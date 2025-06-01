@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useApiValidation } from '@/hooks/useApiValidation';
 import { useNumberSync } from '@/hooks/useNumberSync';
-import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Sync } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const SystemHealthDashboard = () => {
   const { validateAllCredentials, validationResults, isValidating } = useApiValidation();
@@ -91,7 +91,7 @@ const SystemHealthDashboard = () => {
               variant="outline"
               size="sm"
             >
-              <Sync className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
               Sync Now
             </Button>
           </CardTitle>
