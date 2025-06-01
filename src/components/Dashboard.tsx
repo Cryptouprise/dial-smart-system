@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,14 +36,6 @@ const Dashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setIsLoading(false);
-      
-      if (!user) {
-        toast({
-          title: "Authentication Required",
-          description: "Please sign in to access the dashboard",
-          variant: "destructive"
-        });
-      }
     };
 
     checkAuth();
@@ -54,7 +45,7 @@ const Dashboard = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, [toast]);
+  }, []);
 
   // Fetch phone numbers
   const { data: numbers = [], isLoading: numbersLoading } = useQuery({
@@ -160,6 +151,7 @@ const Dashboard = () => {
       title: "Signed Out",
       description: "You have been signed out successfully",
     });
+    window.location.href = '/auth';
   };
 
   const handleSignIn = async () => {
@@ -235,21 +227,8 @@ const Dashboard = () => {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <Card className="w-96">
-          <CardHeader>
-            <CardTitle>Sign In Required</CardTitle>
-            <CardDescription>Please sign in to access the Smart Dialer System</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={handleSignIn} className="w-full">
-              Sign In
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    window.location.href = '/auth';
+    return null;
   }
 
   const filteredNumbers = numbers.filter(n => {
