@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { HelpCircle, BookOpen, Settings, Phone, Shield, Bot, ArrowLeft, Home, Zap, RotateCw, Brain, Database } from 'lucide-react';
+import { HelpCircle, BookOpen, Settings, Phone, Shield, Bot, ArrowLeft, Home, Zap, RotateCw, Brain, Database, AlertTriangle, CheckCircle, Clock, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 
@@ -35,12 +36,16 @@ const HelpSystem = () => {
         </div>
 
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Complete System Documentation</h1>
-          <p className="text-lg text-gray-600">Comprehensive guide to all features and functions</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Complete Phone Dialer System Guide</h1>
+          <p className="text-lg text-gray-600">Everything you need to know to master your phone number management platform</p>
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+            <p className="text-blue-800 font-medium">📞 New to phone dialers? Start with the "Quick Start" tab below!</p>
+          </div>
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+        <Tabs defaultValue="quickstart" className="w-full">
+          <TabsList className="grid w-full grid-cols-7">
+            <TabsTrigger value="quickstart">Quick Start</TabsTrigger>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="features">All Features</TabsTrigger>
             <TabsTrigger value="setup">Setup Guide</TabsTrigger>
@@ -49,35 +54,183 @@ const HelpSystem = () => {
             <TabsTrigger value="troubleshooting">Troubleshooting</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="quickstart" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-green-600" />
+                  🚀 Get Started in 5 Minutes
+                </CardTitle>
+                <CardDescription>Follow these simple steps to make your first call</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4">
+                  <div className="flex items-start gap-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold">1</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-green-800 text-lg">Add Your API Keys</h3>
+                      <p className="text-green-700 mb-3">You need Twilio credentials to make calls. Don't have them? No problem!</p>
+                      <div className="bg-white p-3 rounded border">
+                        <p className="text-sm font-medium mb-2">What you need from Twilio:</p>
+                        <ul className="text-sm space-y-1 text-gray-600">
+                          <li>• <strong>Account SID</strong> (starts with "AC...")</li>
+                          <li>• <strong>Auth Token</strong> (long random string)</li>
+                          <li>• <strong>Phone Number</strong> (your Twilio number for outbound calls)</li>
+                        </ul>
+                        <p className="text-xs text-gray-500 mt-2">💡 Find these in your Twilio Console → Account → API Keys</p>
+                      </div>
+                      <Button 
+                        onClick={() => navigate('/api-keys')}
+                        className="mt-3 bg-green-600 hover:bg-green-700"
+                      >
+                        Add API Keys Now →
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold">2</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-blue-800 text-lg">Buy Phone Numbers</h3>
+                      <p className="text-blue-700 mb-3">Purchase phone numbers to start calling from</p>
+                      <div className="bg-white p-3 rounded border">
+                        <p className="text-sm font-medium mb-2">How to buy numbers:</p>
+                        <ol className="text-sm space-y-1 text-gray-600 list-decimal list-inside">
+                          <li>Go to Dashboard → Overview tab</li>
+                          <li>Enter area code (like 555 for New York)</li>
+                          <li>Choose quantity (start with 5-10 numbers)</li>
+                          <li>Click "Purchase Numbers"</li>
+                        </ol>
+                        <p className="text-xs text-gray-500 mt-2">💰 Cost: ~$1/month per number</p>
+                      </div>
+                      <Button 
+                        onClick={() => navigate('/')}
+                        className="mt-3 bg-blue-600 hover:bg-blue-700"
+                      >
+                        Buy Numbers Now →
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <div className="bg-purple-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold">3</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-purple-800 text-lg">Make Your First Test Call</h3>
+                      <p className="text-purple-700 mb-3">Test that everything works with a simple call</p>
+                      <div className="bg-white p-3 rounded border">
+                        <p className="text-sm font-medium mb-2">Testing your setup:</p>
+                        <ol className="text-sm space-y-1 text-gray-600 list-decimal list-inside">
+                          <li>Find any number in your numbers list</li>
+                          <li>Click the "Test Call" button</li>
+                          <li>Enter your personal phone number</li>
+                          <li>You should receive a call!</li>
+                        </ol>
+                        <p className="text-xs text-gray-500 mt-2">🔧 Not working? Check the Troubleshooting tab</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <div className="bg-orange-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold">4</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-orange-800 text-lg">🎉 You're Ready!</h3>
+                      <p className="text-orange-700 mb-3">Now you can start using advanced features</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="text-sm bg-white p-2 rounded border">
+                          <strong>Next Steps:</strong>
+                          <ul className="mt-1 space-y-1 text-gray-600">
+                            <li>• Set up AI calling (Retell AI)</li>
+                            <li>• Configure spam protection</li>
+                            <li>• Set up number rotation</li>
+                          </ul>
+                        </div>
+                        <div className="text-sm bg-white p-2 rounded border">
+                          <strong>Pro Tips:</strong>
+                          <ul className="mt-1 space-y-1 text-gray-600">
+                            <li>• Monitor call analytics daily</li>
+                            <li>• Use different area codes</li>
+                            <li>• Keep spam scores low</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    <div>
+                      <h4 className="font-semibold text-yellow-800">⚠️ Important Notes for Beginners</h4>
+                      <ul className="text-sm text-yellow-700 mt-2 space-y-1">
+                        <li>• <strong>Start small:</strong> Buy 5-10 numbers first, not 50</li>
+                        <li>• <strong>Different area codes:</strong> Don't buy all numbers from the same area</li>
+                        <li>• <strong>Monitor spam scores:</strong> Numbers with high scores get blocked</li>
+                        <li>• <strong>Rotate regularly:</strong> Don't overuse the same number</li>
+                        <li>• <strong>Test everything:</strong> Always test before going live</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="overview" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>System Overview</CardTitle>
-                <CardDescription>Your complete phone number management platform</CardDescription>
+                <CardDescription>Your complete phone number management platform explained simply</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-semibold text-blue-800 mb-2">6 Main Dashboard Sections</h4>
+                    <h4 className="font-semibold text-blue-800 mb-2">🎯 What This System Does</h4>
                     <ul className="text-sm text-blue-700 space-y-1">
-                      <li>• Overview - Quick stats and number management</li>
-                      <li>• Analytics - Performance data and insights</li>
-                      <li>• AI Engine - Intelligent recommendations</li>
-                      <li>• Yellowstone - Rollback and backup system</li>
-                      <li>• Advanced Rotation - Smart number rotation</li>
-                      <li>• Spam Protection - Automated spam detection</li>
+                      <li>• Manages hundreds of phone numbers automatically</li>
+                      <li>• Prevents numbers from being marked as spam</li>
+                      <li>• Rotates numbers to avoid overuse</li>
+                      <li>• Integrates with AI calling services</li>
+                      <li>• Provides detailed analytics and reporting</li>
+                      <li>• Backs up and restores system states</li>
                     </ul>
                   </div>
                   <div className="p-4 bg-green-50 rounded-lg">
-                    <h4 className="font-semibold text-green-800 mb-2">Core Capabilities</h4>
+                    <h4 className="font-semibold text-green-800 mb-2">📊 6 Main Dashboard Sections</h4>
                     <ul className="text-sm text-green-700 space-y-1">
-                      <li>• Automated number purchasing</li>
-                      <li>• Real-time spam detection</li>
-                      <li>• AI-powered decision making</li>
-                      <li>• System state management</li>
-                      <li>• Integration with Retell AI & Twilio</li>
-                      <li>• Advanced analytics and reporting</li>
+                      <li>• <strong>Overview:</strong> Buy numbers, see stats, manage pool</li>
+                      <li>• <strong>Analytics:</strong> Charts, graphs, performance data</li>
+                      <li>• <strong>AI Engine:</strong> Smart recommendations and insights</li>
+                      <li>• <strong>Yellowstone:</strong> Backup and restore system</li>
+                      <li>• <strong>Advanced Rotation:</strong> Automated number switching</li>
+                      <li>• <strong>Spam Protection:</strong> Keep numbers healthy</li>
                     </ul>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-semibold text-gray-800 mb-3">🔄 Typical Daily Workflow</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Clock className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                      <h5 className="font-medium text-sm">Morning</h5>
+                      <p className="text-xs text-gray-600 mt-1">Check overnight analytics and spam scores</p>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Users className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                      <h5 className="font-medium text-sm">Midday</h5>
+                      <p className="text-xs text-gray-600 mt-1">Start calling campaigns with rotated numbers</p>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Brain className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                      <h5 className="font-medium text-sm">Afternoon</h5>
+                      <p className="text-xs text-gray-600 mt-1">Review AI recommendations and optimize</p>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Shield className="h-8 w-8 mx-auto mb-2 text-orange-600" />
+                      <h5 className="font-medium text-sm">Evening</h5>
+                      <p className="text-xs text-gray-600 mt-1">Check for quarantined numbers and plan tomorrow</p>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -305,30 +458,55 @@ const HelpSystem = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="h-5 w-5" />
-                  Quick Setup Guide
+                  Complete Setup Guide
                 </CardTitle>
-                <CardDescription>Get your dialer system up and running in minutes</CardDescription>
+                <CardDescription>Detailed instructions for each step of the setup process</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-4">
+              <CardContent className="space-y-6">
+                <div className="space-y-6">
                   <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
                     <div className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</div>
                     <div>
-                      <h4 className="font-semibold">Configure API Keys</h4>
-                      <p className="text-sm text-gray-600">Go to API Keys page and add your service credentials:</p>
-                      <ul className="text-sm text-gray-600 mt-2 ml-4 list-disc">
-                        <li>Twilio: Account SID, Auth Token, Phone Number</li>
-                        <li>Retell AI: API Key</li>
-                        <li>OpenAI: API Key (optional for AI features)</li>
-                        <li>Stripe: Secret Key (optional for payments)</li>
-                      </ul>
+                      <h4 className="font-semibold text-lg">Configure API Keys (Required)</h4>
+                      <p className="text-sm text-gray-600 mb-3">Add your service credentials to connect to external services</p>
+                      
+                      <div className="space-y-3">
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-blue-800">Twilio (Required for calling)</h5>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <p><strong>Where to find:</strong> Twilio Console → Account → API Keys & tokens</p>
+                            <ul className="mt-1 ml-4 list-disc">
+                              <li><strong>Account SID:</strong> Starts with "AC..." (visible on dashboard)</li>
+                              <li><strong>Auth Token:</strong> Click "View" next to Auth Token</li>
+                              <li><strong>Phone Number:</strong> Format: +1234567890 (from your Twilio numbers)</li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-green-800">Retell AI (Optional, for AI calling)</h5>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <p><strong>Where to find:</strong> Retell AI Dashboard → API Keys</p>
+                            <p><strong>What it does:</strong> Enables AI-powered voice agents for automated calling</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-purple-800">OpenAI (Optional, for AI features)</h5>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <p><strong>Where to find:</strong> OpenAI Platform → API Keys</p>
+                            <p><strong>What it does:</strong> Powers intelligent recommendations and analysis</p>
+                          </div>
+                        </div>
+                      </div>
+
                       <Button 
                         variant="outline" 
                         size="sm" 
                         onClick={() => navigate('/api-keys')}
-                        className="mt-2"
+                        className="mt-3"
                       >
-                        Go to API Keys
+                        Configure API Keys →
                       </Button>
                     </div>
                   </div>
@@ -336,15 +514,30 @@ const HelpSystem = () => {
                   <div className="flex items-start gap-3 p-4 bg-green-50 rounded-lg">
                     <div className="bg-green-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</div>
                     <div>
-                      <h4 className="font-semibold">Purchase Phone Numbers</h4>
-                      <p className="text-sm text-gray-600">Buy phone numbers from the dashboard by entering area codes</p>
+                      <h4 className="font-semibold text-lg">Purchase Your First Phone Numbers</h4>
+                      <p className="text-sm text-gray-600 mb-3">Buy phone numbers to start making calls</p>
+                      
+                      <div className="bg-white p-3 rounded border">
+                        <h5 className="font-medium mb-2">Step-by-step process:</h5>
+                        <ol className="text-sm text-gray-600 list-decimal list-inside space-y-1">
+                          <li>Go to Dashboard → Overview tab</li>
+                          <li>In "Buy Numbers" section, enter area code (3 digits, like 555)</li>
+                          <li>Choose quantity (recommend starting with 5-10 numbers)</li>
+                          <li>Toggle "Auto-import to Retell AI" if you have Retell AI configured</li>
+                          <li>Click "Purchase Numbers" and wait for confirmation</li>
+                        </ol>
+                        <div className="mt-3 p-2 bg-yellow-50 rounded">
+                          <p className="text-xs text-yellow-800"><strong>💡 Pro tip:</strong> Use different area codes for better distribution (555, 213, 415, etc.)</p>
+                        </div>
+                      </div>
+
                       <Button 
                         variant="outline" 
                         size="sm" 
                         onClick={() => navigate('/')}
-                        className="mt-2"
+                        className="mt-3"
                       >
-                        Go to Dashboard
+                        Go to Dashboard →
                       </Button>
                     </div>
                   </div>
@@ -352,16 +545,67 @@ const HelpSystem = () => {
                   <div className="flex items-start gap-3 p-4 bg-purple-50 rounded-lg">
                     <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</div>
                     <div>
-                      <h4 className="font-semibold">Set Up Spam Protection</h4>
-                      <p className="text-sm text-gray-600">Configure automatic spam detection and quarantine settings</p>
+                      <h4 className="font-semibold text-lg">Configure Spam Protection</h4>
+                      <p className="text-sm text-gray-600 mb-3">Set up automatic monitoring to keep numbers healthy</p>
+                      
+                      <div className="bg-white p-3 rounded border">
+                        <h5 className="font-medium mb-2">Automatic protection features:</h5>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                          <li>• <strong>Real-time monitoring:</strong> Tracks call volumes and patterns</li>
+                          <li>• <strong>Auto-quarantine:</strong> Isolates risky numbers automatically</li>
+                          <li>• <strong>Spam scoring:</strong> Rates each number's risk level (0-100)</li>
+                          <li>• <strong>30-day quarantine:</strong> Automatic release after cooling period</li>
+                        </ul>
+                        <div className="mt-3 p-2 bg-green-50 rounded">
+                          <p className="text-xs text-green-800"><strong>✅ Good news:</strong> This works automatically once you have numbers!</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-3 p-4 bg-orange-50 rounded-lg">
                     <div className="bg-orange-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</div>
                     <div>
-                      <h4 className="font-semibold">Start Calling</h4>
-                      <p className="text-sm text-gray-600">Use the test call feature or import numbers to Retell AI for automated calling</p>
+                      <h4 className="font-semibold text-lg">Test Your Setup</h4>
+                      <p className="text-sm text-gray-600 mb-3">Verify everything works before going live</p>
+                      
+                      <div className="bg-white p-3 rounded border">
+                        <h5 className="font-medium mb-2">Testing checklist:</h5>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span>Test call feature with your personal number</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span>Verify numbers appear in your dashboard</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span>Check analytics are tracking call data</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span>Confirm Retell AI integration (if enabled)</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-red-50 rounded-lg border border-red-200">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div>
+                      <h4 className="font-semibold text-red-800">🚨 Common Setup Mistakes to Avoid</h4>
+                      <ul className="text-sm text-red-700 mt-2 space-y-1">
+                        <li>• <strong>Wrong phone number format:</strong> Must include country code (+1234567890)</li>
+                        <li>• <strong>Invalid area codes:</strong> Use real US area codes only (check online lists)</li>
+                        <li>• <strong>Insufficient Twilio balance:</strong> Ensure you have funds for number purchases</li>
+                        <li>• <strong>Mixed up SID and Token:</strong> Account SID starts with "AC", Auth Token is longer</li>
+                        <li>• <strong>Not testing first:</strong> Always test with small batches before scaling</li>
+                      </ul>
                     </div>
                   </div>
                 </div>
@@ -482,41 +726,149 @@ const HelpSystem = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <HelpCircle className="h-5 w-5" />
-                  Common Issues & Solutions
+                  Common Issues & Step-by-Step Solutions
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-4">
-                  <div className="border-l-4 border-blue-500 pl-4">
-                    <h4 className="font-semibold">Can't make calls</h4>
-                    <p className="text-sm text-gray-600">
-                      Ensure Twilio credentials are correctly configured in API Keys. 
-                      Check that your Twilio account has sufficient balance and the phone number is verified.
-                    </p>
+              <CardContent className="space-y-6">
+                <div className="space-y-6">
+                  <div className="border-l-4 border-red-500 pl-4 bg-red-50 p-4 rounded">
+                    <h4 className="font-semibold text-red-800 text-lg">🚫 Can't Make Calls - Nothing Happens</h4>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-red-700">Step-by-step solution:</p>
+                      <ol className="text-sm text-red-600 list-decimal list-inside space-y-1 ml-2">
+                        <li>Go to API Keys page and verify all fields are filled</li>
+                        <li>Check Twilio console - is your Auth Token correct?</li>
+                        <li>Verify phone number format: +1234567890 (with +1)</li>
+                        <li>Confirm Twilio account has sufficient balance ($5+ recommended)</li>
+                        <li>Try test call with a different number from your pool</li>
+                      </ol>
+                      <div className="mt-2 p-2 bg-white rounded border">
+                        <p className="text-xs"><strong>Still not working?</strong> Log into Twilio console → Monitor → Logs to see error details</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="border-l-4 border-green-500 pl-4">
-                    <h4 className="font-semibold">Numbers not importing to Retell AI</h4>
-                    <p className="text-sm text-gray-600">
-                      Verify your Retell AI API key is valid and you have an active account. 
-                      Ensure the termination URI is properly formatted.
-                    </p>
+                  <div className="border-l-4 border-orange-500 pl-4 bg-orange-50 p-4 rounded">
+                    <h4 className="font-semibold text-orange-800 text-lg">🤖 Numbers Not Importing to Retell AI</h4>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-orange-700">Step-by-step solution:</p>
+                      <ol className="text-sm text-orange-600 list-decimal list-inside space-y-1 ml-2">
+                        <li>Verify Retell AI API key is correct in API Keys page</li>
+                        <li>Check you have an active Retell AI account with available credits</li>
+                        <li>Ensure "Auto-import to Retell AI" toggle was ON when buying numbers</li>
+                        <li>Try manually importing: go to Dashboard → select numbers → Import to Retell</li>
+                        <li>Check Retell AI dashboard to confirm numbers appeared there</li>
+                      </ol>
+                      <div className="mt-2 p-2 bg-white rounded border">
+                        <p className="text-xs"><strong>Pro tip:</strong> Retell AI may take 2-3 minutes to show new numbers</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="border-l-4 border-orange-500 pl-4">
-                    <h4 className="font-semibold">Spam detection not working</h4>
-                    <p className="text-sm text-gray-600">
-                      The spam detection system runs automatically. You can manually trigger checks 
-                      from the Dashboard. Ensure numbers have call activity to generate spam scores.
-                    </p>
+                  <div className="border-l-4 border-yellow-500 pl-4 bg-yellow-50 p-4 rounded">
+                    <h4 className="font-semibold text-yellow-800 text-lg">📊 Spam Detection Shows All Zeros</h4>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-yellow-700">This is normal for new numbers! Here's why:</p>
+                      <ul className="text-sm text-yellow-600 space-y-1 ml-2">
+                        <li>• Spam scores require call history to calculate</li>
+                        <li>• New numbers show 0 until they make/receive calls</li>
+                        <li>• System updates scores every 24 hours automatically</li>
+                        <li>• You can manually trigger checks from the Dashboard</li>
+                      </ul>
+                      <div className="mt-2 p-2 bg-white rounded border">
+                        <p className="text-xs"><strong>Expected timeline:</strong> Scores appear after 1-2 days of calling activity</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="border-l-4 border-red-500 pl-4">
-                    <h4 className="font-semibold">Numbers stuck in quarantine</h4>
-                    <p className="text-sm text-gray-600">
-                      Numbers are quarantined for 30 days by default. You can manually release 
-                      them early using the "Release" button, or wait for automatic release.
-                    </p>
+                  <div className="border-l-4 border-purple-500 pl-4 bg-purple-50 p-4 rounded">
+                    <h4 className="font-semibold text-purple-800 text-lg">🔒 Numbers Stuck in Quarantine</h4>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-purple-700">Understanding quarantine system:</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-sm">Why numbers get quarantined:</h5>
+                          <ul className="text-xs text-gray-600 mt-1 space-y-1">
+                            <li>• High call volume in short time</li>
+                            <li>• Spam score above threshold (70+)</li>
+                            <li>• Unusual calling patterns detected</li>
+                            <li>• Manual quarantine by user</li>
+                          </ul>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-sm">How to release early:</h5>
+                          <ul className="text-xs text-gray-600 mt-1 space-y-1">
+                            <li>• Click "Release" button next to number</li>
+                            <li>• Auto-release after 30 days</li>
+                            <li>• Check if spam score improved first</li>
+                            <li>• Monitor closely after release</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded">
+                    <h4 className="font-semibold text-blue-800 text-lg">📉 Poor Call Connection Rates</h4>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-blue-700">Improving call success:</p>
+                      <div className="grid grid-cols-2 gap-3 mt-2">
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-sm">Check these factors:</h5>
+                          <ul className="text-xs text-gray-600 mt-1 space-y-1">
+                            <li>• Time of day (avoid early morning/late evening)</li>
+                            <li>• Area code reputation</li>
+                            <li>• Number age (newer = better)</li>
+                            <li>• Call frequency per number</li>
+                          </ul>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <h5 className="font-medium text-sm">Best practices:</h5>
+                          <ul className="text-xs text-gray-600 mt-1 space-y-1">
+                            <li>• Rotate numbers frequently</li>
+                            <li>• Use local area codes</li>
+                            <li>• Keep calls under 50/day per number</li>
+                            <li>• Monitor spam scores daily</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-l-4 border-green-500 pl-4 bg-green-50 p-4 rounded">
+                    <h4 className="font-semibold text-green-800 text-lg">🔧 General Troubleshooting Steps</h4>
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-green-700 mb-2">When something isn't working, try these in order:</p>
+                      <ol className="text-sm text-green-600 list-decimal list-inside space-y-1 ml-2">
+                        <li>Refresh the page and try again</li>
+                        <li>Check API Keys page - are all credentials valid?</li>
+                        <li>Look at browser console (F12) for error messages</li>
+                        <li>Try with a different number from your pool</li>
+                        <li>Check your Twilio/Retell AI account directly</li>
+                        <li>Contact support with specific error messages</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-semibold text-gray-800 mb-3">📞 Still Need Help?</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="text-center p-3 bg-white rounded border">
+                      <BookOpen className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                      <h5 className="font-medium text-sm">Check Other Tabs</h5>
+                      <p className="text-xs text-gray-600 mt-1">Setup Guide, Features, Integrations</p>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Settings className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                      <h5 className="font-medium text-sm">System Settings</h5>
+                      <p className="text-xs text-gray-600 mt-1">API Keys, Configuration</p>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded border">
+                      <Phone className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                      <h5 className="font-medium text-sm">Test Everything</h5>
+                      <p className="text-xs text-gray-600 mt-1">Small tests before big campaigns</p>
+                    </div>
                   </div>
                 </div>
               </CardContent>
