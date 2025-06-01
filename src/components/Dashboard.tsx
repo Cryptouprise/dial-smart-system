@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useRetellAI } from '@/hooks/useRetellAI';
 import Navigation from '@/components/Navigation';
 
 interface PhoneNumber {
@@ -32,12 +33,15 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [integrationStatus, setIntegrationStatus] = useState({
     twilio: false,
+    retell: false,
     openai: false,
     stripe: false
   });
+  const [retellUri, setRetellUri] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { importPhoneNumber, isLoading: retellLoading } = useRetellAI();
 
   // Check authentication status
   useEffect(() => {
@@ -94,6 +98,7 @@ const Dashboard = () => {
         const credentials = JSON.parse(storedCredentials);
         setIntegrationStatus({
           twilio: credentials.some((c: any) => c.service === 'twilio'),
+          retell: credentials.some((c: any) => c.service === 'retell'),
           openai: credentials.some((c: any) => c.service === 'openai'),
           stripe: credentials.some((c: any) => c.service === 'stripe')
         });
@@ -201,6 +206,19 @@ const Dashboard = () => {
     }
   });
 
+  // Import to Retell AI
+  const importToRetellMutation = useMutation({
+    mutationFn: async ({ phoneNumber, terminationUri }: { phoneNumber: string; terminationUri: string }) => {
+      return await importPhoneNumber(phoneNumber, terminationUri);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Phone number imported to Retell AI",
+      });
+    }
+  });
+
   // Make call function (placeholder for Twilio integration)
   const makeCall = async (phoneNumber: string, targetNumber: string) => {
     if (!integrationStatus.twilio) {
@@ -282,6 +300,19 @@ const Dashboard = () => {
     });
   };
 
+  const handleImportToRetell = (phoneNumber: string) => {
+    if (!retellUri) {
+      toast({
+        title: "Error",
+        description: "Please enter a termination URI for Retell AI",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    importToRetellMutation.mutate({ phoneNumber, terminationUri: retellUri });
+  };
+
   const getStatusBadge = (status: string, isSpam: boolean) => {
     if (status === 'quarantined') {
       return <Badge variant="destructive">Quarantined</Badge>;
@@ -325,13 +356,13 @@ const Dashboard = () => {
         </div>
 
         {/* Integration Status Alert */}
-        {!integrationStatus.twilio && (
+        {(!integrationStatus.twilio && !integrationStatus.retell) && (
           <Card className="border-orange-200 bg-orange-50">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold text-orange-800">Integration Required</h3>
-                  <p className="text-orange-700">Configure your Twilio credentials to start making calls</p>
+                  <p className="text-orange-700">Configure your Twilio or Retell AI credentials to start making calls</p>
                 </div>
                 <Button 
                   onClick={() => navigate('/api-keys')}
@@ -339,6 +370,29 @@ const Dashboard = () => {
                 >
                   Configure API Keys
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Retell AI Integration Card */}
+        {integrationStatus.retell && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Retell AI Integration</CardTitle>
+              <CardDescription>Import phone numbers to Retell AI for AI-powered calling</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <Label htmlFor="retellUri">Termination URI</Label>
+                  <Input
+                    id="retellUri"
+                    placeholder="e.g., someuri.pstn.twilio.com"
+                    value={retellUri}
+                    onChange={(e) => setRetellUri(e.target.value)}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -473,7 +527,7 @@ const Dashboard = () => {
                             {number.last_used ? new Date(number.last_used).toLocaleString() : 'Never'}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               {number.status === 'active' ? (
                                 <>
                                   <Button
@@ -485,6 +539,17 @@ const Dashboard = () => {
                                   >
                                     Test Call
                                   </Button>
+                                  {integrationStatus.retell && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleImportToRetell(number.number)}
+                                      disabled={retellLoading || !retellUri}
+                                      className="border-purple-500 text-purple-600 hover:bg-purple-50"
+                                    >
+                                      Import to Retell
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="destructive"
                                     size="sm"

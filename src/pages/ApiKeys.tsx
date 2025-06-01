@@ -51,6 +51,12 @@ const ApiKeys = () => {
         { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890' }
       ]
     },
+    retell: {
+      displayName: 'Retell AI',
+      fields: [
+        { key: 'apiKey', label: 'API Key', placeholder: 'Your Retell AI API Key', type: 'password' }
+      ]
+    },
     openai: {
       displayName: 'OpenAI',
       fields: [
@@ -110,6 +116,11 @@ const ApiKeys = () => {
     };
 
     setApiCredentials([...apiCredentials, newCredential]);
+    
+    // Store credentials in localStorage for persistence
+    const existingCredentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
+    localStorage.setItem('api-credentials', JSON.stringify([...existingCredentials, newCredential]));
+    
     setNewCredentialName('');
     setSelectedService('');
     setCredentialFields({});
