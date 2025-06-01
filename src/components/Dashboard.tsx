@@ -19,6 +19,7 @@ import NumberRotationManager from '@/components/NumberRotationManager';
 import CallAnalytics from '@/components/CallAnalytics';
 import AutomationEngine from '@/components/AutomationEngine';
 import AlertSystem from '@/components/AlertSystem';
+import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 
 interface PhoneNumber {
   id: string;
@@ -384,12 +385,13 @@ const Dashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
             <TabsTrigger value="retell">Retell AI</TabsTrigger>
             <TabsTrigger value="spam">Spam Detection</TabsTrigger>
+            <TabsTrigger value="system">System Health</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -601,6 +603,10 @@ const Dashboard = () => {
 
           <TabsContent value="spam">
             <SpamDetectionManager />
+          </TabsContent>
+
+          <TabsContent value="system">
+            <SystemHealthDashboard />
           </TabsContent>
         </Tabs>
       </div>

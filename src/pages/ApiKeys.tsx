@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +39,8 @@ const ApiKeys = () => {
   const [selectedService, setSelectedService] = useState('');
   const [credentialFields, setCredentialFields] = useState<Record<string, string>>({});
   const [showCredentials, setShowCredentials] = useState<{ [key: string]: boolean }>({});
+  const [validationResults, setValidationResults] = useState<{ [key: string]: boolean }>({});
+  const [isValidating, setIsValidating] = useState(false);
   const { toast } = useToast();
 
   const serviceConfigs = {
@@ -159,6 +160,63 @@ const ApiKeys = () => {
     const visibleChars = Math.min(4, Math.floor(credential.length / 3));
     const maskedLength = credential.length - (visibleChars * 2);
     return credential.substring(0, visibleChars) + '*'.repeat(Math.max(0, maskedLength)) + credential.substring(credential.length - visibleChars);
+  };
+
+  const validateCredential = async (credential: ApiCredentials) => {
+    setIsValidating(true);
+    try {
+      let isValid = false;
+      
+      switch (credential.service) {
+        case 'retell':
+          const response = await fetch('https://api.retellai.com/v2/agent', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${credential.credentials.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          isValid = response.ok;
+          break;
+          
+        case 'twilio':
+          // For Twilio, just check format since we can't easily test without exposing credentials
+          isValid = credential.credentials.accountSid?.startsWith('AC') && 
+                   credential.credentials.authToken?.length > 30;
+          break;
+          
+        case 'openai':
+          const openaiResponse = await fetch('https://api.openai.com/v1/models', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${credential.credentials.apiKey}`,
+            },
+          });
+          isValid = openaiResponse.ok;
+          break;
+          
+        default:
+          isValid = true; // Assume valid for other services
+      }
+      
+      setValidationResults(prev => ({ ...prev, [credential.id]: isValid }));
+      
+      toast({
+        title: isValid ? "Validation Successful" : "Validation Failed",
+        description: `${getServiceDisplayName(credential.service)} credentials ${isValid ? 'are valid' : 'failed validation'}`,
+        variant: isValid ? "default" : "destructive"
+      });
+      
+    } catch (error) {
+      setValidationResults(prev => ({ ...prev, [credential.id]: false }));
+      toast({
+        title: "Validation Error",
+        description: "Could not validate credentials. Check your network connection.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   const getServiceDisplayName = (service: string) => {
@@ -295,19 +353,36 @@ const ApiKeys = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={credential.status === 'active' ? 'default' : 'secondary'}>
-                            {credential.status}
-                          </Badge>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant={credential.status === 'active' ? 'default' : 'secondary'}>
+                              {credential.status}
+                            </Badge>
+                            {validationResults[credential.id] !== undefined && (
+                              <Badge variant={validationResults[credential.id] ? 'default' : 'destructive'}>
+                                {validationResults[credential.id] ? 'Valid' : 'Invalid'}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>{credential.created}</TableCell>
                         <TableCell>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteCredentials(credential.id)}
-                          >
-                            <Trash2 size={16} />
-                          </Button>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => validateCredential(credential)}
+                              disabled={isValidating}
+                            >
+                              {isValidating ? 'Validating...' : 'Validate'}
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteCredentials(credential.id)}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

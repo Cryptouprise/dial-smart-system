@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AutomationEngineProps {
   numbers: any[];
@@ -10,7 +11,7 @@ interface AutomationEngineProps {
 
 const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) => {
   const { toast } = useToast();
-  const { importPhoneNumber, deletePhoneNumber, updatePhoneNumber } = useRetellAI();
+  const { importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers } = useRetellAI();
   const [automationSettings, setAutomationSettings] = useState({
     autoImportOnPurchase: false,
     autoRemoveQuarantined: false,
@@ -96,61 +97,83 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
     return () => clearInterval(interval);
   }, [numbers, automationSettings, deletePhoneNumber, toast]);
 
-  // Automatic rotation scheduler
+  // Automatic rotation scheduler - NOW ACTIVE
   useEffect(() => {
     if (!automationSettings.rotationEnabled) return;
 
     const executeRotation = async () => {
       console.log('Executing automatic rotation...');
       
-      // Get current Retell numbers (mock for now)
-      const activeNumbers = numbers.filter(n => n.status === 'active');
-      const highVolumeNumbers = activeNumbers.filter(n => n.daily_calls > 40);
-      
-      if (highVolumeNumbers.length > 0) {
-        // Remove high volume numbers and replace with fresh ones
-        for (const number of highVolumeNumbers.slice(0, 2)) {
-          await deletePhoneNumber(number.number);
+      try {
+        // Get current Retell numbers
+        const retellNumbers = await listPhoneNumbers();
+        if (!retellNumbers) return;
+
+        const activeNumbers = numbers.filter(n => n.status === 'active');
+        const highVolumeNumbers = activeNumbers.filter(n => n.daily_calls > 40);
+        
+        if (highVolumeNumbers.length > 0) {
+          let rotatedCount = 0;
           
-          // Find replacement number
-          const replacement = activeNumbers.find(n => 
-            n.daily_calls < 10 && 
-            !highVolumeNumbers.includes(n)
-          );
-          
-          if (replacement && automationSettings.terminationUri) {
-            await importPhoneNumber(replacement.number, automationSettings.terminationUri);
+          // Remove high volume numbers and replace with fresh ones
+          for (const number of highVolumeNumbers.slice(0, 2)) {
+            const isInRetell = retellNumbers.find(r => r.phone_number === number.number);
             
-            if (automationSettings.defaultAgentId) {
-              await updatePhoneNumber(replacement.number, automationSettings.defaultAgentId);
+            if (isInRetell) {
+              await deletePhoneNumber(number.number);
+              rotatedCount++;
+              
+              // Find replacement number
+              const replacement = activeNumbers.find(n => 
+                n.daily_calls < 10 && 
+                !highVolumeNumbers.includes(n) &&
+                !retellNumbers.find(r => r.phone_number === n.number)
+              );
+              
+              if (replacement && automationSettings.terminationUri) {
+                await importPhoneNumber(replacement.number, automationSettings.terminationUri);
+                
+                if (automationSettings.defaultAgentId) {
+                  await updatePhoneNumber(replacement.number, automationSettings.defaultAgentId);
+                }
+                
+                console.log(`Rotated ${number.number} -> ${replacement.number}`);
+              }
             }
           }
-        }
-        
-        toast({
-          title: "Automatic Rotation Complete",
-          description: `Rotated ${highVolumeNumbers.length} high-volume numbers`,
-        });
+          
+          if (rotatedCount > 0) {
+            toast({
+              title: "Automatic Rotation Complete",
+              description: `Rotated ${rotatedCount} high-volume numbers`,
+            });
 
-        // Log rotation event
-        const rotationEvent = {
-          type: 'automatic',
-          numbersAdded: [],
-          numbersRemoved: highVolumeNumbers.map(n => n.number),
-          reason: `Scheduled rotation (${automationSettings.rotationInterval}h interval)`,
-          agentId: automationSettings.defaultAgentId
-        };
-        
-        const history = JSON.parse(localStorage.getItem('rotation-history') || '[]');
-        localStorage.setItem('rotation-history', JSON.stringify([rotationEvent, ...history]));
+            // Log rotation event
+            const rotationEvent = {
+              timestamp: new Date().toISOString(),
+              type: 'automatic',
+              numbersRotated: rotatedCount,
+              reason: `Scheduled rotation (${automationSettings.rotationInterval}h interval)`,
+              trigger: 'high_volume_detected'
+            };
+            
+            const history = JSON.parse(localStorage.getItem('rotation-history') || '[]');
+            localStorage.setItem('rotation-history', JSON.stringify([rotationEvent, ...history.slice(0, 49)]));
+          }
+        }
+      } catch (error) {
+        console.error('Rotation execution error:', error);
       }
     };
 
     const intervalHours = parseInt(automationSettings.rotationInterval);
     const interval = setInterval(executeRotation, intervalHours * 60 * 60 * 1000);
     
+    // Also run once on startup if enabled
+    setTimeout(executeRotation, 5000);
+    
     return () => clearInterval(interval);
-  }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, toast]);
+  }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers, toast]);
 
   // This component doesn't render anything - it's just the automation engine
   return null;
