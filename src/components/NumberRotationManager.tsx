@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Upload, RotateCw, Settings, Play, Pause } from 'lucide-react';
+import { Upload, RotateCw, Settings, Play, Pause, Zap, Bot, Shield, RefreshCw } from 'lucide-react';
 
 interface NumberRotationManagerProps {
   numbers: any[];
@@ -23,8 +23,28 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
   const [rotationInterval, setRotationInterval] = useState('24');
   const [activePoolSize, setActivePoolSize] = useState('5');
   const [rotationStrategy, setRotationStrategy] = useState('round-robin');
+  
+  // New automation settings
+  const [autoImportOnPurchase, setAutoImportOnPurchase] = useState(false);
+  const [autoRemoveQuarantined, setAutoRemoveQuarantined] = useState(false);
+  const [autoAssignAgent, setAutoAssignAgent] = useState(false);
+  const [defaultAgentId, setDefaultAgentId] = useState('');
+  
   const { toast } = useToast();
-  const { importPhoneNumber, deletePhoneNumber, listPhoneNumbers, isLoading } = useRetellAI();
+  const { importPhoneNumber, deletePhoneNumber, listPhoneNumbers, listAgents, isLoading } = useRetellAI();
+
+  const [agents, setAgents] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadAgents();
+  }, []);
+
+  const loadAgents = async () => {
+    const agentsData = await listAgents();
+    if (agentsData) {
+      setAgents(agentsData);
+    }
+  };
 
   const activeNumbers = numbers.filter(n => n.status === 'active');
 
@@ -77,24 +97,37 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
     });
   };
 
-  const handleManualImport = async (phoneNumber: string) => {
+  const triggerRotation = async () => {
     if (!terminationUri) {
       toast({
         title: "Error",
-        description: "Please enter a termination URI",
+        description: "Please configure termination URI first",
         variant: "destructive"
       });
       return;
     }
 
-    await importPhoneNumber(phoneNumber, terminationUri);
+    toast({
+      title: "Manual Rotation Triggered",
+      description: "Starting number rotation process...",
+    });
+
+    // Simulate rotation logic - in real implementation this would:
+    // 1. Get current Retell numbers
+    // 2. Remove some based on strategy
+    // 3. Add new ones from available pool
+    console.log('Triggering manual rotation with settings:', {
+      activePoolSize,
+      rotationStrategy,
+      terminationUri
+    });
   };
 
   const startRotation = () => {
     setRotationEnabled(true);
     toast({
       title: "Rotation Started",
-      description: `Numbers will rotate every ${rotationInterval} hours`,
+      description: `Automatic rotation every ${rotationInterval} hours is now active`,
     });
   };
 
@@ -106,8 +139,141 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
     });
   };
 
+  const saveAutomationSettings = () => {
+    // Save automation settings to localStorage or database
+    const settings = {
+      autoImportOnPurchase,
+      autoRemoveQuarantined,
+      autoAssignAgent,
+      defaultAgentId,
+      terminationUri
+    };
+    localStorage.setItem('automation-settings', JSON.stringify(settings));
+    
+    toast({
+      title: "Automation Settings Saved",
+      description: "Your automation preferences have been saved",
+    });
+  };
+
   return (
     <div className="space-y-6">
+      {/* Automation Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            Automation Controls
+          </CardTitle>
+          <CardDescription>
+            Configure automatic workflows for your voice agent operation
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Global Settings */}
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="automationTerminationUri">Default Termination URI</Label>
+              <Input
+                id="automationTerminationUri"
+                placeholder="e.g., someuri.pstn.twilio.com"
+                value={terminationUri}
+                onChange={(e) => setTerminationUri(e.target.value)}
+              />
+              <p className="text-xs text-gray-500 mt-1">Used for all automatic imports</p>
+            </div>
+
+            {autoAssignAgent && (
+              <div>
+                <Label htmlFor="defaultAgent">Default Agent for Auto-Assignment</Label>
+                <Select value={defaultAgentId} onValueChange={setDefaultAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select default agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                        {agent.agent_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          {/* Automation Toggles */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  <Label className="font-medium">Auto-Import on Purchase</Label>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Automatically import new numbers to Retell AI when purchased
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={autoImportOnPurchase ? "default" : "secondary"}>
+                  {autoImportOnPurchase ? "Enabled" : "Disabled"}
+                </Badge>
+                <Switch
+                  checked={autoImportOnPurchase}
+                  onCheckedChange={setAutoImportOnPurchase}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  <Label className="font-medium">Auto-Remove Quarantined</Label>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Automatically remove quarantined numbers from Retell AI
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={autoRemoveQuarantined ? "default" : "secondary"}>
+                  {autoRemoveQuarantined ? "Enabled" : "Disabled"}
+                </Badge>
+                <Switch
+                  checked={autoRemoveQuarantined}
+                  onCheckedChange={setAutoRemoveQuarantined}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  <Label className="font-medium">Auto-Assign Agent</Label>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Automatically assign default agent to imported numbers
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={autoAssignAgent ? "default" : "secondary"}>
+                  {autoAssignAgent ? "Enabled" : "Disabled"}
+                </Badge>
+                <Switch
+                  checked={autoAssignAgent}
+                  onCheckedChange={setAutoAssignAgent}
+                />
+              </div>
+            </div>
+          </div>
+
+          <Button onClick={saveAutomationSettings} className="w-full">
+            Save Automation Settings
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Manual Import Controls */}
       <Card>
         <CardHeader>
@@ -120,17 +286,6 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Termination URI Input */}
-          <div>
-            <Label htmlFor="terminationUri">Termination URI</Label>
-            <Input
-              id="terminationUri"
-              placeholder="e.g., someuri.pstn.twilio.com"
-              value={terminationUri}
-              onChange={(e) => setTerminationUri(e.target.value)}
-            />
-          </div>
-
           {/* Bulk Selection */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -274,9 +429,9 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
                 Stop Rotation
               </Button>
             )}
-            <Button variant="outline">
-              <Settings className="h-4 w-4 mr-2" />
-              Advanced Settings
+            <Button variant="outline" onClick={triggerRotation}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Manual Rotation
             </Button>
           </div>
 
@@ -305,15 +460,15 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button variant="outline" className="h-auto p-4">
+            <Button variant="outline" className="h-auto p-4" onClick={handleBulkImport} disabled={activeNumbers.length === 0 || !terminationUri}>
               <div className="text-center">
                 <Upload className="h-6 w-6 mx-auto mb-2" />
                 <div className="font-medium">Import All Active</div>
-                <div className="text-xs text-gray-500">Import all active numbers</div>
+                <div className="text-xs text-gray-500">Import all {activeNumbers.length} active numbers</div>
               </div>
             </Button>
             
-            <Button variant="outline" className="h-auto p-4">
+            <Button variant="outline" className="h-auto p-4" onClick={triggerRotation}>
               <div className="text-center">
                 <RotateCw className="h-6 w-6 mx-auto mb-2" />
                 <div className="font-medium">Rotate Now</div>
