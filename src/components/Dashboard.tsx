@@ -14,7 +14,6 @@ import { useNavigate } from 'react-router-dom';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { RefreshCw } from 'lucide-react';
 import Navigation from '@/components/Navigation';
-import RetellAIManager from '@/components/RetellAIManager';
 import SpamDetectionManager from '@/components/SpamDetectionManager';
 import NumberRotationManager from '@/components/NumberRotationManager';
 import CallAnalytics from '@/components/CallAnalytics';
