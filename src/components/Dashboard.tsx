@@ -27,6 +27,7 @@ const Dashboard = () => {
   const [newAreaCode, setNewAreaCode] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [user, setUser] = useState<any>(null);
+  const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -34,32 +35,41 @@ const Dashboard = () => {
 
   // Check authentication status
   useEffect(() => {
-    const checkAuth = async () => {
+    const initializeAuth = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        console.log('Auth check result:', user);
-        setUser(user);
+        // First get the current session
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        console.log('Initial session check:', currentSession);
         
-        if (!user) {
-          console.log('No user found, redirecting to auth');
+        if (currentSession) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+        } else {
+          console.log('No session found, redirecting to auth');
           navigate('/auth');
           return;
         }
       } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('Auth initialization error:', error);
         navigate('/auth');
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuth();
+    initializeAuth();
 
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state changed:', event, session?.user);
+      setSession(session);
       setUser(session?.user || null);
       
-      if (!session?.user && event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_IN') {
+        console.log('User signed in, updating state');
+        setIsLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out, redirecting');
         navigate('/auth');
       }
     });
@@ -79,7 +89,7 @@ const Dashboard = () => {
       if (error) throw error;
       return data as PhoneNumber[];
     },
-    enabled: !!user
+    enabled: !!user && !!session
   });
 
   // Buy number mutation
@@ -171,7 +181,6 @@ const Dashboard = () => {
       title: "Signed Out",
       description: "You have been signed out successfully",
     });
-    window.location.href = '/auth';
   };
 
   const handleSignIn = async () => {
@@ -246,7 +255,7 @@ const Dashboard = () => {
     );
   }
 
-  if (!user) {
+  if (!user || !session) {
     return null;
   }
 
