@@ -340,8 +340,8 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted flex items-center justify-center">
+        <div className="text-lg text-foreground">Loading...</div>
       </div>
     );
   }
@@ -361,7 +361,7 @@ const Dashboard = () => {
   const totalCallsToday = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
       <Navigation />
       <AutomationEngine numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
       <AlertSystem numbers={numbers} />
@@ -369,22 +369,22 @@ const Dashboard = () => {
       <div className="max-w-7xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6">
         {/* Header */}
         <div className="text-center mb-6 md:mb-8">
-          <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-2">Phone Number Management Dashboard</h1>
-          <p className="text-sm md:text-lg text-gray-600">Manage your voice agent phone numbers with intelligent automation</p>
+          <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-2">Phone Number Management Dashboard</h1>
+          <p className="text-sm md:text-lg text-muted-foreground">Manage your voice agent phone numbers with intelligent automation</p>
         </div>
 
         {/* Integration Status Alert */}
         {(!integrationStatus.twilio && !integrationStatus.retell) && (
-          <Card className="border-orange-200 bg-orange-50">
+          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950 dark:border-orange-800">
             <CardContent className="pt-4 md:pt-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-semibold text-orange-800">Integration Required</h3>
-                  <p className="text-orange-700 text-sm md:text-base">Configure your Twilio or Retell AI credentials to start making calls</p>
+                  <h3 className="font-semibold text-orange-800 dark:text-orange-200">Integration Required</h3>
+                  <p className="text-orange-700 dark:text-orange-300 text-sm md:text-base">Configure your Twilio or Retell AI credentials to start making calls</p>
                 </div>
                 <Button 
                   onClick={() => navigate('/api-keys')}
-                  className="bg-orange-600 hover:bg-orange-700 w-full md:w-auto"
+                  className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-600 w-full md:w-auto"
                 >
                   Configure API Keys
                 </Button>
@@ -412,11 +412,11 @@ const Dashboard = () => {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-gray-600">Total Numbers</CardTitle>
+                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Total Numbers</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl md:text-2xl font-bold">{numbers.length}</div>
-                  <p className="text-xs text-gray-500">
+                  <div className="text-xl md:text-2xl font-bold text-foreground">{numbers.length}</div>
+                  <p className="text-xs text-muted-foreground">
                     {numbers.filter(n => n.status === 'active').length} active
                   </p>
                 </CardContent>
@@ -424,13 +424,13 @@ const Dashboard = () => {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-gray-600">Daily Calls</CardTitle>
+                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Daily Calls</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl md:text-2xl font-bold">
+                  <div className="text-xl md:text-2xl font-bold text-foreground">
                     {numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0)}
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Avg: {Math.round(numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0) / numbers.length || 0)} per number
                   </p>
                 </CardContent>
@@ -438,13 +438,13 @@ const Dashboard = () => {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-gray-600">Quarantined</CardTitle>
+                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Quarantined</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl md:text-2xl font-bold text-red-600">
+                  <div className="text-xl md:text-2xl font-bold text-red-600 dark:text-red-400">
                     {numbers.filter(n => n.status === 'quarantined').length}
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     {Math.round((numbers.filter(n => n.status === 'quarantined').length / numbers.length) * 100 || 0)}% of total
                   </p>
                 </CardContent>
@@ -452,13 +452,13 @@ const Dashboard = () => {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-gray-600">Area Codes</CardTitle>
+                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Area Codes</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl md:text-2xl font-bold">
+                  <div className="text-xl md:text-2xl font-bold text-foreground">
                     {new Set(numbers.map(n => n.area_code)).size}
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Geographic diversity
                   </p>
                 </CardContent>
@@ -468,8 +468,8 @@ const Dashboard = () => {
             {/* Controls */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg md:text-xl">Number Management</CardTitle>
-                <CardDescription className="text-sm md:text-base">Purchase new numbers and manage existing ones</CardDescription>
+                <CardTitle className="text-lg md:text-xl text-foreground">Number Management</CardTitle>
+                <CardDescription className="text-sm md:text-base text-muted-foreground">Purchase new numbers and manage existing ones</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-4 mb-6">
@@ -512,46 +512,46 @@ const Dashboard = () => {
             {/* Numbers Table */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg md:text-xl">Phone Numbers</CardTitle>
-                <CardDescription className="text-sm md:text-base">Manage your phone numbers and their status</CardDescription>
+                <CardTitle className="text-lg md:text-xl text-foreground">Phone Numbers</CardTitle>
+                <CardDescription className="text-sm md:text-base text-muted-foreground">Manage your phone numbers and their status</CardDescription>
               </CardHeader>
               <CardContent>
                 {numbersLoading ? (
-                  <div className="text-center py-8">Loading numbers...</div>
+                  <div className="text-center py-8 text-muted-foreground">Loading numbers...</div>
                 ) : (
                   <div className="rounded-md border overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="min-w-[150px]">Number</TableHead>
-                          <TableHead className="hidden sm:table-cell">Area Code</TableHead>
-                          <TableHead>Calls</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="hidden md:table-cell">Last Used</TableHead>
-                          <TableHead>Actions</TableHead>
+                          <TableHead className="min-w-[150px] text-foreground">Number</TableHead>
+                          <TableHead className="hidden sm:table-cell text-foreground">Area Code</TableHead>
+                          <TableHead className="text-foreground">Calls</TableHead>
+                          <TableHead className="text-foreground">Status</TableHead>
+                          <TableHead className="hidden md:table-cell text-foreground">Last Used</TableHead>
+                          <TableHead className="text-foreground">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredNumbers.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                               No phone numbers found. Purchase your first number to get started.
                             </TableCell>
                           </TableRow>
                         ) : (
                           filteredNumbers.map((number) => (
                             <TableRow key={number.id}>
-                              <TableCell className="font-mono text-xs md:text-sm">{number.number}</TableCell>
-                              <TableCell className="hidden sm:table-cell">{number.area_code}</TableCell>
+                              <TableCell className="font-mono text-xs md:text-sm text-foreground">{number.number}</TableCell>
+                              <TableCell className="hidden sm:table-cell text-foreground">{number.area_code}</TableCell>
                               <TableCell>
-                                <span className={`font-semibold text-xs md:text-sm ${number.daily_calls > 45 ? 'text-red-600' : 'text-green-600'}`}>
+                                <span className={`font-semibold text-xs md:text-sm ${number.daily_calls > 45 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                   {number.daily_calls}/50
                                 </span>
                               </TableCell>
                               <TableCell>
                                 {getStatusBadge(number.status, number.is_spam)}
                               </TableCell>
-                              <TableCell className="text-gray-600 text-xs hidden md:table-cell">
+                              <TableCell className="text-muted-foreground text-xs hidden md:table-cell">
                                 {number.last_used ? new Date(number.last_used).toLocaleDateString() : 'Never'}
                               </TableCell>
                               <TableCell>
@@ -604,7 +604,7 @@ const Dashboard = () => {
           <TabsContent value="analytics">
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">System Analytics</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">System Analytics</h2>
                 <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Data
@@ -618,7 +618,7 @@ const Dashboard = () => {
           <TabsContent value="ai-engine">
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">AI Decision Engine</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">AI Decision Engine</h2>
                 <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Analysis
@@ -631,7 +631,7 @@ const Dashboard = () => {
           <TabsContent value="yellowstone">
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Yellowstone Rollback System</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">Yellowstone Rollback System</h2>
                 <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Data
@@ -644,7 +644,7 @@ const Dashboard = () => {
           <TabsContent value="rotation">
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Advanced Number Rotation</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">Advanced Number Rotation</h2>
                 <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Data
@@ -657,7 +657,7 @@ const Dashboard = () => {
           <TabsContent value="spam-detection">
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Spam Detection & Protection</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">Spam Detection & Protection</h2>
                 <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh Data

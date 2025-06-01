@@ -3,6 +3,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Settings, Home, Key, Users, HelpCircle } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 const Navigation = () => {
   const navigate = useNavigate();
@@ -16,10 +17,10 @@ const Navigation = () => {
   ];
 
   return (
-    <nav className="bg-white border-b border-gray-200 px-6 py-4">
+    <nav className="bg-background border-b border-border px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-8">
-          <h1 className="text-xl font-bold text-gray-900">📞 Smart Dialer</h1>
+          <h1 className="text-xl font-bold text-foreground">📞 Smart Dialer</h1>
           <div className="flex space-x-4">
             {navItems.map(({ path, label, icon: Icon }) => (
               <Button
@@ -34,6 +35,7 @@ const Navigation = () => {
             ))}
           </div>
         </div>
+        <ThemeToggle />
       </div>
     </nav>
   );
