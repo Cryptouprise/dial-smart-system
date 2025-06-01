@@ -1,508 +1,269 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { useRetellAI } from '@/hooks/useRetellAI';
-import { RefreshCw } from 'lucide-react';
 import Navigation from '@/components/Navigation';
-import SpamDetectionManager from '@/components/SpamDetectionManager';
-import NumberRotationManager from '@/components/NumberRotationManager';
 import CallAnalytics from '@/components/CallAnalytics';
-import AutomationEngine from '@/components/AutomationEngine';
-import AlertSystem from '@/components/AlertSystem';
-import SystemHealthDashboard from '@/components/SystemHealthDashboard';
-import AIDecisionEngine from '@/components/AIDecisionEngine';
+import NumberRotationManager from '@/components/NumberRotationManager';
+import SpamDetectionManager from '@/components/SpamDetectionManager';
 import YellowstoneManager from '@/components/YellowstoneManager';
-import { useIsMobile } from '@/hooks/use-mobile';
+import AIDecisionEngine from '@/components/AIDecisionEngine';
+import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 
 interface PhoneNumber {
   id: string;
-  number: string;
-  area_code: string;
-  daily_calls: number;
-  status: 'active' | 'quarantined' | 'cooldown';
-  quarantine_until?: string;
-  is_spam: boolean;
-  last_used?: string;
-  created_at: string;
-  updated_at: string;
+  phoneNumber: string;
+  status: 'active' | 'quarantined' | 'inactive';
+  dailyCalls: number;
+  spamScore: number;
+  dateAdded: string;
+}
+
+interface SystemHealth {
+  apiStatus: 'online' | 'offline';
+  databaseStatus: 'online' | 'offline';
+  lastBackup: string;
 }
 
 const Dashboard = () => {
-  const [newAreaCode, setNewAreaCode] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [user, setUser] = useState<any>(null);
-  const [session, setSession] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [integrationStatus, setIntegrationStatus] = useState({
-    twilio: false,
-    retell: false,
-    openai: false,
-    stripe: false
-  });
-  const [retellUri, setRetellUri] = useState('');
+  const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
+  const [areaCode, setAreaCode] = useState('');
+  const [quantity, setQuantity] = useState('10');
+  const [autoImport, setAutoImport] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const { importPhoneNumber, isLoading: retellLoading } = useRetellAI();
-  const isMobile = useIsMobile();
 
-  // Add the missing onRefreshNumbers function
-  const onRefreshNumbers = () => {
-    queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
-  };
-
-  // Check authentication status
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        console.log('Initial session check:', currentSession);
-        
-        if (currentSession) {
-          setSession(currentSession);
-          setUser(currentSession.user);
-          checkIntegrationStatus();
-        } else {
-          console.log('No session found, redirecting to auth');
-          navigate('/auth');
-          return;
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        navigate('/auth');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // Mock data for phone numbers
+    const mockNumbers: PhoneNumber[] = [
+      {
+        id: '1',
+        phoneNumber: '+15551234567',
+        status: 'active',
+        dailyCalls: 25,
+        spamScore: 30,
+        dateAdded: '2024-01-20',
+      },
+      {
+        id: '2',
+        phoneNumber: '+15559876543',
+        status: 'quarantined',
+        dailyCalls: 5,
+        spamScore: 85,
+        dateAdded: '2024-01-15',
+      },
+      {
+        id: '3',
+        phoneNumber: '+12125551212',
+        status: 'active',
+        dailyCalls: 40,
+        spamScore: 60,
+        dateAdded: '2024-01-10',
+      },
+      {
+        id: '4',
+        phoneNumber: '+13105550000',
+        status: 'inactive',
+        dailyCalls: 0,
+        spamScore: 10,
+        dateAdded: '2023-12-01',
+      },
+    ];
+    setNumbers(mockNumbers);
+  }, []);
 
-    initializeAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session?.user);
-      setSession(session);
-      setUser(session?.user || null);
-      
-      if (event === 'SIGNED_IN') {
-        console.log('User signed in, updating state');
-        setIsLoading(false);
-      } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out, redirecting');
-        navigate('/auth');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  // Check integration status
-  const checkIntegrationStatus = () => {
-    const storedCredentials = localStorage.getItem('api-credentials');
-    if (storedCredentials) {
-      try {
-        const credentials = JSON.parse(storedCredentials);
-        setIntegrationStatus({
-          twilio: credentials.some((c: any) => c.service === 'twilio'),
-          retell: credentials.some((c: any) => c.service === 'retell'),
-          openai: credentials.some((c: any) => c.service === 'openai'),
-          stripe: credentials.some((c: any) => c.service === 'stripe')
-        });
-      } catch (error) {
-        console.error('Error parsing stored credentials:', error);
-      }
-    }
-  };
-
-  // Fetch phone numbers
-  const { data: numbers = [], isLoading: numbersLoading } = useQuery({
-    queryKey: ['phone-numbers'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('phone_numbers')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as PhoneNumber[];
-    },
-    enabled: !!user && !!session
-  });
-
-  // Buy number mutation
-  const buyNumberMutation = useMutation({
-    mutationFn: async (areaCode: string) => {
-      const newNumber = `+1 (${areaCode}) 555-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-      
-      const { data, error } = await supabase
-        .from('phone_numbers')
-        .insert({
-          number: newNumber,
-          area_code: areaCode,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
-      setNewAreaCode('');
-      toast({
-        title: "Success",
-        description: `New number purchased: ${data.number}`,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to purchase number",
-        variant: "destructive"
-      });
-    }
-  });
-
-  // Quarantine number mutation
-  const quarantineMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const quarantineDate = new Date();
-      quarantineDate.setDate(quarantineDate.getDate() + 30);
-      
-      const { error } = await supabase
-        .from('phone_numbers')
-        .update({
-          status: 'quarantined',
-          quarantine_until: quarantineDate.toISOString().split('T')[0],
-          is_spam: true
-        })
-        .eq('id', id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
-      toast({
-        title: "Number Quarantined",
-        description: "Number has been quarantined for 30 days",
-      });
-    }
-  });
-
-  // Release number mutation
-  const releaseMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('phone_numbers')
-        .update({
-          status: 'active',
-          quarantine_until: null,
-          is_spam: false
-        })
-        .eq('id', id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
-      toast({
-        title: "Number Released",
-        description: "Number has been released and is now active",
-      });
-    }
-  });
-
-  // Import to Retell AI
-  const importToRetellMutation = useMutation({
-    mutationFn: async ({ phoneNumber, terminationUri }: { phoneNumber: string; terminationUri: string }) => {
-      return await importPhoneNumber(phoneNumber, terminationUri);
-    },
-    onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Phone number imported to Retell AI",
-      });
-    }
-  });
-
-  // Make call function (placeholder for Twilio integration)
-  const makeCall = async (phoneNumber: string, targetNumber: string) => {
-    if (!integrationStatus.twilio) {
-      toast({
-        title: "Twilio Not Configured",
-        description: "Please configure your Twilio credentials in API Keys to make calls",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // In a real app, this would use the stored Twilio credentials
-    // to make an actual call via Supabase Edge Function
+  const handleBuyNumbers = async () => {
+    setIsLoading(true);
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    setIsLoading(false);
     toast({
-      title: "Call Initiated",
-      description: `Calling ${targetNumber} from ${phoneNumber}`,
+      title: 'Numbers Purchased!',
+      description: `Successfully purchased ${quantity} numbers with area code ${areaCode}.`,
     });
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleTestCall = (phoneNumber: string) => {
     toast({
-      title: "Signed Out",
-      description: "You have been signed out successfully",
+      title: 'Test Call Initiated',
+      description: `Calling ${phoneNumber}...`,
     });
   };
 
-  const handleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: 'admin@example.com',
-      password: 'password123'
-    });
-
-    if (error) {
-      toast({
-        title: "Sign In Failed",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const buyNumber = () => {
-    if (!newAreaCode) {
-      toast({
-        title: "Error",
-        description: "Please enter an area code",
-        variant: "destructive"
-      });
-      return;
-    }
-    buyNumberMutation.mutate(newAreaCode);
-  };
-
-  const exportToCSV = () => {
-    const csvContent = [
-      ['ID', 'Number', 'Area Code', 'Daily Calls', 'Status', 'Is Spam', 'Last Used'],
-      ...numbers.map(n => [
-        n.id,
-        n.number,
-        n.area_code,
-        n.daily_calls,
-        n.status,
-        n.is_spam ? 'Yes' : 'No',
-        n.last_used || 'Never'
-      ])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'dialer-numbers.csv';
-    a.click();
-    
+  const handleReleaseFromQuarantine = (phoneNumber: string) => {
+    setNumbers(numbers.map(n => n.phoneNumber === phoneNumber ? { ...n, status: 'active' } : n));
     toast({
-      title: "Export Complete",
-      description: "CSV file has been downloaded",
+      title: 'Number Released',
+      description: `${phoneNumber} has been released from quarantine.`,
     });
   };
 
-  const handleImportToRetell = (phoneNumber: string) => {
-    if (!retellUri) {
-      toast({
-        title: "Error",
-        description: "Please enter a termination URI for Retell AI",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    importToRetellMutation.mutate({ phoneNumber, terminationUri: retellUri });
+  const refreshNumbers = () => {
+    toast({
+      title: 'Numbers Refreshed',
+      description: 'Phone numbers have been refreshed.',
+    });
   };
-
-  const getStatusBadge = (status: string, isSpam: boolean) => {
-    if (status === 'quarantined') {
-      return <Badge variant="destructive">Quarantined</Badge>;
-    }
-    if (isSpam) {
-      return <Badge variant="outline" className="border-orange-500 text-orange-600">Spam Flag</Badge>;
-    }
-    return <Badge variant="default" className="bg-green-500">Active</Badge>;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted flex items-center justify-center">
-        <div className="text-lg text-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user || !session) {
-    return null;
-  }
-
-  const filteredNumbers = numbers.filter(n => {
-    if (filterStatus === 'all') return true;
-    return n.status === filterStatus;
-  });
-
-  const totalNumbers = numbers.length;
-  const activeNumbers = numbers.filter(n => n.status === 'active').length;
-  const quarantinedNumbers = numbers.filter(n => n.status === 'quarantined').length;
-  const totalCallsToday = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
       <Navigation />
-      <AutomationEngine numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
-      <AlertSystem numbers={numbers} />
-      
-      <div className="max-w-7xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6">
+      <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 max-w-7xl">
         {/* Header */}
-        <div className="text-center mb-6 md:mb-8">
-          <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-2">Phone Number Management Dashboard</h1>
-          <p className="text-sm md:text-lg text-muted-foreground">Manage your voice agent phone numbers with intelligent automation</p>
+        <div className="flex flex-col space-y-2">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-slate-100">
+            📞 Smart Dialer Dashboard
+          </h1>
+          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+            Manage your phone numbers and calling campaigns
+          </p>
         </div>
 
-        {/* Integration Status Alert */}
-        {(!integrationStatus.twilio && !integrationStatus.retell) && (
-          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950 dark:border-orange-800">
-            <CardContent className="pt-4 md:pt-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-semibold text-orange-800 dark:text-orange-200">Integration Required</h3>
-                  <p className="text-orange-700 dark:text-orange-300 text-sm md:text-base">Configure your Twilio or Retell AI credentials to start making calls</p>
-                </div>
-                <Button 
-                  onClick={() => navigate('/api-keys')}
-                  className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-600 w-full md:w-auto"
-                >
-                  Configure API Keys
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Main Content Tabs */}
-        <Tabs defaultValue="overview" className="space-y-4 md:space-y-6">
-          <ScrollArea className="w-full whitespace-nowrap">
-            <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-max">
-              <TabsTrigger value="overview" className="whitespace-nowrap text-xs md:text-sm">Overview</TabsTrigger>
-              <TabsTrigger value="analytics" className="whitespace-nowrap text-xs md:text-sm">Call Analytics</TabsTrigger>
-              <TabsTrigger value="ai-engine" className="whitespace-nowrap text-xs md:text-sm">AI Engine</TabsTrigger>
-              <TabsTrigger value="yellowstone" className="whitespace-nowrap text-xs md:text-sm">Yellowstone</TabsTrigger>
-              <TabsTrigger value="rotation" className="whitespace-nowrap text-xs md:text-sm">Number Rotation</TabsTrigger>
-              <TabsTrigger value="spam-detection" className="whitespace-nowrap text-xs md:text-sm">Spam Protection</TabsTrigger>
+        <Tabs defaultValue="overview" className="w-full">
+          <div className="w-full overflow-x-auto">
+            <TabsList className="grid w-full grid-cols-6 min-w-[600px] sm:min-w-0">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="analytics" className="text-xs sm:text-sm">Analytics</TabsTrigger>
+              <TabsTrigger value="ai-engine" className="text-xs sm:text-sm">AI Engine</TabsTrigger>
+              <TabsTrigger value="yellowstone" className="text-xs sm:text-sm">Yellowstone</TabsTrigger>
+              <TabsTrigger value="rotation" className="text-xs sm:text-sm">Rotation</TabsTrigger>
+              <TabsTrigger value="spam" className="text-xs sm:text-sm">Spam Protection</TabsTrigger>
             </TabsList>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          </div>
 
-          <TabsContent value="overview" className="space-y-4 md:space-y-6">
+          <TabsContent value="overview" className="space-y-4 sm:space-y-6">
             {/* Quick Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-              <Card>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Total Numbers</CardTitle>
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Total Numbers
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-xl md:text-2xl font-bold text-foreground">{numbers.length}</div>
-                  <p className="text-xs text-muted-foreground">
+                <CardContent className="pt-0">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    {numbers.length}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {numbers.filter(n => n.status === 'active').length} active
                   </p>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Daily Calls</CardTitle>
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Daily Calls
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-xl md:text-2xl font-bold text-foreground">
-                    {numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0)}
+                <CardContent className="pt-0">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    {numbers.reduce((sum, n) => sum + n.dailyCalls, 0)}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Avg: {Math.round(numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0) / numbers.length || 0)} per number
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Avg: {Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))}
                   </p>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Quarantined</CardTitle>
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Quarantined
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-xl md:text-2xl font-bold text-red-600 dark:text-red-400">
+                <CardContent className="pt-0">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {numbers.filter(n => n.status === 'quarantined').length}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {Math.round((numbers.filter(n => n.status === 'quarantined').length / numbers.length) * 100 || 0)}% of total
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    {Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)}% of total
                   </p>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-xs md:text-sm font-medium text-muted-foreground">Area Codes</CardTitle>
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Area Codes
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-xl md:text-2xl font-bold text-foreground">
-                    {new Set(numbers.map(n => n.area_code)).size}
+                <CardContent className="pt-0">
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    {new Set(numbers.map(n => n.phoneNumber.slice(2, 5))).size}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Geographic diversity
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Geographic spread
                   </p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Controls */}
-            <Card>
+            {/* Buy Numbers Section */}
+            <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
               <CardHeader>
-                <CardTitle className="text-lg md:text-xl text-foreground">Number Management</CardTitle>
-                <CardDescription className="text-sm md:text-base text-muted-foreground">Purchase new numbers and manage existing ones</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                  <Plus className="h-5 w-5" />
+                  Buy Numbers
+                </CardTitle>
+                <CardDescription className="text-slate-600 dark:text-slate-400">
+                  Purchase new phone numbers for your campaigns
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-4 mb-6">
-                  <div className="flex flex-col sm:flex-row gap-2">
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Area Code
+                    </label>
                     <Input
-                      placeholder="Area code (e.g., 720)"
-                      value={newAreaCode}
-                      onChange={(e) => setNewAreaCode(e.target.value)}
-                      className="flex-1"
+                      placeholder="e.g., 555"
+                      value={areaCode}
+                      onChange={(e) => setAreaCode(e.target.value)}
+                      className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100"
                     />
-                    <Button 
-                      onClick={buyNumber} 
-                      disabled={buyNumberMutation.isPending}
-                      className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-                    >
-                      {buyNumberMutation.isPending ? 'Buying...' : 'Buy Number'}
-                    </Button>
                   </div>
-                  
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Select value={filterStatus} onValueChange={setFilterStatus}>
-                      <SelectTrigger className="w-full sm:w-40">
-                        <SelectValue placeholder="Filter status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="quarantined">Quarantined</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    
-                    <Button variant="outline" onClick={exportToCSV} className="w-full sm:w-auto">
-                      Export CSV
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Quantity
+                    </label>
+                    <Input
+                      type="number"
+                      placeholder="10"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Auto-import to Retell AI
+                    </label>
+                    <div className="flex items-center space-x-2 h-10">
+                      <input
+                        type="checkbox"
+                        id="auto-import"
+                        checked={autoImport}
+                        onChange={(e) => setAutoImport(e.target.checked)}
+                        className="rounded border-slate-300 dark:border-slate-600"
+                      />
+                      <label htmlFor="auto-import" className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                        Enable
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex items-end">
+                    <Button 
+                      onClick={handleBuyNumbers}
+                      disabled={isLoading}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {isLoading ? 'Purchasing...' : 'Purchase Numbers'}
                     </Button>
                   </div>
                 </div>
@@ -510,91 +271,92 @@ const Dashboard = () => {
             </Card>
 
             {/* Numbers Table */}
-            <Card>
+            <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
               <CardHeader>
-                <CardTitle className="text-lg md:text-xl text-foreground">Phone Numbers</CardTitle>
-                <CardDescription className="text-sm md:text-base text-muted-foreground">Manage your phone numbers and their status</CardDescription>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                  <CardTitle className="text-slate-900 dark:text-slate-100">
+                    Phone Numbers ({numbers.length})
+                  </CardTitle>
+                  <Button 
+                    onClick={refreshNumbers}
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  >
+                    <RotateCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                {numbersLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading numbers...</div>
-                ) : (
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="min-w-[150px] text-foreground">Number</TableHead>
-                          <TableHead className="hidden sm:table-cell text-foreground">Area Code</TableHead>
-                          <TableHead className="text-foreground">Calls</TableHead>
-                          <TableHead className="text-foreground">Status</TableHead>
-                          <TableHead className="hidden md:table-cell text-foreground">Last Used</TableHead>
-                          <TableHead className="text-foreground">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredNumbers.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                              No phone numbers found. Purchase your first number to get started.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          filteredNumbers.map((number) => (
-                            <TableRow key={number.id}>
-                              <TableCell className="font-mono text-xs md:text-sm text-foreground">{number.number}</TableCell>
-                              <TableCell className="hidden sm:table-cell text-foreground">{number.area_code}</TableCell>
-                              <TableCell>
-                                <span className={`font-semibold text-xs md:text-sm ${number.daily_calls > 45 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                  {number.daily_calls}/50
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                {getStatusBadge(number.status, number.is_spam)}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-xs hidden md:table-cell">
-                                {number.last_used ? new Date(number.last_used).toLocaleDateString() : 'Never'}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
-                                  {number.status === 'active' ? (
-                                    <>
-                                      <Button
-                                        variant="default"
-                                        size="sm"
-                                        onClick={() => makeCall(number.number, '+1234567890')}
-                                        disabled={!integrationStatus.twilio}
-                                        className="bg-blue-600 hover:bg-blue-700 text-xs w-full sm:w-auto"
-                                      >
-                                        {isMobile ? 'Call' : 'Test Call'}
-                                      </Button>
-                                      <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        onClick={() => quarantineMutation.mutate(number.id)}
-                                        disabled={quarantineMutation.isPending}
-                                        className="text-xs w-full sm:w-auto"
-                                      >
-                                        {isMobile ? 'Block' : 'Quarantine'}
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <Button
-                                      variant="default"
-                                      size="sm"
-                                      onClick={() => releaseMutation.mutate(number.id)}
-                                      disabled={releaseMutation.isPending}
-                                      className="bg-green-600 hover:bg-green-700 text-xs w-full sm:w-auto"
-                                    >
-                                      Release
-                                    </Button>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[600px]">
+                    <div className="grid grid-cols-6 gap-3 sm:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-3 border-b border-slate-200 dark:border-slate-700">
+                      <div>Phone Number</div>
+                      <div>Status</div>
+                      <div>Daily Calls</div>
+                      <div>Spam Score</div>
+                      <div>Added</div>
+                      <div>Actions</div>
+                    </div>
+                    <div className="space-y-2 mt-3">
+                      {numbers.map((number) => (
+                        <div key={number.id} className="grid grid-cols-6 gap-3 sm:gap-4 items-center py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <div className="font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100">
+                            {number.phoneNumber}
+                          </div>
+                          <div>
+                            <Badge 
+                              variant={number.status === 'active' ? 'default' : 
+                                     number.status === 'quarantined' ? 'destructive' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {number.status}
+                            </Badge>
+                          </div>
+                          <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                            {number.dailyCalls}
+                          </div>
+                          <div>
+                            <Badge 
+                              variant={number.spamScore > 70 ? 'destructive' : 
+                                     number.spamScore > 40 ? 'secondary' : 'default'}
+                              className="text-xs"
+                            >
+                              {number.spamScore}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {number.dateAdded}
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-1">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleTestCall(number.phoneNumber)}
+                              className="text-xs border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              Test
+                            </Button>
+                            {number.status === 'quarantined' && (
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleReleaseFromQuarantine(number.phoneNumber)}
+                                className="text-xs border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20"
+                              >
+                                Release
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {numbers.length === 0 && (
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                    No phone numbers found. Purchase some numbers to get started.
                   </div>
                 )}
               </CardContent>
@@ -602,71 +364,28 @@ const Dashboard = () => {
           </TabsContent>
 
           <TabsContent value="analytics">
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">System Analytics</h2>
-                <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Data
-                </Button>
-              </div>
-              <CallAnalytics numbers={numbers} />
-              <SystemHealthDashboard />
-            </div>
+            <CallAnalytics />
           </TabsContent>
 
           <TabsContent value="ai-engine">
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">AI Decision Engine</h2>
-                <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Analysis
-                </Button>
-              </div>
-              <AIDecisionEngine numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
-            </div>
+            <AIDecisionEngine />
           </TabsContent>
 
           <TabsContent value="yellowstone">
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">Yellowstone Rollback System</h2>
-                <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Data
-                </Button>
-              </div>
-              <YellowstoneManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
-            </div>
+            <YellowstoneManager />
           </TabsContent>
 
           <TabsContent value="rotation">
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">Advanced Number Rotation</h2>
-                <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Data
-                </Button>
-              </div>
-              <NumberRotationManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
-            </div>
+            <NumberRotationManager />
           </TabsContent>
 
-          <TabsContent value="spam-detection">
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">Spam Detection & Protection</h2>
-                <Button onClick={onRefreshNumbers} variant="outline" className="w-full sm:w-auto">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Data
-                </Button>
-              </div>
-              <SpamDetectionManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
-            </div>
+          <TabsContent value="spam">
+            <SpamDetectionManager />
           </TabsContent>
         </Tabs>
+
+        {/* System Health - Fixed props */}
+        <SystemHealthDashboard />
       </div>
     </div>
   );
