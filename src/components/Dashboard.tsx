@@ -126,27 +126,29 @@ const Dashboard = () => {
         </div>
 
         <Tabs defaultValue="overview" className="w-full">
-          <div className="w-full overflow-x-auto">
-            <TabsList className="grid w-full grid-cols-6 min-w-[500px] sm:min-w-0 h-auto">
-              <TabsTrigger value="overview" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                Analytics
-              </TabsTrigger>
-              <TabsTrigger value="ai-engine" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                AI Engine
-              </TabsTrigger>
-              <TabsTrigger value="yellowstone" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                Yellowstone
-              </TabsTrigger>
-              <TabsTrigger value="rotation" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                Rotation
-              </TabsTrigger>
-              <TabsTrigger value="spam" className="text-[10px] sm:text-xs lg:text-sm px-1 sm:px-2 py-1.5 sm:py-2">
-                Spam
-              </TabsTrigger>
-            </TabsList>
+          <div className="w-full overflow-x-auto pb-2">
+            <div className="min-w-max">
+              <TabsList className="grid grid-cols-6 w-full min-w-[600px] h-auto bg-slate-100 dark:bg-slate-800">
+                <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  Analytics
+                </TabsTrigger>
+                <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  AI Engine
+                </TabsTrigger>
+                <TabsTrigger value="yellowstone" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  Yellowstone
+                </TabsTrigger>
+                <TabsTrigger value="rotation" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  Rotation
+                </TabsTrigger>
+                <TabsTrigger value="spam" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                  Spam
+                </TabsTrigger>
+              </TabsList>
+            </div>
           </div>
 
           <TabsContent value="overview" className="space-y-3 sm:space-y-4 lg:space-y-6">
@@ -154,7 +156,7 @@ const Dashboard = () => {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
               <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-600 dark:text-slate-400">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
                     Total Numbers
                   </CardTitle>
                 </CardHeader>
@@ -162,7 +164,7 @@ const Dashboard = () => {
                   <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {numbers.length}
                   </div>
-                  <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {numbers.filter(n => n.status === 'active').length} active
                   </p>
                 </CardContent>
@@ -170,7 +172,7 @@ const Dashboard = () => {
 
               <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-600 dark:text-slate-400">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
                     Daily Calls
                   </CardTitle>
                 </CardHeader>
@@ -178,7 +180,7 @@ const Dashboard = () => {
                   <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {numbers.reduce((sum, n) => sum + n.dailyCalls, 0)}
                   </div>
-                  <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Avg: {Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))}
                   </p>
                 </CardContent>
@@ -186,7 +188,7 @@ const Dashboard = () => {
 
               <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-600 dark:text-slate-400">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
                     Quarantined
                   </CardTitle>
                 </CardHeader>
@@ -194,7 +196,7 @@ const Dashboard = () => {
                   <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {numbers.filter(n => n.status === 'quarantined').length}
                   </div>
-                  <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)}% of total
                   </p>
                 </CardContent>
@@ -202,7 +204,7 @@ const Dashboard = () => {
 
               <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
                 <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-600 dark:text-slate-400">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
                     Area Codes
                   </CardTitle>
                 </CardHeader>
@@ -210,7 +212,7 @@ const Dashboard = () => {
                   <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {new Set(numbers.map(n => n.phoneNumber.slice(2, 5))).size}
                   </div>
-                  <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Geographic spread
                   </p>
                 </CardContent>
@@ -231,7 +233,7 @@ const Dashboard = () => {
               <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
                   <div className="space-y-1 sm:space-y-2">
-                    <label className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                       Area Code
                     </label>
                     <Input
@@ -242,7 +244,7 @@ const Dashboard = () => {
                     />
                   </div>
                   <div className="space-y-1 sm:space-y-2">
-                    <label className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                       Quantity
                     </label>
                     <Input
@@ -254,7 +256,7 @@ const Dashboard = () => {
                     />
                   </div>
                   <div className="space-y-1 sm:space-y-2">
-                    <label className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                       Auto-import to Retell AI
                     </label>
                     <div className="flex items-center space-x-2 h-8 sm:h-10">
@@ -265,7 +267,7 @@ const Dashboard = () => {
                         onChange={(e) => setAutoImport(e.target.checked)}
                         className="rounded border-slate-300 dark:border-slate-600"
                       />
-                      <label htmlFor="auto-import" className="text-[10px] sm:text-xs lg:text-sm text-slate-600 dark:text-slate-400">
+                      <label htmlFor="auto-import" className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                         Enable
                       </label>
                     </div>
@@ -303,8 +305,8 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent className="px-3 sm:px-6">
                 <div className="overflow-x-auto">
-                  <div className="min-w-[500px] sm:min-w-[600px]">
-                    <div className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 text-[10px] sm:text-xs lg:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
+                  <div className="min-w-[600px]">
+                    <div className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
                       <div>Phone Number</div>
                       <div>Status</div>
                       <div>Daily Calls</div>
@@ -315,31 +317,31 @@ const Dashboard = () => {
                     <div className="space-y-1 sm:space-y-2 mt-2 sm:mt-3">
                       {numbers.map((number) => (
                         <div key={number.id} className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 items-center py-1.5 sm:py-2 px-1 sm:px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <div className="font-mono text-[10px] sm:text-xs lg:text-sm text-slate-900 dark:text-slate-100 truncate">
+                          <div className="font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
                             {number.phoneNumber}
                           </div>
                           <div>
                             <Badge 
                               variant={number.status === 'active' ? 'default' : 
                                      number.status === 'quarantined' ? 'destructive' : 'secondary'}
-                              className="text-[9px] sm:text-xs px-1 py-0.5"
+                              className="text-xs px-1 py-0.5"
                             >
                               {number.status}
                             </Badge>
                           </div>
-                          <div className="text-[10px] sm:text-xs lg:text-sm text-slate-700 dark:text-slate-300">
+                          <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
                             {number.dailyCalls}
                           </div>
                           <div>
                             <Badge 
                               variant={number.spamScore > 70 ? 'destructive' : 
                                      number.spamScore > 40 ? 'secondary' : 'default'}
-                              className="text-[9px] sm:text-xs px-1 py-0.5"
+                              className="text-xs px-1 py-0.5"
                             >
                               {number.spamScore}
                             </Badge>
                           </div>
-                          <div className="text-[9px] sm:text-xs text-slate-500 dark:text-slate-400">
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
                             {number.dateAdded}
                           </div>
                           <div className="flex flex-col sm:flex-row gap-1">
@@ -347,7 +349,7 @@ const Dashboard = () => {
                               size="sm" 
                               variant="outline"
                               onClick={() => handleTestCall(number.phoneNumber)}
-                              className="text-[9px] sm:text-xs border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 h-6 sm:h-7 px-1 sm:px-2"
+                              className="text-xs border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 h-6 sm:h-7 px-1 sm:px-2"
                             >
                               Test
                             </Button>
@@ -356,7 +358,7 @@ const Dashboard = () => {
                                 size="sm" 
                                 variant="outline"
                                 onClick={() => handleReleaseFromQuarantine(number.phoneNumber)}
-                                className="text-[9px] sm:text-xs border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 h-6 sm:h-7 px-1 sm:px-2"
+                                className="text-xs border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 h-6 sm:h-7 px-1 sm:px-2"
                               >
                                 Release
                               </Button>
