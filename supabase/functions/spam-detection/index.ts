@@ -84,13 +84,13 @@ async function checkSpamIndicators(number: any, supabase: any) {
   // 1. High daily call volume (above 45 calls)
   if (number.daily_calls > 45) {
     spamScore += 30;
-    reasons.push('High daily call volume');
+    reasons.push(`High daily call volume: ${number.daily_calls} calls`);
   }
 
   // 2. Very high daily call volume (above 50 calls - immediate quarantine)
   if (number.daily_calls >= 50) {
     spamScore += 50;
-    reasons.push('Maximum daily calls exceeded');
+    reasons.push(`Critical call volume: ${number.daily_calls} calls (max exceeded)`);
   }
 
   // 3. Already flagged as spam previously
@@ -106,14 +106,14 @@ async function checkSpamIndicators(number: any, supabase: any) {
   
   if (daysSinceUsed > 7 && number.daily_calls > 30) {
     spamScore += 25;
-    reasons.push('Inactive number with high call volume');
+    reasons.push(`Inactive for ${daysSinceUsed} days with ${number.daily_calls} calls`);
   }
 
   // 5. Pattern detection - numbers from same area code with similar patterns
   const areaCodePattern = await checkAreaCodePattern(number.area_code, supabase);
   if (areaCodePattern.isSpammy) {
     spamScore += 15;
-    reasons.push('Area code shows spam patterns');
+    reasons.push(areaCodePattern.reason);
   }
 
   // Determine if number should be quarantined (score >= 50)
@@ -158,7 +158,7 @@ async function checkAreaCodePattern(areaCode: string, supabase: any) {
     .eq('area_code', areaCode);
 
   if (error || !areaNumbers) {
-    return { isSpammy: false, reason: 'Unable to check pattern' };
+    return { isSpammy: false, reason: 'Unable to check area code pattern' };
   }
 
   const totalNumbers = areaNumbers.length;
@@ -167,6 +167,8 @@ async function checkAreaCodePattern(areaCode: string, supabase: any) {
 
   return {
     isSpammy: spamRatio > 0.6 && totalNumbers >= 3,
-    reason: spamRatio > 0.6 ? `${Math.round(spamRatio * 100)}% of area code numbers are spam` : 'Normal pattern'
+    reason: spamRatio > 0.6 ? 
+      `Area code ${areaCode}: ${Math.round(spamRatio * 100)}% spam rate (${spamNumbers}/${totalNumbers})` : 
+      `Area code ${areaCode}: Normal pattern (${Math.round(spamRatio * 100)}% spam rate)`
   };
 }
