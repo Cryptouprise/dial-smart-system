@@ -21,6 +21,8 @@ import AutomationEngine from '@/components/AutomationEngine';
 import AlertSystem from '@/components/AlertSystem';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 import AIDecisionEngine from '@/components/AIDecisionEngine';
+import RefreshCw from '@/components/icons/RefreshCw';
+import YellowstoneManager from '@/components/YellowstoneManager';
 
 interface PhoneNumber {
   id: string;
@@ -360,8 +362,8 @@ const Dashboard = () => {
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Dashboard</h1>
-          <p className="text-lg text-gray-600">Manage your phone numbers, call limits, and spam protection</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Phone Number Management Dashboard</h1>
+          <p className="text-lg text-gray-600">Manage your voice agent phone numbers with intelligent automation</p>
         </div>
 
         {/* Integration Status Alert */}
@@ -386,52 +388,69 @@ const Dashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="ai-engine">AI Engine</TabsTrigger>
+            <TabsTrigger value="yellowstone">Yellowstone</TabsTrigger>
             <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
-            <TabsTrigger value="retell">Retell AI</TabsTrigger>
-            <TabsTrigger value="spam">Spam Detection</TabsTrigger>
-            <TabsTrigger value="system">System Health</TabsTrigger>
+            <TabsTrigger value="spam-detection">Spam Protection</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            {/* Stats Cards */}
+            {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-gray-600">Total Numbers</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-blue-600">{totalNumbers}</div>
+                  <div className="text-2xl font-bold">{numbers.length}</div>
+                  <p className="text-xs text-gray-500">
+                    {numbers.filter(n => n.status === 'active').length} active
+                  </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Active Numbers</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600">Daily Calls</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-600">{activeNumbers}</div>
+                  <div className="text-2xl font-bold">
+                    {numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0)}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Avg: {Math.round(numbers.reduce((sum, n) => sum + (n.daily_calls || 0), 0) / numbers.length || 0)} per number
+                  </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-gray-600">Quarantined</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-red-600">{quarantinedNumbers}</div>
+                  <div className="text-2xl font-bold text-red-600">
+                    {numbers.filter(n => n.status === 'quarantined').length}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {Math.round((numbers.filter(n => n.status === 'quarantined').length / numbers.length) * 100 || 0)}% of total
+                  </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Calls Today</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600">Area Codes</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-purple-600">{totalCallsToday}</div>
+                  <div className="text-2xl font-bold">
+                    {new Set(numbers.map(n => n.area_code)).size}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Geographic diversity
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -572,50 +591,68 @@ const Dashboard = () => {
           </TabsContent>
 
           <TabsContent value="analytics">
-            <CallAnalytics numbers={numbers} />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">System Analytics</h2>
+                <Button onClick={onRefreshNumbers} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Data
+                </Button>
+              </div>
+              <CallAnalytics numbers={numbers} />
+            </div>
           </TabsContent>
 
           <TabsContent value="ai-engine">
-            <AIDecisionEngine 
-              numbers={numbers} 
-              onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })}
-            />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">AI Decision Engine</h2>
+                <Button onClick={onRefreshNumbers} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Analysis
+                </Button>
+              </div>
+              <AIDecisionEngine numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="yellowstone">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Yellowstone Rollback System</h2>
+                <Button onClick={onRefreshNumbers} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Data
+                </Button>
+              </div>
+              <YellowstoneManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
+            </div>
           </TabsContent>
 
           <TabsContent value="rotation">
-            <NumberRotationManager 
-              numbers={numbers} 
-              onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })}
-            />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Advanced Number Rotation</h2>
+                <Button onClick={onRefreshNumbers} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Data
+                </Button>
+              </div>
+              <NumberRotationManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
+            </div>
           </TabsContent>
 
-          <TabsContent value="retell">
-            {integrationStatus.retell ? (
-              <RetellAIManager />
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Retell AI Integration</CardTitle>
-                  <CardDescription>Configure your Retell AI credentials to manage AI-powered calling</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 mb-4">Retell AI credentials not configured</p>
-                    <Button onClick={() => navigate('/api-keys')}>
-                      Configure Retell AI
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          <TabsContent value="spam">
-            <SpamDetectionManager />
-          </TabsContent>
-
-          <TabsContent value="system">
-            <SystemHealthDashboard />
+          <TabsContent value="spam-detection">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Spam Detection & Protection</h2>
+                <Button onClick={onRefreshNumbers} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Data
+                </Button>
+              </div>
+              <SpamDetectionManager numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
+            </div>
           </TabsContent>
         </Tabs>
       </div>
