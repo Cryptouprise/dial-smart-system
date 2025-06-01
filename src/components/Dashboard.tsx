@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 
 interface PhoneNumber {
   id: string;
@@ -29,23 +30,42 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // Check authentication status
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      setIsLoading(false);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        console.log('Auth check result:', user);
+        setUser(user);
+        
+        if (!user) {
+          console.log('No user found, redirecting to auth');
+          navigate('/auth');
+          return;
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        navigate('/auth');
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session?.user);
       setUser(session?.user || null);
+      
+      if (!session?.user && event === 'SIGNED_OUT') {
+        navigate('/auth');
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   // Fetch phone numbers
   const { data: numbers = [], isLoading: numbersLoading } = useQuery({
@@ -227,7 +247,6 @@ const Dashboard = () => {
   }
 
   if (!user) {
-    window.location.href = '/auth';
     return null;
   }
 
