@@ -4,12 +4,37 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { HelpCircle, BookOpen, Settings, Phone, Shield, Bot } from 'lucide-react';
+import { HelpCircle, BookOpen, Settings, Phone, Shield, Bot, ArrowLeft, Home } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import Navigation from '@/components/Navigation';
 
 const HelpSystem = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <Navigation />
       <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Navigation Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <Button 
+            variant="outline" 
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft size={16} />
+            Back to Dashboard
+          </Button>
+          <Button 
+            variant="default" 
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+          >
+            <Home size={16} />
+            Dashboard
+          </Button>
+        </div>
+
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Help & Integration Guide</h1>
           <p className="text-lg text-gray-600">Complete setup guide for your dialer system</p>
@@ -45,6 +70,14 @@ const HelpSystem = () => {
                         <li>OpenAI: API Key (optional for AI features)</li>
                         <li>Stripe: Secret Key (optional for payments)</li>
                       </ul>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => navigate('/api-keys')}
+                        className="mt-2"
+                      >
+                        Go to API Keys
+                      </Button>
                     </div>
                   </div>
 
@@ -53,6 +86,14 @@ const HelpSystem = () => {
                     <div>
                       <h4 className="font-semibold">Purchase Phone Numbers</h4>
                       <p className="text-sm text-gray-600">Buy phone numbers from the dashboard by entering area codes</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => navigate('/')}
+                        className="mt-2"
+                      >
+                        Go to Dashboard
+                      </Button>
                     </div>
                   </div>
 
@@ -222,6 +263,22 @@ const HelpSystem = () => {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Footer Navigation */}
+        <div className="flex justify-center gap-4 pt-6 border-t">
+          <Button onClick={() => navigate('/')} className="bg-blue-600 hover:bg-blue-700">
+            <Home size={16} className="mr-2" />
+            Return to Dashboard
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/settings')}>
+            <Settings size={16} className="mr-2" />
+            Settings
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/api-keys')}>
+            <Bot size={16} className="mr-2" />
+            API Keys
+          </Button>
+        </div>
       </div>
     </div>
   );

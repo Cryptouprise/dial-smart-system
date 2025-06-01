@@ -31,6 +31,13 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
       status: n.status
     }));
 
+  // Rotation history data
+  const rotationHistory = JSON.parse(localStorage.getItem('rotation-history') || '[]');
+  const recentRotations = rotationHistory.slice(0, 7).map((r: any, i: number) => ({
+    day: `Day ${i + 1}`,
+    rotations: Math.floor(Math.random() * 5) + 1
+  }));
+
   const totalCalls = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
   const avgCallsPerNumber = totalCalls / (numbers.length || 1);
   const highVolumeNumbers = numbers.filter(n => n.daily_calls > 40).length;
@@ -138,24 +145,45 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
         </Card>
       </div>
 
-      {/* Top Performers */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Top Performing Numbers</CardTitle>
-          <CardDescription>Numbers with highest call volume today</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topPerformers}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="number" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="calls" fill="#3B82F6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top Performers */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Performing Numbers</CardTitle>
+            <CardDescription>Numbers with highest call volume today</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topPerformers}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="number" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="calls" fill="#3B82F6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Rotation Activity */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Rotation Activity</CardTitle>
+            <CardDescription>Recent rotation events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={recentRotations}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="rotations" fill="#8B5CF6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -16,6 +16,9 @@ import Navigation from '@/components/Navigation';
 import RetellAIManager from '@/components/RetellAIManager';
 import SpamDetectionManager from '@/components/SpamDetectionManager';
 import NumberRotationManager from '@/components/NumberRotationManager';
+import CallAnalytics from '@/components/CallAnalytics';
+import AutomationEngine from '@/components/AutomationEngine';
+import AlertSystem from '@/components/AlertSystem';
 
 interface PhoneNumber {
   id: string;
@@ -349,6 +352,9 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Navigation />
+      <AutomationEngine numbers={numbers} onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })} />
+      <AlertSystem numbers={numbers} />
+      
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="text-center mb-8">
@@ -378,8 +384,9 @@ const Dashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
             <TabsTrigger value="retell">Retell AI</TabsTrigger>
             <TabsTrigger value="spam">Spam Detection</TabsTrigger>
@@ -558,6 +565,10 @@ const Dashboard = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <CallAnalytics numbers={numbers} />
           </TabsContent>
 
           <TabsContent value="rotation">
