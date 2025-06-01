@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -392,14 +393,17 @@ const Dashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="analytics">Call Analytics</TabsTrigger>
-            <TabsTrigger value="ai-engine">AI Engine</TabsTrigger>
-            <TabsTrigger value="yellowstone">Yellowstone</TabsTrigger>
-            <TabsTrigger value="rotation">Number Rotation</TabsTrigger>
-            <TabsTrigger value="spam-detection">Spam Protection</TabsTrigger>
-          </TabsList>
+          <ScrollArea className="w-full whitespace-nowrap">
+            <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-max">
+              <TabsTrigger value="overview" className="whitespace-nowrap">Overview</TabsTrigger>
+              <TabsTrigger value="analytics" className="whitespace-nowrap">Call Analytics</TabsTrigger>
+              <TabsTrigger value="ai-engine" className="whitespace-nowrap">AI Engine</TabsTrigger>
+              <TabsTrigger value="yellowstone" className="whitespace-nowrap">Yellowstone</TabsTrigger>
+              <TabsTrigger value="rotation" className="whitespace-nowrap">Number Rotation</TabsTrigger>
+              <TabsTrigger value="spam-detection" className="whitespace-nowrap">Spam Protection</TabsTrigger>
+            </TabsList>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
 
           <TabsContent value="overview" className="space-y-6">
             {/* Quick Stats */}
