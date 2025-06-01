@@ -137,7 +137,17 @@ const ApiKeys = () => {
 
   const maskCredential = (credential: string) => {
     if (credential.length <= 8) return credential;
-    return credential.substring(0, 8) + '*'.repeat(credential.length - 12) + credential.substring(credential.length - 4);
+    
+    // For credentials longer than 12 characters, show first 8 and last 4 with asterisks in between
+    if (credential.length > 12) {
+      const maskedLength = credential.length - 12;
+      return credential.substring(0, 8) + '*'.repeat(maskedLength) + credential.substring(credential.length - 4);
+    }
+    
+    // For credentials between 8 and 12 characters, show first 4 and last 4 with asterisks in between
+    const visibleChars = Math.min(4, Math.floor(credential.length / 3));
+    const maskedLength = credential.length - (visibleChars * 2);
+    return credential.substring(0, visibleChars) + '*'.repeat(Math.max(0, maskedLength)) + credential.substring(credential.length - visibleChars);
   };
 
   const getServiceDisplayName = (service: string) => {
