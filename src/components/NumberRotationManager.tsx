@@ -187,13 +187,25 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
 
       {/* Main Tabs */}
       <Tabs defaultValue="automation" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="automation">Automation</TabsTrigger>
-          <TabsTrigger value="import">Manual Import</TabsTrigger>
-          <TabsTrigger value="rotation">Rotation</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="pool">Pool Manager</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto pb-2">
+          <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
+            <TabsTrigger value="automation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              Automation
+            </TabsTrigger>
+            <TabsTrigger value="import" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              Manual Import
+            </TabsTrigger>
+            <TabsTrigger value="rotation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              Rotation
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="pool" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              Pool Manager
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="automation" className="space-y-6">
           {/* Automation Controls */}
