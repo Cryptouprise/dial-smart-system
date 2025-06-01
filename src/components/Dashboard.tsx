@@ -7,9 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-interface NumberRecord {
-  id: number;
+interface PhoneNumber {
+  id: string;
   number: string;
   area_code: string;
   daily_calls: number;
@@ -17,48 +19,163 @@ interface NumberRecord {
   quarantine_until?: string;
   is_spam: boolean;
   last_used?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 const Dashboard = () => {
-  const [numbers, setNumbers] = useState<NumberRecord[]>([
-    {
-      id: 1,
-      number: '+1 (720) 555-0123',
-      area_code: '720',
-      daily_calls: 23,
-      status: 'active',
-      is_spam: false,
-      last_used: '2024-06-01 14:30'
-    },
-    {
-      id: 2,
-      number: '+1 (303) 555-0456',
-      area_code: '303',
-      daily_calls: 47,
-      status: 'active',
-      is_spam: false,
-      last_used: '2024-06-01 15:45'
-    },
-    {
-      id: 3,
-      number: '+1 (720) 555-0789',
-      area_code: '720',
-      daily_calls: 52,
-      status: 'quarantined',
-      quarantine_until: '2024-06-30',
-      is_spam: true,
-      last_used: '2024-05-30 12:15'
-    }
-  ]);
-  
   const [newAreaCode, setNewAreaCode] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const totalNumbers = numbers.length;
-  const activeNumbers = numbers.filter(n => n.status === 'active').length;
-  const quarantinedNumbers = numbers.filter(n => n.status === 'quarantined').length;
-  const totalCallsToday = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setIsLoading(false);
+      
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to access the dashboard",
+          variant: "destructive"
+        });
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [toast]);
+
+  // Fetch phone numbers
+  const { data: numbers = [], isLoading: numbersLoading } = useQuery({
+    queryKey: ['phone-numbers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as PhoneNumber[];
+    },
+    enabled: !!user
+  });
+
+  // Buy number mutation
+  const buyNumberMutation = useMutation({
+    mutationFn: async (areaCode: string) => {
+      const newNumber = `+1 (${areaCode}) 555-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+      
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .insert({
+          number: newNumber,
+          area_code: areaCode,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
+      setNewAreaCode('');
+      toast({
+        title: "Success",
+        description: `New number purchased: ${data.number}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to purchase number",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Quarantine number mutation
+  const quarantineMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const quarantineDate = new Date();
+      quarantineDate.setDate(quarantineDate.getDate() + 30);
+      
+      const { error } = await supabase
+        .from('phone_numbers')
+        .update({
+          status: 'quarantined',
+          quarantine_until: quarantineDate.toISOString().split('T')[0],
+          is_spam: true
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
+      toast({
+        title: "Number Quarantined",
+        description: "Number has been quarantined for 30 days",
+      });
+    }
+  });
+
+  // Release number mutation
+  const releaseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('phone_numbers')
+        .update({
+          status: 'active',
+          quarantine_until: null,
+          is_spam: false
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
+      toast({
+        title: "Number Released",
+        description: "Number has been released and is now active",
+      });
+    }
+  });
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    toast({
+      title: "Signed Out",
+      description: "You have been signed out successfully",
+    });
+  };
+
+  const handleSignIn = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: 'admin@example.com',
+      password: 'password123'
+    });
+
+    if (error) {
+      toast({
+        title: "Sign In Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
 
   const buyNumber = () => {
     if (!newAreaCode) {
@@ -69,49 +186,7 @@ const Dashboard = () => {
       });
       return;
     }
-
-    const newNumber: NumberRecord = {
-      id: Math.max(...numbers.map(n => n.id)) + 1,
-      number: `+1 (${newAreaCode}) 555-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
-      area_code: newAreaCode,
-      daily_calls: 0,
-      status: 'active',
-      is_spam: false
-    };
-
-    setNumbers([...numbers, newNumber]);
-    setNewAreaCode('');
-    
-    toast({
-      title: "Success",
-      description: `New number purchased: ${newNumber.number}`,
-    });
-  };
-
-  const quarantineNumber = (id: number) => {
-    setNumbers(numbers.map(n => 
-      n.id === id 
-        ? { ...n, status: 'quarantined' as const, quarantine_until: '2024-07-01' }
-        : n
-    ));
-    
-    toast({
-      title: "Number Quarantined",
-      description: "Number has been quarantined for 30 days",
-    });
-  };
-
-  const releaseNumber = (id: number) => {
-    setNumbers(numbers.map(n => 
-      n.id === id 
-        ? { ...n, status: 'active' as const, quarantine_until: undefined, is_spam: false }
-        : n
-    ));
-    
-    toast({
-      title: "Number Released",
-      description: "Number has been released and is now active",
-    });
+    buyNumberMutation.mutate(newAreaCode);
   };
 
   const exportToCSV = () => {
@@ -151,18 +226,54 @@ const Dashboard = () => {
     return <Badge variant="default" className="bg-green-500">Active</Badge>;
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <Card className="w-96">
+          <CardHeader>
+            <CardTitle>Sign In Required</CardTitle>
+            <CardDescription>Please sign in to access the Smart Dialer System</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={handleSignIn} className="w-full">
+              Sign In
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const filteredNumbers = numbers.filter(n => {
     if (filterStatus === 'all') return true;
     return n.status === filterStatus;
   });
 
+  const totalNumbers = numbers.length;
+  const activeNumbers = numbers.filter(n => n.status === 'active').length;
+  const quarantinedNumbers = numbers.filter(n => n.status === 'quarantined').length;
+  const totalCallsToday = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">📞 Smart Dialer System</h1>
-          <p className="text-lg text-gray-600">Manage your Twilio numbers, call limits, and spam protection</p>
+        <div className="flex justify-between items-center mb-8">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">📞 Smart Dialer System</h1>
+            <p className="text-lg text-gray-600">Manage your phone numbers, call limits, and spam protection</p>
+          </div>
+          <Button onClick={handleSignOut} variant="outline">
+            Sign Out
+          </Button>
         </div>
 
         {/* Stats Cards */}
@@ -219,8 +330,12 @@ const Dashboard = () => {
                   onChange={(e) => setNewAreaCode(e.target.value)}
                   className="max-w-xs"
                 />
-                <Button onClick={buyNumber} className="bg-blue-600 hover:bg-blue-700">
-                  Buy Number
+                <Button 
+                  onClick={buyNumber} 
+                  disabled={buyNumberMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {buyNumberMutation.isPending ? 'Buying...' : 'Buy Number'}
                 </Button>
               </div>
               
@@ -248,64 +363,78 @@ const Dashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle>Phone Numbers</CardTitle>
-            <CardDescription>Manage your Twilio phone numbers and their status</CardDescription>
+            <CardDescription>Manage your phone numbers and their status</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Number</TableHead>
-                    <TableHead>Area Code</TableHead>
-                    <TableHead>Daily Calls</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Used</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredNumbers.map((number) => (
-                    <TableRow key={number.id}>
-                      <TableCell className="font-mono">{number.number}</TableCell>
-                      <TableCell>{number.area_code}</TableCell>
-                      <TableCell>
-                        <span className={`font-semibold ${number.daily_calls > 45 ? 'text-red-600' : 'text-green-600'}`}>
-                          {number.daily_calls}/50
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(number.status, number.is_spam)}
-                      </TableCell>
-                      <TableCell className="text-gray-600">
-                        {number.last_used || 'Never'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {number.status === 'active' ? (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => quarantineNumber(number.id)}
-                            >
-                              Quarantine
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => releaseNumber(number.id)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              Release
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
+            {numbersLoading ? (
+              <div className="text-center py-8">Loading numbers...</div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Number</TableHead>
+                      <TableHead>Area Code</TableHead>
+                      <TableHead>Daily Calls</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Used</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredNumbers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                          No phone numbers found. Purchase your first number to get started.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredNumbers.map((number) => (
+                        <TableRow key={number.id}>
+                          <TableCell className="font-mono">{number.number}</TableCell>
+                          <TableCell>{number.area_code}</TableCell>
+                          <TableCell>
+                            <span className={`font-semibold ${number.daily_calls > 45 ? 'text-red-600' : 'text-green-600'}`}>
+                              {number.daily_calls}/50
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {getStatusBadge(number.status, number.is_spam)}
+                          </TableCell>
+                          <TableCell className="text-gray-600">
+                            {number.last_used ? new Date(number.last_used).toLocaleString() : 'Never'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              {number.status === 'active' ? (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => quarantineMutation.mutate(number.id)}
+                                  disabled={quarantineMutation.isPending}
+                                >
+                                  Quarantine
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => releaseMutation.mutate(number.id)}
+                                  disabled={releaseMutation.isPending}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  Release
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
