@@ -52,7 +52,6 @@ const Dashboard = () => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        // First get the current session
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         console.log('Initial session check:', currentSession);
         
@@ -75,7 +74,6 @@ const Dashboard = () => {
 
     initializeAuth();
 
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state changed:', event, session?.user);
       setSession(session);
@@ -95,8 +93,6 @@ const Dashboard = () => {
 
   // Check integration status
   const checkIntegrationStatus = () => {
-    // In a real app, this would check stored credentials
-    // For now, we'll simulate checking localStorage or API
     const storedCredentials = localStorage.getItem('api-credentials');
     if (storedCredentials) {
       try {
@@ -384,7 +380,7 @@ const Dashboard = () => {
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="rotation">Number Rotation</TabsTrigger>
+            <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
             <TabsTrigger value="retell">Retell AI</TabsTrigger>
             <TabsTrigger value="spam">Spam Detection</TabsTrigger>
           </TabsList>
