@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import Navigation from '@/components/Navigation';
+import RetellAIManager from '@/components/RetellAIManager';
 
 interface PhoneNumber {
   id: string;
@@ -377,27 +377,31 @@ const Dashboard = () => {
           </Card>
         )}
 
-        {/* Retell AI Integration Card */}
+        {/* Retell AI Management Section */}
         {integrationStatus.retell && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Retell AI Integration</CardTitle>
-              <CardDescription>Import phone numbers to Retell AI for AI-powered calling</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <Label htmlFor="retellUri">Termination URI</Label>
-                  <Input
-                    id="retellUri"
-                    placeholder="e.g., someuri.pstn.twilio.com"
-                    value={retellUri}
-                    onChange={(e) => setRetellUri(e.target.value)}
-                  />
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Retell AI Integration</CardTitle>
+                <CardDescription>Import phone numbers to Retell AI for AI-powered calling</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1">
+                    <Label htmlFor="retellUri">Termination URI</Label>
+                    <Input
+                      id="retellUri"
+                      placeholder="e.g., someuri.pstn.twilio.com"
+                      value={retellUri}
+                      onChange={(e) => setRetellUri(e.target.value)}
+                    />
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+            
+            <RetellAIManager />
+          </div>
         )}
 
         {/* Stats Cards */}

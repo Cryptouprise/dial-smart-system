@@ -11,6 +11,13 @@ interface RetellPhoneNumber {
   termination_uri?: string;
 }
 
+interface Agent {
+  agent_id: string;
+  agent_name: string;
+  voice_id?: string;
+  created_at?: string;
+}
+
 export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -181,11 +188,79 @@ export const useRetellAI = () => {
     }
   };
 
+  const listAgents = async (): Promise<Agent[] | null> => {
+    const apiKey = getRetellCredentials();
+    if (!apiKey) {
+      return null;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'list',
+          apiKey
+        }
+      });
+
+      if (error) throw error;
+      return data?.agents || [];
+    } catch (error: any) {
+      console.error('Failed to list agents:', error);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createAgent = async (agentName: string): Promise<Agent | null> => {
+    const apiKey = getRetellCredentials();
+    if (!apiKey) {
+      toast({
+        title: "Error",
+        description: "Retell AI credentials not found. Please add them in API Keys.",
+        variant: "destructive"
+      });
+      return null;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'create',
+          apiKey,
+          agentName
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `Agent "${agentName}" created successfully`,
+      });
+
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create agent",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     importPhoneNumber,
     updatePhoneNumber,
     deletePhoneNumber,
     listPhoneNumbers,
+    listAgents,
+    createAgent,
     isLoading
   };
 };
