@@ -6,143 +6,226 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 
-interface ApiKey {
+interface ApiCredentials {
   id: string;
   name: string;
-  key: string;
   service: string;
+  credentials: Record<string, string>;
   status: 'active' | 'inactive';
   created: string;
 }
 
 const ApiKeys = () => {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([
+  const [apiCredentials, setApiCredentials] = useState<ApiCredentials[]>([
     {
       id: '1',
-      name: 'Twilio API',
-      key: 'sk_test_***************************',
-      service: 'SMS/Voice',
+      name: 'Twilio Production',
+      service: 'twilio',
+      credentials: {
+        accountSid: 'AC***************************',
+        authToken: 'sk_test_***************************',
+        phoneNumber: '+1234567890'
+      },
       status: 'active',
       created: '2024-01-15'
     }
   ]);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyValue, setNewKeyValue] = useState('');
-  const [newKeyService, setNewKeyService] = useState('');
-  const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
+
+  const [newCredentialName, setNewCredentialName] = useState('');
+  const [selectedService, setSelectedService] = useState('');
+  const [credentialFields, setCredentialFields] = useState<Record<string, string>>({});
+  const [showCredentials, setShowCredentials] = useState<{ [key: string]: boolean }>({});
   const { toast } = useToast();
 
-  const handleAddApiKey = () => {
-    if (!newKeyName || !newKeyValue || !newKeyService) {
+  const serviceConfigs = {
+    twilio: {
+      displayName: 'Twilio',
+      fields: [
+        { key: 'accountSid', label: 'Account SID', placeholder: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxx' },
+        { key: 'authToken', label: 'Auth Token', placeholder: 'Your Twilio Auth Token', type: 'password' },
+        { key: 'phoneNumber', label: 'Phone Number', placeholder: '+1234567890' }
+      ]
+    },
+    openai: {
+      displayName: 'OpenAI',
+      fields: [
+        { key: 'apiKey', label: 'API Key', placeholder: 'sk-...', type: 'password' }
+      ]
+    },
+    stripe: {
+      displayName: 'Stripe',
+      fields: [
+        { key: 'publishableKey', label: 'Publishable Key', placeholder: 'pk_...' },
+        { key: 'secretKey', label: 'Secret Key', placeholder: 'sk_...', type: 'password' }
+      ]
+    }
+  };
+
+  const handleServiceChange = (service: string) => {
+    setSelectedService(service);
+    setCredentialFields({});
+  };
+
+  const handleFieldChange = (fieldKey: string, value: string) => {
+    setCredentialFields(prev => ({
+      ...prev,
+      [fieldKey]: value
+    }));
+  };
+
+  const handleAddCredentials = () => {
+    if (!newCredentialName || !selectedService) {
       toast({
         title: "Error",
-        description: "Please fill in all fields",
+        description: "Please enter a name and select a service",
         variant: "destructive"
       });
       return;
     }
 
-    const newKey: ApiKey = {
+    const serviceConfig = serviceConfigs[selectedService as keyof typeof serviceConfigs];
+    const missingFields = serviceConfig.fields.filter(field => !credentialFields[field.key]);
+    
+    if (missingFields.length > 0) {
+      toast({
+        title: "Error",
+        description: `Please fill in all required fields: ${missingFields.map(f => f.label).join(', ')}`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const newCredential: ApiCredentials = {
       id: Date.now().toString(),
-      name: newKeyName,
-      key: newKeyValue,
-      service: newKeyService,
+      name: newCredentialName,
+      service: selectedService,
+      credentials: { ...credentialFields },
       status: 'active',
       created: new Date().toISOString().split('T')[0]
     };
 
-    setApiKeys([...apiKeys, newKey]);
-    setNewKeyName('');
-    setNewKeyValue('');
-    setNewKeyService('');
+    setApiCredentials([...apiCredentials, newCredential]);
+    setNewCredentialName('');
+    setSelectedService('');
+    setCredentialFields({});
 
     toast({
-      title: "API Key Added",
-      description: "Your API key has been saved successfully",
+      title: "Credentials Added",
+      description: `Your ${serviceConfig.displayName} credentials have been saved successfully`,
     });
   };
 
-  const handleDeleteKey = (id: string) => {
-    setApiKeys(apiKeys.filter(key => key.id !== id));
+  const handleDeleteCredentials = (id: string) => {
+    setApiCredentials(apiCredentials.filter(cred => cred.id !== id));
     toast({
-      title: "API Key Deleted",
-      description: "The API key has been removed",
+      title: "Credentials Deleted",
+      description: "The credentials have been removed",
     });
   };
 
-  const toggleKeyVisibility = (id: string) => {
-    setShowKeys(prev => ({
+  const toggleCredentialVisibility = (id: string) => {
+    setShowCredentials(prev => ({
       ...prev,
       [id]: !prev[id]
     }));
   };
 
-  const maskKey = (key: string) => {
-    if (key.length <= 8) return key;
-    return key.substring(0, 8) + '*'.repeat(key.length - 12) + key.substring(key.length - 4);
+  const maskCredential = (credential: string) => {
+    if (credential.length <= 8) return credential;
+    return credential.substring(0, 8) + '*'.repeat(credential.length - 12) + credential.substring(credential.length - 4);
+  };
+
+  const getServiceDisplayName = (service: string) => {
+    return serviceConfigs[service as keyof typeof serviceConfigs]?.displayName || service;
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Navigation />
       <div className="max-w-6xl mx-auto p-6 space-y-6">
-        <h1 className="text-3xl font-bold text-gray-900">API Keys Management</h1>
+        <h1 className="text-3xl font-bold text-gray-900">API Credentials Management</h1>
 
-        {/* Add New API Key */}
+        {/* Add New Credentials */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Plus size={20} />
-              <span>Add New API Key</span>
+              <span>Add New API Credentials</span>
             </CardTitle>
-            <CardDescription>Store your API keys securely for integration with external services</CardDescription>
+            <CardDescription>Store your API credentials securely for integration with external services</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="space-y-2">
-                <Label htmlFor="keyName">Key Name</Label>
-                <Input
-                  id="keyName"
-                  placeholder="e.g., Twilio API"
-                  value={newKeyName}
-                  onChange={(e) => setNewKeyName(e.target.value)}
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="credentialName">Credential Set Name</Label>
+                  <Input
+                    id="credentialName"
+                    placeholder="e.g., Twilio Production"
+                    value={newCredentialName}
+                    onChange={(e) => setNewCredentialName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="service">Service</Label>
+                  <Select value={selectedService} onValueChange={handleServiceChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a service" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(serviceConfigs).map(([key, config]) => (
+                        <SelectItem key={key} value={key}>
+                          {config.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="keyService">Service</Label>
-                <Input
-                  id="keyService"
-                  placeholder="e.g., SMS/Voice"
-                  value={newKeyService}
-                  onChange={(e) => setNewKeyService(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="keyValue">API Key</Label>
-                <Input
-                  id="keyValue"
-                  type="password"
-                  placeholder="Enter your API key"
-                  value={newKeyValue}
-                  onChange={(e) => setNewKeyValue(e.target.value)}
-                />
-              </div>
+
+              {selectedService && (
+                <div className="space-y-4 border-t pt-4">
+                  <h4 className="font-medium text-gray-900">
+                    {getServiceDisplayName(selectedService)} Credentials
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {serviceConfigs[selectedService as keyof typeof serviceConfigs].fields.map((field) => (
+                      <div key={field.key} className="space-y-2">
+                        <Label htmlFor={field.key}>{field.label}</Label>
+                        <Input
+                          id={field.key}
+                          type={field.type || 'text'}
+                          placeholder={field.placeholder}
+                          value={credentialFields[field.key] || ''}
+                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Button 
+                onClick={handleAddCredentials} 
+                disabled={!selectedService}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Add Credentials
+              </Button>
             </div>
-            <Button onClick={handleAddApiKey} className="bg-blue-600 hover:bg-blue-700">
-              Add API Key
-            </Button>
           </CardContent>
         </Card>
 
-        {/* API Keys List */}
+        {/* Stored Credentials */}
         <Card>
           <CardHeader>
-            <CardTitle>Stored API Keys</CardTitle>
-            <CardDescription>Manage your existing API keys</CardDescription>
+            <CardTitle>Stored API Credentials</CardTitle>
+            <CardDescription>Manage your existing API credentials</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -151,49 +234,56 @@ const ApiKeys = () => {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Service</TableHead>
-                    <TableHead>API Key</TableHead>
+                    <TableHead>Credentials</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {apiKeys.length === 0 ? (
+                  {apiCredentials.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                        No API keys stored yet. Add your first API key above.
+                        No API credentials stored yet. Add your first credentials above.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    apiKeys.map((apiKey) => (
-                      <TableRow key={apiKey.id}>
-                        <TableCell className="font-medium">{apiKey.name}</TableCell>
-                        <TableCell>{apiKey.service}</TableCell>
-                        <TableCell className="font-mono">
-                          <div className="flex items-center space-x-2">
-                            <span>
-                              {showKeys[apiKey.id] ? apiKey.key : maskKey(apiKey.key)}
-                            </span>
+                    apiCredentials.map((credential) => (
+                      <TableRow key={credential.id}>
+                        <TableCell className="font-medium">{credential.name}</TableCell>
+                        <TableCell>{getServiceDisplayName(credential.service)}</TableCell>
+                        <TableCell>
+                          <div className="space-y-2">
+                            {Object.entries(credential.credentials).map(([key, value]) => (
+                              <div key={key} className="flex items-center space-x-2 text-sm">
+                                <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                                  {key}:
+                                </span>
+                                <span className="font-mono">
+                                  {showCredentials[credential.id] ? value : maskCredential(value)}
+                                </span>
+                              </div>
+                            ))}
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleKeyVisibility(apiKey.id)}
+                              onClick={() => toggleCredentialVisibility(credential.id)}
                             >
-                              {showKeys[apiKey.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                              {showCredentials[credential.id] ? <EyeOff size={16} /> : <Eye size={16} />}
                             </Button>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={apiKey.status === 'active' ? 'default' : 'secondary'}>
-                            {apiKey.status}
+                          <Badge variant={credential.status === 'active' ? 'default' : 'secondary'}>
+                            {credential.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>{apiKey.created}</TableCell>
+                        <TableCell>{credential.created}</TableCell>
                         <TableCell>
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => handleDeleteKey(apiKey.id)}
+                            onClick={() => handleDeleteCredentials(credential.id)}
                           >
                             <Trash2 size={16} />
                           </Button>

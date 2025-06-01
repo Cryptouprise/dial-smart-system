@@ -30,6 +30,11 @@ const Dashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [integrationStatus, setIntegrationStatus] = useState({
+    twilio: false,
+    openai: false,
+    stripe: false
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -45,6 +50,7 @@ const Dashboard = () => {
         if (currentSession) {
           setSession(currentSession);
           setUser(currentSession.user);
+          checkIntegrationStatus();
         } else {
           console.log('No session found, redirecting to auth');
           navigate('/auth');
@@ -77,6 +83,25 @@ const Dashboard = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  // Check integration status
+  const checkIntegrationStatus = () => {
+    // In a real app, this would check stored credentials
+    // For now, we'll simulate checking localStorage or API
+    const storedCredentials = localStorage.getItem('api-credentials');
+    if (storedCredentials) {
+      try {
+        const credentials = JSON.parse(storedCredentials);
+        setIntegrationStatus({
+          twilio: credentials.some((c: any) => c.service === 'twilio'),
+          openai: credentials.some((c: any) => c.service === 'openai'),
+          stripe: credentials.some((c: any) => c.service === 'stripe')
+        });
+      } catch (error) {
+        console.error('Error parsing stored credentials:', error);
+      }
+    }
+  };
 
   // Fetch phone numbers
   const { data: numbers = [], isLoading: numbersLoading } = useQuery({
@@ -175,6 +200,25 @@ const Dashboard = () => {
       });
     }
   });
+
+  // Make call function (placeholder for Twilio integration)
+  const makeCall = async (phoneNumber: string, targetNumber: string) => {
+    if (!integrationStatus.twilio) {
+      toast({
+        title: "Twilio Not Configured",
+        description: "Please configure your Twilio credentials in API Keys to make calls",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // In a real app, this would use the stored Twilio credentials
+    // to make an actual call via Supabase Edge Function
+    toast({
+      title: "Call Initiated",
+      description: `Calling ${targetNumber} from ${phoneNumber}`,
+    });
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -279,6 +323,26 @@ const Dashboard = () => {
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Dashboard</h1>
           <p className="text-lg text-gray-600">Manage your phone numbers, call limits, and spam protection</p>
         </div>
+
+        {/* Integration Status Alert */}
+        {!integrationStatus.twilio && (
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-orange-800">Integration Required</h3>
+                  <p className="text-orange-700">Configure your Twilio credentials to start making calls</p>
+                </div>
+                <Button 
+                  onClick={() => navigate('/api-keys')}
+                  className="bg-orange-600 hover:bg-orange-700"
+                >
+                  Configure API Keys
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -411,14 +475,25 @@ const Dashboard = () => {
                           <TableCell>
                             <div className="flex gap-2">
                               {number.status === 'active' ? (
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => quarantineMutation.mutate(number.id)}
-                                  disabled={quarantineMutation.isPending}
-                                >
-                                  Quarantine
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={() => makeCall(number.number, '+1234567890')}
+                                    disabled={!integrationStatus.twilio}
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                  >
+                                    Test Call
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => quarantineMutation.mutate(number.id)}
+                                    disabled={quarantineMutation.isPending}
+                                  >
+                                    Quarantine
+                                  </Button>
+                                </>
                               ) : (
                                 <Button
                                   variant="default"
