@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -394,10 +395,10 @@ const Dashboard = () => {
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="analytics">Call Analytics</TabsTrigger>
             <TabsTrigger value="ai-engine">AI Engine</TabsTrigger>
             <TabsTrigger value="yellowstone">Yellowstone</TabsTrigger>
-            <TabsTrigger value="rotation">Rotation</TabsTrigger>
+            <TabsTrigger value="rotation">Number Rotation</TabsTrigger>
             <TabsTrigger value="spam-detection">Spam Protection</TabsTrigger>
           </TabsList>
 
