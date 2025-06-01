@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ import { useRetellAI } from '@/hooks/useRetellAI';
 import Navigation from '@/components/Navigation';
 import RetellAIManager from '@/components/RetellAIManager';
 import SpamDetectionManager from '@/components/SpamDetectionManager';
+import NumberRotationManager from '@/components/NumberRotationManager';
 
 interface PhoneNumber {
   id: string;
@@ -378,219 +380,222 @@ const Dashboard = () => {
           </Card>
         )}
 
-        {/* Spam Detection System */}
-        <SpamDetectionManager />
+        {/* Main Content Tabs */}
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="rotation">Number Rotation</TabsTrigger>
+            <TabsTrigger value="retell">Retell AI</TabsTrigger>
+            <TabsTrigger value="spam">Spam Detection</TabsTrigger>
+          </TabsList>
 
-        {/* Retell AI Management Section */}
-        {integrationStatus.retell && (
-          <div className="space-y-6">
+          <TabsContent value="overview" className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total Numbers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-600">{totalNumbers}</div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Active Numbers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{activeNumbers}</div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Quarantined</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600">{quarantinedNumbers}</div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Calls Today</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-purple-600">{totalCallsToday}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Controls */}
             <Card>
               <CardHeader>
-                <CardTitle>Retell AI Integration</CardTitle>
-                <CardDescription>Import phone numbers to Retell AI for AI-powered calling</CardDescription>
+                <CardTitle>Number Management</CardTitle>
+                <CardDescription>Purchase new numbers and manage existing ones</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-4 items-end">
-                  <div className="flex-1">
-                    <Label htmlFor="retellUri">Termination URI</Label>
+                <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                  <div className="flex gap-2 flex-1">
                     <Input
-                      id="retellUri"
-                      placeholder="e.g., someuri.pstn.twilio.com"
-                      value={retellUri}
-                      onChange={(e) => setRetellUri(e.target.value)}
+                      placeholder="Area code (e.g., 720)"
+                      value={newAreaCode}
+                      onChange={(e) => setNewAreaCode(e.target.value)}
+                      className="max-w-xs"
                     />
+                    <Button 
+                      onClick={buyNumber} 
+                      disabled={buyNumberMutation.isPending}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {buyNumberMutation.isPending ? 'Buying...' : 'Buy Number'}
+                    </Button>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Filter status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="quarantined">Quarantined</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    
+                    <Button variant="outline" onClick={exportToCSV}>
+                      Export CSV
+                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            
-            <RetellAIManager />
-          </div>
-        )}
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Numbers</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{totalNumbers}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Active Numbers</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{activeNumbers}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Quarantined</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{quarantinedNumbers}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Calls Today</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">{totalCallsToday}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Controls */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Number Management</CardTitle>
-            <CardDescription>Purchase new numbers and manage existing ones</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              <div className="flex gap-2 flex-1">
-                <Input
-                  placeholder="Area code (e.g., 720)"
-                  value={newAreaCode}
-                  onChange={(e) => setNewAreaCode(e.target.value)}
-                  className="max-w-xs"
-                />
-                <Button 
-                  onClick={buyNumber} 
-                  disabled={buyNumberMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {buyNumberMutation.isPending ? 'Buying...' : 'Buy Number'}
-                </Button>
-              </div>
-              
-              <div className="flex gap-2">
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Filter status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="quarantined">Quarantined</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                <Button variant="outline" onClick={exportToCSV}>
-                  Export CSV
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Numbers Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Phone Numbers</CardTitle>
-            <CardDescription>Manage your phone numbers and their status</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {numbersLoading ? (
-              <div className="text-center py-8">Loading numbers...</div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Number</TableHead>
-                      <TableHead>Area Code</TableHead>
-                      <TableHead>Daily Calls</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last Used</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredNumbers.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                          No phone numbers found. Purchase your first number to get started.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredNumbers.map((number) => (
-                        <TableRow key={number.id}>
-                          <TableCell className="font-mono">{number.number}</TableCell>
-                          <TableCell>{number.area_code}</TableCell>
-                          <TableCell>
-                            <span className={`font-semibold ${number.daily_calls > 45 ? 'text-red-600' : 'text-green-600'}`}>
-                              {number.daily_calls}/50
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {getStatusBadge(number.status, number.is_spam)}
-                          </TableCell>
-                          <TableCell className="text-gray-600">
-                            {number.last_used ? new Date(number.last_used).toLocaleString() : 'Never'}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2 flex-wrap">
-                              {number.status === 'active' ? (
-                                <>
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => makeCall(number.number, '+1234567890')}
-                                    disabled={!integrationStatus.twilio}
-                                    className="bg-blue-600 hover:bg-blue-700"
-                                  >
-                                    Test Call
-                                  </Button>
-                                  {integrationStatus.retell && (
+            {/* Numbers Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Phone Numbers</CardTitle>
+                <CardDescription>Manage your phone numbers and their status</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {numbersLoading ? (
+                  <div className="text-center py-8">Loading numbers...</div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Number</TableHead>
+                          <TableHead>Area Code</TableHead>
+                          <TableHead>Daily Calls</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Last Used</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredNumbers.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                              No phone numbers found. Purchase your first number to get started.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredNumbers.map((number) => (
+                            <TableRow key={number.id}>
+                              <TableCell className="font-mono">{number.number}</TableCell>
+                              <TableCell>{number.area_code}</TableCell>
+                              <TableCell>
+                                <span className={`font-semibold ${number.daily_calls > 45 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {number.daily_calls}/50
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                {getStatusBadge(number.status, number.is_spam)}
+                              </TableCell>
+                              <TableCell className="text-gray-600">
+                                {number.last_used ? new Date(number.last_used).toLocaleString() : 'Never'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-2 flex-wrap">
+                                  {number.status === 'active' ? (
+                                    <>
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => makeCall(number.number, '+1234567890')}
+                                        disabled={!integrationStatus.twilio}
+                                        className="bg-blue-600 hover:bg-blue-700"
+                                      >
+                                        Test Call
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => quarantineMutation.mutate(number.id)}
+                                        disabled={quarantineMutation.isPending}
+                                      >
+                                        Quarantine
+                                      </Button>
+                                    </>
+                                  ) : (
                                     <Button
-                                      variant="outline"
+                                      variant="default"
                                       size="sm"
-                                      onClick={() => handleImportToRetell(number.number)}
-                                      disabled={retellLoading || !retellUri}
-                                      className="border-purple-500 text-purple-600 hover:bg-purple-50"
+                                      onClick={() => releaseMutation.mutate(number.id)}
+                                      disabled={releaseMutation.isPending}
+                                      className="bg-green-600 hover:bg-green-700"
                                     >
-                                      Import to Retell
+                                      Release
                                     </Button>
                                   )}
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => quarantineMutation.mutate(number.id)}
-                                    disabled={quarantineMutation.isPending}
-                                  >
-                                    Quarantine
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  onClick={() => releaseMutation.mutate(number.id)}
-                                  disabled={releaseMutation.isPending}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  Release
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="rotation">
+            <NumberRotationManager 
+              numbers={numbers} 
+              onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })}
+            />
+          </TabsContent>
+
+          <TabsContent value="retell">
+            {integrationStatus.retell ? (
+              <RetellAIManager />
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Retell AI Integration</CardTitle>
+                  <CardDescription>Configure your Retell AI credentials to manage AI-powered calling</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 mb-4">Retell AI credentials not configured</p>
+                    <Button onClick={() => navigate('/api-keys')}>
+                      Configure Retell AI
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
+          </TabsContent>
+
+          <TabsContent value="spam">
+            <SpamDetectionManager />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
