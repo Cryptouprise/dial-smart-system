@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Settings, Home, Key, Users } from 'lucide-react';
+import { Settings, Home, Key, Users, HelpCircle } from 'lucide-react';
 
 const Navigation = () => {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ const Navigation = () => {
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/settings', label: 'Settings', icon: Settings },
     { path: '/api-keys', label: 'API Keys', icon: Key },
+    { path: '/help', label: 'Help', icon: HelpCircle },
   ];
 
   return (
