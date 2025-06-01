@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import Navigation from '@/components/Navigation';
 import RetellAIManager from '@/components/RetellAIManager';
+import SpamDetectionManager from '@/components/SpamDetectionManager';
 
 interface PhoneNumber {
   id: string;
@@ -376,6 +377,9 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Spam Detection System */}
+        <SpamDetectionManager />
 
         {/* Retell AI Management Section */}
         {integrationStatus.retell && (
