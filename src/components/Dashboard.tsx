@@ -20,6 +20,7 @@ import CallAnalytics from '@/components/CallAnalytics';
 import AutomationEngine from '@/components/AutomationEngine';
 import AlertSystem from '@/components/AlertSystem';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
+import AIDecisionEngine from '@/components/AIDecisionEngine';
 
 interface PhoneNumber {
   id: string;
@@ -385,9 +386,10 @@ const Dashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="ai-engine">AI Engine</TabsTrigger>
             <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
             <TabsTrigger value="retell">Retell AI</TabsTrigger>
             <TabsTrigger value="spam">Spam Detection</TabsTrigger>
@@ -571,6 +573,13 @@ const Dashboard = () => {
 
           <TabsContent value="analytics">
             <CallAnalytics numbers={numbers} />
+          </TabsContent>
+
+          <TabsContent value="ai-engine">
+            <AIDecisionEngine 
+              numbers={numbers} 
+              onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })}
+            />
           </TabsContent>
 
           <TabsContent value="rotation">
