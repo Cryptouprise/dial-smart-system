@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -127,28 +126,26 @@ const Dashboard = () => {
 
         <Tabs defaultValue="overview" className="w-full">
           <div className="w-full overflow-x-auto pb-2">
-            <div className="min-w-max">
-              <TabsList className="grid grid-cols-6 w-full min-w-[600px] h-auto bg-slate-100 dark:bg-slate-800">
-                <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  Overview
-                </TabsTrigger>
-                <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  Analytics
-                </TabsTrigger>
-                <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  AI Engine
-                </TabsTrigger>
-                <TabsTrigger value="yellowstone" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  Yellowstone
-                </TabsTrigger>
-                <TabsTrigger value="rotation" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  Rotation
-                </TabsTrigger>
-                <TabsTrigger value="spam" className="text-xs sm:text-sm px-2 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                  Spam
-                </TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Analytics
+              </TabsTrigger>
+              <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                AI Engine
+              </TabsTrigger>
+              <TabsTrigger value="yellowstone" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Yellowstone
+              </TabsTrigger>
+              <TabsTrigger value="rotation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Rotation
+              </TabsTrigger>
+              <TabsTrigger value="spam" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Spam
+              </TabsTrigger>
+            </TabsList>
           </div>
 
           <TabsContent value="overview" className="space-y-3 sm:space-y-4 lg:space-y-6">
