@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useRetellAI } from '@/hooks/useRetellAI';
+import { RefreshCw } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import RetellAIManager from '@/components/RetellAIManager';
 import SpamDetectionManager from '@/components/SpamDetectionManager';
@@ -21,7 +22,6 @@ import AutomationEngine from '@/components/AutomationEngine';
 import AlertSystem from '@/components/AlertSystem';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 import AIDecisionEngine from '@/components/AIDecisionEngine';
-import RefreshCw from '@/components/icons/RefreshCw';
 import YellowstoneManager from '@/components/YellowstoneManager';
 
 interface PhoneNumber {
@@ -54,6 +54,11 @@ const Dashboard = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { importPhoneNumber, isLoading: retellLoading } = useRetellAI();
+
+  // Add the missing onRefreshNumbers function
+  const onRefreshNumbers = () => {
+    queryClient.invalidateQueries({ queryKey: ['phone-numbers'] });
+  };
 
   // Check authentication status
   useEffect(() => {
@@ -356,7 +361,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Navigation />
-      <AutomationEngine numbers={numbers} onRefreshNumbers={() => queryClient.invalidateQueries({ queryKey: ['phone-numbers'] })} />
+      <AutomationEngine numbers={numbers} onRefreshNumbers={onRefreshNumbers} />
       <AlertSystem numbers={numbers} />
       
       <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -393,7 +398,7 @@ const Dashboard = () => {
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="ai-engine">AI Engine</TabsTrigger>
             <TabsTrigger value="yellowstone">Yellowstone</TabsTrigger>
-            <TabsTrigger value="rotation">Advanced Rotation</TabsTrigger>
+            <TabsTrigger value="rotation">Rotation</TabsTrigger>
             <TabsTrigger value="spam-detection">Spam Protection</TabsTrigger>
           </TabsList>
 
