@@ -9,6 +9,210 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      call_logs: {
+        Row: {
+          answered_at: string | null
+          caller_id: string
+          campaign_id: string | null
+          created_at: string
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          lead_id: string | null
+          notes: string | null
+          outcome: string | null
+          phone_number: string
+          retell_call_id: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          answered_at?: string | null
+          caller_id: string
+          campaign_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          notes?: string | null
+          outcome?: string | null
+          phone_number: string
+          retell_call_id?: string | null
+          status: string
+          user_id: string
+        }
+        Update: {
+          answered_at?: string | null
+          caller_id?: string
+          campaign_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          notes?: string | null
+          outcome?: string | null
+          phone_number?: string
+          retell_call_id?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_leads: {
+        Row: {
+          added_at: string
+          campaign_id: string | null
+          id: string
+          lead_id: string | null
+        }
+        Insert: {
+          added_at?: string
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+        }
+        Update: {
+          added_at?: string
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_leads_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_leads_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          agent_id: string | null
+          calling_hours_end: string | null
+          calling_hours_start: string | null
+          calls_per_minute: number | null
+          created_at: string
+          description: string | null
+          id: string
+          max_attempts: number | null
+          name: string
+          script: string | null
+          status: string
+          timezone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          calling_hours_end?: string | null
+          calling_hours_start?: string | null
+          calls_per_minute?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          max_attempts?: number | null
+          name: string
+          script?: string | null
+          status?: string
+          timezone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          calling_hours_end?: string | null
+          calling_hours_start?: string | null
+          calls_per_minute?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          max_attempts?: number | null
+          name?: string
+          script?: string | null
+          status?: string
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          company: string | null
+          created_at: string
+          email: string | null
+          first_name: string | null
+          id: string
+          last_contacted_at: string | null
+          last_name: string | null
+          next_callback_at: string | null
+          notes: string | null
+          phone_number: string
+          priority: number | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          id?: string
+          last_contacted_at?: string | null
+          last_name?: string | null
+          next_callback_at?: string | null
+          notes?: string | null
+          phone_number: string
+          priority?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          id?: string
+          last_contacted_at?: string | null
+          last_name?: string | null
+          next_callback_at?: string | null
+          notes?: string | null
+          phone_number?: string
+          priority?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       phone_numbers: {
         Row: {
           area_code: string

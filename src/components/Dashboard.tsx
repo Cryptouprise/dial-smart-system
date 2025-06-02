@@ -14,6 +14,7 @@ import SpamDetectionManager from '@/components/SpamDetectionManager';
 import YellowstoneManager from '@/components/YellowstoneManager';
 import AIDecisionEngine from '@/components/AIDecisionEngine';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
+import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard';
 
 interface PhoneNumber {
   id: string;
@@ -129,6 +130,9 @@ const Dashboard = () => {
             <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
               <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Overview
+              </TabsTrigger>
+              <TabsTrigger value="predictive" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                Predictive Dialing
               </TabsTrigger>
               <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Analytics
@@ -373,6 +377,10 @@ const Dashboard = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="predictive">
+            <PredictiveDialingDashboard />
           </TabsContent>
 
           <TabsContent value="analytics">
