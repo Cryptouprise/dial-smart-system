@@ -63,9 +63,13 @@ export const usePredictiveDialing = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      if (!leadData.phone_number) {
+        throw new Error('Phone number is required');
+      }
+
       const { data, error } = await supabase
         .from('leads')
-        .insert([{ ...leadData, user_id: user.id }])
+        .insert([{ ...leadData, user_id: user.id, phone_number: leadData.phone_number }])
         .select()
         .single();
 
@@ -125,10 +129,24 @@ export const usePredictiveDialing = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const leadsWithUserId = leads.map(lead => ({
-        ...lead,
+      // Validate and filter leads to ensure phone_number is present
+      const validLeads = leads.filter(lead => lead.phone_number && lead.phone_number.trim() !== '');
+      
+      if (validLeads.length === 0) {
+        throw new Error('No valid leads found. All leads must have a phone number.');
+      }
+
+      const leadsWithUserId = validLeads.map(lead => ({
         user_id: user.id,
-        phone_number: lead.phone_number || '', // Ensure required field
+        phone_number: lead.phone_number!,
+        first_name: lead.first_name || null,
+        last_name: lead.last_name || null,
+        email: lead.email || null,
+        company: lead.company || null,
+        status: lead.status || 'new',
+        priority: lead.priority || 1,
+        notes: lead.notes || null,
+        next_callback_at: lead.next_callback_at || null
       }));
 
       const { data, error } = await supabase
@@ -138,9 +156,15 @@ export const usePredictiveDialing = () => {
 
       if (error) throw error;
 
+      const skippedCount = leads.length - validLeads.length;
+      let message = `Successfully imported ${data.length} leads`;
+      if (skippedCount > 0) {
+        message += ` (${skippedCount} leads skipped due to missing phone numbers)`;
+      }
+
       toast({
         title: "Success",
-        description: `Successfully imported ${data.length} leads`,
+        description: message,
       });
 
       return data;
@@ -204,12 +228,24 @@ export const usePredictiveDialing = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      if (!campaignData.name) {
+        throw new Error('Campaign name is required');
+      }
+
       const { data, error } = await supabase
         .from('campaigns')
         .insert([{ 
-          ...campaignData, 
           user_id: user.id,
-          name: campaignData.name || 'Untitled Campaign' // Ensure required field
+          name: campaignData.name,
+          description: campaignData.description || null,
+          status: campaignData.status || 'draft',
+          script: campaignData.script || null,
+          agent_id: campaignData.agent_id || null,
+          calls_per_minute: campaignData.calls_per_minute || 5,
+          max_attempts: campaignData.max_attempts || 3,
+          calling_hours_start: campaignData.calling_hours_start || '09:00',
+          calling_hours_end: campaignData.calling_hours_end || '17:00',
+          timezone: campaignData.timezone || 'America/New_York'
         }])
         .select()
         .single();
