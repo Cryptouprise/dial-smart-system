@@ -60,9 +60,12 @@ export const usePredictiveDialing = () => {
   const createLead = async (leadData: Partial<Lead>) => {
     setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase
         .from('leads')
-        .insert([leadData])
+        .insert([{ ...leadData, user_id: user.id }])
         .select()
         .single();
 
@@ -119,9 +122,18 @@ export const usePredictiveDialing = () => {
   const importLeads = async (leads: Partial<Lead>[]) => {
     setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const leadsWithUserId = leads.map(lead => ({
+        ...lead,
+        user_id: user.id,
+        phone_number: lead.phone_number || '', // Ensure required field
+      }));
+
       const { data, error } = await supabase
         .from('leads')
-        .insert(leads)
+        .insert(leadsWithUserId)
         .select();
 
       if (error) throw error;
@@ -154,9 +166,19 @@ export const usePredictiveDialing = () => {
       }
 
       if (filters?.campaign_id) {
-        query = query.in('id', 
-          supabase.from('campaign_leads').select('lead_id').eq('campaign_id', filters.campaign_id)
-        );
+        // Get lead IDs that belong to the campaign
+        const { data: campaignLeads } = await supabase
+          .from('campaign_leads')
+          .select('lead_id')
+          .eq('campaign_id', filters.campaign_id);
+
+        if (campaignLeads && campaignLeads.length > 0) {
+          const leadIds = campaignLeads.map(cl => cl.lead_id);
+          query = query.in('id', leadIds);
+        } else {
+          // No leads in this campaign
+          return [];
+        }
       }
 
       const { data, error } = await query;
@@ -179,9 +201,16 @@ export const usePredictiveDialing = () => {
   const createCampaign = async (campaignData: Partial<Campaign>) => {
     setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase
         .from('campaigns')
-        .insert([campaignData])
+        .insert([{ 
+          ...campaignData, 
+          user_id: user.id,
+          name: campaignData.name || 'Untitled Campaign' // Ensure required field
+        }])
         .select()
         .single();
 
