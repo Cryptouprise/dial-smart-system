@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Navigation from '@/components/Navigation';
 import CallAnalytics from '@/components/CallAnalytics';
@@ -15,6 +15,7 @@ import YellowstoneManager from '@/components/YellowstoneManager';
 import AIDecisionEngine from '@/components/AIDecisionEngine';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard';
+import RetellAIManager from '@/components/RetellAIManager';
 
 interface PhoneNumber {
   id: string;
@@ -133,6 +134,10 @@ const Dashboard = () => {
               </TabsTrigger>
               <TabsTrigger value="predictive" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Predictive Dialing
+              </TabsTrigger>
+              <TabsTrigger value="retell" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Settings className="h-4 w-4 mr-2" />
+                Retell AI
               </TabsTrigger>
               <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Analytics
@@ -383,6 +388,10 @@ const Dashboard = () => {
             <PredictiveDialingDashboard />
           </TabsContent>
 
+          <TabsContent value="retell">
+            <RetellAIManager />
+          </TabsContent>
+
           <TabsContent value="analytics">
             <CallAnalytics numbers={numbers} />
           </TabsContent>
@@ -412,3 +421,5 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
+</edits_to_apply>
