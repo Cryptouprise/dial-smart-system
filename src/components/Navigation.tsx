@@ -136,7 +136,7 @@ const Navigation = () => {
               </span>
             </Link>
             
-            <div className="hidden md:flex space-x-1">
+            <div className="flex space-x-1">
               {navItems.map((item) => (
                 <NavLink key={item.path} item={item} />
               ))}
