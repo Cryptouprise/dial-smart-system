@@ -400,5 +400,3 @@ const EnhancedLeadManager = () => {
 };
 
 export default EnhancedLeadManager;
-
-</initial_code>
