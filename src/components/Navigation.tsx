@@ -1,47 +1,98 @@
 
 import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Settings, Home, Key, Users, HelpCircle } from 'lucide-react';
-import ThemeToggle from './ThemeToggle';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  Home, 
+  Settings, 
+  Key, 
+  HelpCircle, 
+  LogOut, 
+  BarChart3,
+  Brain
+} from 'lucide-react';
 
 const Navigation = () => {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/auth');
+      toast({
+        title: "Signed out successfully",
+        description: "You have been logged out of your account.",
+      });
+    } catch (error) {
+      console.error('Error signing out:', error);
+      toast({
+        title: "Error signing out",
+        description: "There was a problem signing you out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: Home },
-    { path: '/settings', label: 'Settings', icon: Settings },
-    { path: '/api-keys', label: 'API Keys', icon: Key },
-    { path: '/help', label: 'Help', icon: HelpCircle },
+    { path: '/', icon: Home, label: 'Dashboard' },
+    { path: '/analytics', icon: Brain, label: 'Analytics & Pipeline' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/api-keys', icon: Key, label: 'API Keys' },
+    { path: '/help', icon: HelpCircle, label: 'Help' },
   ];
 
   return (
-    <nav className="bg-background border-b border-border px-3 sm:px-6 py-2 sm:py-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2 sm:space-x-8 min-w-0 flex-1">
-          <h1 className="text-lg sm:text-xl font-bold text-foreground whitespace-nowrap">📞 Smart Dialer</h1>
-          
-          {/* Mobile scrollable navigation */}
-          <div className="flex-1 overflow-x-auto sm:overflow-visible">
-            <div className="flex space-x-2 sm:space-x-4 min-w-max pb-2 sm:pb-0">
-              {navItems.map(({ path, label, icon: Icon }) => (
-                <Button
-                  key={path}
-                  variant={location.pathname === path ? "default" : "ghost"}
-                  onClick={() => navigate(path)}
-                  className="flex items-center space-x-1 sm:space-x-2 whitespace-nowrap text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 h-8 sm:h-auto"
-                >
-                  <Icon size={14} className="sm:w-4 sm:h-4" />
-                  <span>{label}</span>
-                </Button>
-              ))}
+    <nav className="bg-white dark:bg-gray-800 shadow-sm border-b">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          <div className="flex items-center space-x-8">
+            <Link to="/" className="flex items-center space-x-2">
+              <BarChart3 className="h-8 w-8 text-blue-600" />
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
+                CallCenter AI
+              </span>
+            </Link>
+            
+            <div className="hidden md:flex space-x-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
+                
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
             </div>
           </div>
-        </div>
-        
-        <div className="ml-2 sm:ml-4 flex-shrink-0">
-          <ThemeToggle />
+
+          <div className="flex items-center space-x-4">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="flex items-center space-x-2"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </Button>
+          </div>
         </div>
       </div>
     </nav>

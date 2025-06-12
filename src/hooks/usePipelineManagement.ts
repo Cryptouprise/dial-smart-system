@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -33,24 +33,41 @@ interface LeadPipelinePosition {
   lead?: any;
 }
 
+interface LoadingStates {
+  dispositions: boolean;
+  pipelineBoards: boolean;
+  leadPositions: boolean;
+  initializing: boolean;
+}
+
 export const usePipelineManagement = () => {
   const [dispositions, setDispositions] = useState<Disposition[]>([]);
   const [pipelineBoards, setPipelineBoards] = useState<PipelineBoard[]>([]);
   const [leadPositions, setLeadPositions] = useState<LeadPipelinePosition[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadingStates, setLoadingStates] = useState<LoadingStates>({
+    dispositions: false,
+    pipelineBoards: false,
+    leadPositions: false,
+    initializing: true
+  });
   const { toast } = useToast();
 
   const callPipelineFunction = async (action: string, params: any = {}) => {
-    const { data, error } = await supabase.functions.invoke('pipeline-management', {
-      body: { action, ...params }
-    });
+    try {
+      const { data, error } = await supabase.functions.invoke('pipeline-management', {
+        body: { action, ...params }
+      });
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error(`Pipeline function error for action ${action}:`, error);
+      throw error;
+    }
   };
 
   // Initialize default dispositions if none exist
-  const initializeDefaultDispositions = async () => {
+  const initializeDefaultDispositions = useCallback(async () => {
     try {
       const result = await callPipelineFunction('check_dispositions_exist');
       
@@ -73,39 +90,63 @@ export const usePipelineManagement = () => {
         await callPipelineFunction('insert_default_dispositions', { 
           dispositions: dispositionsWithUserId 
         });
-        await fetchDispositions();
       }
     } catch (error) {
       console.error('Error initializing dispositions:', error);
+      // Don't throw here as this is initialization
     }
-  };
+  }, []);
 
-  const fetchDispositions = async () => {
+  const fetchDispositions = useCallback(async () => {
+    setLoadingStates(prev => ({ ...prev, dispositions: true }));
     try {
       const result = await callPipelineFunction('get_dispositions');
       setDispositions(result.data || []);
     } catch (error) {
       console.error('Error fetching dispositions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch dispositions",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingStates(prev => ({ ...prev, dispositions: false }));
     }
-  };
+  }, [toast]);
 
-  const fetchPipelineBoards = async () => {
+  const fetchPipelineBoards = useCallback(async () => {
+    setLoadingStates(prev => ({ ...prev, pipelineBoards: true }));
     try {
       const result = await callPipelineFunction('get_pipeline_boards');
       setPipelineBoards(result.data || []);
     } catch (error) {
       console.error('Error fetching pipeline boards:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch pipeline boards",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingStates(prev => ({ ...prev, pipelineBoards: false }));
     }
-  };
+  }, [toast]);
 
-  const fetchLeadPositions = async () => {
+  const fetchLeadPositions = useCallback(async () => {
+    setLoadingStates(prev => ({ ...prev, leadPositions: true }));
     try {
       const result = await callPipelineFunction('get_lead_positions');
       setLeadPositions(result.data || []);
     } catch (error) {
       console.error('Error fetching lead positions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch lead positions",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingStates(prev => ({ ...prev, leadPositions: false }));
     }
-  };
+  }, [toast]);
 
   const createDisposition = async (disposition: Omit<Disposition, 'id'>) => {
     try {
@@ -127,6 +168,7 @@ export const usePipelineManagement = () => {
         description: "Failed to create disposition",
         variant: "destructive",
       });
+      throw error;
     }
   };
 
@@ -150,6 +192,7 @@ export const usePipelineManagement = () => {
         description: "Failed to create pipeline board",
         variant: "destructive",
       });
+      throw error;
     }
   };
 
@@ -175,29 +218,46 @@ export const usePipelineManagement = () => {
         description: "Failed to move lead",
         variant: "destructive",
       });
+      throw error;
     }
   };
 
-  const initializeData = async () => {
-    setIsLoading(true);
-    await initializeDefaultDispositions();
-    await Promise.all([
-      fetchDispositions(),
-      fetchPipelineBoards(),
-      fetchLeadPositions()
-    ]);
-    setIsLoading(false);
-  };
+  const initializeData = useCallback(async () => {
+    setLoadingStates(prev => ({ ...prev, initializing: true }));
+    try {
+      await initializeDefaultDispositions();
+      await Promise.all([
+        fetchDispositions(),
+        fetchPipelineBoards(),
+        fetchLeadPositions()
+      ]);
+    } catch (error) {
+      console.error('Error initializing pipeline data:', error);
+      toast({
+        title: "Initialization Error",
+        description: "Failed to load pipeline data. Please refresh the page.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingStates(prev => ({ ...prev, initializing: false }));
+    }
+  }, [initializeDefaultDispositions, fetchDispositions, fetchPipelineBoards, fetchLeadPositions, toast]);
 
   useEffect(() => {
     initializeData();
-  }, []);
+  }, [initializeData]);
+
+  const isLoading = loadingStates.initializing || 
+                   loadingStates.dispositions || 
+                   loadingStates.pipelineBoards || 
+                   loadingStates.leadPositions;
 
   return {
     dispositions,
     pipelineBoards,
     leadPositions,
     isLoading,
+    loadingStates,
     createDisposition,
     createPipelineBoard,
     moveLeadToPipeline,
