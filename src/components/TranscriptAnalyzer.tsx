@@ -7,29 +7,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useTranscriptAnalysis } from '@/hooks/useTranscriptAnalysis';
 import TranscriptAnalyzerErrorBoundary from '@/components/TranscriptAnalyzer/ErrorBoundary';
-import { Brain, Loader2, FileText, Target, TrendingUp, AlertCircle, Info } from 'lucide-react';
+import { Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 const TranscriptAnalyzer = () => {
-  const [callId, setCallId] = useState('');
   const [transcript, setTranscript] = useState('');
-  const [openaiApiKey, setOpenaiApiKey] = useState(() => {
-    return localStorage.getItem('openai_api_key') || '';
-  });
-  
+  const [callId, setCallId] = useState('');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const { analyzeTranscript, isAnalyzing, analysis } = useTranscriptAnalysis();
+  const { toast } = useToast();
 
   const handleAnalyze = async () => {
-    if (!openaiApiKey.trim()) {
+    if (!transcript.trim() || !callId.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both a call ID and transcript",
+        variant: "destructive",
+      });
       return;
     }
-    
-    if (openaiApiKey) {
-      localStorage.setItem('openai_api_key', openaiApiKey);
-    }
-    
+
     await analyzeTranscript({
       callId: callId.trim(),
       transcript: transcript.trim(),
@@ -37,72 +36,51 @@ const TranscriptAnalyzer = () => {
     });
   };
 
-  const getSentimentColor = (sentiment: string) => {
-    switch (sentiment) {
-      case 'positive': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-      case 'negative': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type === 'text/plain') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setTranscript(content);
+      };
+      reader.readAsText(file);
+    } else {
+      toast({
+        title: "Invalid File",
+        description: "Please upload a .txt file",
+        variant: "destructive",
+      });
     }
   };
-
-  const getDispositionColor = (disposition: string) => {
-    const colors: Record<string, string> = {
-      'Interested': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
-      'Appointment Booked': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100',
-      'Callback Requested': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100',
-      'Not Interested': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
-      'Wrong Number': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100',
-      'Voicemail': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100',
-      'Do Not Call': 'bg-red-200 text-red-900 dark:bg-red-800 dark:text-red-100'
-    };
-    return colors[disposition] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
-  };
-
-  const isFormValid = callId.trim() && transcript.trim() && openaiApiKey.trim();
 
   return (
     <TranscriptAnalyzerErrorBoundary>
       <div className="space-y-6">
+        {/* Input Section */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Brain className="h-5 w-5" />
-              AI Transcript Analyzer
+              AI Transcript Analysis
             </CardTitle>
             <CardDescription>
-              Automatically analyze call transcripts and categorize leads using AI
+              Upload or paste a call transcript for AI-powered analysis and disposition recommendations
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!openaiApiKey && (
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  You'll need an OpenAI API key to use this feature. Get one at{' '}
-                  <a 
-                    href="https://platform.openai.com/api-keys" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="underline text-blue-600 hover:text-blue-800"
-                  >
-                    platform.openai.com
-                  </a>
-                </AlertDescription>
-              </Alert>
-            )}
-            
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="callId">Call ID (Optional)</Label>
+                <Label htmlFor="callId">Call ID</Label>
                 <Input
                   id="callId"
-                  placeholder="Enter call ID to update existing record"
+                  placeholder="Enter call ID..."
                   value={callId}
                   onChange={(e) => setCallId(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="openaiKey">OpenAI API Key *</Label>
+                <Label htmlFor="openaiKey">OpenAI API Key (Optional)</Label>
                 <Input
                   id="openaiKey"
                   type="password"
@@ -114,103 +92,155 @@ const TranscriptAnalyzer = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="transcript">Call Transcript *</Label>
+              <Label htmlFor="transcript">Call Transcript</Label>
               <Textarea
                 id="transcript"
-                placeholder="Paste the call transcript here..."
-                rows={8}
+                placeholder="Paste the call transcript here or upload a file..."
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
-                className="resize-none"
+                rows={8}
               />
             </div>
 
-            <Button 
-              onClick={handleAnalyze}
-              disabled={!isFormValid || isAnalyzing}
-              className="w-full"
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing Transcript...
-                </>
-              ) : (
-                <>
-                  <Brain className="mr-2 h-4 w-4" />
-                  Analyze Transcript
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept=".txt"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="file-upload"
+                />
+                <Label htmlFor="file-upload" className="cursor-pointer">
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    Upload .txt File
+                  </Button>
+                </Label>
+              </div>
+              
+              <Button 
+                onClick={handleAnalyze}
+                disabled={isAnalyzing || !transcript.trim() || !callId.trim()}
+                className="flex items-center gap-2"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Analyze Transcript
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Results Section */}
         {analysis && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
+                <TrendingUp className="h-5 w-5" />
                 Analysis Results
               </CardTitle>
+              <CardDescription>
+                AI-generated insights and recommendations
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Disposition and Confidence */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium">Disposition</Label>
-                  <Badge className={getDispositionColor(analysis.disposition)}>
-                    {analysis.disposition}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-right">
-                  <Label className="text-sm font-medium">Confidence</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Recommended Disposition</Label>
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-green-600" />
-                    <span className="font-semibold">{(analysis.confidence * 100).toFixed(1)}%</span>
+                    <Badge variant="default" className="text-lg px-3 py-1">
+                      {analysis.disposition}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Confidence Score</Label>
+                  <div className="flex items-center gap-2">
+                    <Badge 
+                      variant={analysis.confidence > 0.8 ? "default" : analysis.confidence > 0.6 ? "secondary" : "destructive"}
+                      className="text-lg px-3 py-1"
+                    >
+                      {Math.round(analysis.confidence * 100)}%
+                    </Badge>
                   </div>
                 </div>
               </div>
 
               <Separator />
 
-              {/* Sentiment */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Sentiment</Label>
-                <Badge className={getSentimentColor(analysis.sentiment)}>
-                  {analysis.sentiment.toUpperCase()}
-                </Badge>
-              </div>
-
               {/* Reasoning */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">AI Reasoning</Label>
-                <div className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                <Label className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Reasoning
+                </Label>
+                <p className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
                   {analysis.reasoning}
-                </div>
+                </p>
               </div>
 
               {/* Key Points */}
+              {analysis.key_points && analysis.key_points.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Key Points</Label>
+                  <ul className="space-y-1">
+                    {analysis.key_points.map((point, index) => (
+                      <li key={index} className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2">
+                        <span className="text-blue-500 mt-1">•</span>
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Next Action */}
+              {analysis.next_action && (
+                <div className="space-y-2">
+                  <Label>Recommended Next Action</Label>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                    {analysis.next_action}
+                  </p>
+                </div>
+              )}
+
+              {/* Sentiment */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Key Conversation Points</Label>
-                <ul className="space-y-1">
-                  {analysis.key_points.map((point, index) => (
-                    <li key={index} className="flex items-start gap-2 text-sm">
-                      <Target className="h-3 w-3 mt-1 text-blue-500 flex-shrink-0" />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
+                <Label>Sentiment Analysis</Label>
+                <Badge 
+                  variant={
+                    analysis.sentiment === 'positive' ? "default" : 
+                    analysis.sentiment === 'neutral' ? "secondary" : 
+                    "destructive"
+                  }
+                  className="capitalize"
+                >
+                  {analysis.sentiment}
+                </Badge>
               </div>
 
               {/* Pain Points */}
               {analysis.pain_points && analysis.pain_points.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Identified Pain Points</Label>
+                  <Label className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Pain Points Identified
+                  </Label>
                   <ul className="space-y-1">
-                    {analysis.pain_points.map((pain, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm">
-                        <AlertCircle className="h-3 w-3 mt-1 text-orange-500 flex-shrink-0" />
-                        <span>{pain}</span>
+                    {analysis.pain_points.map((point, index) => (
+                      <li key={index} className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2">
+                        <span className="text-red-500 mt-1">⚠</span>
+                        {point}
                       </li>
                     ))}
                   </ul>
@@ -220,25 +250,30 @@ const TranscriptAnalyzer = () => {
               {/* Objections */}
               {analysis.objections && analysis.objections.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Objections Raised</Label>
+                  <Label>Objections Raised</Label>
                   <ul className="space-y-1">
                     {analysis.objections.map((objection, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm">
-                        <AlertCircle className="h-3 w-3 mt-1 text-red-500 flex-shrink-0" />
-                        <span>{objection}</span>
+                      <li key={index} className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2">
+                        <span className="text-orange-500 mt-1">!</span>
+                        {objection}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
 
-              {/* Next Action */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Recommended Next Action</Label>
-                <div className="text-sm bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-100 p-3 rounded-lg font-medium">
-                  {analysis.next_action}
-                </div>
-              </div>
+        {/* Empty State */}
+        {!analysis && !isAnalyzing && (
+          <Card>
+            <CardContent className="text-center py-12">
+              <Brain className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-medium mb-2">Ready for Analysis</h3>
+              <p className="text-gray-500">
+                Upload a transcript or paste one above to get AI-powered insights
+              </p>
             </CardContent>
           </Card>
         )}
