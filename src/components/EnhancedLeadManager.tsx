@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Upload, Users, Sync, FileText, Database, Link } from 'lucide-react';
+import { Upload, Users, RefreshCw, FileText, Database, Link } from 'lucide-react';
 
 interface Lead {
   id: string;
@@ -175,7 +174,7 @@ const EnhancedLeadManager = () => {
         
         {ghlConnected && (
           <Button onClick={handleGHLSync} variant="outline">
-            <Sync className="h-4 w-4 mr-2" />
+            <RefreshCw className="h-4 w-4 mr-2" />
             Sync from GHL
           </Button>
         )}
@@ -401,3 +400,5 @@ const EnhancedLeadManager = () => {
 };
 
 export default EnhancedLeadManager;
+
+</initial_code>

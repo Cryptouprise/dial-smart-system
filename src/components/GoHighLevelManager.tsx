@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Link, Settings, Sync, Users, ArrowLeftRight, CheckCircle, XCircle, RefreshCw, Zap } from 'lucide-react';
+import { Link, Settings, RefreshCw, Users, ArrowLeftRight, CheckCircle, XCircle, RefreshCw as RefreshIcon, Zap } from 'lucide-react';
 
 const GoHighLevelManager = () => {
   const [credentials, setCredentials] = useState({
@@ -52,7 +51,11 @@ const GoHighLevelManager = () => {
   const loadSettings = async () => {
     const savedCreds = getGHLCredentials();
     if (savedCreds) {
-      setCredentials(savedCreds);
+      setCredentials({
+        apiKey: savedCreds.apiKey,
+        locationId: savedCreds.locationId,
+        webhookKey: savedCreds.webhookKey || ''
+      });
       // Test connection with saved credentials
       const result = await testConnection(savedCreds);
       if (result) {
