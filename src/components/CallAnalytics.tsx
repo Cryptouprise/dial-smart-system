@@ -9,6 +9,9 @@ interface CallAnalyticsProps {
 }
 
 const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
+  // Ensure numbers is always an array
+  const safeNumbers = Array.isArray(numbers) ? numbers : [];
+
   // Generate sample analytics data based on numbers
   const callVolumeData = Array.from({ length: 7 }, (_, i) => ({
     day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
@@ -17,18 +20,19 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
   }));
 
   const numberStatusData = [
-    { name: 'Active', value: numbers.filter(n => n.status === 'active').length, color: '#10B981' },
-    { name: 'Quarantined', value: numbers.filter(n => n.status === 'quarantined').length, color: '#EF4444' },
-    { name: 'Cooldown', value: numbers.filter(n => n.status === 'cooldown').length, color: '#F59E0B' }
+    { name: 'Active', value: safeNumbers.filter(n => n?.status === 'active').length, color: '#10B981' },
+    { name: 'Quarantined', value: safeNumbers.filter(n => n?.status === 'quarantined').length, color: '#EF4444' },
+    { name: 'Cooldown', value: safeNumbers.filter(n => n?.status === 'cooldown').length, color: '#F59E0B' }
   ];
 
-  const topPerformers = numbers
-    .sort((a, b) => b.daily_calls - a.daily_calls)
+  const topPerformers = safeNumbers
+    .filter(n => n?.number && n?.daily_calls !== undefined && n?.status) // Filter out invalid entries
+    .sort((a, b) => (b.daily_calls || 0) - (a.daily_calls || 0))
     .slice(0, 5)
     .map(n => ({
-      number: n.number.slice(-4),
-      calls: n.daily_calls,
-      status: n.status
+      number: n.number ? n.number.slice(-4) : 'N/A',
+      calls: n.daily_calls || 0,
+      status: n.status || 'unknown'
     }));
 
   // Rotation history data
@@ -38,9 +42,9 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
     rotations: Math.floor(Math.random() * 5) + 1
   }));
 
-  const totalCalls = numbers.reduce((sum, n) => sum + n.daily_calls, 0);
-  const avgCallsPerNumber = totalCalls / (numbers.length || 1);
-  const highVolumeNumbers = numbers.filter(n => n.daily_calls > 40).length;
+  const totalCalls = safeNumbers.reduce((sum, n) => sum + (n?.daily_calls || 0), 0);
+  const avgCallsPerNumber = safeNumbers.length > 0 ? totalCalls / safeNumbers.length : 0;
+  const highVolumeNumbers = safeNumbers.filter(n => (n?.daily_calls || 0) > 40).length;
 
   return (
     <div className="space-y-6">
@@ -87,7 +91,7 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Active Numbers</p>
-                <p className="text-2xl font-bold text-purple-600">{numbers.filter(n => n.status === 'active').length}</p>
+                <p className="text-2xl font-bold text-purple-600">{safeNumbers.filter(n => n?.status === 'active').length}</p>
               </div>
               <RotateCw className="h-8 w-8 text-purple-500" />
             </div>
