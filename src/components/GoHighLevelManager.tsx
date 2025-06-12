@@ -251,7 +251,7 @@ const GoHighLevelManager = () => {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Sync className="h-5 w-5" />
+                    <RefreshCw className="h-5 w-5" />
                     Lead Synchronization
                   </CardTitle>
                   <CardDescription>
@@ -446,7 +446,7 @@ const GoHighLevelManager = () => {
                       <p className="text-sm text-gray-600">Syncing...</p>
                     </div>
                     <div className="text-center p-4 border rounded-lg">
-                      <Sync className="h-8 w-8 text-purple-500 mx-auto mb-2" />
+                      <RefreshCw className="h-8 w-8 text-purple-500 mx-auto mb-2" />
                       <p className="font-medium">Sync Rate</p>
                       <p className="text-sm text-gray-600">Real-time</p>
                     </div>
