@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,9 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Link, Settings, RefreshCw, Users, ArrowLeftRight, CheckCircle, XCircle, RefreshCw as RefreshIcon, Zap } from 'lucide-react';
+import { Link, Settings, RefreshCw, Users, ArrowLeftRight, CheckCircle, XCircle, RefreshCw as RefreshIcon, Zap, Plus, Search, Eye, Edit, Phone } from 'lucide-react';
 
 const GoHighLevelManager = () => {
   const [credentials, setCredentials] = useState({
@@ -19,6 +21,15 @@ const GoHighLevelManager = () => {
   });
   const [isConnected, setIsConnected] = useState(false);
   const [connectionData, setConnectionData] = useState<any>(null);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedContact, setSelectedContact] = useState<any>(null);
+  const [newOpportunity, setNewOpportunity] = useState({
+    name: '',
+    value: '',
+    pipelineId: '',
+    stageId: ''
+  });
   const [syncSettings, setSyncSettings] = useState({
     autoSyncNewLeads: false,
     autoUpdateAfterCalls: true,
@@ -41,7 +52,9 @@ const GoHighLevelManager = () => {
     saveGHLCredentials,
     getGHLCredentials,
     syncContacts,
-    getPipelines
+    getPipelines,
+    getContacts,
+    createOpportunity
   } = useGoHighLevel();
 
   useEffect(() => {
@@ -62,6 +75,7 @@ const GoHighLevelManager = () => {
         setIsConnected(true);
         setConnectionData(result);
         loadPipelines();
+        loadContacts();
       }
     }
 
@@ -92,6 +106,7 @@ const GoHighLevelManager = () => {
       setIsConnected(true);
       setConnectionData(result);
       loadPipelines();
+      loadContacts();
     }
   };
 
@@ -99,6 +114,13 @@ const GoHighLevelManager = () => {
     const pipelineData = await getPipelines();
     if (pipelineData) {
       setPipelines(pipelineData);
+    }
+  };
+
+  const loadContacts = async () => {
+    const contactData = await getContacts({ search: searchTerm });
+    if (contactData) {
+      setContacts(contactData);
     }
   };
 
@@ -113,6 +135,30 @@ const GoHighLevelManager = () => {
       };
       setSyncStats(newStats);
       localStorage.setItem('ghl-sync-stats', JSON.stringify(newStats));
+      loadContacts(); // Refresh contacts after sync
+    }
+  };
+
+  const handleCreateOpportunity = async () => {
+    if (!selectedContact || !newOpportunity.name || !newOpportunity.pipelineId) {
+      toast({
+        title: "Error",
+        description: "Please select a contact and fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const result = await createOpportunity(selectedContact.id, {
+      name: newOpportunity.name,
+      value: parseFloat(newOpportunity.value) || 0,
+      pipelineId: newOpportunity.pipelineId,
+      stageId: newOpportunity.stageId
+    });
+
+    if (result) {
+      setNewOpportunity({ name: '', value: '', pipelineId: '', stageId: '' });
+      setSelectedContact(null);
     }
   };
 
@@ -128,6 +174,7 @@ const GoHighLevelManager = () => {
     setIsConnected(false);
     setConnectionData(null);
     setCredentials({ apiKey: '', locationId: '', webhookKey: '' });
+    setContacts([]);
     const creds = JSON.parse(localStorage.getItem('api-credentials') || '[]');
     const filtered = creds.filter((c: any) => c.service !== 'gohighlevel');
     localStorage.setItem('api-credentials', JSON.stringify(filtered));
@@ -136,6 +183,14 @@ const GoHighLevelManager = () => {
       description: "Go High Level connection has been removed",
     });
   };
+
+  const filteredContacts = contacts.filter(contact => 
+    !searchTerm || 
+    (contact.firstName && contact.firstName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (contact.lastName && contact.lastName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (contact.email && contact.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (contact.phone && contact.phone.includes(searchTerm))
+  );
 
   return (
     <div className="space-y-6">
@@ -238,12 +293,185 @@ const GoHighLevelManager = () => {
       </Card>
 
       {isConnected && (
-        <Tabs defaultValue="sync" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="sync">Lead Sync</TabsTrigger>
+        <Tabs defaultValue="contacts" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+            <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
+            <TabsTrigger value="sync">Sync & Import</TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="contacts">
+            <div className="space-y-4">
+              {/* Search and Actions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Contact Management
+                  </CardTitle>
+                  <CardDescription>
+                    Search and manage your Go High Level contacts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="Search contacts by name, email, or phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    <Button onClick={loadContacts} disabled={isLoading}>
+                      <Search className="h-4 w-4 mr-2" />
+                      Search
+                    </Button>
+                  </div>
+
+                  {/* Contacts List */}
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {filteredContacts.length > 0 ? (
+                      filteredContacts.map((contact) => (
+                        <div 
+                          key={contact.id} 
+                          className={`p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
+                            selectedContact?.id === contact.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                          }`}
+                          onClick={() => setSelectedContact(contact)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">
+                                {contact.firstName} {contact.lastName}
+                              </p>
+                              <p className="text-sm text-gray-600">{contact.email}</p>
+                              <p className="text-sm text-gray-500">{contact.phone}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Badge variant="outline">
+                                {contact.companyName || 'No Company'}
+                              </Badge>
+                              {selectedContact?.id === contact.id && (
+                                <Badge variant="default">Selected</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        {isLoading ? 'Loading contacts...' : 'No contacts found'}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="opportunities">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="h-5 w-5" />
+                    Create Opportunity
+                  </CardTitle>
+                  <CardDescription>
+                    Create new opportunities for your contacts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedContact ? (
+                    <>
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="font-medium">Selected Contact:</p>
+                        <p className="text-sm">{selectedContact.firstName} {selectedContact.lastName}</p>
+                        <p className="text-sm text-gray-600">{selectedContact.email}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="oppName">Opportunity Name</Label>
+                          <Input
+                            id="oppName"
+                            placeholder="e.g., Website Design Project"
+                            value={newOpportunity.name}
+                            onChange={(e) => setNewOpportunity(prev => ({ ...prev, name: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="oppValue">Value ($)</Label>
+                          <Input
+                            id="oppValue"
+                            type="number"
+                            placeholder="5000"
+                            value={newOpportunity.value}
+                            onChange={(e) => setNewOpportunity(prev => ({ ...prev, value: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Pipeline</Label>
+                          <Select 
+                            value={newOpportunity.pipelineId}
+                            onValueChange={(value) => setNewOpportunity(prev => ({ ...prev, pipelineId: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select pipeline" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pipelines.map((pipeline) => (
+                                <SelectItem key={pipeline.id} value={pipeline.id}>
+                                  {pipeline.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Stage</Label>
+                          <Select 
+                            value={newOpportunity.stageId}
+                            onValueChange={(value) => setNewOpportunity(prev => ({ ...prev, stageId: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select stage" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pipelines
+                                .find(p => p.id === newOpportunity.pipelineId)?.stages?.map((stage: any) => (
+                                <SelectItem key={stage.id} value={stage.id}>
+                                  {stage.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <Button 
+                        onClick={handleCreateOpportunity}
+                        disabled={isLoading}
+                        className="w-full"
+                      >
+                        {isLoading ? 'Creating...' : 'Create Opportunity'}
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                      <p>Select a contact from the Contacts tab to create an opportunity</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           <TabsContent value="sync">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -419,50 +647,6 @@ const GoHighLevelManager = () => {
                 <Button onClick={saveSyncSettings} className="w-full">
                   Save Automation Settings
                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="analytics">
-            <Card>
-              <CardHeader>
-                <CardTitle>Integration Analytics</CardTitle>
-                <CardDescription>
-                  Performance metrics and sync health monitoring
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {/* Integration Health */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center p-4 border rounded-lg">
-                      <CheckCircle className="h-8 w-8 text-green-500 mx-auto mb-2" />
-                      <p className="font-medium">Connection Status</p>
-                      <p className="text-sm text-green-600">Healthy</p>
-                    </div>
-                    <div className="text-center p-4 border rounded-lg">
-                      <Users className="h-8 w-8 text-blue-500 mx-auto mb-2" />
-                      <p className="font-medium">Total Contacts</p>
-                      <p className="text-sm text-gray-600">Syncing...</p>
-                    </div>
-                    <div className="text-center p-4 border rounded-lg">
-                      <RefreshCw className="h-8 w-8 text-purple-500 mx-auto mb-2" />
-                      <p className="font-medium">Sync Rate</p>
-                      <p className="text-sm text-gray-600">Real-time</p>
-                    </div>
-                  </div>
-
-                  {/* Webhook Status */}
-                  <div className="p-4 border rounded-lg bg-yellow-50">
-                    <h3 className="font-medium mb-2">Webhook Configuration</h3>
-                    <p className="text-sm text-gray-600 mb-2">
-                      Set up webhooks in GHL to enable real-time sync
-                    </p>
-                    <div className="text-xs bg-gray-100 p-2 rounded font-mono">
-                      https://your-domain.com/api/ghl-webhook
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
