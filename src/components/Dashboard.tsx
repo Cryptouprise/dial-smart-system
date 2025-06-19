@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 import CallAnalytics from '@/components/CallAnalytics';
 import NumberRotationManager from '@/components/NumberRotationManager';
@@ -17,6 +18,7 @@ import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard';
 import RetellAIManager from '@/components/RetellAIManager';
 import GoHighLevelManager from '@/components/GoHighLevelManager';
+import PipelineKanban from '@/components/PipelineKanban';
 
 interface PhoneNumber {
   id: string;
@@ -34,6 +36,9 @@ interface SystemHealth {
 }
 
 const Dashboard = () => {
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get('tab') || 'overview';
+  
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [areaCode, setAreaCode] = useState('');
   const [quantity, setQuantity] = useState('10');
@@ -127,13 +132,18 @@ const Dashboard = () => {
           </p>
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <div className="w-full overflow-x-auto pb-2">
             <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
               <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Overview
               </TabsTrigger>
+              <TabsTrigger value="pipeline" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Workflow className="h-4 w-4 mr-2" />
+                Pipeline
+              </TabsTrigger>
               <TabsTrigger value="predictive" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Target className="h-4 w-4 mr-2" />
                 Predictive Dialing
               </TabsTrigger>
               <TabsTrigger value="retell" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
@@ -387,6 +397,10 @@ const Dashboard = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="pipeline" className="space-y-6">
+            <PipelineKanban />
           </TabsContent>
 
           <TabsContent value="predictive">
