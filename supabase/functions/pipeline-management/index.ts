@@ -24,15 +24,27 @@ serve(async (req) => {
       }
     )
 
-    const authHeader = req.headers.get('Authorization')!
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user } } = await supabaseClient.auth.getUser(token)
-
-    if (!user) {
-      throw new Error('Unauthorized')
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      console.error('No authorization header provided')
+      throw new Error('Authorization header is required')
     }
 
+    const token = authHeader.replace('Bearer ', '')
+    console.log('Processing request with token:', token.substring(0, 20) + '...')
+    
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('Authentication failed:', authError)
+      throw new Error('Invalid authentication token')
+    }
+
+    console.log('Authenticated user:', user.id)
+
     const { action, ...params } = await req.json()
+    console.log('Processing action:', action)
 
     let result
 
@@ -68,17 +80,29 @@ serve(async (req) => {
         break
 
       case 'create_disposition':
+        console.log('Creating disposition with data:', params.disposition_data)
         result = await supabaseClient
           .from('dispositions')
-          .insert({ ...params.disposition_data, user_id: user.id })
+          .insert({ 
+            ...params.disposition_data, 
+            user_id: user.id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
           .select()
           .single()
         break
 
       case 'create_pipeline_board':
+        console.log('Creating pipeline board with data:', params.board_data)
         result = await supabaseClient
           .from('pipeline_boards')
-          .insert({ ...params.board_data, user_id: user.id })
+          .insert({ 
+            ...params.board_data, 
+            user_id: user.id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
           .select()
           .single()
         break
@@ -92,7 +116,9 @@ serve(async (req) => {
             pipeline_board_id: params.pipeline_board_id,
             position: params.position || 0,
             moved_by_user: params.moved_by_user || true,
-            notes: params.notes || ''
+            notes: params.notes || '',
+            moved_at: new Date().toISOString(),
+            created_at: new Date().toISOString()
           })
         break
 
@@ -107,19 +133,28 @@ serve(async (req) => {
         break
 
       case 'insert_default_dispositions':
+        const dispositionsWithUserId = params.dispositions.map(d => ({
+          ...d,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }))
+        
         result = await supabaseClient
           .from('dispositions')
-          .insert(params.dispositions)
+          .insert(dispositionsWithUserId)
         break
 
       default:
-        throw new Error('Invalid action')
+        throw new Error(`Invalid action: ${action}`)
     }
 
     if (result.error) {
+      console.error(`Database error for action ${action}:`, result.error)
       throw result.error
     }
 
+    console.log(`Successfully processed action ${action}`)
     return new Response(
       JSON.stringify({ success: true, data: result.data }),
       { 
