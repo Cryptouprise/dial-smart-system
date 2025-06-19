@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { usePipelineManagement } from '@/hooks/usePipelineManagement';
 import { Plus, Users, Phone, Calendar, ArrowRight, Filter } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -30,6 +30,8 @@ const PipelineKanban = () => {
   });
   
   const [filterDisposition, setFilterDisposition] = useState('all');
+  const [isCreating, setIsCreating] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // Group leads by pipeline board
   const groupedLeads = React.useMemo(() => {
@@ -47,19 +49,50 @@ const PipelineKanban = () => {
   }, [pipelineBoards, leadPositions, filterDisposition]);
 
   const handleCreateDisposition = async () => {
-    if (!newDisposition.name) return;
+    if (!newDisposition.name.trim()) {
+      return;
+    }
     
-    await createDisposition({
-      ...newDisposition,
-      auto_actions: []
-    });
-    
-    setNewDisposition({
-      name: '',
-      description: '',
-      color: '#3B82F6',
-      pipeline_stage: ''
-    });
+    setIsCreating(true);
+    try {
+      // Create the disposition first
+      const disposition = await createDisposition({
+        name: newDisposition.name,
+        description: newDisposition.description,
+        color: newDisposition.color,
+        pipeline_stage: newDisposition.pipeline_stage || newDisposition.name.toLowerCase().replace(/\s+/g, '_'),
+        auto_actions: []
+      });
+
+      // Automatically create a corresponding pipeline board
+      if (disposition) {
+        await createPipelineBoard({
+          name: newDisposition.name,
+          description: newDisposition.description,
+          disposition_id: disposition.id,
+          position: pipelineBoards.length,
+          settings: {
+            autoMove: false,
+            maxLeads: 100,
+            sortBy: 'created_at',
+            notifications: true
+          }
+        });
+      }
+      
+      // Reset form and close dialog
+      setNewDisposition({
+        name: '',
+        description: '',
+        color: '#3B82F6',
+        pipeline_stage: ''
+      });
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error('Error creating disposition:', error);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleDragEnd = async (result: any) => {
@@ -126,55 +159,83 @@ const PipelineKanban = () => {
             </select>
           </div>
           
-          <Dialog>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                New Disposition
+                New Pipeline Stage
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Create New Disposition</DialogTitle>
+                <DialogTitle>Create New Pipeline Stage</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Name</Label>
+                  <Label htmlFor="stage-name">Stage Name *</Label>
                   <Input
+                    id="stage-name"
                     placeholder="e.g., Qualified Lead"
                     value={newDisposition.name}
-                    onChange={(e) => setNewDisposition(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => setNewDisposition(prev => ({ 
+                      ...prev, 
+                      name: e.target.value,
+                      pipeline_stage: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                    }))}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Description</Label>
+                  <Label htmlFor="stage-description">Description</Label>
                   <Textarea
-                    placeholder="Describe this disposition..."
+                    id="stage-description"
+                    placeholder="Describe this pipeline stage..."
                     value={newDisposition.description}
                     onChange={(e) => setNewDisposition(prev => ({ ...prev, description: e.target.value }))}
+                    rows={3}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Color</Label>
-                    <Input
-                      type="color"
-                      value={newDisposition.color}
-                      onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
-                    />
+                    <Label htmlFor="stage-color">Color</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="stage-color"
+                        type="color"
+                        value={newDisposition.color}
+                        onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
+                        className="w-16 h-10 p-1 border rounded"
+                      />
+                      <Input
+                        value={newDisposition.color}
+                        onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
+                        placeholder="#3B82F6"
+                        className="flex-1"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Pipeline Stage</Label>
+                    <Label htmlFor="pipeline-stage">Stage Key</Label>
                     <Input
+                      id="pipeline-stage"
                       placeholder="e.g., qualified_leads"
                       value={newDisposition.pipeline_stage}
                       onChange={(e) => setNewDisposition(prev => ({ ...prev, pipeline_stage: e.target.value }))}
                     />
                   </div>
                 </div>
-                <Button onClick={handleCreateDisposition} className="w-full">
-                  Create Disposition
-                </Button>
+                <div className="flex justify-end gap-2 pt-4">
+                  <DialogClose asChild>
+                    <Button variant="outline" disabled={isCreating}>
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button 
+                    onClick={handleCreateDisposition} 
+                    disabled={!newDisposition.name.trim() || isCreating}
+                  >
+                    {isCreating ? 'Creating...' : 'Create Stage'}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
@@ -303,21 +364,14 @@ const PipelineKanban = () => {
         <Card>
           <CardContent className="text-center py-12">
             <ArrowRight className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-medium mb-2">No Pipeline Boards Yet</h3>
+            <h3 className="text-lg font-medium mb-2">No Pipeline Stages Yet</h3>
             <p className="text-gray-500 mb-4">
-              Create dispositions and pipeline boards to start organizing your leads
+              Create your first pipeline stage to start organizing your leads
             </p>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Your First Disposition
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                {/* Reuse the same dialog content from above */}
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setIsDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Your First Pipeline Stage
+            </Button>
           </CardContent>
         </Card>
       )}
