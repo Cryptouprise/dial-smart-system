@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
@@ -13,29 +12,53 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
   const { toast } = useToast();
   const { importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers } = useRetellAI();
   const [automationSettings, setAutomationSettings] = useState({
-    autoImportOnPurchase: false,
-    autoRemoveQuarantined: false,
-    autoAssignAgent: false,
+    enabled: true,
+    rotation_interval_hours: 24,
+    high_volume_threshold: 50,
+    auto_import_enabled: false,
+    auto_remove_quarantined: false,
     defaultAgentId: '',
-    terminationUri: '',
-    rotationEnabled: false,
-    rotationInterval: '24',
-    activePoolSize: '5'
+    terminationUri: ''
   });
 
   useEffect(() => {
-    // Load automation settings
-    const savedSettings = localStorage.getItem('automation-settings');
-    if (savedSettings) {
-      setAutomationSettings(JSON.parse(savedSettings));
-    }
+    loadSettingsFromDatabase();
   }, []);
+
+  const loadSettingsFromDatabase = async () => {
+    try {
+      const response = await supabase.functions.invoke('enhanced-rotation-manager', {
+        method: 'GET',
+        body: null,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (response.data?.settings) {
+        setAutomationSettings(prev => ({
+          ...prev,
+          ...response.data.settings,
+          // Keep localStorage values for UI-only settings
+          defaultAgentId: localStorage.getItem('defaultAgentId') || '',
+          terminationUri: localStorage.getItem('terminationUri') || ''
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load settings from database:', error);
+      // Fallback to localStorage
+      const savedSettings = localStorage.getItem('automation-settings');
+      if (savedSettings) {
+        setAutomationSettings(JSON.parse(savedSettings));
+      }
+    }
+  };
 
   // Auto-import newly purchased numbers
   useEffect(() => {
-    if (!automationSettings.autoImportOnPurchase || !automationSettings.terminationUri) return;
+    if (!automationSettings.auto_import_enabled || !automationSettings.terminationUri) return;
 
-    const checkForNewNumbers = () => {
+    const checkForNewNumbers = async () => {
       const importedNumbers = JSON.parse(localStorage.getItem('imported-numbers') || '[]');
       const newNumbers = numbers.filter(n => 
         n.status === 'active' && 
@@ -43,11 +66,11 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
         new Date(n.created_at) > new Date(Date.now() - 5 * 60 * 1000) // Created in last 5 minutes
       );
 
-      newNumbers.forEach(async (number) => {
+      for (const number of newNumbers) {
         console.log('Auto-importing new number:', number.number);
         const success = await importPhoneNumber(number.number, automationSettings.terminationUri);
         
-        if (success && automationSettings.autoAssignAgent && automationSettings.defaultAgentId) {
+        if (success && automationSettings.defaultAgentId) {
           await updatePhoneNumber(number.number, automationSettings.defaultAgentId);
         }
 
@@ -55,12 +78,26 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
           const updatedImported = [...importedNumbers, number.id];
           localStorage.setItem('imported-numbers', JSON.stringify(updatedImported));
           
+          // Log to database
+          await supabase.functions.invoke('enhanced-rotation-manager', {
+            method: 'POST',
+            body: {
+              action: 'log_event',
+              event: {
+                action_type: 'import',
+                phone_number: number.number,
+                reason: 'Auto-import on purchase',
+                metadata: { trigger: 'automatic', agent_id: automationSettings.defaultAgentId }
+              }
+            }
+          });
+          
           toast({
             title: "Auto-Import Complete",
             description: `${number.number} automatically imported to Retell AI`,
           });
         }
-      });
+      }
     };
 
     const interval = setInterval(checkForNewNumbers, 30000); // Check every 30 seconds
@@ -69,13 +106,13 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
 
   // Auto-remove quarantined numbers from Retell
   useEffect(() => {
-    if (!automationSettings.autoRemoveQuarantined) return;
+    if (!automationSettings.auto_remove_quarantined) return;
 
-    const checkQuarantinedNumbers = () => {
+    const checkQuarantinedNumbers = async () => {
       const quarantinedNumbers = numbers.filter(n => n.status === 'quarantined');
       const removedNumbers = JSON.parse(localStorage.getItem('removed-quarantined') || '[]');
 
-      quarantinedNumbers.forEach(async (number) => {
+      for (const number of quarantinedNumbers) {
         if (!removedNumbers.includes(number.id)) {
           console.log('Auto-removing quarantined number:', number.number);
           const success = await deletePhoneNumber(number.number);
@@ -84,38 +121,80 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
             const updatedRemoved = [...removedNumbers, number.id];
             localStorage.setItem('removed-quarantined', JSON.stringify(updatedRemoved));
             
+            // Log to database
+            await supabase.functions.invoke('enhanced-rotation-manager', {
+              method: 'POST',
+              body: {
+                action: 'log_event',
+                event: {
+                  action_type: 'remove',
+                  phone_number: number.number,
+                  reason: 'Auto-removal due to quarantine',
+                  metadata: { trigger: 'automatic', previous_status: 'quarantined' }
+                }
+              }
+            });
+            
             toast({
               title: "Auto-Removal Complete",
               description: `${number.number} removed from Retell AI due to quarantine`,
             });
           }
         }
-      });
+      }
     };
 
     const interval = setInterval(checkQuarantinedNumbers, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [numbers, automationSettings, deletePhoneNumber, toast]);
 
-  // Automatic rotation scheduler - NOW ACTIVE
+  // Automatic rotation scheduler - Enhanced with database backend
   useEffect(() => {
-    if (!automationSettings.rotationEnabled) return;
+    if (!automationSettings.enabled) return;
 
     const executeRotation = async () => {
-      console.log('Executing automatic rotation...');
+      console.log('Executing automatic rotation via backend...');
       
       try {
-        // Get current Retell numbers
+        const response = await supabase.functions.invoke('enhanced-rotation-manager', {
+          method: 'POST',
+          body: {
+            action: 'execute_rotation'
+          }
+        });
+
+        if (response.data?.success) {
+          const rotatedCount = response.data.rotated_count;
+          
+          if (rotatedCount > 0) {
+            toast({
+              title: "Automatic Rotation Complete",
+              description: `Rotated ${rotatedCount} high-volume numbers`,
+            });
+
+            // Refresh numbers to show updated status
+            onRefreshNumbers();
+          }
+        }
+      } catch (error) {
+        console.error('Backend rotation execution error:', error);
+        
+        // Fallback to original rotation logic
+        await executeFallbackRotation();
+      }
+    };
+
+    const executeFallbackRotation = async () => {
+      try {
         const retellNumbers = await listPhoneNumbers();
         if (!retellNumbers) return;
 
         const activeNumbers = numbers.filter(n => n.status === 'active');
-        const highVolumeNumbers = activeNumbers.filter(n => n.daily_calls > 40);
+        const highVolumeNumbers = activeNumbers.filter(n => n.daily_calls > automationSettings.high_volume_threshold);
         
         if (highVolumeNumbers.length > 0) {
           let rotatedCount = 0;
           
-          // Remove high volume numbers and replace with fresh ones
           for (const number of highVolumeNumbers.slice(0, 2)) {
             const isInRetell = retellNumbers.find(r => r.phone_number === number.number);
             
@@ -123,7 +202,6 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
               await deletePhoneNumber(number.number);
               rotatedCount++;
               
-              // Find replacement number
               const replacement = activeNumbers.find(n => 
                 n.daily_calls < 10 && 
                 !highVolumeNumbers.includes(n) &&
@@ -148,34 +226,23 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
               description: `Rotated ${rotatedCount} high-volume numbers`,
             });
 
-            // Log rotation event
-            const rotationEvent = {
-              timestamp: new Date().toISOString(),
-              type: 'automatic',
-              numbersRotated: rotatedCount,
-              reason: `Scheduled rotation (${automationSettings.rotationInterval}h interval)`,
-              trigger: 'high_volume_detected'
-            };
-            
-            const history = JSON.parse(localStorage.getItem('rotation-history') || '[]');
-            localStorage.setItem('rotation-history', JSON.stringify([rotationEvent, ...history.slice(0, 49)]));
+            onRefreshNumbers();
           }
         }
       } catch (error) {
-        console.error('Rotation execution error:', error);
+        console.error('Fallback rotation execution error:', error);
       }
     };
 
-    const intervalHours = parseInt(automationSettings.rotationInterval);
+    const intervalHours = automationSettings.rotation_interval_hours;
     const interval = setInterval(executeRotation, intervalHours * 60 * 60 * 1000);
     
     // Also run once on startup if enabled
     setTimeout(executeRotation, 5000);
     
     return () => clearInterval(interval);
-  }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers, toast]);
+  }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers, toast, onRefreshNumbers]);
 
-  // This component doesn't render anything - it's just the automation engine
   return null;
 };
 

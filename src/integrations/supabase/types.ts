@@ -162,6 +162,63 @@ export type Database = {
         }
         Relationships: []
       }
+      dialing_queues: {
+        Row: {
+          attempts: number
+          campaign_id: string
+          created_at: string
+          id: string
+          lead_id: string
+          max_attempts: number
+          phone_number: string
+          priority: number
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          campaign_id: string
+          created_at?: string
+          id?: string
+          lead_id: string
+          max_attempts?: number
+          phone_number: string
+          priority?: number
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          lead_id?: string
+          max_attempts?: number
+          phone_number?: string
+          priority?: number
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_dialing_queues_campaign"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_dialing_queues_lead"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           company: string | null
@@ -213,6 +270,45 @@ export type Database = {
         }
         Relationships: []
       }
+      number_orders: {
+        Row: {
+          area_code: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          order_details: Json | null
+          provider: string
+          quantity: number
+          status: string
+          total_cost: number | null
+          user_id: string
+        }
+        Insert: {
+          area_code: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          order_details?: Json | null
+          provider?: string
+          quantity: number
+          status?: string
+          total_cost?: number | null
+          user_id: string
+        }
+        Update: {
+          area_code?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          order_details?: Json | null
+          provider?: string
+          quantity?: number
+          status?: string
+          total_cost?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       phone_numbers: {
         Row: {
           area_code: string
@@ -249,6 +345,138 @@ export type Database = {
           quarantine_until?: string | null
           status?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      rotation_history: {
+        Row: {
+          action_type: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          phone_number: string | null
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          phone_number?: string | null
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          phone_number?: string | null
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      rotation_settings: {
+        Row: {
+          auto_import_enabled: boolean
+          auto_remove_quarantined: boolean
+          created_at: string
+          enabled: boolean
+          high_volume_threshold: number
+          id: string
+          rotation_interval_hours: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_import_enabled?: boolean
+          auto_remove_quarantined?: boolean
+          created_at?: string
+          enabled?: boolean
+          high_volume_threshold?: number
+          id?: string
+          rotation_interval_hours?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_import_enabled?: boolean
+          auto_remove_quarantined?: boolean
+          created_at?: string
+          enabled?: boolean
+          high_volume_threshold?: number
+          id?: string
+          rotation_interval_hours?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      system_health_logs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          response_time_ms: number | null
+          service_name: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          response_time_ms?: number | null
+          service_name: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          response_time_ms?: number | null
+          service_name?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      yellowstone_settings: {
+        Row: {
+          api_key_encrypted: string | null
+          auto_sync_enabled: boolean
+          created_at: string
+          id: string
+          last_sync_at: string | null
+          sync_interval_minutes: number
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          api_key_encrypted?: string | null
+          auto_sync_enabled?: boolean
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          sync_interval_minutes?: number
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          api_key_encrypted?: string | null
+          auto_sync_enabled?: boolean
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          sync_interval_minutes?: number
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
         }
         Relationships: []
       }
