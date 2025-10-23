@@ -1,11 +1,11 @@
 
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Navigation from '@/components/Navigation';
 import TranscriptAnalyzer from '@/components/TranscriptAnalyzer';
 import PipelineKanban from '@/components/PipelineKanban';
-import { Brain, BarChart3, Workflow, TrendingUp } from 'lucide-react';
+import DialingAnalytics from '@/components/DialingAnalytics';
+import { Brain, BarChart3, Workflow } from 'lucide-react';
 
 const Analytics = () => {
   return (
@@ -46,26 +46,7 @@ const Analytics = () => {
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Analytics Reports
-                </CardTitle>
-                <CardDescription>
-                  Detailed performance metrics and insights
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <BarChart3 className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-lg font-medium mb-2">Reports Coming Soon</h3>
-                  <p className="text-gray-500">
-                    Advanced analytics and reporting features will be available soon
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <DialingAnalytics />
           </TabsContent>
         </Tabs>
       </div>

@@ -14,12 +14,15 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
-    "strict": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noImplicitAny": false,
-    "noFallthroughCasesInSwitch": false,
+    /* Linting - Gradually enable for better type safety */
+    "strict": false,                      // TODO: Enable once codebase is refactored
+    "noUnusedLocals": false,              // TODO: Clean up unused variables first
+    "noUnusedParameters": false,          // TODO: Clean up unused parameters first
+    "noImplicitAny": false,               // TODO: Add proper types throughout codebase
+    "noFallthroughCasesInSwitch": true,   // ENABLED: Catch bugs in switch statements
+    "forceConsistentCasingInFileNames": true,  // ENABLED: Prevent import casing issues
+    "noImplicitReturns": false,           // TODO: Ensure all code paths return values
+    "noUncheckedIndexedAccess": false,    // TODO: Add runtime checks for array access
 
     "baseUrl": ".",
     "paths": {

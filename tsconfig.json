@@ -9,11 +9,15 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "noImplicitAny": false,
-    "noUnusedParameters": false,
-    "skipLibCheck": true,
-    "allowJs": true,
-    "noUnusedLocals": false,
-    "strictNullChecks": false
+    /* Type Safety - These options are currently disabled for backward compatibility */
+    /* TODO: Gradually enable these as the codebase is refactored */
+    "noImplicitAny": false,          // Add explicit types instead of 'any'
+    "noUnusedParameters": false,     // Remove unused function parameters
+    "noUnusedLocals": false,         // Remove unused variables
+    "strictNullChecks": false,       // Handle null/undefined explicitly
+
+    /* Build Performance */
+    "skipLibCheck": true,            // Skip type checking of declaration files
+    "allowJs": true                  // Allow JavaScript files in the project
   }
 }
