@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Phone, PhoneOff, Play, Pause, SkipForward } from 'lucide-react';
+import { Phone, PhoneOff, Play, Pause, SkipForward, Zap } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
+import { useCallDispatcher } from '@/hooks/useCallDispatcher';
+import { useToast } from '@/hooks/use-toast';
 
 interface CallCenterProps {
   onStatsUpdate?: (stats: any) => void;
@@ -14,12 +16,15 @@ interface CallCenterProps {
 
 const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
   const { getCampaigns, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
+  const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
+  const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
   const [leads, setLeads] = useState<any[]>([]);
   const [currentLead, setCurrentLead] = useState<any>(null);
   const [currentCall, setCurrentCall] = useState<any>(null);
   const [isDialing, setIsDialing] = useState(false);
+  const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
   const [callOutcome, setCallOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
 
@@ -32,6 +37,16 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
       loadCampaignLeads();
     }
   }, [selectedCampaign]);
+
+  // Auto-dispatch effect
+  useEffect(() => {
+    if (!autoDispatchEnabled) return;
+    
+    console.log('Starting auto-dispatch for campaign:', selectedCampaign);
+    const cleanup = startAutoDispatch(30); // Dispatch every 30 seconds
+    
+    return cleanup;
+  }, [autoDispatchEnabled, selectedCampaign]);
 
   const loadCampaigns = async () => {
     const data = await getCampaigns();
@@ -104,16 +119,85 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
     setCurrentLead(nextLead);
   };
 
+  const toggleAutoDispatch = () => {
+    if (!selectedCampaign) {
+      toast({
+        title: "Campaign Required",
+        description: "Please select a campaign first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAutoDispatchEnabled(!autoDispatchEnabled);
+    
+    toast({
+      title: autoDispatchEnabled ? "Auto-Dispatch Stopped" : "Auto-Dispatch Started",
+      description: autoDispatchEnabled 
+        ? "AI-powered call distribution disabled" 
+        : "AI will now automatically distribute calls to optimal numbers",
+    });
+  };
+
+  const handleManualDispatch = async () => {
+    await dispatchCalls();
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Call Center
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Manage active dialing sessions and call outcomes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            Call Center
+          </h2>
+          <p className="text-slate-600 dark:text-slate-400">
+            Manage active dialing sessions and call outcomes
+          </p>
+        </div>
+        
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleManualDispatch}
+            disabled={!selectedCampaign || isDispatching}
+          >
+            <Zap className="h-4 w-4 mr-2" />
+            {isDispatching ? 'Dispatching...' : 'Dispatch Now'}
+          </Button>
+          
+          <Button
+            variant={autoDispatchEnabled ? "destructive" : "default"}
+            onClick={toggleAutoDispatch}
+            disabled={!selectedCampaign}
+          >
+            {autoDispatchEnabled ? (
+              <>
+                <Pause className="h-4 w-4 mr-2" />
+                Stop Auto-Dispatch
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 mr-2" />
+                Start Auto-Dispatch
+              </>
+            )}
+          </Button>
+        </div>
       </div>
+
+      {autoDispatchEnabled && (
+        <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+              <Zap className="h-5 w-5" />
+              <div>
+                <p className="font-medium">AI Auto-Dispatch Active</p>
+                <p className="text-sm">AI is automatically selecting optimal numbers and distributing calls every 30 seconds</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Campaign Selection */}

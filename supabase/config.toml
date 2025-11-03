@@ -2,3 +2,6 @@ project_id = "emonjusymdripmkvtttc"
 
 [functions.predictive-dialing-engine]
 verify_jwt = true
+
+[functions.call-dispatcher]
+verify_jwt = true
