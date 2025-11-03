@@ -166,18 +166,21 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    // Log detailed error server-side for debugging
     console.error('Error in pipeline management function:', error)
+    
+    // Return generic error to client (don't expose internal details)
     return new Response(
       JSON.stringify({ 
-        error: error.message,
-        details: 'Failed to process pipeline management request'
+        error: 'An error occurred processing your request',
+        code: 'PIPELINE_ERROR'
       }),
       { 
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json' 
         }, 
-        status: 400 
+        status: 500 
       }
     )
   }

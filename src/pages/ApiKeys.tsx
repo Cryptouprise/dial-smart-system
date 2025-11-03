@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ApiCredentials {
   id: string;
@@ -42,6 +43,39 @@ const ApiKeys = () => {
   const [validationResults, setValidationResults] = useState<{ [key: string]: boolean }>({});
   const [isValidating, setIsValidating] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    loadCredentials();
+  }, []);
+
+  const loadCredentials = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      const formatted = data?.map((cred: any) => ({
+        id: cred.id,
+        name: cred.service_name,
+        service: cred.service_name.toLowerCase().includes('twilio') ? 'twilio' : 
+                 cred.service_name.toLowerCase().includes('retell') ? 'retell' :
+                 cred.service_name.toLowerCase().includes('openai') ? 'openai' : 'stripe',
+        credentials: { [cred.credential_key]: atob(cred.credential_value_encrypted) },
+        status: 'active' as const,
+        created: new Date(cred.created_at).toISOString().split('T')[0]
+      })) || [];
+
+      setApiCredentials(formatted);
+    } catch (error: any) {
+      console.error('Failed to load credentials:', error);
+    }
+  };
 
   const serviceConfigs = {
     twilio: {
@@ -85,7 +119,7 @@ const ApiKeys = () => {
     }));
   };
 
-  const handleAddCredentials = () => {
+  const handleAddCredentials = async () => {
     if (!newCredentialName || !selectedService) {
       toast({
         title: "Error",
@@ -107,37 +141,74 @@ const ApiKeys = () => {
       return;
     }
 
-    const newCredential: ApiCredentials = {
-      id: Date.now().toString(),
-      name: newCredentialName,
-      service: selectedService,
-      credentials: { ...credentialFields },
-      status: 'active',
-      created: new Date().toISOString().split('T')[0]
-    };
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to save credentials",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    setApiCredentials([...apiCredentials, newCredential]);
-    
-    // Store credentials in localStorage for persistence
-    const existingCredentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    localStorage.setItem('api-credentials', JSON.stringify([...existingCredentials, newCredential]));
-    
-    setNewCredentialName('');
-    setSelectedService('');
-    setCredentialFields({});
+      // Store each credential field separately in the database
+      for (const [key, value] of Object.entries(credentialFields)) {
+        const encrypted = btoa(value);
 
-    toast({
-      title: "Credentials Added",
-      description: `Your ${serviceConfig.displayName} credentials have been saved successfully`,
-    });
+        const { error } = await supabase
+          .from('user_credentials')
+          .insert({
+            user_id: user.id,
+            service_name: newCredentialName,
+            credential_key: key,
+            credential_value_encrypted: encrypted,
+          });
+
+        if (error) throw error;
+      }
+
+      await loadCredentials();
+      
+      setNewCredentialName('');
+      setSelectedService('');
+      setCredentialFields({});
+
+      toast({
+        title: "Credentials Added",
+        description: `Your ${serviceConfig.displayName} credentials have been saved securely`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save credentials",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteCredentials = (id: string) => {
-    setApiCredentials(apiCredentials.filter(cred => cred.id !== id));
-    toast({
-      title: "Credentials Deleted",
-      description: "The credentials have been removed",
-    });
+  const handleDeleteCredentials = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('user_credentials')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setApiCredentials(apiCredentials.filter(cred => cred.id !== id));
+      
+      toast({
+        title: "Credentials Deleted",
+        description: "The credentials have been removed securely",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to delete credentials",
+        variant: "destructive",
+      });
+    }
   };
 
   const toggleCredentialVisibility = (id: string) => {
