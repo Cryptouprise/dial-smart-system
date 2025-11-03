@@ -1,1 +1,4 @@
 project_id = "emonjusymdripmkvtttc"
+
+[functions.predictive-dialing-engine]
+verify_jwt = true
