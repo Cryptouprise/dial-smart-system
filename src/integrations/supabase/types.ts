@@ -224,6 +224,93 @@ export type Database = {
           },
         ]
       }
+      dispositions: {
+        Row: {
+          auto_actions: Json | null
+          color: string
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          pipeline_stage: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          auto_actions?: Json | null
+          color?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          pipeline_stage: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          auto_actions?: Json | null
+          color?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          pipeline_stage?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      lead_pipeline_positions: {
+        Row: {
+          created_at: string | null
+          id: string
+          lead_id: string
+          moved_at: string | null
+          moved_by_user: boolean | null
+          notes: string | null
+          pipeline_board_id: string
+          position: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          lead_id: string
+          moved_at?: string | null
+          moved_by_user?: boolean | null
+          notes?: string | null
+          pipeline_board_id: string
+          position?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          lead_id?: string
+          moved_at?: string | null
+          moved_by_user?: boolean | null
+          notes?: string | null
+          pipeline_board_id?: string
+          position?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_pipeline_positions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_pipeline_positions_pipeline_board_id_fkey"
+            columns: ["pipeline_board_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           company: string | null
@@ -355,6 +442,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      pipeline_boards: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          disposition_id: string | null
+          id: string
+          name: string
+          position: number
+          settings: Json | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          disposition_id?: string | null
+          id?: string
+          name: string
+          position?: number
+          settings?: Json | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          disposition_id?: string | null
+          id?: string
+          name?: string
+          position?: number
+          settings?: Json | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_boards_disposition_id_fkey"
+            columns: ["disposition_id"]
+            isOneToOne: false
+            referencedRelation: "dispositions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rotation_history: {
         Row: {
