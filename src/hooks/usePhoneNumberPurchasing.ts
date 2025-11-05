@@ -7,7 +7,7 @@ export const usePhoneNumberPurchasing = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const purchaseNumbers = async (areaCode: string, quantity: number, provider = 'telnyx') => {
+  const purchaseNumbers = async (areaCode: string, quantity: number, provider = 'retell') => {
     setIsLoading(true);
     try {
       console.log(`Purchasing ${quantity} numbers in area code ${areaCode}`);

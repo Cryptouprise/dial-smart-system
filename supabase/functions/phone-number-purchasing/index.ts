@@ -66,16 +66,75 @@ serve(async (req) => {
         });
       }
 
-      // Simulate number provisioning (replace with real API call)
+      // Get Retell AI credentials
+      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+      if (!retellApiKey) {
+        console.error('RETELL_AI_API_KEY not configured');
+        await supabaseClient
+          .from('number_orders')
+          .update({ status: 'failed' })
+          .eq('id', order.id);
+        
+        return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Purchase numbers from Retell AI
       const numbers = [];
+      const retellNumbers = [];
+      
       for (let i = 0; i < quantity; i++) {
-        const randomSuffix = Math.floor(Math.random() * 9000) + 1000;
-        const number = `+1 (${areaCode}) ${Math.floor(Math.random() * 900) + 100}-${randomSuffix}`;
-        numbers.push({
-          number,
-          area_code: areaCode,
-          status: 'active',
-          daily_calls: 0
+        try {
+          // Purchase from Retell AI
+          const purchaseResponse = await fetch('https://api.retellai.com/create-phone-number', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${retellApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              area_code: areaCode,
+              // You can optionally assign agents here
+              // inbound_agent_id: "agent_id_here",
+              // outbound_agent_id: "agent_id_here"
+            })
+          });
+
+          if (!purchaseResponse.ok) {
+            const errorText = await purchaseResponse.text();
+            console.error('Retell purchase failed:', errorText);
+            throw new Error(`Retell API error: ${purchaseResponse.status}`);
+          }
+
+          const retellNumber = await purchaseResponse.json();
+          console.log('Purchased number from Retell:', retellNumber);
+
+          retellNumbers.push(retellNumber);
+          numbers.push({
+            number: retellNumber.phone_number,
+            area_code: areaCode,
+            status: 'active',
+            daily_calls: 0,
+            user_id: user.id,
+            retell_phone_id: retellNumber.phone_number_id
+          });
+        } catch (error) {
+          console.error(`Failed to purchase number ${i + 1}:`, error);
+          // Continue trying other numbers
+        }
+      }
+
+      if (numbers.length === 0) {
+        await supabaseClient
+          .from('number_orders')
+          .update({ status: 'failed' })
+          .eq('id', order.id);
+
+        return new Response(JSON.stringify({ error: 'Failed to purchase any numbers from Retell AI' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 

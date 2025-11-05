@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.call-dispatcher]
 verify_jwt = true
+
+[functions.twilio-integration]
+verify_jwt = true
