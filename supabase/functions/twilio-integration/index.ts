@@ -46,13 +46,22 @@ serve(async (req) => {
 
     const { action, phoneNumberSid, phoneNumber }: TwilioImportRequest = await req.json();
 
+    // Helper function to encode credentials safely (handles UTF-8)
+    const encodeCredentials = (accountSid: string, authToken: string): string => {
+      const credentials = `${accountSid}:${authToken}`;
+      const encoder = new TextEncoder();
+      const data = encoder.encode(credentials);
+      const base64 = btoa(String.fromCharCode(...Array.from(data)));
+      return base64;
+    };
+
     // List all Twilio numbers
     if (action === 'list_numbers') {
       const response = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json`,
         {
           headers: {
-            'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`)
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
         }
       );
@@ -138,7 +147,7 @@ serve(async (req) => {
         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json`,
         {
           headers: {
-            'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`)
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
         }
       );
