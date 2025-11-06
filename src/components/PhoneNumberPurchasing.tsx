@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,18 +18,24 @@ import {
   Info,
   Zap,
   Shield,
-  Download
+  Download,
+  LogIn
 } from 'lucide-react';
 import { usePhoneNumberPurchasing } from '@/hooks/usePhoneNumberPurchasing';
 import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
+import { supabase } from '@/integrations/supabase/client';
 
 const PhoneNumberPurchasing = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { purchaseNumbers, isLoading: isPurchasing } = usePhoneNumberPurchasing();
   const { listTwilioNumbers, importNumber, syncAllNumbers, isLoading: isTwilioLoading } = useTwilioIntegration();
+
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   // Purchase state
   const [areaCode, setAreaCode] = useState('');
@@ -44,15 +51,33 @@ const PhoneNumberPurchasing = () => {
   const [showPurchaseHelp, setShowPurchaseHelp] = useState(false);
   const [showTwilioHelp, setShowTwilioHelp] = useState(false);
 
+  // Check authentication
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session);
+    };
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Load Twilio numbers
   const loadTwilioNumbers = async () => {
+    if (!isAuthenticated) return;
     const numbers = await listTwilioNumbers();
     setTwilioNumbers(numbers);
   };
 
   useEffect(() => {
-    loadTwilioNumbers();
-  }, []);
+    if (isAuthenticated) {
+      loadTwilioNumbers();
+    }
+  }, [isAuthenticated]);
 
   // Handle purchase
   const handlePurchase = async () => {
@@ -142,6 +167,31 @@ const PhoneNumberPurchasing = () => {
     num.phone_number.includes(searchTerm) || 
     num.friendly_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Alert className="border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-900">
+        <LogIn className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+        <AlertDescription className="flex items-center justify-between text-orange-800 dark:text-orange-300">
+          <span>
+            <strong>Authentication Required:</strong> Please sign in to purchase or import phone numbers.
+          </span>
+          <Button onClick={() => navigate("/auth")} size="sm" variant="default">
+            <LogIn className="h-4 w-4 mr-2" />
+            Sign In
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   return (
     <div className="space-y-6">
