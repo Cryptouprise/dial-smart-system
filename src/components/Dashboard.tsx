@@ -20,6 +20,7 @@ import RetellAIManager from '@/components/RetellAIManager';
 import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
   id: string;
@@ -47,43 +48,37 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  const loadNumbers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedNumbers: PhoneNumber[] = (data || []).map(num => ({
+        id: num.id,
+        phoneNumber: num.number,
+        status: num.status as 'active' | 'quarantined' | 'inactive',
+        dailyCalls: num.daily_calls,
+        spamScore: num.is_spam ? 100 : 0,
+        dateAdded: new Date(num.created_at).toISOString().split('T')[0],
+      }));
+
+      setNumbers(formattedNumbers);
+    } catch (error) {
+      console.error('Error loading numbers:', error);
+      toast({
+        title: 'Error Loading Numbers',
+        description: 'Failed to load phone numbers from database',
+        variant: 'destructive'
+      });
+    }
+  };
+
   useEffect(() => {
-    // Mock data for phone numbers
-    const mockNumbers: PhoneNumber[] = [
-      {
-        id: '1',
-        phoneNumber: '+15551234567',
-        status: 'active',
-        dailyCalls: 25,
-        spamScore: 30,
-        dateAdded: '2024-01-20',
-      },
-      {
-        id: '2',
-        phoneNumber: '+15559876543',
-        status: 'quarantined',
-        dailyCalls: 5,
-        spamScore: 85,
-        dateAdded: '2024-01-15',
-      },
-      {
-        id: '3',
-        phoneNumber: '+12125551212',
-        status: 'active',
-        dailyCalls: 40,
-        spamScore: 60,
-        dateAdded: '2024-01-10',
-      },
-      {
-        id: '4',
-        phoneNumber: '+13105550000',
-        status: 'inactive',
-        dailyCalls: 0,
-        spamScore: 10,
-        dateAdded: '2023-12-01',
-      },
-    ];
-    setNumbers(mockNumbers);
+    loadNumbers();
   }, []);
 
   const handleBuyNumbers = async () => {
@@ -112,7 +107,8 @@ const Dashboard = () => {
     });
   };
 
-  const refreshNumbers = () => {
+  const refreshNumbers = async () => {
+    await loadNumbers();
     toast({
       title: 'Numbers Refreshed',
       description: 'Phone numbers have been refreshed.',
