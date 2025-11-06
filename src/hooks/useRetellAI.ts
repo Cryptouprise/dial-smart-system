@@ -27,15 +27,17 @@ export const useRetellAI = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
+      // Look for Retell credentials saved through the API Keys page
       const { data, error } = await supabase
         .from('user_credentials')
-        .select('credential_value_encrypted')
+        .select('credential_value_encrypted, service_name')
         .eq('user_id', user.id)
-        .eq('credential_key', 'RETELL_AI_API_KEY')
-        .single();
+        .eq('credential_key', 'apiKey')
+        .ilike('service_name', '%retell%');
 
-      if (error || !data) return null;
-      return atob(data.credential_value_encrypted);
+      if (error || !data || data.length === 0) return null;
+      // Return the first matching credential
+      return atob(data[0].credential_value_encrypted);
     } catch (error) {
       console.error('Failed to get Retell credentials:', error);
       return null;
