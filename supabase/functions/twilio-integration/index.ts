@@ -67,7 +67,9 @@ serve(async (req) => {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch Twilio numbers');
+        const errorText = await response.text();
+        console.error('Twilio API error:', response.status, errorText);
+        throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -153,7 +155,9 @@ serve(async (req) => {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch Twilio numbers');
+        const errorText = await response.text();
+        console.error('Twilio API error:', response.status, errorText);
+        throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
