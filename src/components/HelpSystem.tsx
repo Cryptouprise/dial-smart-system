@@ -40,6 +40,81 @@ const HelpSystem = () => {
       icon: Book,
       articles: [
         {
+          title: 'Quick Start: Buy Your First Numbers',
+          content: 'Get up and running in minutes by purchasing and testing phone numbers.',
+          steps: [
+            'Navigate to Dashboard > Overview tab',
+            'Scroll to the "Purchase Numbers" section',
+            'Enter an area code (3 digits) that matches your target market',
+            'Select quantity (start with 5-10 numbers for testing)',
+            'Click "Purchase Numbers" - they\'ll be ready in seconds',
+            'Numbers are automatically checked for spam reputation',
+            'View your numbers in the table below with spam scores',
+            'Make a test call to verify everything works',
+            'Numbers are immediately available for campaigns'
+          ],
+          quickTips: [
+            'Local area codes typically have better answer rates',
+            'Purchase numbers in multiple area codes to test performance',
+            'All numbers are automatically added to Retell AI',
+            'Spam scores are checked immediately upon purchase',
+            'Keep some numbers in reserve for rotation strategy'
+          ]
+        },
+        {
+          title: 'Import Existing Twilio Numbers',
+          content: 'Already have Twilio numbers? Import them into the system.',
+          steps: [
+            'Go to Settings and add your Twilio credentials (Account SID and Auth Token)',
+            'Navigate to Dashboard > Overview > Purchase Numbers section',
+            'Click on the "Import from Twilio" tab',
+            'Your Twilio numbers will automatically load',
+            'Select individual numbers or click "Sync All" to import everything',
+            'Each number is registered with Retell AI during import',
+            'Spam reputation is checked for each imported number',
+            'Imported numbers appear in your pool immediately',
+            'You can now use these numbers in campaigns'
+          ],
+          requirements: [
+            'Active Twilio account with purchased numbers',
+            'Twilio Account SID (found in Twilio Console)',
+            'Twilio Auth Token (found in Twilio Console)',
+            'Numbers must be SMS/Voice capable',
+            'Numbers should be in good standing with Twilio'
+          ],
+          troubleshooting: [
+            'Numbers not showing? Verify Twilio credentials in Settings',
+            'Import fails? Check that numbers are SMS/Voice enabled',
+            'Already imported? Numbers can\'t be imported twice',
+            'Permission errors? Ensure Auth Token has proper permissions'
+          ]
+        },
+        {
+          title: 'Understanding Spam Scores',
+          content: 'How spam detection works and what the scores mean.',
+          spamScoreGuide: [
+            'Score 0-30 (Green): Clean number, safe to use extensively',
+            'Score 31-60 (Yellow): Moderate risk, monitor closely',
+            'Score 61-80 (Orange): High risk, use sparingly',
+            'Score 81-100 (Red): Very high spam likelihood, avoid or release'
+          ],
+          whatHappens: [
+            'Every purchased or imported number is checked immediately',
+            'Scores are pulled from multiple spam databases',
+            'Numbers are checked daily for updated spam status',
+            'High-scoring numbers (>80) trigger automatic alerts',
+            'You can manually quarantine numbers at any time',
+            'Quarantined numbers are automatically removed from campaigns'
+          ],
+          bestPractices: [
+            'Don\'t use numbers with scores above 70 for cold calling',
+            'Rotate numbers regularly to maintain low spam scores',
+            'Monitor scores weekly and retire problem numbers',
+            'Keep spare numbers available for quick rotation',
+            'Use clean numbers for important campaigns'
+          ]
+        },
+        {
           title: 'Complete System Overview',
           content: 'Comprehensive guide to understanding Smart Dialer\'s architecture and capabilities.',
           steps: [

@@ -19,6 +19,7 @@ import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard'
 import RetellAIManager from '@/components/RetellAIManager';
 import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
+import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 
 interface PhoneNumber {
   id: string;
@@ -240,71 +241,8 @@ const Dashboard = () => {
               </Card>
             </div>
 
-            {/* Buy Numbers Section */}
-            <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-              <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
-                <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100 text-sm sm:text-base lg:text-lg">
-                  <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-                  Buy Numbers
-                </CardTitle>
-                <CardDescription className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
-                  Purchase new phone numbers for your campaigns
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
-                  <div className="space-y-1 sm:space-y-2">
-                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Area Code
-                    </label>
-                    <Input
-                      placeholder="e.g., 555"
-                      value={areaCode}
-                      onChange={(e) => setAreaCode(e.target.value)}
-                      className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-xs sm:text-sm h-8 sm:h-10"
-                    />
-                  </div>
-                  <div className="space-y-1 sm:space-y-2">
-                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Quantity
-                    </label>
-                    <Input
-                      type="number"
-                      placeholder="10"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-xs sm:text-sm h-8 sm:h-10"
-                    />
-                  </div>
-                  <div className="space-y-1 sm:space-y-2">
-                    <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Auto-import to Retell AI
-                    </label>
-                    <div className="flex items-center space-x-2 h-8 sm:h-10">
-                      <input
-                        type="checkbox"
-                        id="auto-import"
-                        checked={autoImport}
-                        onChange={(e) => setAutoImport(e.target.checked)}
-                        className="rounded border-slate-300 dark:border-slate-600"
-                      />
-                      <label htmlFor="auto-import" className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                        Enable
-                      </label>
-                    </div>
-                  </div>
-                  <div className="flex items-end">
-                    <Button 
-                      onClick={handleBuyNumbers}
-                      disabled={isLoading}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm h-8 sm:h-10"
-                    >
-                      {isLoading ? 'Purchasing...' : 'Purchase Numbers'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Number Management Component */}
+            <PhoneNumberPurchasing />
 
             {/* Numbers Table */}
             <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
