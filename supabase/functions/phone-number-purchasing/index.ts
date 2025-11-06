@@ -95,7 +95,7 @@ serve(async (req) => {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              area_code: areaCode,
+              area_code: parseInt(areaCode, 10),
               // You can optionally assign agents here
               // inbound_agent_id: "agent_id_here",
               // outbound_agent_id: "agent_id_here"
