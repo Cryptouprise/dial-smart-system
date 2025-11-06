@@ -22,14 +22,28 @@ export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const getRetellCredentials = () => {
-    const credentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const retellCreds = credentials.find((cred: any) => cred.service === 'retell');
-    return retellCreds?.credentials?.apiKey;
+  const getRetellCredentials = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('credential_value_encrypted')
+        .eq('user_id', user.id)
+        .eq('credential_key', 'RETELL_AI_API_KEY')
+        .single();
+
+      if (error || !data) return null;
+      return atob(data.credential_value_encrypted);
+    } catch (error) {
+      console.error('Failed to get Retell credentials:', error);
+      return null;
+    }
   };
 
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       toast({
         title: "Error",
@@ -71,7 +85,7 @@ export const useRetellAI = () => {
   };
 
   const updatePhoneNumber = async (phoneNumber: string, agentId?: string, nickname?: string) => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       toast({
         title: "Error",
@@ -114,7 +128,7 @@ export const useRetellAI = () => {
   };
 
   const deletePhoneNumber = async (phoneNumber: string) => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       toast({
         title: "Error",
@@ -155,7 +169,7 @@ export const useRetellAI = () => {
   };
 
   const listPhoneNumbers = async (): Promise<RetellPhoneNumber[] | null> => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       toast({
         title: "Error",
@@ -189,7 +203,7 @@ export const useRetellAI = () => {
   };
 
   const listAgents = async (): Promise<Agent[] | null> => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       return null;
     }
@@ -214,7 +228,7 @@ export const useRetellAI = () => {
   };
 
   const createAgent = async (agentName: string): Promise<Agent | null> => {
-    const apiKey = getRetellCredentials();
+    const apiKey = await getRetellCredentials();
     if (!apiKey) {
       toast({
         title: "Error",
