@@ -105,7 +105,21 @@ serve(async (req) => {
           if (!purchaseResponse.ok) {
             const errorText = await purchaseResponse.text();
             console.error('Retell purchase failed:', errorText);
-            throw new Error(`Retell API error: ${purchaseResponse.status}`);
+            
+            // Parse error message
+            let errorMessage = `Retell API error: ${purchaseResponse.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              if (errorJson.message) {
+                errorMessage = errorJson.message;
+              } else if (errorJson.error_message) {
+                errorMessage = errorJson.error_message;
+              }
+            } catch {
+              // Use default error message
+            }
+            
+            throw new Error(errorMessage);
           }
 
           const retellNumber = await purchaseResponse.json();
@@ -132,8 +146,10 @@ serve(async (req) => {
           .update({ status: 'failed' })
           .eq('id', order.id);
 
-        return new Response(JSON.stringify({ error: 'Failed to purchase any numbers from Retell AI' }), {
-          status: 500,
+        return new Response(JSON.stringify({ 
+          error: 'No phone numbers available in this area code. Please try a different area code.' 
+        }), {
+          status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
