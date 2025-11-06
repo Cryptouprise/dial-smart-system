@@ -73,11 +73,8 @@ const PhoneNumberPurchasing = () => {
     setTwilioNumbers(numbers);
   };
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadTwilioNumbers();
-    }
-  }, [isAuthenticated]);
+  // Twilio numbers are now loaded only when user clicks Refresh button
+  // to avoid errors when credentials are not configured
 
   // Handle purchase
   const handlePurchase = async () => {
