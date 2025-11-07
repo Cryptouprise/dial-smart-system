@@ -15,5 +15,8 @@ verify_jwt = true
 [functions.retell-phone-management]
 verify_jwt = true
 
+[functions.retell-llm-management]
+verify_jwt = true
+
 [functions.outbound-calling]
 verify_jwt = true

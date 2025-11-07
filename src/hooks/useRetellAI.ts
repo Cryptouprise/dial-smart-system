@@ -30,6 +30,8 @@ export const useRetellAI = () => {
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
     setIsLoading(true);
     try {
+      console.log('[useRetellAI] Importing phone number:', { phoneNumber, terminationUri });
+      
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
         body: {
           action: 'import',
@@ -38,7 +40,12 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useRetellAI] Import error:', error);
+        throw error;
+      }
+
+      console.log('[useRetellAI] Import success:', data);
 
       toast({
         title: "Success",
@@ -47,6 +54,7 @@ export const useRetellAI = () => {
 
       return data;
     } catch (error: any) {
+      console.error('[useRetellAI] Import failed:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to import phone number",
@@ -162,17 +170,26 @@ export const useRetellAI = () => {
     }
   };
 
-  const createAgent = async (agentName: string): Promise<Agent | null> => {
+  const createAgent = async (agentName: string, llmId: string, voiceId?: string): Promise<Agent | null> => {
     setIsLoading(true);
     try {
+      console.log('[useRetellAI] Creating agent:', { agentName, llmId, voiceId });
+      
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
         body: {
           action: 'create',
-          agentName
+          agentName,
+          llmId,
+          voiceId
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useRetellAI] Create agent error:', error);
+        throw error;
+      }
+
+      console.log('[useRetellAI] Agent created:', data);
 
       toast({
         title: "Success",
@@ -181,6 +198,7 @@ export const useRetellAI = () => {
 
       return data;
     } catch (error: any) {
+      console.error('[useRetellAI] Create agent failed:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to create agent",
