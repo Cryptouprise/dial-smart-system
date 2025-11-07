@@ -60,7 +60,10 @@ serve(async (req) => {
         }
         
         const updateData: any = {};
-        if (agentId) updateData.inbound_agent_id = agentId;
+        if (agentId) {
+          updateData.inbound_agent_id = agentId;
+          updateData.outbound_agent_id = agentId; // Required for outbound calls
+        }
         if (nickname) updateData.nickname = nickname;
         
         response = await fetch(`${baseUrl}/update-phone-number/${encodeURIComponent(phoneNumber)}`, {
