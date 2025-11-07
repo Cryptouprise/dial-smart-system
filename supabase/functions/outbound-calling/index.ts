@@ -109,7 +109,7 @@ serve(async (req) => {
     async function postToRetellCandidate(pathCandidates: string[], bodyObj: any) {
       let lastErr: any = null;
       for (const candidate of pathCandidates) {
-        const fullPath = candidate.replace(/^\/+/,''); // normalize
+        const fullPath = candidate.replace(/^\/+/,''); // Remove leading slashes to prevent double slashes in URL construction
         const url = `${baseUrl}/${fullPath}`;
         try {
           const resp = await fetch(url, {

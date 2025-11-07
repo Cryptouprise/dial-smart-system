@@ -7,7 +7,7 @@
 // - Standardized JSON responses and safe logging
 
 import { serve } from "std/server";
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm"; // adjust if you have local import strategy
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 import { encode as base64Encode } from "std/encoding/base64.ts";
 
 const corsHeaders = {
@@ -42,8 +42,11 @@ serve(async (req) => {
     global: { headers: { "x-edges-runtime": "1" } }
   });
 
+  // Get user ID once to avoid repeated auth calls
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const userId = user?.id || null;
+
   // Authenticate user if present in Authorization header to perform per-user actions
-  // If you want strict user auth, pass token from client and create a client with that token for auth.getUser
   const { action, phoneNumber }: TwilioImportRequest = await req.json().catch(() => ({}));
 
   const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
@@ -156,8 +159,7 @@ serve(async (req) => {
       const { data: dbNumber, error: dbError } = await supabaseClient
         .from("phone_numbers")
         .insert({
-          // In production, ensure user.id is assigned correctly
-          user_id: (await supabaseClient.auth.getUser()).data?.user?.id || null,
+          user_id: userId,
           number: phoneNumber,
           area_code: areaCode,
           status: "active",
@@ -259,7 +261,7 @@ serve(async (req) => {
           await supabaseClient
             .from("phone_numbers")
             .upsert({
-              user_id: (await supabaseClient.auth.getUser()).data?.user?.id || null,
+              user_id: userId,
               number: twilioNum.phone_number,
               area_code: areaCode,
               status: "active",

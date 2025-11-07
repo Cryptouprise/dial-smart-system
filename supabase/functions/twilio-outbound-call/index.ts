@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { encode as base64Encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,13 +45,13 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Build form-encoded body (Twilio expects application/x-www-form-urlencoded)
     const params = new URLSearchParams();
     params.append('From', from);
     params.append('To', to);
     if (twimlUrl) params.append('Url', twimlUrl);
 
-    const basicAuth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+    const creds = `${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`;
+    const basicAuth = base64Encode(new TextEncoder().encode(creds));
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`;
 
     const resp = await fetch(twilioUrl, {
