@@ -50,12 +50,6 @@ export const usePredictiveDialing = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const getRetellCredentials = () => {
-    const credentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const retellCreds = credentials.find((cred: any) => cred.service === 'retell');
-    return retellCreds?.credentials?.apiKey;
-  };
-
   // Lead Management
   const createLead = async (leadData: Partial<Lead>) => {
     setIsLoading(true);
@@ -357,16 +351,6 @@ export const usePredictiveDialing = () => {
 
   // Outbound Calling
   const makeCall = async (campaignId: string, leadId: string, phoneNumber: string, callerId: string) => {
-    const apiKey = getRetellCredentials();
-    if (!apiKey) {
-      toast({
-        title: "Error",
-        description: "Retell AI credentials not found. Please add them in API Keys.",
-        variant: "destructive"
-      });
-      return null;
-    }
-
     setIsLoading(true);
     try {
       // Get campaign details for agent ID
@@ -389,8 +373,7 @@ export const usePredictiveDialing = () => {
           leadId,
           phoneNumber,
           callerId,
-          agentId: campaign.agent_id,
-          apiKey
+          agentId: campaign.agent_id
         }
       });
 

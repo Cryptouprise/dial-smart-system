@@ -8,7 +8,6 @@ const corsHeaders = {
 
 interface RetellAgentRequest {
   action: 'create' | 'list' | 'update' | 'delete';
-  apiKey: string;
   agentName?: string;
   agentId?: string;
   voiceId?: string;
@@ -22,11 +21,14 @@ serve(async (req) => {
   }
 
   try {
-    const { action, apiKey, agentName, agentId, voiceId, llmWebsocketUrl }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmWebsocketUrl }: RetellAgentRequest = await req.json();
 
+    const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
-      throw new Error('Retell AI API key is required');
+      throw new Error('RETELL_AI_API_KEY is not configured');
     }
+
+    console.log(`Processing ${action} request for Retell AI agent`);
 
     const baseUrl = 'https://api.retellai.com/v2';
     const headers = {

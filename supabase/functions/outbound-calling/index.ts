@@ -15,7 +15,6 @@ interface OutboundCallRequest {
   callerId?: string;
   agentId?: string;
   retellCallId?: string;
-  apiKey?: string;
 }
 
 serve(async (req) => {
@@ -41,13 +40,15 @@ serve(async (req) => {
       phoneNumber, 
       callerId, 
       agentId, 
-      retellCallId,
-      apiKey 
+      retellCallId
     }: OutboundCallRequest = await req.json();
 
+    const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
-      throw new Error('Retell AI API key is required');
+      throw new Error('RETELL_AI_API_KEY is not configured');
     }
+
+    console.log(`Processing ${action} outbound call request`);
 
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {

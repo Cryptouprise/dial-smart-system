@@ -8,7 +8,6 @@ const corsHeaders = {
 
 interface RetellPhoneNumberRequest {
   action: 'import' | 'update' | 'delete' | 'list';
-  apiKey: string;
   phoneNumber?: string;
   terminationUri?: string;
   agentId?: string;
@@ -22,11 +21,14 @@ serve(async (req) => {
   }
 
   try {
-    const { action, apiKey, phoneNumber, terminationUri, agentId, nickname }: RetellPhoneNumberRequest = await req.json();
+    const { action, phoneNumber, terminationUri, agentId, nickname }: RetellPhoneNumberRequest = await req.json();
 
+    const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
-      throw new Error('Retell AI API key is required');
+      throw new Error('RETELL_AI_API_KEY is not configured');
     }
+
+    console.log(`Processing ${action} request for Retell AI phone number`);
 
     const baseUrl = 'https://api.retellai.com/v2';
     const headers = {
