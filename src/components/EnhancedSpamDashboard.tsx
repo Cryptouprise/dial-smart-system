@@ -356,6 +356,75 @@ export const EnhancedSpamDashboard = () => {
                   </Alert>
                 </CardContent>
               </Card>
+
+              <Card className="border-yellow-500/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                    Registration Required
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm">
+                    To get proper STIR/SHAKEN attestation for your outbound calls, you must complete the following registrations with Twilio:
+                  </p>
+
+                  <div className="space-y-3">
+                    <div className="p-3 bg-muted rounded-lg">
+                      <div className="font-semibold mb-1">1. A2P 10DLC Campaign Registration</div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Register your business and campaign use case. Required for all application-to-person (A2P) messaging and calling.
+                      </p>
+                      <a 
+                        href="https://console.twilio.com/us1/develop/sms/settings/a2p-registration"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary text-sm hover:underline inline-flex items-center gap-1"
+                      >
+                        Register A2P 10DLC →
+                      </a>
+                    </div>
+
+                    <div className="p-3 bg-muted rounded-lg">
+                      <div className="font-semibold mb-1">2. CNAM Registration</div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Register your Caller ID Name (CNAM) so your business name appears on recipient devices.
+                      </p>
+                      <a 
+                        href="https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary text-sm hover:underline inline-flex items-center gap-1"
+                      >
+                        Learn about CNAM →
+                      </a>
+                    </div>
+
+                    <div className="p-3 bg-muted rounded-lg">
+                      <div className="font-semibold mb-1">3. Verify Registration Status</div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        After registration, attestation levels are determined by actual call performance and will appear in call logs.
+                      </p>
+                      <a 
+                        href="https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary text-sm hover:underline inline-flex items-center gap-1"
+                      >
+                        STIR/SHAKEN Documentation →
+                      </a>
+                    </div>
+                  </div>
+
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      <strong>Note:</strong> STIR/SHAKEN attestation is determined during actual calls and recorded in call detail records (CDRs). 
+                      The attestation level cannot be checked via lookup APIs - it requires making actual calls to verify.
+                    </AlertDescription>
+                  </Alert>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </CardContent>
