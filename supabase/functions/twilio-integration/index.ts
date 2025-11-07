@@ -37,42 +37,18 @@ serve(async (req) => {
 
     console.log('✅ User authenticated:', user.id);
 
-    // Get Twilio credentials from user_credentials table
-    const { data: twilioCredentials, error: twilioError } = await supabaseClient
-      .from('user_credentials')
-      .select('credentials')
-      .eq('user_id', user.id)
-      .eq('service', 'twilio')
-      .single();
-
-    if (twilioError || !twilioCredentials) {
-      console.log('❌ Twilio credentials not found for user:', user.id);
-      return new Response(JSON.stringify({ error: 'Twilio credentials not configured. Please add them in Settings > API Keys.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const twilioAccountSid = twilioCredentials.credentials.account_sid;
-    const twilioAuthToken = twilioCredentials.credentials.auth_token;
+    // Get credentials from environment variables
+    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
 
     if (!twilioAccountSid || !twilioAuthToken) {
-      console.log('❌ Invalid Twilio credentials structure');
-      return new Response(JSON.stringify({ error: 'Invalid Twilio credentials. Please update them in Settings > API Keys.' }), {
+      console.log('❌ Twilio credentials not configured in secrets');
+      return new Response(JSON.stringify({ error: 'Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    // Get Retell AI credentials
-    const { data: retellCredentials, error: retellError } = await supabaseClient
-      .from('user_credentials')
-      .select('credentials')
-      .eq('user_id', user.id)
-      .eq('service', 'retell')
-      .single();
-
-    const retellApiKey = retellCredentials?.credentials?.api_key;
 
     console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
 
