@@ -27,18 +27,25 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
 
   const loadSettingsFromDatabase = async () => {
     try {
-      const response = await supabase.functions.invoke('enhanced-rotation-manager', {
-        method: 'GET',
-        body: null,
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) return;
 
-      if (response.data?.settings) {
+      const response = await fetch(
+        `https://emonjusymdripmkvtttc.supabase.co/functions/v1/enhanced-rotation-manager?action=settings`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.session.access_token}`,
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtb25qdXN5bWRyaXBta3Z0dHRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3MzYyNDcsImV4cCI6MjA2NDMxMjI0N30.NPmcCmeJwR_vNymUZp73G9PqbsiPJ7KSTA9x8xG6Soc'
+          }
+        }
+      );
+
+      const result = await response.json();
+
+      if (result?.settings) {
         setAutomationSettings(prev => ({
           ...prev,
-          ...response.data.settings,
+          ...result.settings,
           // Keep localStorage values for UI-only settings
           defaultAgentId: localStorage.getItem('defaultAgentId') || '',
           terminationUri: localStorage.getItem('terminationUri') || ''

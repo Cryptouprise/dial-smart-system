@@ -81,18 +81,20 @@ serve(async (req) => {
           .eq('user_id', user.id)
           .single();
 
-        if (!settings) {
-          return new Response(JSON.stringify({ error: 'Rotation settings not found' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
+        // If no settings exist, use defaults
+        const effectiveSettings = settings || {
+          enabled: true,
+          rotation_interval_hours: 24,
+          high_volume_threshold: 50,
+          auto_import_enabled: true,
+          auto_remove_quarantined: true
+        };
 
         // Get high volume numbers
         const { data: highVolumeNumbers } = await supabaseClient
           .from('phone_numbers')
           .select('*')
-          .gte('daily_calls', settings.high_volume_threshold)
+          .gte('daily_calls', effectiveSettings.high_volume_threshold)
           .eq('status', 'active');
 
         let rotatedCount = 0;
@@ -167,7 +169,23 @@ serve(async (req) => {
           .eq('user_id', user.id)
           .single();
 
-        if (error && error.code !== 'PGRST116') {
+        // If no settings exist yet, return defaults instead of error
+        if (error && error.code === 'PGRST116') {
+          console.log('No settings found for user, returning defaults');
+          return new Response(JSON.stringify({
+            settings: {
+              enabled: true,
+              rotation_interval_hours: 24,
+              high_volume_threshold: 50,
+              auto_import_enabled: true,
+              auto_remove_quarantined: true
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (error) {
           console.error('Settings fetch error:', error);
           return new Response(JSON.stringify({ error: 'Failed to fetch settings' }), {
             status: 500,
