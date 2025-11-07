@@ -12,6 +12,7 @@ interface SpamLookupRequest {
   phoneNumber?: string;
   checkAll?: boolean;
   includeSTIRSHAKEN?: boolean;
+  checkRegistrationStatus?: boolean;
 }
 
 serve(async (req) => {
@@ -25,7 +26,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { phoneNumberId, phoneNumber, checkAll, includeSTIRSHAKEN }: SpamLookupRequest = await req.json();
+    const { phoneNumberId, phoneNumber, checkAll, includeSTIRSHAKEN, checkRegistrationStatus }: SpamLookupRequest = await req.json();
+
+    // Check Twilio registration status
+    if (checkRegistrationStatus) {
+      return await checkTwilioRegistration();
+    }
 
     if (checkAll) {
       return await checkAllNumbers(supabase, includeSTIRSHAKEN);
@@ -397,6 +403,122 @@ async function analyzeBehaviorPattern(number: any, supabase: any) {
   }
 
   return { score, reasons };
+}
+
+async function checkTwilioRegistration() {
+  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    return new Response(JSON.stringify({
+      error: 'Twilio credentials not configured',
+      registered: false
+    }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const encoder = new TextEncoder();
+  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
+  const base64Creds = base64Encode(credentials);
+
+  try {
+    // Check A2P 10DLC registration - check for trust products (business profile)
+    const trustProductsUrl = `https://trusthub.twilio.com/v1/TrustProducts`;
+    const trustResponse = await fetch(trustProductsUrl, {
+      headers: {
+        'Authorization': `Basic ${base64Creds}`
+      }
+    });
+
+    const trustData = await trustResponse.json();
+    const hasTrustProduct = trustData.trust_products && trustData.trust_products.length > 0;
+    const trustProducts = trustData.trust_products || [];
+
+    // Check for messaging services (campaign registration)
+    const messagingUrl = `https://messaging.twilio.com/v1/Services`;
+    const messagingResponse = await fetch(messagingUrl, {
+      headers: {
+        'Authorization': `Basic ${base64Creds}`
+      }
+    });
+
+    const messagingData = await messagingResponse.json();
+    const hasMessagingService = messagingData.services && messagingData.services.length > 0;
+
+    // Check for A2P brand registration
+    const brandsUrl = `https://messaging.twilio.com/v1/a2p/BrandRegistrations`;
+    const brandsResponse = await fetch(brandsUrl, {
+      headers: {
+        'Authorization': `Basic ${base64Creds}`
+      }
+    });
+
+    const brandsData = await brandsResponse.json();
+    const brands = brandsData.data || [];
+    const activeBrands = brands.filter((b: any) => b.status === 'APPROVED' || b.status === 'VERIFIED');
+
+    return new Response(JSON.stringify({
+      registered: hasTrustProduct && activeBrands.length > 0,
+      details: {
+        trustProducts: {
+          count: trustProducts.length,
+          verified: trustProducts.filter((tp: any) => tp.status === 'twilio-approved').length,
+          products: trustProducts.map((tp: any) => ({
+            sid: tp.sid,
+            friendlyName: tp.friendly_name,
+            status: tp.status,
+            dateCreated: tp.date_created
+          }))
+        },
+        brands: {
+          count: brands.length,
+          approved: activeBrands.length,
+          brands: brands.map((b: any) => ({
+            sid: b.sid,
+            status: b.status,
+            identityStatus: b.identity_status
+          }))
+        },
+        messagingServices: {
+          count: messagingData.services?.length || 0
+        }
+      },
+      recommendation: getRegistrationRecommendation(hasTrustProduct, activeBrands.length, trustProducts)
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Registration check error:', error);
+    return new Response(JSON.stringify({
+      error: error.message,
+      registered: false,
+      details: null
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+function getRegistrationRecommendation(hasTrustProduct: boolean, approvedBrands: number, trustProducts: any[]) {
+  if (!hasTrustProduct) {
+    return '❌ No business profile found. You need to register with Twilio Trust Hub and create a business profile.';
+  }
+
+  const verifiedTrustProducts = trustProducts.filter((tp: any) => tp.status === 'twilio-approved').length;
+  
+  if (verifiedTrustProducts === 0) {
+    return '⚠️ Business profile pending approval. Submit for verification in Twilio Trust Hub.';
+  }
+
+  if (approvedBrands === 0) {
+    return '⚠️ No approved A2P brand registration. Register your brand for A2P 10DLC messaging.';
+  }
+
+  return `✅ Fully registered! You have ${verifiedTrustProducts} verified business profile(s) and ${approvedBrands} approved brand(s). STIR/SHAKEN attestation will be applied to your outbound calls.`;
 }
 
 function getRecommendation(riskLevel: string, reasons: string[]) {

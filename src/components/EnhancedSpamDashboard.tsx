@@ -27,11 +27,30 @@ export const EnhancedSpamDashboard = () => {
   const [numbers, setNumbers] = useState<any[]>([]);
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<any>(null);
+  const [registrationStatus, setRegistrationStatus] = useState<any>(null);
+  const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadNumbers();
+    checkRegistrationStatus();
   }, []);
+
+  const checkRegistrationStatus = async () => {
+    setIsCheckingRegistration(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { checkRegistrationStatus: true }
+      });
+
+      if (error) throw error;
+      setRegistrationStatus(data);
+    } catch (error: any) {
+      console.error('Registration check failed:', error);
+    } finally {
+      setIsCheckingRegistration(false);
+    }
+  };
 
   const loadNumbers = async () => {
     const { data, error } = await supabase
@@ -147,10 +166,152 @@ export const EnhancedSpamDashboard = () => {
         <CardContent>
           <Tabs defaultValue="numbers" className="space-y-4">
             <TabsList>
+              <TabsTrigger value="registration">Registration Status</TabsTrigger>
               <TabsTrigger value="numbers">Phone Numbers ({numbers.length})</TabsTrigger>
               <TabsTrigger value="results">Latest Scan Results</TabsTrigger>
               <TabsTrigger value="info">About STIR/SHAKEN</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="registration" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Twilio A2P Registration Status</CardTitle>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={checkRegistrationStatus}
+                      disabled={isCheckingRegistration}
+                    >
+                      {isCheckingRegistration ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Checking...</>
+                      ) : (
+                        <><RefreshCw className="h-3 w-3 mr-1" />Refresh</>
+                      )}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isCheckingRegistration ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : registrationStatus ? (
+                    <>
+                      <Alert className={registrationStatus.registered ? 'border-green-500 bg-green-500/10' : 'border-yellow-500 bg-yellow-500/10'}>
+                        {registrationStatus.registered ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        )}
+                        <AlertDescription>
+                          <strong>{registrationStatus.registered ? '✅ Registered' : '⚠️ Not Fully Registered'}</strong>
+                          <p className="mt-1 text-sm">{registrationStatus.recommendation}</p>
+                        </AlertDescription>
+                      </Alert>
+
+                      {registrationStatus.details && (
+                        <div className="space-y-3">
+                          <div className="p-4 bg-muted rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="font-semibold">Trust Hub (Business Profile)</div>
+                              <Badge variant={registrationStatus.details.trustProducts.verified > 0 ? 'default' : 'secondary'}>
+                                {registrationStatus.details.trustProducts.verified} / {registrationStatus.details.trustProducts.count} Verified
+                              </Badge>
+                            </div>
+                            {registrationStatus.details.trustProducts.products.length > 0 ? (
+                              <div className="space-y-2 mt-3">
+                                {registrationStatus.details.trustProducts.products.map((tp: any) => (
+                                  <div key={tp.sid} className="text-sm p-2 bg-background rounded border">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium">{tp.friendlyName}</span>
+                                      <Badge variant={tp.status === 'twilio-approved' ? 'default' : 'secondary'}>
+                                        {tp.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">SID: {tp.sid}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No business profiles found</p>
+                            )}
+                          </div>
+
+                          <div className="p-4 bg-muted rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="font-semibold">A2P Brand Registration</div>
+                              <Badge variant={registrationStatus.details.brands.approved > 0 ? 'default' : 'secondary'}>
+                                {registrationStatus.details.brands.approved} / {registrationStatus.details.brands.count} Approved
+                              </Badge>
+                            </div>
+                            {registrationStatus.details.brands.brands.length > 0 ? (
+                              <div className="space-y-2 mt-3">
+                                {registrationStatus.details.brands.brands.map((brand: any) => (
+                                  <div key={brand.sid} className="text-sm p-2 bg-background rounded border">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium">Brand {brand.sid.slice(-8)}</span>
+                                      <Badge variant={brand.status === 'APPROVED' || brand.status === 'VERIFIED' ? 'default' : 'secondary'}>
+                                        {brand.status}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No A2P brands registered</p>
+                            )}
+                          </div>
+
+                          <div className="p-4 bg-muted rounded-lg">
+                            <div className="flex items-center justify-between">
+                              <div className="font-semibold">Messaging Services</div>
+                              <Badge>{registrationStatus.details.messagingServices.count} Services</Badge>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {!registrationStatus.registered && (
+                        <div className="pt-4 border-t">
+                          <h4 className="font-semibold mb-2">Next Steps:</h4>
+                          <ol className="list-decimal list-inside space-y-2 text-sm">
+                            <li>
+                              <a 
+                                href="https://console.twilio.com/us1/develop/trust-hub"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                Create Trust Hub Business Profile
+                              </a>
+                            </li>
+                            <li>
+                              <a 
+                                href="https://console.twilio.com/us1/develop/sms/settings/a2p-registration"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                Register A2P 10DLC Brand
+                              </a>
+                            </li>
+                            <li>Submit for verification and wait for approval (1-2 business days)</li>
+                          </ol>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        Click "Refresh" to check your Twilio registration status
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
             <TabsContent value="numbers" className="space-y-3">
               {numbers.map((number) => {
