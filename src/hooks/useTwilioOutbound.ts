@@ -15,7 +15,7 @@ interface TwilioCallResponse {
   status: string;
   to: string;
   from: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export const useTwilioOutbound = () => {
@@ -65,11 +65,12 @@ export const useTwilioOutbound = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to create outbound call";
       console.error('[useTwilioOutbound] Failed to create call:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create outbound call",
+        description: errorMessage,
         variant: "destructive"
       });
       return null;
