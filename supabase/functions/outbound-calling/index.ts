@@ -120,6 +120,24 @@ serve(async (req) => {
 
         console.log('[Outbound Calling] Creating call log for user:', user.id);
 
+        // Fetch lead details for personalization
+        let leadData = null;
+        if (leadId) {
+          const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('first_name, last_name, email, company, phone_number, status, priority, notes')
+            .eq('id', leadId)
+            .single();
+          
+          if (!leadError && lead) {
+            leadData = lead;
+            console.log('[Outbound Calling] Lead data retrieved:', {
+              name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+              company: lead.company
+            });
+          }
+        }
+
         // Use admin client for database operations
         const { data: callLog, error: callLogError } = await supabaseAdmin
           .from('call_logs')
@@ -158,7 +176,17 @@ serve(async (req) => {
             metadata: {
               campaign_id: campaignId,
               lead_id: leadId,
-              call_log_id: callLog.id
+              call_log_id: callLog.id,
+              // Include all lead data for agent personalization
+              ...(leadData && {
+                first_name: leadData.first_name,
+                last_name: leadData.last_name,
+                email: leadData.email,
+                company: leadData.company,
+                status: leadData.status,
+                priority: leadData.priority,
+                notes: leadData.notes,
+              })
             }
           }),
         });
