@@ -31,21 +31,53 @@ serve(async (req) => {
 
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
+      console.log('❌ Unauthorized - no user found');
       return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
 
-    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+    console.log('✅ User authenticated:', user.id);
 
-    if (!twilioAccountSid || !twilioAuthToken) {
-      return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
+    // Get Twilio credentials from user_credentials table
+    const { data: twilioCredentials, error: twilioError } = await supabaseClient
+      .from('user_credentials')
+      .select('credentials')
+      .eq('user_id', user.id)
+      .eq('service', 'twilio')
+      .single();
+
+    if (twilioError || !twilioCredentials) {
+      console.log('❌ Twilio credentials not found for user:', user.id);
+      return new Response(JSON.stringify({ error: 'Twilio credentials not configured. Please add them in Settings > API Keys.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    const twilioAccountSid = twilioCredentials.credentials.account_sid;
+    const twilioAuthToken = twilioCredentials.credentials.auth_token;
+
+    if (!twilioAccountSid || !twilioAuthToken) {
+      console.log('❌ Invalid Twilio credentials structure');
+      return new Response(JSON.stringify({ error: 'Invalid Twilio credentials. Please update them in Settings > API Keys.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Get Retell AI credentials
+    const { data: retellCredentials, error: retellError } = await supabaseClient
+      .from('user_credentials')
+      .select('credentials')
+      .eq('user_id', user.id)
+      .eq('service', 'retell')
+      .single();
+
+    const retellApiKey = retellCredentials?.credentials?.api_key;
+
+    console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
+
     const { action, phoneNumberSid, phoneNumber }: TwilioImportRequest = await req.json();
+    console.log('📥 Request action:', action, { phoneNumber, phoneNumberSid });
 
     // Helper function to encode credentials safely (handles UTF-8)
     const encodeCredentials = (accountSid: string, authToken: string): string => {
@@ -57,6 +89,7 @@ serve(async (req) => {
 
     // List all Twilio numbers
     if (action === 'list_numbers') {
+      console.log('📞 Fetching Twilio numbers...');
       const response = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json`,
         {
@@ -68,11 +101,12 @@ serve(async (req) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Twilio API error:', response.status, errorText);
+        console.error('❌ Twilio API error:', response.status, errorText);
         throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('✅ Fetched', data.incoming_phone_numbers?.length || 0, 'Twilio numbers');
       return new Response(JSON.stringify({ numbers: data.incoming_phone_numbers }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -80,39 +114,52 @@ serve(async (req) => {
 
     // Import single number
     if (action === 'import_number' && phoneNumber) {
+      console.log('📲 Importing number:', phoneNumber);
+      
       if (!retellApiKey) {
-        return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
+        console.log('❌ Retell AI credentials not configured');
+        return new Response(JSON.stringify({ error: 'Retell AI credentials not configured. Please add them in Settings > API Keys.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       // Import to Retell AI first
-      const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
+      const retellPayload = {
+        phone_number: phoneNumber,
+        termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
+      };
+      console.log('📤 Sending to Retell AI:', JSON.stringify(retellPayload, null, 2));
+
+      const retellResponse = await fetch('https://api.retellai.com/v2/import-phone-number', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${retellApiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          phone_number: phoneNumber,
-          termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
-        })
+        body: JSON.stringify(retellPayload)
       });
 
       if (!retellResponse.ok) {
         const errorText = await retellResponse.text();
-        console.error('Retell import failed:', errorText);
-        return new Response(JSON.stringify({ error: 'Failed to import to Retell AI' }), {
+        console.error('❌ Retell import failed:', retellResponse.status, errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to import to Retell AI', 
+          details: errorText,
+          status: retellResponse.status 
+        }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       const retellNumber = await retellResponse.json();
+      console.log('✅ Retell AI import successful:', retellNumber);
 
       // Add to our database
       const areaCode = phoneNumber.replace(/\D/g, '').slice(1, 4);
+      console.log('💾 Saving to database:', { phoneNumber, areaCode, retell_phone_id: retellNumber.phone_number_id });
+      
       const { data: dbNumber, error: dbError } = await supabaseClient
         .from('phone_numbers')
         .insert({
@@ -127,13 +174,17 @@ serve(async (req) => {
         .single();
 
       if (dbError) {
-        console.error('Database insert error:', dbError);
-        return new Response(JSON.stringify({ error: 'Failed to save number to database' }), {
+        console.error('❌ Database insert error:', dbError);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to save number to database', 
+          details: dbError.message 
+        }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
+      console.log('✅ Number imported successfully:', dbNumber.id);
       return new Response(JSON.stringify({ 
         success: true, 
         number: dbNumber,
@@ -145,6 +196,16 @@ serve(async (req) => {
 
     // Sync all Twilio numbers
     if (action === 'sync_all') {
+      console.log('🔄 Starting sync of all Twilio numbers...');
+      
+      if (!retellApiKey) {
+        console.log('❌ Retell AI credentials required for sync');
+        return new Response(JSON.stringify({ error: 'Retell AI credentials not configured. Please add them in Settings > API Keys.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       const response = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json`,
         {
@@ -156,36 +217,74 @@ serve(async (req) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Twilio API error:', response.status, errorText);
+        console.error('❌ Twilio API error:', response.status, errorText);
         throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      const twilioNumbers = data.incoming_phone_numbers || [];
+      console.log('📞 Found', twilioNumbers.length, 'Twilio numbers to sync');
+
       const imported = [];
       const failed = [];
 
-      for (const twilioNum of data.incoming_phone_numbers) {
+      for (const twilioNum of twilioNumbers) {
         try {
-          const importResult = await fetch(req.url, {
+          console.log('📲 Importing:', twilioNum.phone_number);
+          
+          // Import to Retell AI
+          const retellPayload = {
+            phone_number: twilioNum.phone_number,
+            termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
+          };
+
+          const retellResponse = await fetch('https://api.retellai.com/v2/import-phone-number', {
             method: 'POST',
-            headers: req.headers,
-            body: JSON.stringify({
-              action: 'import_number',
-              phoneNumber: twilioNum.phone_number
-            })
+            headers: {
+              'Authorization': `Bearer ${retellApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(retellPayload)
           });
 
-          if (importResult.ok) {
-            imported.push(twilioNum.phone_number);
-          } else {
-            failed.push(twilioNum.phone_number);
+          if (!retellResponse.ok) {
+            const errorText = await retellResponse.text();
+            console.error('❌ Retell import failed for', twilioNum.phone_number, ':', errorText);
+            failed.push({ number: twilioNum.phone_number, error: 'Retell import failed' });
+            continue;
           }
+
+          const retellNumber = await retellResponse.json();
+
+          // Save to database
+          const areaCode = twilioNum.phone_number.replace(/\D/g, '').slice(1, 4);
+          const { error: dbError } = await supabaseClient
+            .from('phone_numbers')
+            .insert({
+              user_id: user.id,
+              number: twilioNum.phone_number,
+              area_code: areaCode,
+              status: 'active',
+              daily_calls: 0,
+              retell_phone_id: retellNumber.phone_number_id
+            });
+
+          if (dbError) {
+            console.error('❌ Database error for', twilioNum.phone_number, ':', dbError);
+            failed.push({ number: twilioNum.phone_number, error: 'Database save failed' });
+            continue;
+          }
+
+          console.log('✅ Successfully imported:', twilioNum.phone_number);
+          imported.push(twilioNum.phone_number);
+
         } catch (error) {
-          console.error('Failed to import:', twilioNum.phone_number, error);
-          failed.push(twilioNum.phone_number);
+          console.error('❌ Failed to import:', twilioNum.phone_number, error);
+          failed.push({ number: twilioNum.phone_number, error: error.message });
         }
       }
 
+      console.log('🎉 Sync complete - Imported:', imported.length, 'Failed:', failed.length);
       return new Response(JSON.stringify({ 
         success: true,
         imported_count: imported.length,
