@@ -285,7 +285,7 @@ serve(async (req) => {
     console.error('[Outbound Calling] Error:', error);
     console.error('[Outbound Calling] Error stack:', error?.stack || 'no stack');
     return new Response(JSON.stringify({
-      error: error?.message || String(error),
+      error: 'An unexpected error occurred',
       details: 'Check edge function logs for more information'
     }), {
       status: 500,

@@ -19,6 +19,9 @@ jobs:
     # Only run if secrets are configured (prevents failures in forks)
     if: ${{ vars.ENABLE_SMOKE_TESTS == 'true' && secrets.SUPABASE_URL != '' }}
     
+    permissions:
+      contents: read
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

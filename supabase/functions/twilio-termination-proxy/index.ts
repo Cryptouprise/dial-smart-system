@@ -65,9 +65,10 @@ serve(async (req) => {
     });
   } catch (err: any) {
     console.error("twilio-termination-proxy error:", err?.message || err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal forwarding error", details: String(err?.message || err) }), {
+    return new Response(JSON.stringify({ ok: false, error: "Internal forwarding error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });
+

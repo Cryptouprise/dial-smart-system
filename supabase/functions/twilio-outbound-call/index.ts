@@ -88,6 +88,6 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error('twilio-outbound-call error:', err);
-    return new Response(JSON.stringify({ error: String(err?.message || err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'An unexpected error occurred' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

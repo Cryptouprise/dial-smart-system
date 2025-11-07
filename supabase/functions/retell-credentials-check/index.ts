@@ -46,7 +46,7 @@ serve(async (req) => {
     });
   } catch (err: any) {
     console.error("retell-credentials-check error:", err?.message || err);
-    return new Response(JSON.stringify({ ok: false, error: "Network or unexpected error", details: String(err?.message || err) }), {
+    return new Response(JSON.stringify({ ok: false, error: "Network or unexpected error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });

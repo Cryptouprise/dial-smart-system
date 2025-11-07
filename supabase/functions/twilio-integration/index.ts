@@ -287,7 +287,7 @@ serve(async (req) => {
     });
   } catch (err: any) {
     console.error("twilio-integration handler error:", err?.message || err);
-    return new Response(JSON.stringify({ error: "Internal server error", details: String(err?.message || err) }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
