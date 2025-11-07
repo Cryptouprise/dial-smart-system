@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { extractAreaCode } from '../_shared/phone-parser.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -133,7 +134,7 @@ serve(async (req) => {
       console.log('✅ Retell AI import successful:', retellNumber);
 
       // Add to our database
-      const areaCode = phoneNumber.replace(/\D/g, '').slice(1, 4);
+      const areaCode = extractAreaCode(phoneNumber);
       console.log('💾 Saving to database:', { phoneNumber, areaCode, retell_phone_id: retellNumber.phone_number_id });
       
       const { data: dbNumber, error: dbError } = await supabaseClient
@@ -233,7 +234,7 @@ serve(async (req) => {
           const retellNumber = await retellResponse.json();
 
           // Save to database
-          const areaCode = twilioNum.phone_number.replace(/\D/g, '').slice(1, 4);
+          const areaCode = extractAreaCode(twilioNum.phone_number);
           const { error: dbError } = await supabaseClient
             .from('phone_numbers')
             .insert({
