@@ -1,226 +1,64 @@
-
-import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-
-interface RetellPhoneNumber {
-  phone_number: string;
-  nickname?: string;
-  inbound_agent_id?: string;
-  outbound_agent_id?: string;
-  termination_uri?: string;
-}
-
-interface Agent {
-  agent_id: string;
-  agent_name: string;
-  voice_id?: string;
-  created_at?: string;
-}
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Replace mock with a real server-side check call
   const getRetellCredentials = async () => {
-    // API key is stored in Supabase secrets, not user_credentials table
-    return true; // Just return true to indicate credentials are configured
+    try {
+      const { data, error } = await supabase.functions.invoke("retell-credentials-check", {});
+      if (error) {
+        console.error("retell-credentials-check invocation error:", error);
+        return false;
+      }
+      return !!(data && (data as any).ok);
+    } catch (err: any) {
+      console.error("Failed to validate Retell credentials:", err?.message || err);
+      return false;
+    }
   };
 
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
     setIsLoading(true);
     try {
-      console.log('[useRetellAI] Importing phone number:', { phoneNumber, terminationUri });
-      
-      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
+      console.log("[useRetellAI] Importing phone number:", { phoneNumber });
+      const { data, error } = await supabase.functions.invoke("retell-phone-management", {
         body: {
-          action: 'import',
+          action: "import",
           phoneNumber,
           terminationUri
         }
       });
 
       if (error) {
-        console.error('[useRetellAI] Import error:', error);
         throw error;
       }
 
-      console.log('[useRetellAI] Import success:', data);
-
       toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} imported to Retell AI`,
+        title: "Phone Imported",
+        description: `${phoneNumber} imported`,
       });
 
       return data;
-    } catch (error: any) {
-      console.error('[useRetellAI] Import failed:', error);
+    } catch (err: any) {
+      console.error("useRetellAI import error:", err?.message || err);
       toast({
-        title: "Error",
-        description: error.message || "Failed to import phone number",
+        title: "Import Failed",
+        description: err?.message || "Failed to import number",
         variant: "destructive"
       });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updatePhoneNumber = async (phoneNumber: string, agentId?: string, nickname?: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
-        body: {
-          action: 'update',
-          phoneNumber,
-          agentId,
-          nickname
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} updated`,
-      });
-
-      return data;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update phone number",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const deletePhoneNumber = async (phoneNumber: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
-        body: {
-          action: 'delete',
-          phoneNumber
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} deleted from Retell AI`,
-      });
-
-      return true;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete phone number",
-        variant: "destructive"
-      });
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const listPhoneNumbers = async (): Promise<RetellPhoneNumber[] | null> => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
-        body: {
-          action: 'list'
-        }
-      });
-
-      if (error) throw error;
-      console.log('[useRetellAI] Phone numbers response:', data);
-      // Retell AI returns array directly, not wrapped in an object
-      return Array.isArray(data) ? data : (data?.phone_numbers || []);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to list phone numbers",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const listAgents = async (): Promise<Agent[] | null> => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
-        body: {
-          action: 'list'
-        }
-      });
-
-      if (error) throw error;
-      console.log('[useRetellAI] Agents response:', data);
-      // Retell AI returns array directly, not wrapped in an object
-      return Array.isArray(data) ? data : (data?.agents || []);
-    } catch (error: any) {
-      console.error('Failed to list agents:', error);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const createAgent = async (agentName: string, llmId: string, voiceId?: string): Promise<Agent | null> => {
-    setIsLoading(true);
-    try {
-      console.log('[useRetellAI] Creating agent:', { agentName, llmId, voiceId });
-      
-      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
-        body: {
-          action: 'create',
-          agentName,
-          llmId,
-          voiceId
-        }
-      });
-
-      if (error) {
-        console.error('[useRetellAI] Create agent error:', error);
-        throw error;
-      }
-
-      console.log('[useRetellAI] Agent created:', data);
-
-      toast({
-        title: "Success",
-        description: `Agent "${agentName}" created successfully`,
-      });
-
-      return data;
-    } catch (error: any) {
-      console.error('[useRetellAI] Create agent failed:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create agent",
-        variant: "destructive"
-      });
-      return null;
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
   return {
-    importPhoneNumber,
-    updatePhoneNumber,
-    deletePhoneNumber,
-    listPhoneNumbers,
-    listAgents,
-    createAgent,
-    isLoading
+    isLoading,
+    getRetellCredentials,
+    importPhoneNumber
   };
 };

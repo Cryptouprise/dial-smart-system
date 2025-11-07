@@ -375,7 +375,7 @@ export const usePredictiveDialing = () => {
         throw new Error('Campaign must have an agent assigned');
       }
 
-      // Call the edge function (auth is handled automatically by Supabase client)
+      // Call the edge function with explicit auth header
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
@@ -384,6 +384,9 @@ export const usePredictiveDialing = () => {
           phoneNumber,
           callerId,
           agentId: campaign.agent_id
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
         }
       });
 
