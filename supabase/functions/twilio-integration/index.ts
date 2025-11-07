@@ -6,9 +6,9 @@
 // - Improved area code extraction and defensive checks
 // - Standardized JSON responses and safe logging
 
-import { serve } from "std/server";
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm"; // adjust if you have local import strategy
-import { encode as base64Encode } from "std/encoding/base64.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
