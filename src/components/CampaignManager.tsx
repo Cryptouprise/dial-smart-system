@@ -71,7 +71,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       });
       
       if (error) throw error;
-      setAgents(data || []);
+      
+      // Deduplicate agents by agent_id to prevent React key conflicts
+      const agentArray = Array.isArray(data) ? data : (data?.agents || []);
+      const uniqueAgents = agentArray.reduce((acc: any[], agent: any) => {
+        if (!acc.find(a => a.agent_id === agent.agent_id)) {
+          acc.push(agent);
+        }
+        return acc;
+      }, []);
+      
+      console.log('Loaded unique agents:', uniqueAgents.length);
+      setAgents(uniqueAgents);
     } catch (error) {
       console.error('Error loading agents:', error);
       toast({
@@ -200,7 +211,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <SelectTrigger>
                     <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background z-50">
                     {agents.map((agent) => (
                       <SelectItem key={agent.agent_id} value={agent.agent_id}>
                         {agent.agent_name}

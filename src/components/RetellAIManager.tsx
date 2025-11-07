@@ -72,7 +72,16 @@ const RetellAIManager = () => {
     ]);
 
     if (numbersData) setRetellNumbers(numbersData);
-    if (agentsData) setAgents(agentsData);
+    if (agentsData) {
+      // Deduplicate agents by agent_id to prevent React key conflicts
+      const uniqueAgents = agentsData.reduce((acc: any[], agent: any) => {
+        if (!acc.find(a => a.agent_id === agent.agent_id)) {
+          acc.push(agent);
+        }
+        return acc;
+      }, []);
+      setAgents(uniqueAgents);
+    }
     if (llmsData) setLlms(llmsData);
   };
 

@@ -48,7 +48,14 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
   const loadAgents = async () => {
     const agentsData = await listAgents();
     if (agentsData) {
-      setAgents(agentsData);
+      // Deduplicate agents by agent_id to prevent React key conflicts
+      const uniqueAgents = agentsData.reduce((acc: any[], agent: any) => {
+        if (!acc.find(a => a.agent_id === agent.agent_id)) {
+          acc.push(agent);
+        }
+        return acc;
+      }, []);
+      setAgents(uniqueAgents);
     }
   };
 
@@ -240,7 +247,7 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
                       <SelectTrigger>
                         <SelectValue placeholder="Select default agent" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-background z-50">
                         {agents.map((agent) => (
                           <SelectItem key={agent.agent_id} value={agent.agent_id}>
                             {agent.agent_name}
