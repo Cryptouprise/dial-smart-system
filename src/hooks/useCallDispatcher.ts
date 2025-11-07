@@ -33,11 +33,11 @@ export const useCallDispatcher = () => {
 
       return data;
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('Call dispatch error:', error);
       toast({
         title: "Dispatch Failed",
-        description: error.message || "Failed to dispatch calls",
+        description: error instanceof Error ? error.message : "Failed to dispatch calls",
         variant: "destructive"
       });
       return null;
