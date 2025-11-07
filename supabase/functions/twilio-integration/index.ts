@@ -105,7 +105,7 @@ serve(async (req) => {
         phone_number: phoneNumber,
         termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
       };
-      console.log('📤 Sending to Retell AI:', JSON.stringify(retellPayload, null, 2));
+      console.log('📤 Sending to Retell AI - phone_number:', phoneNumber);
 
       const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
         method: 'POST',
