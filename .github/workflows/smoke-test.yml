@@ -7,10 +7,15 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
@@ -36,6 +41,8 @@ jobs:
   integration-test:
     name: Integration Test (Optional)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # Only run if secrets are available (not required for PR from forks)
     if: ${{ vars.ENABLE_INTEGRATION_TESTS == 'true' && secrets.SUPABASE_URL != '' }}
     needs: lint
@@ -69,6 +76,8 @@ jobs:
   build:
     name: Build Application
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
@@ -100,6 +109,8 @@ jobs:
   summary:
     name: Test Summary
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [lint, build]
     if: always()
     

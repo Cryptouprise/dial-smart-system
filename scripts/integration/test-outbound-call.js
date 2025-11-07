@@ -126,7 +126,15 @@ async function testOutboundCall() {
   };
   
   console.log('📤 Sending request to:', functionUrl);
-  console.log('Request headers:', JSON.stringify(options.headers, null, 2));
+  // Mask sensitive headers before logging
+  const maskedHeaders = { ...options.headers };
+  if (maskedHeaders.Authorization) {
+    maskedHeaders.Authorization = maskedHeaders.Authorization.substring(0, 20) + '...';
+  }
+  if (maskedHeaders.apikey) {
+    maskedHeaders.apikey = maskedHeaders.apikey.substring(0, 10) + '...';
+  }
+  console.log('Request headers:', JSON.stringify(maskedHeaders, null, 2));
   console.log('Request body:', requestBody);
   console.log('\n⏳ Waiting for response...\n');
   
