@@ -1,0 +1,51 @@
+name: Smoke Tests (Outbound Calling)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+    paths:
+      - 'supabase/functions/**'
+      - 'scripts/integration/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    # Only run if secrets are configured (prevents failures in forks)
+    if: ${{ vars.ENABLE_SMOKE_TESTS == 'true' && secrets.SUPABASE_URL != '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Make test script executable
+        run: chmod +x scripts/integration/test-outbound-call.js
+
+      - name: Run integration tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          echo "Running outbound calling smoke tests..."
+          node scripts/integration/test-outbound-call.js
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ All smoke tests passed"
+          else
+            echo "⚠️ Some smoke tests failed or were skipped"
+          fi
