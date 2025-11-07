@@ -19,7 +19,8 @@ import {
   Loader2,
   RefreshCw,
   TrendingUp,
-  Info
+  Info,
+  Activity
 } from 'lucide-react';
 
 export const EnhancedSpamDashboard = () => {
@@ -28,13 +29,87 @@ export const EnhancedSpamDashboard = () => {
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<any>(null);
   const [registrationStatus, setRegistrationStatus] = useState<any>(null);
+  const [numberProfiles, setNumberProfiles] = useState<Map<string, any>>(new Map());
+  const [approvedProfiles, setApprovedProfiles] = useState<any[]>([]);
+  const [transferringNumber, setTransferringNumber] = useState<string | null>(null);
   const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadNumbers();
     checkRegistrationStatus();
+    loadApprovedProfiles();
   }, []);
+
+  useEffect(() => {
+    // Check profiles for all loaded numbers
+    numbers.forEach(num => {
+      if (!numberProfiles.has(num.number)) {
+        checkNumberProfile(num.number);
+      }
+    });
+  }, [numbers]);
+
+  const loadApprovedProfiles = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { listApprovedProfiles: true }
+      });
+      
+      if (error) throw error;
+      setApprovedProfiles(data.approvedProfiles || []);
+    } catch (error) {
+      console.error('Failed to load approved profiles:', error);
+    }
+  };
+
+  const checkNumberProfile = async (phoneNumber: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { checkNumberProfile: true, phoneNumber }
+      });
+      
+      if (error) throw error;
+      setNumberProfiles(prev => new Map(prev).set(phoneNumber, data));
+      return data;
+    } catch (error) {
+      console.error('Failed to check number profile:', error);
+      return null;
+    }
+  };
+
+  const transferNumberToProfile = async (phoneNumber: string, profileSid: string) => {
+    setTransferringNumber(phoneNumber);
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { 
+          transferToProfile: true,
+          phoneNumber,
+          customerProfileSid: profileSid
+        }
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Number Transferred",
+        description: `${phoneNumber} has been assigned to the approved STIR/SHAKEN profile`,
+      });
+      
+      // Refresh the number profile
+      await checkNumberProfile(phoneNumber);
+      await runEnhancedScan(phoneNumber);
+    } catch (error) {
+      console.error('Transfer failed:', error);
+      toast({
+        title: "Transfer Failed",
+        description: error.message || "Failed to transfer number",
+        variant: "destructive"
+      });
+    } finally {
+      setTransferringNumber(null);
+    }
+  };
 
   const checkRegistrationStatus = async () => {
     setIsCheckingRegistration(true);
@@ -317,6 +392,8 @@ export const EnhancedSpamDashboard = () => {
               {numbers.map((number) => {
                 const scoreData = getSpamScoreBadge(number.external_spam_score || 0);
                 const ScoreIcon = scoreData.icon;
+                const profile = numberProfiles.get(number.number);
+                const needsTransfer = profile && !profile.currentProfile?.isApproved && approvedProfiles.length > 0;
 
                 return (
                   <Card key={number.id} className="border-l-4" style={{ borderLeftColor: number.is_spam ? '#ef4444' : '#22c55e' }}>
@@ -364,6 +441,57 @@ export const EnhancedSpamDashboard = () => {
                               <div className="mt-1 text-sm">{number.caller_name || 'Not registered'}</div>
                             </div>
                           </div>
+
+                          {profile && (
+                            <div className="pt-2 border-t">
+                              <div className="text-xs text-muted-foreground mb-1">Trust Hub Profile</div>
+                              {profile.currentProfile ? (
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={profile.currentProfile.isApproved ? "default" : "secondary"}>
+                                    {profile.currentProfile.friendlyName}
+                                  </Badge>
+                                  {profile.currentProfile.isApproved ? (
+                                    <CheckCircle className="h-4 w-4 text-green-500" />
+                                  ) : (
+                                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-yellow-600">Not assigned</span>
+                              )}
+                            </div>
+                          )}
+
+                          {needsTransfer && (
+                            <Alert className="border-yellow-500 bg-yellow-500/10">
+                              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                              <AlertDescription>
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">Number not on approved STIR/SHAKEN profile</p>
+                                  <div className="space-y-1">
+                                    <p className="text-xs text-muted-foreground">Transfer to:</p>
+                                    {approvedProfiles.map(prof => (
+                                      <Button
+                                        key={prof.sid}
+                                        size="sm"
+                                        variant="outline"
+                                        className="w-full justify-start text-xs"
+                                        onClick={() => transferNumberToProfile(number.number, prof.sid)}
+                                        disabled={transferringNumber === number.number}
+                                      >
+                                        {transferringNumber === number.number ? (
+                                          <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                        ) : (
+                                          <Shield className="h-3 w-3 mr-2" />
+                                        )}
+                                        {prof.friendlyName}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </AlertDescription>
+                            </Alert>
+                          )}
 
                           {number.is_voip && (
                             <Alert className="mt-2">
