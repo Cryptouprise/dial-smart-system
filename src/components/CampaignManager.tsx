@@ -7,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2 } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
+import { CampaignLeadManager } from './CampaignLeadManager';
 
 interface Campaign {
   id: string;
@@ -33,6 +34,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -270,25 +272,47 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
             </CardHeader>
             
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-slate-500">Calls/Min:</span>
-                  <div className="font-medium">{campaign.calls_per_minute}</div>
-                </div>
-                <div>
-                  <span className="text-slate-500">Max Attempts:</span>
-                  <div className="font-medium">{campaign.max_attempts}</div>
-                </div>
-                <div>
-                  <span className="text-slate-500">Hours:</span>
-                  <div className="font-medium">
-                    {campaign.calling_hours_start} - {campaign.calling_hours_end}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-500">Calls/Min:</span>
+                    <div className="font-medium">{campaign.calls_per_minute}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Max Attempts:</span>
+                    <div className="font-medium">{campaign.max_attempts}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Hours:</span>
+                    <div className="font-medium">
+                      {campaign.calling_hours_start} - {campaign.calling_hours_end}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Timezone:</span>
+                    <div className="font-medium">{campaign.timezone}</div>
                   </div>
                 </div>
-                <div>
-                  <span className="text-slate-500">Timezone:</span>
-                  <div className="font-medium">{campaign.timezone}</div>
-                </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setExpandedCampaignId(
+                    expandedCampaignId === campaign.id ? null : campaign.id
+                  )}
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  {expandedCampaignId === campaign.id ? 'Hide' : 'Manage'} Campaign Leads
+                </Button>
+
+                {expandedCampaignId === campaign.id && (
+                  <div className="pt-4">
+                    <CampaignLeadManager
+                      campaignId={campaign.id}
+                      campaignName={campaign.name}
+                    />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
