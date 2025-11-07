@@ -25,14 +25,27 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     console.log('[Outbound Calling] Auth header present:', !!authHeader);
+    console.log('[Outbound Calling] Auth header value (first 20 chars):', authHeader?.substring(0, 20));
     
     if (!authHeader) {
-      throw new Error('Missing Authorization header');
+      console.error('[Outbound Calling] Missing Authorization header');
+      throw new Error('Missing Authorization header. Please ensure you are logged in.');
     }
 
+    if (!authHeader.startsWith('Bearer ')) {
+      console.error('[Outbound Calling] Invalid Authorization header format');
+      throw new Error('Invalid Authorization header format. Expected "Bearer <token>"');
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    
+    console.log('[Outbound Calling] Supabase URL configured:', !!supabaseUrl);
+    console.log('[Outbound Calling] Supabase Anon Key configured:', !!supabaseAnonKey);
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      supabaseUrl ?? '',
+      supabaseAnonKey ?? '',
       {
         global: {
           headers: { Authorization: authHeader },
@@ -60,16 +73,16 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     
     if (authError) {
-      console.error('[Outbound Calling] Auth error:', authError);
-      throw new Error(`Authentication failed: ${authError.message}`);
+      console.error('[Outbound Calling] Auth error details:', JSON.stringify(authError));
+      throw new Error(`Authentication failed: ${authError.message || 'Unable to verify user'}`);
     }
     
     if (!user) {
       console.error('[Outbound Calling] No user found in token');
-      throw new Error('User not authenticated');
+      throw new Error('User not authenticated. Please log in again.');
     }
 
-    console.log('[Outbound Calling] Authenticated user:', user.id);
+    console.log('[Outbound Calling] ✓ Authenticated user:', user.id);
 
     const baseUrl = 'https://api.retellai.com/v2';
     const headers = {

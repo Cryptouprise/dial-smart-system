@@ -353,6 +353,15 @@ export const usePredictiveDialing = () => {
   const makeCall = async (campaignId: string, leadId: string, phoneNumber: string, callerId: string) => {
     setIsLoading(true);
     try {
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('You must be logged in to make calls. Please refresh the page and log in again.');
+      }
+
+      console.log('Making call with authenticated user:', session.user.id);
+
       // Get campaign details for agent ID
       const { data: campaign, error: campaignError } = await supabase
         .from('campaigns')
@@ -366,6 +375,7 @@ export const usePredictiveDialing = () => {
         throw new Error('Campaign must have an agent assigned');
       }
 
+      // Call the edge function with explicit auth header
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
@@ -374,10 +384,21 @@ export const usePredictiveDialing = () => {
           phoneNumber,
           callerId,
           agentId: campaign.agent_id
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        console.error('Edge function returned error:', data.error);
+        throw new Error(data.error);
+      }
 
       toast({
         title: "Success",
@@ -386,6 +407,7 @@ export const usePredictiveDialing = () => {
 
       return data;
     } catch (error: any) {
+      console.error('Make call error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to make call",
