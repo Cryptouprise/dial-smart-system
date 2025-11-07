@@ -52,32 +52,27 @@ serve(async (req) => {
       throw new Error('Supabase configuration missing');
     }
 
-    // Use service role client for database operations
+    // Use service role client for all operations
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    // Create separate client with user auth to verify identity
-    const supabaseClient = createClient(
-      supabaseUrl,
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: { headers: { Authorization: authHeader } },
-      }
-    );
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    // Extract JWT token from Authorization header
+    const token = authHeader.replace('Bearer ', '');
     
-    console.log('[Outbound Calling] Auth user result:', { 
+    // Verify the JWT token directly
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    console.log('[Outbound Calling] Auth verification:', { 
       hasUser: !!user, 
       userId: user?.id,
       error: authError?.message 
     });
     
     if (authError || !user) {
-      console.error('[Outbound Calling] Auth verification failed:', authError?.message || 'No user');
+      console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
       return new Response(
         JSON.stringify({ 
           error: 'Authentication failed: Auth session missing!',
-          details: authError?.message || 'No user found in session. Please refresh the page and try again.'
+          details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
         }), 
         { 
           status: 401, 
