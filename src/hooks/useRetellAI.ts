@@ -138,7 +138,9 @@ export const useRetellAI = () => {
       });
 
       if (error) throw error;
-      return data?.phone_numbers || [];
+      console.log('[useRetellAI] Phone numbers response:', data);
+      // Retell AI returns array directly, not wrapped in an object
+      return Array.isArray(data) ? data : (data?.phone_numbers || []);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -161,7 +163,9 @@ export const useRetellAI = () => {
       });
 
       if (error) throw error;
-      return data?.agents || [];
+      console.log('[useRetellAI] Agents response:', data);
+      // Retell AI returns array directly, not wrapped in an object
+      return Array.isArray(data) ? data : (data?.agents || []);
     } catch (error: any) {
       console.error('Failed to list agents:', error);
       return null;
