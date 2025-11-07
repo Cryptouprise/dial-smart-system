@@ -62,7 +62,7 @@ serve(async (req) => {
 
       case 'list':
         console.log('[Retell LLM] Listing all LLMs');
-        response = await fetch(`${baseUrl}/list-retell-llm`, {
+        response = await fetch(`${baseUrl}/list-retell-llms`, {
           method: 'GET',
           headers,
         });
