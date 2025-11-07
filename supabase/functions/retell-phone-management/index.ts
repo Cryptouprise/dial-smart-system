@@ -30,7 +30,7 @@ serve(async (req) => {
 
     console.log(`Processing ${action} request for Retell AI phone number`);
 
-    const baseUrl = 'https://api.retellai.com/v2';
+    const baseUrl = 'https://api.retellai.com';
     const headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -44,11 +44,11 @@ serve(async (req) => {
           throw new Error('Phone number and termination URI are required for import');
         }
         
-        response = await fetch(`${baseUrl}/phone-number/import`, {
+        response = await fetch(`${baseUrl}/import-phone-number`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            phone_number: phoneNumber,
+            from_number: phoneNumber,
             termination_uri: terminationUri,
           }),
         });
@@ -63,7 +63,7 @@ serve(async (req) => {
         if (agentId) updateData.inbound_agent_id = agentId;
         if (nickname) updateData.nickname = nickname;
         
-        response = await fetch(`${baseUrl}/phone-number/${encodeURIComponent(phoneNumber)}`, {
+        response = await fetch(`${baseUrl}/update-phone-number/${encodeURIComponent(phoneNumber)}`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify(updateData),
@@ -75,14 +75,14 @@ serve(async (req) => {
           throw new Error('Phone number is required for delete');
         }
         
-        response = await fetch(`${baseUrl}/phone-number/${encodeURIComponent(phoneNumber)}`, {
+        response = await fetch(`${baseUrl}/delete-phone-number/${encodeURIComponent(phoneNumber)}`, {
           method: 'DELETE',
           headers,
         });
         break;
 
       case 'list':
-        response = await fetch(`${baseUrl}/phone-number`, {
+        response = await fetch(`${baseUrl}/list-phone-numbers`, {
           method: 'GET',
           headers,
         });

@@ -13,10 +13,22 @@ serve(async (req) => {
   }
 
   try {
+    // Get the authorization header first
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      console.error('No authorization header provided')
+      throw new Error('Authorization header is required')
+    }
+
+    // Create Supabase client with the user's JWT token
+    // This allows RLS policies to work correctly with auth.uid()
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
+        global: {
+          headers: { Authorization: authHeader }
+        },
         auth: {
           autoRefreshToken: false,
           persistSession: false
@@ -24,17 +36,10 @@ serve(async (req) => {
       }
     )
 
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      console.error('No authorization header provided')
-      throw new Error('Authorization header is required')
-    }
-
     const token = authHeader.replace('Bearer ', '')
     console.log('Processing request with token:', token.substring(0, 20) + '...')
     
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
 
     if (authError || !user) {
       console.error('Authentication failed:', authError)

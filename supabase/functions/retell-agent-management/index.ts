@@ -30,7 +30,7 @@ serve(async (req) => {
 
     console.log(`[Retell Agent] Processing ${action} request`);
 
-    const baseUrl = 'https://api.retellai.com/v2';
+    const baseUrl = 'https://api.retellai.com';
     const headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -58,7 +58,7 @@ serve(async (req) => {
         
         console.log('[Retell Agent] Creating agent with payload:', JSON.stringify(createPayload));
         
-        response = await fetch(`${baseUrl}/agent`, {
+        response = await fetch(`${baseUrl}/create-agent`, {
           method: 'POST',
           headers,
           body: JSON.stringify(createPayload),
@@ -66,7 +66,7 @@ serve(async (req) => {
         break;
 
       case 'list':
-        response = await fetch(`${baseUrl}/agent`, {
+        response = await fetch(`${baseUrl}/list-agents`, {
           method: 'GET',
           headers,
         });
@@ -89,7 +89,7 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Updating agent ${agentId} with:`, JSON.stringify(updateData));
         
-        response = await fetch(`${baseUrl}/agent/${agentId}`, {
+        response = await fetch(`${baseUrl}/update-agent/${agentId}`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify(updateData),
@@ -101,7 +101,7 @@ serve(async (req) => {
           throw new Error('Agent ID is required for delete');
         }
         
-        response = await fetch(`${baseUrl}/agent/${agentId}`, {
+        response = await fetch(`${baseUrl}/delete-agent/${agentId}`, {
           method: 'DELETE',
           headers,
         });

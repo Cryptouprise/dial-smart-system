@@ -28,7 +28,7 @@ serve(async (req) => {
 
     console.log(`[Retell LLM] Processing ${action} request`);
 
-    const baseUrl = 'https://api.retellai.com/v2';
+    const baseUrl = 'https://api.retellai.com';
     const headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -38,19 +38,22 @@ serve(async (req) => {
 
     switch (action) {
       case 'create':
-        if (!generalPrompt || !beginMessage) {
-          throw new Error('generalPrompt and beginMessage are required for creation');
+        if (!generalPrompt) {
+          throw new Error('General prompt is required for LLM creation');
         }
         
-        const createPayload = {
+        const createPayload: any = {
           general_prompt: generalPrompt,
-          begin_message: beginMessage,
           model: model || 'gpt-4o'
         };
         
+        if (beginMessage) {
+          createPayload.begin_message = beginMessage;
+        }
+        
         console.log('[Retell LLM] Creating LLM with payload:', JSON.stringify(createPayload));
         
-        response = await fetch(`${baseUrl}/retell-llm`, {
+        response = await fetch(`${baseUrl}/create-retell-llm`, {
           method: 'POST',
           headers,
           body: JSON.stringify(createPayload),
@@ -59,7 +62,7 @@ serve(async (req) => {
 
       case 'list':
         console.log('[Retell LLM] Listing all LLMs');
-        response = await fetch(`${baseUrl}/retell-llm`, {
+        response = await fetch(`${baseUrl}/list-retell-llm`, {
           method: 'GET',
           headers,
         });
@@ -71,7 +74,7 @@ serve(async (req) => {
         }
         
         console.log(`[Retell LLM] Getting LLM: ${llmId}`);
-        response = await fetch(`${baseUrl}/retell-llm/${llmId}`, {
+        response = await fetch(`${baseUrl}/get-retell-llm/${llmId}`, {
           method: 'GET',
           headers,
         });
@@ -84,12 +87,12 @@ serve(async (req) => {
         
         const updateData: any = {};
         if (generalPrompt) updateData.general_prompt = generalPrompt;
-        if (beginMessage) updateData.begin_message = beginMessage;
+        if (beginMessage !== undefined) updateData.begin_message = beginMessage;
         if (model) updateData.model = model;
         
         console.log(`[Retell LLM] Updating LLM ${llmId} with:`, JSON.stringify(updateData));
         
-        response = await fetch(`${baseUrl}/retell-llm/${llmId}`, {
+        response = await fetch(`${baseUrl}/update-retell-llm/${llmId}`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify(updateData),
@@ -102,7 +105,7 @@ serve(async (req) => {
         }
         
         console.log(`[Retell LLM] Deleting LLM: ${llmId}`);
-        response = await fetch(`${baseUrl}/retell-llm/${llmId}`, {
+        response = await fetch(`${baseUrl}/delete-retell-llm/${llmId}`, {
           method: 'DELETE',
           headers,
         });
