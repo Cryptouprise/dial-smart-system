@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Plus, Play, Pause, Edit, Trash2, Users } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { CampaignLeadManager } from './CampaignLeadManager';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface Campaign {
   id: string;
@@ -31,7 +33,10 @@ interface CampaignManagerProps {
 
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, isLoading } = usePredictiveDialing();
+  const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
@@ -48,11 +53,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
   useEffect(() => {
     loadCampaigns();
+    loadAgents();
   }, []);
 
   const loadCampaigns = async () => {
     const data = await getCampaigns();
     if (data) setCampaigns(data);
+  };
+
+  const loadAgents = async () => {
+    setLoadingAgents(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: { action: 'list' }
+      });
+      
+      if (error) throw error;
+      setAgents(data || []);
+    } catch (error) {
+      console.error('Error loading agents:', error);
+      toast({
+        title: "Error loading agents",
+        description: "Could not fetch Retell AI agents. Please check your API configuration.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingAgents(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,6 +186,28 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Retell AI Agent *
+                </label>
+                <Select
+                  value={formData.agent_id}
+                  onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
+                  disabled={loadingAgents}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                        {agent.agent_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -212,13 +261,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={isLoading}>
+                <Button type="submit" disabled={isLoading || !formData.agent_id}>
                   {editingCampaign ? 'Update' : 'Create'} Campaign
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
               </div>
+              {!formData.agent_id && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Please select a Retell AI agent to continue
+                </p>
+              )}
             </form>
           </DialogContent>
         </Dialog>
