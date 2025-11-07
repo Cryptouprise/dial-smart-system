@@ -300,7 +300,9 @@ const RetellAIManager = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Retell AI Phone Numbers</CardTitle>
-                  <CardDescription>Manage phone numbers in your Retell AI account</CardDescription>
+                  <CardDescription>
+                    Manage phone numbers in your Retell AI account. <strong className="text-primary">Assign an agent to enable outbound calling.</strong>
+                  </CardDescription>
                 </div>
                 <Button onClick={() => setShowImportDialog(true)} size="sm">
                   <Plus className="h-4 w-4 mr-2" />
@@ -309,6 +311,23 @@ const RetellAIManager = () => {
               </div>
             </CardHeader>
             <CardContent>
+              {retellNumbers.some(n => !n.outbound_agent_id) && (
+                <div className="mb-4 p-4 border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Badge variant="outline" className="bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700">
+                      Action Required
+                    </Badge>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-900 dark:text-amber-100 mb-1">
+                        Phone numbers need agents for outbound calling
+                      </p>
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        Click the edit button on each phone number and select an agent. This configures the number for making outbound calls.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -347,29 +366,41 @@ const RetellAIManager = () => {
                           </TableCell>
                           <TableCell>
                             {editingNumber === number.phone_number ? (
-                              <Select
-                                value={editForm.agentId || 'none'}
-                                onValueChange={(value) => setEditForm(prev => ({ 
-                                  ...prev, 
-                                  agentId: value === 'none' ? '' : value 
-                                }))}
-                              >
-                                <SelectTrigger className="w-[180px]">
-                                  <SelectValue placeholder="Select agent" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">No agent</SelectItem>
-                                  {agents.map((agent) => (
-                                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                                      {agent.agent_name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="space-y-2">
+                                <Select
+                                  value={editForm.agentId || 'none'}
+                                  onValueChange={(value) => setEditForm(prev => ({ 
+                                    ...prev, 
+                                    agentId: value === 'none' ? '' : value 
+                                  }))}
+                                >
+                                  <SelectTrigger className="w-[200px]">
+                                    <SelectValue placeholder="Select agent" />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-background z-50">
+                                    <SelectItem value="none">No agent</SelectItem>
+                                    {agents.map((agent) => (
+                                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                                        {agent.agent_name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                  Sets agent for both inbound & outbound
+                                </p>
+                              </div>
                             ) : (
-                              <span className="text-muted-foreground">
-                                {number.inbound_agent_id ? getAgentName(number.inbound_agent_id) : 'No agent assigned'}
-                              </span>
+                              <div className="space-y-1">
+                                <div className="text-sm">
+                                  {number.inbound_agent_id ? getAgentName(number.inbound_agent_id) : 'No agent'}
+                                </div>
+                                {!number.outbound_agent_id && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Outbound not configured
+                                  </Badge>
+                                )}
+                              </div>
                             )}
                           </TableCell>
                           <TableCell className="font-mono text-xs">
