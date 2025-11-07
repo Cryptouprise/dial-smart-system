@@ -148,13 +148,13 @@ serve(async (req) => {
           agent: agentId
         });
 
-        response = await fetch(`${baseUrl}/call`, {
+        response = await fetch(`${baseUrl}/create-phone-call`, {
           method: 'POST',
           headers: retellHeaders,
           body: JSON.stringify({
             from_number: callerId,
             to_number: phoneNumber,
-            agent_id: agentId,
+            override_agent_id: agentId,
             metadata: {
               campaign_id: campaignId,
               lead_id: leadId,
@@ -200,7 +200,7 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
+        response = await fetch(`${baseUrl}/get-call/${retellCallId}`, {
           method: 'GET',
           headers: retellHeaders,
         });
@@ -218,8 +218,8 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
-          method: 'DELETE',
+        response = await fetch(`${baseUrl}/stop-call/${retellCallId}`, {
+          method: 'POST',
           headers: retellHeaders,
         });
 
