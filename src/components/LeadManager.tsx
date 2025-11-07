@@ -23,7 +23,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
   const [importText, setImportText] = useState('');
-  const [filters, setFilters] = useState({ status: '', search: '' });
+  const [filters, setFilters] = useState({ status: 'all', search: '' });
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -41,7 +41,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   }, [filters]);
 
   const loadLeads = async () => {
-    const leadsData = await getLeads(filters.status ? { status: filters.status } : undefined);
+    const leadsData = await getLeads(filters.status && filters.status !== 'all' ? { status: filters.status } : undefined);
     if (leadsData) {
       let filteredLeads = leadsData;
       if (filters.search) {
@@ -154,7 +154,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Statuses</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="new">New</SelectItem>
               <SelectItem value="contacted">Contacted</SelectItem>
               <SelectItem value="interested">Interested</SelectItem>
