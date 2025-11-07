@@ -173,21 +173,25 @@ serve(async (req) => {
             from_number: callerId,
             to_number: phoneNumber,
             override_agent_id: agentId,
+            // metadata is for internal tracking only
             metadata: {
               campaign_id: campaignId,
               lead_id: leadId,
               call_log_id: callLog.id,
-              // Include all lead data for agent personalization
-              ...(leadData && {
-                first_name: leadData.first_name,
-                last_name: leadData.last_name,
-                email: leadData.email,
-                company: leadData.company,
-                status: leadData.status,
-                priority: leadData.priority,
-                notes: leadData.notes,
-              })
-            }
+            },
+            // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
+            ...(leadData && {
+              dynamic_variables: {
+                first_name: leadData.first_name || '',
+                last_name: leadData.last_name || '',
+                full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+                email: leadData.email || '',
+                company: leadData.company || '',
+                status: leadData.status || '',
+                priority: leadData.priority?.toString() || '',
+                notes: leadData.notes || '',
+              }
+            })
           }),
         });
 
