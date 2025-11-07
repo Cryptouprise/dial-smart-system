@@ -14,37 +14,32 @@ interface NumberPoolManagerProps {
   onRefreshNumbers: () => void;
 }
 
-const NumberPoolManager = ({ numbers = [], onRefreshNumbers }: NumberPoolManagerProps) => {
+const NumberPoolManager = ({ numbers, onRefreshNumbers }: NumberPoolManagerProps) => {
   const [retellNumbers, setRetellNumbers] = useState<any[]>([]);
   const [showPoolDetails, setShowPoolDetails] = useState(false);
   const { toast } = useToast();
 
-  // Ensure numbers is always an array
-  const safeNumbers = Array.isArray(numbers) ? numbers : [];
-
   // Categorize numbers
-  const availablePool = safeNumbers.filter(n => n.status === 'active' && !retellNumbers.some(r => r.phone_number === n.number));
-  const activeInRetell = safeNumbers.filter(n => retellNumbers.some(r => r.phone_number === n.number));
-  const quarantinedPool = safeNumbers.filter(n => n.status === 'quarantined');
-  const cooldownPool = safeNumbers.filter(n => n.status === 'cooldown');
+  const availablePool = numbers.filter(n => n.status === 'active' && !retellNumbers.some(r => r.phone_number === n.number));
+  const activeInRetell = numbers.filter(n => retellNumbers.some(r => r.phone_number === n.number));
+  const quarantinedPool = numbers.filter(n => n.status === 'quarantined');
+  const cooldownPool = numbers.filter(n => n.status === 'cooldown');
 
   const loadRetellNumbers = async () => {
     // This would call your Retell AI API to get current numbers
     // For now, simulate some data
-    if (safeNumbers.length > 0) {
-      const mockRetellNumbers = safeNumbers.slice(0, 3).map(n => ({
-        phone_number: n.number,
-        nickname: `Agent Number ${n.number.slice(-4)}`,
-        inbound_agent_id: 'agent_123',
-        termination_uri: 'someuri.pstn.twilio.com'
-      }));
-      setRetellNumbers(mockRetellNumbers);
-    }
+    const mockRetellNumbers = numbers.slice(0, 3).map(n => ({
+      phone_number: n.number,
+      nickname: `Agent Number ${n.number.slice(-4)}`,
+      inbound_agent_id: 'agent_123',
+      termination_uri: 'someuri.pstn.twilio.com'
+    }));
+    setRetellNumbers(mockRetellNumbers);
   };
 
   React.useEffect(() => {
     loadRetellNumbers();
-  }, [safeNumbers.length]);
+  }, [numbers]);
 
   const executeRotation = async (strategy: string, count: number) => {
     if (availablePool.length < count) {
