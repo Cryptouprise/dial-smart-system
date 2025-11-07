@@ -147,7 +147,7 @@ serve(async (req) => {
           agent: agentId
         });
 
-        response = await fetch(`${baseUrl}/call`, {
+        response = await fetch(`${baseUrl}/create-phone-call`, {
           method: 'POST',
           headers: retellHeaders,
           body: JSON.stringify({
