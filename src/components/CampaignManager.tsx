@@ -7,9 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { CampaignLeadManager } from './CampaignLeadManager';
+import { CampaignCallActivity } from './CampaignCallActivity';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -40,6 +41,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
+  const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -348,16 +350,27 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setExpandedCampaignId(
-                    expandedCampaignId === campaign.id ? null : campaign.id
-                  )}
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  {expandedCampaignId === campaign.id ? 'Hide' : 'Manage'} Campaign Leads
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setExpandedCampaignId(
+                      expandedCampaignId === campaign.id ? null : campaign.id
+                    )}
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    {expandedCampaignId === campaign.id ? 'Hide' : 'Manage'} Leads
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setViewingCallsFor(
+                      viewingCallsFor === campaign.id ? null : campaign.id
+                    )}
+                  >
+                    <Activity className="h-4 w-4 mr-2" />
+                    {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Call Activity
+                  </Button>
+                </div>
 
                 {expandedCampaignId === campaign.id && (
                   <div className="pt-4">
@@ -365,6 +378,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       campaignId={campaign.id}
                       campaignName={campaign.name}
                     />
+                  </div>
+                )}
+
+                {viewingCallsFor === campaign.id && (
+                  <div className="pt-4">
+                    <CampaignCallActivity campaignId={campaign.id} />
                   </div>
                 )}
               </div>
