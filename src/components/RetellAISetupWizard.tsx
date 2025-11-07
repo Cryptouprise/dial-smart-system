@@ -171,10 +171,10 @@ export const RetellAISetupWizard = () => {
             <div className="space-y-2">
               <Label htmlFor="voice">Voice</Label>
               <Select value={agentVoice} onValueChange={setAgentVoice}>
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger id="voice">
+                  <SelectValue placeholder="Select a voice" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" sideOffset={5}>
                   <SelectItem value="11labs-Adrian">Adrian (Male)</SelectItem>
                   <SelectItem value="11labs-Aria">Aria (Female)</SelectItem>
                   <SelectItem value="11labs-Sarah">Sarah (Female)</SelectItem>
