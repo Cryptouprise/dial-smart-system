@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
+import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -111,6 +112,9 @@ const Settings = () => {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Enhanced Spam Detection & STIR/SHAKEN */}
+        <EnhancedSpamDashboard />
       </div>
     </div>
   );

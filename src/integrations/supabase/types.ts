@@ -404,43 +404,64 @@ export type Database = {
       phone_numbers: {
         Row: {
           area_code: string
+          caller_name: string | null
+          carrier_name: string | null
           created_at: string
           daily_calls: number
+          external_spam_score: number | null
           id: string
           is_spam: boolean
+          is_voip: boolean | null
+          last_lookup_at: string | null
           last_used: string | null
+          line_type: string | null
           number: string
           quarantine_until: string | null
           retell_phone_id: string | null
           status: string
+          stir_shaken_attestation: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           area_code: string
+          caller_name?: string | null
+          carrier_name?: string | null
           created_at?: string
           daily_calls?: number
+          external_spam_score?: number | null
           id?: string
           is_spam?: boolean
+          is_voip?: boolean | null
+          last_lookup_at?: string | null
           last_used?: string | null
+          line_type?: string | null
           number: string
           quarantine_until?: string | null
           retell_phone_id?: string | null
           status?: string
+          stir_shaken_attestation?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           area_code?: string
+          caller_name?: string | null
+          carrier_name?: string | null
           created_at?: string
           daily_calls?: number
+          external_spam_score?: number | null
           id?: string
           is_spam?: boolean
+          is_voip?: boolean | null
+          last_lookup_at?: string | null
           last_used?: string | null
+          line_type?: string | null
           number?: string
           quarantine_until?: string | null
           retell_phone_id?: string | null
           status?: string
+          stir_shaken_attestation?: string | null
           updated_at?: string
           user_id?: string
         }
