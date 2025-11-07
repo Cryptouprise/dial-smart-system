@@ -107,7 +107,7 @@ serve(async (req) => {
       };
       console.log('📤 Sending to Retell AI:', JSON.stringify(retellPayload, null, 2));
 
-      const retellResponse = await fetch('https://api.retellai.com/v2/import-phone-number', {
+      const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${retellApiKey}`,
@@ -214,7 +214,7 @@ serve(async (req) => {
             termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
           };
 
-          const retellResponse = await fetch('https://api.retellai.com/v2/import-phone-number', {
+          const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${retellApiKey}`,
