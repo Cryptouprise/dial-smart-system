@@ -6,11 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
-import { Trash2, Edit, RefreshCw, Sparkles } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus } from 'lucide-react';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -41,12 +42,18 @@ const RetellAIManager = () => {
     nickname: '',
     agentId: ''
   });
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importForm, setImportForm] = useState({
+    phoneNumber: '',
+    terminationUri: ''
+  });
   const { toast } = useToast();
   const { 
     listPhoneNumbers, 
     updatePhoneNumber, 
     deletePhoneNumber, 
     listAgents,
+    importPhoneNumber,
     isLoading 
   } = useRetellAI();
   
@@ -123,6 +130,24 @@ const RetellAIManager = () => {
   const getAgentName = (agentId: string) => {
     const agent = agents.find(a => a.agent_id === agentId);
     return agent ? agent.agent_name : agentId;
+  };
+
+  const handleImportNumber = async () => {
+    if (!importForm.phoneNumber || !importForm.terminationUri) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both phone number and termination URI",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const result = await importPhoneNumber(importForm.phoneNumber, importForm.terminationUri);
+    if (result) {
+      setShowImportDialog(false);
+      setImportForm({ phoneNumber: '', terminationUri: '' });
+      loadRetellData();
+    }
   };
 
   return (
@@ -271,8 +296,16 @@ const RetellAIManager = () => {
         <TabsContent value="numbers">
           <Card>
             <CardHeader>
-              <CardTitle>Retell AI Phone Numbers</CardTitle>
-              <CardDescription>Manage phone numbers in your Retell AI account</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Retell AI Phone Numbers</CardTitle>
+                  <CardDescription>Manage phone numbers in your Retell AI account</CardDescription>
+                </div>
+                <Button onClick={() => setShowImportDialog(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Import Number
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border">
@@ -384,6 +417,48 @@ const RetellAIManager = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Import Phone Number Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Phone Number to Retell AI</DialogTitle>
+            <DialogDescription>
+              Enter the phone number and termination URI to import it into Retell AI
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="import-phone">Phone Number</Label>
+              <Input
+                id="import-phone"
+                placeholder="+1234567890"
+                value={importForm.phoneNumber}
+                onChange={(e) => setImportForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Include country code (e.g., +1 for US)</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="import-uri">Termination URI</Label>
+              <Input
+                id="import-uri"
+                placeholder="wss://your-domain.com/endpoint"
+                value={importForm.terminationUri}
+                onChange={(e) => setImportForm(prev => ({ ...prev, terminationUri: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">WebSocket endpoint for call handling</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleImportNumber} disabled={isLoading}>
+              {isLoading ? 'Importing...' : 'Import Number'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
