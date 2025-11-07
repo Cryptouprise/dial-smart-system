@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -346,18 +347,25 @@ const RetellAIManager = () => {
                           </TableCell>
                           <TableCell>
                             {editingNumber === number.phone_number ? (
-                              <select
-                                value={editForm.agentId}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, agentId: e.target.value }))}
-                                className="border rounded px-2 py-1 text-sm"
+                              <Select
+                                value={editForm.agentId || 'none'}
+                                onValueChange={(value) => setEditForm(prev => ({ 
+                                  ...prev, 
+                                  agentId: value === 'none' ? '' : value 
+                                }))}
                               >
-                                <option value="">No agent</option>
-                                {agents.map((agent) => (
-                                  <option key={agent.agent_id} value={agent.agent_id}>
-                                    {agent.agent_name}
-                                  </option>
-                                ))}
-                              </select>
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue placeholder="Select agent" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No agent</SelectItem>
+                                  {agents.map((agent) => (
+                                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                                      {agent.agent_name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             ) : (
                               <span className="text-muted-foreground">
                                 {number.inbound_agent_id ? getAgentName(number.inbound_agent_id) : 'No agent assigned'}
