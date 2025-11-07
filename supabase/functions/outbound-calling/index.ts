@@ -66,12 +66,18 @@ serve(async (req) => {
 
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     
+    console.log('[Outbound Calling] Auth user result:', { 
+      hasUser: !!user, 
+      userId: user?.id,
+      error: authError?.message 
+    });
+    
     if (authError || !user) {
       console.error('[Outbound Calling] Auth verification failed:', authError?.message || 'No user');
       return new Response(
         JSON.stringify({ 
-          error: 'Authentication failed. Please log out and log in again.',
-          details: authError?.message || 'User verification failed'
+          error: 'Authentication failed: Auth session missing!',
+          details: authError?.message || 'No user found in session. Please refresh the page and try again.'
         }), 
         { 
           status: 401, 
