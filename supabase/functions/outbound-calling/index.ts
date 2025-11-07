@@ -23,12 +23,19 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization');
+    console.log('[Outbound Calling] Auth header present:', !!authHeader);
+    
+    if (!authHeader) {
+      throw new Error('Missing Authorization header');
+    }
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
         global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
+          headers: { Authorization: authHeader },
         },
       }
     );
@@ -48,12 +55,21 @@ serve(async (req) => {
       throw new Error('RETELL_AI_API_KEY is not configured');
     }
 
-    console.log(`Processing ${action} outbound call request`);
+    console.log(`[Outbound Calling] Processing ${action} request`);
 
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) {
-      throw new Error('Unauthorized');
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    
+    if (authError) {
+      console.error('[Outbound Calling] Auth error:', authError);
+      throw new Error(`Authentication failed: ${authError.message}`);
     }
+    
+    if (!user) {
+      console.error('[Outbound Calling] No user found in token');
+      throw new Error('User not authenticated');
+    }
+
+    console.log('[Outbound Calling] Authenticated user:', user.id);
 
     const baseUrl = 'https://api.retellai.com/v2';
     const headers = {
@@ -70,6 +86,8 @@ serve(async (req) => {
           throw new Error('Phone number, caller ID, and agent ID are required');
         }
 
+        console.log('[Outbound Calling] Creating call log for user:', user.id);
+
         // Create call log entry first
         const { data: callLog, error: callLogError } = await supabaseClient
           .from('call_logs')
@@ -84,9 +102,20 @@ serve(async (req) => {
           .select()
           .single();
 
-        if (callLogError) throw callLogError;
+        if (callLogError) {
+          console.error('[Outbound Calling] Call log error:', callLogError);
+          throw callLogError;
+        }
+
+        console.log('[Outbound Calling] Call log created:', callLog.id);
 
         // Create outbound call via Retell AI
+        console.log('[Outbound Calling] Initiating Retell AI call:', {
+          from: callerId,
+          to: phoneNumber,
+          agent: agentId
+        });
+
         response = await fetch(`${baseUrl}/call`, {
           method: 'POST',
           headers,
@@ -104,10 +133,19 @@ serve(async (req) => {
 
         if (!response.ok) {
           const errorData = await response.text();
+          console.error('[Outbound Calling] Retell API error:', errorData);
+          
+          // Update call log to failed
+          await supabaseClient
+            .from('call_logs')
+            .update({ status: 'failed' })
+            .eq('id', callLog.id);
+            
           throw new Error(`Retell AI API error: ${response.status} - ${errorData}`);
         }
 
         const callData = await response.json();
+        console.log('[Outbound Calling] Retell AI call created:', callData.call_id);
 
         // Update call log with Retell call ID
         await supabaseClient
@@ -170,8 +208,12 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('Error in outbound-calling function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('[Outbound Calling] Error:', error);
+    console.error('[Outbound Calling] Error stack:', error.stack);
+    return new Response(JSON.stringify({ 
+      error: error.message,
+      details: 'Check edge function logs for more information'
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -9,6 +9,7 @@ import { Phone, PhoneOff, Play, Pause, SkipForward, Zap } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCallDispatcher } from '@/hooks/useCallDispatcher';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CallCenterProps {
   onStatsUpdate?: (stats: any) => void;
@@ -72,21 +73,44 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
 
     setIsDialing(true);
     
-    // Use first available caller ID (you might want to implement number rotation here)
-    const callerId = '+15551234567'; // This should come from your phone numbers
-    
-    const result = await makeCall(
-      selectedCampaign,
-      currentLead.id,
-      currentLead.phone_number,
-      callerId
-    );
+    try {
+      // Get an active phone number to use as caller ID
+      const { data: phoneNumbers, error: phoneError } = await supabase
+        .from('phone_numbers')
+        .select('number')
+        .eq('status', 'active')
+        .limit(1)
+        .single();
 
-    if (result) {
-      setCurrentCall(result);
+      if (phoneError || !phoneNumbers) {
+        toast({
+          title: "No Phone Numbers",
+          description: "Please add an active phone number to make calls",
+          variant: "destructive"
+        });
+        setIsDialing(false);
+        return;
+      }
+
+      const result = await makeCall(
+        selectedCampaign,
+        currentLead.id,
+        currentLead.phone_number,
+        phoneNumbers.number
+      );
+
+      if (result) {
+        setCurrentCall(result);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Call Failed",
+        description: error.message || "Failed to initiate call",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDialing(false);
     }
-    
-    setIsDialing(false);
   };
 
   const handleEndCall = () => {
