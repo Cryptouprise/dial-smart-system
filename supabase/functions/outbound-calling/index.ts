@@ -24,35 +24,65 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
+    console.log('[Outbound Calling] Request received');
     console.log('[Outbound Calling] Auth header present:', !!authHeader);
-    console.log('[Outbound Calling] Auth header value (first 20 chars):', authHeader?.substring(0, 20));
     
     if (!authHeader) {
       console.error('[Outbound Calling] Missing Authorization header');
-      throw new Error('Missing Authorization header. Please ensure you are logged in.');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Missing authorization. Please log in and try again.',
+          details: 'Authorization header not found'
+        }), 
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    if (!authHeader.startsWith('Bearer ')) {
-      console.error('[Outbound Calling] Invalid Authorization header format');
-      throw new Error('Invalid Authorization header format. Expected "Bearer <token>"');
-    }
-
+    // Create client with service role for backend operations
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     console.log('[Outbound Calling] Supabase URL configured:', !!supabaseUrl);
-    console.log('[Outbound Calling] Supabase Anon Key configured:', !!supabaseAnonKey);
+    console.log('[Outbound Calling] Service role key configured:', !!serviceRoleKey);
 
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error('Supabase configuration missing');
+    }
+
+    // Use service role client for database operations
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+    // Create separate client with user auth to verify identity
     const supabaseClient = createClient(
-      supabaseUrl ?? '',
-      supabaseAnonKey ?? '',
+      supabaseUrl,
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
-        global: {
-          headers: { Authorization: authHeader },
-        },
+        global: { headers: { Authorization: authHeader } },
       }
     );
 
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    
+    if (authError || !user) {
+      console.error('[Outbound Calling] Auth verification failed:', authError?.message || 'No user');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentication failed. Please log out and log in again.',
+          details: authError?.message || 'User verification failed'
+        }), 
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log('[Outbound Calling] ✓ User verified:', user.id);
+
+    
     const { 
       action, 
       campaignId, 
@@ -68,24 +98,11 @@ serve(async (req) => {
       throw new Error('RETELL_AI_API_KEY is not configured');
     }
 
-    console.log(`[Outbound Calling] Processing ${action} request`);
+    console.log(`[Outbound Calling] Processing ${action} request for user:`, user.id);
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    
-    if (authError) {
-      console.error('[Outbound Calling] Auth error details:', JSON.stringify(authError));
-      throw new Error(`Authentication failed: ${authError.message || 'Unable to verify user'}`);
-    }
-    
-    if (!user) {
-      console.error('[Outbound Calling] No user found in token');
-      throw new Error('User not authenticated. Please log in again.');
-    }
-
-    console.log('[Outbound Calling] ✓ Authenticated user:', user.id);
 
     const baseUrl = 'https://api.retellai.com/v2';
-    const headers = {
+    const retellHeaders = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     };
@@ -101,8 +118,8 @@ serve(async (req) => {
 
         console.log('[Outbound Calling] Creating call log for user:', user.id);
 
-        // Create call log entry first
-        const { data: callLog, error: callLogError } = await supabaseClient
+        // Use admin client for database operations
+        const { data: callLog, error: callLogError } = await supabaseAdmin
           .from('call_logs')
           .insert({
             user_id: user.id,
@@ -131,7 +148,7 @@ serve(async (req) => {
 
         response = await fetch(`${baseUrl}/call`, {
           method: 'POST',
-          headers,
+          headers: retellHeaders,
           body: JSON.stringify({
             from_number: callerId,
             to_number: phoneNumber,
@@ -148,8 +165,8 @@ serve(async (req) => {
           const errorData = await response.text();
           console.error('[Outbound Calling] Retell API error:', errorData);
           
-          // Update call log to failed
-          await supabaseClient
+          // Update call log to failed using admin client
+          await supabaseAdmin
             .from('call_logs')
             .update({ status: 'failed' })
             .eq('id', callLog.id);
@@ -160,8 +177,8 @@ serve(async (req) => {
         const callData = await response.json();
         console.log('[Outbound Calling] Retell AI call created:', callData.call_id);
 
-        // Update call log with Retell call ID
-        await supabaseClient
+        // Update call log with Retell call ID using admin client
+        await supabaseAdmin
           .from('call_logs')
           .update({ 
             retell_call_id: callData.call_id,
@@ -183,7 +200,7 @@ serve(async (req) => {
 
         response = await fetch(`${baseUrl}/call/${retellCallId}`, {
           method: 'GET',
-          headers,
+          headers: retellHeaders,
         });
 
         if (!response.ok) {
@@ -201,7 +218,7 @@ serve(async (req) => {
 
         response = await fetch(`${baseUrl}/call/${retellCallId}`, {
           method: 'DELETE',
-          headers,
+          headers: retellHeaders,
         });
 
         if (!response.ok) {
