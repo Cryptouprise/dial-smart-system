@@ -125,7 +125,7 @@ serve(async (req) => {
         if (leadId) {
           const { data: lead, error: leadError } = await supabaseAdmin
             .from('leads')
-            .select('first_name, last_name, email, company, phone_number, status, priority, notes')
+            .select('first_name, last_name, email, company, phone_number, status, priority, notes, lead_source, tags, custom_fields, timezone, preferred_contact_time, ghl_contact_id')
             .eq('id', leadId)
             .single();
           
@@ -182,15 +182,39 @@ serve(async (req) => {
             // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
             ...(leadData && {
               dynamic_variables: {
+                // Basic contact info
                 first_name: leadData.first_name || '',
                 last_name: leadData.last_name || '',
                 full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
                 contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
                 email: leadData.email || '',
+                phone: leadData.phone_number || '',
                 company: leadData.company || '',
+                
+                // Lead status and tracking
                 status: leadData.status || '',
                 priority: leadData.priority?.toString() || '',
+                lead_source: leadData.lead_source || '',
+                tags: Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '',
+                
+                // Notes and history
                 notes: leadData.notes || '',
+                
+                // Contact preferences
+                timezone: leadData.timezone || '',
+                preferred_contact_time: leadData.preferred_contact_time || '',
+                
+                // Integration IDs
+                ghl_contact_id: leadData.ghl_contact_id || '',
+                
+                // Custom fields (flatten JSONB into individual variables)
+                ...(leadData.custom_fields && typeof leadData.custom_fields === 'object' 
+                  ? Object.entries(leadData.custom_fields).reduce((acc, [key, value]) => {
+                      acc[`custom_${key}`] = String(value || '');
+                      return acc;
+                    }, {} as Record<string, string>)
+                  : {}
+                )
               }
             })
           }),
