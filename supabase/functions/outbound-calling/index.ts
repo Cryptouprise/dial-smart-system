@@ -185,6 +185,7 @@ serve(async (req) => {
                 first_name: leadData.first_name || '',
                 last_name: leadData.last_name || '',
                 full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+                contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
                 email: leadData.email || '',
                 company: leadData.company || '',
                 status: leadData.status || '',
