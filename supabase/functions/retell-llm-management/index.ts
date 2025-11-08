@@ -11,6 +11,11 @@ interface RetellLLMRequest {
   generalPrompt?: string;
   beginMessage?: string;
   model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  generalTools?: any[];
+  states?: any[];
+  startingState?: string;
 }
 
 serve(async (req) => {
@@ -19,7 +24,8 @@ serve(async (req) => {
   }
 
   try {
-    const { action, llmId, generalPrompt, beginMessage, model }: RetellLLMRequest = await req.json();
+    const { action, llmId, generalPrompt, beginMessage, model, temperature, maxTokens, 
+      generalTools, states, startingState }: RetellLLMRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -47,9 +53,12 @@ serve(async (req) => {
           model: model || 'gpt-4o'
         };
         
-        if (beginMessage) {
-          createPayload.begin_message = beginMessage;
-        }
+        if (beginMessage) createPayload.begin_message = beginMessage;
+        if (temperature !== undefined) createPayload.temperature = temperature;
+        if (maxTokens) createPayload.max_tokens = maxTokens;
+        if (generalTools) createPayload.general_tools = generalTools;
+        if (states) createPayload.states = states;
+        if (startingState) createPayload.starting_state = startingState;
         
         console.log('[Retell LLM] Creating LLM with payload:', JSON.stringify(createPayload));
         
@@ -89,6 +98,11 @@ serve(async (req) => {
         if (generalPrompt) updateData.general_prompt = generalPrompt;
         if (beginMessage !== undefined) updateData.begin_message = beginMessage;
         if (model) updateData.model = model;
+        if (temperature !== undefined) updateData.temperature = temperature;
+        if (maxTokens) updateData.max_tokens = maxTokens;
+        if (generalTools) updateData.general_tools = generalTools;
+        if (states) updateData.states = states;
+        if (startingState) updateData.starting_state = startingState;
         
         console.log(`[Retell LLM] Updating LLM ${llmId} with:`, JSON.stringify(updateData));
         
