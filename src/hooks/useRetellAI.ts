@@ -23,8 +23,57 @@ export const useRetellAI = () => {
   const { toast } = useToast();
 
   const getRetellCredentials = async () => {
-    // API key is stored in Supabase secrets, not user_credentials table
-    return true; // Just return true to indicate credentials are configured
+    // Check if credentials are configured by calling the credentials check function
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-credentials-check');
+      
+      if (error) {
+        console.error('[useRetellAI] Credentials check error:', error);
+        return false;
+      }
+
+      console.log('[useRetellAI] Credentials status:', data);
+      return data?.retell_configured && data?.twilio_configured;
+    } catch (error) {
+      console.error('[useRetellAI] Credentials check failed:', error);
+      return false;
+    }
+  };
+
+  const checkCredentials = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-credentials-check');
+      
+      if (error) {
+        throw error;
+      }
+
+      if (data?.retell_configured && data?.twilio_configured) {
+        toast({
+          title: "Credentials Configured",
+          description: "Retell AI and Twilio credentials are valid",
+        });
+      } else {
+        toast({
+          title: "Credentials Missing",
+          description: data?.message || "Some credentials are not configured",
+          variant: "destructive"
+        });
+      }
+
+      return data;
+    } catch (error: any) {
+      console.error('[useRetellAI] Check credentials failed:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to check credentials",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
@@ -215,6 +264,8 @@ export const useRetellAI = () => {
   };
 
   return {
+    getRetellCredentials,
+    checkCredentials,
     importPhoneNumber,
     updatePhoneNumber,
     deletePhoneNumber,

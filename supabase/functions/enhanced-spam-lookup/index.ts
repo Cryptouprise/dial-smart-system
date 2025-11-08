@@ -324,7 +324,7 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     const e164Number = cleanNumber.startsWith('1') ? `+${cleanNumber}` : `+1${cleanNumber}`;
     
     // Check recent calls FROM this number to see attestation history
-    const callsUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(e164Number)}&PageSize=50`;
+    const callsUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(e164Number)}&PageSize=20`;
     
     const encoder = new TextEncoder();
     const credentials = encoder.encode(`${accountSid}:${authToken}`);
@@ -342,37 +342,90 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
 
     const data = await response.json();
     
-    // Analyze calls for StirVerstat (STIR/SHAKEN attestation)
-    // StirVerstat values: TN-Validation-Passed-A, TN-Validation-Passed-B, TN-Validation-Passed-C, TN-Validation-Failed, No-TN-Validation
-    const callsWithAttestation = data.calls?.filter((call: any) => call.answered_by !== 'machine_start');
-    
-    if (!callsWithAttestation || callsWithAttestation.length === 0) {
+    if (!data.calls || data.calls.length === 0) {
       return {
         level: 'not_verified' as 'A' | 'B' | 'C' | 'not_verified',
         checked: true,
-        note: 'No call history found. Make outbound calls to verify STIR/SHAKEN attestation. Register with Twilio A2P 10DLC for best attestation.',
+        note: 'No call history found. Make outbound calls to verify STIR/SHAKEN attestation. Register number with Twilio Trust Hub for A-level attestation.',
         registrationRequired: true,
         callCount: 0
       };
     }
 
-    // Check the most recent attestation levels
+    // Fetch detailed call records to get StirVerstat (STIR/SHAKEN attestation)
+    // StirVerstat values: TN-Validation-Passed-A, TN-Validation-Passed-B, TN-Validation-Passed-C, TN-Validation-Failed, No-TN-Validation
     let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
     let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
+    let checkedCalls = 0;
     
-    for (const call of callsWithAttestation.slice(0, 20)) {
-      // Note: StirVerstat is only available if you fetch individual call details
-      // We'd need to make additional API calls to get this data
-      // For now, we'll indicate that calls exist but detailed attestation requires call detail fetch
+    // Check up to 10 most recent calls for attestation
+    for (const call of data.calls.slice(0, 10)) {
+      try {
+        const callDetailUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${call.sid}.json`;
+        const callDetailResponse = await fetch(callDetailUrl, {
+          headers: {
+            'Authorization': `Basic ${base64Creds}`
+          }
+        });
+
+        if (callDetailResponse.ok) {
+          const callDetail = await callDetailResponse.json();
+          checkedCalls++;
+          
+          // Parse StirVerstat (STIR/SHAKEN attestation level)
+          const stirVerstat = callDetail.stir_verstat || callDetail.StirVerstat;
+          
+          if (stirVerstat) {
+            if (stirVerstat.includes('Passed-A') || stirVerstat === 'TN-Validation-Passed-A') {
+              attestationCounts.A++;
+              if (bestAttestation === 'not_verified' || bestAttestation === 'C' || bestAttestation === 'B') {
+                bestAttestation = 'A';
+              }
+            } else if (stirVerstat.includes('Passed-B') || stirVerstat === 'TN-Validation-Passed-B') {
+              attestationCounts.B++;
+              if (bestAttestation === 'not_verified' || bestAttestation === 'C') {
+                bestAttestation = 'B';
+              }
+            } else if (stirVerstat.includes('Passed-C') || stirVerstat === 'TN-Validation-Passed-C') {
+              attestationCounts.C++;
+              if (bestAttestation === 'not_verified') {
+                bestAttestation = 'C';
+              }
+            } else if (stirVerstat.includes('Failed')) {
+              attestationCounts.failed++;
+            } else {
+              attestationCounts.none++;
+            }
+          } else {
+            attestationCounts.none++;
+          }
+        }
+      } catch (callError) {
+        console.error('Error fetching call detail:', callError);
+      }
+    }
+
+    let note = '';
+    if (checkedCalls === 0) {
+      note = `Found ${data.calls.length} calls but couldn't fetch attestation details. Check Twilio console for StirVerstat values.`;
+    } else if (bestAttestation === 'A') {
+      note = `✅ A-Level attestation (${attestationCounts.A}/${checkedCalls} calls). Number is registered with Trust Hub and has full caller ID authority.`;
+    } else if (bestAttestation === 'B') {
+      note = `⚠️ B-Level attestation (${attestationCounts.B}/${checkedCalls} calls). Number authenticated but not fully verified. Register with Trust Hub for A-level.`;
+    } else if (bestAttestation === 'C') {
+      note = `⚠️ C-Level attestation (${attestationCounts.C}/${checkedCalls} calls). Gateway-level only. Register number with Twilio Trust Hub for better attestation.`;
+    } else {
+      note = `❌ No STIR/SHAKEN attestation found (${checkedCalls} calls checked). Register number with Twilio Trust Hub to get A-level attestation.`;
     }
 
     return {
       level: bestAttestation,
       checked: true,
-      note: `Found ${callsWithAttestation.length} calls. STIR/SHAKEN attestation requires: 1) Twilio A2P 10DLC registration, 2) CNAM registration. Check individual call logs for StirVerstat values.`,
-      registrationRequired: true,
-      callCount: callsWithAttestation.length,
-      attestationCounts
+      note,
+      registrationRequired: bestAttestation !== 'A',
+      callCount: data.calls.length,
+      attestationCounts,
+      checkedCallDetails: checkedCalls
     };
 
   } catch (error) {
@@ -380,7 +433,7 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     return {
       level: 'not_verified' as 'A' | 'B' | 'C' | 'not_verified',
       checked: false,
-      note: `Error checking attestation: ${error.message}. Ensure Twilio A2P 10DLC and CNAM registration completed.`,
+      note: `Error checking attestation: ${error.message}. Ensure number is registered with Twilio Trust Hub.`,
       registrationRequired: true
     };
   }

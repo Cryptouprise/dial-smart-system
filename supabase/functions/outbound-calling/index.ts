@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { extractAreaCode } from '../_shared/phone-parser.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -119,6 +120,24 @@ serve(async (req) => {
 
         console.log('[Outbound Calling] Creating call log for user:', user.id);
 
+        // Fetch lead details for personalization
+        let leadData = null;
+        if (leadId) {
+          const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('first_name, last_name, email, company, phone_number, status, priority, notes, lead_source, tags, custom_fields, timezone, preferred_contact_time, ghl_contact_id')
+            .eq('id', leadId)
+            .single();
+          
+          if (!leadError && lead) {
+            leadData = lead;
+            console.log('[Outbound Calling] Lead data retrieved:', {
+              name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+              company: lead.company
+            });
+          }
+        }
+
         // Use admin client for database operations
         const { data: callLog, error: callLogError } = await supabaseAdmin
           .from('call_logs')
@@ -153,12 +172,51 @@ serve(async (req) => {
           body: JSON.stringify({
             from_number: callerId,
             to_number: phoneNumber,
-            agent_id: agentId,
+            override_agent_id: agentId,
+            // metadata is for internal tracking only
             metadata: {
               campaign_id: campaignId,
               lead_id: leadId,
-              call_log_id: callLog.id
-            }
+              call_log_id: callLog.id,
+            },
+            // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
+            ...(leadData && {
+              dynamic_variables: {
+                // Basic contact info
+                first_name: leadData.first_name || '',
+                last_name: leadData.last_name || '',
+                full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+                contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+                email: leadData.email || '',
+                phone: leadData.phone_number || '',
+                company: leadData.company || '',
+                
+                // Lead status and tracking
+                status: leadData.status || '',
+                priority: leadData.priority?.toString() || '',
+                lead_source: leadData.lead_source || '',
+                tags: Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '',
+                
+                // Notes and history
+                notes: leadData.notes || '',
+                
+                // Contact preferences
+                timezone: leadData.timezone || '',
+                preferred_contact_time: leadData.preferred_contact_time || '',
+                
+                // Integration IDs
+                ghl_contact_id: leadData.ghl_contact_id || '',
+                
+                // Custom fields (flatten JSONB into individual variables)
+                ...(leadData.custom_fields && typeof leadData.custom_fields === 'object' 
+                  ? Object.entries(leadData.custom_fields).reduce((acc, [key, value]) => {
+                      acc[`custom_${key}`] = String(value || '');
+                      return acc;
+                    }, {} as Record<string, string>)
+                  : {}
+                )
+              }
+            })
           }),
         });
 
@@ -199,7 +257,7 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
+        response = await fetch(`${baseUrl}/get-call/${retellCallId}`, {
           method: 'GET',
           headers: retellHeaders,
         });
@@ -217,8 +275,8 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
-          method: 'DELETE',
+        response = await fetch(`${baseUrl}/stop-call/${retellCallId}`, {
+          method: 'POST',
           headers: retellHeaders,
         });
 

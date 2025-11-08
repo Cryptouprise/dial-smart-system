@@ -315,48 +315,69 @@ export type Database = {
         Row: {
           company: string | null
           created_at: string
+          custom_fields: Json | null
+          do_not_call: boolean | null
           email: string | null
           first_name: string | null
+          ghl_contact_id: string | null
           id: string
           last_contacted_at: string | null
           last_name: string | null
+          lead_source: string | null
           next_callback_at: string | null
           notes: string | null
           phone_number: string
+          preferred_contact_time: string | null
           priority: number | null
           status: string
+          tags: string[] | null
+          timezone: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           company?: string | null
           created_at?: string
+          custom_fields?: Json | null
+          do_not_call?: boolean | null
           email?: string | null
           first_name?: string | null
+          ghl_contact_id?: string | null
           id?: string
           last_contacted_at?: string | null
           last_name?: string | null
+          lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
           phone_number: string
+          preferred_contact_time?: string | null
           priority?: number | null
           status?: string
+          tags?: string[] | null
+          timezone?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           company?: string | null
           created_at?: string
+          custom_fields?: Json | null
+          do_not_call?: boolean | null
           email?: string | null
           first_name?: string | null
+          ghl_contact_id?: string | null
           id?: string
           last_contacted_at?: string | null
           last_name?: string | null
+          lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
           phone_number?: string
+          preferred_contact_time?: string | null
           priority?: number | null
           status?: string
+          tags?: string[] | null
+          timezone?: string | null
           updated_at?: string
           user_id?: string
         }
