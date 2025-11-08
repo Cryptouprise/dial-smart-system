@@ -160,64 +160,62 @@ serve(async (req) => {
         console.log('[Outbound Calling] Call log created:', callLog.id);
 
         // Create outbound call via Retell AI
-        console.log('[Outbound Calling] Initiating Retell AI call:', {
-          from: callerId,
-          to: phoneNumber,
-          agent: agentId
-        });
+        const retellPayload = {
+          from_number: callerId,
+          to_number: phoneNumber,
+          override_agent_id: agentId,
+          // metadata is for internal tracking only
+          metadata: {
+            campaign_id: campaignId,
+            lead_id: leadId,
+            call_log_id: callLog.id,
+          },
+          // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
+          ...(leadData && {
+            dynamic_variables: {
+              // Basic contact info
+              first_name: leadData.first_name || '',
+              last_name: leadData.last_name || '',
+              full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+              contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+              email: leadData.email || '',
+              phone: leadData.phone_number || '',
+              company: leadData.company || '',
+              
+              // Lead status and tracking
+              status: leadData.status || '',
+              priority: leadData.priority?.toString() || '',
+              lead_source: leadData.lead_source || '',
+              tags: Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '',
+              
+              // Notes and history
+              notes: leadData.notes || '',
+              
+              // Contact preferences
+              timezone: leadData.timezone || '',
+              preferred_contact_time: leadData.preferred_contact_time || '',
+              
+              // Integration IDs
+              ghl_contact_id: leadData.ghl_contact_id || '',
+              
+              // Custom fields (flatten JSONB into individual variables)
+              ...(leadData.custom_fields && typeof leadData.custom_fields === 'object' 
+                ? Object.entries(leadData.custom_fields).reduce((acc, [key, value]) => {
+                    acc[`custom_${key}`] = String(value || '');
+                    return acc;
+                  }, {} as Record<string, string>)
+                : {}
+              )
+            }
+          })
+        };
+
+        console.log('[Outbound Calling] Initiating Retell AI call with payload:', JSON.stringify(retellPayload, null, 2));
 
         response = await fetch(`${baseUrl}/create-phone-call`, {
           method: 'POST',
           headers: retellHeaders,
-          body: JSON.stringify({
-            from_number: callerId,
-            to_number: phoneNumber,
-            override_agent_id: agentId,
-            // metadata is for internal tracking only
-            metadata: {
-              campaign_id: campaignId,
-              lead_id: leadId,
-              call_log_id: callLog.id,
-            },
-            // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
-            ...(leadData && {
-              dynamic_variables: {
-                // Basic contact info
-                first_name: leadData.first_name || '',
-                last_name: leadData.last_name || '',
-                full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
-                contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
-                email: leadData.email || '',
-                phone: leadData.phone_number || '',
-                company: leadData.company || '',
-                
-                // Lead status and tracking
-                status: leadData.status || '',
-                priority: leadData.priority?.toString() || '',
-                lead_source: leadData.lead_source || '',
-                tags: Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '',
-                
-                // Notes and history
-                notes: leadData.notes || '',
-                
-                // Contact preferences
-                timezone: leadData.timezone || '',
-                preferred_contact_time: leadData.preferred_contact_time || '',
-                
-                // Integration IDs
-                ghl_contact_id: leadData.ghl_contact_id || '',
-                
-                // Custom fields (flatten JSONB into individual variables)
-                ...(leadData.custom_fields && typeof leadData.custom_fields === 'object' 
-                  ? Object.entries(leadData.custom_fields).reduce((acc, [key, value]) => {
-                      acc[`custom_${key}`] = String(value || '');
-                      return acc;
-                    }, {} as Record<string, string>)
-                  : {}
-                )
-              }
-            })
-          }),
+          body: JSON.stringify(retellPayload),
         });
 
         if (!response.ok) {
