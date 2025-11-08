@@ -7,10 +7,12 @@ const corsHeaders = {
 };
 
 interface RetellPhoneNumberRequest {
-  action: 'import' | 'update' | 'delete' | 'list';
+  action: 'import' | 'get' | 'list' | 'update' | 'delete' | 'register';
   phoneNumber?: string;
   terminationUri?: string;
   agentId?: string;
+  inboundAgentId?: string;
+  outboundAgentId?: string;
   nickname?: string;
 }
 
@@ -21,7 +23,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, phoneNumber, terminationUri, agentId, nickname }: RetellPhoneNumberRequest = await req.json();
+    const { action, phoneNumber, terminationUri, agentId, inboundAgentId, outboundAgentId, nickname }: RetellPhoneNumberRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -44,13 +46,36 @@ serve(async (req) => {
           throw new Error('Phone number and termination URI are required for import');
         }
         
+        const importPayload: any = {
+          from_number: phoneNumber,
+          termination_uri: terminationUri,
+        };
+        if (inboundAgentId) importPayload.inbound_agent_id = inboundAgentId;
+        if (outboundAgentId) importPayload.outbound_agent_id = outboundAgentId;
+        if (nickname) importPayload.nickname = nickname;
+        
         response = await fetch(`${baseUrl}/import-phone-number`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            from_number: phoneNumber,
-            termination_uri: terminationUri,
-          }),
+          body: JSON.stringify(importPayload),
+        });
+        break;
+
+      case 'get':
+        if (!phoneNumber) {
+          throw new Error('Phone number is required for get');
+        }
+        
+        response = await fetch(`${baseUrl}/get-phone-number/${encodeURIComponent(phoneNumber)}`, {
+          method: 'GET',
+          headers,
+        });
+        break;
+
+      case 'list':
+        response = await fetch(`${baseUrl}/list-phone-numbers`, {
+          method: 'GET',
+          headers,
         });
         break;
 
@@ -62,8 +87,10 @@ serve(async (req) => {
         const updateData: any = {};
         if (agentId) {
           updateData.inbound_agent_id = agentId;
-          updateData.outbound_agent_id = agentId; // Required for outbound calls
+          updateData.outbound_agent_id = agentId;
         }
+        if (inboundAgentId) updateData.inbound_agent_id = inboundAgentId;
+        if (outboundAgentId) updateData.outbound_agent_id = outboundAgentId;
         if (nickname) updateData.nickname = nickname;
         
         response = await fetch(`${baseUrl}/update-phone-number/${encodeURIComponent(phoneNumber)}`, {
@@ -84,10 +111,18 @@ serve(async (req) => {
         });
         break;
 
-      case 'list':
-        response = await fetch(`${baseUrl}/list-phone-numbers`, {
-          method: 'GET',
+      case 'register':
+        if (!phoneNumber || !agentId) {
+          throw new Error('Phone number and agent ID are required for register');
+        }
+        
+        response = await fetch(`${baseUrl}/register-phone-number`, {
+          method: 'POST',
           headers,
+          body: JSON.stringify({
+            phone_number: phoneNumber,
+            agent_id: agentId,
+          }),
         });
         break;
 
