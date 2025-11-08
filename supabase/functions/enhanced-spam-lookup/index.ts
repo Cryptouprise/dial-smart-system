@@ -357,8 +357,8 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     }
 
     // Check the most recent attestation levels
-    let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
-    let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
+    const bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
+    const attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
     
     for (const call of callsWithAttestation.slice(0, 20)) {
       // Note: StirVerstat is only available if you fetch individual call details
