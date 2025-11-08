@@ -8,16 +8,16 @@ export interface PhoneCallRequest {
   to_number: string;
   agent_id?: string;
   override_agent_id?: string;
-  retell_llm_dynamic_variables?: Record<string, any>;
-  metadata?: Record<string, any>;
+  retell_llm_dynamic_variables?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   drop_call_if_machine_detected?: boolean;
   max_call_duration_ms?: number;
 }
 
 export interface WebCallRequest {
   agent_id: string;
-  metadata?: Record<string, any>;
-  retell_llm_dynamic_variables?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+  retell_llm_dynamic_variables?: Record<string, unknown>;
 }
 
 export interface Call {
@@ -34,7 +34,7 @@ export interface Call {
   transcript_object?: TranscriptObject[];
   recording_url?: string;
   public_log_url?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   disconnection_reason?: string;
   call_analysis?: CallAnalysis;
   access_token?: string; // For web calls
@@ -57,7 +57,7 @@ export interface CallAnalysis {
   call_successful?: boolean;
   in_voicemail?: boolean;
   user_sentiment?: 'Negative' | 'Positive' | 'Neutral' | 'Unknown';
-  custom_analysis_data?: Record<string, any>;
+  custom_analysis_data?: Record<string, unknown>;
 }
 
 // ============== Phone Number Types ==============
@@ -182,7 +182,7 @@ export interface LLMTool {
   name: string;
   description: string;
   url: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   speak_after_execution?: boolean;
   speak_during_execution?: boolean;
   speak_during_execution_message?: string;
@@ -227,13 +227,13 @@ export interface UpdateRetellLLMRequest {
 export interface Conversation {
   conversation_id: string;
   agent_id: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   last_modification_timestamp?: number;
 }
 
 export interface CreateConversationRequest {
   agent_id: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // ============== Knowledge Base Types ==============
@@ -294,8 +294,8 @@ export interface BatchCallRequest {
   agent_id: string;
   phone_numbers: string[];
   from_number: string;
-  metadata?: Record<string, any>;
-  retell_llm_dynamic_variables?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+  retell_llm_dynamic_variables?: Record<string, unknown>;
   drop_call_if_machine_detected?: boolean;
   max_call_duration_ms?: number;
   start_time?: string; // ISO 8601 format
@@ -337,7 +337,7 @@ export interface CustomTelephonyInfo {
   telephony_provider: string;
   sip_uri?: string;
   webhook_url?: string;
-  credential?: Record<string, any>;
+  credential?: Record<string, unknown>;
 }
 
 // ============== API Response Types ==============

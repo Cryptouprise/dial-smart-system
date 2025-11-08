@@ -98,7 +98,7 @@ export class RetellService {
   static async listCalls(params?: {
     limit?: number;
     sort_order?: 'ascending' | 'descending';
-    filter_criteria?: Record<string, any>;
+    filter_criteria?: Record<string, unknown>;
   }): Promise<Call[]> {
     const { data, error } = await supabase.functions.invoke('retell-call-management', {
       body: {
@@ -479,7 +479,7 @@ export class RetellService {
    */
   static async updateConversation(
     conversationId: string,
-    updates: { metadata?: Record<string, any> }
+    updates: { metadata?: Record<string, unknown> }
   ): Promise<Conversation> {
     const { data, error } = await supabase.functions.invoke('retell-conversation-management', {
       body: {
@@ -672,7 +672,7 @@ export class RetellService {
    * Create batch test
    * POST /create-batch-test
    */
-  static async createBatchTest(request: BatchTestRequest): Promise<any> {
+  static async createBatchTest(request: BatchTestRequest): Promise<unknown> {
     const { data, error } = await supabase.functions.invoke('retell-batch-operations', {
       body: {
         action: 'create-batch-test',

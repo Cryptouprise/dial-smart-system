@@ -53,11 +53,12 @@ export const useRetellService = () => {
           });
         }
         return result;
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`[useRetellService] ${errorPrefix}:`, error);
         toast({
           title: 'Error',
-          description: error.message || `${errorPrefix}. Please try again.`,
+          description: errorMessage || `${errorPrefix}. Please try again.`,
           variant: 'destructive',
         });
         return null;
@@ -109,7 +110,7 @@ export const useRetellService = () => {
     async (params?: {
       limit?: number;
       sort_order?: 'ascending' | 'descending';
-      filter_criteria?: Record<string, any>;
+      filter_criteria?: Record<string, unknown>;
     }): Promise<Call[] | null> => {
       return handleOperation(
         () => RetellService.listCalls(params),
@@ -347,7 +348,7 @@ export const useRetellService = () => {
   const updateConversation = useCallback(
     async (
       conversationId: string,
-      updates: { metadata?: Record<string, any> }
+      updates: { metadata?: Record<string, unknown> }
     ): Promise<Conversation | null> => {
       return handleOperation(
         () => RetellService.updateConversation(conversationId, updates),
@@ -475,7 +476,7 @@ export const useRetellService = () => {
   );
 
   const createBatchTest = useCallback(
-    async (request: BatchTestRequest): Promise<any | null> => {
+    async (request: BatchTestRequest): Promise<unknown | null> => {
       return handleOperation(
         () => RetellService.createBatchTest(request),
         `Batch test created with ${request.test_scenarios.length} scenarios`,
