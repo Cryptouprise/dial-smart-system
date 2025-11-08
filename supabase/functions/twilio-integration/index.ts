@@ -103,7 +103,11 @@ serve(async (req) => {
       // Import to Retell AI first
       const retellPayload = {
         phone_number: phoneNumber,
-        termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
+        termination_uri: `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
+        termination_uri_auth: {
+          username: twilioAccountSid,
+          password: twilioAuthToken
+        }
       };
       console.log('📤 Sending to Retell AI:', JSON.stringify(retellPayload, null, 2));
 
@@ -211,7 +215,11 @@ serve(async (req) => {
           // Import to Retell AI
           const retellPayload = {
             phone_number: twilioNum.phone_number,
-            termination_uri: `https://${twilioAccountSid}:${twilioAuthToken}@api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`
+            termination_uri: `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
+            termination_uri_auth: {
+              username: twilioAccountSid,
+              password: twilioAuthToken
+            }
           };
 
           const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
