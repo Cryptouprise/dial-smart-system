@@ -2,12 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle } from 'lucide-react';
+import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle, Brain } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import LeadManager from '@/components/LeadManager';
 import CampaignManager from '@/components/CampaignManager';
 import CallCenter from '@/components/CallCenter';
 import DialingAnalytics from '@/components/DialingAnalytics';
+import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
+import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
@@ -61,6 +63,9 @@ const PredictiveDialingDashboard = () => {
           Manage leads, campaigns, and outbound calling operations
         </p>
       </div>
+
+      {/* Concurrency Monitor */}
+      <ConcurrencyMonitor />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -129,6 +134,10 @@ const PredictiveDialingDashboard = () => {
               <PlayCircle className="h-4 w-4 mr-2" />
               Call Center
             </TabsTrigger>
+            <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Brain className="h-4 w-4 mr-2" />
+              AI Engine
+            </TabsTrigger>
             <TabsTrigger value="campaigns" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Target className="h-4 w-4 mr-2" />
               Campaigns
@@ -146,6 +155,10 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="call-center">
           <CallCenter onStatsUpdate={setStats} />
+        </TabsContent>
+
+        <TabsContent value="ai-engine">
+          <PredictiveDialingEngine />
         </TabsContent>
 
         <TabsContent value="campaigns">
