@@ -8,9 +8,18 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'configure_number' | 'get_number_config';
   phoneNumberSid?: string;
   phoneNumber?: string;
+  config?: {
+    recordCalls?: boolean;
+    voicemailDetection?: boolean;
+    callForwarding?: string;
+    statusCallbackUrl?: string;
+    voiceUrl?: string;
+    smsUrl?: string;
+    friendlyName?: string;
+  };
 }
 
 serve(async (req) => {
@@ -52,8 +61,8 @@ serve(async (req) => {
 
     console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
 
-    const { action, phoneNumberSid, phoneNumber }: TwilioImportRequest = await req.json();
-    console.log('📥 Request action:', action, { phoneNumber, phoneNumberSid });
+    const { action, phoneNumberSid, phoneNumber, config }: TwilioImportRequest = await req.json();
+    console.log('📥 Request action:', action, { phoneNumber, phoneNumberSid, config });
 
     // Helper function to encode credentials safely (handles UTF-8)
     const encodeCredentials = (accountSid: string, authToken: string): string => {
@@ -276,6 +285,80 @@ serve(async (req) => {
         imported,
         failed
       }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Configure number with advanced Twilio features
+    if (action === 'configure_number' && phoneNumberSid && config) {
+      console.log('⚙️ Configuring Twilio number:', phoneNumberSid, config);
+      
+      const updatePayload: any = {};
+      
+      if (config.friendlyName) updatePayload.FriendlyName = config.friendlyName;
+      if (config.voiceUrl) updatePayload.VoiceUrl = config.voiceUrl;
+      if (config.smsUrl) updatePayload.SmsUrl = config.smsUrl;
+      if (config.statusCallbackUrl) updatePayload.StatusCallback = config.statusCallbackUrl;
+      
+      // Call recording
+      if (config.recordCalls !== undefined) {
+        updatePayload.VoiceReceiveMode = config.recordCalls ? 'voice' : 'fax';
+      }
+      
+      // Voicemail detection (AMD - Answering Machine Detection)
+      if (config.voicemailDetection !== undefined) {
+        updatePayload.VoiceApplicationSid = config.voicemailDetection ? 'detect-answering-machine' : '';
+      }
+      
+      const response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${phoneNumberSid}.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(updatePayload).toString(),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Twilio configuration error:', response.status, errorText);
+        throw new Error(`Failed to configure number: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Number configured successfully');
+      
+      return new Response(JSON.stringify({ success: true, number: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Get number configuration
+    if (action === 'get_number_config' && phoneNumberSid) {
+      console.log('📋 Getting number configuration:', phoneNumberSid);
+      
+      const response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${phoneNumberSid}.json`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Twilio API error:', response.status, errorText);
+        throw new Error(`Failed to get number config: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Retrieved number configuration');
+      
+      return new Response(JSON.stringify({ success: true, config: data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
