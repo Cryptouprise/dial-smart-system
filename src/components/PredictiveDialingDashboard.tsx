@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle, Brain } from 'lucide-react';
+import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle, Brain, Settings } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import LeadManager from '@/components/LeadManager';
 import CampaignManager from '@/components/CampaignManager';
@@ -10,6 +10,7 @@ import CallCenter from '@/components/CallCenter';
 import DialingAnalytics from '@/components/DialingAnalytics';
 import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
 import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
+import AdvancedDialerSettings from '@/components/AdvancedDialerSettings';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
@@ -138,6 +139,10 @@ const PredictiveDialingDashboard = () => {
               <Brain className="h-4 w-4 mr-2" />
               AI Engine
             </TabsTrigger>
+            <TabsTrigger value="advanced-settings" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Settings className="h-4 w-4 mr-2" />
+              Advanced
+            </TabsTrigger>
             <TabsTrigger value="campaigns" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Target className="h-4 w-4 mr-2" />
               Campaigns
@@ -159,6 +164,10 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="ai-engine">
           <PredictiveDialingEngine />
+        </TabsContent>
+
+        <TabsContent value="advanced-settings">
+          <AdvancedDialerSettings />
         </TabsContent>
 
         <TabsContent value="campaigns">
