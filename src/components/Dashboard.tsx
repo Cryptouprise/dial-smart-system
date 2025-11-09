@@ -20,6 +20,8 @@ import RetellAIManager from '@/components/RetellAIManager';
 import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
+import { EnhancedAgentManager } from '@/components/EnhancedAgentManager';
+import { AIDialerOptimization } from '@/components/AIDialerOptimization';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -145,6 +147,14 @@ const Dashboard = () => {
               <TabsTrigger value="retell" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <Settings className="h-4 w-4 mr-2" />
                 Retell AI
+              </TabsTrigger>
+              <TabsTrigger value="agents" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Zap className="h-4 w-4 mr-2" />
+                Agent Manager
+              </TabsTrigger>
+              <TabsTrigger value="ai-dialer" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Brain className="h-4 w-4 mr-2" />
+                AI Optimization
               </TabsTrigger>
               <TabsTrigger value="gohighlevel" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <Link className="h-4 w-4 mr-2" />
@@ -342,6 +352,14 @@ const Dashboard = () => {
 
           <TabsContent value="retell">
             <RetellAIManager />
+          </TabsContent>
+
+          <TabsContent value="agents">
+            <EnhancedAgentManager />
+          </TabsContent>
+
+          <TabsContent value="ai-dialer">
+            <AIDialerOptimization />
           </TabsContent>
 
           <TabsContent value="gohighlevel">

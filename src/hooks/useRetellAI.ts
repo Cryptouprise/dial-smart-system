@@ -214,6 +214,85 @@ export const useRetellAI = () => {
     }
   };
 
+  const updateAgent = async (agentId: string, updates: Partial<Agent>): Promise<Agent | null> => {
+    setIsLoading(true);
+    try {
+      console.log('[useRetellAI] Updating agent:', { agentId, updates });
+      
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'update',
+          agentId,
+          agentName: updates.agent_name,
+          voiceId: updates.voice_id,
+          llmId: updates.response_engine?.llm_id,
+        }
+      });
+
+      if (error) {
+        console.error('[useRetellAI] Update agent error:', error);
+        throw error;
+      }
+
+      console.log('[useRetellAI] Agent updated:', data);
+
+      toast({
+        title: "Success",
+        description: "Agent updated successfully",
+      });
+
+      return data;
+    } catch (error: any) {
+      console.error('[useRetellAI] Update agent failed:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update agent",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteAgent = async (agentId: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      console.log('[useRetellAI] Deleting agent:', agentId);
+      
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'delete',
+          agentId
+        }
+      });
+
+      if (error) {
+        console.error('[useRetellAI] Delete agent error:', error);
+        throw error;
+      }
+
+      console.log('[useRetellAI] Agent deleted:', data);
+
+      toast({
+        title: "Success",
+        description: "Agent deleted successfully",
+      });
+
+      return true;
+    } catch (error: any) {
+      console.error('[useRetellAI] Delete agent failed:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete agent",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     importPhoneNumber,
     updatePhoneNumber,
@@ -221,6 +300,8 @@ export const useRetellAI = () => {
     listPhoneNumbers,
     listAgents,
     createAgent,
+    updateAgent,
+    deleteAgent,
     isLoading
   };
 };

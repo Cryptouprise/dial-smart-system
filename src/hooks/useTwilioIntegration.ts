@@ -8,6 +8,16 @@ interface TwilioNumber {
   friendly_name: string;
 }
 
+interface TwilioNumberConfig {
+  recordCalls?: boolean;
+  voicemailDetection?: boolean;
+  callForwarding?: string;
+  statusCallbackUrl?: string;
+  voiceUrl?: string;
+  smsUrl?: string;
+  friendlyName?: string;
+}
+
 export const useTwilioIntegration = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -93,10 +103,69 @@ export const useTwilioIntegration = () => {
     }
   };
 
+  const configureNumber = async (phoneNumberSid: string, config: TwilioNumberConfig) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: {
+          action: 'configure_number',
+          phoneNumberSid,
+          config
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Number Configured",
+        description: "Twilio number settings have been updated",
+      });
+
+      return data;
+    } catch (error) {
+      console.error('Configure error:', error);
+      toast({
+        title: "Configuration Failed",
+        description: error.message || "Failed to configure number",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getNumberConfig = async (phoneNumberSid: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: {
+          action: 'get_number_config',
+          phoneNumberSid
+        }
+      });
+
+      if (error) throw error;
+      return data.config;
+    } catch (error) {
+      console.error('Get config error:', error);
+      toast({
+        title: "Failed to Get Configuration",
+        description: error.message || "Could not fetch number configuration",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     listTwilioNumbers,
     importNumber,
     syncAllNumbers,
+    configureNumber,
+    getNumberConfig,
     isLoading
   };
 };
