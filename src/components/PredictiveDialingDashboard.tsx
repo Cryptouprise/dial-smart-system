@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle, Brain, Settings } from 'lucide-react';
+import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle, Brain, Settings, Activity } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import LeadManager from '@/components/LeadManager';
 import CampaignManager from '@/components/CampaignManager';
@@ -11,6 +11,7 @@ import DialingAnalytics from '@/components/DialingAnalytics';
 import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
 import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
 import AdvancedDialerSettings from '@/components/AdvancedDialerSettings';
+import DialingPerformanceDashboard from '@/components/DialingPerformanceDashboard';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
@@ -135,6 +136,10 @@ const PredictiveDialingDashboard = () => {
               <PlayCircle className="h-4 w-4 mr-2" />
               Call Center
             </TabsTrigger>
+            <TabsTrigger value="performance" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Activity className="h-4 w-4 mr-2" />
+              Performance
+            </TabsTrigger>
             <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Brain className="h-4 w-4 mr-2" />
               AI Engine
@@ -160,6 +165,10 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="call-center">
           <CallCenter onStatsUpdate={setStats} />
+        </TabsContent>
+
+        <TabsContent value="performance">
+          <DialingPerformanceDashboard />
         </TabsContent>
 
         <TabsContent value="ai-engine">
