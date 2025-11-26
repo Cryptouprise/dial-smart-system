@@ -15,7 +15,7 @@ export interface AutoAction {
   type: 'email' | 'sms' | 'webhook' | 'task';
   trigger: 'immediate' | 'delayed';
   delay?: number;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 export interface PipelineBoard {

@@ -11,7 +11,7 @@ interface GHLContact {
   phone?: string;
   companyName?: string;
   tags?: string[];
-  customFields?: Record<string, any>;
+  customFields?: Record<string, unknown>;
   source?: string;
   dateAdded?: string;
 }
@@ -38,14 +38,14 @@ export const useGoHighLevel = () => {
   const { toast } = useToast();
 
   const getGHLCredentials = (): GHLCredentials | null => {
-    const credentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const ghlCreds = credentials.find((cred: any) => cred.service === 'gohighlevel');
-    return ghlCreds?.credentials || null;
+    const credentials = JSON.parse(localStorage.getItem('api-credentials') || '[]') as Array<{service: string; credentials: unknown}>;
+    const ghlCreds = credentials.find((cred) => cred.service === 'gohighlevel');
+    return ghlCreds?.credentials as GHLCredentials || null;
   };
 
   const saveGHLCredentials = (credentials: GHLCredentials) => {
-    const existingCreds = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const updatedCreds = existingCreds.filter((cred: any) => cred.service !== 'gohighlevel');
+    const existingCreds = JSON.parse(localStorage.getItem('api-credentials') || '[]') as Array<{service: string; credentials: unknown}>;
+    const updatedCreds = existingCreds.filter((cred) => cred.service !== 'gohighlevel');
     updatedCreds.push({
       service: 'gohighlevel',
       credentials
@@ -71,10 +71,10 @@ export const useGoHighLevel = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Connection Failed",
-        description: error.message || "Failed to connect to Go High Level",
+        description: error instanceof Error ? error.message : "Failed to connect to Go High Level",
         variant: "destructive"
       });
       return null;
@@ -112,10 +112,10 @@ export const useGoHighLevel = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Sync Failed",
-        description: error.message || "Failed to sync contacts",
+        description: error instanceof Error ? error.message : "Failed to sync contacts",
         variant: "destructive"
       });
       return null;
@@ -148,7 +148,7 @@ export const useGoHighLevel = () => {
       if (error) throw error;
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update GHL contact:', error);
       return null;
     } finally {
@@ -184,10 +184,10 @@ export const useGoHighLevel = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
-        description: error.message || "Failed to create opportunity",
+        description: error instanceof Error ? error.message : "Failed to create opportunity",
         variant: "destructive"
       });
       return null;
@@ -211,10 +211,10 @@ export const useGoHighLevel = () => {
 
       if (error) throw error;
       return data.pipelines || [];
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
-        description: error.message || "Failed to fetch pipelines",
+        description: error instanceof Error ? error.message : "Failed to fetch pipelines",
         variant: "destructive"
       });
       return null;
@@ -243,10 +243,10 @@ export const useGoHighLevel = () => {
 
       if (error) throw error;
       return data.contacts || [];
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
-        description: error.message || "Failed to fetch contacts",
+        description: error instanceof Error ? error.message : "Failed to fetch contacts",
         variant: "destructive"
       });
       return null;
