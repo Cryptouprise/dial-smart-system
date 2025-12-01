@@ -717,6 +717,175 @@ export type Database = {
           },
         ]
       }
+      retell_branded_calls: {
+        Row: {
+          approved_at: string | null
+          business_profile_id: string
+          created_at: string
+          display_name_long: string
+          display_name_short: string
+          id: string
+          phone_number: string
+          rejection_reason: string | null
+          retell_branded_id: string | null
+          status: string
+          submitted_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          business_profile_id: string
+          created_at?: string
+          display_name_long: string
+          display_name_short: string
+          id?: string
+          phone_number: string
+          rejection_reason?: string | null
+          retell_branded_id?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          business_profile_id?: string
+          created_at?: string
+          display_name_long?: string
+          display_name_short?: string
+          id?: string
+          phone_number?: string
+          rejection_reason?: string | null
+          retell_branded_id?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retell_branded_calls_business_profile_id_fkey"
+            columns: ["business_profile_id"]
+            isOneToOne: false
+            referencedRelation: "retell_business_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      retell_business_profiles: {
+        Row: {
+          approved_at: string | null
+          business_address: string
+          business_name: string
+          business_registration_number: string
+          city: string
+          contact_phone: string
+          country: string
+          created_at: string
+          id: string
+          rejection_reason: string | null
+          retell_profile_id: string | null
+          state: string
+          status: string
+          submitted_at: string | null
+          updated_at: string
+          user_id: string
+          website_url: string
+          zip_code: string
+        }
+        Insert: {
+          approved_at?: string | null
+          business_address: string
+          business_name: string
+          business_registration_number: string
+          city: string
+          contact_phone: string
+          country?: string
+          created_at?: string
+          id?: string
+          rejection_reason?: string | null
+          retell_profile_id?: string | null
+          state: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          user_id: string
+          website_url: string
+          zip_code: string
+        }
+        Update: {
+          approved_at?: string | null
+          business_address?: string
+          business_name?: string
+          business_registration_number?: string
+          city?: string
+          contact_phone?: string
+          country?: string
+          created_at?: string
+          id?: string
+          rejection_reason?: string | null
+          retell_profile_id?: string | null
+          state?: string
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          user_id?: string
+          website_url?: string
+          zip_code?: string
+        }
+        Relationships: []
+      }
+      retell_verified_numbers: {
+        Row: {
+          approved_at: string | null
+          business_profile_id: string
+          created_at: string
+          id: string
+          phone_number: string
+          rejection_reason: string | null
+          retell_verification_id: string | null
+          status: string
+          submitted_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          business_profile_id: string
+          created_at?: string
+          id?: string
+          phone_number: string
+          rejection_reason?: string | null
+          retell_verification_id?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          business_profile_id?: string
+          created_at?: string
+          id?: string
+          phone_number?: string
+          rejection_reason?: string | null
+          retell_verification_id?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retell_verified_numbers_business_profile_id_fkey"
+            columns: ["business_profile_id"]
+            isOneToOne: false
+            referencedRelation: "retell_business_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rotation_history: {
         Row: {
           action_type: string

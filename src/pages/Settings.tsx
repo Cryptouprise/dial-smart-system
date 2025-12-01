@@ -16,6 +16,7 @@ import { useRetellAI } from '@/hooks/useRetellAI';
 import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -399,93 +400,8 @@ const Settings = () => {
               </p>
             </div>
 
-            <div className="border-t pt-6 space-y-4">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-5 space-y-3">
-                <h4 className="font-semibold text-base flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-blue-600" />
-                  Retell AI Business Verification Services
-                </h4>
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Increase your call pickup rates by up to 40% with Retell AI's carrier verification services. 
-                  These premium features help establish trust with your callers and prevent your numbers from being marked as spam.
-                </p>
-                
-                <div className="grid gap-3 mt-4">
-                  <div className="bg-white rounded-lg p-4 border border-blue-100">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-blue-100 rounded-full p-2 mt-0.5">
-                        <Shield className="h-4 w-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h5 className="font-semibold text-sm mb-1">Business Profile Registration</h5>
-                        <p className="text-xs text-gray-600 mb-2">
-                          Register your business identity with carriers. Required for all verification services.
-                        </p>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="text-xs"
-                          onClick={() => window.open('https://app.retellai.com', '_blank')}
-                        >
-                          Create Business Profile →
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg p-4 border border-blue-100">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-green-100 rounded-full p-2 mt-0.5">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h5 className="font-semibold text-sm mb-1">Verified Phone Number</h5>
-                        <p className="text-xs text-gray-600 mb-2">
-                          Remove "Spam Likely" labels from your numbers. Approval takes 1-2 weeks. (US only)
-                        </p>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="text-xs"
-                          onClick={() => window.open('https://app.retellai.com', '_blank')}
-                        >
-                          Apply for Verification →
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg p-4 border border-blue-100">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-purple-100 rounded-full p-2 mt-0.5">
-                        <Phone className="h-4 w-4 text-purple-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h5 className="font-semibold text-sm mb-1">Branded Call Display</h5>
-                        <p className="text-xs text-gray-600 mb-2">
-                          Show your business name instead of just a number. Increases answer rates. (US only)
-                        </p>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="text-xs"
-                          onClick={() => window.open('https://app.retellai.com', '_blank')}
-                        >
-                          Apply for Branded Call →
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-3">
-                  <p className="text-xs text-gray-700">
-                    <strong>Note:</strong> These services are managed through Retell AI's dashboard and work with ANY phone numbers 
-                    you use with Retell AI - whether you purchase through Retell, import from Twilio, or use Telnyx numbers.
-                  </p>
-                </div>
-              </div>
-            </div>
+            {/* Business Verification Management */}
+            <RetellBusinessVerification />
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
