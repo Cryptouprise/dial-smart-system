@@ -23,3 +23,6 @@ verify_jwt = true
 
 [functions.enhanced-spam-lookup]
 verify_jwt = true
+
+[functions.retell-business-verification]
+verify_jwt = true
