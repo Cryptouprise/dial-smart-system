@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -20,6 +20,7 @@ import RetellAIManager from '@/components/RetellAIManager';
 import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
+import SmsMessaging from '@/components/SmsMessaging';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -164,6 +165,10 @@ const Dashboard = () => {
               </TabsTrigger>
               <TabsTrigger value="spam" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Spam
+              </TabsTrigger>
+              <TabsTrigger value="sms" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                SMS
               </TabsTrigger>
             </TabsList>
           </div>
@@ -366,6 +371,10 @@ const Dashboard = () => {
 
           <TabsContent value="spam">
             <SpamDetectionManager />
+          </TabsContent>
+
+          <TabsContent value="sms">
+            <SmsMessaging />
           </TabsContent>
         </Tabs>
 
