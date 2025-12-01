@@ -697,6 +697,429 @@ export type Database = {
         }
         Relationships: []
       }
+      phone_providers: {
+        Row: {
+          id: string
+          user_id: string
+          name: "retell" | "telnyx" | "twilio" | "custom"
+          display_name: string | null
+          config_json: Record<string, unknown>
+          api_key_reference: string | null
+          priority: number
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: "retell" | "telnyx" | "twilio" | "custom"
+          display_name?: string | null
+          config_json?: Record<string, unknown>
+          api_key_reference?: string | null
+          priority?: number
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: "retell" | "telnyx" | "twilio" | "custom"
+          display_name?: string | null
+          config_json?: Record<string, unknown>
+          api_key_reference?: string | null
+          priority?: number
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_numbers: {
+        Row: {
+          id: string
+          user_id: string
+          provider_id: string | null
+          provider_type: "retell" | "telnyx" | "twilio" | "custom"
+          number: string
+          capabilities_json: string[]
+          region: string | null
+          friendly_name: string | null
+          verified: boolean
+          last_synced: string | null
+          provider_number_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider_id?: string | null
+          provider_type: "retell" | "telnyx" | "twilio" | "custom"
+          number: string
+          capabilities_json?: string[]
+          region?: string | null
+          friendly_name?: string | null
+          verified?: boolean
+          last_synced?: string | null
+          provider_number_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider_id?: string | null
+          provider_type?: "retell" | "telnyx" | "twilio" | "custom"
+          number?: string
+          capabilities_json?: string[]
+          region?: string | null
+          friendly_name?: string | null
+          verified?: boolean
+          last_synced?: string | null
+          provider_number_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_numbers_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "phone_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      carrier_configs: {
+        Row: {
+          id: string
+          provider_id: string
+          user_id: string
+          capabilities: string[]
+          signed_calls_enabled: boolean
+          cost_estimate_per_minute: number | null
+          cost_estimate_per_sms: number | null
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          provider_id: string
+          user_id: string
+          capabilities?: string[]
+          signed_calls_enabled?: boolean
+          cost_estimate_per_minute?: number | null
+          cost_estimate_per_sms?: number | null
+          metadata?: Record<string, unknown>
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          provider_id?: string
+          user_id?: string
+          capabilities?: string[]
+          signed_calls_enabled?: boolean
+          cost_estimate_per_minute?: number | null
+          cost_estimate_per_sms?: number | null
+          metadata?: Record<string, unknown>
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carrier_configs_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "phone_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      call_signatures: {
+        Row: {
+          id: string
+          user_id: string
+          call_id: string
+          provider_id: string | null
+          provider_type: string | null
+          signature: string | null
+          attestation_level: "A" | "B" | "C" | null
+          verified: boolean
+          signed_at: string | null
+          verification_error: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          call_id: string
+          provider_id?: string | null
+          provider_type?: string | null
+          signature?: string | null
+          attestation_level?: "A" | "B" | "C" | null
+          verified?: boolean
+          signed_at?: string | null
+          verification_error?: string | null
+          metadata?: Record<string, unknown>
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          call_id?: string
+          provider_id?: string | null
+          provider_type?: string | null
+          signature?: string | null
+          attestation_level?: "A" | "B" | "C" | null
+          verified?: boolean
+          signed_at?: string | null
+          verification_error?: string | null
+          metadata?: Record<string, unknown>
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_signatures_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "phone_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      rvm_queue: {
+        Row: {
+          id: string
+          user_id: string
+          lead_id: string | null
+          provider_id: string | null
+          provider_type: string | null
+          to_number: string
+          from_number: string
+          audio_url: string | null
+          payload: Record<string, unknown>
+          status: "pending" | "queued" | "processing" | "delivered" | "failed" | "cancelled"
+          provider_rvm_id: string | null
+          attempts: number
+          max_attempts: number
+          last_attempt_at: string | null
+          completed_at: string | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          lead_id?: string | null
+          provider_id?: string | null
+          provider_type?: string | null
+          to_number: string
+          from_number: string
+          audio_url?: string | null
+          payload?: Record<string, unknown>
+          status?: "pending" | "queued" | "processing" | "delivered" | "failed" | "cancelled"
+          provider_rvm_id?: string | null
+          attempts?: number
+          max_attempts?: number
+          last_attempt_at?: string | null
+          completed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          lead_id?: string | null
+          provider_id?: string | null
+          provider_type?: string | null
+          to_number?: string
+          from_number?: string
+          audio_url?: string | null
+          payload?: Record<string, unknown>
+          status?: "pending" | "queued" | "processing" | "delivered" | "failed" | "cancelled"
+          provider_rvm_id?: string | null
+          attempts?: number
+          max_attempts?: number
+          last_attempt_at?: string | null
+          completed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rvm_queue_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rvm_queue_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "phone_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      sms_messages: {
+        Row: {
+          id: string
+          user_id: string
+          lead_id: string | null
+          provider_id: string | null
+          provider_type: string | null
+          to_number: string
+          from_number: string
+          body: string
+          template_id: string | null
+          direction: "inbound" | "outbound"
+          status: "pending" | "queued" | "sent" | "delivered" | "failed" | "received"
+          provider_message_id: string | null
+          error_message: string | null
+          metadata: Record<string, unknown>
+          sent_at: string | null
+          delivered_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          lead_id?: string | null
+          provider_id?: string | null
+          provider_type?: string | null
+          to_number: string
+          from_number: string
+          body: string
+          template_id?: string | null
+          direction?: "inbound" | "outbound"
+          status?: "pending" | "queued" | "sent" | "delivered" | "failed" | "received"
+          provider_message_id?: string | null
+          error_message?: string | null
+          metadata?: Record<string, unknown>
+          sent_at?: string | null
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          lead_id?: string | null
+          provider_id?: string | null
+          provider_type?: string | null
+          to_number?: string
+          from_number?: string
+          body?: string
+          template_id?: string | null
+          direction?: "inbound" | "outbound"
+          status?: "pending" | "queued" | "sent" | "delivered" | "failed" | "received"
+          provider_message_id?: string | null
+          error_message?: string | null
+          metadata?: Record<string, unknown>
+          sent_at?: string | null
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "phone_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      follow_ups: {
+        Row: {
+          id: string
+          user_id: string
+          lead_id: string
+          campaign_id: string | null
+          scheduled_at: string
+          action_type: "call" | "sms" | "rvm" | "email"
+          provider_type: string | null
+          template_id: string | null
+          metadata_json: Record<string, unknown>
+          status: "pending" | "scheduled" | "in_progress" | "completed" | "failed" | "cancelled"
+          attempts: number
+          last_attempt_at: string | null
+          completed_at: string | null
+          result: Record<string, unknown> | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          lead_id: string
+          campaign_id?: string | null
+          scheduled_at: string
+          action_type: "call" | "sms" | "rvm" | "email"
+          provider_type?: string | null
+          template_id?: string | null
+          metadata_json?: Record<string, unknown>
+          status?: "pending" | "scheduled" | "in_progress" | "completed" | "failed" | "cancelled"
+          attempts?: number
+          last_attempt_at?: string | null
+          completed_at?: string | null
+          result?: Record<string, unknown> | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          lead_id?: string
+          campaign_id?: string | null
+          scheduled_at?: string
+          action_type?: "call" | "sms" | "rvm" | "email"
+          provider_type?: string | null
+          template_id?: string | null
+          metadata_json?: Record<string, unknown>
+          status?: "pending" | "scheduled" | "in_progress" | "completed" | "failed" | "cancelled"
+          attempts?: number
+          last_attempt_at?: string | null
+          completed_at?: string | null
+          result?: Record<string, unknown> | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_ups_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_ups_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

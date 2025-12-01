@@ -30,7 +30,22 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 - **Performance charts**: Answer rate trends, concurrency analysis
 - **Intelligent insights**: Automatic recommendations and compliance alerts
 
+### Multi-Carrier Provider Integration
+- **Multiple provider support**: Retell AI, Telnyx, and Twilio
+- **Intelligent carrier routing**: Auto-select best provider based on capabilities
+- **STIR/SHAKEN compliance**: Verified caller ID with attestation
+- **SMS messaging**: Send/receive with templates and opt-out handling
+- **Ringless Voicemail (RVM)**: Queue and deliver voicemails without ringing
+- **Provider management UI**: Easy setup and number import
+
 ## 📚 Documentation
+
+See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup guide including:
+- Environment variable configuration
+- Provider credential setup
+- Number import and routing configuration
+- STIR/SHAKEN and SMS setup
+- API reference and troubleshooting
 
 See [PREDICTIVE_DIALING_GUIDE.md](./PREDICTIVE_DIALING_GUIDE.md) for comprehensive documentation including:
 - Feature descriptions and usage examples
