@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,14 +12,31 @@ import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
-import { Sparkles, MessageSquare } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
   const [dailyCallLimit, setDailyCallLimit] = useState('50');
   const [cooldownPeriod, setCooldownPeriod] = useState('30');
+  const [preferStirShaken, setPreferStirShaken] = useState(true);
+  const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
   const { toast } = useToast();
   const { settings, updateSettings } = useAiSmsMessaging();
+
+  useEffect(() => {
+    loadPhoneNumbers();
+  }, []);
+
+  const loadPhoneNumbers = async () => {
+    const { data } = await supabase
+      .from('phone_numbers')
+      .select('*')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (data) setPhoneNumbers(data);
+  };
 
   const handleSaveSettings = () => {
     // In a real app, you'd save these settings to the database
@@ -256,6 +273,102 @@ const Settings = () => {
                 Number of previous messages to include for context
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* STIR/SHAKEN Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              STIR/SHAKEN Attestation
+            </CardTitle>
+            <CardDescription>
+              Call authentication to prevent spam and spoofing
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                How STIR/SHAKEN Works
+              </h4>
+              <p className="text-sm text-gray-700">
+                <strong>Direct with Twilio/Telnyx:</strong> STIR/SHAKEN attestation is provided by your carrier (Twilio, Telnyx). 
+                These providers sign your calls at the network level.
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Through Retell AI:</strong> When Retell AI uses a Twilio or Telnyx number, it inherits that number's 
+                STIR/SHAKEN attestation automatically. Both work together seamlessly.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Prefer STIR/SHAKEN Numbers</Label>
+                <p className="text-sm text-gray-600">Prioritize numbers with attestation for outbound calls</p>
+              </div>
+              <Switch
+                checked={preferStirShaken}
+                onCheckedChange={setPreferStirShaken}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-base font-medium">Phone Number Attestation Status</Label>
+              <div className="border rounded-lg overflow-hidden">
+                {phoneNumbers.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-500">
+                    No active phone numbers. Import numbers from your carriers.
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {phoneNumbers.map((number) => (
+                      <div key={number.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-sm">{number.number}</span>
+                          {number.carrier_name && (
+                            <Badge variant="outline" className="text-xs">
+                              {number.carrier_name}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {number.stir_shaken_attestation === 'A' ? (
+                            <Badge className="bg-green-100 text-green-800 gap-1">
+                              <CheckCircle className="h-3 w-3" />
+                              Full Attestation
+                            </Badge>
+                          ) : number.stir_shaken_attestation === 'B' ? (
+                            <Badge className="bg-blue-100 text-blue-800 gap-1">
+                              <CheckCircle className="h-3 w-3" />
+                              Partial
+                            </Badge>
+                          ) : number.stir_shaken_attestation === 'C' ? (
+                            <Badge variant="secondary" className="gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Gateway
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Not Verified
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <strong>A:</strong> Full attestation (best) · <strong>B:</strong> Partial attestation · <strong>C:</strong> Gateway attestation
+              </p>
+            </div>
+
+            <Button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700">
+              Save STIR/SHAKEN Preferences
+            </Button>
           </CardContent>
         </Card>
 
