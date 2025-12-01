@@ -7,11 +7,12 @@ const corsHeaders = {
 };
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
   llmId?: string;
+  agentConfig?: any; // Full agent configuration object
 }
 
 serve(async (req) => {
@@ -21,7 +22,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, agentName, agentId, voiceId, llmId }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, agentConfig }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -72,19 +73,35 @@ serve(async (req) => {
         });
         break;
 
+      case 'get':
+        if (!agentId) {
+          throw new Error('Agent ID is required for get');
+        }
+        
+        response = await fetch(`${baseUrl}/get-agent/${agentId}`, {
+          method: 'GET',
+          headers,
+        });
+        break;
+
       case 'update':
         if (!agentId) {
           throw new Error('Agent ID is required for update');
         }
         
-        const updateData: any = {};
-        if (agentName) updateData.agent_name = agentName;
-        if (voiceId) updateData.voice_id = voiceId;
-        if (llmId) {
-          updateData.response_engine = {
-            type: 'retell-llm',
-            llm_id: llmId
-          };
+        // Use agentConfig if provided (full update), otherwise use individual fields
+        const updateData: any = agentConfig || {};
+        
+        // If no agentConfig provided, build from individual fields
+        if (!agentConfig) {
+          if (agentName) updateData.agent_name = agentName;
+          if (voiceId) updateData.voice_id = voiceId;
+          if (llmId) {
+            updateData.response_engine = {
+              type: 'retell-llm',
+              llm_id: llmId
+            };
+          }
         }
         
         console.log(`[Retell Agent] Updating agent ${agentId} with:`, JSON.stringify(updateData));
