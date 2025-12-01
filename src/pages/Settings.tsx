@@ -5,16 +5,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
+import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
+import { Sparkles, MessageSquare } from 'lucide-react';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
   const [dailyCallLimit, setDailyCallLimit] = useState('50');
   const [cooldownPeriod, setCooldownPeriod] = useState('30');
   const { toast } = useToast();
+  const { settings, updateSettings } = useAiSmsMessaging();
 
   const handleSaveSettings = () => {
     // In a real app, you'd save these settings to the database
@@ -110,6 +115,147 @@ const Settings = () => {
             <Button variant="outline">
               Change Password
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* AI SMS Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              AI SMS Settings
+            </CardTitle>
+            <CardDescription>Configure AI provider and SMS behavior</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Enable AI SMS</Label>
+                <p className="text-sm text-gray-600">Turn on AI-powered SMS responses</p>
+              </div>
+              <Switch
+                checked={settings?.enabled || false}
+                onCheckedChange={(checked) => updateSettings({ enabled: checked })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-provider" className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                AI Provider
+              </Label>
+              <Select
+                value={settings?.ai_provider || 'lovable'}
+                onValueChange={(value: 'lovable' | 'retell') => updateSettings({ ai_provider: value })}
+              >
+                <SelectTrigger id="ai-provider" className="max-w-md">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lovable">
+                    <div className="flex flex-col py-1">
+                      <span className="font-medium">Lovable AI</span>
+                      <span className="text-xs text-muted-foreground">Powered by Gemini - Best for images & context</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="retell">
+                    <div className="flex flex-col py-1">
+                      <span className="font-medium">Retell AI</span>
+                      <span className="text-xs text-muted-foreground">Voice-optimized SMS responses</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {settings?.ai_provider === 'retell' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="retell-llm">Retell LLM ID</Label>
+                  <Input
+                    id="retell-llm"
+                    value={settings?.retell_llm_id || ''}
+                    onChange={(e) => updateSettings({ retell_llm_id: e.target.value })}
+                    placeholder="llm_xxxxxxxxxxxxx"
+                    className="max-w-md"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Get this from your Retell AI dashboard
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="retell-voice">Retell Voice ID (Optional)</Label>
+                  <Input
+                    id="retell-voice"
+                    value={settings?.retell_voice_id || ''}
+                    onChange={(e) => updateSettings({ retell_voice_id: e.target.value })}
+                    placeholder="voice_xxxxxxxxxxxxx"
+                    className="max-w-md"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-personality">AI Personality</Label>
+              <Textarea
+                id="ai-personality"
+                value={settings?.ai_personality || ''}
+                onChange={(e) => updateSettings({ ai_personality: e.target.value })}
+                placeholder="e.g., professional and helpful, friendly and casual, etc."
+                rows={3}
+                className="max-w-md"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Auto Response</Label>
+                <p className="text-sm text-gray-600">Automatically respond to incoming messages</p>
+              </div>
+              <Switch
+                checked={settings?.auto_response_enabled || false}
+                onCheckedChange={(checked) => updateSettings({ auto_response_enabled: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Image Analysis</Label>
+                <p className="text-sm text-gray-600">Analyze images sent by contacts</p>
+              </div>
+              <Switch
+                checked={settings?.enable_image_analysis || false}
+                onCheckedChange={(checked) => updateSettings({ enable_image_analysis: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Prevent Double Texting</Label>
+                <p className="text-sm text-gray-600">Avoid sending multiple messages in quick succession</p>
+              </div>
+              <Switch
+                checked={settings?.prevent_double_texting || false}
+                onCheckedChange={(checked) => updateSettings({ prevent_double_texting: checked })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="context-window">Context Window Size</Label>
+              <Input
+                id="context-window"
+                type="number"
+                value={settings?.context_window_size || 20}
+                onChange={(e) => updateSettings({ context_window_size: parseInt(e.target.value) })}
+                min={1}
+                max={100}
+                className="max-w-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Number of previous messages to include for context
+              </p>
+            </div>
           </CardContent>
         </Card>
 
