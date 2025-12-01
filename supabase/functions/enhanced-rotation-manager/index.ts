@@ -1,19 +1,20 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface RotationSettings {
-  enabled: boolean;
-  rotation_interval_hours: number;
-  high_volume_threshold: number;
-  auto_import_enabled: boolean;
-  auto_remove_quarantined: boolean;
-}
+const RotationSettingsSchema = z.object({
+  enabled: z.boolean(),
+  rotation_interval_hours: z.number().int().min(1, 'Minimum 1 hour').max(168, 'Maximum 1 week'),
+  high_volume_threshold: z.number().int().min(1).max(1000),
+  auto_import_enabled: z.boolean(),
+  auto_remove_quarantined: z.boolean()
+});
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -40,7 +41,19 @@ serve(async (req) => {
       const body = await req.json();
 
       if (body.action === 'save_settings') {
-        const settings: RotationSettings = body.settings;
+        // Validate settings input
+        const validationResult = RotationSettingsSchema.safeParse(body.settings);
+        if (!validationResult.success) {
+          return new Response(
+            JSON.stringify({ 
+              error: 'Invalid settings data',
+              details: validationResult.error.issues.map(i => i.message)
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const settings = validationResult.data;
 
         // Save or update rotation settings
         const { data: existingSettings } = await supabaseClient
@@ -232,10 +245,16 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   } catch (error) {
-    console.error('Function error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    console.error('Error in enhanced-rotation-manager:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: 'An error occurred processing your rotation request',
+        code: 'ROTATION_ERROR'
+      }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    );
   }
 });
