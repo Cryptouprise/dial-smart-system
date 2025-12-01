@@ -50,8 +50,8 @@ export const useAdvancedDialerFeatures = () => {
           enableLocalPresence: data.enable_local_presence || false,
           enableTimeZoneCompliance: data.enable_timezone_compliance || true,
           enableDNCCheck: data.enable_dnc_check || true,
-          amdSensitivity: data.amd_sensitivity || 'medium',
-          localPresenceStrategy: data.local_presence_strategy || 'match_area_code'
+          amdSensitivity: (data.amd_sensitivity as 'low' | 'medium' | 'high') || 'medium',
+          localPresenceStrategy: (data.local_presence_strategy as 'match_area_code' | 'match_prefix' | 'nearest') || 'match_area_code'
         });
       }
     } catch (error) {

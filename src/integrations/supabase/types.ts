@@ -56,6 +56,7 @@ export type Database = {
       ai_sms_settings: {
         Row: {
           ai_personality: string | null
+          ai_provider: string | null
           auto_response_enabled: boolean | null
           business_hours_only: boolean | null
           context_window_size: number | null
@@ -68,12 +69,15 @@ export type Database = {
           max_context_tokens: number | null
           prevent_double_texting: boolean | null
           retell_agent_id: string | null
+          retell_llm_id: string | null
+          retell_voice_id: string | null
           updated_at: string
           use_number_rotation: boolean | null
           user_id: string
         }
         Insert: {
           ai_personality?: string | null
+          ai_provider?: string | null
           auto_response_enabled?: boolean | null
           business_hours_only?: boolean | null
           context_window_size?: number | null
@@ -86,12 +90,15 @@ export type Database = {
           max_context_tokens?: number | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
+          retell_llm_id?: string | null
+          retell_voice_id?: string | null
           updated_at?: string
           use_number_rotation?: boolean | null
           user_id: string
         }
         Update: {
           ai_personality?: string | null
+          ai_provider?: string | null
           auto_response_enabled?: boolean | null
           business_hours_only?: boolean | null
           context_window_size?: number | null
@@ -104,6 +111,8 @@ export type Database = {
           max_context_tokens?: number | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
+          retell_llm_id?: string | null
+          retell_voice_id?: string | null
           updated_at?: string
           use_number_rotation?: boolean | null
           user_id?: string

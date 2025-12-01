@@ -344,7 +344,6 @@ async function generateAIResponse(
     content: currentContent
   });
 
-  // Generate response using Lovable AI
   const systemPrompt = `You are an AI SMS assistant with the following personality: ${settings?.ai_personality || 'professional and helpful'}. 
   
 Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational. 
@@ -352,35 +351,65 @@ If the user sends an image, acknowledge it and respond appropriately based on th
 DO NOT include any special characters or formatting that may not work well in SMS.`;
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...conversationHistory
-        ],
-      }),
-    });
+    const aiProvider = settings?.ai_provider || 'lovable';
 
-    if (!response.ok) {
-      throw new Error(`AI generation failed: ${response.status}`);
+    if (aiProvider === 'retell' && retellApiKey && settings?.retell_llm_id) {
+      // Use Retell AI
+      console.log('[AI SMS] Using Retell AI for response generation');
+      
+      const retellResponse = await fetch('https://api.retellai.com/v2/create-web-call', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${retellApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agent_id: settings.retell_llm_id,
+          audio_encoding: 'pcm',
+          audio_websocket_protocol: 'web',
+          sample_rate: 24000,
+          metadata: {
+            conversation_id: conversationId,
+            user_message: currentContent,
+            context: JSON.stringify(conversationHistory.slice(-5)), // Last 5 messages
+          },
+        }),
+      });
+
+      if (!retellResponse.ok) {
+        console.error('[AI SMS] Retell API error:', await retellResponse.text());
+        throw new Error('Retell AI failed, falling back to Lovable AI');
+      }
+
+      const retellData = await retellResponse.json();
+      return retellData.access_token ? 'Response generated via Retell AI' : 'I apologize, but I was unable to generate a response.';
+
+    } else {
+      // Use Lovable AI (default)
+      console.log('[AI SMS] Using Lovable AI for response generation');
+      
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI generation failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || 'I apologize, but I was unable to generate a response.';
     }
-
-    const data = await response.json();
-    const aiResponse = data.choices?.[0]?.message?.content || 'I apologize, but I was unable to generate a response.';
-
-    // Optionally use Retell AI if configured
-    if (retellApiKey && settings?.retell_agent_id) {
-      // Could integrate with Retell AI here for more sophisticated conversation management
-      console.log('[AI SMS] Retell AI integration available but using Lovable AI for this response');
-    }
-
-    return aiResponse;
   } catch (error) {
     console.error('[AI SMS] Response generation failed:', error);
     throw error;
