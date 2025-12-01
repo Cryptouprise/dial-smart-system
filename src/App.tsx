@@ -12,6 +12,7 @@ import ApiKeys from "./pages/ApiKeys";
 import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
+import AiSmsConversations from "./components/AiSmsConversations";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/sms-conversations" element={<AiSmsConversations />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/api-keys" element={<ApiKeys />} />

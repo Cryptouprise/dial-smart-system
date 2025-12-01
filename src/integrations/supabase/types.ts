@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_sms_settings: {
+        Row: {
+          ai_personality: string | null
+          auto_response_enabled: boolean | null
+          business_hours_only: boolean | null
+          context_window_size: number | null
+          created_at: string
+          double_text_delay_seconds: number | null
+          enable_image_analysis: boolean | null
+          enable_reaction_detection: boolean | null
+          enabled: boolean | null
+          id: string
+          max_context_tokens: number | null
+          prevent_double_texting: boolean | null
+          retell_agent_id: string | null
+          updated_at: string
+          use_number_rotation: boolean | null
+          user_id: string
+        }
+        Insert: {
+          ai_personality?: string | null
+          auto_response_enabled?: boolean | null
+          business_hours_only?: boolean | null
+          context_window_size?: number | null
+          created_at?: string
+          double_text_delay_seconds?: number | null
+          enable_image_analysis?: boolean | null
+          enable_reaction_detection?: boolean | null
+          enabled?: boolean | null
+          id?: string
+          max_context_tokens?: number | null
+          prevent_double_texting?: boolean | null
+          retell_agent_id?: string | null
+          updated_at?: string
+          use_number_rotation?: boolean | null
+          user_id: string
+        }
+        Update: {
+          ai_personality?: string | null
+          auto_response_enabled?: boolean | null
+          business_hours_only?: boolean | null
+          context_window_size?: number | null
+          created_at?: string
+          double_text_delay_seconds?: number | null
+          enable_image_analysis?: boolean | null
+          enable_reaction_detection?: boolean | null
+          enabled?: boolean | null
+          id?: string
+          max_context_tokens?: number | null
+          prevent_double_texting?: boolean | null
+          retell_agent_id?: string | null
+          updated_at?: string
+          use_number_rotation?: boolean | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       call_logs: {
         Row: {
           answered_at: string | null
@@ -597,6 +654,176 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      sms_context_history: {
+        Row: {
+          context_window: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          summary: string | null
+          token_count: number | null
+          user_id: string
+        }
+        Insert: {
+          context_window: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          summary?: string | null
+          token_count?: number | null
+          user_id: string
+        }
+        Update: {
+          context_window?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          summary?: string | null
+          token_count?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_context_history_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "sms_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_conversations: {
+        Row: {
+          contact_name: string | null
+          contact_phone: string
+          context_summary: string | null
+          created_at: string
+          id: string
+          last_message_at: string
+          metadata: Json | null
+          unread_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_name?: string | null
+          contact_phone: string
+          context_summary?: string | null
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          metadata?: Json | null
+          unread_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_name?: string | null
+          contact_phone?: string
+          context_summary?: string | null
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          metadata?: Json | null
+          unread_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sms_messages: {
+        Row: {
+          body: string
+          conversation_id: string | null
+          created_at: string
+          delivered_at: string | null
+          direction: string
+          error_message: string | null
+          from_number: string
+          has_image: boolean | null
+          id: string
+          image_analysis: Json | null
+          image_url: string | null
+          is_ai_generated: boolean | null
+          is_reaction: boolean | null
+          lead_id: string | null
+          metadata: Json | null
+          provider_message_id: string | null
+          provider_type: string | null
+          reaction_type: string | null
+          read_at: string | null
+          sent_at: string | null
+          status: string
+          to_number: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          direction: string
+          error_message?: string | null
+          from_number: string
+          has_image?: boolean | null
+          id?: string
+          image_analysis?: Json | null
+          image_url?: string | null
+          is_ai_generated?: boolean | null
+          is_reaction?: boolean | null
+          lead_id?: string | null
+          metadata?: Json | null
+          provider_message_id?: string | null
+          provider_type?: string | null
+          reaction_type?: string | null
+          read_at?: string | null
+          sent_at?: string | null
+          status?: string
+          to_number: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          direction?: string
+          error_message?: string | null
+          from_number?: string
+          has_image?: boolean | null
+          id?: string
+          image_analysis?: Json | null
+          image_url?: string | null
+          is_ai_generated?: boolean | null
+          is_reaction?: boolean | null
+          lead_id?: string | null
+          metadata?: Json | null
+          provider_message_id?: string | null
+          provider_type?: string | null
+          reaction_type?: string | null
+          read_at?: string | null
+          sent_at?: string | null
+          status?: string
+          to_number?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "sms_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       system_health_logs: {
         Row: {
