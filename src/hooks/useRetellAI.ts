@@ -268,6 +268,91 @@ export const useRetellAI = () => {
     }
   };
 
+  const getAgent = async (agentId: string): Promise<any | null> => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'get',
+          agentId
+        }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to get agent details",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateAgent = async (agentId: string, agentConfig: any): Promise<any | null> => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'update',
+          agentId,
+          agentConfig
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Agent updated successfully",
+      });
+
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update agent",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteAgent = async (agentId: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'delete',
+          agentId
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Agent deleted successfully",
+      });
+
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete agent",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     importPhoneNumber,
     updatePhoneNumber,
@@ -277,6 +362,9 @@ export const useRetellAI = () => {
     purchaseNumber,
     listAgents,
     createAgent,
+    getAgent,
+    updateAgent,
+    deleteAgent,
     isLoading
   };
 };

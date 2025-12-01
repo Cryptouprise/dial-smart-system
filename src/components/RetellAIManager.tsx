@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
+import { AgentEditDialog } from './AgentEditDialog';
 import { Trash2, Edit, RefreshCw, Sparkles, Plus } from 'lucide-react';
 
 interface RetellPhoneNumber {
@@ -25,6 +26,7 @@ interface RetellPhoneNumber {
 interface Agent {
   agent_id: string;
   agent_name: string;
+  voice_id?: string;
 }
 
 interface RetellLLM {
@@ -48,6 +50,8 @@ const RetellAIManager = () => {
     phoneNumber: '',
     terminationUri: ''
   });
+  const [editingAgent, setEditingAgent] = useState<any>(null);
+  const [showAgentEditDialog, setShowAgentEditDialog] = useState(false);
   const { toast } = useToast();
   const { 
     listPhoneNumbers, 
@@ -55,6 +59,9 @@ const RetellAIManager = () => {
     deletePhoneNumber, 
     listAgents,
     importPhoneNumber,
+    getAgent,
+    updateAgent,
+    deleteAgent,
     isLoading 
   } = useRetellAI();
   
@@ -157,6 +164,34 @@ const RetellAIManager = () => {
       setShowImportDialog(false);
       setImportForm({ phoneNumber: '', terminationUri: '' });
       loadRetellData();
+    }
+  };
+
+  const handleEditAgent = async (agentId: string) => {
+    const agentDetails = await getAgent(agentId);
+    if (agentDetails) {
+      setEditingAgent(agentDetails);
+      setShowAgentEditDialog(true);
+    }
+  };
+
+  const handleSaveAgent = async (agentConfig: any) => {
+    if (editingAgent) {
+      const success = await updateAgent(editingAgent.agent_id, agentConfig);
+      if (success) {
+        setShowAgentEditDialog(false);
+        setEditingAgent(null);
+        loadRetellData();
+      }
+    }
+  };
+
+  const handleDeleteAgent = async (agentId: string, agentName: string) => {
+    if (window.confirm(`Are you sure you want to delete agent "${agentName}"? This cannot be undone.`)) {
+      const success = await deleteAgent(agentId);
+      if (success) {
+        loadRetellData();
+      }
     }
   };
 
@@ -289,12 +324,42 @@ const RetellAIManager = () => {
                   <p>No agents found. Use the Setup Wizard to create one.</p>
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-3">
                   {agents.map((agent) => (
-                    <Badge key={agent.agent_id} variant="secondary" className="text-sm py-2 px-3">
-                      {agent.agent_name}
-                      <span className="ml-2 text-xs text-muted-foreground">({agent.agent_id})</span>
-                    </Badge>
+                    <div key={agent.agent_id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h4 className="font-semibold">{agent.agent_name}</h4>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {agent.agent_id}
+                          </Badge>
+                        </div>
+                        {agent.voice_id && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Voice: {agent.voice_id}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditAgent(agent.agent_id)}
+                          disabled={isLoading}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteAgent(agent.agent_id, agent.agent_name)}
+                          disabled={isLoading}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -507,6 +572,17 @@ const RetellAIManager = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Agent Edit Dialog */}
+      {editingAgent && (
+        <AgentEditDialog
+          open={showAgentEditDialog}
+          onOpenChange={setShowAgentEditDialog}
+          agent={editingAgent}
+          onSave={handleSaveAgent}
+          isLoading={isLoading}
+        />
+      )}
     </div>
   );
 };
