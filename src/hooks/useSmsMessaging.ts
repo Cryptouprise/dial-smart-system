@@ -1,11 +1,13 @@
 /**
  * useSmsMessaging Hook
  * 
- * React hook for sending SMS messages through multi-carrier providers.
+ * React hook for sending SMS messages through Twilio.
  * Provides methods for:
- * - Sending SMS messages via Twilio or Telnyx
+ * - Sending SMS messages via Twilio
  * - Viewing message history
- * - Managing SMS templates
+ * - Getting available SMS-enabled phone numbers
+ * 
+ * Note: Currently supports Twilio. Multi-carrier support (Telnyx) is planned.
  */
 
 import { useState, useCallback } from 'react';

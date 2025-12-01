@@ -109,6 +109,7 @@ serve(async (req) => {
             status: 'pending',
             lead_id: request.lead_id || null,
             provider_type: 'twilio',
+            metadata: {},
           })
           .select()
           .single();
@@ -221,13 +222,17 @@ serve(async (req) => {
         // Combine and filter for SMS-capable numbers
         const allNumbers = new Set<string>();
         
-        // Add all phone numbers (assume SMS capable if from Twilio)
+        // Add all phone numbers from phone_numbers table
+        // These are typically Twilio numbers imported via the system
+        // and are assumed to be SMS-capable since Twilio numbers generally support both voice and SMS
         numbers?.forEach(n => allNumbers.add(n.number));
         
-        // Add provider numbers with SMS capability
+        // Add provider numbers that explicitly have SMS capability
+        // Note: We only include numbers with explicit 'sms' capability from provider_numbers
+        // Voice-only numbers are not included here
         providerNumbers?.forEach(n => {
           const capabilities = n.capabilities_json as string[] || [];
-          if (capabilities.includes('sms') || capabilities.includes('voice')) {
+          if (capabilities.includes('sms')) {
             allNumbers.add(n.number);
           }
         });
