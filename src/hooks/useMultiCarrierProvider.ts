@@ -13,6 +13,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { ProviderType, ProviderNumber } from '@/services/providers/types';
+import { PROVIDER_TYPES } from '@/services/providers/constants';
 
 export interface PhoneProvider {
   id: string;
@@ -356,7 +357,7 @@ export const useMultiCarrierProvider = () => {
    * Get available provider types
    */
   const getAvailableProviderTypes = useCallback((): ProviderType[] => {
-    return ['retell', 'telnyx', 'twilio'];
+    return [...PROVIDER_TYPES];
   }, []);
 
   return {

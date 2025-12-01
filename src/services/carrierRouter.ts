@@ -22,7 +22,7 @@ import type {
   NumberCapability,
   UserContext,
 } from './providers/types';
-import { createProviderAdapter } from './providers';
+import { createProviderAdapter, extractAreaCode } from './providers';
 
 export interface CarrierRouterConfig {
   /** Default provider to use when no specific requirements */
@@ -171,21 +171,14 @@ export class CarrierRouter {
    * Filter numbers by local presence (matching area code)
    */
   private filterByLocalPresence(numbers: ProviderNumber[], targetNumber: string): ProviderNumber[] {
-    // Extract area code from target number (assumes +1XXXXXXXXXX format)
-    const cleanTarget = targetNumber.replace(/\D/g, '');
-    const targetAreaCode = cleanTarget.length >= 10 
-      ? cleanTarget.slice(cleanTarget.length - 10, cleanTarget.length - 7)
-      : null;
+    const targetAreaCode = extractAreaCode(targetNumber);
     
     if (!targetAreaCode) {
       return numbers;
     }
     
     return numbers.filter(number => {
-      const cleanNumber = number.number.replace(/\D/g, '');
-      const numberAreaCode = cleanNumber.length >= 10
-        ? cleanNumber.slice(cleanNumber.length - 10, cleanNumber.length - 7)
-        : null;
+      const numberAreaCode = extractAreaCode(number.number);
       return numberAreaCode === targetAreaCode;
     });
   }

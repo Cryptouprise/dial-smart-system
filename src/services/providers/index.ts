@@ -9,6 +9,9 @@
 // Types
 export * from './types';
 
+// Constants
+export * from './constants';
+
 // Adapters
 export { RetellAdapter } from './retellAdapter';
 export { TelnyxAdapter } from './telnyxAdapter';

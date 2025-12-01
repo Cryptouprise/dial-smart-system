@@ -58,20 +58,7 @@ import {
 } from 'lucide-react';
 import { useMultiCarrierProvider, type PhoneProvider } from '@/hooks/useMultiCarrierProvider';
 import type { ProviderType } from '@/services/providers/types';
-
-const PROVIDER_LABELS: Record<ProviderType, string> = {
-  retell: 'Retell AI',
-  telnyx: 'Telnyx',
-  twilio: 'Twilio',
-  custom: 'Custom',
-};
-
-const PROVIDER_DESCRIPTIONS: Record<ProviderType, string> = {
-  retell: 'AI-powered voice conversations',
-  telnyx: 'Voice, SMS, and RVM with STIR/SHAKEN',
-  twilio: 'Voice and SMS with wide coverage',
-  custom: 'Custom provider integration',
-};
+import { PROVIDER_LABELS, PROVIDER_DESCRIPTIONS, PROVIDER_TYPES } from '@/services/providers/constants';
 
 const CAPABILITY_ICONS: Record<string, React.ElementType> = {
   voice: Phone,
