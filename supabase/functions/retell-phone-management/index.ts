@@ -7,11 +7,12 @@ const corsHeaders = {
 };
 
 interface RetellPhoneNumberRequest {
-  action: 'import' | 'update' | 'delete' | 'list';
+  action: 'import' | 'update' | 'delete' | 'list' | 'list_available' | 'purchase';
   phoneNumber?: string;
   terminationUri?: string;
   agentId?: string;
   nickname?: string;
+  areaCode?: string;
 }
 
 serve(async (req) => {
@@ -21,7 +22,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, phoneNumber, terminationUri, agentId, nickname }: RetellPhoneNumberRequest = await req.json();
+    const { action, phoneNumber, terminationUri, agentId, nickname, areaCode }: RetellPhoneNumberRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -88,6 +89,32 @@ serve(async (req) => {
         response = await fetch(`${baseUrl}/list-phone-numbers`, {
           method: 'GET',
           headers,
+        });
+        break;
+
+      case 'list_available':
+        // List available phone numbers for purchase from Retell AI
+        const searchParams = new URLSearchParams();
+        if (areaCode) searchParams.append('area_code', areaCode);
+        
+        response = await fetch(`${baseUrl}/list-available-phone-numbers?${searchParams}`, {
+          method: 'GET',
+          headers,
+        });
+        break;
+
+      case 'purchase':
+        // Purchase a phone number from Retell AI
+        if (!phoneNumber) {
+          throw new Error('Phone number is required for purchase');
+        }
+        
+        response = await fetch(`${baseUrl}/purchase-phone-number`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            phone_number: phoneNumber,
+          }),
         });
         break;
 

@@ -153,6 +153,60 @@ export const useRetellAI = () => {
     }
   };
 
+  const listAvailableNumbers = async (areaCode?: string): Promise<RetellPhoneNumber[] | null> => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
+        body: {
+          action: 'list_available',
+          areaCode
+        }
+      });
+
+      if (error) throw error;
+      return Array.isArray(data) ? data : (data?.available_numbers || []);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to list available numbers",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const purchaseNumber = async (phoneNumber: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
+        body: {
+          action: 'purchase',
+          phoneNumber
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `Phone number ${phoneNumber} purchased from Retell AI`,
+      });
+
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to purchase phone number",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const listAgents = async (): Promise<Agent[] | null> => {
     setIsLoading(true);
     try {
@@ -219,6 +273,8 @@ export const useRetellAI = () => {
     updatePhoneNumber,
     deletePhoneNumber,
     listPhoneNumbers,
+    listAvailableNumbers,
+    purchaseNumber,
     listAgents,
     createAgent,
     isLoading

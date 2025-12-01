@@ -12,8 +12,10 @@ import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
-import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle } from 'lucide-react';
+import { useRetellAI } from '@/hooks/useRetellAI';
+import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -21,8 +23,12 @@ const Settings = () => {
   const [cooldownPeriod, setCooldownPeriod] = useState('30');
   const [preferStirShaken, setPreferStirShaken] = useState(true);
   const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
+  const [availableRetellNumbers, setAvailableRetellNumbers] = useState<any[]>([]);
+  const [searchAreaCode, setSearchAreaCode] = useState('');
+  const [isRetellDialogOpen, setIsRetellDialogOpen] = useState(false);
   const { toast } = useToast();
   const { settings, updateSettings } = useAiSmsMessaging();
+  const { listAvailableNumbers, purchaseNumber, isLoading: retellLoading } = useRetellAI();
 
   useEffect(() => {
     loadPhoneNumbers();
@@ -36,6 +42,19 @@ const Settings = () => {
       .order('created_at', { ascending: false })
       .limit(5);
     if (data) setPhoneNumbers(data);
+  };
+
+  const handleSearchRetellNumbers = async () => {
+    const numbers = await listAvailableNumbers(searchAreaCode);
+    if (numbers) setAvailableRetellNumbers(numbers);
+  };
+
+  const handlePurchaseRetellNumber = async (phoneNumber: string) => {
+    const result = await purchaseNumber(phoneNumber);
+    if (result) {
+      setIsRetellDialogOpen(false);
+      loadPhoneNumbers();
+    }
   };
 
   const handleSaveSettings = () => {
@@ -281,25 +300,102 @@ const Settings = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              STIR/SHAKEN Attestation
+              STIR/SHAKEN & Number Management
             </CardTitle>
             <CardDescription>
-              Call authentication to prevent spam and spoofing
+              Call authentication, verification, and spam prevention
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
               <h4 className="font-semibold text-sm flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-blue-600" />
-                How STIR/SHAKEN Works
+                How STIR/SHAKEN & Verification Works
               </h4>
-              <p className="text-sm text-gray-700">
-                <strong>Direct with Twilio/Telnyx:</strong> STIR/SHAKEN attestation is provided by your carrier (Twilio, Telnyx). 
-                These providers sign your calls at the network level.
-              </p>
-              <p className="text-sm text-gray-700">
-                <strong>Through Retell AI:</strong> When Retell AI uses a Twilio or Telnyx number, it inherits that number's 
-                STIR/SHAKEN attestation automatically. Both work together seamlessly.
+              <div className="space-y-2">
+                <p className="text-sm text-gray-700">
+                  <strong>Option 1 - Your Own Numbers (Direct Carrier):</strong> When you use your own Twilio/Telnyx numbers, 
+                  STIR/SHAKEN attestation is provided directly by the carrier at the network level.
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>Option 2 - Retell AI Managed Numbers:</strong> Retell AI offers their own phone numbers (backed by Twilio) 
+                  with built-in verification and spam prevention. These numbers come pre-verified and include STIR/SHAKEN attestation 
+                  from Retell's Twilio backend.
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>Hybrid Approach:</strong> Import your Twilio/Telnyx numbers into Retell AI to get the best of both worlds - 
+                  your existing numbers with Retell's AI calling features and attestation inheritance.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Retell AI Managed Numbers</Label>
+                <Dialog open={isRetellDialogOpen} onOpenChange={setIsRetellDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <ShoppingCart className="h-4 w-4" />
+                      Browse & Purchase
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Phone className="h-5 w-5" />
+                        Retell AI Managed Numbers
+                      </DialogTitle>
+                      <DialogDescription>
+                        Purchase pre-verified numbers with built-in spam prevention and STIR/SHAKEN attestation
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Area code (optional)"
+                          value={searchAreaCode}
+                          onChange={(e) => setSearchAreaCode(e.target.value)}
+                          maxLength={3}
+                          className="max-w-[150px]"
+                        />
+                        <Button onClick={handleSearchRetellNumbers} disabled={retellLoading}>
+                          Search Numbers
+                        </Button>
+                      </div>
+                      <div className="border rounded-lg max-h-[400px] overflow-y-auto">
+                        {availableRetellNumbers.length === 0 ? (
+                          <div className="p-8 text-center text-muted-foreground">
+                            Click "Search Numbers" to see available Retell AI managed numbers
+                          </div>
+                        ) : (
+                          <div className="divide-y">
+                            {availableRetellNumbers.map((number: any) => (
+                              <div key={number.phone_number} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-mono text-sm">{number.phone_number}</span>
+                                  <Badge className="bg-green-100 text-green-800 gap-1">
+                                    <Shield className="h-3 w-3" />
+                                    Verified
+                                  </Badge>
+                                </div>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handlePurchaseRetellNumber(number.phone_number)}
+                                  disabled={retellLoading}
+                                >
+                                  Purchase
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Retell AI offers phone numbers backed by Twilio with pre-configured verification and spam prevention
               </p>
             </div>
 
