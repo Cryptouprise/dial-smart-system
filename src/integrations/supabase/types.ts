@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      advanced_dialer_settings: {
+        Row: {
+          amd_sensitivity: string | null
+          created_at: string | null
+          enable_amd: boolean | null
+          enable_dnc_check: boolean | null
+          enable_local_presence: boolean | null
+          enable_timezone_compliance: boolean | null
+          id: string
+          local_presence_strategy: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amd_sensitivity?: string | null
+          created_at?: string | null
+          enable_amd?: boolean | null
+          enable_dnc_check?: boolean | null
+          enable_local_presence?: boolean | null
+          enable_timezone_compliance?: boolean | null
+          id?: string
+          local_presence_strategy?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amd_sensitivity?: string | null
+          created_at?: string | null
+          enable_amd?: boolean | null
+          enable_dnc_check?: boolean | null
+          enable_local_presence?: boolean | null
+          enable_timezone_compliance?: boolean | null
+          id?: string
+          local_presence_strategy?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_sms_settings: {
         Row: {
           ai_personality: string | null
@@ -73,6 +112,7 @@ export type Database = {
       }
       call_logs: {
         Row: {
+          amd_result: string | null
           answered_at: string | null
           caller_id: string
           campaign_id: string | null
@@ -89,6 +129,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          amd_result?: string | null
           answered_at?: string | null
           caller_id: string
           campaign_id?: string | null
@@ -105,6 +146,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          amd_result?: string | null
           answered_at?: string | null
           caller_id?: string
           campaign_id?: string | null
@@ -313,6 +355,33 @@ export type Database = {
           name?: string
           pipeline_stage?: string
           updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      dnc_list: {
+        Row: {
+          added_at: string | null
+          created_at: string | null
+          id: string
+          phone_number: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          added_at?: string | null
+          created_at?: string | null
+          id?: string
+          phone_number: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          added_at?: string | null
+          created_at?: string | null
+          id?: string
+          phone_number?: string
+          reason?: string | null
           user_id?: string
         }
         Relationships: []
@@ -589,6 +658,56 @@ export type Database = {
           },
         ]
       }
+      predictive_dialing_stats: {
+        Row: {
+          abandonment_rate: number | null
+          answer_rate: number | null
+          calls_abandoned: number | null
+          calls_attempted: number | null
+          calls_connected: number | null
+          campaign_id: string | null
+          concurrent_calls: number
+          created_at: string | null
+          id: string
+          timestamp: string | null
+          user_id: string
+        }
+        Insert: {
+          abandonment_rate?: number | null
+          answer_rate?: number | null
+          calls_abandoned?: number | null
+          calls_attempted?: number | null
+          calls_connected?: number | null
+          campaign_id?: string | null
+          concurrent_calls: number
+          created_at?: string | null
+          id?: string
+          timestamp?: string | null
+          user_id: string
+        }
+        Update: {
+          abandonment_rate?: number | null
+          answer_rate?: number | null
+          calls_abandoned?: number | null
+          calls_attempted?: number | null
+          calls_connected?: number | null
+          campaign_id?: string | null
+          concurrent_calls?: number
+          created_at?: string | null
+          id?: string
+          timestamp?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "predictive_dialing_stats_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rotation_history: {
         Row: {
           action_type: string
@@ -852,6 +971,39 @@ export type Database = {
           response_time_ms?: number | null
           service_name?: string
           status?: string
+        }
+        Relationships: []
+      }
+      system_settings: {
+        Row: {
+          calls_per_minute: number | null
+          created_at: string | null
+          enable_adaptive_pacing: boolean | null
+          id: string
+          max_calls_per_agent: number | null
+          max_concurrent_calls: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          calls_per_minute?: number | null
+          created_at?: string | null
+          enable_adaptive_pacing?: boolean | null
+          id?: string
+          max_calls_per_agent?: number | null
+          max_concurrent_calls?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          calls_per_minute?: number | null
+          created_at?: string | null
+          enable_adaptive_pacing?: boolean | null
+          id?: string
+          max_calls_per_agent?: number | null
+          max_concurrent_calls?: number | null
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
