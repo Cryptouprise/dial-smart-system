@@ -33,8 +33,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     if (agent) {
       setConfig({
         agent_name: agent.agent_name || '',
+        response_engine: agent.response_engine || {},
         voice_id: agent.voice_id || '11labs-Adrian',
         voice_model: agent.voice_model || 'eleven_turbo_v2',
+        fallback_voice_ids: agent.fallback_voice_ids || [],
         voice_temperature: agent.voice_temperature || 1,
         voice_speed: agent.voice_speed || 1,
         volume: agent.volume || 1,
@@ -49,6 +51,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         webhook_url: agent.webhook_url || '',
         webhook_timeout_ms: agent.webhook_timeout_ms || 10000,
         boosted_keywords: agent.boosted_keywords || [],
+        pronunciation_dictionary: agent.pronunciation_dictionary || [],
+        voicemail_option: agent.voicemail_option || { action: { type: 'hangup' } },
+        post_call_analysis_data: agent.post_call_analysis_data || [],
+        post_call_analysis_model: agent.post_call_analysis_model || 'gpt-4o-mini',
         end_call_after_silence_ms: agent.end_call_after_silence_ms || 600000,
         max_call_duration_ms: agent.max_call_duration_ms || 3600000,
         normalize_for_speech: agent.normalize_for_speech ?? true,
@@ -59,7 +65,14 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         stt_mode: agent.stt_mode || 'fast',
         vocab_specialization: agent.vocab_specialization || 'general',
         allow_user_dtmf: agent.allow_user_dtmf ?? true,
+        user_dtmf_options: agent.user_dtmf_options || {
+          digit_limit: 25,
+          termination_key: '#',
+          timeout_ms: 8000
+        },
         denoising_mode: agent.denoising_mode || 'noise-cancellation',
+        data_storage_setting: agent.data_storage_setting || 'everything',
+        opt_in_signed_url: agent.opt_in_signed_url ?? true,
       });
     }
   }, [agent]);
@@ -84,10 +97,12 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
         <ScrollArea className="h-[600px] pr-4">
           <Tabs defaultValue="basic" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="basic">Basic</TabsTrigger>
+              <TabsTrigger value="llm">LLM/Script</TabsTrigger>
               <TabsTrigger value="voice">Voice</TabsTrigger>
               <TabsTrigger value="behavior">Behavior</TabsTrigger>
+              <TabsTrigger value="features">Features</TabsTrigger>
               <TabsTrigger value="advanced">Advanced</TabsTrigger>
             </TabsList>
 
@@ -144,6 +159,38 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
               </div>
             </TabsContent>
 
+            {/* LLM/Script Tab */}
+            <TabsContent value="llm" className="space-y-4">
+              <div className="space-y-2">
+                <Label>Response Engine Type</Label>
+                <Badge variant="outline">{config.response_engine?.type || 'Not configured'}</Badge>
+              </div>
+
+              {config.response_engine?.type === 'retell-llm' && (
+                <div className="space-y-2">
+                  <Label>LLM ID</Label>
+                  <Input
+                    value={config.response_engine?.llm_id || ''}
+                    onChange={(e) => updateConfig('response_engine', { 
+                      ...config.response_engine, 
+                      llm_id: e.target.value 
+                    })}
+                    placeholder="llm_xxxxxxxxxxxxx"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The LLM configuration contains your agent's script and prompts. Edit the LLM in the LLMs tab.
+                  </p>
+                </div>
+              )}
+
+              <div className="p-4 border rounded-lg bg-muted/50">
+                <p className="text-sm text-muted-foreground">
+                  The agent's conversation script and prompts are configured in the associated Retell LLM. 
+                  To edit the script, go to the LLMs tab and modify the LLM directly.
+                </p>
+              </div>
+            </TabsContent>
+
             {/* Voice Tab */}
             <TabsContent value="voice" className="space-y-4">
               <div className="space-y-2">
@@ -154,6 +201,16 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                   onChange={(e) => updateConfig('voice_id', e.target.value)}
                   placeholder="e.g., 11labs-Adrian, openai-Alloy"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Fallback Voice IDs (comma separated)</Label>
+                <Input
+                  value={config.fallback_voice_ids?.join(', ') || ''}
+                  onChange={(e) => updateConfig('fallback_voice_ids', e.target.value.split(',').map((v: string) => v.trim()).filter(Boolean))}
+                  placeholder="openai-Alloy, deepgram-Angus"
+                />
+                <p className="text-xs text-muted-foreground">Backup voices if primary fails</p>
               </div>
 
               <div className="space-y-2">
@@ -318,6 +375,164 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
               </div>
             </TabsContent>
 
+            {/* Features Tab */}
+            <TabsContent value="features" className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold mb-3">Voicemail Configuration</h4>
+                  <div className="space-y-3 pl-4 border-l-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="voicemail_action_type">Voicemail Action Type</Label>
+                      <Select 
+                        value={config.voicemail_option?.action?.type || 'hangup'} 
+                        onValueChange={(v) => updateConfig('voicemail_option', {
+                          action: { type: v, text: config.voicemail_option?.action?.text || '' }
+                        })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hangup">Hang Up</SelectItem>
+                          <SelectItem value="static_text">Static Text Message</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {config.voicemail_option?.action?.type === 'static_text' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="voicemail_text">Voicemail Message</Label>
+                        <Textarea
+                          id="voicemail_text"
+                          value={config.voicemail_option?.action?.text || ''}
+                          onChange={(e) => updateConfig('voicemail_option', {
+                            action: { type: 'static_text', text: e.target.value }
+                          })}
+                          placeholder="Please give us a callback tomorrow at 10am."
+                          rows={3}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Pronunciation Dictionary</h4>
+                  <div className="space-y-3 pl-4 border-l-2">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Add custom pronunciations for specific words (JSON format)
+                    </p>
+                    <Textarea
+                      value={JSON.stringify(config.pronunciation_dictionary || [], null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value);
+                          updateConfig('pronunciation_dictionary', parsed);
+                        } catch {}
+                      }}
+                      placeholder='[{"word":"actually","alphabet":"ipa","phoneme":"ˈæktʃuəli"}]'
+                      rows={4}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Post-Call Analysis</h4>
+                  <div className="space-y-3 pl-4 border-l-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="post_call_model">Analysis Model</Label>
+                      <Select 
+                        value={config.post_call_analysis_model} 
+                        onValueChange={(v) => updateConfig('post_call_analysis_model', v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
+                          <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                          <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Data to Extract (JSON format)</Label>
+                      <Textarea
+                        value={JSON.stringify(config.post_call_analysis_data || [], null, 2)}
+                        onChange={(e) => {
+                          try {
+                            const parsed = JSON.parse(e.target.value);
+                            updateConfig('post_call_analysis_data', parsed);
+                          } catch {}
+                        }}
+                        placeholder='[{"type":"string","name":"customer_name","description":"The name of the customer","examples":["John Doe"]}]'
+                        rows={6}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">DTMF (Keypad) Options</h4>
+                  <div className="space-y-3 pl-4 border-l-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Allow User DTMF</Label>
+                      <Switch
+                        checked={config.allow_user_dtmf}
+                        onCheckedChange={(v) => updateConfig('allow_user_dtmf', v)}
+                      />
+                    </div>
+
+                    {config.allow_user_dtmf && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="dtmf_digit_limit">Digit Limit</Label>
+                          <Input
+                            id="dtmf_digit_limit"
+                            type="number"
+                            value={config.user_dtmf_options?.digit_limit || 25}
+                            onChange={(e) => updateConfig('user_dtmf_options', {
+                              ...config.user_dtmf_options,
+                              digit_limit: parseInt(e.target.value)
+                            })}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="dtmf_termination">Termination Key</Label>
+                          <Input
+                            id="dtmf_termination"
+                            value={config.user_dtmf_options?.termination_key || '#'}
+                            onChange={(e) => updateConfig('user_dtmf_options', {
+                              ...config.user_dtmf_options,
+                              termination_key: e.target.value
+                            })}
+                            maxLength={1}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="dtmf_timeout">Timeout (ms)</Label>
+                          <Input
+                            id="dtmf_timeout"
+                            type="number"
+                            value={config.user_dtmf_options?.timeout_ms || 8000}
+                            onChange={(e) => updateConfig('user_dtmf_options', {
+                              ...config.user_dtmf_options,
+                              timeout_ms: parseInt(e.target.value)
+                            })}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
             {/* Advanced Tab */}
             <TabsContent value="advanced" className="space-y-4">
               <div className="space-y-2">
@@ -390,9 +605,23 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                   <p className="text-xs text-muted-foreground">Enable keypad input during call</p>
                 </div>
                 <Switch
-                  checked={config.allow_user_dtmf}
-                  onCheckedChange={(v) => updateConfig('allow_user_dtmf', v)}
+                  checked={config.opt_in_signed_url}
+                  onCheckedChange={(v) => updateConfig('opt_in_signed_url', v)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="data_storage">Data Storage Setting</Label>
+                <Select value={config.data_storage_setting} onValueChange={(v) => updateConfig('data_storage_setting', v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="everything">Everything</SelectItem>
+                    <SelectItem value="call_only">Call Data Only</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
