@@ -67,6 +67,9 @@ export interface AiSmsSettings {
   ai_personality: string;
   auto_response_enabled: boolean;
   business_hours_only: boolean;
+  ai_provider: 'lovable' | 'retell';
+  retell_llm_id: string | null;
+  retell_voice_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -228,7 +231,10 @@ export const useAiSmsMessaging = () => {
         if (createError) throw createError;
         setSettings(newSettings as AiSmsSettings);
       } else {
-        setSettings(data as AiSmsSettings);
+        setSettings({
+          ...data,
+          ai_provider: (data.ai_provider as 'lovable' | 'retell') || 'lovable'
+        } as AiSmsSettings);
       }
     } catch (error) {
       console.error('[AI SMS] Failed to load settings:', error);
@@ -247,7 +253,10 @@ export const useAiSmsMessaging = () => {
 
       if (error) throw error;
 
-      setSettings(data);
+      setSettings({
+        ...data,
+        ai_provider: (data.ai_provider as 'lovable' | 'retell') || 'lovable'
+      } as AiSmsSettings);
       toast({
         title: 'Settings Updated',
         description: 'Your AI SMS settings have been saved',
