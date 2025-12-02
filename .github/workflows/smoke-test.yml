@@ -1,0 +1,54 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    # Only run if secrets are available
+    if: ${{ vars.ENABLE_SMOKE_TESTS == 'true' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Run Retell Credentials Check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TEST_AUTH_TOKEN: ${{ secrets.TEST_AUTH_TOKEN }}
+        run: |
+          echo "Testing Retell credentials..."
+          curl -X POST "$SUPABASE_URL/functions/v1/retell-credentials-check" \
+            -H "Authorization: Bearer $TEST_AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            --fail-with-body
+
+      - name: Run Integration Tests (if configured)
+        if: ${{ secrets.TEST_PHONE_NUMBER != '' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TEST_AUTH_TOKEN: ${{ secrets.TEST_AUTH_TOKEN }}
+          TEST_PHONE_NUMBER: ${{ secrets.TEST_PHONE_NUMBER }}
+          TEST_CALLER_ID: ${{ secrets.TEST_CALLER_ID }}
+          TEST_AGENT_ID: ${{ secrets.TEST_AGENT_ID }}
+        run: |
+          chmod +x scripts/integration/test-outbound-call.js
+          node scripts/integration/test-outbound-call.js
+
+      - name: Test Results
+        if: always()
+        run: |
+          echo "Smoke tests completed"

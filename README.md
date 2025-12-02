@@ -161,3 +161,132 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Supabase Functions Deployment
+
+This project includes several Supabase Edge Functions for Twilio and Retell AI integrations.
+
+### Prerequisites
+
+1. Install [Supabase CLI](https://supabase.com/docs/guides/cli)
+2. Login to Supabase:
+   ```sh
+   supabase login
+   ```
+3. Link to your project:
+   ```sh
+   supabase link --project-ref <your-project-ref>
+   ```
+
+### Required Environment Variables
+
+Set the following secrets in your Supabase project:
+
+```sh
+# Twilio Credentials
+supabase secrets set TWILIO_ACCOUNT_SID=your_account_sid
+supabase secrets set TWILIO_AUTH_TOKEN=your_auth_token
+
+# Retell AI Credentials
+supabase secrets set RETELL_AI_API_KEY=your_retell_api_key
+```
+
+### Deploy Functions
+
+Deploy all functions:
+
+```sh
+supabase functions deploy
+```
+
+Or deploy individual functions:
+
+```sh
+# Retell AI functions
+supabase functions deploy retell-credentials-check
+supabase functions deploy retell-phone-management
+supabase functions deploy retell-agent-management
+
+# Twilio functions
+supabase functions deploy twilio-integration
+supabase functions deploy twilio-termination-proxy
+supabase functions deploy twilio-outbound-call
+
+# Outbound calling
+supabase functions deploy outbound-calling
+```
+
+### Testing
+
+#### Quick curl tests
+
+Test Retell credentials:
+```sh
+curl -X POST "https://<your-project-ref>.supabase.co/functions/v1/retell-credentials-check" \
+  -H "Authorization: Bearer <your-auth-token>" \
+  -H "Content-Type: application/json" \
+  -H "apikey: <your-anon-key>"
+```
+
+Test Twilio integration:
+```sh
+curl -X POST "https://<your-project-ref>.supabase.co/functions/v1/twilio-integration" \
+  -H "Authorization: Bearer <your-auth-token>" \
+  -H "Content-Type: application/json" \
+  -H "apikey: <your-anon-key>" \
+  -d '{"action": "list_numbers"}'
+```
+
+#### Integration tests
+
+Run the full integration test suite:
+
+```sh
+export SUPABASE_URL=https://<your-project-ref>.supabase.co
+export SUPABASE_ANON_KEY=<your-anon-key>
+export TEST_AUTH_TOKEN=<valid-user-token>
+export TEST_PHONE_NUMBER=+1234567890
+export TEST_CALLER_ID=+1234567890
+export TEST_AGENT_ID=<retell-agent-id>
+
+node scripts/integration/test-outbound-call.js
+```
+
+#### CI/CD Smoke Tests
+
+The repository includes a GitHub Actions workflow (`.github/workflows/smoke-test.yml`) that runs smoke tests on push/PR.
+
+To enable:
+1. Set `ENABLE_SMOKE_TESTS` repository variable to `true`
+2. Configure the required secrets in GitHub:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `TEST_AUTH_TOKEN`
+   - Optional: `TEST_PHONE_NUMBER`, `TEST_CALLER_ID`, `TEST_AGENT_ID`
+
+### Migration Notes
+
+When deploying these functions for the first time:
+
+1. Ensure your database has the `call_logs` table with the following columns:
+   - `id` (uuid, primary key)
+   - `user_id` (uuid, references auth.users)
+   - `campaign_id` (uuid, nullable)
+   - `lead_id` (uuid, nullable)
+   - `phone_number` (text)
+   - `caller_id` (text)
+   - `retell_call_id` (text, nullable)
+   - `status` (text)
+   - `created_at` (timestamp)
+
+2. Ensure your database has the `phone_numbers` table with the following columns:
+   - `id` (uuid, primary key)
+   - `user_id` (uuid, references auth.users)
+   - `number` (text)
+   - `area_code` (text)
+   - `status` (text)
+   - `daily_calls` (integer)
+   - `retell_phone_id` (text, nullable)
+   - `created_at` (timestamp)
+
+3. Run any pending migrations in `supabase/migrations/`

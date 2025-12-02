@@ -109,7 +109,7 @@ serve(async (req) => {
           password: twilioAuthToken
         }
       };
-      console.log('📤 Sending to Retell AI:', JSON.stringify(retellPayload, null, 2));
+      console.log('📤 Sending to Retell AI - phone_number:', phoneNumber);
 
       const retellResponse = await fetch('https://api.retellai.com/import-phone-number', {
         method: 'POST',
