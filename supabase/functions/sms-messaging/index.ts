@@ -22,6 +22,7 @@ interface SmsRequest {
   from?: string;
   body?: string;
   lead_id?: string;
+  conversation_id?: string;
   limit?: number;
 }
 
@@ -95,7 +96,38 @@ serve(async (req) => {
 
         // Clean phone numbers
         const cleanTo = request.to.replace(/[^\d+]/g, '');
-        const cleanFrom = request.from.replace(/[^\d+]/g, '');
+        let cleanFrom = request.from.replace(/[^\d+]/g, '');
+        
+        // Ensure E.164 format
+        if (!cleanFrom.startsWith('+')) {
+          cleanFrom = '+' + cleanFrom;
+        }
+
+        // Verify the "From" number belongs to the Twilio account
+        console.log('[SMS Messaging] Verifying phone number ownership...');
+        const verifyUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanFrom)}`;
+        
+        const verifyResponse = await fetch(verifyUrl, {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+          },
+        });
+
+        const verifyData = await verifyResponse.json();
+        
+        if (!verifyResponse.ok || !verifyData.incoming_phone_numbers || verifyData.incoming_phone_numbers.length === 0) {
+          console.error('[SMS Messaging] Phone number not found in Twilio account:', cleanFrom);
+          throw new Error(`The phone number ${cleanFrom} is not registered in your Twilio account. Please ensure the number is purchased and active in your Twilio console, or select a different number.`);
+        }
+
+        // Check if the number has SMS capability
+        const twilioNumber = verifyData.incoming_phone_numbers[0];
+        if (twilioNumber.capabilities && !twilioNumber.capabilities.sms) {
+          console.error('[SMS Messaging] Phone number does not support SMS:', cleanFrom);
+          throw new Error(`The phone number ${cleanFrom} does not have SMS capability enabled. Please enable SMS in your Twilio console or use a different number.`);
+        }
+
+        console.log('[SMS Messaging] Phone number verified:', twilioNumber.sid);
 
         // Create SMS record first
         const { data: smsRecord, error: insertError } = await supabaseAdmin
@@ -108,6 +140,7 @@ serve(async (req) => {
             direction: 'outbound',
             status: 'pending',
             lead_id: request.lead_id || null,
+            conversation_id: request.conversation_id || null,
             provider_type: 'twilio',
             metadata: {},
           })
@@ -165,6 +198,14 @@ serve(async (req) => {
               sent_at: new Date().toISOString(),
             })
             .eq('id', smsRecord.id);
+
+          // Update conversation last_message_at if conversation_id provided
+          if (request.conversation_id) {
+            await supabaseAdmin
+              .from('sms_conversations')
+              .update({ last_message_at: new Date().toISOString() })
+              .eq('id', request.conversation_id);
+          }
 
           result = { 
             success: true, 
