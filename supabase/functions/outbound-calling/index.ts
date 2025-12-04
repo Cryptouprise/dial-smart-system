@@ -149,7 +149,7 @@ serve(async (req) => {
 
         // First, set the outbound agent on the phone number
         console.log('[Outbound Calling] Setting outbound agent on phone number...');
-        const updatePhoneResponse = await fetch(`https://api.retellai.com/v2/update-phone-number/${encodeURIComponent(callerId)}`, {
+        const updatePhoneResponse = await fetch(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
           method: 'PATCH',
           headers: retellHeaders,
           body: JSON.stringify({
