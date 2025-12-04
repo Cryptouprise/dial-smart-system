@@ -116,10 +116,14 @@ export const AIAssistantChat: React.FC = () => {
         content: m.content,
       }));
 
+      // Get current user ID for action execution
+      const { data: { user } } = await supabase.auth.getUser();
+
       const { data, error } = await supabase.functions.invoke('ai-assistant', {
         body: { 
           message: messageText.trim(),
           conversationHistory,
+          userId: user?.id,
         },
       });
 
