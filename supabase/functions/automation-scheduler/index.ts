@@ -127,19 +127,35 @@ async function processRule(supabase: any, rule: AutomationRule) {
     // Queue the call
     const campaignId = rule.campaign_id;
     if (campaignId) {
+      // Check if already in queue
+      const { data: existing } = await supabase
+        .from('dialing_queues')
+        .select('id')
+        .eq('campaign_id', campaignId)
+        .eq('lead_id', lead.id)
+        .eq('status', 'pending')
+        .maybeSingle();
+      
+      if (existing) {
+        console.log(`[Scheduler] Lead ${lead.id} already in queue`);
+        continue;
+      }
+      
       const { error: queueError } = await supabase
         .from('dialing_queues')
-        .upsert({
+        .insert({
           campaign_id: campaignId,
           lead_id: lead.id,
           phone_number: lead.phone_number,
           priority: rule.priority || 1,
           status: 'pending',
           scheduled_at: new Date().toISOString(),
-        }, { onConflict: 'campaign_id,lead_id' });
+        });
       
       if (!queueError) {
         processed++;
+      } else {
+        console.error(`[Scheduler] Error queuing lead ${lead.id}:`, queueError);
       }
     }
   }
