@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -22,6 +22,7 @@ import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 import SmsMessaging from '@/components/SmsMessaging';
 import TabErrorBoundary from '@/components/TabErrorBoundary';
+import DailyReports from '@/components/DailyReports';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -170,6 +171,10 @@ const Dashboard = () => {
               <TabsTrigger value="sms" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <MessageSquare className="h-4 w-4 mr-2" />
                 SMS
+              </TabsTrigger>
+              <TabsTrigger value="reports" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <FileText className="h-4 w-4 mr-2" />
+                Reports
               </TabsTrigger>
             </TabsList>
           </div>
@@ -400,6 +405,12 @@ const Dashboard = () => {
           <TabsContent value="sms">
             <TabErrorBoundary tabName="SMS">
               <SmsMessaging />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="reports">
+            <TabErrorBoundary tabName="Reports">
+              <DailyReports />
             </TabErrorBoundary>
           </TabsContent>
         </Tabs>
