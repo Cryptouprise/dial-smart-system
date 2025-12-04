@@ -221,6 +221,23 @@ serve(async (req) => {
       }
     }
 
+    // Check for duplicate webhook (Twilio retries)
+    if (MessageSid) {
+      const { data: existingMessage } = await supabaseAdmin
+        .from('sms_messages')
+        .select('id')
+        .eq('provider_message_id', MessageSid)
+        .maybeSingle();
+      
+      if (existingMessage) {
+        console.log('[Twilio SMS Webhook] Duplicate webhook detected, skipping:', MessageSid);
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+        );
+      }
+    }
+
     // Store the inbound message
     const { data: message, error: msgError } = await supabaseAdmin
       .from('sms_messages')
@@ -260,11 +277,84 @@ serve(async (req) => {
     console.log('[Twilio SMS Webhook] AI SMS settings:', JSON.stringify({
       enabled: settings?.enabled,
       auto_response_enabled: settings?.auto_response_enabled,
+      prevent_double_texting: settings?.prevent_double_texting,
       delay: settings?.double_text_delay_seconds
     }));
 
+    // Double-texting prevention: Check if we've recently sent an AI message
+    if (settings?.enabled && settings?.auto_response_enabled && settings?.prevent_double_texting && conversationId) {
+      const preventionWindowMs = (settings.double_text_delay_seconds || 60) * 1000;
+      const cutoffTime = new Date(Date.now() - preventionWindowMs).toISOString();
+      
+      const { data: recentAiMessage } = await supabaseAdmin
+        .from('sms_messages')
+        .select('id, created_at')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'outbound')
+        .eq('is_ai_generated', true)
+        .gt('created_at', cutoffTime)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (recentAiMessage) {
+        console.log('[Twilio SMS Webhook] Double-texting prevention: AI message sent recently, skipping auto-response');
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+        );
+      }
+    }
+
+    // Rapid message batching: Wait briefly then check if more messages arrived
+    if (settings?.enabled && settings?.auto_response_enabled && conversationId) {
+      // Wait a moment to allow rapid messages to be stored
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Check if this is the most recent inbound message
+      const { data: latestInbound } = await supabaseAdmin
+        .from('sms_messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'inbound')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (latestInbound && message && latestInbound.id !== message.id) {
+        console.log('[Twilio SMS Webhook] Newer inbound message exists, skipping auto-response for this one');
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+        );
+      }
+    }
+
+    // Check if auto-response should be generated
     if (settings?.enabled && settings?.auto_response_enabled && conversationId) {
       console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...');
+      
+      // Check for reactions - skip auto-response for simple acknowledgments
+      const reactionPatterns = [
+        /^(👍|👎|❤️|😀|😊|🙏|👌|✅|ok|okay|k|thanks|thank you|thx|ty|cool|got it|sounds good|perfect|great|yes|no|yep|nope)$/i
+      ];
+      
+      const isReaction = reactionPatterns.some(pattern => pattern.test(messageBody.trim()));
+      
+      if (isReaction && settings.enable_reaction_detection) {
+        console.log('[Twilio SMS Webhook] Message is a reaction/acknowledgment, skipping auto-response');
+        
+        // Mark the message as a reaction
+        await supabaseAdmin
+          .from('sms_messages')
+          .update({ is_reaction: true, reaction_type: 'acknowledgment' })
+          .eq('id', message?.id);
+        
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+        );
+      }
       
       try {
         // Fetch lead info for context if enabled
