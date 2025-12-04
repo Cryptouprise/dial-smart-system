@@ -52,15 +52,29 @@ export const AIAssistantChat: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Load settings from localStorage
+  // Load settings from database
   useEffect(() => {
-    const savedSettings = localStorage.getItem('chatbot_settings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setVoiceEnabled(settings.voiceEnabled ?? true);
-      setAutoSpeak(settings.autoSpeak ?? false);
-      setVoiceId(settings.voiceId ?? 'EXAVITQu4vr4xnSDxMaL');
-    }
+    const loadSettings = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from('ai_chatbot_settings')
+          .select('voice_enabled, voice_id, auto_speak')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (data) {
+          setVoiceEnabled(data.voice_enabled ?? true);
+          setAutoSpeak(data.auto_speak ?? false);
+          setVoiceId(data.voice_id ?? 'EXAVITQu4vr4xnSDxMaL');
+        }
+      } catch (error) {
+        console.error('Error loading chatbot settings:', error);
+      }
+    };
+    loadSettings();
   }, []);
 
   const handleVoiceTranscript = (text: string) => {

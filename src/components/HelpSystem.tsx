@@ -855,20 +855,27 @@ const HelpSystem = () => {
         },
         {
           title: 'Background Scheduler',
-          content: 'The automation engine processes rules automatically in the background.',
+          content: 'The automation engine processes rules automatically in the background via pg_cron.',
           howItWorks: [
-            'Scheduler runs periodically to check active rules',
+            'Cron job runs every minute via pg_cron and pg_net',
+            'Scheduler checks all enabled automation rules',
             'Evaluates which rules apply based on current time and day',
             'Selects leads that match rule conditions',
             'Queues calls in the dialing queue for execution',
             'Respects max calls per day limits per lead',
-            'Tracks call attempts and no-answer counts'
+            'Tracks call attempts and no-answer counts',
+            'Logs all activity for debugging in Supabase function logs'
           ],
           conditions: [
             'no_answer_count: Skip leads who haven\'t answered X times',
             'days_since_last_call: Wait X days before calling again',
             'day_of_week: Only call on specific days',
             'max_calls_per_day: Limit total calls to each lead'
+          ],
+          monitoring: [
+            'View scheduler logs: Supabase Dashboard > Functions > automation-scheduler > Logs',
+            'Check cron jobs: Supabase Dashboard > Database > cron.job table',
+            'Monitor queued calls: Dashboard > Predictive Dialing > Queue view'
           ]
         }
       ]
