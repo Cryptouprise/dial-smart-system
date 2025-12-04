@@ -97,6 +97,36 @@ export const EnhancedSpamDashboard = () => {
       
       if (error) throw error;
       
+      // Check for business logic errors in the response
+      if (data?.error) {
+        if (data.needsVoiceIntegrity) {
+          toast({
+            title: "Voice Integrity Profile Required",
+            description: "This number requires a Voice Integrity trust product for STIR/SHAKEN. Complete A2P 10DLC registration first.",
+            variant: "destructive"
+          });
+        } else if (data.notInTwilio) {
+          toast({
+            title: "Number Not in Twilio",
+            description: "Only Twilio numbers can be assigned to STIR/SHAKEN profiles. This number may be from another provider.",
+            variant: "destructive"
+          });
+        } else if (data.needsApproval) {
+          toast({
+            title: "Profile Not Approved",
+            description: data.error,
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "Transfer Failed",
+            description: data.error,
+            variant: "destructive"
+          });
+        }
+        return;
+      }
+      
       toast({
         title: "Number Transferred",
         description: `${phoneNumber} has been assigned to the approved STIR/SHAKEN profile`,
@@ -105,7 +135,7 @@ export const EnhancedSpamDashboard = () => {
       // Refresh the number profile
       await checkNumberProfile(phoneNumber);
       await runEnhancedScan(phoneNumber);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Transfer failed:', error);
       toast({
         title: "Transfer Failed",
@@ -561,35 +591,65 @@ export const EnhancedSpamDashboard = () => {
                             </div>
                           )}
 
-                          {needsTransfer && (
-                            <Alert className="border-yellow-500 bg-yellow-500/10">
-                              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                              <AlertDescription>
-                                <div className="space-y-2">
-                                  <p className="text-sm font-medium">Number not on approved STIR/SHAKEN profile</p>
-                                  <div className="space-y-1">
-                                    <p className="text-xs text-muted-foreground">Transfer to:</p>
-                                    {approvedProfiles.map(prof => (
-                                      <Button
-                                        key={prof.sid}
-                                        size="sm"
-                                        variant="outline"
-                                        className="w-full justify-start text-xs"
-                                        onClick={() => transferNumberToProfile(number.number, prof.sid)}
-                                        disabled={transferringNumber === number.number}
-                                      >
-                                        {transferringNumber === number.number ? (
-                                          <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                                        ) : (
-                                          <Shield className="h-3 w-3 mr-2" />
-                                        )}
-                                        {prof.friendlyName}
-                                      </Button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </AlertDescription>
-                            </Alert>
+                          {/* STIR/SHAKEN Registration Options */}
+                          {numberProviders.get(number.number) === 'twilio' && (
+                            <div className="pt-2 border-t space-y-2">
+                              {needsTransfer && approvedProfiles.length > 0 ? (
+                                <Alert className="border-yellow-500 bg-yellow-500/10">
+                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                  <AlertDescription>
+                                    <div className="space-y-2">
+                                      <p className="text-sm font-medium">Assign to STIR/SHAKEN Profile</p>
+                                      <div className="space-y-1">
+                                        {approvedProfiles.map(prof => (
+                                          <Button
+                                            key={prof.sid}
+                                            size="sm"
+                                            variant="outline"
+                                            className="w-full justify-start text-xs"
+                                            onClick={() => transferNumberToProfile(number.number, prof.sid)}
+                                            disabled={transferringNumber === number.number}
+                                          >
+                                            {transferringNumber === number.number ? (
+                                              <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                            ) : (
+                                              <Shield className="h-3 w-3 mr-2" />
+                                            )}
+                                            {prof.friendlyName} ({prof.type === 'trust_product' ? 'Trust' : 'Customer'})
+                                          </Button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </AlertDescription>
+                                </Alert>
+                              ) : approvedProfiles.length === 0 ? (
+                                <Alert className="border-blue-500 bg-blue-500/10">
+                                  <Info className="h-4 w-4 text-blue-600" />
+                                  <AlertDescription>
+                                    <p className="text-sm font-medium mb-2">No approved STIR/SHAKEN profiles found</p>
+                                    <a 
+                                      href="https://console.twilio.com/us1/develop/trust-hub"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary text-xs hover:underline"
+                                    >
+                                      Create a Trust Hub profile →
+                                    </a>
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
+                            </div>
+                          )}
+                          
+                          {numberProviders.get(number.number) !== 'twilio' && (
+                            <div className="pt-2 border-t">
+                              <Alert className="border-slate-500 bg-slate-500/10">
+                                <Info className="h-4 w-4 text-slate-600" />
+                                <AlertDescription className="text-xs">
+                                  STIR/SHAKEN profile assignment requires Twilio numbers. This number is from {numberProviders.get(number.number) || 'another provider'}.
+                                </AlertDescription>
+                              </Alert>
+                            </div>
                           )}
 
                           {number.is_voip && (
