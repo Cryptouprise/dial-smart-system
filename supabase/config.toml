@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.retell-business-verification]
 verify_jwt = true
+
+[functions.twilio-sms-webhook]
+verify_jwt = false
