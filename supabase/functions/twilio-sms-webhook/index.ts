@@ -67,7 +67,9 @@ serve(async (req) => {
       MediaContentType0,
     } = webhookData;
 
-    if (!From || !To || !Body) {
+    // Allow messages with media but no body (MMS images)
+    const hasMedia = NumMedia && parseInt(NumMedia) > 0;
+    if (!From || !To || (!Body && !hasMedia)) {
       console.log('[Twilio SMS Webhook] Missing required fields');
       // Return TwiML response even for incomplete data
       return new Response(
@@ -78,7 +80,10 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[Twilio SMS Webhook] Inbound SMS from ${From} to ${To}: ${Body.substring(0, 50)}...`);
+    // Use a placeholder for empty body with media
+    const messageBody = Body || (hasMedia ? '[Image]' : '');
+
+    console.log(`[Twilio SMS Webhook] Inbound SMS from ${From} to ${To}: ${messageBody.substring(0, 50)}${hasMedia ? ' [with media]' : ''}`);
 
     // Find the user who owns the "To" number - try multiple methods
     let userId: string | null = null;
@@ -217,8 +222,6 @@ serve(async (req) => {
     }
 
     // Store the inbound message
-    const hasImage = NumMedia && parseInt(NumMedia) > 0;
-    
     const { data: message, error: msgError } = await supabaseAdmin
       .from('sms_messages')
       .insert({
@@ -226,13 +229,13 @@ serve(async (req) => {
         conversation_id: conversationId,
         to_number: To,
         from_number: From,
-        body: Body,
+        body: messageBody,
         direction: 'inbound',
         status: 'received',
         provider_type: 'twilio',
         provider_message_id: MessageSid,
-        has_image: hasImage,
-        image_url: hasImage ? MediaUrl0 : null,
+        has_image: hasMedia,
+        image_url: hasMedia ? MediaUrl0 : null,
         metadata: {
           media_content_type: MediaContentType0,
           num_media: NumMedia,
