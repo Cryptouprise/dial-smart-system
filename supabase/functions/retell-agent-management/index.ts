@@ -146,7 +146,6 @@ serve(async (req) => {
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
-    }
 
     if (!response.ok) {
       const errorText = await response.text();
