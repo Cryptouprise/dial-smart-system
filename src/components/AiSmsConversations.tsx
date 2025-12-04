@@ -236,10 +236,10 @@ const AiSmsConversations: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages with auto-response
   useEffect(() => {
     const channel = supabase
-      .channel('sms-messages-changes')
+      .channel('sms-messages-realtime')
       .on(
         'postgres_changes',
         {
@@ -247,13 +247,52 @@ const AiSmsConversations: React.FC = () => {
           schema: 'public',
           table: 'sms_messages',
         },
-        (payload) => {
-          console.log('[AiSmsConversations] New message received:', payload);
-          // Reload conversations to update list
-          loadConversations();
-          // If this message is for the selected conversation, reload messages
-          if (selectedConversation && payload.new?.conversation_id === selectedConversation.id) {
-            loadMessages(selectedConversation.id);
+        async (payload) => {
+          try {
+            console.log('[AiSmsConversations] New message received:', payload);
+            const newMessage = payload.new as any;
+            
+            // Reload conversations to update list
+            await loadConversations();
+            
+            // If this message is for the selected conversation, reload messages
+            if (selectedConversation && newMessage?.conversation_id === selectedConversation.id) {
+              await loadMessages(selectedConversation.id);
+            }
+            
+            // Auto-respond to inbound messages if enabled
+            if (
+              settings?.auto_response_enabled && 
+              newMessage?.direction === 'inbound' && 
+              newMessage?.conversation_id
+            ) {
+              console.log('[AiSmsConversations] Auto-response enabled, generating AI response...');
+              
+              // Small delay to prevent race conditions
+              setTimeout(async () => {
+                try {
+                  const aiResponse = await generateAIResponse(newMessage.conversation_id);
+                  
+                  if (aiResponse && selectedFromNumber) {
+                    // Get the conversation to find the contact phone
+                    const conv = conversations.find(c => c.id === newMessage.conversation_id);
+                    if (conv) {
+                      await sendMessage(
+                        newMessage.conversation_id,
+                        conv.contact_phone,
+                        selectedFromNumber,
+                        aiResponse
+                      );
+                      console.log('[AiSmsConversations] Auto-response sent successfully');
+                    }
+                  }
+                } catch (autoError) {
+                  console.error('[AiSmsConversations] Auto-response error:', autoError);
+                }
+              }, 1000);
+            }
+          } catch (error) {
+            console.error('[AiSmsConversations] Error handling new message:', error);
           }
         }
       )
@@ -262,7 +301,7 @@ const AiSmsConversations: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation, loadConversations, loadMessages]);
+  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations]);
 
   const handleSelectConversation = (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
