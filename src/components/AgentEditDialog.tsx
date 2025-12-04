@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,9 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface AgentEditDialogProps {
   open: boolean;
@@ -20,6 +22,18 @@ interface AgentEditDialogProps {
   onSave: (agentConfig: any) => Promise<void>;
   isLoading: boolean;
 }
+
+// Voice samples for preview
+const VOICE_SAMPLES: Record<string, string> = {
+  '11labs-Adrian': 'https://retell-utils-public.s3.us-west-2.amazonaws.com/adrian.wav',
+  '11labs-Rachel': 'https://retell-utils-public.s3.us-west-2.amazonaws.com/rachel.wav',
+  'openai-Alloy': 'https://cdn.openai.com/API/docs/audio/alloy.wav',
+  'openai-Echo': 'https://cdn.openai.com/API/docs/audio/echo.wav',
+  'openai-Fable': 'https://cdn.openai.com/API/docs/audio/fable.wav',
+  'openai-Onyx': 'https://cdn.openai.com/API/docs/audio/onyx.wav',
+  'openai-Nova': 'https://cdn.openai.com/API/docs/audio/nova.wav',
+  'openai-Shimmer': 'https://cdn.openai.com/API/docs/audio/shimmer.wav',
+};
 
 // Pricing data based on Retell AI's pricing page
 const PRICING = {
@@ -62,10 +76,27 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   onSave,
   isLoading
 }) => {
+  const { toast } = useToast();
   const [config, setConfig] = useState<any>({});
   const [testMessage, setTestMessage] = useState('');
   const [testResponse, setTestResponse] = useState('');
   const [isTesting, setIsTesting] = useState(false);
+  
+  // Voice preview state
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [voicePreviewText, setVoicePreviewText] = useState('Hello! I am your AI assistant. How can I help you today?');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Call simulator state
+  const [isCallActive, setIsCallActive] = useState(false);
+  const [callPhoneNumber, setCallPhoneNumber] = useState('');
+  const [callStatus, setCallStatus] = useState<string>('');
+  
+  // Knowledge base state
+  const [knowledgeBase, setKnowledgeBase] = useState<any[]>([]);
+  const [newKbName, setNewKbName] = useState('');
+  const [newKbContent, setNewKbContent] = useState('');
+  const [isUploadingKb, setIsUploadingKb] = useState(false);
 
   useEffect(() => {
     if (agent) {
@@ -161,11 +192,183 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const handleTestChat = async () => {
     if (!testMessage.trim()) return;
     setIsTesting(true);
-    // Simulate a test response - in production this would call Retell's test API
-    setTimeout(() => {
-      setTestResponse(`[Test Response] Agent "${config.agent_name}" would respond to: "${testMessage}"\n\nThis is a simulated response. To test the actual agent, use the Retell dashboard or make a test call.`);
+    try {
+      // Call Retell's test chat API through our edge function
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: {
+          action: 'test_chat',
+          agentId: agent?.agent_id,
+          message: testMessage
+        }
+      });
+      
+      if (error) throw error;
+      setTestResponse(data?.response || 'No response received');
+    } catch (error: any) {
+      console.error('Test chat error:', error);
+      // Fallback to simulated response
+      setTestResponse(`[Simulated Response] Agent "${config.agent_name}" would respond to: "${testMessage}"\n\nNote: Live testing requires the agent to be deployed. Use the Retell dashboard for full testing.`);
+    } finally {
       setIsTesting(false);
-    }, 1500);
+    }
+  };
+
+  // Voice preview functions
+  const playVoicePreview = async () => {
+    const voiceId = config.voice_id || '';
+    const sampleUrl = VOICE_SAMPLES[voiceId];
+    
+    if (sampleUrl) {
+      // Play pre-recorded sample
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      audioRef.current = new Audio(sampleUrl);
+      audioRef.current.onended = () => setIsPlayingVoice(false);
+      audioRef.current.onerror = () => {
+        setIsPlayingVoice(false);
+        toast({ title: 'Error', description: 'Could not load voice sample', variant: 'destructive' });
+      };
+      setIsPlayingVoice(true);
+      await audioRef.current.play();
+    } else {
+      // Generate preview via Retell API
+      setIsPlayingVoice(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+          body: {
+            action: 'preview_voice',
+            voiceId: voiceId,
+            text: voicePreviewText,
+            voiceModel: config.voice_model
+          }
+        });
+        
+        if (error) throw error;
+        
+        if (data?.audio_url) {
+          audioRef.current = new Audio(data.audio_url);
+          audioRef.current.onended = () => setIsPlayingVoice(false);
+          await audioRef.current.play();
+        } else {
+          toast({ title: 'Voice Preview', description: 'Voice preview generated. Check Retell dashboard for audio.', variant: 'default' });
+          setIsPlayingVoice(false);
+        }
+      } catch (error: any) {
+        console.error('Voice preview error:', error);
+        toast({ title: 'Error', description: 'Could not generate voice preview', variant: 'destructive' });
+        setIsPlayingVoice(false);
+      }
+    }
+  };
+  
+  const stopVoicePreview = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsPlayingVoice(false);
+  };
+
+  // Call simulator functions
+  const startTestCall = async () => {
+    if (!callPhoneNumber.trim()) {
+      toast({ title: 'Error', description: 'Please enter a phone number', variant: 'destructive' });
+      return;
+    }
+    
+    setIsCallActive(true);
+    setCallStatus('Initiating call...');
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('outbound-calling', {
+        body: {
+          action: 'create_call',
+          agentId: agent?.agent_id,
+          toNumber: callPhoneNumber,
+          fromNumber: config.phone_number || undefined
+        }
+      });
+      
+      if (error) throw error;
+      
+      setCallStatus(`Call active: ${data?.call_id || 'Connected'}`);
+      toast({ title: 'Call Started', description: 'Test call initiated successfully' });
+    } catch (error: any) {
+      console.error('Call error:', error);
+      setCallStatus('Call failed');
+      toast({ title: 'Call Failed', description: error.message || 'Could not initiate call', variant: 'destructive' });
+      setIsCallActive(false);
+    }
+  };
+  
+  const endTestCall = async () => {
+    setCallStatus('Ending call...');
+    try {
+      await supabase.functions.invoke('outbound-calling', {
+        body: {
+          action: 'end_call',
+          agentId: agent?.agent_id
+        }
+      });
+      toast({ title: 'Call Ended', description: 'Test call ended' });
+    } catch (error: any) {
+      console.error('End call error:', error);
+    }
+    setIsCallActive(false);
+    setCallStatus('');
+  };
+
+  // Knowledge base functions
+  const addKnowledgeBase = () => {
+    if (!newKbName.trim()) {
+      toast({ title: 'Error', description: 'Please enter a knowledge base name', variant: 'destructive' });
+      return;
+    }
+    
+    const newKb = {
+      id: `kb_${Date.now()}`,
+      name: newKbName,
+      content: newKbContent,
+      type: 'text',
+      created_at: new Date().toISOString()
+    };
+    
+    setKnowledgeBase([...knowledgeBase, newKb]);
+    updateConfig('knowledge_base_ids', [...(config.knowledge_base_ids || []), newKb.id]);
+    setNewKbName('');
+    setNewKbContent('');
+    toast({ title: 'Knowledge Base Added', description: `"${newKbName}" has been added` });
+  };
+  
+  const removeKnowledgeBase = (id: string) => {
+    setKnowledgeBase(knowledgeBase.filter(kb => kb.id !== id));
+    updateConfig('knowledge_base_ids', (config.knowledge_base_ids || []).filter((kbId: string) => kbId !== id));
+  };
+  
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploadingKb(true);
+    try {
+      const text = await file.text();
+      const newKb = {
+        id: `kb_${Date.now()}`,
+        name: file.name,
+        content: text.substring(0, 10000), // Limit content
+        type: file.type.includes('pdf') ? 'pdf' : 'text',
+        created_at: new Date().toISOString()
+      };
+      
+      setKnowledgeBase([...knowledgeBase, newKb]);
+      updateConfig('knowledge_base_ids', [...(config.knowledge_base_ids || []), newKb.id]);
+      toast({ title: 'File Uploaded', description: `"${file.name}" has been added to knowledge base` });
+    } catch (error: any) {
+      toast({ title: 'Upload Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUploadingKb(false);
+    }
   };
 
   const addMcpServer = () => {
@@ -207,14 +410,15 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
         <ScrollArea className="h-[600px] pr-4">
           <Tabs defaultValue="basic" className="w-full">
-            <TabsList className="grid w-full grid-cols-8 mb-4">
+            <TabsList className="grid w-full grid-cols-9 mb-4">
               <TabsTrigger value="basic">Basic</TabsTrigger>
-              <TabsTrigger value="llm">LLM/Script</TabsTrigger>
+              <TabsTrigger value="llm">LLM</TabsTrigger>
               <TabsTrigger value="voice">Voice</TabsTrigger>
               <TabsTrigger value="speech">Speech</TabsTrigger>
-              <TabsTrigger value="transcription">Transcription</TabsTrigger>
-              <TabsTrigger value="call">Call Settings</TabsTrigger>
-              <TabsTrigger value="mcp">MCP Tools</TabsTrigger>
+              <TabsTrigger value="transcription">STT</TabsTrigger>
+              <TabsTrigger value="call">Call</TabsTrigger>
+              <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
+              <TabsTrigger value="mcp">MCP</TabsTrigger>
               <TabsTrigger value="test">Test</TabsTrigger>
             </TabsList>
 
@@ -387,14 +591,63 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
             {/* Voice Tab */}
             <TabsContent value="voice" className="space-y-4">
+              {/* Voice Preview Card */}
+              <Card className="border-primary/20 bg-primary/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Volume2 className="h-4 w-4" />
+                    Voice Preview
+                  </CardTitle>
+                  <CardDescription>Listen to how your agent's voice sounds</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Preview Text</Label>
+                    <Textarea
+                      value={voicePreviewText}
+                      onChange={(e) => setVoicePreviewText(e.target.value)}
+                      placeholder="Enter text to preview..."
+                      rows={2}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    {!isPlayingVoice ? (
+                      <Button onClick={playVoicePreview} variant="default">
+                        <Play className="h-4 w-4 mr-2" />
+                        Play Voice Sample
+                      </Button>
+                    ) : (
+                      <Button onClick={stopVoicePreview} variant="destructive">
+                        <Square className="h-4 w-4 mr-2" />
+                        Stop
+                      </Button>
+                    )}
+                  </div>
+                  {VOICE_SAMPLES[config.voice_id] && (
+                    <p className="text-xs text-muted-foreground">
+                      ✓ Pre-recorded sample available for {config.voice_id}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
               <div className="space-y-2">
                 <Label htmlFor="voice_id">Voice ID</Label>
-                <Input
-                  id="voice_id"
-                  value={config.voice_id || ''}
-                  onChange={(e) => updateConfig('voice_id', e.target.value)}
-                  placeholder="e.g., 11labs-Adrian, openai-Alloy"
-                />
+                <Select value={config.voice_id} onValueChange={(v) => updateConfig('voice_id', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a voice" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="11labs-Adrian">11Labs - Adrian</SelectItem>
+                    <SelectItem value="11labs-Rachel">11Labs - Rachel</SelectItem>
+                    <SelectItem value="openai-Alloy">OpenAI - Alloy</SelectItem>
+                    <SelectItem value="openai-Echo">OpenAI - Echo</SelectItem>
+                    <SelectItem value="openai-Fable">OpenAI - Fable</SelectItem>
+                    <SelectItem value="openai-Onyx">OpenAI - Onyx</SelectItem>
+                    <SelectItem value="openai-Nova">OpenAI - Nova</SelectItem>
+                    <SelectItem value="openai-Shimmer">OpenAI - Shimmer</SelectItem>
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">
                   ElevenLabs/Cartesia: $0.07/min | OpenAI: $0.08/min
                 </p>
@@ -971,8 +1224,141 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
               </Card>
             </TabsContent>
 
+            {/* Knowledge Base Tab */}
+            <TabsContent value="knowledge" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Book className="h-4 w-4" />
+                    Knowledge Base
+                  </CardTitle>
+                  <CardDescription>
+                    Add documents and information for your agent to reference during calls (+$0.005/min)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {knowledgeBase.map((kb) => (
+                    <div key={kb.id} className="p-4 border rounded-lg space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{kb.name}</span>
+                          <Badge variant="outline" className="text-xs">{kb.type}</Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeKnowledgeBase(kb.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {kb.content?.substring(0, 100)}...
+                      </p>
+                    </div>
+                  ))}
+
+                  <div className="border-t pt-4 space-y-4">
+                    <div className="space-y-2">
+                      <Label>Add New Knowledge Base</Label>
+                      <Input
+                        value={newKbName}
+                        onChange={(e) => setNewKbName(e.target.value)}
+                        placeholder="Knowledge base name (e.g., Product FAQ)"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Content</Label>
+                      <Textarea
+                        value={newKbContent}
+                        onChange={(e) => setNewKbContent(e.target.value)}
+                        placeholder="Enter text content or paste information..."
+                        rows={4}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={addKnowledgeBase} disabled={!newKbName.trim()}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Knowledge Base
+                      </Button>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".txt,.md,.pdf,.doc,.docx"
+                          onChange={handleFileUpload}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          disabled={isUploadingKb}
+                        />
+                        <Button variant="outline" disabled={isUploadingKb}>
+                          {isUploadingKb ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Upload className="h-4 w-4 mr-2" />
+                          )}
+                          Upload File
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      Knowledge bases allow your agent to access specific information during calls, such as product details, FAQs, pricing, and company policies.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
             {/* Test Tab */}
             <TabsContent value="test" className="space-y-4">
+              {/* Call Simulator */}
+              <Card className="border-primary/20 bg-primary/5">
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    Call Simulator
+                  </CardTitle>
+                  <CardDescription>Make a test call to your phone to test the agent</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Your Phone Number</Label>
+                    <Input
+                      value={callPhoneNumber}
+                      onChange={(e) => setCallPhoneNumber(e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                      disabled={isCallActive}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter your phone number to receive a test call from the agent
+                    </p>
+                  </div>
+                  
+                  {callStatus && (
+                    <div className="p-3 bg-muted rounded-lg">
+                      <p className="text-sm font-medium">{callStatus}</p>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    {!isCallActive ? (
+                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim()}>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Start Test Call
+                      </Button>
+                    ) : (
+                      <Button onClick={endTestCall} variant="destructive">
+                        <PhoneOff className="h-4 w-4 mr-2" />
+                        End Call
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Test Chat */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -1008,33 +1394,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Volume2 className="h-4 w-4" />
-                    Test Audio
-                  </CardTitle>
-                  <CardDescription>Listen to how your agent's voice sounds</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="p-4 bg-muted/50 rounded-lg text-center">
-                    <Mic className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mb-4">
-                      To test the actual voice and make test calls, use the Retell AI dashboard.
-                    </p>
-                    <Button variant="outline" asChild>
-                      <a 
-                        href="https://beta.re-tell.ai/dashboard" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                      >
-                        Open Retell Dashboard
-                      </a>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
+              {/* Configuration Summary */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">Configuration Summary</CardTitle>
@@ -1057,6 +1417,34 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       <p className="text-muted-foreground">Est. Cost</p>
                       <p className="font-medium text-primary">${costs.total.toFixed(3)}/min</p>
                     </div>
+                    <div>
+                      <p className="text-muted-foreground">Knowledge Bases</p>
+                      <p className="font-medium">{knowledgeBase.length} items</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">MCP Servers</p>
+                      <p className="font-medium">{config.mcp_servers?.length || 0} configured</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* External Dashboard Link */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      For advanced testing features, use the Retell AI dashboard
+                    </p>
+                    <Button variant="outline" asChild>
+                      <a 
+                        href="https://beta.re-tell.ai/dashboard" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        Open Retell Dashboard
+                      </a>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
