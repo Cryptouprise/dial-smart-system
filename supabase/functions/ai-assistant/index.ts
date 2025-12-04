@@ -54,7 +54,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_setting",
-      description: "Update any numeric or text setting. Examples: daily_call_limit, cooldown_period, max_concurrent_calls, calls_per_minute, ai_personality, context_window_size",
+      description: "Update any numeric or text setting. Examples: daily_call_limit, cooldown_period, max_concurrent_calls, calls_per_minute, ai_personality, context_window_size, amd_sensitivity (low/medium/high), local_presence_strategy (match_area_code/match_state/random)",
       parameters: {
         type: "object",
         properties: {
@@ -269,10 +269,14 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         'high_volume_threshold': { table: 'rotation_settings', column: 'high_volume_threshold' },
         'ai_personality': { table: 'ai_sms_settings', column: 'ai_personality' },
         'context_window_size': { table: 'ai_sms_settings', column: 'context_window_size' },
+        'amd_sensitivity': { table: 'advanced_dialer_settings', column: 'amd_sensitivity' },
+        'local_presence_strategy': { table: 'advanced_dialer_settings', column: 'local_presence_strategy' },
+        'custom_instructions': { table: 'ai_sms_settings', column: 'custom_instructions' },
+        'knowledge_base': { table: 'ai_sms_settings', column: 'knowledge_base' },
       };
       
       const mapping = settingMap[setting_name];
-      if (!mapping) return { success: false, message: `Unknown setting: ${setting_name}` };
+      if (!mapping) return { success: false, message: `Unknown setting: ${setting_name}. Available: ${Object.keys(settingMap).join(', ')}` };
       
       const { error } = await supabase
         .from(mapping.table)
