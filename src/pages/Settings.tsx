@@ -12,9 +12,10 @@ import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 import ChatbotSettings from '@/components/ChatbotSettings';
+import PhoneNumberRow from '@/components/PhoneNumberRow';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
@@ -476,51 +477,23 @@ const Settings = () => {
               <Label className="text-base font-medium">Phone Number Attestation Status</Label>
               <div className="border rounded-lg overflow-hidden">
                 {phoneNumbers.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-500">
+                  <div className="p-4 text-center text-sm text-muted-foreground">
                     No active phone numbers. Import numbers from your carriers.
                   </div>
                 ) : (
                   <div className="divide-y">
                     {phoneNumbers.map((number) => (
-                      <div key={number.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-sm">{number.number}</span>
-                          {number.carrier_name && (
-                            <Badge variant="outline" className="text-xs">
-                              {number.carrier_name}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {number.stir_shaken_attestation === 'A' ? (
-                            <Badge className="bg-green-100 text-green-800 gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Full Attestation
-                            </Badge>
-                          ) : number.stir_shaken_attestation === 'B' ? (
-                            <Badge className="bg-blue-100 text-blue-800 gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Partial
-                            </Badge>
-                          ) : number.stir_shaken_attestation === 'C' ? (
-                            <Badge variant="secondary" className="gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              Gateway
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              Not Verified
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
+                      <PhoneNumberRow 
+                        key={number.id} 
+                        number={number}
+                        onRefresh={loadPhoneNumbers}
+                      />
                     ))}
                   </div>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                <strong>A:</strong> Full attestation (best) · <strong>B:</strong> Partial attestation · <strong>C:</strong> Gateway attestation
+                <strong>SHAKEN A:</strong> Full attestation (best) · <strong>B:</strong> Partial · <strong>C:</strong> Gateway · Use the menu to register numbers
               </p>
             </div>
 
