@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
+import ChatbotSettings from '@/components/ChatbotSettings';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { Sparkles, MessageSquare, Shield, CheckCircle, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
@@ -154,6 +155,9 @@ const Settings = () => {
             </Button>
           </CardContent>
         </Card>
+
+        {/* AI Assistant / Chatbot Settings */}
+        <ChatbotSettings />
 
         {/* AI SMS Settings */}
         <Card>

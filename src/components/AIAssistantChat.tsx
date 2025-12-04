@@ -13,10 +13,15 @@ import {
   User,
   Minimize2,
   Maximize2,
-  Sparkles
+  Sparkles,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useVoiceChat } from '@/hooks/useVoiceChat';
 
 interface Message {
   id: string;
@@ -40,9 +45,44 @@ export const AIAssistantChat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [voiceId, setVoiceId] = useState('EXAVITQu4vr4xnSDxMaL');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Load settings from localStorage
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('chatbot_settings');
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      setVoiceEnabled(settings.voiceEnabled ?? true);
+      setAutoSpeak(settings.autoSpeak ?? false);
+      setVoiceId(settings.voiceId ?? 'EXAVITQu4vr4xnSDxMaL');
+    }
+  }, []);
+
+  const handleVoiceTranscript = (text: string) => {
+    setInputValue(text);
+    // Auto-send after voice input
+    setTimeout(() => {
+      sendMessage(text);
+    }, 100);
+  };
+
+  const { 
+    isListening, 
+    isSpeaking, 
+    isProcessing, 
+    startListening, 
+    stopListening, 
+    speak, 
+    stopSpeaking 
+  } = useVoiceChat({ 
+    voiceId,
+    onTranscript: handleVoiceTranscript 
+  });
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -85,14 +125,21 @@ export const AIAssistantChat: React.FC = () => {
 
       if (error) throw error;
 
+      const responseText = data.response || 'Sorry, I could not generate a response.';
+      
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: data.response || 'Sorry, I could not generate a response.',
+        content: responseText,
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+      
+      // Auto-speak if enabled
+      if (autoSpeak && voiceEnabled) {
+        speak(responseText);
+      }
     } catch (error: any) {
       console.error('AI Assistant error:', error);
       
@@ -260,15 +307,57 @@ export const AIAssistantChat: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="p-3 border-t bg-background">
           <div className="flex gap-2">
+            {voiceEnabled && (
+              <Button
+                type="button"
+                size="icon"
+                variant={isListening ? "destructive" : "outline"}
+                onClick={isListening ? stopListening : startListening}
+                disabled={isLoading || isSpeaking}
+                title={isListening ? "Stop listening" : "Start voice input"}
+              >
+                {isListening ? (
+                  <MicOff className="h-4 w-4" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </Button>
+            )}
             <Input
               ref={inputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Ask me anything..."
-              disabled={isLoading}
+              placeholder={isListening ? "Listening..." : "Ask me anything..."}
+              disabled={isLoading || isListening}
               className="flex-1"
             />
-            <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()}>
+            {voiceEnabled && isSpeaking && (
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={stopSpeaking}
+                title="Stop speaking"
+              >
+                <VolumeX className="h-4 w-4" />
+              </Button>
+            )}
+            {voiceEnabled && !isSpeaking && messages.length > 0 && (
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={() => {
+                  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+                  if (lastAssistant) speak(lastAssistant.content);
+                }}
+                disabled={isLoading || isProcessing}
+                title="Replay last response"
+              >
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+              </Button>
+            )}
+            <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim() || isListening}>
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -276,6 +365,11 @@ export const AIAssistantChat: React.FC = () => {
               )}
             </Button>
           </div>
+          {isListening && (
+            <p className="text-xs text-center text-muted-foreground mt-2 animate-pulse">
+              🎤 Listening... speak now
+            </p>
+          )}
         </form>
       </CardContent>
     </Card>
