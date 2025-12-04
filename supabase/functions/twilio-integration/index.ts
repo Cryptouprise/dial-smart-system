@@ -8,10 +8,11 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook';
   phoneNumberSid?: string;
   phoneNumber?: string;
   messagingServiceSid?: string;
+  webhookUrl?: string;
 }
 
 serve(async (req) => {
@@ -580,6 +581,85 @@ serve(async (req) => {
         success: true, 
         message: 'Phone number added to A2P campaign',
         data: result
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Configure SMS webhook for phone number
+    if (action === 'configure_sms_webhook') {
+      console.log('🔧 Configuring SMS webhook for all numbers...');
+      
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const webhookUrl = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
+      
+      console.log('📍 Webhook URL:', webhookUrl);
+      
+      // Get all phone numbers
+      const numbersResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!numbersResponse.ok) {
+        const errorText = await numbersResponse.text();
+        console.error('❌ Failed to fetch phone numbers:', errorText);
+        return new Response(JSON.stringify({ error: 'Failed to fetch phone numbers' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const numbersData = await numbersResponse.json();
+      const numbers = numbersData.incoming_phone_numbers || [];
+      
+      const configured: string[] = [];
+      const failed: { number: string; error: string }[] = [];
+
+      for (const num of numbers) {
+        if (!num.capabilities?.sms) {
+          console.log('⏭️ Skipping non-SMS number:', num.phone_number);
+          continue;
+        }
+
+        console.log('📲 Configuring webhook for:', num.phone_number);
+        
+        // Update the phone number's SMS webhook
+        const updateResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${num.sid}.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `SmsUrl=${encodeURIComponent(webhookUrl)}&SmsMethod=POST`
+          }
+        );
+
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error('❌ Failed to configure:', num.phone_number, errorText);
+          failed.push({ number: num.phone_number, error: 'Failed to update webhook' });
+        } else {
+          console.log('✅ Configured:', num.phone_number);
+          configured.push(num.phone_number);
+        }
+      }
+
+      console.log('🎉 Webhook configuration complete - Configured:', configured.length, 'Failed:', failed.length);
+      
+      return new Response(JSON.stringify({ 
+        success: true,
+        webhook_url: webhookUrl,
+        configured_count: configured.length,
+        failed_count: failed.length,
+        configured,
+        failed
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
