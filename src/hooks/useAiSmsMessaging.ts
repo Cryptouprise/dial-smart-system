@@ -288,27 +288,7 @@ export const useAiSmsMessaging = () => {
     }
   }, [toast]);
 
-  // Subscribe to real-time updates
-  useEffect(() => {
-    const channel = supabase
-      .channel('sms-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'sms_messages'
-        },
-        () => {
-          loadConversations();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadConversations]);
+  // Note: Real-time subscription moved to AiSmsConversations component for auto-response handling
 
   // Load initial data
   useEffect(() => {
