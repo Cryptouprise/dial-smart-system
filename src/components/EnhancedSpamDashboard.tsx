@@ -137,11 +137,40 @@ export const EnhancedSpamDashboard = () => {
       await runEnhancedScan(phoneNumber);
     } catch (error: any) {
       console.error('Transfer failed:', error);
-      toast({
-        title: "Transfer Failed",
-        description: error.message || "Failed to transfer number",
-        variant: "destructive"
-      });
+      
+      // Try to parse error response for helpful info
+      let errorData: any = null;
+      try {
+        if (error.context?.body) {
+          errorData = JSON.parse(error.context.body);
+        }
+      } catch {}
+      
+      if (errorData?.needsVoiceIntegrity) {
+        toast({
+          title: "Voice Integrity Profile Required",
+          description: "STIR/SHAKEN requires a Voice Integrity profile. Complete A2P 10DLC registration in Twilio Console first.",
+          variant: "destructive"
+        });
+      } else if (errorData?.notInTwilio) {
+        toast({
+          title: "Number Not in Twilio",
+          description: "Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
+          variant: "destructive"
+        });
+      } else if (errorData?.needsApproval) {
+        toast({
+          title: "Profile Not Approved",
+          description: errorData.error || "The trust profile is not yet approved.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Transfer Failed", 
+          description: errorData?.error || error.message || "Failed to transfer number",
+          variant: "destructive"
+        });
+      }
     } finally {
       setTransferringNumber(null);
     }
