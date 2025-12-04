@@ -662,7 +662,7 @@ async function listApprovedTrustProducts() {
   const base64Creds = base64Encode(credentials);
 
   try {
-    // Get Trust Products (for SHAKEN business profiles)
+    // Get Trust Products (for SHAKEN business profiles) - these support phone number assignments
     const trustProductsUrl = `https://trusthub.twilio.com/v1/TrustProducts`;
     const trustResponse = await fetch(trustProductsUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
@@ -677,10 +677,11 @@ async function listApprovedTrustProducts() {
         status: tp.status,
         dateCreated: tp.date_created,
         policySid: tp.policy_sid,
-        type: 'trust_product'
+        type: 'trust_product',
+        supportsPhoneAssignment: true // Trust Products support phone assignments
       }));
 
-    // Also get Customer Profiles that might support phone assignments
+    // Get Customer Profiles - note: these are for A2P messaging, not STIR/SHAKEN voice
     const customerProfilesUrl = `https://trusthub.twilio.com/v1/CustomerProfiles`;
     const customerResponse = await fetch(customerProfilesUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
@@ -695,21 +696,23 @@ async function listApprovedTrustProducts() {
         status: cp.status,
         dateCreated: cp.date_created,
         policySid: cp.policy_sid,
-        type: 'customer_profile'
+        type: 'customer_profile',
+        supportsPhoneAssignment: false // Customer Profiles don't support direct phone assignments for STIR/SHAKEN
       }));
 
-    // Combine both, prioritizing trust products
-    const allProfiles = [...trustProducts, ...customerProfiles];
+    // Only return profiles that support phone number assignment for STIR/SHAKEN
+    const eligibleProfiles = trustProducts.filter((tp: any) => tp.supportsPhoneAssignment);
 
     return new Response(JSON.stringify({
-      approvedProfiles: allProfiles,
+      approvedProfiles: eligibleProfiles, // Only eligible profiles
       trustProducts: trustProducts,
       customerProfiles: customerProfiles,
-      count: allProfiles.length,
+      count: eligibleProfiles.length,
       hasVoiceIntegrity: trustProducts.some((tp: any) => 
         tp.friendlyName?.toLowerCase().includes('voice') || 
         tp.friendlyName?.toLowerCase().includes('shaken')
-      )
+      ),
+      note: 'Only Trust Products with SHAKEN Business Profile support phone number assignments for STIR/SHAKEN. Customer Profiles are for A2P messaging.'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -723,7 +726,7 @@ async function listApprovedTrustProducts() {
   }
 }
 
-async function transferNumberToProfile(phoneNumber: string, customerProfileSid: string) {
+async function transferNumberToProfile(phoneNumber: string, profileSid: string) {
   const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
 
@@ -739,6 +742,11 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
   const base64Creds = base64Encode(credentials);
 
   try {
+    // Determine profile type based on SID prefix
+    // BU = Trust Product (Business Profile)
+    // Customer Profiles also start with BU but are accessed via different endpoint
+    // We need to try TrustProducts first, then CustomerProfiles
+    
     // Get phone number SID from Twilio
     const cleanNumber = phoneNumber.replace(/\D/g, '');
     const e164Number = cleanNumber.startsWith('1') ? `+${cleanNumber}` : `+1${cleanNumber}`;
@@ -761,33 +769,55 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
 
     const phoneSid = numbersData.incoming_phone_numbers[0].sid;
 
-    // First, check if this Trust Product supports phone number assignments
-    // Get the Trust Product details to verify its policy_sid
-    const trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${customerProfileSid}`;
-    const trustProductResponse = await fetch(trustProductUrl, {
+    // Try TrustProducts endpoint first
+    let trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
+    let profileResponse = await fetch(trustProductUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
     });
     
-    if (!trustProductResponse.ok) {
-      const errorData = await trustProductResponse.json();
-      console.error('Trust Product fetch error:', errorData);
-      return new Response(JSON.stringify({ 
-        error: 'Could not find the specified Trust Product. Please ensure your SHAKEN Business Profile is approved.',
-        details: errorData
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    let isTrustProduct = profileResponse.ok;
+    let profile: any = null;
+    
+    if (isTrustProduct) {
+      profile = await profileResponse.json();
+      console.log('Found Trust Product:', JSON.stringify(profile));
+    } else {
+      // Try CustomerProfiles endpoint
+      const customerProfileUrl = `https://trusthub.twilio.com/v1/CustomerProfiles/${profileSid}`;
+      profileResponse = await fetch(customerProfileUrl, {
+        headers: { 'Authorization': `Basic ${base64Creds}` }
       });
+      
+      if (profileResponse.ok) {
+        profile = await profileResponse.json();
+        console.log('Found Customer Profile:', JSON.stringify(profile));
+        
+        // Customer Profiles don't support direct phone number assignments for STIR/SHAKEN
+        return new Response(JSON.stringify({ 
+          error: 'Customer Profiles cannot be used for STIR/SHAKEN phone number registration. You need a SHAKEN Business Profile (Trust Product).',
+          details: 'Customer Profiles are for A2P 10DLC messaging registration, not voice STIR/SHAKEN.',
+          needsVoiceIntegrity: true,
+          helpUrl: 'https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } else {
+        return new Response(JSON.stringify({ 
+          error: 'Profile not found. Please ensure your SHAKEN Business Profile exists and is approved.',
+          details: `Profile SID: ${profileSid}`
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
     }
 
-    const trustProduct = await trustProductResponse.json();
-    console.log('Trust Product:', JSON.stringify(trustProduct));
-
     // Check if status is approved
-    if (trustProduct.status !== 'twilio-approved') {
+    if (profile.status !== 'twilio-approved') {
       return new Response(JSON.stringify({ 
-        error: `Trust Product is not approved (status: ${trustProduct.status}). Please complete verification in Twilio Trust Hub first.`,
-        status: trustProduct.status,
+        error: `Trust Product is not approved (status: ${profile.status}). Please complete verification in Twilio Trust Hub first.`,
+        status: profile.status,
         needsApproval: true
       }), {
         status: 400,
@@ -795,8 +825,8 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
       });
     }
 
-    // Try to create Channel Endpoint Assignment
-    const assignmentUrl = `https://trusthub.twilio.com/v1/TrustProducts/${customerProfileSid}/ChannelEndpointAssignments`;
+    // Try to create Channel Endpoint Assignment for Trust Product
+    const assignmentUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}/ChannelEndpointAssignments`;
     const assignmentResponse = await fetch(assignmentUrl, {
       method: 'POST',
       headers: {
@@ -813,12 +843,11 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
     console.log('Assignment response:', JSON.stringify(assignmentData));
 
     if (!assignmentResponse.ok) {
-      // Check for specific error types
       const errorMessage = assignmentData.message || assignmentData.error_message || 'Unknown error';
       
       if (errorMessage.includes('not eligible') || errorMessage.includes('ChannelEndpointAssignment')) {
         return new Response(JSON.stringify({ 
-          error: 'This Trust Product type does not support direct phone number assignments. For STIR/SHAKEN caller ID verification, you need to complete A2P 10DLC registration and use a Voice Integrity profile.',
+          error: 'This Trust Product type does not support phone number assignments. For STIR/SHAKEN, you need a SHAKEN Business Profile specifically designed for voice caller ID.',
           details: errorMessage,
           needsVoiceIntegrity: true,
           helpUrl: 'https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir'
@@ -831,14 +860,14 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
       throw new Error(errorMessage);
     }
 
-    console.log(`✅ Number ${phoneNumber} assigned to Trust Product ${customerProfileSid}`);
+    console.log(`✅ Number ${phoneNumber} assigned to Trust Product ${profileSid}`);
 
     return new Response(JSON.stringify({
       success: true,
       message: 'Number successfully assigned to STIR/SHAKEN profile',
       assignment: {
         sid: assignmentData.sid,
-        profileSid: customerProfileSid,
+        profileSid: profileSid,
         phoneSid: phoneSid
       }
     }), {
@@ -849,7 +878,7 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
     console.error('Error transferring number to profile:', error);
     return new Response(JSON.stringify({ 
       error: error.message,
-      suggestion: 'For STIR/SHAKEN attestation, ensure you have completed A2P 10DLC registration and have an approved Voice Integrity trust product.'
+      suggestion: 'For STIR/SHAKEN attestation, ensure you have completed Twilio Trust Hub registration and have an approved SHAKEN Business Profile.'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
