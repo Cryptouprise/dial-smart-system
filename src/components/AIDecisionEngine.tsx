@@ -30,12 +30,13 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
   const [lastAnalysis, setLastAnalysis] = useState<Date | null>(null);
   const { toast } = useToast();
 
+  // Generate recommendations when component mounts, but not on every numbers change
+  // to prevent excessive API calls and toast spam
   useEffect(() => {
-    // Auto-analyze on component mount and when numbers change
-    if (numbers.length > 0) {
+    if (numbers.length > 0 && recommendations.length === 0) {
       generateRecommendations();
     }
-  }, [numbers]);
+  }, [numbers.length]); // Only trigger when count changes, not on every reference change
 
   const generateRecommendations = async () => {
     setIsAnalyzing(true);
@@ -417,7 +418,9 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-600">
-                  {Math.round((numbers.filter(n => n.status === 'active').length / numbers.length) * 100)}%
+                  {numbers.length > 0 
+                    ? Math.round((numbers.filter(n => n.status === 'active').length / numbers.length) * 100)
+                    : 0}%
                 </div>
                 <div className="text-sm text-gray-600">Pool Utilization</div>
               </div>
