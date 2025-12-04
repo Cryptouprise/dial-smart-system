@@ -91,6 +91,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [isCallActive, setIsCallActive] = useState(false);
   const [callPhoneNumber, setCallPhoneNumber] = useState('');
   const [callStatus, setCallStatus] = useState<string>('');
+  const [activeCallId, setActiveCallId] = useState<string | null>(null);
   
   // Knowledge base state
   const [knowledgeBase, setKnowledgeBase] = useState<any[]>([]);
@@ -285,13 +286,14 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         body: {
           action: 'create_call',
           agentId: agent?.agent_id,
-          toNumber: callPhoneNumber,
-          fromNumber: config.phone_number || undefined
+          phoneNumber: callPhoneNumber,
+          callerId: agent?.inbound_phone_number || '+15551234567' // Use agent's phone or placeholder
         }
       });
       
       if (error) throw error;
       
+      setActiveCallId(data?.call_id || null);
       setCallStatus(`Call active: ${data?.call_id || 'Connected'}`);
       toast({ title: 'Call Started', description: 'Test call initiated successfully' });
     } catch (error: any) {
@@ -299,16 +301,23 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       setCallStatus('Call failed');
       toast({ title: 'Call Failed', description: error.message || 'Could not initiate call', variant: 'destructive' });
       setIsCallActive(false);
+      setActiveCallId(null);
     }
   };
   
   const endTestCall = async () => {
+    if (!activeCallId) {
+      setIsCallActive(false);
+      setCallStatus('');
+      return;
+    }
+    
     setCallStatus('Ending call...');
     try {
       await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'end_call',
-          agentId: agent?.agent_id
+          retellCallId: activeCallId
         }
       });
       toast({ title: 'Call Ended', description: 'Test call ended' });
@@ -317,6 +326,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     }
     setIsCallActive(false);
     setCallStatus('');
+    setActiveCallId(null);
   };
 
   // Knowledge base functions
