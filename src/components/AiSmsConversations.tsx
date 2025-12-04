@@ -226,6 +226,34 @@ const AiSmsConversations: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
 
+  // Real-time subscription for new messages
+  useEffect(() => {
+    const channel = supabase
+      .channel('sms-messages-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sms_messages',
+        },
+        (payload) => {
+          console.log('[AiSmsConversations] New message received:', payload);
+          // Reload conversations to update list
+          loadConversations();
+          // If this message is for the selected conversation, reload messages
+          if (selectedConversation && payload.new?.conversation_id === selectedConversation.id) {
+            loadMessages(selectedConversation.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConversation, loadConversations, loadMessages]);
+
   const handleSelectConversation = (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
   };
