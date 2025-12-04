@@ -247,7 +247,141 @@ serve(async (req) => {
       console.log('[Twilio SMS Webhook] Message stored successfully:', message.id);
     }
 
-    // Return TwiML response (empty response = no auto-reply)
+    // Check AI SMS settings for auto-response
+    const { data: settings } = await supabaseAdmin
+      .from('ai_sms_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    console.log('[Twilio SMS Webhook] AI SMS settings:', JSON.stringify({
+      enabled: settings?.enabled,
+      auto_response_enabled: settings?.auto_response_enabled,
+      delay: settings?.double_text_delay_seconds
+    }));
+
+    if (settings?.enabled && settings?.auto_response_enabled && conversationId) {
+      console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...');
+      
+      try {
+        // Get conversation history for context
+        const { data: messages } = await supabaseAdmin
+          .from('sms_messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: false })
+          .limit(settings.context_window_size || 20);
+
+        const conversationHistory = (messages || [])
+          .reverse()
+          .map((msg: any) => ({
+            role: msg.direction === 'inbound' ? 'user' : 'assistant',
+            content: msg.body
+          }));
+
+        // Generate AI response using Lovable AI
+        const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+        if (!lovableApiKey) {
+          console.error('[Twilio SMS Webhook] LOVABLE_API_KEY not configured');
+        } else {
+          const systemPrompt = `You are an AI SMS assistant with the following personality: ${settings.ai_personality || 'professional and helpful'}. 
+Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational.
+DO NOT include any special characters or formatting that may not work well in SMS.`;
+
+          const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...conversationHistory
+              ],
+            }),
+          });
+
+          if (!aiResponse.ok) {
+            console.error('[Twilio SMS Webhook] AI generation failed:', aiResponse.status);
+          } else {
+            const aiData = await aiResponse.json();
+            const generatedText = aiData.choices?.[0]?.message?.content;
+
+            if (generatedText) {
+              console.log('[Twilio SMS Webhook] AI generated response:', generatedText.substring(0, 50) + '...');
+
+              // Wait for the configured delay
+              const delayMs = (settings.double_text_delay_seconds || 2) * 1000;
+              console.log(`[Twilio SMS Webhook] Waiting ${delayMs}ms before sending...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+
+              // Send the response via Twilio
+              const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+              const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+              if (twilioAccountSid && twilioAuthToken) {
+                const twilioResponse = await fetch(
+                  `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                      To: From, // Reply to the sender
+                      From: To, // Use the same number they texted
+                      Body: generatedText,
+                    }),
+                  }
+                );
+
+                if (twilioResponse.ok) {
+                  const twilioData = await twilioResponse.json();
+                  console.log('[Twilio SMS Webhook] Auto-response sent successfully:', twilioData.sid);
+
+                  // Store the outbound message
+                  await supabaseAdmin
+                    .from('sms_messages')
+                    .insert({
+                      user_id: userId,
+                      conversation_id: conversationId,
+                      to_number: From,
+                      from_number: To,
+                      body: generatedText,
+                      direction: 'outbound',
+                      status: 'sent',
+                      provider_type: 'twilio',
+                      provider_message_id: twilioData.sid,
+                      is_ai_generated: true,
+                      sent_at: new Date().toISOString(),
+                    });
+
+                  // Update conversation
+                  await supabaseAdmin
+                    .from('sms_conversations')
+                    .update({ last_message_at: new Date().toISOString() })
+                    .eq('id', conversationId);
+
+                  console.log('[Twilio SMS Webhook] Auto-response stored in database');
+                } else {
+                  const errorText = await twilioResponse.text();
+                  console.error('[Twilio SMS Webhook] Failed to send Twilio message:', errorText);
+                }
+              } else {
+                console.error('[Twilio SMS Webhook] Twilio credentials not configured');
+              }
+            }
+          }
+        }
+      } catch (autoError) {
+        console.error('[Twilio SMS Webhook] Auto-response error:', autoError);
+      }
+    }
+
+    // Return TwiML response (empty response = no auto-reply from Twilio itself)
     return new Response(
       '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
       { 
