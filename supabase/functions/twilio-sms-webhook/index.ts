@@ -481,7 +481,8 @@ ${processedKnowledge}`;
           systemPrompt += `\n\nSMS GUIDELINES:
 - Keep responses concise and appropriate for SMS (under 300 characters when possible)
 - Be natural and conversational
-- DO NOT include any special characters or formatting that may not work well in SMS
+- Emojis are allowed and encouraged when appropriate to add warmth and personality 😊
+- Avoid special formatting like markdown, bullet points, or numbered lists that don't render well in SMS
 - If the user sends an image, describe what you see and respond appropriately`;
 
           console.log('[Twilio SMS Webhook] System prompt built, length:', systemPrompt.length);
