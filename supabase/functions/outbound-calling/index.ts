@@ -147,6 +147,24 @@ serve(async (req) => {
           agent: agentId
         });
 
+        // First, set the outbound agent on the phone number
+        console.log('[Outbound Calling] Setting outbound agent on phone number...');
+        const updatePhoneResponse = await fetch(`https://api.retellai.com/v2/update-phone-number/${encodeURIComponent(callerId)}`, {
+          method: 'PATCH',
+          headers: retellHeaders,
+          body: JSON.stringify({
+            outbound_agent_id: agentId
+          }),
+        });
+
+        if (!updatePhoneResponse.ok) {
+          const updateError = await updatePhoneResponse.text();
+          console.error('[Outbound Calling] Failed to set outbound agent:', updateError);
+          // Continue anyway, maybe it's already set
+        } else {
+          console.log('[Outbound Calling] Outbound agent set successfully');
+        }
+
         response = await fetch(`${baseUrl}/create-phone-call`, {
           method: 'POST',
           headers: retellHeaders,
