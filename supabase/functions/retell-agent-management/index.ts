@@ -7,12 +7,13 @@ const corsHeaders = {
 };
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
   llmId?: string;
-  agentConfig?: any; // Full agent configuration object
+  agentConfig?: any;
+  text?: string; // For voice preview
 }
 
 serve(async (req) => {
@@ -22,7 +23,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, agentName, agentId, voiceId, llmId, agentConfig }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, agentConfig, text }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -124,8 +125,27 @@ serve(async (req) => {
         });
         break;
 
+      case 'preview_voice':
+        if (!voiceId) {
+          throw new Error('Voice ID is required for preview');
+        }
+        
+        const previewText = text || 'Hello! This is a preview of how I sound. I can help you with various tasks and have natural conversations.';
+        
+        // Retell doesn't have a direct voice preview API, so we return voice info
+        // The frontend should use pre-recorded samples or ElevenLabs directly
+        return new Response(JSON.stringify({ 
+          success: true,
+          voiceId: voiceId,
+          message: 'Voice preview requested. Use the voice samples in the UI for preview.',
+          sampleText: previewText
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
       default:
         throw new Error(`Unsupported action: ${action}`);
+    }
     }
 
     if (!response.ok) {
