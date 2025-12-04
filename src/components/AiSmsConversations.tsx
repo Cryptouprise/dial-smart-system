@@ -264,11 +264,15 @@ const AiSmsConversations: React.FC = () => {
             if (
               settings?.auto_response_enabled && 
               newMessage?.direction === 'inbound' && 
-              newMessage?.conversation_id
+              newMessage?.conversation_id &&
+              !newMessage?.is_ai_generated
             ) {
               console.log('[AiSmsConversations] Auto-response enabled, generating AI response...');
               
-              // Small delay to prevent race conditions
+              // Use configurable delay from settings (default to 2 seconds)
+              const delayMs = (settings?.double_text_delay_seconds || 2) * 1000;
+              console.log(`[AiSmsConversations] Will respond after ${delayMs}ms delay`);
+              
               setTimeout(async () => {
                 try {
                   const aiResponse = await generateAIResponse(newMessage.conversation_id);
@@ -284,12 +288,21 @@ const AiSmsConversations: React.FC = () => {
                         aiResponse
                       );
                       console.log('[AiSmsConversations] Auto-response sent successfully');
+                      toast({
+                        title: 'Auto Response Sent',
+                        description: 'AI generated and sent a response automatically',
+                      });
                     }
                   }
                 } catch (autoError) {
                   console.error('[AiSmsConversations] Auto-response error:', autoError);
+                  toast({
+                    title: 'Auto Response Failed',
+                    description: 'Failed to generate automatic response',
+                    variant: 'destructive',
+                  });
                 }
-              }, 1000);
+              }, delayMs);
             }
           } catch (error) {
             console.error('[AiSmsConversations] Error handling new message:', error);
@@ -1240,6 +1253,52 @@ const AiSmsConversations: React.FC = () => {
 
                 {/* Message Input */}
                 <div className="border-t p-4 space-y-3">
+                  {/* Auto-Response Controls */}
+                  {settings?.enabled && (
+                    <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50 border">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="auto-response-toggle"
+                          checked={settings?.auto_response_enabled || false}
+                          onCheckedChange={(checked) => updateSettings({ auto_response_enabled: checked })}
+                        />
+                        <Label htmlFor="auto-response-toggle" className="text-sm font-medium cursor-pointer">
+                          Auto Response
+                        </Label>
+                        {settings?.auto_response_enabled && (
+                          <Badge variant="default" className="text-xs">
+                            <Zap className="h-3 w-3 mr-1" />
+                            Active
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      {settings?.auto_response_enabled && (
+                        <div className="flex items-center gap-2 border-l pl-4">
+                          <Label htmlFor="delay-select" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Delay:
+                          </Label>
+                          <Select
+                            value={String(settings?.double_text_delay_seconds || 2)}
+                            onValueChange={(value) => updateSettings({ double_text_delay_seconds: parseInt(value) })}
+                          >
+                            <SelectTrigger id="delay-select" className="w-24 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1 sec</SelectItem>
+                              <SelectItem value="2">2 sec</SelectItem>
+                              <SelectItem value="5">5 sec</SelectItem>
+                              <SelectItem value="10">10 sec</SelectItem>
+                              <SelectItem value="15">15 sec</SelectItem>
+                              <SelectItem value="30">30 sec</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {settings?.enabled && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button
