@@ -56,6 +56,7 @@ const ChatbotSettings: React.FC = () => {
     aiActionsEnabled: true,
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -63,28 +64,68 @@ const ChatbotSettings: React.FC = () => {
   }, []);
 
   const loadSettings = async () => {
+    setIsLoading(true);
     try {
-      const savedSettings = localStorage.getItem('chatbot_settings');
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('ai_chatbot_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setSettings({
+          voiceEnabled: data.voice_enabled ?? true,
+          voiceId: data.voice_id ?? 'EXAVITQu4vr4xnSDxMaL',
+          autoSpeak: data.auto_speak ?? false,
+          customReportInstructions: data.custom_report_instructions ?? '',
+          reportMetrics: data.report_metrics ?? ['total_calls', 'connected_calls', 'answer_rate', 'appointments_set', 'wins', 'improvements', 'recommendations'],
+          aiActionsEnabled: data.ai_actions_enabled ?? true,
+        });
       }
     } catch (error) {
       console.error('Error loading chatbot settings:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
-      localStorage.setItem('chatbot_settings', JSON.stringify(settings));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('ai_chatbot_settings')
+        .upsert({
+          user_id: user.id,
+          voice_enabled: settings.voiceEnabled,
+          voice_id: settings.voiceId,
+          auto_speak: settings.autoSpeak,
+          custom_report_instructions: settings.customReportInstructions,
+          report_metrics: settings.reportMetrics,
+          ai_actions_enabled: settings.aiActionsEnabled,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+
       toast({
         title: 'Settings Saved',
         description: 'AI Assistant settings have been updated.',
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to save settings.',
+        description: error.message || 'Failed to save settings.',
         variant: 'destructive',
       });
     } finally {
@@ -100,6 +141,16 @@ const ChatbotSettings: React.FC = () => {
         : [...prev.reportMetrics, metricId],
     }));
   };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          Loading settings...
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

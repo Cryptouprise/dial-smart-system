@@ -224,12 +224,12 @@ const CampaignAutomation: React.FC = () => {
 
             <div className="space-y-2">
               <Label>Apply to Campaign (optional)</Label>
-              <Select value={newRule.campaign_id} onValueChange={(v) => setNewRule({ ...newRule, campaign_id: v })}>
+              <Select value={newRule.campaign_id || 'all'} onValueChange={(v) => setNewRule({ ...newRule, campaign_id: v === 'all' ? '' : v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="All campaigns" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Campaigns</SelectItem>
+                  <SelectItem value="all">All Campaigns</SelectItem>
                   {campaigns.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}

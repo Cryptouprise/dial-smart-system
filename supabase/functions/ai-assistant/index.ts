@@ -325,9 +325,13 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
 
     case 'generate_daily_report': {
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-daily-report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`
+        },
         body: JSON.stringify({ userId, customInstructions: args.custom_instructions })
       });
       const result = await response.json();
@@ -437,7 +441,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           quarantine_until: quarantineUntil.toISOString(),
           is_spam: true
         })
-        .eq('number', args.phone_number);
+        .eq('number', args.phone_number)
+        .eq('user_id', userId);
       
       if (error) throw error;
       return { success: true, message: `Number ${args.phone_number} quarantined for ${args.days || 30} days` };
