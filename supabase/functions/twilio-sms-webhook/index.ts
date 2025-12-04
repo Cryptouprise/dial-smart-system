@@ -80,20 +80,23 @@ serve(async (req) => {
 
     console.log(`[Twilio SMS Webhook] Inbound SMS from ${From} to ${To}: ${Body.substring(0, 50)}...`);
 
-    // Find the user who owns the "To" number
-    const { data: phoneNumber, error: phoneError } = await supabaseAdmin
+    // Find the user who owns the "To" number - try multiple methods
+    let userId: string | null = null;
+    
+    // Method 1: Check phone_numbers table
+    const { data: phoneNumber } = await supabaseAdmin
       .from('phone_numbers')
       .select('user_id')
       .eq('number', To)
       .maybeSingle();
 
-    let userId: string | null = null;
-
     if (phoneNumber?.user_id) {
       userId = phoneNumber.user_id;
-      console.log('[Twilio SMS Webhook] Found user for number:', userId);
-    } else {
-      // Try to find by matching number format variations
+      console.log('[Twilio SMS Webhook] Found user via phone_numbers table:', userId);
+    }
+    
+    // Method 2: Try number format variations in phone_numbers
+    if (!userId) {
       const cleanedTo = To.replace(/\D/g, '');
       const { data: altNumber } = await supabaseAdmin
         .from('phone_numbers')
@@ -107,10 +110,59 @@ serve(async (req) => {
         console.log('[Twilio SMS Webhook] Found user via alt format:', userId);
       }
     }
+    
+    // Method 3: Check existing conversations where we've sent FROM this number
+    if (!userId) {
+      console.log('[Twilio SMS Webhook] Checking sms_messages for previous outbound from:', To);
+      const { data: prevMessage } = await supabaseAdmin
+        .from('sms_messages')
+        .select('user_id')
+        .eq('from_number', To)
+        .eq('direction', 'outbound')
+        .limit(1)
+        .maybeSingle();
+
+      if (prevMessage?.user_id) {
+        userId = prevMessage.user_id;
+        console.log('[Twilio SMS Webhook] Found user via previous outbound message:', userId);
+      }
+    }
+    
+    // Method 4: Check existing conversations with this contact
+    if (!userId) {
+      console.log('[Twilio SMS Webhook] Checking sms_conversations for contact:', From);
+      const { data: existingConvForContact } = await supabaseAdmin
+        .from('sms_conversations')
+        .select('user_id')
+        .eq('contact_phone', From)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConvForContact?.user_id) {
+        userId = existingConvForContact.user_id;
+        console.log('[Twilio SMS Webhook] Found user via existing conversation:', userId);
+      }
+    }
+    
+    // Method 5: If still no user, get the most recently active user (for single-user setups)
+    if (!userId) {
+      console.log('[Twilio SMS Webhook] Fallback: finding most recent active user');
+      const { data: recentUser } = await supabaseAdmin
+        .from('ai_sms_settings')
+        .select('user_id')
+        .eq('enabled', true)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentUser?.user_id) {
+        userId = recentUser.user_id;
+        console.log('[Twilio SMS Webhook] Found user via ai_sms_settings fallback:', userId);
+      }
+    }
 
     if (!userId) {
-      console.log('[Twilio SMS Webhook] No user found for number:', To);
-      // Still return success to Twilio
+      console.log('[Twilio SMS Webhook] No user found for number:', To, '- message will not be stored');
       return new Response(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         { 
@@ -118,6 +170,8 @@ serve(async (req) => {
         }
       );
     }
+    
+    console.log('[Twilio SMS Webhook] Processing inbound SMS for user:', userId);
 
     // Find or create conversation
     let conversationId: string | null = null;
