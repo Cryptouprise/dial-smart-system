@@ -155,6 +155,9 @@ const AiSmsConversations: React.FC = () => {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [availableTwilioNumbers, setAvailableTwilioNumbers] = useState<Array<{number: string, friendly_name?: string}>>([]);
+  const [selectedFromNumber, setSelectedFromNumber] = useState('');
+  const [loadingNumbers, setLoadingNumbers] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -189,6 +192,30 @@ const AiSmsConversations: React.FC = () => {
     }
   };
 
+  // Load available Twilio numbers on mount
+  useEffect(() => {
+    const loadAvailableNumbers = async () => {
+      setLoadingNumbers(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('sms-messaging', {
+          body: { action: 'get_available_numbers' }
+        });
+        if (error) throw error;
+        const numbers = data?.numbers || [];
+        setAvailableTwilioNumbers(numbers);
+        // Auto-select first number if available
+        if (numbers.length > 0 && !selectedFromNumber) {
+          setSelectedFromNumber(numbers[0].number);
+        }
+      } catch (error) {
+        console.error('[AiSmsConversations] Failed to load available numbers:', error);
+      } finally {
+        setLoadingNumbers(false);
+      }
+    };
+    loadAvailableNumbers();
+  }, []);
+
   useEffect(() => {
     if (selectedConversation) {
       loadMessages(selectedConversation.id);
@@ -206,17 +233,13 @@ const AiSmsConversations: React.FC = () => {
   const handleSendMessage = async () => {
     if (!selectedConversation || !messageText.trim()) return;
 
-    // Get available numbers
-    const { data: numbers } = await supabase
-      .from('phone_numbers')
-      .select('number')
-      .eq('status', 'active')
-      .limit(1);
+    // Use the selected from number or first available Twilio number
+    const fromNumber = selectedFromNumber || availableTwilioNumbers[0]?.number;
 
-    if (!numbers || numbers.length === 0) {
+    if (!fromNumber) {
       toast({
         title: 'No Phone Number',
-        description: 'Please add a phone number first',
+        description: 'No SMS-capable phone numbers found in your Twilio account. Please add a number in Twilio first.',
         variant: 'destructive',
       });
       return;
@@ -225,7 +248,7 @@ const AiSmsConversations: React.FC = () => {
     const success = await sendMessage(
       selectedConversation.id,
       selectedConversation.contact_phone,
-      numbers[0].number,
+      fromNumber,
       messageText
     );
 
@@ -887,7 +910,38 @@ const AiSmsConversations: React.FC = () => {
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <Label htmlFor="new-phone">Phone Number *</Label>
+                      <Label htmlFor="from-number">From Number *</Label>
+                      <Select value={selectedFromNumber} onValueChange={setSelectedFromNumber}>
+                        <SelectTrigger id="from-number">
+                          <SelectValue placeholder={loadingNumbers ? "Loading..." : "Select your Twilio number"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableTwilioNumbers.map((num) => (
+                            <SelectItem key={num.number} value={num.number}>
+                              <div className="flex items-center gap-2">
+                                <Phone className="h-4 w-4" />
+                                {formatPhone(num.number)}
+                                {num.friendly_name && (
+                                  <span className="text-muted-foreground">({num.friendly_name})</span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {availableTwilioNumbers.length === 0 && !loadingNumbers && (
+                            <SelectItem value="" disabled>
+                              No SMS-capable numbers found in Twilio
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {availableTwilioNumbers.length === 0 && !loadingNumbers && (
+                        <p className="text-xs text-destructive">
+                          No SMS-capable numbers found. Please add numbers in your Twilio console.
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-phone">To Phone Number *</Label>
                       <Input
                         id="new-phone"
                         placeholder="+1 (555) 123-4567"
@@ -909,7 +963,7 @@ const AiSmsConversations: React.FC = () => {
                     <Button variant="outline" onClick={() => setShowNewConversation(false)}>
                       Cancel
                     </Button>
-                    <Button onClick={handleCreateConversation}>
+                    <Button onClick={handleCreateConversation} disabled={!selectedFromNumber || !newContactPhone.trim()}>
                       <Plus className="h-4 w-4 mr-2" />
                       Create
                     </Button>
