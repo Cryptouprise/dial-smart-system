@@ -28,13 +28,18 @@ const Settings = () => {
   const [availableRetellNumbers, setAvailableRetellNumbers] = useState<any[]>([]);
   const [searchAreaCode, setSearchAreaCode] = useState('');
   const [isRetellDialogOpen, setIsRetellDialogOpen] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const { toast } = useToast();
   const { settings, updateSettings } = useAiSmsMessaging();
   const { listAvailableNumbers, purchaseNumber, isLoading: retellLoading } = useRetellAI();
 
   useEffect(() => {
-    loadPhoneNumbers();
-    loadDialerSettings();
+    const loadAllData = async () => {
+      setIsLoadingSettings(true);
+      await Promise.all([loadPhoneNumbers(), loadDialerSettings()]);
+      setIsLoadingSettings(false);
+    };
+    loadAllData();
   }, []);
 
   const loadDialerSettings = async () => {
@@ -136,6 +141,10 @@ const Settings = () => {
             <CardDescription>Configure your dialer system settings</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {isLoadingSettings ? (
+              <div className="py-8 text-center text-muted-foreground">Loading settings...</div>
+            ) : (
+              <>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-medium">Auto-Quarantine Spam Numbers</Label>
@@ -172,6 +181,8 @@ const Settings = () => {
             <Button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700">
               Save Settings
             </Button>
+            </>
+            )}
           </CardContent>
         </Card>
 
