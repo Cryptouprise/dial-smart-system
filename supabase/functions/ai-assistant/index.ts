@@ -1,7 +1,7 @@
 /**
- * AI Assistant Edge Function with Tool Calling
+ * AI Assistant Edge Function with FULL Tool Calling
  * 
- * An intelligent chatbot with FULL analytics access AND ability to perform actions.
+ * Can control ALL settings, toggles, and create automations
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -12,62 +12,95 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant - an expert analyst with FULL ACCESS to the system's database AND the ability to perform actions.
+const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant with FULL CONTROL over the entire system.
 
-## YOUR CAPABILITIES
-You have real-time access to:
-- All call logs, leads, SMS messages, campaigns
-- Phone number health and spam status
-- System settings and configurations
+## YOUR SUPERPOWERS
+You can control EVERYTHING:
+- All settings toggles (dialer, SMS, rotation, AI settings)
+- Phone number management (import, quarantine, purchase)
+- Campaign management (create, update, start, pause)
+- Lead management (status, pipeline, callbacks)
+- Automation rules (create schedules, retry logic)
+- Reports (generate, view)
+- SMS (send messages)
 
-## ACTIONS YOU CAN PERFORM
-You can execute these actions when users ask:
-- **generate_daily_report**: Generate a daily performance report
-- **update_dialer_settings**: Update dialer configuration (daily_call_limit, auto_quarantine, cooldown_period)
-- **import_phone_number**: Import a phone number to the system
-- **update_lead_status**: Change a lead's status in the pipeline
-- **create_campaign**: Create a new dialing campaign
-- **send_sms**: Send an SMS message to a contact
-- **quarantine_number**: Quarantine a phone number
-- **get_analytics**: Fetch detailed analytics data
+## WHEN TO USE TOOLS
+- User says "turn on/off X" → Use toggle_setting
+- User says "set X to Y" → Use update_setting  
+- User says "create automation" → Use create_automation_rule
+- User says "import number" → Use import_phone_number
+- User says "generate report" → Use generate_daily_report
+- User says "send SMS" → Use send_sms
 
-When a user asks you to DO something (not just report on data), use the appropriate tool.
-When they ask questions about data, provide answers from the analytics.
+Be proactive! When they ask to do something, DO IT with tools.`;
 
-Be proactive - if they say "generate my report" or "import this number", execute the action!`;
-
-// Tool definitions for the AI
 const TOOLS = [
   {
     type: "function",
     function: {
-      name: "generate_daily_report",
-      description: "Generate a daily performance report with call stats, wins, improvements, and recommendations",
+      name: "toggle_setting",
+      description: "Toggle any boolean setting on/off. Settings include: auto_quarantine, enable_amd, enable_local_presence, enable_timezone_compliance, enable_dnc_check, ai_sms_enabled, auto_response_enabled, enable_image_analysis, prevent_double_texting, number_rotation_enabled, adaptive_pacing",
       parameters: {
         type: "object",
         properties: {
-          custom_instructions: {
-            type: "string",
-            description: "Any custom instructions for what to include in the report"
-          }
+          setting_name: { type: "string", description: "Name of the setting to toggle" },
+          enabled: { type: "boolean", description: "Turn on (true) or off (false)" }
         },
-        required: []
+        required: ["setting_name", "enabled"]
       }
     }
   },
   {
     type: "function",
     function: {
-      name: "update_dialer_settings",
-      description: "Update dialer configuration settings",
+      name: "update_setting",
+      description: "Update any numeric or text setting. Examples: daily_call_limit, cooldown_period, max_concurrent_calls, calls_per_minute, ai_personality, context_window_size",
       parameters: {
         type: "object",
         properties: {
-          daily_call_limit: { type: "number", description: "Maximum calls per number per day" },
-          auto_quarantine: { type: "boolean", description: "Auto-quarantine spam numbers" },
-          cooldown_period: { type: "number", description: "Quarantine period in days" }
+          setting_name: { type: "string", description: "Name of the setting" },
+          value: { type: "string", description: "New value (number or text)" }
         },
-        required: []
+        required: ["setting_name", "value"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_automation_rule",
+      description: "Create a campaign automation rule for scheduling calls",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string", description: "Campaign ID (optional, applies to all if not set)" },
+          name: { type: "string", description: "Rule name" },
+          rule_type: { type: "string", description: "Type: schedule, retry_logic, time_window, condition" },
+          conditions: { 
+            type: "object", 
+            description: "When to apply: no_answer_count, days_since_last_call, day_of_week array" 
+          },
+          actions: { 
+            type: "object", 
+            description: "What to do: max_calls_per_day, call_times array, pause_days, only_call_times" 
+          },
+          days_of_week: { type: "array", items: { type: "string" }, description: "Days to run: monday, tuesday, etc" },
+          time_windows: { type: "array", description: "Time windows like [{start: '09:00', end: '12:00'}]" }
+        },
+        required: ["name", "rule_type"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_daily_report",
+      description: "Generate a daily performance report",
+      parameters: {
+        type: "object",
+        properties: {
+          custom_instructions: { type: "string", description: "Custom instructions for the report" }
+        }
       }
     }
   },
@@ -79,8 +112,8 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          phone_number: { type: "string", description: "The phone number to import (E.164 format)" },
-          area_code: { type: "string", description: "Area code of the number" }
+          phone_number: { type: "string", description: "Phone number in E.164 format" },
+          area_code: { type: "string", description: "Area code" }
         },
         required: ["phone_number"]
       }
@@ -90,15 +123,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_lead_status",
-      description: "Update a lead's status in the pipeline",
+      description: "Update a lead's status",
       parameters: {
         type: "object",
         properties: {
-          lead_id: { type: "string", description: "The lead's ID" },
-          phone_number: { type: "string", description: "The lead's phone number (alternative to ID)" },
-          new_status: { type: "string", description: "New status: new, contacted, qualified, appointment_set, closed_won, closed_lost, dnc" }
+          phone_number: { type: "string", description: "Lead's phone number" },
+          new_status: { type: "string", description: "new, contacted, qualified, appointment_set, closed_won, closed_lost, dnc" }
         },
-        required: ["new_status"]
+        required: ["phone_number", "new_status"]
       }
     }
   },
@@ -111,25 +143,43 @@ const TOOLS = [
         type: "object",
         properties: {
           name: { type: "string", description: "Campaign name" },
-          description: { type: "string", description: "Campaign description" },
-          script: { type: "string", description: "Call script for agents" },
-          calls_per_minute: { type: "number", description: "Dialing pace" }
+          description: { type: "string", description: "Description" },
+          calls_per_minute: { type: "number", description: "Dialing pace" },
+          max_attempts: { type: "number", description: "Max call attempts per lead" }
         },
         required: ["name"]
       }
     }
   },
   {
-    type: "function", 
+    type: "function",
     function: {
-      name: "send_sms",
-      description: "Send an SMS message to a contact",
+      name: "update_campaign",
+      description: "Update an existing campaign's settings or status",
       parameters: {
         type: "object",
         properties: {
-          to_number: { type: "string", description: "Recipient phone number" },
-          message: { type: "string", description: "Message content" },
-          from_number: { type: "string", description: "Sender number (optional, will use default)" }
+          campaign_id: { type: "string", description: "Campaign ID" },
+          campaign_name: { type: "string", description: "Campaign name (alternative to ID)" },
+          status: { type: "string", description: "draft, active, paused, completed" },
+          calls_per_minute: { type: "number" },
+          max_attempts: { type: "number" },
+          calling_hours_start: { type: "string", description: "Start time like 09:00" },
+          calling_hours_end: { type: "string", description: "End time like 17:00" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_sms",
+      description: "Send an SMS message",
+      parameters: {
+        type: "object",
+        properties: {
+          to_number: { type: "string", description: "Recipient phone" },
+          message: { type: "string", description: "Message content" }
         },
         required: ["to_number", "message"]
       }
@@ -139,51 +189,149 @@ const TOOLS = [
     type: "function",
     function: {
       name: "quarantine_number",
-      description: "Quarantine a phone number due to spam or issues",
+      description: "Quarantine a phone number",
       parameters: {
         type: "object",
         properties: {
-          phone_number: { type: "string", description: "The phone number to quarantine" },
-          reason: { type: "string", description: "Reason for quarantine" },
-          days: { type: "number", description: "Number of days to quarantine (default 30)" }
+          phone_number: { type: "string" },
+          reason: { type: "string" },
+          days: { type: "number", description: "Days to quarantine (default 30)" }
         },
         required: ["phone_number"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_automation_rules",
+      description: "List all automation rules",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_automation_rule",
+      description: "Delete an automation rule",
+      parameters: {
+        type: "object",
+        properties: {
+          rule_id: { type: "string" },
+          rule_name: { type: "string" }
+        }
       }
     }
   }
 ];
 
-// Execute tool functions
 async function executeToolCall(supabase: any, toolName: string, args: any, userId: string) {
-  console.log(`[AI Assistant] Executing tool: ${toolName}`, args);
+  console.log(`[AI Assistant] Executing: ${toolName}`, args);
   
   switch (toolName) {
+    case 'toggle_setting': {
+      const { setting_name, enabled } = args;
+      const settingMap: Record<string, { table: string, column: string }> = {
+        'auto_quarantine': { table: 'rotation_settings', column: 'auto_remove_quarantined' },
+        'enable_amd': { table: 'advanced_dialer_settings', column: 'enable_amd' },
+        'enable_local_presence': { table: 'advanced_dialer_settings', column: 'enable_local_presence' },
+        'enable_timezone_compliance': { table: 'advanced_dialer_settings', column: 'enable_timezone_compliance' },
+        'enable_dnc_check': { table: 'advanced_dialer_settings', column: 'enable_dnc_check' },
+        'ai_sms_enabled': { table: 'ai_sms_settings', column: 'enabled' },
+        'auto_response_enabled': { table: 'ai_sms_settings', column: 'auto_response_enabled' },
+        'enable_image_analysis': { table: 'ai_sms_settings', column: 'enable_image_analysis' },
+        'prevent_double_texting': { table: 'ai_sms_settings', column: 'prevent_double_texting' },
+        'number_rotation_enabled': { table: 'rotation_settings', column: 'enabled' },
+        'adaptive_pacing': { table: 'system_settings', column: 'enable_adaptive_pacing' },
+      };
+      
+      const mapping = settingMap[setting_name];
+      if (!mapping) return { success: false, message: `Unknown setting: ${setting_name}` };
+      
+      const { error } = await supabase
+        .from(mapping.table)
+        .upsert({ user_id: userId, [mapping.column]: enabled }, { onConflict: 'user_id' });
+      
+      if (error) throw error;
+      return { success: true, message: `${setting_name} ${enabled ? 'enabled' : 'disabled'}` };
+    }
+
+    case 'update_setting': {
+      const { setting_name, value } = args;
+      const numValue = parseFloat(value);
+      const isNumeric = !isNaN(numValue);
+      
+      const settingMap: Record<string, { table: string, column: string }> = {
+        'daily_call_limit': { table: 'system_settings', column: 'max_calls_per_agent' },
+        'max_concurrent_calls': { table: 'system_settings', column: 'max_concurrent_calls' },
+        'calls_per_minute': { table: 'system_settings', column: 'calls_per_minute' },
+        'cooldown_period': { table: 'rotation_settings', column: 'rotation_interval_hours' },
+        'high_volume_threshold': { table: 'rotation_settings', column: 'high_volume_threshold' },
+        'ai_personality': { table: 'ai_sms_settings', column: 'ai_personality' },
+        'context_window_size': { table: 'ai_sms_settings', column: 'context_window_size' },
+      };
+      
+      const mapping = settingMap[setting_name];
+      if (!mapping) return { success: false, message: `Unknown setting: ${setting_name}` };
+      
+      const { error } = await supabase
+        .from(mapping.table)
+        .upsert({ user_id: userId, [mapping.column]: isNumeric ? numValue : value }, { onConflict: 'user_id' });
+      
+      if (error) throw error;
+      return { success: true, message: `${setting_name} set to ${value}` };
+    }
+
+    case 'create_automation_rule': {
+      const { data, error } = await supabase
+        .from('campaign_automation_rules')
+        .insert({
+          user_id: userId,
+          campaign_id: args.campaign_id || null,
+          name: args.name,
+          rule_type: args.rule_type || 'schedule',
+          conditions: args.conditions || {},
+          actions: args.actions || {},
+          days_of_week: args.days_of_week || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          time_windows: args.time_windows || [{ start: '09:00', end: '17:00' }],
+          enabled: true
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { success: true, message: `Automation rule "${args.name}" created!`, data };
+    }
+
+    case 'list_automation_rules': {
+      const { data, error } = await supabase
+        .from('campaign_automation_rules')
+        .select('*')
+        .eq('user_id', userId);
+      
+      if (error) throw error;
+      return { success: true, message: `Found ${data?.length || 0} automation rules`, data };
+    }
+
+    case 'delete_automation_rule': {
+      let query = supabase.from('campaign_automation_rules').delete();
+      if (args.rule_id) query = query.eq('id', args.rule_id);
+      else if (args.rule_name) query = query.eq('name', args.rule_name);
+      
+      const { error } = await query.eq('user_id', userId);
+      if (error) throw error;
+      return { success: true, message: 'Automation rule deleted' };
+    }
+
     case 'generate_daily_report': {
-      // Call the generate-daily-report function
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-daily-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
-          customInstructions: args.custom_instructions 
-        })
+        body: JSON.stringify({ userId, customInstructions: args.custom_instructions })
       });
       const result = await response.json();
       return { success: true, message: "Daily report generated!", data: result };
-    }
-
-    case 'update_dialer_settings': {
-      const updates: any = {};
-      if (args.daily_call_limit !== undefined) updates.max_calls_per_agent = args.daily_call_limit;
-      if (args.auto_quarantine !== undefined) updates.enable_adaptive_pacing = args.auto_quarantine;
-      
-      const { error } = await supabase
-        .from('system_settings')
-        .upsert({ user_id: userId, ...updates }, { onConflict: 'user_id' });
-      
-      if (error) throw error;
-      return { success: true, message: `Settings updated: ${JSON.stringify(args)}` };
     }
 
     case 'import_phone_number': {
@@ -202,21 +350,16 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .single();
       
       if (error) throw error;
-      return { success: true, message: `Phone number ${args.phone_number} imported successfully!`, data };
+      return { success: true, message: `Phone number ${args.phone_number} imported!`, data };
     }
 
     case 'update_lead_status': {
-      let query = supabase.from('leads').update({ status: args.new_status });
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: args.new_status })
+        .eq('phone_number', args.phone_number)
+        .eq('user_id', userId);
       
-      if (args.lead_id) {
-        query = query.eq('id', args.lead_id);
-      } else if (args.phone_number) {
-        query = query.eq('phone_number', args.phone_number);
-      } else {
-        return { success: false, message: "Need either lead_id or phone_number to update" };
-      }
-      
-      const { error } = await query;
       if (error) throw error;
       return { success: true, message: `Lead status updated to "${args.new_status}"` };
     }
@@ -228,8 +371,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           user_id: userId,
           name: args.name,
           description: args.description || '',
-          script: args.script || '',
           calls_per_minute: args.calls_per_minute || 5,
+          max_attempts: args.max_attempts || 3,
           status: 'draft'
         })
         .select()
@@ -239,19 +382,33 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       return { success: true, message: `Campaign "${args.name}" created!`, data };
     }
 
-    case 'send_sms': {
-      // Get a from number if not provided
-      let fromNumber = args.from_number;
-      if (!fromNumber) {
-        const { data: numbers } = await supabase
-          .from('phone_numbers')
-          .select('number')
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .limit(1);
-        fromNumber = numbers?.[0]?.number || '+10000000000';
-      }
+    case 'update_campaign': {
+      const updates: any = {};
+      if (args.status) updates.status = args.status;
+      if (args.calls_per_minute) updates.calls_per_minute = args.calls_per_minute;
+      if (args.max_attempts) updates.max_attempts = args.max_attempts;
+      if (args.calling_hours_start) updates.calling_hours_start = args.calling_hours_start;
+      if (args.calling_hours_end) updates.calling_hours_end = args.calling_hours_end;
+      
+      let query = supabase.from('campaigns').update(updates);
+      if (args.campaign_id) query = query.eq('id', args.campaign_id);
+      else if (args.campaign_name) query = query.eq('name', args.campaign_name);
+      
+      const { error } = await query.eq('user_id', userId);
+      if (error) throw error;
+      return { success: true, message: `Campaign updated!` };
+    }
 
+    case 'send_sms': {
+      const { data: numbers } = await supabase
+        .from('phone_numbers')
+        .select('number')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .limit(1);
+      
+      const fromNumber = numbers?.[0]?.number || '+10000000000';
+      
       const { data, error } = await supabase
         .from('sms_messages')
         .insert({
@@ -283,15 +440,6 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .eq('number', args.phone_number);
       
       if (error) throw error;
-      
-      // Log the rotation action
-      await supabase.from('rotation_history').insert({
-        user_id: userId,
-        phone_number: args.phone_number,
-        action_type: 'quarantined',
-        reason: args.reason || 'Manual quarantine via AI assistant'
-      });
-      
       return { success: true, message: `Number ${args.phone_number} quarantined for ${args.days || 30} days` };
     }
 
@@ -300,43 +448,23 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
   }
 }
 
-// Fetch analytics
-async function fetchAnalytics(supabase: any) {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  const [callsToday, allCalls, leads, campaigns, smsMessages, phoneNumbers] = await Promise.all([
-    supabase.from('call_logs').select('*').gte('created_at', todayStart),
-    supabase.from('call_logs').select('*').limit(500),
-    supabase.from('leads').select('*'),
-    supabase.from('campaigns').select('*'),
-    supabase.from('sms_messages').select('*').limit(500),
-    supabase.from('phone_numbers').select('*')
+async function fetchAnalytics(supabase: any, userId: string) {
+  const [calls, leads, campaigns, sms, numbers, rules] = await Promise.all([
+    supabase.from('call_logs').select('*').eq('user_id', userId).limit(100),
+    supabase.from('leads').select('*').eq('user_id', userId),
+    supabase.from('campaigns').select('*').eq('user_id', userId),
+    supabase.from('sms_messages').select('*').eq('user_id', userId).limit(100),
+    supabase.from('phone_numbers').select('*').eq('user_id', userId),
+    supabase.from('campaign_automation_rules').select('*').eq('user_id', userId)
   ]);
 
-  const allCallsData = allCalls.data || [];
-  const callsTodayData = callsToday.data || [];
-  const leadsData = leads.data || [];
-  const smsData = smsMessages.data || [];
-  const numbersData = phoneNumbers.data || [];
-
-  const connectedCalls = allCallsData.filter((c: any) => 
-    c.status === 'completed' || c.outcome === 'connected' || c.outcome === 'appointment_set'
-  ).length;
-
   return {
-    totalCalls: allCallsData.length,
-    callsToday: callsTodayData.length,
-    connectedCalls,
-    answerRate: allCallsData.length > 0 ? Math.round((connectedCalls / allCallsData.length) * 100) : 0,
-    totalLeads: leadsData.length,
-    activeLeads: leadsData.filter((l: any) => l.status !== 'closed_lost' && l.status !== 'dnc').length,
-    smsSent: smsData.filter((m: any) => m.direction === 'outbound').length,
-    smsReceived: smsData.filter((m: any) => m.direction === 'inbound').length,
-    activeCampaigns: (campaigns.data || []).filter((c: any) => c.status === 'active').length,
-    activeNumbers: numbersData.filter((n: any) => n.status === 'active' && !n.is_spam).length,
-    quarantinedNumbers: numbersData.filter((n: any) => n.quarantine_until || n.is_spam).length
+    totalCalls: calls.data?.length || 0,
+    totalLeads: leads.data?.length || 0,
+    activeCampaigns: campaigns.data?.filter((c: any) => c.status === 'active').length || 0,
+    smsSent: sms.data?.filter((m: any) => m.direction === 'outbound').length || 0,
+    activeNumbers: numbers.data?.filter((n: any) => n.status === 'active').length || 0,
+    automationRules: rules.data?.length || 0
   };
 }
 
@@ -347,34 +475,27 @@ serve(async (req) => {
 
   try {
     const { message, conversationHistory = [], userId } = await req.json();
-
     if (!message) {
-      return new Response(
-        JSON.stringify({ error: 'Message is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Message required' }), 
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!lovableApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'AI service not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'AI not configured' }), 
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Initialize Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
 
-    // Fetch analytics for context
-    const analytics = await fetchAnalytics(supabase);
-    const analyticsContext = `\n\n## CURRENT STATS\n- Calls today: ${analytics.callsToday}\n- Total calls: ${analytics.totalCalls}\n- Answer rate: ${analytics.answerRate}%\n- Active leads: ${analytics.activeLeads}\n- SMS sent: ${analytics.smsSent}\n- Active numbers: ${analytics.activeNumbers}`;
+    const analytics = await fetchAnalytics(supabase, userId || '');
+    const context = `\n\nCURRENT STATS: ${analytics.totalCalls} calls, ${analytics.totalLeads} leads, ${analytics.activeCampaigns} active campaigns, ${analytics.automationRules} automation rules`;
 
     console.log('[AI Assistant] Processing:', message.substring(0, 100));
 
-    // First API call with tools
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -384,7 +505,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: SYSTEM_KNOWLEDGE + analyticsContext },
+          { role: 'system', content: SYSTEM_KNOWLEDGE + context },
           ...conversationHistory.slice(-10),
           { role: 'user', content: message }
         ],
@@ -396,83 +517,55 @@ serve(async (req) => {
 
     if (!response.ok) {
       const status = response.status;
-      if (status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      throw new Error(`AI gateway error: ${status}`);
+      if (status === 429) return new Response(JSON.stringify({ error: 'Rate limited' }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      throw new Error(`AI error: ${status}`);
     }
 
     const data = await response.json();
     const choice = data.choices?.[0];
     
-    // Check if AI wants to call tools
     if (choice?.message?.tool_calls?.length > 0) {
-      const toolResults: string[] = [];
+      const results: string[] = [];
       
-      for (const toolCall of choice.message.tool_calls) {
-        const toolName = toolCall.function.name;
-        const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
-        
+      for (const tc of choice.message.tool_calls) {
         try {
-          const result = await executeToolCall(supabase, toolName, toolArgs, userId || 'system');
-          toolResults.push(`✅ ${toolName}: ${result.message}`);
-          console.log(`[AI Assistant] Tool ${toolName} result:`, result);
-        } catch (error: any) {
-          toolResults.push(`❌ ${toolName}: Failed - ${error.message}`);
-          console.error(`[AI Assistant] Tool ${toolName} error:`, error);
+          const result = await executeToolCall(supabase, tc.function.name, JSON.parse(tc.function.arguments || '{}'), userId || '');
+          results.push(`✅ ${tc.function.name}: ${result.message}`);
+        } catch (e: any) {
+          results.push(`❌ ${tc.function.name}: ${e.message}`);
         }
       }
 
-      // Get a follow-up response from AI with tool results
-      const followUpResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const followUp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${lovableApiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash',
           messages: [
-            { role: 'system', content: SYSTEM_KNOWLEDGE },
-            { role: 'user', content: message },
-            { role: 'assistant', content: `I executed the following actions:\n${toolResults.join('\n')}\n\nLet me summarize what I did for you.` }
+            { role: 'system', content: 'Summarize what actions were taken concisely.' },
+            { role: 'user', content: `User asked: "${message}"\nActions: ${results.join(', ')}` }
           ],
-          max_tokens: 500,
+          max_tokens: 300,
         }),
       });
 
-      const followUpData = await followUpResponse.json();
-      const finalMessage = followUpData.choices?.[0]?.message?.content || `Done! ${toolResults.join('. ')}`;
-
-      return new Response(
-        JSON.stringify({ 
-          response: finalMessage,
-          actions_taken: toolResults,
-          analytics
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const followUpData = await followUp.json();
+      
+      return new Response(JSON.stringify({ 
+        response: followUpData.choices?.[0]?.message?.content || results.join('\n'),
+        actions_taken: results,
+        analytics
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // No tools called, just return the response
-    const assistantMessage = choice?.message?.content || 'Sorry, I could not generate a response.';
-
-    return new Response(
-      JSON.stringify({ 
-        response: assistantMessage,
-        analytics
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ 
+      response: choice?.message?.content || 'No response',
+      analytics
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
     console.error('[AI Assistant] Error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message || 'An error occurred' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: error.message }), 
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

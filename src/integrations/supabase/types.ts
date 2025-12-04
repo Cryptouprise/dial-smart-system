@@ -53,6 +53,45 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_chatbot_settings: {
+        Row: {
+          ai_actions_enabled: boolean | null
+          auto_speak: boolean | null
+          created_at: string
+          custom_report_instructions: string | null
+          id: string
+          report_metrics: string[] | null
+          updated_at: string
+          user_id: string
+          voice_enabled: boolean | null
+          voice_id: string | null
+        }
+        Insert: {
+          ai_actions_enabled?: boolean | null
+          auto_speak?: boolean | null
+          created_at?: string
+          custom_report_instructions?: string | null
+          id?: string
+          report_metrics?: string[] | null
+          updated_at?: string
+          user_id: string
+          voice_enabled?: boolean | null
+          voice_id?: string | null
+        }
+        Update: {
+          ai_actions_enabled?: boolean | null
+          auto_speak?: boolean | null
+          created_at?: string
+          custom_report_instructions?: string | null
+          id?: string
+          report_metrics?: string[] | null
+          updated_at?: string
+          user_id?: string
+          voice_enabled?: boolean | null
+          voice_id?: string | null
+        }
+        Relationships: []
+      }
       ai_sms_settings: {
         Row: {
           ai_personality: string | null
@@ -205,6 +244,71 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_automation_rules: {
+        Row: {
+          actions: Json | null
+          campaign_id: string | null
+          conditions: Json | null
+          created_at: string
+          days_of_week: string[] | null
+          description: string | null
+          enabled: boolean | null
+          end_date: string | null
+          id: string
+          name: string
+          priority: number | null
+          rule_type: string
+          start_date: string | null
+          time_windows: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actions?: Json | null
+          campaign_id?: string | null
+          conditions?: Json | null
+          created_at?: string
+          days_of_week?: string[] | null
+          description?: string | null
+          enabled?: boolean | null
+          end_date?: string | null
+          id?: string
+          name: string
+          priority?: number | null
+          rule_type?: string
+          start_date?: string | null
+          time_windows?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actions?: Json | null
+          campaign_id?: string | null
+          conditions?: Json | null
+          created_at?: string
+          days_of_week?: string[] | null
+          description?: string | null
+          enabled?: boolean | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          priority?: number | null
+          rule_type?: string
+          start_date?: string | null
+          time_windows?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_automation_rules_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
             referencedColumns: ["id"]
           },
         ]
