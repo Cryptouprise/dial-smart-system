@@ -32,13 +32,19 @@ import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loa
 import { useSmsMessaging, type SmsMessage } from '@/hooks/useSmsMessaging';
 import { format } from 'date-fns';
 
+interface TwilioNumber {
+  number: string;
+  friendly_name?: string;
+  capabilities?: { voice?: boolean; sms?: boolean; mms?: boolean };
+}
+
 const SmsMessaging: React.FC = () => {
   const { isLoading, messages, sendSms, getMessages, getAvailableNumbers } = useSmsMessaging();
   
   const [toNumber, setToNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
   const [messageBody, setMessageBody] = useState('');
-  const [availableNumbers, setAvailableNumbers] = useState<string[]>([]);
+  const [availableNumbers, setAvailableNumbers] = useState<TwilioNumber[]>([]);
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
@@ -50,9 +56,13 @@ const SmsMessaging: React.FC = () => {
       getAvailableNumbers(),
       getMessages(),
     ]);
-    setAvailableNumbers(numbers);
-    if (numbers.length > 0 && !fromNumber) {
-      setFromNumber(numbers[0]);
+    // Handle both old format (string[]) and new format (TwilioNumber[])
+    const normalizedNumbers: TwilioNumber[] = numbers.map((num: string | TwilioNumber) => 
+      typeof num === 'string' ? { number: num } : num
+    );
+    setAvailableNumbers(normalizedNumbers);
+    if (normalizedNumbers.length > 0 && !fromNumber) {
+      setFromNumber(normalizedNumbers[0].number);
     }
   };
 
@@ -163,10 +173,13 @@ const SmsMessaging: React.FC = () => {
                       </SelectTrigger>
                       <SelectContent>
                         {availableNumbers.map((num) => (
-                          <SelectItem key={num} value={num}>
+                          <SelectItem key={num.number} value={num.number}>
                             <div className="flex items-center gap-2">
                               <Phone className="h-4 w-4" />
-                              {formatPhoneNumber(num)}
+                              {formatPhoneNumber(num.number)}
+                              {num.friendly_name && (
+                                <span className="text-muted-foreground">({num.friendly_name})</span>
+                              )}
                             </div>
                           </SelectItem>
                         ))}
