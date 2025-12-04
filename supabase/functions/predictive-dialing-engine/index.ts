@@ -128,16 +128,27 @@ serve(async (req) => {
           cl.leads && ['new', 'contacted', 'qualified'].includes(cl.leads.status)
         ) || [];
 
-        const queueEntries = callableLeads.map((cl) => ({
-          campaign_id: campaignId,
-          lead_id: cl.leads.id,
-          phone_number: cl.leads.phone_number,
-          priority: 1,
-          scheduled_at: new Date().toISOString(),
-          status: 'pending',
-          attempts: 0,
-          max_attempts: campaign.max_attempts || 3,
-        }));
+        // Check which leads are already in queue
+        const { data: existingQueue } = await supabase
+          .from('dialing_queues')
+          .select('lead_id')
+          .eq('campaign_id', campaignId)
+          .in('status', ['pending', 'calling']);
+        
+        const existingLeadIds = new Set(existingQueue?.map(q => q.lead_id) || []);
+
+        const queueEntries = callableLeads
+          .filter((cl) => !existingLeadIds.has(cl.leads.id))
+          .map((cl) => ({
+            campaign_id: campaignId,
+            lead_id: cl.leads.id,
+            phone_number: cl.leads.phone_number,
+            priority: 1,
+            scheduled_at: new Date().toISOString(),
+            status: 'pending',
+            attempts: 0,
+            max_attempts: campaign.max_attempts || 3,
+          }));
 
         if (queueEntries.length > 0) {
           const { error: insertError } = await supabase

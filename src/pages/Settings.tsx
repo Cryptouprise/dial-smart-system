@@ -34,7 +34,29 @@ const Settings = () => {
 
   useEffect(() => {
     loadPhoneNumbers();
+    loadDialerSettings();
   }, []);
+
+  const loadDialerSettings = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('rotation_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (data) {
+        setAutoQuarantine(data.auto_remove_quarantined ?? true);
+        setDailyCallLimit(String(data.high_volume_threshold ?? 50));
+        setCooldownPeriod(String(Math.round((data.rotation_interval_hours ?? 720) / 24)));
+      }
+    } catch (error) {
+      console.error('Error loading dialer settings:', error);
+    }
+  };
 
   const loadPhoneNumbers = async () => {
     const { data } = await supabase
@@ -59,12 +81,33 @@ const Settings = () => {
     }
   };
 
-  const handleSaveSettings = () => {
-    // In a real app, you'd save these settings to the database
-    toast({
-      title: "Settings Saved",
-      description: "Your settings have been updated successfully.",
-    });
+  const handleSaveSettings = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: 'Please log in', variant: 'destructive' });
+        return;
+      }
+
+      // Save rotation settings
+      await supabase.from('rotation_settings').upsert({
+        user_id: user.id,
+        auto_remove_quarantined: autoQuarantine,
+        high_volume_threshold: parseInt(dailyCallLimit) || 50,
+        rotation_interval_hours: parseInt(cooldownPeriod) * 24 || 720, // Convert days to hours
+      }, { onConflict: 'user_id' });
+
+      toast({
+        title: "Settings Saved",
+        description: "Your dialer settings have been updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save settings",
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleSignOut = async () => {
