@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status';
   phoneNumberSid?: string;
   phoneNumber?: string;
 }
@@ -333,6 +333,167 @@ serve(async (req) => {
         imported,
         failed
       }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check A2P 10DLC registration status
+    if (action === 'check_a2p_status') {
+      console.log('🔍 Checking A2P 10DLC registration status...');
+      
+      const results: any = {
+        phone_numbers: [],
+        messaging_services: [],
+        brand_registrations: [],
+        campaigns: [],
+        summary: {
+          total_numbers: 0,
+          registered_numbers: 0,
+          pending_numbers: 0,
+          unregistered_numbers: 0,
+        }
+      };
+
+      // Fetch all phone numbers with their messaging service bindings
+      console.log('📞 Fetching phone numbers...');
+      const numbersResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (numbersResponse.ok) {
+        const numbersData = await numbersResponse.json();
+        results.phone_numbers = numbersData.incoming_phone_numbers?.map((num: any) => ({
+          phone_number: num.phone_number,
+          sid: num.sid,
+          friendly_name: num.friendly_name,
+          capabilities: num.capabilities,
+          status: num.status,
+          sms_url: num.sms_url,
+          voice_url: num.voice_url,
+        })) || [];
+        results.summary.total_numbers = results.phone_numbers.length;
+      }
+
+      // Fetch Messaging Services
+      console.log('📨 Fetching messaging services...');
+      const msResponse = await fetch(
+        `https://messaging.twilio.com/v1/Services?PageSize=50`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (msResponse.ok) {
+        const msData = await msResponse.json();
+        
+        for (const service of msData.services || []) {
+          // Get phone numbers associated with this messaging service
+          const msNumbersResponse = await fetch(
+            `https://messaging.twilio.com/v1/Services/${service.sid}/PhoneNumbers?PageSize=100`,
+            {
+              headers: {
+                'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+              }
+            }
+          );
+
+          let associatedNumbers: string[] = [];
+          if (msNumbersResponse.ok) {
+            const msNumbersData = await msNumbersResponse.json();
+            associatedNumbers = msNumbersData.phone_numbers?.map((n: any) => n.phone_number) || [];
+          }
+
+          results.messaging_services.push({
+            sid: service.sid,
+            friendly_name: service.friendly_name,
+            use_case: service.usecase,
+            status: service.status,
+            us_app_to_person_registered: service.us_app_to_person_registered,
+            associated_phone_numbers: associatedNumbers,
+          });
+
+          // Mark these numbers as registered
+          for (const phoneNum of associatedNumbers) {
+            const numIndex = results.phone_numbers.findIndex((n: any) => n.phone_number === phoneNum);
+            if (numIndex >= 0) {
+              results.phone_numbers[numIndex].a2p_registered = service.us_app_to_person_registered;
+              results.phone_numbers[numIndex].messaging_service_sid = service.sid;
+              results.phone_numbers[numIndex].messaging_service_name = service.friendly_name;
+            }
+          }
+        }
+      }
+
+      // Fetch Brand Registrations (A2P Trust Hub)
+      console.log('🏢 Fetching brand registrations...');
+      const brandResponse = await fetch(
+        `https://messaging.twilio.com/v1/a2p/BrandRegistrations?PageSize=50`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (brandResponse.ok) {
+        const brandData = await brandResponse.json();
+        results.brand_registrations = brandData.data?.map((brand: any) => ({
+          sid: brand.sid,
+          status: brand.status,
+          brand_type: brand.brand_type,
+          a2p_trust_bundle_sid: brand.a2p_trust_bundle_sid,
+          failure_reason: brand.failure_reason,
+          date_created: brand.date_created,
+          date_updated: brand.date_updated,
+        })) || [];
+      }
+
+      // Fetch Campaigns
+      console.log('📋 Fetching A2P campaigns...');
+      for (const service of results.messaging_services) {
+        const campaignsResponse = await fetch(
+          `https://messaging.twilio.com/v1/Services/${service.sid}/UsAppToPerson?PageSize=50`,
+          {
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+            }
+          }
+        );
+
+        if (campaignsResponse.ok) {
+          const campaignsData = await campaignsResponse.json();
+          const serviceCampaigns = campaignsData.us_app_to_person_usecases?.map((campaign: any) => ({
+            sid: campaign.sid,
+            messaging_service_sid: service.sid,
+            messaging_service_name: service.friendly_name,
+            brand_registration_sid: campaign.brand_registration_sid,
+            use_case: campaign.us_app_to_person_usecase,
+            description: campaign.description,
+            status: campaign.campaign_status,
+            date_created: campaign.date_created,
+          })) || [];
+          results.campaigns.push(...serviceCampaigns);
+        }
+      }
+
+      // Calculate summary
+      results.summary.registered_numbers = results.phone_numbers.filter((n: any) => n.a2p_registered === true).length;
+      results.summary.pending_numbers = results.phone_numbers.filter((n: any) => 
+        n.messaging_service_sid && n.a2p_registered !== true
+      ).length;
+      results.summary.unregistered_numbers = results.phone_numbers.filter((n: any) => 
+        !n.messaging_service_sid
+      ).length;
+
+      console.log('✅ A2P status check complete:', results.summary);
+      return new Response(JSON.stringify(results), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
