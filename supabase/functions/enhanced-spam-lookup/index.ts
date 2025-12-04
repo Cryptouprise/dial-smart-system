@@ -343,7 +343,6 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     const data = await response.json();
     
     // Analyze calls for StirVerstat (STIR/SHAKEN attestation)
-    // StirVerstat values: TN-Validation-Passed-A, TN-Validation-Passed-B, TN-Validation-Passed-C, TN-Validation-Failed, No-TN-Validation
     const callsWithAttestation = data.calls?.filter((call: any) => call.answered_by !== 'machine_start');
     
     if (!callsWithAttestation || callsWithAttestation.length === 0) {
@@ -359,12 +358,6 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     // Check the most recent attestation levels
     let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
     let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
-    
-    for (const call of callsWithAttestation.slice(0, 20)) {
-      // Note: StirVerstat is only available if you fetch individual call details
-      // We'd need to make additional API calls to get this data
-      // For now, we'll indicate that calls exist but detailed attestation requires call detail fetch
-    }
 
     return {
       level: bestAttestation,
@@ -550,192 +543,6 @@ function getRegistrationRecommendation(hasTrustProduct: boolean, approvedBrands:
   return `✅ Fully registered! You have ${verifiedTrustProducts} verified business profile(s) and ${approvedBrands} approved brand(s). STIR/SHAKEN attestation will be applied to your outbound calls.`;
 }
 
-async function checkNumberProfile(phoneNumber: string) {
-  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-
-  if (!twilioAccountSid || !twilioAuthToken) {
-    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
-
-  try {
-    // First get the phone number SID
-    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
-    const numbersResponse = await fetch(numbersUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-    const numbersData = await numbersResponse.json();
-    
-    if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
-      return new Response(JSON.stringify({ error: 'Phone number not found in Twilio account' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const phoneSid = numbersData.incoming_phone_numbers[0].sid;
-
-    // Check which Customer Profile this number is assigned to
-    const assignmentsUrl = `https://trusthub.twilio.com/v1/CustomerProfiles?ChannelEndpointSid=${phoneSid}`;
-    const assignmentsResponse = await fetch(assignmentsUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-    
-    const assignmentsData = await assignmentsResponse.json();
-    const currentProfile = assignmentsData.results?.[0] || null;
-
-    return new Response(JSON.stringify({
-      phoneNumber,
-      phoneSid,
-      currentProfile: currentProfile ? {
-        sid: currentProfile.sid,
-        friendlyName: currentProfile.friendly_name,
-        status: currentProfile.status,
-        isApproved: currentProfile.status === 'twilio-approved'
-      } : null,
-      hasProfile: !!currentProfile
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    console.error('Error checking number profile:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-async function listApprovedProfiles() {
-  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-
-  if (!twilioAccountSid || !twilioAuthToken) {
-    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
-
-  try {
-    const trustProductsUrl = `https://trusthub.twilio.com/v1/TrustProducts`;
-    const response = await fetch(trustProductsUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-
-    const data = await response.json();
-    const approvedProfiles = (data.trust_products || [])
-      .filter((tp: any) => tp.status === 'twilio-approved')
-      .map((tp: any) => ({
-        sid: tp.sid,
-        friendlyName: tp.friendly_name,
-        status: tp.status,
-        dateCreated: tp.date_created
-      }));
-
-    return new Response(JSON.stringify({
-      approvedProfiles,
-      count: approvedProfiles.length
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    console.error('Error listing approved profiles:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-async function transferNumberToProfile(phoneNumber: string, customerProfileSid: string) {
-  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-
-  if (!twilioAccountSid || !twilioAuthToken) {
-    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
-
-  try {
-    // Get phone number SID
-    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
-    const numbersResponse = await fetch(numbersUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-    const numbersData = await numbersResponse.json();
-    
-    if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
-      return new Response(JSON.stringify({ error: 'Phone number not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const phoneSid = numbersData.incoming_phone_numbers[0].sid;
-
-    // Create Channel Endpoint Assignment to associate number with approved profile
-    const assignmentUrl = `https://trusthub.twilio.com/v1/CustomerProfiles/${customerProfileSid}/ChannelEndpointAssignments`;
-    const assignmentResponse = await fetch(assignmentUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${base64Creds}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        'ChannelEndpointType': 'phone-number',
-        'ChannelEndpointSid': phoneSid
-      })
-    });
-
-    const assignmentData = await assignmentResponse.json();
-
-    if (!assignmentResponse.ok) {
-      throw new Error(assignmentData.message || 'Failed to assign number to profile');
-    }
-
-    console.log(`✅ Number ${phoneNumber} assigned to Customer Profile ${customerProfileSid}`);
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'Number successfully assigned to approved STIR/SHAKEN profile',
-      assignment: {
-        sid: assignmentData.sid,
-        profileSid: customerProfileSid,
-        phoneSid: phoneSid
-      }
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    console.error('Error transferring number to profile:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
-
 async function checkPhoneNumberProfile(phoneNumber: string) {
   const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -838,7 +645,7 @@ async function listApprovedTrustProducts() {
     });
 
     const data = await response.json();
-    const approvedProfiles = (data.results || [])
+    const approvedProfiles = (data.results || data.trust_products || [])
       .filter((tp: any) => tp.status === 'twilio-approved')
       .map((tp: any) => ({
         sid: tp.sid,
@@ -940,7 +747,6 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
 
 function getRecommendation(riskLevel: string, reasons: string[]) {
   const hasSTIRSHAKEN = reasons.some(r => r.includes('STIR/SHAKEN'));
-  const hasCarrier = reasons.some(r => r.includes('VoIP') || r.includes('carrier'));
   
   switch (riskLevel) {
     case 'critical':
