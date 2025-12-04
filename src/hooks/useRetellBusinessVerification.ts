@@ -43,6 +43,12 @@ interface BrandedCall {
   business_profile?: BusinessProfile;
 }
 
+// Helper to check if user is authenticated
+const checkAuth = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+};
+
 export const useRetellBusinessVerification = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -50,6 +56,9 @@ export const useRetellBusinessVerification = () => {
   const createBusinessProfile = async (profileData: Omit<BusinessProfile, 'id' | 'status' | 'submitted_at' | 'approved_at' | 'rejection_reason'>) => {
     setIsLoading(true);
     try {
+      const user = await checkAuth();
+      if (!user) throw new Error('Please log in to create a business profile');
+
       const { data, error } = await supabase.functions.invoke('retell-business-verification', {
         body: {
           action: 'create_profile',
@@ -80,6 +89,12 @@ export const useRetellBusinessVerification = () => {
   const listBusinessProfiles = async (): Promise<BusinessProfile[]> => {
     setIsLoading(true);
     try {
+      const user = await checkAuth();
+      if (!user) {
+        // Silently return empty array if not authenticated
+        return [];
+      }
+
       const { data, error } = await supabase.functions.invoke('retell-business-verification', {
         body: {
           action: 'list_profiles'
@@ -89,11 +104,8 @@ export const useRetellBusinessVerification = () => {
       if (error) throw error;
       return data || [];
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load business profiles",
-        variant: "destructive"
-      });
+      // Only show toast for actual errors, not auth issues
+      console.error('Error loading business profiles:', error);
       return [];
     } finally {
       setIsLoading(false);
@@ -171,6 +183,9 @@ export const useRetellBusinessVerification = () => {
   const listVerifications = async (): Promise<VerifiedNumber[]> => {
     setIsLoading(true);
     try {
+      const user = await checkAuth();
+      if (!user) return [];
+
       const { data, error } = await supabase.functions.invoke('retell-business-verification', {
         body: {
           action: 'list_verifications'
@@ -180,11 +195,7 @@ export const useRetellBusinessVerification = () => {
       if (error) throw error;
       return data || [];
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load verifications",
-        variant: "destructive"
-      });
+      console.error('Error loading verifications:', error);
       return [];
     } finally {
       setIsLoading(false);
@@ -194,6 +205,9 @@ export const useRetellBusinessVerification = () => {
   const listBrandedCalls = async (): Promise<BrandedCall[]> => {
     setIsLoading(true);
     try {
+      const user = await checkAuth();
+      if (!user) return [];
+
       const { data, error} = await supabase.functions.invoke('retell-business-verification', {
         body: {
           action: 'list_branded'
@@ -203,11 +217,7 @@ export const useRetellBusinessVerification = () => {
       if (error) throw error;
       return data || [];
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load branded calls",
-        variant: "destructive"
-      });
+      console.error('Error loading branded calls:', error);
       return [];
     } finally {
       setIsLoading(false);
