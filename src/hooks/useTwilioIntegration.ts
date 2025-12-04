@@ -139,11 +139,45 @@ export const useTwilioIntegration = () => {
     }
   };
 
+  const addNumberToCampaign = async (phoneNumber: string, messagingServiceSid: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { 
+          action: 'add_number_to_campaign',
+          phoneNumber,
+          messagingServiceSid
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast({
+        title: "Number Added to Campaign",
+        description: `${phoneNumber} is now registered for A2P messaging`,
+      });
+
+      return data;
+    } catch (error: any) {
+      console.error('Add to campaign error:', error);
+      toast({
+        title: "Failed to Add Number",
+        description: error.message || "Could not add number to campaign",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     listTwilioNumbers,
     importNumber,
     syncAllNumbers,
     checkA2PStatus,
+    addNumberToCampaign,
     isLoading
   };
 };
