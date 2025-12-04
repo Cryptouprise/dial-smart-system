@@ -80,7 +80,7 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
         .select('number')
         .eq('status', 'active')
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (phoneError || !phoneNumbers) {
         toast({
