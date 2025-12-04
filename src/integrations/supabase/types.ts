@@ -296,6 +296,78 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_reports: {
+        Row: {
+          answer_rate: number | null
+          appointments_set: number | null
+          avg_call_duration: number | null
+          callbacks_scheduled: number | null
+          connected_calls: number | null
+          created_at: string
+          dnc_added: number | null
+          failures: string[] | null
+          id: string
+          improvements: string[] | null
+          performance_score: number | null
+          raw_data: Json | null
+          recommendations: string[] | null
+          report_date: string
+          report_type: string
+          sms_received: number | null
+          sms_sent: number | null
+          summary: string | null
+          total_calls: number | null
+          user_id: string
+          wins: string[] | null
+        }
+        Insert: {
+          answer_rate?: number | null
+          appointments_set?: number | null
+          avg_call_duration?: number | null
+          callbacks_scheduled?: number | null
+          connected_calls?: number | null
+          created_at?: string
+          dnc_added?: number | null
+          failures?: string[] | null
+          id?: string
+          improvements?: string[] | null
+          performance_score?: number | null
+          raw_data?: Json | null
+          recommendations?: string[] | null
+          report_date?: string
+          report_type?: string
+          sms_received?: number | null
+          sms_sent?: number | null
+          summary?: string | null
+          total_calls?: number | null
+          user_id: string
+          wins?: string[] | null
+        }
+        Update: {
+          answer_rate?: number | null
+          appointments_set?: number | null
+          avg_call_duration?: number | null
+          callbacks_scheduled?: number | null
+          connected_calls?: number | null
+          created_at?: string
+          dnc_added?: number | null
+          failures?: string[] | null
+          id?: string
+          improvements?: string[] | null
+          performance_score?: number | null
+          raw_data?: Json | null
+          recommendations?: string[] | null
+          report_date?: string
+          report_type?: string
+          sms_received?: number | null
+          sms_sent?: number | null
+          summary?: string | null
+          total_calls?: number | null
+          user_id?: string
+          wins?: string[] | null
+        }
+        Relationships: []
+      }
       dialing_queues: {
         Row: {
           attempts: number

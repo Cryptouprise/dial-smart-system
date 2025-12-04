@@ -1,34 +1,105 @@
 project_id = "emonjusymdripmkvtttc"
 
-[functions.predictive-dialing-engine]
-verify_jwt = true
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
 
-[functions.call-dispatcher]
-verify_jwt = true
+[db]
+port = 54322
+major_version = 15
 
-[functions.twilio-integration]
-verify_jwt = true
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost"
 
-[functions.retell-agent-management]
-verify_jwt = true
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
 
-[functions.retell-phone-management]
-verify_jwt = true
+[functions.ai-assistant]
+verify_jwt = false
 
-[functions.retell-llm-management]
-verify_jwt = true
+[functions.generate-daily-report]
+verify_jwt = false
 
-[functions.outbound-calling]
-verify_jwt = true
+[functions.system-health-monitor]
+verify_jwt = false
+
+[functions.spam-detection]
+verify_jwt = false
+
+[functions.scheduled-spam-check]
+verify_jwt = false
 
 [functions.enhanced-spam-lookup]
-verify_jwt = true
+verify_jwt = false
 
-[functions.retell-business-verification]
-verify_jwt = true
+[functions.advanced-spam-detection]
+verify_jwt = false
+
+[functions.enhanced-rotation-manager]
+verify_jwt = false
+
+[functions.sms-messaging]
+verify_jwt = false
 
 [functions.twilio-sms-webhook]
 verify_jwt = false
 
-[functions.ai-assistant]
+[functions.ai-sms-processor]
+verify_jwt = false
+
+[functions.retell-agent-management]
+verify_jwt = false
+
+[functions.retell-llm-management]
+verify_jwt = false
+
+[functions.retell-phone-management]
+verify_jwt = false
+
+[functions.outbound-calling]
+verify_jwt = false
+
+[functions.call-dispatcher]
+verify_jwt = false
+
+[functions.predictive-dialing-engine]
+verify_jwt = false
+
+[functions.phone-number-purchasing]
+verify_jwt = false
+
+[functions.ghl-integration]
+verify_jwt = false
+
+[functions.twilio-integration]
+verify_jwt = false
+
+[functions.airtable-sync]
+verify_jwt = false
+
+[functions.call-tracking-webhook]
+verify_jwt = false
+
+[functions.provider-management]
+verify_jwt = false
+
+[functions.telnyx-webhook]
+verify_jwt = false
+
+[functions.pipeline-management]
+verify_jwt = false
+
+[functions.yellowstone-integration]
+verify_jwt = false
+
+[functions.analyze-call-transcript]
+verify_jwt = false
+
+[functions.retell-business-verification]
 verify_jwt = false
