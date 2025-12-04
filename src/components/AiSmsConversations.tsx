@@ -139,7 +139,7 @@ const AiSmsConversations: React.FC = () => {
     updateSettings,
   } = useAiSmsMessaging();
   
-  const { checkA2PStatus, addNumberToCampaign, isLoading: isLoadingA2P } = useTwilioIntegration();
+  const { checkA2PStatus, addNumberToCampaign, configureSmsWebhook, isLoading: isLoadingA2P } = useTwilioIntegration();
 
   const [selectedConversation, setSelectedConversation] = useState<SmsConversation | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -158,8 +158,18 @@ const AiSmsConversations: React.FC = () => {
   const [availableTwilioNumbers, setAvailableTwilioNumbers] = useState<Array<{number: string, friendly_name?: string}>>([]);
   const [selectedFromNumber, setSelectedFromNumber] = useState('');
   const [loadingNumbers, setLoadingNumbers] = useState(false);
+  const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  const handleConfigureWebhook = async () => {
+    setConfiguringWebhook(true);
+    try {
+      await configureSmsWebhook();
+    } finally {
+      setConfiguringWebhook(false);
+    }
+  };
 
   const handleCheckA2PStatus = async () => {
     setShowA2PStatus(true);
@@ -632,6 +642,21 @@ const AiSmsConversations: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2">
+              {/* Configure Webhook Button */}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleConfigureWebhook}
+                disabled={configuringWebhook}
+              >
+                {configuringWebhook ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 mr-2" />
+                )}
+                {configuringWebhook ? 'Configuring...' : 'Setup Inbound SMS'}
+              </Button>
+              
               {/* A2P Status Dialog */}
               <Dialog open={showA2PStatus} onOpenChange={setShowA2PStatus}>
                 <DialogTrigger asChild>

@@ -172,12 +172,42 @@ export const useTwilioIntegration = () => {
     }
   };
 
+  const configureSmsWebhook = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'configure_sms_webhook' }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast({
+        title: "SMS Webhooks Configured",
+        description: `Configured ${data.configured_count} numbers to receive inbound SMS. ${data.failed_count > 0 ? `${data.failed_count} failed.` : ''}`,
+      });
+
+      return data;
+    } catch (error: any) {
+      console.error('Configure webhook error:', error);
+      toast({
+        title: "Configuration Failed",
+        description: error.message || "Could not configure SMS webhooks",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     listTwilioNumbers,
     importNumber,
     syncAllNumbers,
     checkA2PStatus,
     addNumberToCampaign,
+    configureSmsWebhook,
     isLoading
   };
 };
