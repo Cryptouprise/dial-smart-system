@@ -21,6 +21,7 @@ import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 import SmsMessaging from '@/components/SmsMessaging';
+import TabErrorBoundary from '@/components/TabErrorBoundary';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -174,210 +175,232 @@ const Dashboard = () => {
           </div>
 
           <TabsContent value="overview" className="space-y-3 sm:space-y-4 lg:space-y-6">
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
-              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-                <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
-                    Total Numbers
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {numbers.length}
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {numbers.filter(n => n.status === 'active').length} active
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-                <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
-                    Daily Calls
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {numbers.reduce((sum, n) => sum + n.dailyCalls, 0)}
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Avg: {Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-                <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
-                    Quarantined
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {numbers.filter(n => n.status === 'quarantined').length}
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)}% of total
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-                <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
-                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
-                    Area Codes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {new Set(numbers.map(n => {
-                      const cleaned = n.phoneNumber?.replace(/\D/g, '') || '';
-                      return cleaned.length >= 4 ? cleaned.slice(cleaned.startsWith('1') ? 1 : 0, cleaned.startsWith('1') ? 4 : 3) : '';
-                    }).filter(Boolean)).size}
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Geographic spread
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Number Management Component */}
-            <PhoneNumberPurchasing />
-
-            {/* Numbers Table */}
-            <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
-              <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
-                  <CardTitle className="text-slate-900 dark:text-slate-100 text-sm sm:text-base lg:text-lg">
-                    Phone Numbers ({numbers.length})
-                  </CardTitle>
-                  <Button 
-                    onClick={refreshNumbers}
-                    variant="outline"
-                    size="sm"
-                    className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs sm:text-sm h-7 sm:h-8"
-                  >
-                    <RotateCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    Refresh
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="px-3 sm:px-6">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[600px]">
-                    <div className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
-                      <div>Phone Number</div>
-                      <div>Status</div>
-                      <div>Daily Calls</div>
-                      <div>Spam Score</div>
-                      <div>Added</div>
-                      <div>Actions</div>
+            <TabErrorBoundary tabName="Overview">
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
+                <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
+                  <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
+                    <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Total Numbers
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
+                    <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {numbers.length}
                     </div>
-                    <div className="space-y-1 sm:space-y-2 mt-2 sm:mt-3">
-                      {numbers.map((number) => (
-                        <div key={number.id} className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 items-center py-1.5 sm:py-2 px-1 sm:px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <div className="font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
-                            {number.phoneNumber}
-                          </div>
-                          <div>
-                            <Badge 
-                              variant={number.status === 'active' ? 'default' : 
-                                     number.status === 'quarantined' ? 'destructive' : 'secondary'}
-                              className="text-xs px-1 py-0.5"
-                            >
-                              {number.status}
-                            </Badge>
-                          </div>
-                          <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
-                            {number.dailyCalls}
-                          </div>
-                          <div>
-                            <Badge 
-                              variant={number.spamScore > 70 ? 'destructive' : 
-                                     number.spamScore > 40 ? 'secondary' : 'default'}
-                              className="text-xs px-1 py-0.5"
-                            >
-                              {number.spamScore}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {number.dateAdded}
-                          </div>
-                          <div className="flex flex-col sm:flex-row gap-1">
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => handleTestCall(number.phoneNumber)}
-                              className="text-xs border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 h-6 sm:h-7 px-1 sm:px-2"
-                            >
-                              Test
-                            </Button>
-                            {number.status === 'quarantined' && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {numbers.filter(n => n.status === 'active').length} active
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
+                  <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
+                    <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Daily Calls
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
+                    <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {numbers.reduce((sum, n) => sum + n.dailyCalls, 0)}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Avg: {Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
+                  <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
+                    <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Quarantined
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
+                    <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {numbers.filter(n => n.status === 'quarantined').length}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)}% of total
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-200 dark:border-slate-700">
+                  <CardHeader className="pb-1 sm:pb-2 px-2 sm:px-4 pt-2 sm:pt-4">
+                    <CardTitle className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Area Codes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
+                    <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {new Set(numbers.map(n => {
+                        const cleaned = n.phoneNumber?.replace(/\D/g, '') || '';
+                        return cleaned.length >= 4 ? cleaned.slice(cleaned.startsWith('1') ? 1 : 0, cleaned.startsWith('1') ? 4 : 3) : '';
+                      }).filter(Boolean)).size}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Geographic spread
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Number Management Component */}
+              <PhoneNumberPurchasing />
+
+              {/* Numbers Table */}
+              <Card className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-slate-200 dark:border-slate-700">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                    <CardTitle className="text-slate-900 dark:text-slate-100 text-sm sm:text-base lg:text-lg">
+                      Phone Numbers ({numbers.length})
+                    </CardTitle>
+                    <Button 
+                      onClick={refreshNumbers}
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs sm:text-sm h-7 sm:h-8"
+                    >
+                      <RotateCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      Refresh
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6">
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[600px]">
+                      <div className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
+                        <div>Phone Number</div>
+                        <div>Status</div>
+                        <div>Daily Calls</div>
+                        <div>Spam Score</div>
+                        <div>Added</div>
+                        <div>Actions</div>
+                      </div>
+                      <div className="space-y-1 sm:space-y-2 mt-2 sm:mt-3">
+                        {numbers.map((number) => (
+                          <div key={number.id} className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 items-center py-1.5 sm:py-2 px-1 sm:px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                            <div className="font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                              {number.phoneNumber}
+                            </div>
+                            <div>
+                              <Badge 
+                                variant={number.status === 'active' ? 'default' : 
+                                       number.status === 'quarantined' ? 'destructive' : 'secondary'}
+                                className="text-xs px-1 py-0.5"
+                              >
+                                {number.status}
+                              </Badge>
+                            </div>
+                            <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                              {number.dailyCalls}
+                            </div>
+                            <div>
+                              <Badge 
+                                variant={number.spamScore > 70 ? 'destructive' : 
+                                       number.spamScore > 40 ? 'secondary' : 'default'}
+                                className="text-xs px-1 py-0.5"
+                              >
+                                {number.spamScore}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              {number.dateAdded}
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-1">
                               <Button 
                                 size="sm" 
                                 variant="outline"
-                                onClick={() => handleReleaseFromQuarantine(number.phoneNumber)}
-                                className="text-xs border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 h-6 sm:h-7 px-1 sm:px-2"
+                                onClick={() => handleTestCall(number.phoneNumber)}
+                                className="text-xs border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 h-6 sm:h-7 px-1 sm:px-2"
                               >
-                                Release
+                                Test
                               </Button>
-                            )}
+                              {number.status === 'quarantined' && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleReleaseFromQuarantine(number.phoneNumber)}
+                                  className="text-xs border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 h-6 sm:h-7 px-1 sm:px-2"
+                                >
+                                  Release
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-                {numbers.length === 0 && (
-                  <div className="text-center py-6 sm:py-8 text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
-                    No phone numbers found. Purchase some numbers to get started.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  {numbers.length === 0 && (
+                    <div className="text-center py-6 sm:py-8 text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
+                      No phone numbers found. Purchase some numbers to get started.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="pipeline" className="space-y-6">
-            <PipelineKanban />
+            <TabErrorBoundary tabName="Pipeline">
+              <PipelineKanban />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="predictive">
-            <PredictiveDialingDashboard />
+            <TabErrorBoundary tabName="Predictive Dialing">
+              <PredictiveDialingDashboard />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="retell">
-            <RetellAIManager />
+            <TabErrorBoundary tabName="Retell AI">
+              <RetellAIManager />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="gohighlevel">
-            <GoHighLevelManager />
+            <TabErrorBoundary tabName="Go High Level">
+              <GoHighLevelManager />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="analytics">
-            <CallAnalytics numbers={numbers} />
+            <TabErrorBoundary tabName="Analytics">
+              <CallAnalytics numbers={numbers} />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="ai-engine">
-            <AIDecisionEngine numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            <TabErrorBoundary tabName="AI Engine">
+              <AIDecisionEngine numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="yellowstone">
-            <YellowstoneManager numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            <TabErrorBoundary tabName="Yellowstone">
+              <YellowstoneManager numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="rotation">
-            <NumberRotationManager numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            <TabErrorBoundary tabName="Rotation">
+              <NumberRotationManager numbers={numbers} onRefreshNumbers={refreshNumbers} />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="spam">
-            <SpamDetectionManager />
+            <TabErrorBoundary tabName="Spam Detection">
+              <SpamDetectionManager />
+            </TabErrorBoundary>
           </TabsContent>
 
           <TabsContent value="sms">
-            <SmsMessaging />
+            <TabErrorBoundary tabName="SMS">
+              <SmsMessaging />
+            </TabErrorBoundary>
           </TabsContent>
         </Tabs>
 
