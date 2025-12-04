@@ -26,11 +26,12 @@ interface Message {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'How do I make a call?', message: 'How do I make a call using the system?' },
-  { label: 'Setup Retell AI', message: 'Walk me through setting up Retell AI from scratch' },
-  { label: 'Send SMS', message: 'How do I send an SMS message?' },
-  { label: 'Run Health Check', message: 'How do I check if all my integrations are working?' },
-  { label: 'Fix spam issues', message: 'Some of my numbers are flagged as spam. What should I do?' },
+  { label: '📊 Today\'s Stats', message: 'How many calls were made today? Give me a full breakdown of outcomes.' },
+  { label: '📅 Appointments', message: 'How many appointments were booked? Rate each one on a scale of 1-10 and explain why.' },
+  { label: '📈 Answer Rate', message: 'What is our current answer rate and how does it compare to this week?' },
+  { label: '📱 SMS Analytics', message: 'How many SMS messages sent vs received? What\'s our response rate?' },
+  { label: '🔥 Top Leads', message: 'Show me our best leads based on engagement and call quality.' },
+  { label: '⚡ Campaign Performance', message: 'How are our campaigns performing? Which one has the best results?' },
 ];
 
 export const AIAssistantChat: React.FC = () => {
