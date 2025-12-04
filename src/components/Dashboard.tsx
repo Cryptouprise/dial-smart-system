@@ -232,7 +232,10 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent className="pt-0 px-2 sm:px-4 pb-2 sm:pb-4">
                   <div className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {new Set(numbers.map(n => n.phoneNumber.slice(2, 5))).size}
+                    {new Set(numbers.map(n => {
+                      const cleaned = n.phoneNumber?.replace(/\D/g, '') || '';
+                      return cleaned.length >= 4 ? cleaned.slice(cleaned.startsWith('1') ? 1 : 0, cleaned.startsWith('1') ? 4 : 3) : '';
+                    }).filter(Boolean)).size}
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     Geographic spread
