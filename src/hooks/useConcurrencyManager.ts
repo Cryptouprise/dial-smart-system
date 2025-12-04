@@ -61,9 +61,9 @@ export const useConcurrencyManager = () => {
         .from('system_settings')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
 
       return {
         maxConcurrentCalls: data?.max_concurrent_calls || 10,

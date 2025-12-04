@@ -40,9 +40,9 @@ export const useAdvancedDialerFeatures = () => {
         .from('advanced_dialer_settings')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
 
       if (data) {
         setSettings({
@@ -112,7 +112,7 @@ export const useAdvancedDialerFeatures = () => {
         .select('number')
         .eq('status', 'active')
         .limit(1)
-        .single();
+        .maybeSingle();
       
       return data?.number || null;
     }
@@ -144,7 +144,7 @@ export const useAdvancedDialerFeatures = () => {
           break;
       }
 
-      const { data, error } = await query.limit(1).single();
+      const { data, error } = await query.limit(1).maybeSingle();
 
       if (error || !data) {
         // Fallback to any available number
@@ -153,7 +153,7 @@ export const useAdvancedDialerFeatures = () => {
           .select('number')
           .eq('status', 'active')
           .limit(1)
-          .single();
+          .maybeSingle();
         
         return fallback?.number || null;
       }
@@ -216,9 +216,9 @@ export const useAdvancedDialerFeatures = () => {
         .from('dnc_list')
         .select('id')
         .eq('phone_number', phoneNumber)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
 
       // If found in DNC list, return false (call not allowed)
       return !data;
