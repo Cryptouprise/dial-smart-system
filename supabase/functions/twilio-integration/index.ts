@@ -120,25 +120,81 @@ serve(async (req) => {
         body: JSON.stringify(retellPayload)
       });
 
+      let retellNumber: any = null;
+      let alreadyExistsInRetell = false;
+
       if (!retellResponse.ok) {
         const errorText = await retellResponse.text();
-        console.error('❌ Retell import failed:', retellResponse.status, errorText);
+        console.error('❌ Retell import response:', retellResponse.status, errorText);
+        
+        // Check if the error is "Phone number already exists"
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.message?.toLowerCase().includes('already exists')) {
+            console.log('ℹ️ Number already exists in Retell AI, will check local database');
+            alreadyExistsInRetell = true;
+            
+            // Try to get the existing number from Retell
+            const getResponse = await fetch(`https://api.retellai.com/get-phone-number/${encodeURIComponent(phoneNumber)}`, {
+              headers: {
+                'Authorization': `Bearer ${retellApiKey}`,
+              }
+            });
+            
+            if (getResponse.ok) {
+              retellNumber = await getResponse.json();
+              console.log('✅ Found existing Retell number:', retellNumber.phone_number_id);
+            }
+          } else {
+            // Other error - return it
+            return new Response(JSON.stringify({ 
+              error: 'Failed to import to Retell AI', 
+              details: errorJson.message || errorText,
+              status: retellResponse.status 
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        } catch {
+          return new Response(JSON.stringify({ 
+            error: 'Failed to import to Retell AI', 
+            details: errorText,
+            status: retellResponse.status 
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      } else {
+        retellNumber = await retellResponse.json();
+        console.log('✅ Retell AI import successful:', retellNumber);
+      }
+
+      // Check if number already exists in our database
+      const { data: existingNumber } = await supabaseClient
+        .from('phone_numbers')
+        .select('*')
+        .eq('number', phoneNumber)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingNumber) {
+        console.log('ℹ️ Number already exists in database:', existingNumber.id);
         return new Response(JSON.stringify({ 
-          error: 'Failed to import to Retell AI', 
-          details: errorText,
-          status: retellResponse.status 
+          success: true, 
+          message: 'Number already imported',
+          number: existingNumber,
+          retell_data: retellNumber,
+          already_existed: true
         }), {
-          status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      const retellNumber = await retellResponse.json();
-      console.log('✅ Retell AI import successful:', retellNumber);
-
       // Add to our database
       const areaCode = phoneNumber.replace(/\D/g, '').slice(1, 4);
-      console.log('💾 Saving to database:', { phoneNumber, areaCode, retell_phone_id: retellNumber.phone_number_id });
+      console.log('💾 Saving to database:', { phoneNumber, areaCode, retell_phone_id: retellNumber?.phone_number_id });
       
       const { data: dbNumber, error: dbError } = await supabaseClient
         .from('phone_numbers')
@@ -148,7 +204,7 @@ serve(async (req) => {
           area_code: areaCode,
           status: 'active',
           daily_calls: 0,
-          retell_phone_id: retellNumber.phone_number_id
+          retell_phone_id: retellNumber?.phone_number_id || null
         })
         .select()
         .single();
@@ -159,7 +215,7 @@ serve(async (req) => {
           error: 'Failed to save number to database', 
           details: dbError.message 
         }), {
-          status: 500,
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -168,7 +224,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ 
         success: true, 
         number: dbNumber,
-        retell_data: retellNumber 
+        retell_data: retellNumber,
+        already_existed_in_retell: alreadyExistsInRetell
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
