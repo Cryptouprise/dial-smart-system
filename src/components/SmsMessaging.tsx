@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table';
 import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSmsMessaging, type SmsMessage } from '@/hooks/useSmsMessaging';
+import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
 interface TwilioNumber {
@@ -40,6 +41,7 @@ interface TwilioNumber {
 
 const SmsMessaging: React.FC = () => {
   const { isLoading, messages, sendSms, getMessages, getAvailableNumbers } = useSmsMessaging();
+  const { toast } = useToast();
   
   const [toNumber, setToNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -71,19 +73,35 @@ const SmsMessaging: React.FC = () => {
       return;
     }
 
-    setIsSending(true);
-    const success = await sendSms({
-      to: toNumber,
-      from: fromNumber,
-      body: messageBody.trim(),
-    });
-
-    if (success) {
-      setMessageBody('');
-      setToNumber('');
-      await getMessages();
+    // Validate phone number format
+    const cleanToNumber = toNumber.replace(/[^\d+]/g, '');
+    if (!cleanToNumber.startsWith('+') && cleanToNumber.length < 10) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: 'Please enter a valid phone number with country code (e.g., +1234567890)',
+        variant: 'destructive',
+      });
+      return;
     }
-    setIsSending(false);
+
+    setIsSending(true);
+    try {
+      const success = await sendSms({
+        to: toNumber,
+        from: fromNumber,
+        body: messageBody.trim(),
+      });
+
+      if (success) {
+        setMessageBody('');
+        setToNumber('');
+        await getMessages();
+      }
+    } catch (error) {
+      console.error('Error sending SMS:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const getStatusBadge = (status: SmsMessage['status']) => {

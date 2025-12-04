@@ -158,15 +158,15 @@ export const AIAssistantChat: React.FC = () => {
       if (autoSpeak && voiceEnabled) {
         speak(responseText);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('AI Assistant error:', error);
       
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: error.message?.includes('429') 
+        content: error instanceof Error && error.message.includes('429') 
           ? 'I\'m getting too many requests right now. Please wait a moment and try again.'
-          : error.message?.includes('402')
+          : error instanceof Error && error.message.includes('402')
           ? 'AI credits are depleted. Please add credits to continue using the assistant.'
           : 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date(),
@@ -176,7 +176,7 @@ export const AIAssistantChat: React.FC = () => {
       
       toast({
         title: 'Assistant Error',
-        description: error.message || 'Failed to get response',
+        description: error instanceof Error ? error.message : 'Failed to get response',
         variant: 'destructive',
       });
     } finally {

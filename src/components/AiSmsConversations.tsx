@@ -147,7 +147,40 @@ const AiSmsConversations: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showA2PStatus, setShowA2PStatus] = useState(false);
-  const [a2pStatus, setA2PStatus] = useState<any>(null);
+  const [a2pStatus, setA2PStatus] = useState<{
+    phone_numbers?: Array<{
+      sid: string;
+      phone_number: string;
+      friendly_name?: string;
+      a2p_registered?: boolean;
+      messaging_service_sid?: string;
+      messaging_service_name?: string;
+    }>;
+    messaging_services?: Array<{
+      sid: string;
+      friendly_name: string;
+      use_case?: string;
+      us_app_to_person_registered?: boolean;
+      associated_phone_numbers?: string[];
+    }>;
+    brand_registrations?: Array<{
+      sid: string;
+      brand_type: string;
+      status: string;
+    }>;
+    campaigns?: Array<{
+      sid: string;
+      use_case: string;
+      status: string;
+      messaging_service_name?: string;
+    }>;
+    summary?: {
+      total_numbers: number;
+      registered_numbers: number;
+      pending_numbers: number;
+      unregistered_numbers: number;
+    };
+  } | null>(null);
   const [a2pTab, setA2pTab] = useState('overview');
   const [selectedCampaignSid, setSelectedCampaignSid] = useState('');
   const [numberToAddToCampaign, setNumberToAddToCampaign] = useState('');
@@ -250,7 +283,11 @@ const AiSmsConversations: React.FC = () => {
         async (payload) => {
           try {
             console.log('[AiSmsConversations] New message received:', payload);
-            const newMessage = payload.new as any;
+            const newMessage = payload.new as {
+              conversation_id?: string;
+              direction?: string;
+              is_ai_generated?: boolean;
+            };
             
             // Reload conversations to update list
             await loadConversations();
@@ -314,7 +351,7 @@ const AiSmsConversations: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations]);
+  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations, toast]);
 
   const handleSelectConversation = (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
@@ -948,7 +985,7 @@ COMMON OBJECTIONS:
                                 Phone Numbers
                               </h4>
                               <div className="space-y-2">
-                                {a2pStatus.phone_numbers?.map((num: any) => (
+                                {a2pStatus.phone_numbers?.map((num) => (
                                   <div 
                                     key={num.sid} 
                                     className="flex items-center justify-between p-3 rounded-lg border"
@@ -995,7 +1032,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">Messaging Services (Campaigns)</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.messaging_services.map((service: any) => (
+                                  {a2pStatus.messaging_services.map((service) => (
                                     <div key={service.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-start">
                                         <div>
@@ -1022,7 +1059,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">Brand Registrations</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.brand_registrations.map((brand: any) => (
+                                  {a2pStatus.brand_registrations.map((brand) => (
                                     <div key={brand.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-center">
                                         <span className="font-medium">{brand.brand_type}</span>
@@ -1041,7 +1078,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">A2P Campaigns</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.campaigns.map((campaign: any) => (
+                                  {a2pStatus.campaigns.map((campaign) => (
                                     <div key={campaign.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-center">
                                         <div>
@@ -1081,8 +1118,8 @@ COMMON OBJECTIONS:
                                 </SelectTrigger>
                                 <SelectContent>
                                   {a2pStatus.phone_numbers
-                                    ?.filter((num: any) => !num.messaging_service_sid)
-                                    .map((num: any) => (
+                                    ?.filter((num) => !num.messaging_service_sid)
+                                    .map((num) => (
                                       <SelectItem key={num.sid} value={num.phone_number}>
                                         <div className="flex items-center gap-2">
                                           <ShieldAlert className="h-4 w-4 text-red-500" />
@@ -1093,7 +1130,7 @@ COMMON OBJECTIONS:
                                         </div>
                                       </SelectItem>
                                     ))}
-                                  {a2pStatus.phone_numbers?.filter((num: any) => !num.messaging_service_sid).length === 0 && (
+                                  {a2pStatus.phone_numbers?.filter((num) => !num.messaging_service_sid).length === 0 && (
                                     <SelectItem value="" disabled>
                                       All numbers are already registered
                                     </SelectItem>
@@ -1109,7 +1146,7 @@ COMMON OBJECTIONS:
                                   <SelectValue placeholder="Choose a messaging service..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {a2pStatus.messaging_services?.map((service: any) => (
+                                  {a2pStatus.messaging_services?.map((service) => (
                                     <SelectItem key={service.sid} value={service.sid}>
                                       <div className="flex items-center gap-2">
                                         {service.us_app_to_person_registered ? (
