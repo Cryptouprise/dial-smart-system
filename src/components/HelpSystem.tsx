@@ -801,8 +801,237 @@ const HelpSystem = () => {
           ]
         }
       ]
+    },
+    'campaign-automation': {
+      title: 'Campaign Automation',
+      icon: Zap,
+      articles: [
+        {
+          title: 'Automation Rules Overview',
+          content: 'Create intelligent automation rules to manage your calling campaigns automatically.',
+          features: [
+            'Schedule-based rules: Define when calls should be made (days, hours)',
+            'Retry logic rules: Set max calls per day, no-answer thresholds',
+            'Time window rules: Morning only, afternoon only, evening only',
+            'Conditional rules: Based on lead status, call outcomes, or day of week',
+            'Visual timeline: See when rules are active across the week',
+            'Priority system: Higher priority rules execute first'
+          ],
+          steps: [
+            'Navigate to Dashboard > Automation tab',
+            'Click "Create Rule" to add a new automation rule',
+            'Give your rule a descriptive name (e.g., "Weekday Morning Calls")',
+            'Select rule type: Schedule, Retry Logic, Time Window, or Conditional',
+            'Choose which days of the week the rule should be active',
+            'Set the time window (start and end time)',
+            'Configure max calls per day and retry thresholds',
+            'Optionally apply to a specific campaign or all campaigns',
+            'Enable the rule and watch it work on the timeline'
+          ],
+          ruleTypes: [
+            'Schedule: Basic time-based scheduling for campaigns',
+            'Retry Logic: Control how many times leads are called',
+            'Time Window: Restrict calling to specific hours',
+            'Conditional: Advanced rules based on multiple factors'
+          ]
+        },
+        {
+          title: 'Timeline View',
+          content: 'Visual representation of when automation rules are active.',
+          features: [
+            'Weekly grid showing all 7 days and 24 hours',
+            'Color-coded rules for easy identification',
+            'Current time indicator shows real-time position',
+            'Hover over cells to see which rules are active',
+            'Multiple overlapping rules shown in same cell',
+            'Legend identifies each rule by color'
+          ],
+          tips: [
+            'Check for gaps in coverage where no rules are active',
+            'Avoid overlapping rules that might conflict',
+            'Use different time windows for different lead types',
+            'Weekend rules often need different schedules'
+          ]
+        },
+        {
+          title: 'Background Scheduler',
+          content: 'The automation engine processes rules automatically in the background.',
+          howItWorks: [
+            'Scheduler runs periodically to check active rules',
+            'Evaluates which rules apply based on current time and day',
+            'Selects leads that match rule conditions',
+            'Queues calls in the dialing queue for execution',
+            'Respects max calls per day limits per lead',
+            'Tracks call attempts and no-answer counts'
+          ],
+          conditions: [
+            'no_answer_count: Skip leads who haven\'t answered X times',
+            'days_since_last_call: Wait X days before calling again',
+            'day_of_week: Only call on specific days',
+            'max_calls_per_day: Limit total calls to each lead'
+          ]
+        }
+      ]
+    },
+    'ai-assistant': {
+      title: 'AI Assistant',
+      icon: Brain,
+      articles: [
+        {
+          title: 'AI Assistant Capabilities',
+          content: 'Your AI assistant can control nearly every aspect of the Smart Dialer platform.',
+          capabilities: [
+            'Toggle any system setting on or off by asking',
+            'Update numeric values like call limits, cooldown periods',
+            'Create, modify, and delete automation rules',
+            'Import phone numbers and manage quarantine',
+            'Create and update campaigns',
+            'Update lead statuses and manage pipeline',
+            'Generate daily performance reports',
+            'Send SMS messages to any number',
+            'Access real-time analytics and metrics'
+          ],
+          exampleCommands: [
+            '"Turn on AMD" - Enables Answering Machine Detection',
+            '"Set AMD sensitivity to high" - Changes sensitivity level',
+            '"Turn off auto quarantine" - Disables automatic quarantine',
+            '"Create an automation rule for weekday mornings" - Creates rule',
+            '"Import phone number +15551234567" - Adds number to pool',
+            '"Generate daily report" - Creates performance report',
+            '"Send SMS to +15559876543 saying Hello" - Sends message',
+            '"Set AI personality to casual" - Changes SMS AI tone',
+            '"Update calls per minute to 10" - Adjusts dialing speed'
+          ]
+        },
+        {
+          title: 'Available Settings',
+          content: 'Complete list of settings the AI assistant can control.',
+          toggleSettings: [
+            'enable_amd: Answering Machine Detection',
+            'enable_local_presence: Match caller ID to lead area code',
+            'enable_timezone_compliance: Respect lead timezones',
+            'enable_dnc_check: Do Not Call list checking',
+            'ai_sms_enabled: AI-powered SMS responses',
+            'auto_response_enabled: Automatic SMS replies',
+            'enable_image_analysis: Analyze MMS images',
+            'prevent_double_texting: Avoid duplicate messages',
+            'number_rotation_enabled: Rotate caller IDs',
+            'auto_quarantine: Auto-quarantine spam numbers',
+            'adaptive_pacing: Dynamic dialing speed'
+          ],
+          valueSettings: [
+            'amd_sensitivity: low, medium, or high',
+            'local_presence_strategy: match_area_code, match_state, random',
+            'ai_personality: professional, casual, friendly, etc.',
+            'daily_call_limit: Maximum calls per agent per day',
+            'max_concurrent_calls: Simultaneous call limit',
+            'calls_per_minute: Dialing rate',
+            'cooldown_period: Hours between number rotations',
+            'context_window_size: SMS history length'
+          ]
+        },
+        {
+          title: 'Voice Features',
+          content: 'Talk to your AI assistant using voice commands.',
+          features: [
+            'Voice input: Click the microphone to speak commands',
+            'Text-to-speech: AI responses can be read aloud',
+            'Multiple voices: Choose from 8 premium ElevenLabs voices',
+            'Auto-speak mode: Automatically read all AI responses',
+            'Works in any browser with speech recognition support'
+          ],
+          voiceOptions: [
+            'Sarah (Female)', 'George (Male)', 'Aria (Female)', 'Roger (Male)',
+            'Laura (Female)', 'Charlie (Male)', 'Charlotte (Female)', 'Daniel (Male)'
+          ]
+        }
+      ]
+    },
+    'sms-messaging': {
+      title: 'SMS Messaging',
+      icon: Globe,
+      articles: [
+        {
+          title: 'AI-Powered SMS',
+          content: 'Send and receive SMS with intelligent AI assistance.',
+          features: [
+            'Send SMS to any phone number',
+            'AI-generated responses based on context',
+            'Conversation history tracking',
+            'Image analysis for MMS messages',
+            'Double-text prevention',
+            'Number rotation for outbound messages',
+            'Business hours restrictions'
+          ],
+          configuration: [
+            'ai_personality: Set the AI\'s communication style',
+            'custom_instructions: Add specific instructions for AI',
+            'knowledge_base: Provide AI with business-specific knowledge',
+            'context_window_size: How many previous messages AI considers',
+            'prevent_double_texting: Avoid sending duplicate messages',
+            'auto_response_enabled: Auto-reply to inbound messages'
+          ]
+        },
+        {
+          title: 'Conversation Management',
+          content: 'Manage SMS conversations with leads and contacts.',
+          features: [
+            'View all conversations in one dashboard',
+            'See message history with timestamps',
+            'Track read and delivered status',
+            'AI-generated message suggestions',
+            'Lead context integration',
+            'Call history reference in conversations'
+          ]
+        }
+      ]
+    },
+    'daily-reports': {
+      title: 'Daily Reports',
+      icon: FileText,
+      articles: [
+        {
+          title: 'Report Generation',
+          content: 'Generate comprehensive daily performance reports.',
+          metrics: [
+            'Total Calls Made: All outbound calls for the day',
+            'Connected Calls: Calls that reached a live person',
+            'Answer Rate: Percentage of answered calls',
+            'Appointments Set: Successful appointment bookings',
+            'Average Call Duration: Mean talk time',
+            'SMS Sent/Received: Message volume',
+            'Callbacks Scheduled: Follow-up calls booked',
+            'DNC Numbers Added: Do Not Call additions'
+          ],
+          aiInsights: [
+            'Daily Wins: Highlights of successful activities',
+            'Areas for Improvement: Where to focus efforts',
+            'Failures & Issues: Problems encountered',
+            'AI Recommendations: Actionable suggestions'
+          ]
+        },
+        {
+          title: 'Report Configuration',
+          content: 'Customize what appears in your daily reports.',
+          steps: [
+            'Go to Settings > AI Assistant Settings',
+            'Find "Daily Report Configuration" section',
+            'Select which metrics to include in reports',
+            'Add custom instructions for AI-generated insights',
+            'Save settings to apply to future reports'
+          ],
+          customization: [
+            'Choose specific metrics to track',
+            'Add custom analysis instructions',
+            'Focus on conversion metrics or volume',
+            'Compare to previous periods',
+            'Include top performing agents or campaigns'
+          ]
+        }
+      ]
     }
   };
+
 
   const filteredSections = Object.entries(helpSections).filter(([key, section]) => {
     if (!searchTerm) return true;
