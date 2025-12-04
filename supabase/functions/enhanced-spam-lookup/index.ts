@@ -857,6 +857,27 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
         });
       }
       
+      // Handle incomplete Trust Hub setup error
+      if (errorMessage.includes('required supporting Trust products') || errorMessage.includes('Customer profile')) {
+        return new Response(JSON.stringify({ 
+          error: 'Your SHAKEN Business Profile is not fully configured. In Twilio Trust Hub, ensure all required supporting entities (Customer Profile, Business Info, Authorized Representative) are linked to your SHAKEN Business Profile.',
+          details: errorMessage,
+          incompleteSetup: true,
+          helpUrl: 'https://www.twilio.com/docs/trust-hub/trusthub-and-branded-calls',
+          steps: [
+            '1. Go to Twilio Console → Trust Hub',
+            '2. Open your SHAKEN Business Profile',
+            '3. Ensure Customer Profile is linked',
+            '4. Ensure Business Information is complete',
+            '5. Ensure Authorized Representative is assigned',
+            '6. Submit for review if not already approved'
+          ]
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
       throw new Error(errorMessage);
     }
 

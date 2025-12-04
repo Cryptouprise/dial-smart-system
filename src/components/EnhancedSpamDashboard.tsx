@@ -164,6 +164,12 @@ export const EnhancedSpamDashboard = () => {
           description: errorData.error || "The trust profile is not yet approved.",
           variant: "destructive"
         });
+      } else if (errorData?.incompleteSetup) {
+        toast({
+          title: "Trust Hub Setup Incomplete",
+          description: "Your SHAKEN Business Profile needs all supporting entities linked. Check Twilio Trust Hub to complete setup.",
+          variant: "destructive"
+        });
       } else {
         toast({
           title: "Transfer Failed", 
