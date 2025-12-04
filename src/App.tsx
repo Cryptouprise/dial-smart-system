@@ -13,6 +13,7 @@ import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import AiSmsConversations from "./components/AiSmsConversations";
+import AIAssistantChat from "./components/AIAssistantChat";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,8 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          {/* Global AI Assistant - available on all pages */}
+          <AIAssistantChat />
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
