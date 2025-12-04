@@ -567,8 +567,14 @@ async function checkPhoneNumberProfile(phoneNumber: string) {
     const numbersData = await numbersResponse.json();
     
     if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
-      return new Response(JSON.stringify({ error: 'Phone number not found in Twilio account' }), {
-        status: 404,
+      // Return 200 with notFound flag instead of 404 - this is expected for numbers not in Twilio
+      return new Response(JSON.stringify({ 
+        phoneNumber,
+        found: false,
+        notInTwilio: true,
+        message: 'Phone number exists locally but is not in Twilio account'
+      }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
