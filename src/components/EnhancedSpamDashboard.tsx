@@ -20,8 +20,12 @@ import {
   RefreshCw,
   TrendingUp,
   Info,
-  Activity
+  Activity,
+  Cloud,
+  Download
 } from 'lucide-react';
+
+type NumberProvider = 'twilio' | 'telnyx' | 'local';
 
 export const EnhancedSpamDashboard = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -33,6 +37,8 @@ export const EnhancedSpamDashboard = () => {
   const [approvedProfiles, setApprovedProfiles] = useState<any[]>([]);
   const [transferringNumber, setTransferringNumber] = useState<string | null>(null);
   const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
+  const [numberProviders, setNumberProviders] = useState<Map<string, NumberProvider>>(new Map());
+  const [isSyncingTelnyx, setIsSyncingTelnyx] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -136,6 +142,77 @@ export const EnhancedSpamDashboard = () => {
 
     if (!error && data) {
       setNumbers(data);
+      // Check provider for each number
+      data.forEach(num => checkNumberProvider(num.number));
+    }
+  };
+
+  const checkNumberProvider = async (phoneNumber: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { checkNumberProfile: true, phoneNumber }
+      });
+      
+      if (error) {
+        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
+        return;
+      }
+      
+      // If we got a response and the number was found in Twilio
+      if (data && !data.notInTwilio) {
+        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'twilio'));
+      } else {
+        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
+      }
+    } catch (error) {
+      setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
+    }
+  };
+
+  const syncTelnyxNumbers = async () => {
+    setIsSyncingTelnyx(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+        body: { syncTelnyxNumbers: true }
+      });
+
+      if (error) throw error;
+
+      if (data.error === 'TELNYX_API_KEY_NOT_CONFIGURED') {
+        toast({
+          title: "Telnyx API Key Required",
+          description: "Please add your TELNYX_API_KEY in project secrets to sync Telnyx numbers.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Telnyx Sync Complete",
+        description: `Synced ${data.imported || 0} numbers from Telnyx`,
+      });
+      
+      await loadNumbers();
+    } catch (error: any) {
+      toast({
+        title: "Sync Failed",
+        description: error.message || "Failed to sync Telnyx numbers",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSyncingTelnyx(false);
+    }
+  };
+
+  const getProviderBadge = (phoneNumber: string) => {
+    const provider = numberProviders.get(phoneNumber);
+    switch (provider) {
+      case 'twilio':
+        return <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-300"><Cloud className="h-3 w-3 mr-1" />Twilio</Badge>;
+      case 'telnyx':
+        return <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-300"><Cloud className="h-3 w-3 mr-1" />Telnyx</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-600 border-slate-300"><Phone className="h-3 w-3 mr-1" />Local</Badge>;
     }
   };
 
@@ -219,23 +296,42 @@ export const EnhancedSpamDashboard = () => {
                 Real-time carrier lookups, STIR/SHAKEN attestation, and comprehensive spam analysis
               </CardDescription>
             </div>
-            <Button
-              onClick={() => runEnhancedScan()}
-              disabled={isScanning}
-              size="lg"
-            >
-              {isScanning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Scanning...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Scan All Numbers
-                </>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={syncTelnyxNumbers}
+                disabled={isSyncingTelnyx}
+                variant="outline"
+              >
+                {isSyncingTelnyx ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Sync Telnyx
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => runEnhancedScan()}
+                disabled={isScanning}
+                size="lg"
+              >
+                {isScanning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Scan All Numbers
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -403,7 +499,10 @@ export const EnhancedSpamDashboard = () => {
                           <div className="flex items-center gap-3">
                             {getLineTypeIcon(number.line_type)}
                             <div>
-                              <div className="font-mono text-lg font-semibold">{number.number}</div>
+                              <div className="font-mono text-lg font-semibold flex items-center gap-2">
+                                {number.number}
+                                {getProviderBadge(number.number)}
+                              </div>
                               <div className="text-sm text-muted-foreground flex items-center gap-2">
                                 {number.carrier_name || 'Unknown Carrier'}
                                 {number.line_type && (

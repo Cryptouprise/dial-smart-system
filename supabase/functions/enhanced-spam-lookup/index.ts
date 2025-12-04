@@ -17,6 +17,7 @@ interface SpamLookupRequest {
   listApprovedProfiles?: boolean;
   transferToProfile?: boolean;
   customerProfileSid?: string;
+  syncTelnyxNumbers?: boolean;
 }
 
 serve(async (req) => {
@@ -30,6 +31,16 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    const authHeader = req.headers.get('Authorization');
+    let userId: string | null = null;
+    
+    if (authHeader) {
+      const { data: { user }, error } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (!error && user) {
+        userId = user.id;
+      }
+    }
+
     const { 
       phoneNumberId, 
       phoneNumber, 
@@ -39,8 +50,14 @@ serve(async (req) => {
       checkNumberProfile,
       listApprovedProfiles,
       transferToProfile,
-      customerProfileSid
+      customerProfileSid,
+      syncTelnyxNumbers
     }: SpamLookupRequest = await req.json();
+
+    // Sync numbers from Telnyx
+    if (syncTelnyxNumbers) {
+      return await syncNumbersFromTelnyx(supabase, userId);
+    }
 
     // Check Twilio registration status
     if (checkRegistrationStatus) {
@@ -744,6 +761,93 @@ async function transferNumberToProfile(phoneNumber: string, customerProfileSid: 
 
   } catch (error) {
     console.error('Error transferring number to profile:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
+  const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+  
+  if (!telnyxApiKey) {
+    return new Response(JSON.stringify({ 
+      error: 'TELNYX_API_KEY_NOT_CONFIGURED',
+      message: 'Telnyx API key not configured' 
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (!userId) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  try {
+    // Fetch numbers from Telnyx API
+    const response = await fetch('https://api.telnyx.com/v2/phone_numbers', {
+      headers: {
+        'Authorization': `Bearer ${telnyxApiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Telnyx API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const telnyxNumbers = data.data || [];
+    let imported = 0;
+
+    for (const num of telnyxNumbers) {
+      const phoneNumber = num.phone_number;
+      const areaCode = phoneNumber.slice(2, 5); // Extract area code from +1XXXNNNNNNN
+
+      // Check if number already exists
+      const { data: existing } = await supabase
+        .from('phone_numbers')
+        .select('id')
+        .eq('number', phoneNumber)
+        .eq('user_id', userId)
+        .single();
+
+      if (!existing) {
+        // Insert new number
+        const { error: insertError } = await supabase
+          .from('phone_numbers')
+          .insert({
+            number: phoneNumber,
+            area_code: areaCode,
+            user_id: userId,
+            status: num.status === 'active' ? 'active' : 'inactive',
+            carrier_name: 'Telnyx',
+            line_type: num.phone_number_type || 'unknown'
+          });
+
+        if (!insertError) {
+          imported++;
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      imported,
+      total: telnyxNumbers.length,
+      message: `Synced ${imported} new numbers from Telnyx`
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error syncing Telnyx numbers:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
