@@ -83,10 +83,18 @@ export const useAiSmsMessaging = () => {
 
   // Load conversations
   const loadConversations = useCallback(async () => {
+    setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('[AI SMS] No user authenticated');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('sms_conversations')
         .select('*')
+        .eq('user_id', user.id)
         .order('last_message_at', { ascending: false });
 
       if (error) throw error;
@@ -98,6 +106,8 @@ export const useAiSmsMessaging = () => {
         description: 'Failed to load conversations',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -210,18 +220,23 @@ export const useAiSmsMessaging = () => {
   // Load or create settings
   const loadSettings = useCallback(async () => {
     try {
+      // Get current user first
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('[AI SMS] No user authenticated, skipping settings load');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('ai_sms_settings')
         .select('*')
+        .eq('user_id', user.id)
         .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
 
       if (!data) {
-        // Create default settings - get current user
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('User not authenticated');
-
+        // Create default settings
         const { data: newSettings, error: createError } = await supabase
           .from('ai_sms_settings')
           .insert([{ user_id: user.id }])
