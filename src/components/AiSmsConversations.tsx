@@ -8,6 +8,8 @@
  * - Reaction display
  * - Context-aware messaging
  * - Provider selection
+ * - New conversation creation
+ * - SMS templates
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -16,12 +18,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
 import {
   MessageSquare,
   Send,
@@ -36,12 +54,67 @@ import {
   Bot,
   User,
   X,
+  Plus,
+  FileText,
+  Zap,
 } from 'lucide-react';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+// Pre-defined SMS templates
+const SMS_TEMPLATES = [
+  {
+    id: 'greeting',
+    name: 'Greeting',
+    category: 'General',
+    message: "Hi! Thanks for reaching out. How can I help you today?"
+  },
+  {
+    id: 'follow-up',
+    name: 'Follow Up',
+    category: 'Sales',
+    message: "Hi {name}, I wanted to follow up on our conversation. Do you have any questions I can help answer?"
+  },
+  {
+    id: 'appointment-reminder',
+    name: 'Appointment Reminder',
+    category: 'Scheduling',
+    message: "Hi {name}, this is a reminder about your upcoming appointment. Please reply YES to confirm or call us to reschedule."
+  },
+  {
+    id: 'thank-you',
+    name: 'Thank You',
+    category: 'General',
+    message: "Thank you for your time today! If you have any questions, feel free to reach out anytime."
+  },
+  {
+    id: 'callback-request',
+    name: 'Callback Request',
+    category: 'Sales',
+    message: "Hi {name}, I noticed I missed your call. When would be a good time to call you back?"
+  },
+  {
+    id: 'info-request',
+    name: 'Info Request',
+    category: 'General',
+    message: "Hi! To better assist you, could you please provide some additional details about your inquiry?"
+  },
+  {
+    id: 'pricing',
+    name: 'Pricing Info',
+    category: 'Sales',
+    message: "Thanks for your interest! Our pricing starts at $X. Would you like me to send you more detailed information?"
+  },
+  {
+    id: 'out-of-office',
+    name: 'Out of Office',
+    category: 'General',
+    message: "Thanks for your message! I'm currently away but will respond as soon as possible. For urgent matters, please call our main line."
+  },
+];
 
 const AiSmsConversations: React.FC = () => {
   const {
@@ -60,6 +133,10 @@ const AiSmsConversations: React.FC = () => {
   const [messageText, setMessageText] = useState('');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactName, setNewContactName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -120,6 +197,98 @@ const AiSmsConversations: React.FC = () => {
     }
   };
 
+  const handleCreateConversation = async () => {
+    if (!newContactPhone.trim()) {
+      toast({
+        title: 'Phone Required',
+        description: 'Please enter a phone number',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Format phone number
+    let formattedPhone = newContactPhone.replace(/\D/g, '');
+    if (!formattedPhone.startsWith('1') && formattedPhone.length === 10) {
+      formattedPhone = '1' + formattedPhone;
+    }
+    formattedPhone = '+' + formattedPhone;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: 'Error',
+          description: 'You must be logged in',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Check if conversation already exists
+      const { data: existing } = await supabase
+        .from('sms_conversations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('contact_phone', formattedPhone)
+        .maybeSingle();
+
+      if (existing) {
+        setSelectedConversation(existing as SmsConversation);
+        setShowNewConversation(false);
+        setNewContactPhone('');
+        setNewContactName('');
+        toast({
+          title: 'Conversation Found',
+          description: 'Selected existing conversation',
+        });
+        return;
+      }
+
+      // Create new conversation
+      const { data: newConv, error } = await supabase
+        .from('sms_conversations')
+        .insert({
+          user_id: user.id,
+          contact_phone: formattedPhone,
+          contact_name: newContactName.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: 'Conversation Created',
+        description: `Started conversation with ${formattedPhone}`,
+      });
+
+      await loadConversations();
+      setSelectedConversation(newConv as SmsConversation);
+      setShowNewConversation(false);
+      setNewContactPhone('');
+      setNewContactName('');
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create conversation',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleUseTemplate = (template: typeof SMS_TEMPLATES[0]) => {
+    let message = template.message;
+    // Replace placeholders with contact name if available
+    if (selectedConversation?.contact_name) {
+      message = message.replace(/{name}/g, selectedConversation.contact_name);
+    } else {
+      message = message.replace(/{name}/g, 'there');
+    }
+    setMessageText(message);
+  };
+
   const getMessageStatusIcon = (message: SmsMessage) => {
     if (message.direction === 'inbound') return null;
 
@@ -142,6 +311,15 @@ const AiSmsConversations: React.FC = () => {
     }
     return phone;
   };
+
+  const filteredConversations = conversations.filter(conv => {
+    if (!searchQuery) return true;
+    const search = searchQuery.toLowerCase();
+    return (
+      conv.contact_phone.includes(search) ||
+      (conv.contact_name && conv.contact_name.toLowerCase().includes(search))
+    );
+  });
 
   if (showSettings) {
     return (
@@ -344,6 +522,51 @@ const AiSmsConversations: React.FC = () => {
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              <Dialog open={showNewConversation} onOpenChange={setShowNewConversation}>
+                <DialogTrigger asChild>
+                  <Button variant="default" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Conversation
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Start New Conversation</DialogTitle>
+                    <DialogDescription>
+                      Enter the phone number to start a new SMS conversation
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-phone">Phone Number *</Label>
+                      <Input
+                        id="new-phone"
+                        placeholder="+1 (555) 123-4567"
+                        value={newContactPhone}
+                        onChange={(e) => setNewContactPhone(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-name">Contact Name (Optional)</Label>
+                      <Input
+                        id="new-name"
+                        placeholder="John Doe"
+                        value={newContactName}
+                        onChange={(e) => setNewContactName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowNewConversation(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleCreateConversation}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -372,19 +595,21 @@ const AiSmsConversations: React.FC = () => {
               <Input 
                 placeholder="Search conversations..." 
                 className="w-full"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
 
             <ScrollArea className="flex-1">
               <div className="space-y-2">
-                {conversations.length === 0 ? (
+                {filteredConversations.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p>No conversations yet</p>
-                    <p className="text-sm">Start by sending a message</p>
+                    <p className="text-sm">Click "New Conversation" to start</p>
                   </div>
                 ) : (
-                  conversations.map((conv) => (
+                  filteredConversations.map((conv) => (
                     <div
                       key={conv.id}
                       onClick={() => handleSelectConversation(conv)}
@@ -434,6 +659,7 @@ const AiSmsConversations: React.FC = () => {
                 <div className="text-center">
                   <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
                   <p className="text-lg">Select a conversation to view messages</p>
+                  <p className="text-sm mt-2">Or create a new conversation to get started</p>
                 </div>
               </div>
             ) : (
@@ -520,7 +746,7 @@ const AiSmsConversations: React.FC = () => {
                 {/* Message Input */}
                 <div className="border-t p-4 space-y-3">
                   {settings?.enabled && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
@@ -530,6 +756,35 @@ const AiSmsConversations: React.FC = () => {
                         <Sparkles className={cn("h-4 w-4 mr-2", isGeneratingAI && "animate-pulse")} />
                         {isGeneratingAI ? 'Generating...' : 'Generate AI Response'}
                       </Button>
+                      
+                      {/* Templates Dropdown */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <FileText className="h-4 w-4 mr-2" />
+                            Templates
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64">
+                          <DropdownMenuLabel>Quick Templates</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {['General', 'Sales', 'Scheduling'].map(category => (
+                            <React.Fragment key={category}>
+                              <DropdownMenuLabel className="text-xs text-muted-foreground">{category}</DropdownMenuLabel>
+                              {SMS_TEMPLATES.filter(t => t.category === category).map(template => (
+                                <DropdownMenuItem 
+                                  key={template.id}
+                                  onClick={() => handleUseTemplate(template)}
+                                >
+                                  <Zap className="h-4 w-4 mr-2" />
+                                  {template.name}
+                                </DropdownMenuItem>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
                       {settings.enable_image_analysis && (
                         <Badge variant="secondary" className="text-xs">
                           <ImageIcon className="h-3 w-3 mr-1" />
