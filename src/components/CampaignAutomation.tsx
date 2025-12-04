@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import AutomationTimeline from '@/components/AutomationTimeline';
 import { 
   Calendar, 
   Clock, 
@@ -18,7 +19,8 @@ import {
   Trash2,
   Play,
   Pause,
-  Settings2
+  Settings2,
+  LayoutGrid
 } from 'lucide-react';
 
 interface AutomationRule {
@@ -344,6 +346,9 @@ const CampaignAutomation: React.FC = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Timeline View */}
+      <AutomationTimeline rules={rules} />
 
       {/* Existing Rules */}
       <div className="grid gap-4">
