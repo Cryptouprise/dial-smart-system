@@ -23,6 +23,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Loader2,
+  ChevronRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
@@ -137,7 +139,7 @@ const AiSmsConversations: React.FC = () => {
     updateSettings,
   } = useAiSmsMessaging();
   
-  const { checkA2PStatus, isLoading: isLoadingA2P } = useTwilioIntegration();
+  const { checkA2PStatus, addNumberToCampaign, isLoading: isLoadingA2P } = useTwilioIntegration();
 
   const [selectedConversation, setSelectedConversation] = useState<SmsConversation | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -146,6 +148,10 @@ const AiSmsConversations: React.FC = () => {
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showA2PStatus, setShowA2PStatus] = useState(false);
   const [a2pStatus, setA2PStatus] = useState<any>(null);
+  const [a2pTab, setA2pTab] = useState('overview');
+  const [selectedCampaignSid, setSelectedCampaignSid] = useState('');
+  const [numberToAddToCampaign, setNumberToAddToCampaign] = useState('');
+  const [addingToCampaign, setAddingToCampaign] = useState(false);
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,6 +162,31 @@ const AiSmsConversations: React.FC = () => {
     setShowA2PStatus(true);
     const status = await checkA2PStatus();
     setA2PStatus(status);
+  };
+
+  const handleAddNumberToCampaign = async () => {
+    if (!numberToAddToCampaign || !selectedCampaignSid) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please select both a phone number and a messaging service',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setAddingToCampaign(true);
+    try {
+      await addNumberToCampaign(numberToAddToCampaign, selectedCampaignSid);
+      // Refresh A2P status
+      const status = await checkA2PStatus();
+      setA2PStatus(status);
+      setNumberToAddToCampaign('');
+      setSelectedCampaignSid('');
+    } catch (error) {
+      // Error handled in hook
+    } finally {
+      setAddingToCampaign(false);
+    }
   };
 
   useEffect(() => {
@@ -562,142 +593,281 @@ const AiSmsConversations: React.FC = () => {
                     A2P Status
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Shield className="h-5 w-5" />
                       A2P 10DLC Registration Status
                     </DialogTitle>
                     <DialogDescription>
-                      View which phone numbers are registered for A2P messaging in Twilio
+                      View and manage A2P registration for your phone numbers
                     </DialogDescription>
                   </DialogHeader>
-                  <ScrollArea className="flex-1 pr-4">
-                    {isLoadingA2P ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                        <span className="ml-3 text-muted-foreground">Checking A2P status...</span>
-                      </div>
-                    ) : a2pStatus ? (
-                      <div className="space-y-6">
-                        {/* Summary */}
-                        <div className="grid grid-cols-4 gap-4">
-                          <div className="p-4 rounded-lg bg-muted">
-                            <div className="text-2xl font-bold">{a2pStatus.summary?.total_numbers || 0}</div>
-                            <div className="text-sm text-muted-foreground">Total Numbers</div>
-                          </div>
-                          <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                            <div className="text-2xl font-bold text-green-600">{a2pStatus.summary?.registered_numbers || 0}</div>
-                            <div className="text-sm text-muted-foreground">Registered</div>
-                          </div>
-                          <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                            <div className="text-2xl font-bold text-yellow-600">{a2pStatus.summary?.pending_numbers || 0}</div>
-                            <div className="text-sm text-muted-foreground">Pending</div>
-                          </div>
-                          <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-                            <div className="text-2xl font-bold text-red-600">{a2pStatus.summary?.unregistered_numbers || 0}</div>
-                            <div className="text-sm text-muted-foreground">Unregistered</div>
-                          </div>
-                        </div>
+                  
+                  {isLoadingA2P ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      <span className="ml-3 text-muted-foreground">Checking A2P status...</span>
+                    </div>
+                  ) : a2pStatus ? (
+                    <Tabs value={a2pTab} onValueChange={setA2pTab} className="flex-1 overflow-hidden flex flex-col">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="add-number">Add Number to Campaign</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="overview" className="flex-1 overflow-hidden">
+                        <ScrollArea className="h-[50vh] pr-4">
+                          <div className="space-y-6">
+                            {/* Summary */}
+                            <div className="grid grid-cols-4 gap-4">
+                              <div className="p-4 rounded-lg bg-muted">
+                                <div className="text-2xl font-bold">{a2pStatus.summary?.total_numbers || 0}</div>
+                                <div className="text-sm text-muted-foreground">Total Numbers</div>
+                              </div>
+                              <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                                <div className="text-2xl font-bold text-green-600">{a2pStatus.summary?.registered_numbers || 0}</div>
+                                <div className="text-sm text-muted-foreground">Registered</div>
+                              </div>
+                              <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                                <div className="text-2xl font-bold text-yellow-600">{a2pStatus.summary?.pending_numbers || 0}</div>
+                                <div className="text-sm text-muted-foreground">Pending</div>
+                              </div>
+                              <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                                <div className="text-2xl font-bold text-red-600">{a2pStatus.summary?.unregistered_numbers || 0}</div>
+                                <div className="text-sm text-muted-foreground">Unregistered</div>
+                              </div>
+                            </div>
 
-                        {/* Phone Numbers */}
-                        <div>
-                          <h4 className="font-semibold mb-3 flex items-center gap-2">
-                            <Phone className="h-4 w-4" />
-                            Phone Numbers
-                          </h4>
-                          <div className="space-y-2">
-                            {a2pStatus.phone_numbers?.map((num: any) => (
-                              <div 
-                                key={num.sid} 
-                                className="flex items-center justify-between p-3 rounded-lg border"
-                              >
-                                <div className="flex items-center gap-3">
-                                  {num.a2p_registered ? (
-                                    <ShieldCheck className="h-5 w-5 text-green-500" />
-                                  ) : num.messaging_service_sid ? (
-                                    <Shield className="h-5 w-5 text-yellow-500" />
-                                  ) : (
-                                    <ShieldAlert className="h-5 w-5 text-red-500" />
-                                  )}
-                                  <div>
-                                    <div className="font-medium">{num.phone_number}</div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {num.friendly_name || 'No friendly name'}
+                            {/* Phone Numbers */}
+                            <div>
+                              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                                <Phone className="h-4 w-4" />
+                                Phone Numbers
+                              </h4>
+                              <div className="space-y-2">
+                                {a2pStatus.phone_numbers?.map((num: any) => (
+                                  <div 
+                                    key={num.sid} 
+                                    className="flex items-center justify-between p-3 rounded-lg border"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      {num.a2p_registered ? (
+                                        <ShieldCheck className="h-5 w-5 text-green-500" />
+                                      ) : num.messaging_service_sid ? (
+                                        <Shield className="h-5 w-5 text-yellow-500" />
+                                      ) : (
+                                        <ShieldAlert className="h-5 w-5 text-red-500" />
+                                      )}
+                                      <div>
+                                        <div className="font-medium">{num.phone_number}</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {num.friendly_name || 'No friendly name'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <Badge 
+                                        variant={num.a2p_registered ? "default" : num.messaging_service_sid ? "secondary" : "destructive"}
+                                      >
+                                        {num.a2p_registered ? 'Registered' : num.messaging_service_sid ? 'Pending' : 'Not Registered'}
+                                      </Badge>
+                                      {num.messaging_service_name && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          {num.messaging_service_name}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                </div>
-                                <div className="text-right">
-                                  <Badge 
-                                    variant={num.a2p_registered ? "default" : num.messaging_service_sid ? "secondary" : "destructive"}
-                                  >
-                                    {num.a2p_registered ? 'Registered' : num.messaging_service_sid ? 'Pending' : 'Not Registered'}
-                                  </Badge>
-                                  {num.messaging_service_name && (
-                                    <div className="text-xs text-muted-foreground mt-1">
-                                      {num.messaging_service_name}
+                                ))}
+                                {(!a2pStatus.phone_numbers || a2pStatus.phone_numbers.length === 0) && (
+                                  <div className="text-center py-4 text-muted-foreground">
+                                    No phone numbers found in your Twilio account
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Messaging Services / Campaigns */}
+                            {a2pStatus.messaging_services?.length > 0 && (
+                              <div>
+                                <h4 className="font-semibold mb-3">Messaging Services (Campaigns)</h4>
+                                <div className="space-y-2">
+                                  {a2pStatus.messaging_services.map((service: any) => (
+                                    <div key={service.sid} className="p-3 rounded-lg border">
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <div className="font-medium">{service.friendly_name}</div>
+                                          <div className="text-sm text-muted-foreground">
+                                            Use case: {service.use_case || 'Not set'}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground mt-1">
+                                            {service.associated_phone_numbers?.length || 0} phone number(s) attached
+                                          </div>
+                                        </div>
+                                        <Badge variant={service.us_app_to_person_registered ? 'default' : 'secondary'}>
+                                          {service.us_app_to_person_registered ? 'A2P Registered' : 'Not A2P Registered'}
+                                        </Badge>
+                                      </div>
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
                               </div>
-                            ))}
-                            {(!a2pStatus.phone_numbers || a2pStatus.phone_numbers.length === 0) && (
-                              <div className="text-center py-4 text-muted-foreground">
-                                No phone numbers found in your Twilio account
+                            )}
+
+                            {/* Brand Registrations */}
+                            {a2pStatus.brand_registrations?.length > 0 && (
+                              <div>
+                                <h4 className="font-semibold mb-3">Brand Registrations</h4>
+                                <div className="space-y-2">
+                                  {a2pStatus.brand_registrations.map((brand: any) => (
+                                    <div key={brand.sid} className="p-3 rounded-lg border">
+                                      <div className="flex justify-between items-center">
+                                        <span className="font-medium">{brand.brand_type}</span>
+                                        <Badge variant={brand.status === 'APPROVED' ? 'default' : 'secondary'}>
+                                          {brand.status}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* A2P Campaigns */}
+                            {a2pStatus.campaigns?.length > 0 && (
+                              <div>
+                                <h4 className="font-semibold mb-3">A2P Campaigns</h4>
+                                <div className="space-y-2">
+                                  {a2pStatus.campaigns.map((campaign: any) => (
+                                    <div key={campaign.sid} className="p-3 rounded-lg border">
+                                      <div className="flex justify-between items-center">
+                                        <div>
+                                          <span className="font-medium">{campaign.use_case}</span>
+                                          <div className="text-sm text-muted-foreground">
+                                            {campaign.messaging_service_name}
+                                          </div>
+                                        </div>
+                                        <Badge variant={campaign.status === 'VERIFIED' ? 'default' : 'secondary'}>
+                                          {campaign.status}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>
-                        </div>
-
-                        {/* Brand Registrations */}
-                        {a2pStatus.brand_registrations?.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold mb-3">Brand Registrations</h4>
-                            <div className="space-y-2">
-                              {a2pStatus.brand_registrations.map((brand: any) => (
-                                <div key={brand.sid} className="p-3 rounded-lg border">
-                                  <div className="flex justify-between items-center">
-                                    <span className="font-medium">{brand.brand_type}</span>
-                                    <Badge variant={brand.status === 'APPROVED' ? 'default' : 'secondary'}>
-                                      {brand.status}
-                                    </Badge>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                        </ScrollArea>
+                      </TabsContent>
+                      
+                      <TabsContent value="add-number" className="flex-1">
+                        <div className="space-y-6 p-4">
+                          <div className="p-4 rounded-lg bg-muted/50 border">
+                            <h4 className="font-medium mb-2">Add Phone Number to A2P Campaign</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Select an unregistered phone number and a messaging service to register it for A2P messaging.
+                            </p>
                           </div>
-                        )}
 
-                        {/* Campaigns */}
-                        {a2pStatus.campaigns?.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold mb-3">A2P Campaigns</h4>
+                          <div className="space-y-4">
                             <div className="space-y-2">
-                              {a2pStatus.campaigns.map((campaign: any) => (
-                                <div key={campaign.sid} className="p-3 rounded-lg border">
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <span className="font-medium">{campaign.use_case}</span>
-                                      <div className="text-sm text-muted-foreground">
-                                        {campaign.messaging_service_name}
+                              <Label>Select Phone Number</Label>
+                              <Select value={numberToAddToCampaign} onValueChange={setNumberToAddToCampaign}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Choose a phone number..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {a2pStatus.phone_numbers
+                                    ?.filter((num: any) => !num.messaging_service_sid)
+                                    .map((num: any) => (
+                                      <SelectItem key={num.sid} value={num.phone_number}>
+                                        <div className="flex items-center gap-2">
+                                          <ShieldAlert className="h-4 w-4 text-red-500" />
+                                          {num.phone_number}
+                                          {num.friendly_name && (
+                                            <span className="text-muted-foreground">({num.friendly_name})</span>
+                                          )}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  {a2pStatus.phone_numbers?.filter((num: any) => !num.messaging_service_sid).length === 0 && (
+                                    <SelectItem value="" disabled>
+                                      All numbers are already registered
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Select Messaging Service (Campaign)</Label>
+                              <Select value={selectedCampaignSid} onValueChange={setSelectedCampaignSid}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Choose a messaging service..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {a2pStatus.messaging_services?.map((service: any) => (
+                                    <SelectItem key={service.sid} value={service.sid}>
+                                      <div className="flex items-center gap-2">
+                                        {service.us_app_to_person_registered ? (
+                                          <ShieldCheck className="h-4 w-4 text-green-500" />
+                                        ) : (
+                                          <Shield className="h-4 w-4 text-yellow-500" />
+                                        )}
+                                        {service.friendly_name}
+                                        {service.use_case && (
+                                          <span className="text-muted-foreground">- {service.use_case}</span>
+                                        )}
                                       </div>
-                                    </div>
-                                    <Badge variant={campaign.status === 'VERIFIED' ? 'default' : 'secondary'}>
-                                      {campaign.status}
-                                    </Badge>
-                                  </div>
-                                </div>
-                              ))}
+                                    </SelectItem>
+                                  ))}
+                                  {(!a2pStatus.messaging_services || a2pStatus.messaging_services.length === 0) && (
+                                    <SelectItem value="" disabled>
+                                      No messaging services found - create one in Twilio Console
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
                             </div>
+
+                            <Button 
+                              onClick={handleAddNumberToCampaign} 
+                              disabled={addingToCampaign || !numberToAddToCampaign || !selectedCampaignSid}
+                              className="w-full"
+                            >
+                              {addingToCampaign ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Adding to Campaign...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add to Messaging Service
+                                </>
+                              )}
+                            </Button>
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground">
-                        Click to check A2P registration status
-                      </div>
-                    )}
-                  </ScrollArea>
+
+                          {(!a2pStatus.messaging_services || a2pStatus.messaging_services.length === 0) && (
+                            <div className="p-4 rounded-lg border border-yellow-500/20 bg-yellow-500/10">
+                              <h4 className="font-medium text-yellow-700 mb-2">No Messaging Services Found</h4>
+                              <p className="text-sm text-yellow-600">
+                                You need to create a Messaging Service in your Twilio Console first.
+                                Go to Twilio Console → Messaging → Services to create one, then complete
+                                A2P 10DLC registration.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Click to check A2P registration status
+                    </div>
+                  )}
                 </DialogContent>
               </Dialog>
 

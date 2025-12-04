@@ -8,9 +8,10 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign';
   phoneNumberSid?: string;
   phoneNumber?: string;
+  messagingServiceSid?: string;
 }
 
 serve(async (req) => {
@@ -52,8 +53,8 @@ serve(async (req) => {
 
     console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
 
-    const { action, phoneNumberSid, phoneNumber }: TwilioImportRequest = await req.json();
-    console.log('📥 Request action:', action, { phoneNumber, phoneNumberSid });
+    const { action, phoneNumberSid, phoneNumber, messagingServiceSid }: TwilioImportRequest = await req.json();
+    console.log('📥 Request action:', action, { phoneNumber, phoneNumberSid, messagingServiceSid });
 
     // Helper function to encode credentials safely (handles UTF-8)
     const encodeCredentials = (accountSid: string, authToken: string): string => {
@@ -494,6 +495,92 @@ serve(async (req) => {
 
       console.log('✅ A2P status check complete:', results.summary);
       return new Response(JSON.stringify(results), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Add phone number to messaging service/campaign
+    if (action === 'add_number_to_campaign' && phoneNumber && messagingServiceSid) {
+      console.log('📲 Adding phone number to messaging service:', phoneNumber, messagingServiceSid);
+      
+      // First get the phone number SID from Twilio
+      const numbersResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!numbersResponse.ok) {
+        const errorText = await numbersResponse.text();
+        console.error('❌ Failed to find phone number:', errorText);
+        return new Response(JSON.stringify({ error: 'Phone number not found in your Twilio account' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const numbersData = await numbersResponse.json();
+      const twilioNumber = numbersData.incoming_phone_numbers?.[0];
+      
+      if (!twilioNumber) {
+        return new Response(JSON.stringify({ error: 'Phone number not found in your Twilio account' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Add phone number to messaging service
+      const addResponse = await fetch(
+        `https://messaging.twilio.com/v1/Services/${messagingServiceSid}/PhoneNumbers`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `PhoneNumberSid=${twilioNumber.sid}`
+        }
+      );
+
+      if (!addResponse.ok) {
+        const errorText = await addResponse.text();
+        console.error('❌ Failed to add number to messaging service:', errorText);
+        
+        // Parse error for better messaging
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.message?.includes('already exists')) {
+            return new Response(JSON.stringify({ 
+              error: 'This phone number is already in this messaging service',
+              already_exists: true
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          return new Response(JSON.stringify({ error: errorJson.message || 'Failed to add number to campaign' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Failed to add number to campaign' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      const result = await addResponse.json();
+      console.log('✅ Phone number added to messaging service:', result);
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'Phone number added to A2P campaign',
+        data: result
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
