@@ -239,46 +239,40 @@ serve(async (req) => {
       }
 
       case 'get_available_numbers': {
-        // Get phone numbers that are SMS-capable from provider_numbers or phone_numbers table
-        const { data: numbers, error: numbersError } = await supabaseAdmin
-          .from('phone_numbers')
-          .select('number')
-          .eq('user_id', user.id)
-          .eq('status', 'active');
-
-        if (numbersError) {
-          console.error('[SMS Messaging] Numbers fetch error:', numbersError);
+        if (!twilioAccountSid || !twilioAuthToken) {
+          throw new Error('Twilio credentials not configured');
         }
 
-        // Also check provider_numbers for SMS capability
-        const { data: providerNumbers, error: providerError } = await supabaseAdmin
-          .from('provider_numbers')
-          .select('number, capabilities_json')
-          .eq('user_id', user.id);
-
-        if (providerError) {
-          console.error('[SMS Messaging] Provider numbers fetch error:', providerError);
-        }
-
-        // Combine and filter for SMS-capable numbers
-        const allNumbers = new Set<string>();
+        // Fetch actual SMS-capable numbers from Twilio
+        console.log('[SMS Messaging] Fetching available numbers from Twilio...');
         
-        // Add all phone numbers from phone_numbers table
-        // These are typically Twilio numbers imported via the system
-        // and are assumed to be SMS-capable since Twilio numbers generally support both voice and SMS
-        numbers?.forEach(n => allNumbers.add(n.number));
-        
-        // Add provider numbers that explicitly have SMS capability
-        // Note: We only include numbers with explicit 'sms' capability from provider_numbers
-        // Voice-only numbers are not included here
-        providerNumbers?.forEach(n => {
-          const capabilities = n.capabilities_json as string[] || [];
-          if (capabilities.includes('sms')) {
-            allNumbers.add(n.number);
-          }
+        const twilioNumbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`;
+        const twilioResponse = await fetch(twilioNumbersUrl, {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+          },
         });
 
-        result = { numbers: Array.from(allNumbers) };
+        if (!twilioResponse.ok) {
+          console.error('[SMS Messaging] Failed to fetch Twilio numbers');
+          throw new Error('Failed to fetch numbers from Twilio');
+        }
+
+        const twilioData = await twilioResponse.json();
+        const twilioNumbers = twilioData.incoming_phone_numbers || [];
+
+        // Filter for SMS-capable numbers
+        const smsCapableNumbers = twilioNumbers
+          .filter((num: any) => num.capabilities?.sms === true)
+          .map((num: any) => ({
+            number: num.phone_number,
+            friendly_name: num.friendly_name,
+            capabilities: num.capabilities,
+          }));
+
+        console.log('[SMS Messaging] Found', smsCapableNumbers.length, 'SMS-capable numbers in Twilio');
+
+        result = { numbers: smsCapableNumbers };
         break;
       }
 
