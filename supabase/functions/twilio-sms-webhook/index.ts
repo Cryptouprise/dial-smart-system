@@ -275,8 +275,10 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(settings.context_window_size || 20);
 
+        // Build conversation history (text only for history)
         const conversationHistory = (messages || [])
           .reverse()
+          .slice(0, -1) // Exclude the current message, we'll add it with image
           .map((msg: any) => ({
             role: msg.direction === 'inbound' ? 'user' : 'assistant',
             content: msg.body
@@ -289,7 +291,53 @@ serve(async (req) => {
         } else {
           const systemPrompt = `You are an AI SMS assistant with the following personality: ${settings.ai_personality || 'professional and helpful'}. 
 Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational.
-DO NOT include any special characters or formatting that may not work well in SMS.`;
+DO NOT include any special characters or formatting that may not work well in SMS.
+If the user sends an image, describe what you see and respond appropriately.`;
+
+          // Build the current message - include image if present and image analysis is enabled
+          let currentUserMessage: any;
+          
+          if (hasMedia && settings.enable_image_analysis && MediaUrl0) {
+            console.log('[Twilio SMS Webhook] Fetching image for analysis...');
+            try {
+              // Twilio media URLs require authentication
+              const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+              const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+              
+              const imageResponse = await fetch(MediaUrl0, {
+                headers: {
+                  'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
+                },
+              });
+              
+              if (imageResponse.ok) {
+                const imageBuffer = await imageResponse.arrayBuffer();
+                const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+                const mimeType = MediaContentType0 || 'image/jpeg';
+                
+                console.log('[Twilio SMS Webhook] Image fetched and converted to base64');
+                
+                currentUserMessage = {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: messageBody || 'What do you see in this image?' },
+                    { 
+                      type: 'image_url', 
+                      image_url: { url: `data:${mimeType};base64,${base64Image}` }
+                    }
+                  ]
+                };
+              } else {
+                console.error('[Twilio SMS Webhook] Failed to fetch image:', imageResponse.status);
+                currentUserMessage = { role: 'user', content: messageBody };
+              }
+            } catch (imgError) {
+              console.error('[Twilio SMS Webhook] Error fetching image:', imgError);
+              currentUserMessage = { role: 'user', content: messageBody };
+            }
+          } else {
+            currentUserMessage = { role: 'user', content: messageBody };
+          }
 
           const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
             method: 'POST',
@@ -301,7 +349,8 @@ DO NOT include any special characters or formatting that may not work well in SM
               model: 'google/gemini-2.5-flash',
               messages: [
                 { role: 'system', content: systemPrompt },
-                ...conversationHistory
+                ...conversationHistory,
+                currentUserMessage
               ],
             }),
           });
