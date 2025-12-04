@@ -70,6 +70,14 @@ export interface AiSmsSettings {
   ai_provider: 'lovable' | 'retell';
   retell_llm_id: string | null;
   retell_voice_id: string | null;
+  // New comprehensive AI configuration fields
+  custom_instructions: string | null;
+  knowledge_base: string | null;
+  dynamic_variables_enabled: boolean;
+  include_lead_context: boolean;
+  include_call_history: boolean;
+  include_sms_history: boolean;
+  max_history_items: number;
   created_at: string;
   updated_at: string;
 }

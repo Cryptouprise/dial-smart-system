@@ -61,12 +61,19 @@ export type Database = {
           business_hours_only: boolean | null
           context_window_size: number | null
           created_at: string
+          custom_instructions: string | null
           double_text_delay_seconds: number | null
+          dynamic_variables_enabled: boolean | null
           enable_image_analysis: boolean | null
           enable_reaction_detection: boolean | null
           enabled: boolean | null
           id: string
+          include_call_history: boolean | null
+          include_lead_context: boolean | null
+          include_sms_history: boolean | null
+          knowledge_base: string | null
           max_context_tokens: number | null
+          max_history_items: number | null
           prevent_double_texting: boolean | null
           retell_agent_id: string | null
           retell_llm_id: string | null
@@ -82,12 +89,19 @@ export type Database = {
           business_hours_only?: boolean | null
           context_window_size?: number | null
           created_at?: string
+          custom_instructions?: string | null
           double_text_delay_seconds?: number | null
+          dynamic_variables_enabled?: boolean | null
           enable_image_analysis?: boolean | null
           enable_reaction_detection?: boolean | null
           enabled?: boolean | null
           id?: string
+          include_call_history?: boolean | null
+          include_lead_context?: boolean | null
+          include_sms_history?: boolean | null
+          knowledge_base?: string | null
           max_context_tokens?: number | null
+          max_history_items?: number | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
           retell_llm_id?: string | null
@@ -103,12 +117,19 @@ export type Database = {
           business_hours_only?: boolean | null
           context_window_size?: number | null
           created_at?: string
+          custom_instructions?: string | null
           double_text_delay_seconds?: number | null
+          dynamic_variables_enabled?: boolean | null
           enable_image_analysis?: boolean | null
           enable_reaction_detection?: boolean | null
           enabled?: boolean | null
           id?: string
+          include_call_history?: boolean | null
+          include_lead_context?: boolean | null
+          include_sms_history?: boolean | null
+          knowledge_base?: string | null
           max_context_tokens?: number | null
+          max_history_items?: number | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
           retell_llm_id?: string | null

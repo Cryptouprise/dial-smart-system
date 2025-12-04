@@ -267,6 +267,54 @@ serve(async (req) => {
       console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...');
       
       try {
+        // Fetch lead info for context if enabled
+        let leadContext = '';
+        let leadData: any = null;
+        
+        if (settings.include_lead_context) {
+          const { data: lead } = await supabaseAdmin
+            .from('leads')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('phone_number', From)
+            .maybeSingle();
+          
+          if (lead) {
+            leadData = lead;
+            leadContext = `\n\nLEAD INFORMATION:
+- Name: ${lead.first_name || ''} ${lead.last_name || ''}
+- Email: ${lead.email || 'Not provided'}
+- Company: ${lead.company || 'Not provided'}
+- Status: ${lead.status || 'Unknown'}
+- Lead Source: ${lead.lead_source || 'Unknown'}
+- Notes: ${lead.notes || 'None'}
+- Tags: ${lead.tags?.join(', ') || 'None'}`;
+            console.log('[Twilio SMS Webhook] Found lead context');
+          }
+        }
+        
+        // Fetch call history if enabled
+        let callHistoryContext = '';
+        if (settings.include_call_history) {
+          const maxHistoryItems = settings.max_history_items || 5;
+          const { data: calls } = await supabaseAdmin
+            .from('call_logs')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('phone_number', From)
+            .order('created_at', { ascending: false })
+            .limit(maxHistoryItems);
+          
+          if (calls && calls.length > 0) {
+            callHistoryContext = `\n\nRECENT CALL HISTORY:`;
+            calls.forEach((call: any) => {
+              const date = new Date(call.created_at).toLocaleDateString();
+              callHistoryContext += `\n- ${date}: ${call.status} (${call.duration_seconds || 0}s) - Outcome: ${call.outcome || 'N/A'}${call.notes ? ` - Notes: ${call.notes}` : ''}`;
+            });
+            console.log('[Twilio SMS Webhook] Added call history context');
+          }
+        }
+
         // Get conversation history for context
         const { data: messages } = await supabaseAdmin
           .from('sms_messages')
@@ -289,10 +337,64 @@ serve(async (req) => {
         if (!lovableApiKey) {
           console.error('[Twilio SMS Webhook] LOVABLE_API_KEY not configured');
         } else {
-          const systemPrompt = `You are an AI SMS assistant with the following personality: ${settings.ai_personality || 'professional and helpful'}. 
-Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational.
-DO NOT include any special characters or formatting that may not work well in SMS.
-If the user sends an image, describe what you see and respond appropriately.`;
+          // Helper function to replace dynamic variables
+          const replaceDynamicVariables = (text: string): string => {
+            if (!text || !settings.dynamic_variables_enabled) return text || '';
+            
+            const variables: Record<string, string> = {
+              '{{first_name}}': leadData?.first_name || 'there',
+              '{{last_name}}': leadData?.last_name || '',
+              '{{email}}': leadData?.email || '',
+              '{{company}}': leadData?.company || '',
+              '{{phone}}': From || '',
+              '{{status}}': leadData?.status || '',
+            };
+            
+            let result = text;
+            Object.entries(variables).forEach(([key, value]) => {
+              result = result.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), value);
+            });
+            return result;
+          };
+          
+          // Build comprehensive system prompt
+          let systemPrompt = `You are an AI SMS assistant.
+
+PERSONALITY:
+${settings.ai_personality || 'professional and helpful'}`;
+
+          // Add custom instructions if provided
+          if (settings.custom_instructions) {
+            const processedInstructions = replaceDynamicVariables(settings.custom_instructions);
+            systemPrompt += `\n\nRULES & GUIDELINES:
+${processedInstructions}`;
+          }
+
+          // Add knowledge base if provided
+          if (settings.knowledge_base) {
+            const processedKnowledge = replaceDynamicVariables(settings.knowledge_base);
+            systemPrompt += `\n\nKNOWLEDGE BASE:
+${processedKnowledge}`;
+          }
+
+          // Add lead context
+          if (leadContext) {
+            systemPrompt += leadContext;
+          }
+
+          // Add call history context
+          if (callHistoryContext) {
+            systemPrompt += callHistoryContext;
+          }
+
+          // Add general SMS guidelines
+          systemPrompt += `\n\nSMS GUIDELINES:
+- Keep responses concise and appropriate for SMS (under 300 characters when possible)
+- Be natural and conversational
+- DO NOT include any special characters or formatting that may not work well in SMS
+- If the user sends an image, describe what you see and respond appropriately`;
+
+          console.log('[Twilio SMS Webhook] System prompt built, length:', systemPrompt.length);
 
           // Build the current message - include image if present and image analysis is enabled
           let currentUserMessage: any;

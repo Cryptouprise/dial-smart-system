@@ -578,85 +578,259 @@ const AiSmsConversations: React.FC = () => {
                 </>
               )}
 
-              {/* AI Personality */}
-              <div className="space-y-2">
-                <Label htmlFor="ai-personality">AI Personality</Label>
-                <Textarea
-                  id="ai-personality"
-                  value={settings?.ai_personality || ''}
-                  onChange={(e) => updateSettings({ ai_personality: e.target.value })}
-                  placeholder="e.g., professional and helpful, friendly and casual, etc."
-                  rows={3}
-                />
-              </div>
+              {/* Settings organized in tabs */}
+              <Tabs defaultValue="personality" className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="personality">Personality</TabsTrigger>
+                  <TabsTrigger value="instructions">Instructions</TabsTrigger>
+                  <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+                  <TabsTrigger value="context">Context</TabsTrigger>
+                </TabsList>
 
-              {/* Auto Response */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="auto-response">Auto Response</Label>
-                  <p className="text-sm text-muted-foreground">Automatically respond to incoming messages</p>
-                </div>
-                <Switch
-                  id="auto-response"
-                  checked={settings?.auto_response_enabled || false}
-                  onCheckedChange={(checked) => updateSettings({ auto_response_enabled: checked })}
-                />
-              </div>
+                {/* Personality Tab */}
+                <TabsContent value="personality" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ai-personality">AI Personality</Label>
+                    <Textarea
+                      id="ai-personality"
+                      value={settings?.ai_personality || ''}
+                      onChange={(e) => updateSettings({ ai_personality: e.target.value })}
+                      placeholder="e.g., professional and helpful, friendly and casual, warm and empathetic..."
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Describe the tone and style of AI responses
+                    </p>
+                  </div>
 
-              {/* Image Analysis */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="image-analysis">Image Analysis</Label>
-                  <p className="text-sm text-muted-foreground">Analyze images sent by contacts</p>
-                </div>
-                <Switch
-                  id="image-analysis"
-                  checked={settings?.enable_image_analysis || false}
-                  onCheckedChange={(checked) => updateSettings({ enable_image_analysis: checked })}
-                />
-              </div>
+                  {/* Auto Response */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="auto-response">Auto Response</Label>
+                      <p className="text-sm text-muted-foreground">Automatically respond to incoming messages</p>
+                    </div>
+                    <Switch
+                      id="auto-response"
+                      checked={settings?.auto_response_enabled || false}
+                      onCheckedChange={(checked) => updateSettings({ auto_response_enabled: checked })}
+                    />
+                  </div>
 
-              {/* Reaction Detection */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="reaction-detection">Reaction Detection</Label>
-                  <p className="text-sm text-muted-foreground">Detect emoji reactions (👍, ❤️, etc.)</p>
-                </div>
-                <Switch
-                  id="reaction-detection"
-                  checked={settings?.enable_reaction_detection || false}
-                  onCheckedChange={(checked) => updateSettings({ enable_reaction_detection: checked })}
-                />
-              </div>
+                  {/* Response Delay */}
+                  <div className="space-y-2">
+                    <Label htmlFor="response-delay">Response Delay (seconds)</Label>
+                    <Input
+                      id="response-delay"
+                      type="number"
+                      value={settings?.double_text_delay_seconds || 2}
+                      onChange={(e) => updateSettings({ double_text_delay_seconds: parseInt(e.target.value) })}
+                      min={0}
+                      max={300}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Time to wait before sending auto-response (prevents immediate replies)
+                    </p>
+                  </div>
+                </TabsContent>
 
-              {/* Double Texting Prevention */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="double-text-prevention">Prevent Double Texting</Label>
-                  <p className="text-sm text-muted-foreground">Avoid sending multiple messages in quick succession</p>
-                </div>
-                <Switch
-                  id="double-text-prevention"
-                  checked={settings?.prevent_double_texting || false}
-                  onCheckedChange={(checked) => updateSettings({ prevent_double_texting: checked })}
-                />
-              </div>
+                {/* Instructions Tab */}
+                <TabsContent value="instructions" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="custom-instructions" className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Custom Instructions / Rules
+                    </Label>
+                    <Textarea
+                      id="custom-instructions"
+                      value={settings?.custom_instructions || ''}
+                      onChange={(e) => updateSettings({ custom_instructions: e.target.value })}
+                      placeholder={`Enter rules and guidelines for the AI to follow:
 
-              {/* Context Window Size */}
-              <div className="space-y-2">
-                <Label htmlFor="context-window">Context Window Size</Label>
-                <Input
-                  id="context-window"
-                  type="number"
-                  value={settings?.context_window_size || 20}
-                  onChange={(e) => updateSettings({ context_window_size: parseInt(e.target.value) })}
-                  min={1}
-                  max={100}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of previous messages to include for context
-                </p>
-              </div>
+- Always greet the customer by name
+- Never discuss pricing over text
+- If they ask about appointments, direct them to call
+- Be empathetic when handling complaints
+- Always end with a question to keep conversation going`}
+                      rows={10}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Specific rules, guidelines, and behaviors the AI should follow
+                    </p>
+                  </div>
+
+                  <div className="bg-muted/50 p-3 rounded-lg space-y-2">
+                    <p className="text-sm font-medium">Available Dynamic Variables</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <code className="bg-background px-2 py-1 rounded">{"{{first_name}}"}</code>
+                      <code className="bg-background px-2 py-1 rounded">{"{{last_name}}"}</code>
+                      <code className="bg-background px-2 py-1 rounded">{"{{email}}"}</code>
+                      <code className="bg-background px-2 py-1 rounded">{"{{company}}"}</code>
+                      <code className="bg-background px-2 py-1 rounded">{"{{phone}}"}</code>
+                      <code className="bg-background px-2 py-1 rounded">{"{{status}}"}</code>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      These will be replaced with actual lead data when available
+                    </p>
+                  </div>
+                </TabsContent>
+
+                {/* Knowledge Base Tab */}
+                <TabsContent value="knowledge" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="knowledge-base" className="flex items-center gap-2">
+                      <Bot className="w-4 h-4" />
+                      Knowledge Base
+                    </Label>
+                    <Textarea
+                      id="knowledge-base"
+                      value={settings?.knowledge_base || ''}
+                      onChange={(e) => updateSettings({ knowledge_base: e.target.value })}
+                      placeholder={`Enter information the AI should know:
+
+COMPANY INFO:
+- Company Name: Acme Corp
+- Hours: Mon-Fri 9am-5pm EST
+- Main Phone: (555) 123-4567
+
+PRODUCTS/SERVICES:
+- Basic Plan: $29/month
+- Pro Plan: $99/month
+- Enterprise: Contact for pricing
+
+FAQ:
+Q: What is your refund policy?
+A: 30-day money back guarantee on all plans
+
+COMMON OBJECTIONS:
+- "Too expensive" → Mention ROI and payment plans
+- "Need to think about it" → Offer free trial`}
+                      rows={15}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Facts, FAQs, product info, and other knowledge the AI can reference
+                    </p>
+                  </div>
+                </TabsContent>
+
+                {/* Context Tab */}
+                <TabsContent value="context" className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="dynamic-vars">Dynamic Variables</Label>
+                      <p className="text-sm text-muted-foreground">Include lead info in AI context</p>
+                    </div>
+                    <Switch
+                      id="dynamic-vars"
+                      checked={settings?.dynamic_variables_enabled ?? true}
+                      onCheckedChange={(checked) => updateSettings({ dynamic_variables_enabled: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="lead-context">Lead Context</Label>
+                      <p className="text-sm text-muted-foreground">Include lead details (name, email, company, status)</p>
+                    </div>
+                    <Switch
+                      id="lead-context"
+                      checked={settings?.include_lead_context ?? true}
+                      onCheckedChange={(checked) => updateSettings({ include_lead_context: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="call-history">Call History</Label>
+                      <p className="text-sm text-muted-foreground">Include recent call logs for context</p>
+                    </div>
+                    <Switch
+                      id="call-history"
+                      checked={settings?.include_call_history ?? true}
+                      onCheckedChange={(checked) => updateSettings({ include_call_history: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="sms-history">SMS History</Label>
+                      <p className="text-sm text-muted-foreground">Include previous SMS conversation</p>
+                    </div>
+                    <Switch
+                      id="sms-history"
+                      checked={settings?.include_sms_history ?? true}
+                      onCheckedChange={(checked) => updateSettings({ include_sms_history: checked })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="context-window">Context Window Size</Label>
+                    <Input
+                      id="context-window"
+                      type="number"
+                      value={settings?.context_window_size || 20}
+                      onChange={(e) => updateSettings({ context_window_size: parseInt(e.target.value) })}
+                      min={1}
+                      max={100}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Number of previous messages to include
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="max-history">Max History Items</Label>
+                    <Input
+                      id="max-history"
+                      type="number"
+                      value={settings?.max_history_items || 5}
+                      onChange={(e) => updateSettings({ max_history_items: parseInt(e.target.value) })}
+                      min={1}
+                      max={20}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Max call/SMS history entries to include
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="image-analysis">Image Analysis</Label>
+                      <p className="text-sm text-muted-foreground">Analyze images sent by contacts</p>
+                    </div>
+                    <Switch
+                      id="image-analysis"
+                      checked={settings?.enable_image_analysis || false}
+                      onCheckedChange={(checked) => updateSettings({ enable_image_analysis: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="reaction-detection">Reaction Detection</Label>
+                      <p className="text-sm text-muted-foreground">Detect emoji reactions (👍, ❤️, etc.)</p>
+                    </div>
+                    <Switch
+                      id="reaction-detection"
+                      checked={settings?.enable_reaction_detection || false}
+                      onCheckedChange={(checked) => updateSettings({ enable_reaction_detection: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="double-text-prevention">Prevent Double Texting</Label>
+                      <p className="text-sm text-muted-foreground">Avoid multiple quick messages</p>
+                    </div>
+                    <Switch
+                      id="double-text-prevention"
+                      checked={settings?.prevent_double_texting || false}
+                      onCheckedChange={(checked) => updateSettings({ prevent_double_texting: checked })}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
           </CardContent>
         </Card>
