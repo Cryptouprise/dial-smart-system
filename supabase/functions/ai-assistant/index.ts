@@ -546,14 +546,28 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'update_lead_status': {
+      // First find the lead to confirm it exists and get details
+      const { data: lead, error: findError } = await supabase
+        .from('leads')
+        .select('id, first_name, last_name, status')
+        .eq('phone_number', args.phone_number)
+        .eq('user_id', userId)
+        .single();
+      
+      if (findError || !lead) {
+        return { success: false, message: `No lead found with phone number ${args.phone_number}` };
+      }
+      
+      const leadName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || args.phone_number;
+      const oldStatus = lead.status;
+      
       const { error } = await supabase
         .from('leads')
-        .update({ status: args.new_status })
-        .eq('phone_number', args.phone_number)
-        .eq('user_id', userId);
+        .update({ status: args.new_status, updated_at: new Date().toISOString() })
+        .eq('id', lead.id);
       
       if (error) throw error;
-      return { success: true, message: `Lead status updated to "${args.new_status}"` };
+      return { success: true, message: `Lead "${leadName}" status changed from "${oldStatus}" to "${args.new_status}"` };
     }
 
     case 'create_campaign': {
@@ -785,9 +799,16 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         }
       };
       
+      const detailedMessage = `📊 Stats for ${period}:
+• Calls: ${calls.length} total, ${connectedCalls.length} connected (${answerRate}% answer rate)
+• Avg call duration: ${avgDuration} seconds
+• Leads: ${leads.length} total, ${appointments} appointments set, ${stats.leads.closedWon} won
+• SMS: ${stats.sms.sent} sent, ${stats.sms.received} received
+• Numbers: ${stats.numbers.active} active, ${stats.numbers.quarantined} quarantined`;
+      
       return { 
         success: true, 
-        message: `Stats for ${period}: ${calls.length} calls (${answerRate}% answer rate), ${appointments} appointments, ${sms.length} SMS`,
+        message: detailedMessage,
         data: stats 
       };
     }
@@ -811,18 +832,29 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       
       if (error) throw error;
       
-      const leadSummary = (data || []).map((l: any) => ({
-        name: `${l.first_name || ''} ${l.last_name || ''}`.trim() || 'Unknown',
-        phone: l.phone_number,
-        status: l.status,
-        company: l.company,
-        lastContacted: l.last_contacted_at
-      }));
+      const leads = data || [];
+      const leadDetails = leads.map((l: any) => {
+        const name = `${l.first_name || ''} ${l.last_name || ''}`.trim() || 'No name';
+        return `• ${name} (${l.phone_number}) - Status: ${l.status}${l.company ? `, Company: ${l.company}` : ''}`;
+      });
+      
+      const detailedMessage = leads.length > 0 
+        ? `Found ${leads.length} lead(s):\n${leadDetails.join('\n')}`
+        : 'No leads found matching your search';
       
       return { 
         success: true, 
-        message: `Found ${data?.length || 0} leads`,
-        data: leadSummary 
+        message: detailedMessage,
+        data: leads.map((l: any) => ({
+          id: l.id,
+          name: `${l.first_name || ''} ${l.last_name || ''}`.trim() || 'No name',
+          phone: l.phone_number,
+          email: l.email,
+          status: l.status,
+          company: l.company,
+          lastContacted: l.last_contacted_at,
+          notes: l.notes
+        }))
       };
     }
 
@@ -964,14 +996,17 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
 
     case 'move_lead_pipeline': {
       // Find lead
-      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId);
+      let leadQuery = supabase.from('leads').select('id, first_name, last_name, phone_number').eq('user_id', userId);
       if (args.lead_id) leadQuery = leadQuery.eq('id', args.lead_id);
       else if (args.phone_number) leadQuery = leadQuery.eq('phone_number', args.phone_number);
       
       const { data: leads } = await leadQuery.limit(1);
       if (!leads || leads.length === 0) {
-        return { success: false, message: 'Lead not found' };
+        return { success: false, message: `Lead not found with ${args.phone_number ? 'phone ' + args.phone_number : 'ID ' + args.lead_id}` };
       }
+      
+      const lead = leads[0];
+      const leadName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.phone_number;
       
       // Find pipeline board
       let boardQuery = supabase.from('pipeline_boards').select('id, name').eq('user_id', userId);
@@ -980,26 +1015,50 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       
       const { data: boards } = await boardQuery.limit(1);
       if (!boards || boards.length === 0) {
-        return { success: false, message: `Pipeline board "${args.pipeline_board_name}" not found` };
+        // List available boards for user
+        const { data: allBoards } = await supabase.from('pipeline_boards').select('name').eq('user_id', userId);
+        const boardNames = allBoards?.map((b: any) => b.name).join(', ') || 'none';
+        return { success: false, message: `Pipeline board "${args.pipeline_board_name}" not found. Available boards: ${boardNames}` };
       }
       
-      // Upsert pipeline position
-      const { error } = await supabase
+      // Check if position already exists
+      const { data: existing } = await supabase
         .from('lead_pipeline_positions')
-        .upsert({
-          user_id: userId,
-          lead_id: leads[0].id,
-          pipeline_board_id: boards[0].id,
-          notes: args.notes || 'Moved via AI Assistant',
-          moved_at: new Date().toISOString(),
-          moved_by_user: false
-        }, { onConflict: 'lead_id,pipeline_board_id' });
+        .select('id')
+        .eq('lead_id', lead.id)
+        .eq('pipeline_board_id', boards[0].id)
+        .single();
       
-      if (error) throw error;
+      if (existing) {
+        // Update existing
+        const { error } = await supabase
+          .from('lead_pipeline_positions')
+          .update({
+            notes: args.notes || 'Updated via AI Assistant',
+            moved_at: new Date().toISOString(),
+            moved_by_user: false
+          })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        // Insert new
+        const { error } = await supabase
+          .from('lead_pipeline_positions')
+          .insert({
+            user_id: userId,
+            lead_id: lead.id,
+            pipeline_board_id: boards[0].id,
+            notes: args.notes || 'Moved via AI Assistant',
+            moved_at: new Date().toISOString(),
+            moved_by_user: false,
+            position: 0
+          });
+        if (error) throw error;
+      }
       
       return { 
         success: true, 
-        message: `Lead moved to "${boards[0].name}" pipeline stage` 
+        message: `Lead "${leadName}" moved to "${boards[0].name}" pipeline stage` 
       };
     }
 
