@@ -230,21 +230,30 @@ serve(async (req) => {
           .update({ status: 'calling', updated_at: new Date().toISOString() })
           .eq('id', call.id);
 
-        // Initiate the call via outbound-calling function
-        const callResponse = await supabase.functions.invoke('outbound-calling', {
-          body: {
+        // Initiate the call via outbound-calling function with service role auth
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        const callResponse = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
             action: 'create_call',
             campaignId: call.campaign_id,
             leadId: call.lead_id,
             phoneNumber: lead.phone_number,
             callerId: selectedNumber.number,
             agentId: campaign.agent_id,
-            apiKey: retellApiKey
-          }
+          })
         });
 
-        if (callResponse.error) {
-          console.error('Call creation failed:', callResponse.error);
+        const callData = await callResponse.json();
+
+        if (!callResponse.ok || callData.error) {
+          console.error('Call creation failed:', callData.error || `HTTP ${callResponse.status}`);
           
           await supabase
             .from('dialing_queues')
@@ -257,6 +266,8 @@ serve(async (req) => {
           
           continue;
         }
+
+        console.log('Call created successfully:', callData);
 
         // Update number usage statistics
         await supabase
