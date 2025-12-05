@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
   MessageCircle, 
   X, 
@@ -17,7 +18,19 @@ import {
   Mic,
   MicOff,
   Volume2,
-  VolumeX
+  VolumeX,
+  Wrench,
+  Settings,
+  FileText,
+  Phone,
+  Users,
+  BarChart3,
+  Calendar,
+  ShieldAlert,
+  Download,
+  MessageSquare,
+  Zap,
+  ListChecks
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -37,6 +50,28 @@ const QUICK_ACTIONS = [
   { label: '📋 Daily Report', message: 'Generate my daily performance report with wins, improvements, and recommendations.' },
   { label: '📈 Weekly Stats', message: 'Get my stats for this week - compare calls, appointments, and answer rates' },
   { label: '💾 Export Leads', message: 'Export all my leads to CSV format' },
+];
+
+const AVAILABLE_TOOLS = [
+  { icon: BarChart3, name: 'Get Stats', description: 'Real-time call & SMS metrics' },
+  { icon: Users, name: 'Search Leads', description: 'Find leads by name, phone, status' },
+  { icon: ListChecks, name: 'Bulk Update', description: 'Update multiple leads at once' },
+  { icon: Calendar, name: 'Schedule Callback', description: 'Set follow-up reminders' },
+  { icon: ShieldAlert, name: 'Number Health', description: 'Check spam scores & status' },
+  { icon: Zap, name: 'Move Pipeline', description: 'Move leads between stages' },
+  { icon: Download, name: 'Export Data', description: 'Export leads to CSV' },
+  { icon: Settings, name: 'Toggle Setting', description: 'Enable/disable features' },
+  { icon: Settings, name: 'Update Setting', description: 'Change system settings' },
+  { icon: Zap, name: 'Create Automation', description: 'Set up automation rules' },
+  { icon: ListChecks, name: 'List Automations', description: 'View active rules' },
+  { icon: X, name: 'Delete Automation', description: 'Remove automation rules' },
+  { icon: FileText, name: 'Daily Report', description: 'Generate performance report' },
+  { icon: Phone, name: 'Import Number', description: 'Add phone numbers' },
+  { icon: Users, name: 'Update Lead', description: 'Change lead status' },
+  { icon: FileText, name: 'Create Campaign', description: 'Start new campaigns' },
+  { icon: Settings, name: 'Update Campaign', description: 'Modify campaigns' },
+  { icon: MessageSquare, name: 'Send SMS', description: 'Send text messages' },
+  { icon: ShieldAlert, name: 'Quarantine Number', description: 'Flag problematic numbers' },
 ];
 
 export const AIAssistantChat: React.FC = () => {
@@ -251,10 +286,53 @@ export const AIAssistantChat: React.FC = () => {
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot className="h-5 w-5" />
             AI Assistant
-            <Badge variant="secondary" className="text-xs">
-              <Sparkles className="h-3 w-3 mr-1" />
-              Smart
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs gap-1"
+                >
+                  <Wrench className="h-3 w-3" />
+                  19 Tools
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent 
+                className="w-72 p-0" 
+                align="start"
+                side="bottom"
+              >
+                <div className="p-3 border-b bg-muted/50">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Available AI Tools
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ask me to use any of these capabilities
+                  </p>
+                </div>
+                <ScrollArea className="h-64">
+                  <div className="p-2 space-y-1">
+                    {AVAILABLE_TOOLS.map((tool, idx) => (
+                      <div 
+                        key={idx}
+                        className="flex items-start gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-default"
+                      >
+                        <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <tool.icon className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium">{tool.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {tool.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
           </CardTitle>
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
