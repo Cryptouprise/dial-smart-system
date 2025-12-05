@@ -103,19 +103,36 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       });
 
       if (error) {
+        // Parse error body from various possible locations
         let errorData: any = null;
         try {
-          if (error.context?.body) {
-            errorData = JSON.parse(error.context.body);
+          if (typeof error === 'object' && error.context?.body) {
+            errorData = typeof error.context.body === 'string' 
+              ? JSON.parse(error.context.body) 
+              : error.context.body;
+          } else if (error.message) {
+            // Try parsing error message as JSON
+            try {
+              errorData = JSON.parse(error.message);
+            } catch {
+              errorData = { error: error.message };
+            }
           }
-        } catch {}
+        } catch (parseErr) {
+          console.error('Error parsing response:', parseErr);
+        }
 
         if (errorData?.incompleteSetup) {
           toast({
             title: "Trust Hub Setup Incomplete",
-            description: "Complete all required entities in Twilio Trust Hub before assigning numbers.",
-            variant: "destructive"
+            description: errorData.error || "Complete all required entities in Twilio Trust Hub before assigning numbers.",
+            variant: "destructive",
+            duration: 10000
           });
+          // Open help link
+          if (errorData.helpUrl) {
+            window.open(errorData.helpUrl, '_blank');
+          }
         } else if (errorData?.needsVoiceIntegrity) {
           toast({
             title: "SHAKEN Profile Required",
@@ -125,9 +142,23 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
         } else {
           toast({
             title: "Assignment Failed",
-            description: errorData?.error || error.message,
+            description: errorData?.error || errorData?.details || error.message || "Unknown error occurred",
             variant: "destructive"
           });
+        }
+        return;
+      }
+
+      // Check if data contains an error (for 200 responses with error info)
+      if (data?.error) {
+        toast({
+          title: data.incompleteSetup ? "Trust Hub Setup Incomplete" : "Assignment Issue",
+          description: data.error,
+          variant: "destructive",
+          duration: 10000
+        });
+        if (data.helpUrl) {
+          window.open(data.helpUrl, '_blank');
         }
         return;
       }
