@@ -664,9 +664,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           message: `Found ${numberList.length} SMS-capable numbers:\n${formattedList}`,
           data: { numbers: numberList, total: numberList.length }
         };
-      } catch (error: any) {
-        console.error('[AI Assistant] Error listing SMS numbers:', error);
-        return { success: false, message: `Failed to list numbers: ${error.message}` };
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        console.error('[AI Assistant] Error listing SMS numbers:', err);
+        return { success: false, message: `Failed to list numbers: ${errorMessage}` };
       }
     }
 
@@ -678,14 +679,24 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         return { success: false, message: 'Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.' };
       }
       
-      const toNumber = args.to_number.replace(/[^\d+]/g, '');
-      const cleanTo = toNumber.startsWith('+') ? toNumber : '+1' + toNumber;
+      // Smart phone number normalization - handles international numbers
+      const normalizePhone = (phone: string): string => {
+        const cleaned = phone.replace(/[^\d+]/g, '');
+        if (cleaned.startsWith('+')) return cleaned;
+        // Only assume US (+1) for 10-digit numbers without country code
+        if (cleaned.length === 10) return '+1' + cleaned;
+        // For 11-digit numbers starting with 1, add +
+        if (cleaned.length === 11 && cleaned.startsWith('1')) return '+' + cleaned;
+        // Otherwise, assume it already has country code, just add +
+        return '+' + cleaned;
+      };
+      
+      const cleanTo = normalizePhone(args.to_number);
       let fromNumber = args.from_number;
       
       // If from_number specified, use it directly
       if (fromNumber) {
-        fromNumber = fromNumber.replace(/[^\d+]/g, '');
-        fromNumber = fromNumber.startsWith('+') ? fromNumber : '+1' + fromNumber;
+        fromNumber = normalizePhone(fromNumber);
       } else {
         // Fetch SMS-capable numbers from Twilio directly
         try {
@@ -712,9 +723,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           // Use the first SMS-capable number
           fromNumber = smsNumbers[0].phone_number;
           console.log(`[AI Assistant] Auto-selected SMS number: ${fromNumber} from ${smsNumbers.length} available`);
-        } catch (error: any) {
-          console.error('[AI Assistant] Error fetching Twilio numbers:', error);
-          return { success: false, message: `Failed to find an SMS-capable number: ${error.message}. Use list_sms_numbers to see available options.` };
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          console.error('[AI Assistant] Error fetching Twilio numbers:', err);
+          return { success: false, message: `Failed to find an SMS-capable number: ${errorMessage}. Use list_sms_numbers to see available options.` };
         }
       }
       
@@ -812,13 +824,14 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           message: `✅ SMS successfully sent to ${cleanTo} from ${fromNumber}. Message: "${args.message.substring(0, 50)}${args.message.length > 50 ? '...' : ''}"`,
           data: { messageId: twilioData.sid, to: cleanTo, from: fromNumber }
         };
-      } catch (twilioError: any) {
+      } catch (twilioError) {
+        const errorMessage = twilioError instanceof Error ? twilioError.message : 'Unknown error';
         console.error('[AI Assistant] Twilio send error:', twilioError);
         await supabase
           .from('sms_messages')
-          .update({ status: 'failed', error_message: twilioError.message })
+          .update({ status: 'failed', error_message: errorMessage })
           .eq('id', smsRecord.id);
-        return { success: false, message: `Failed to send SMS: ${twilioError.message}` };
+        return { success: false, message: `Failed to send SMS: ${errorMessage}` };
       }
     }
 
