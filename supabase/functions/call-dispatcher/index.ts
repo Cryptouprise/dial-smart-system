@@ -242,6 +242,7 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             action: 'create_call',
+            userId: user.id,
             campaignId: call.campaign_id,
             leadId: call.lead_id,
             phoneNumber: lead.phone_number,
