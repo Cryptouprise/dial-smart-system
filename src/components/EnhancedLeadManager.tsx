@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
+import { RotateCcw } from 'lucide-react';
 import { Upload, Users, RefreshCw, FileText, Database, Link } from 'lucide-react';
 
 interface Lead {
@@ -29,7 +30,7 @@ const EnhancedLeadManager = () => {
   const [selectedCampaign, setSelectedCampaign] = useState('');
   
   const { toast } = useToast();
-  const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign } = usePredictiveDialing();
+  const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
 
   useEffect(() => {
@@ -138,6 +139,23 @@ const EnhancedLeadManager = () => {
         title: "Success",
         description: `Added ${selectedLeads.length} leads to campaign`,
       });
+    }
+  };
+
+  const handleResetForCalling = async () => {
+    if (selectedLeads.length === 0) {
+      toast({
+        title: "No leads selected",
+        description: "Please select at least one lead to reset",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const result = await resetLeadsForCalling(selectedLeads);
+    if (result) {
+      setSelectedLeads([]);
+      loadData();
     }
   };
 
@@ -291,6 +309,14 @@ const EnhancedLeadManager = () => {
                       <SelectItem value="interested">Interested</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Button 
+                    onClick={handleResetForCalling}
+                    disabled={selectedLeads.length === 0 || isLoading}
+                    variant="outline"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset for Calling ({selectedLeads.length})
+                  </Button>
                 </div>
 
                 {/* Leads Table */}

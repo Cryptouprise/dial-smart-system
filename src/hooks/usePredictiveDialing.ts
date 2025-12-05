@@ -174,6 +174,46 @@ export const usePredictiveDialing = () => {
     }
   };
 
+  const resetLeadsForCalling = async (leadIds: string[]) => {
+    setIsLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Reset lead status to 'new'
+      const { error: leadError } = await supabase
+        .from('leads')
+        .update({ status: 'new', last_contacted_at: null })
+        .in('id', leadIds);
+
+      if (leadError) throw leadError;
+
+      // Delete any existing queue entries for these leads
+      const { error: queueError } = await supabase
+        .from('dialing_queues')
+        .delete()
+        .in('lead_id', leadIds);
+
+      if (queueError) throw queueError;
+
+      toast({
+        title: "Success",
+        description: `Reset ${leadIds.length} leads for calling`,
+      });
+
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reset leads",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getLeads = async (filters?: { status?: string; campaign_id?: string }) => {
     setIsLoading(true);
     try {
@@ -524,6 +564,7 @@ export const usePredictiveDialing = () => {
     updateLead,
     importLeads,
     getLeads,
+    resetLeadsForCalling,
     // Campaign management
     createCampaign,
     updateCampaign,
