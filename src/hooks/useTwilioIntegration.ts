@@ -21,9 +21,24 @@ interface A2PPhoneNumber {
 
 interface A2PStatus {
   phone_numbers: A2PPhoneNumber[];
-  messaging_services: any[];
-  brand_registrations: any[];
-  campaigns: any[];
+  messaging_services: Array<{
+    sid: string;
+    friendly_name: string;
+    use_case?: string;
+    us_app_to_person_registered?: boolean;
+    associated_phone_numbers?: string[];
+  }>;
+  brand_registrations: Array<{
+    sid: string;
+    brand_type: string;
+    status: string;
+  }>;
+  campaigns: Array<{
+    sid: string;
+    use_case: string;
+    status: string;
+    messaging_service_name?: string;
+  }>;
   summary: {
     total_numbers: number;
     registered_numbers: number;
@@ -45,11 +60,11 @@ export const useTwilioIntegration = () => {
 
       if (error) throw error;
       return data.numbers || [];
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to list Twilio numbers:', error);
       toast({
         title: "Failed to Load Twilio Numbers",
-        description: error.message || "Could not fetch numbers from Twilio",
+        description: error instanceof Error ? error.message : "Could not fetch numbers from Twilio",
         variant: "destructive"
       });
       return [];
@@ -76,11 +91,11 @@ export const useTwilioIntegration = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Import error:', error);
       toast({
         title: "Import Failed",
-        description: error.message || "Failed to import number",
+        description: error instanceof Error ? error.message : "Failed to import number",
         variant: "destructive"
       });
       throw error;
@@ -104,11 +119,11 @@ export const useTwilioIntegration = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Sync error:', error);
       toast({
         title: "Sync Failed",
-        description: error.message || "Failed to sync Twilio numbers",
+        description: error instanceof Error ? error.message : "Failed to sync Twilio numbers",
         variant: "destructive"
       });
       throw error;
@@ -126,11 +141,11 @@ export const useTwilioIntegration = () => {
 
       if (error) throw error;
       return data as A2PStatus;
-    } catch (error: any) {
+    } catch (error) {
       console.error('A2P status check error:', error);
       toast({
         title: "A2P Status Check Failed",
-        description: error.message || "Could not fetch A2P registration status",
+        description: error instanceof Error ? error.message : "Could not fetch A2P registration status",
         variant: "destructive"
       });
       return null;
@@ -159,11 +174,11 @@ export const useTwilioIntegration = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Add to campaign error:', error);
       toast({
         title: "Failed to Add Number",
-        description: error.message || "Could not add number to campaign",
+        description: error instanceof Error ? error.message : "Could not add number to campaign",
         variant: "destructive"
       });
       throw error;
@@ -188,11 +203,11 @@ export const useTwilioIntegration = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Configure webhook error:', error);
       toast({
         title: "Configuration Failed",
-        description: error.message || "Could not configure SMS webhooks",
+        description: error instanceof Error ? error.message : "Could not configure SMS webhooks",
         variant: "destructive"
       });
       throw error;

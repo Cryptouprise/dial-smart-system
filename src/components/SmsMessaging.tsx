@@ -30,7 +30,9 @@ import {
 } from '@/components/ui/table';
 import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSmsMessaging, type SmsMessage } from '@/hooks/useSmsMessaging';
+import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
 
 interface TwilioNumber {
   number: string;
@@ -40,6 +42,7 @@ interface TwilioNumber {
 
 const SmsMessaging: React.FC = () => {
   const { isLoading, messages, sendSms, getMessages, getAvailableNumbers } = useSmsMessaging();
+  const { toast } = useToast();
   
   const [toNumber, setToNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -68,22 +71,54 @@ const SmsMessaging: React.FC = () => {
 
   const handleSendSms = async () => {
     if (!toNumber || !fromNumber || !messageBody.trim()) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate phone number format
+    const validationError = getPhoneValidationError(toNumber);
+    if (validationError) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Normalize phone number
+    const normalizedToNumber = normalizePhoneNumber(toNumber);
+    if (!normalizedToNumber) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: 'Could not normalize phone number. Please check the format.',
+        variant: 'destructive',
+      });
       return;
     }
 
     setIsSending(true);
-    const success = await sendSms({
-      to: toNumber,
-      from: fromNumber,
-      body: messageBody.trim(),
-    });
+    try {
+      const success = await sendSms({
+        to: normalizedToNumber,
+        from: fromNumber,
+        body: messageBody.trim(),
+      });
 
-    if (success) {
-      setMessageBody('');
-      setToNumber('');
-      await getMessages();
+      if (success) {
+        setMessageBody('');
+        setToNumber('');
+        await getMessages();
+      }
+    } catch (error) {
+      console.error('Error sending SMS:', error);
+    } finally {
+      setIsSending(false);
     }
-    setIsSending(false);
   };
 
   const getStatusBadge = (status: SmsMessage['status']) => {
@@ -105,14 +140,6 @@ const SmsMessaging: React.FC = () => {
         {status}
       </Badge>
     );
-  };
-
-  const formatPhoneNumber = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 11 && cleaned.startsWith('1')) {
-      return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
-    }
-    return phone;
   };
 
   return (

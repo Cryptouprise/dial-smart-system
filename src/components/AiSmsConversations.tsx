@@ -68,10 +68,12 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
 import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
+import { useDebounce } from '@/hooks/useDebounce';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
 
 // Pre-defined SMS templates
 const SMS_TEMPLATES = [
@@ -147,7 +149,40 @@ const AiSmsConversations: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showA2PStatus, setShowA2PStatus] = useState(false);
-  const [a2pStatus, setA2PStatus] = useState<any>(null);
+  const [a2pStatus, setA2PStatus] = useState<{
+    phone_numbers?: Array<{
+      sid: string;
+      phone_number: string;
+      friendly_name?: string;
+      a2p_registered?: boolean;
+      messaging_service_sid?: string;
+      messaging_service_name?: string;
+    }>;
+    messaging_services?: Array<{
+      sid: string;
+      friendly_name: string;
+      use_case?: string;
+      us_app_to_person_registered?: boolean;
+      associated_phone_numbers?: string[];
+    }>;
+    brand_registrations?: Array<{
+      sid: string;
+      brand_type: string;
+      status: string;
+    }>;
+    campaigns?: Array<{
+      sid: string;
+      use_case: string;
+      status: string;
+      messaging_service_name?: string;
+    }>;
+    summary?: {
+      total_numbers: number;
+      registered_numbers: number;
+      pending_numbers: number;
+      unregistered_numbers: number;
+    };
+  } | null>(null);
   const [a2pTab, setA2pTab] = useState('overview');
   const [selectedCampaignSid, setSelectedCampaignSid] = useState('');
   const [numberToAddToCampaign, setNumberToAddToCampaign] = useState('');
@@ -155,6 +190,7 @@ const AiSmsConversations: React.FC = () => {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300); // Debounce search input
   const [availableTwilioNumbers, setAvailableTwilioNumbers] = useState<Array<{number: string, friendly_name?: string}>>([]);
   const [selectedFromNumber, setSelectedFromNumber] = useState('');
   const [loadingNumbers, setLoadingNumbers] = useState(false);
@@ -250,7 +286,11 @@ const AiSmsConversations: React.FC = () => {
         async (payload) => {
           try {
             console.log('[AiSmsConversations] New message received:', payload);
-            const newMessage = payload.new as any;
+            const newMessage = payload.new as {
+              conversation_id?: string;
+              direction?: string;
+              is_ai_generated?: boolean;
+            };
             
             // Reload conversations to update list
             await loadConversations();
@@ -314,7 +354,7 @@ const AiSmsConversations: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations]);
+  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations, toast]);
 
   const handleSelectConversation = (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
@@ -369,12 +409,27 @@ const AiSmsConversations: React.FC = () => {
       return;
     }
 
-    // Format phone number
-    let formattedPhone = newContactPhone.replace(/\D/g, '');
-    if (!formattedPhone.startsWith('1') && formattedPhone.length === 10) {
-      formattedPhone = '1' + formattedPhone;
+    // Validate phone number
+    const validationError = getPhoneValidationError(newContactPhone);
+    if (validationError) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
     }
-    formattedPhone = '+' + formattedPhone;
+
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(newContactPhone);
+    if (!normalizedPhone) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: 'Could not normalize phone number. Please use format: +1234567890',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -392,7 +447,7 @@ const AiSmsConversations: React.FC = () => {
         .from('sms_conversations')
         .select('*')
         .eq('user_id', user.id)
-        .eq('contact_phone', formattedPhone)
+        .eq('contact_phone', normalizedPhone)
         .maybeSingle();
 
       if (existing) {
@@ -412,7 +467,7 @@ const AiSmsConversations: React.FC = () => {
         .from('sms_conversations')
         .insert({
           user_id: user.id,
-          contact_phone: formattedPhone,
+          contact_phone: normalizedPhone,
           contact_name: newContactName.trim() || null,
         })
         .select()
@@ -422,7 +477,7 @@ const AiSmsConversations: React.FC = () => {
 
       toast({
         title: 'Conversation Created',
-        description: `Started conversation with ${formattedPhone}`,
+        description: `Started conversation with ${formatPhoneNumber(normalizedPhone)}`,
       });
 
       await loadConversations();
@@ -466,17 +521,9 @@ const AiSmsConversations: React.FC = () => {
     }
   };
 
-  const formatPhone = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 11 && cleaned.startsWith('1')) {
-      return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
-    }
-    return phone;
-  };
-
   const filteredConversations = conversations.filter(conv => {
-    if (!searchQuery) return true;
-    const search = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery) return true;
+    const search = debouncedSearchQuery.toLowerCase();
     return (
       conv.contact_phone.includes(search) ||
       (conv.contact_name && conv.contact_name.toLowerCase().includes(search))
@@ -948,7 +995,7 @@ COMMON OBJECTIONS:
                                 Phone Numbers
                               </h4>
                               <div className="space-y-2">
-                                {a2pStatus.phone_numbers?.map((num: any) => (
+                                {a2pStatus.phone_numbers?.map((num) => (
                                   <div 
                                     key={num.sid} 
                                     className="flex items-center justify-between p-3 rounded-lg border"
@@ -995,7 +1042,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">Messaging Services (Campaigns)</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.messaging_services.map((service: any) => (
+                                  {a2pStatus.messaging_services.map((service) => (
                                     <div key={service.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-start">
                                         <div>
@@ -1022,7 +1069,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">Brand Registrations</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.brand_registrations.map((brand: any) => (
+                                  {a2pStatus.brand_registrations.map((brand) => (
                                     <div key={brand.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-center">
                                         <span className="font-medium">{brand.brand_type}</span>
@@ -1041,7 +1088,7 @@ COMMON OBJECTIONS:
                               <div>
                                 <h4 className="font-semibold mb-3">A2P Campaigns</h4>
                                 <div className="space-y-2">
-                                  {a2pStatus.campaigns.map((campaign: any) => (
+                                  {a2pStatus.campaigns.map((campaign) => (
                                     <div key={campaign.sid} className="p-3 rounded-lg border">
                                       <div className="flex justify-between items-center">
                                         <div>
@@ -1081,8 +1128,8 @@ COMMON OBJECTIONS:
                                 </SelectTrigger>
                                 <SelectContent>
                                   {a2pStatus.phone_numbers
-                                    ?.filter((num: any) => !num.messaging_service_sid)
-                                    .map((num: any) => (
+                                    ?.filter((num) => !num.messaging_service_sid)
+                                    .map((num) => (
                                       <SelectItem key={num.sid} value={num.phone_number}>
                                         <div className="flex items-center gap-2">
                                           <ShieldAlert className="h-4 w-4 text-red-500" />
@@ -1093,7 +1140,7 @@ COMMON OBJECTIONS:
                                         </div>
                                       </SelectItem>
                                     ))}
-                                  {a2pStatus.phone_numbers?.filter((num: any) => !num.messaging_service_sid).length === 0 && (
+                                  {a2pStatus.phone_numbers?.filter((num) => !num.messaging_service_sid).length === 0 && (
                                     <SelectItem value="" disabled>
                                       All numbers are already registered
                                     </SelectItem>
@@ -1109,7 +1156,7 @@ COMMON OBJECTIONS:
                                   <SelectValue placeholder="Choose a messaging service..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {a2pStatus.messaging_services?.map((service: any) => (
+                                  {a2pStatus.messaging_services?.map((service) => (
                                     <SelectItem key={service.sid} value={service.sid}>
                                       <div className="flex items-center gap-2">
                                         {service.us_app_to_person_registered ? (
@@ -1199,7 +1246,7 @@ COMMON OBJECTIONS:
                             <SelectItem key={num.number} value={num.number}>
                               <div className="flex items-center gap-2">
                                 <Phone className="h-4 w-4" />
-                                {formatPhone(num.number)}
+                                {formatPhoneNumber(num.number)}
                                 {num.friendly_name && (
                                   <span className="text-muted-foreground">({num.friendly_name})</span>
                                 )}
@@ -1311,7 +1358,7 @@ COMMON OBJECTIONS:
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
                             <p className="font-medium truncate">
-                              {conv.contact_name || formatPhone(conv.contact_phone)}
+                              {conv.contact_name || formatPhoneNumber(conv.contact_phone)}
                             </p>
                             {conv.unread_count > 0 && (
                               <Badge variant="default" className="ml-2">
@@ -1320,7 +1367,7 @@ COMMON OBJECTIONS:
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground truncate">
-                            {formatPhone(conv.contact_phone)}
+                            {formatPhoneNumber(conv.contact_phone)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
                             {formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true })}
