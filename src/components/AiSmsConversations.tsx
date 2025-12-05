@@ -300,50 +300,10 @@ const AiSmsConversations: React.FC = () => {
               await loadMessages(selectedConversation.id);
             }
             
-            // Auto-respond to inbound messages if enabled
-            if (
-              settings?.auto_response_enabled && 
-              newMessage?.direction === 'inbound' && 
-              newMessage?.conversation_id &&
-              !newMessage?.is_ai_generated
-            ) {
-              console.log('[AiSmsConversations] Auto-response enabled, generating AI response...');
-              
-              // Use configurable delay from settings (default to 2 seconds)
-              const delayMs = (settings?.double_text_delay_seconds || 2) * 1000;
-              console.log(`[AiSmsConversations] Will respond after ${delayMs}ms delay`);
-              
-              setTimeout(async () => {
-                try {
-                  const aiResponse = await generateAIResponse(newMessage.conversation_id);
-                  
-                  if (aiResponse && selectedFromNumber) {
-                    // Get the conversation to find the contact phone
-                    const conv = conversations.find(c => c.id === newMessage.conversation_id);
-                    if (conv) {
-                      await sendMessage(
-                        newMessage.conversation_id,
-                        conv.contact_phone,
-                        selectedFromNumber,
-                        aiResponse
-                      );
-                      console.log('[AiSmsConversations] Auto-response sent successfully');
-                      toast({
-                        title: 'Auto Response Sent',
-                        description: 'AI generated and sent a response automatically',
-                      });
-                    }
-                  }
-                } catch (autoError) {
-                  console.error('[AiSmsConversations] Auto-response error:', autoError);
-                  toast({
-                    title: 'Auto Response Failed',
-                    description: 'Failed to generate automatic response',
-                    variant: 'destructive',
-                  });
-                }
-              }, delayMs);
-            }
+            // NOTE: Auto-response is handled by the twilio-sms-webhook edge function
+            // The webhook has better double-texting prevention and context awareness
+            // Frontend real-time subscription only handles UI updates, not auto-responses
+            // This prevents duplicate messages from being sent when both webhook and frontend trigger
           } catch (error) {
             console.error('[AiSmsConversations] Error handling new message:', error);
           }
@@ -354,7 +314,7 @@ const AiSmsConversations: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConversation, loadConversations, loadMessages, settings, generateAIResponse, sendMessage, selectedFromNumber, conversations, toast]);
+  }, [selectedConversation, loadConversations, loadMessages]);
 
   const handleSelectConversation = (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
