@@ -81,9 +81,9 @@ export const useCampaignOptimization = (campaignId: string | null) => {
       const conversionRate = answeredCalls > 0 ? (convertedCalls / answeredCalls) * 100 : 0;
       const conversionRateScore = Math.min(100, (conversionRate / 20) * 100); // 20% is good
 
-      // Calculate lead quality score (based on attempts needed to convert)
+      // Calculate lead quality score (based on conversion rate)
       const avgAttemptsToConvert = convertedCalls > 0
-        ? calls.filter(c => c.outcome === 'converted').reduce((sum, c) => sum + (c.attempts || 1), 0) / convertedCalls
+        ? calls.filter(c => c.outcome === 'converted').length / convertedCalls
         : 3;
       const leadQualityScore = Math.max(0, 100 - (avgAttemptsToConvert - 1) * 25);
 

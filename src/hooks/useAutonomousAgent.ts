@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -54,6 +54,9 @@ export interface AutonomousSettings {
   decision_tracking_enabled: boolean;
 }
 
+// Note: This hook requires additional database tables to be created.
+// Currently using local state as a placeholder.
+
 export const useAutonomousAgent = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [settings, setSettings] = useState<AutonomousSettings>({
@@ -68,105 +71,38 @@ export const useAutonomousAgent = () => {
   const [scriptSuggestions, setScriptSuggestions] = useState<ScriptSuggestion[]>([]);
   const { toast } = useToast();
 
-  // Load autonomous settings
+  // Load autonomous settings (using local state - tables not yet created)
   const loadSettings = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('autonomous_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        setSettings({
-          enabled: data.enabled || false,
-          auto_execute_recommendations: data.auto_execute_recommendations || false,
-          auto_approve_script_changes: data.auto_approve_script_changes || false,
-          require_approval_for_high_priority: data.require_approval_for_high_priority ?? true,
-          max_daily_autonomous_actions: data.max_daily_autonomous_actions || 50,
-          decision_tracking_enabled: data.decision_tracking_enabled ?? true
-        });
-      }
-    } catch (error) {
-      console.error('Error loading autonomous settings:', error);
-    }
+    // Settings loaded from local state - database tables not yet created
+    console.log('Autonomous settings: Using local state (database tables not configured)');
   }, []);
 
   // Update autonomous settings
   const updateSettings = useCallback(async (newSettings: Partial<AutonomousSettings>) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+    const updatedSettings = { ...settings, ...newSettings };
+    setSettings(updatedSettings);
 
-      const updatedSettings = { ...settings, ...newSettings };
-      
-      const { error } = await supabase
-        .from('autonomous_settings')
-        .upsert({
-          user_id: user.id,
-          ...updatedSettings,
-          updated_at: new Date().toISOString()
-        });
+    toast({
+      title: "Settings Updated",
+      description: `Autonomous mode: ${updatedSettings.enabled ? 'Enabled' : 'Disabled'} (local state only)`,
+    });
 
-      if (error) throw error;
-
-      setSettings(updatedSettings);
-
-      toast({
-        title: "Settings Updated",
-        description: `Autonomous mode: ${updatedSettings.enabled ? 'Enabled' : 'Disabled'}`,
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update settings",
-        variant: "destructive"
-      });
-      return false;
-    }
+    return true;
   }, [settings, toast]);
 
   // Log a decision made by the AI agent
   const logDecision = useCallback(async (decision: Omit<AgentDecision, 'id' | 'timestamp'>) => {
     if (!settings.decision_tracking_enabled) return null;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+    // Store in local state - database table not yet created
+    const newDecision: AgentDecision = {
+      ...decision,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString()
+    };
 
-      const { data, error } = await supabase
-        .from('agent_decisions')
-        .insert({
-          user_id: user.id,
-          lead_id: decision.lead_id,
-          lead_name: decision.lead_name,
-          decision_type: decision.decision_type,
-          reasoning: decision.reasoning,
-          action_taken: decision.action_taken,
-          outcome: decision.outcome,
-          success: decision.success,
-          executed_at: decision.executed_at,
-          approved_by: decision.approved_by,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      return data;
-    } catch (error) {
-      console.error('Error logging decision:', error);
-      return null;
-    }
+    setDecisions(prev => [newDecision, ...prev]);
+    return newDecision;
   }, [settings.decision_tracking_enabled]);
 
   // Execute a recommendation (autonomous or manual)
@@ -192,14 +128,12 @@ export const useAutonomousAgent = () => {
 
       // Check daily limit
       if (isAutonomous) {
-        const today = new Date().toISOString().split('T')[0];
-        const { data: todayDecisions } = await supabase
-          .from('agent_decisions')
-          .select('id', { count: 'exact' })
-          .gte('created_at', today)
-          .eq('approved_by', 'autonomous');
+        const todayDecisions = decisions.filter(d => 
+          d.timestamp.startsWith(new Date().toISOString().split('T')[0]) &&
+          d.approved_by === 'autonomous'
+        );
 
-        if ((todayDecisions?.length || 0) >= settings.max_daily_autonomous_actions) {
+        if (todayDecisions.length >= settings.max_daily_autonomous_actions) {
           toast({
             title: "Daily Limit Reached",
             description: `Autonomous action limit of ${settings.max_daily_autonomous_actions} reached`,
@@ -215,19 +149,15 @@ export const useAutonomousAgent = () => {
 
       switch (actionType) {
         case 'call':
-          // Queue the call in dialing system
           actionResult = await queueCall(leadId);
           break;
         case 'sms':
-          // Send SMS
           actionResult = await sendSMS(leadId, recommendation.nextBestAction.message);
           break;
         case 'email':
-          // Send email
           actionResult = await sendEmail(leadId, recommendation.nextBestAction.message);
           break;
         case 'wait':
-          // Schedule follow-up
           actionResult = await scheduleFollowUp(leadId, recommendation.nextBestAction.timing);
           break;
       }
@@ -261,11 +191,10 @@ export const useAutonomousAgent = () => {
     } finally {
       setIsExecuting(false);
     }
-  }, [settings, toast, logDecision]);
+  }, [settings, toast, logDecision, decisions]);
 
   // Helper functions for different action types
   const queueCall = async (leadId: string) => {
-    // Add to dialing queue
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -277,7 +206,6 @@ export const useAutonomousAgent = () => {
 
     if (!lead) return null;
 
-    // Update lead to mark for callback
     await supabase
       .from('leads')
       .update({ 
@@ -291,13 +219,11 @@ export const useAutonomousAgent = () => {
 
   const sendSMS = async (leadId: string, message?: string) => {
     // Placeholder for SMS sending
-    // This would integrate with your SMS system
     return true;
   };
 
   const sendEmail = async (leadId: string, message?: string) => {
     // Placeholder for email sending
-    // This would integrate with your email system
     return true;
   };
 
@@ -305,7 +231,7 @@ export const useAutonomousAgent = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Parse timing and schedule
+    // Parse timing and schedule via lead update
     let delay = 24 * 60; // Default 24 hours
     if (timing.includes('hours')) {
       const hours = parseInt(timing.match(/\d+/)?.[0] || '24');
@@ -315,260 +241,63 @@ export const useAutonomousAgent = () => {
     const scheduledAt = new Date();
     scheduledAt.setMinutes(scheduledAt.getMinutes() + delay);
 
+    // Update lead with next callback time
     await supabase
-      .from('scheduled_follow_ups')
-      .insert({
-        user_id: user.id,
-        lead_id: leadId,
-        scheduled_at: scheduledAt.toISOString(),
-        action_type: 'callback',
-        status: 'pending'
-      });
+      .from('leads')
+      .update({
+        next_callback_at: scheduledAt.toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', leadId);
 
     return true;
   };
 
-  // Load decision history
+  // Load decision history (from local state)
   const loadDecisionHistory = useCallback(async (limit = 50) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('agent_decisions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) throw error;
-
-      setDecisions(data || []);
-    } catch (error) {
-      console.error('Error loading decision history:', error);
-    }
+    // Using local state - database table not yet created
+    console.log('Decision history: Using local state');
   }, []);
 
-  // Analyze script performance
+  // Analyze script performance (placeholder)
   const analyzeScriptPerformance = useCallback(async (scriptType: 'call' | 'sms' | 'email'): Promise<ScriptPerformance[]> => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-
-      // Get all scripts and their usage
-      const { data: scripts } = await supabase
-        .from('ai_scripts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('script_type', scriptType);
-
-      if (!scripts) return [];
-
-      const performance: ScriptPerformance[] = [];
-
-      for (const script of scripts) {
-        // Get usage stats
-        const { data: usageStats } = await supabase
-          .from('script_usage_logs')
-          .select('*')
-          .eq('script_id', script.id);
-
-        if (!usageStats || usageStats.length === 0) continue;
-
-        const totalUses = usageStats.length;
-        const positiveOutcomes = usageStats.filter(u => 
-          u.outcome === 'interested' || u.outcome === 'converted' || u.outcome === 'positive'
-        ).length;
-        const negativeOutcomes = usageStats.filter(u => 
-          u.outcome === 'not_interested' || u.outcome === 'negative'
-        ).length;
-
-        const conversionRate = totalUses > 0 ? (positiveOutcomes / totalUses) * 100 : 0;
-        const avgDuration = scriptType === 'call' 
-          ? usageStats.reduce((sum, u) => sum + (u.duration_seconds || 0), 0) / totalUses
-          : undefined;
-
-        // Calculate performance score
-        const performanceScore = Math.round(
-          (conversionRate * 0.7) + 
-          ((positiveOutcomes - negativeOutcomes) / totalUses * 100 * 0.3)
-        );
-
-        performance.push({
-          script_id: script.id,
-          script_type: scriptType,
-          script_content: script.content,
-          total_uses: totalUses,
-          positive_outcomes: positiveOutcomes,
-          negative_outcomes: negativeOutcomes,
-          conversion_rate: Math.round(conversionRate * 10) / 10,
-          average_duration: avgDuration ? Math.round(avgDuration) : undefined,
-          last_used: usageStats[usageStats.length - 1]?.created_at,
-          performance_score: Math.max(0, Math.min(100, performanceScore))
-        });
-      }
-
-      // Sort by performance score
-      performance.sort((a, b) => b.performance_score - a.performance_score);
-
-      return performance;
-    } catch (error) {
-      console.error('Error analyzing script performance:', error);
-      return [];
-    }
+    // Placeholder - tables not yet created
+    console.log('Script performance analysis: Tables not configured');
+    return [];
   }, []);
 
-  // Generate script suggestions based on performance
+  // Generate script suggestions (placeholder)
   const generateScriptSuggestions = useCallback(async (scriptType: 'call' | 'sms' | 'email') => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
+    // Placeholder - tables not yet created
+    console.log('Script suggestions: Tables not configured');
+    return [];
+  }, []);
 
-      const performance = await analyzeScriptPerformance(scriptType);
-      const suggestions: Omit<ScriptSuggestion, 'id' | 'created_at' | 'status'>[] = [];
-
-      for (const script of performance) {
-        // Only suggest improvements for scripts with poor performance
-        if (script.performance_score < 70 && script.total_uses >= 10) {
-          const reasoning: string[] = [];
-          let suggestedChanges = '';
-
-          if (script.conversion_rate < 20) {
-            reasoning.push(`Low conversion rate: ${script.conversion_rate}%`);
-            suggestedChanges += 'Focus on clearer value proposition and stronger call-to-action. ';
-          }
-
-          if (script.negative_outcomes > script.positive_outcomes) {
-            reasoning.push('More negative than positive outcomes');
-            suggestedChanges += 'Soften approach, add more empathy, reduce pressure. ';
-          }
-
-          if (scriptType === 'call' && script.average_duration && script.average_duration < 60) {
-            reasoning.push('Very short calls - may be getting rejected quickly');
-            suggestedChanges += 'Improve opening hook to engage prospect longer. ';
-          }
-
-          if (suggestedChanges) {
-            suggestions.push({
-              script_id: script.script_id,
-              current_script: script.script_content,
-              suggested_script: `${script.script_content}\n\n[AI Suggestion: ${suggestedChanges}]`,
-              reasoning,
-              expected_improvement: Math.min(30, 100 - script.performance_score),
-              based_on_data: {
-                totalCalls: script.total_uses,
-                conversionRate: script.conversion_rate,
-                avgDuration: script.average_duration || 0
-              }
-            });
-          }
-        }
-      }
-
-      // Save suggestions to database
-      for (const suggestion of suggestions) {
-        await supabase
-          .from('script_suggestions')
-          .insert({
-            user_id: user.id,
-            ...suggestion,
-            status: settings.auto_approve_script_changes ? 'auto_applied' : 'pending',
-            created_at: new Date().toISOString()
-          });
-      }
-
-      return suggestions;
-    } catch (error) {
-      console.error('Error generating script suggestions:', error);
-      return [];
-    }
-  }, [analyzeScriptPerformance, settings.auto_approve_script_changes]);
-
-  // Apply a script suggestion
+  // Apply a script suggestion (placeholder)
   const applyScriptSuggestion = useCallback(async (suggestionId: string, isAutonomous: boolean) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return false;
-
-      const { data: suggestion } = await supabase
-        .from('script_suggestions')
-        .select('*')
-        .eq('id', suggestionId)
-        .single();
-
-      if (!suggestion) return false;
-
-      // Update the script
-      await supabase
-        .from('ai_scripts')
-        .update({ 
-          content: suggestion.suggested_script,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', suggestion.script_id);
-
-      // Update suggestion status
-      await supabase
-        .from('script_suggestions')
-        .update({ 
-          status: isAutonomous ? 'auto_applied' : 'approved',
-          applied_at: new Date().toISOString()
-        })
-        .eq('id', suggestionId);
-
-      toast({
-        title: "Script Updated",
-        description: isAutonomous ? "Auto-applied by AI" : "Script changes applied",
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error applying script suggestion:', error);
-      toast({
-        title: "Error",
-        description: "Failed to apply script changes",
-        variant: "destructive"
-      });
-      return false;
-    }
+    toast({
+      title: "Feature Not Available",
+      description: "Script suggestions require additional database configuration",
+      variant: "destructive"
+    });
+    return false;
   }, [toast]);
 
-  // Load script suggestions
+  // Load script suggestions (placeholder)
   const loadScriptSuggestions = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('script_suggestions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setScriptSuggestions(data || []);
-    } catch (error) {
-      console.error('Error loading script suggestions:', error);
-    }
+    console.log('Script suggestions: Tables not configured');
+    return [];
   }, []);
-
-  // Initialize
-  useEffect(() => {
-    loadSettings();
-    loadDecisionHistory();
-    loadScriptSuggestions();
-  }, [loadSettings, loadDecisionHistory, loadScriptSuggestions]);
 
   return {
     isExecuting,
     settings,
     decisions,
     scriptSuggestions,
+    loadSettings,
     updateSettings,
-    executeRecommendation,
     logDecision,
+    executeRecommendation,
     loadDecisionHistory,
     analyzeScriptPerformance,
     generateScriptSuggestions,

@@ -56,14 +56,14 @@ export const useCallTracking = () => {
 
       return (data || []).map(log => ({
         id: log.id,
-        lead_id: log.lead_id,
+        lead_id: log.lead_id || '',
         call_time: log.created_at,
         duration_seconds: log.duration_seconds || 0,
         outcome: log.outcome || 'unknown',
-        disposition: log.auto_disposition || log.outcome || 'none',
+        disposition: log.outcome || 'none',
         notes: log.notes || '',
-        recording_url: log.recording_url,
-        transcript: log.transcript
+        recording_url: undefined,
+        transcript: undefined
       }));
     } catch (error) {
       console.error('Error fetching call history:', error);

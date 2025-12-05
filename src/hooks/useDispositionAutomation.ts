@@ -64,7 +64,7 @@ export const useDispositionAutomation = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Initialize standard dispositions with rules
+  // Initialize standard dispositions
   const initializeStandardDispositions = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -99,35 +99,9 @@ export const useDispositionAutomation = () => {
         if (dispError) throw dispError;
       }
 
-      // Create disposition rules
-      const { data: dispositions } = await supabase
-        .from('dispositions')
-        .select('id, name')
-        .eq('user_id', user.id);
-
-      const dispositionMap = new Map(dispositions?.map(d => [d.name, d.id]) || []);
-
-      const rules = STANDARD_DISPOSITIONS.map(d => ({
-        user_id: user.id,
-        disposition_id: dispositionMap.get(d.name),
-        disposition_name: d.name,
-        sentiment: d.sentiment,
-        auto_create_pipeline_stage: true,
-        pipeline_stage_name: d.pipeline_stage,
-        follow_up_action: d.follow_up,
-        follow_up_delay_minutes: d.follow_up === 'callback' ? 1440 : undefined // 24 hours for callbacks
-      }));
-
-      // Insert rules (upsert to avoid duplicates)
-      for (const rule of rules) {
-        await supabase
-          .from('disposition_rules')
-          .upsert(rule, { onConflict: 'disposition_id' });
-      }
-
       toast({
         title: "Dispositions Initialized",
-        description: `Created ${newDispositions.length} standard dispositions with automation rules`,
+        description: `Created ${newDispositions.length} standard dispositions`,
       });
 
       return true;
@@ -156,7 +130,7 @@ export const useDispositionAutomation = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Get disposition and rule
+      // Get disposition
       const { data: disposition } = await supabase
         .from('dispositions')
         .select('id, name, pipeline_stage')
@@ -166,27 +140,20 @@ export const useDispositionAutomation = () => {
 
       if (!disposition) throw new Error('Disposition not found');
 
-      const { data: rule } = await supabase
-        .from('disposition_rules')
-        .select('*')
-        .eq('disposition_id', disposition.id)
-        .single();
-
       // Update call log
       await supabase
         .from('call_logs')
         .update({
           outcome: params.dispositionName.toLowerCase().replace(/\s+/g, '_'),
-          auto_disposition: params.dispositionName,
-          notes: params.notes,
-          updated_at: new Date().toISOString()
+          notes: params.notes
         })
         .eq('id', params.callLogId);
 
-      // Update lead status based on sentiment
+      // Determine lead status based on disposition
+      const dispConfig = STANDARD_DISPOSITIONS.find(d => d.name === params.dispositionName);
       let leadStatus = 'contacted';
-      if (rule?.sentiment === 'positive') leadStatus = 'qualified';
-      else if (rule?.sentiment === 'negative') leadStatus = 'lost';
+      if (dispConfig?.sentiment === 'positive') leadStatus = 'qualified';
+      else if (dispConfig?.sentiment === 'negative') leadStatus = 'lost';
 
       await supabase
         .from('leads')
@@ -197,23 +164,21 @@ export const useDispositionAutomation = () => {
         })
         .eq('id', params.leadId);
 
-      // Move to pipeline stage if rule specifies
-      if (rule?.auto_create_pipeline_stage && rule.pipeline_stage_name) {
-        // Find or create pipeline board
+      // Move to pipeline stage if specified
+      if (disposition.pipeline_stage) {
         let { data: pipelineBoard } = await supabase
           .from('pipeline_boards')
           .select('id')
           .eq('user_id', user.id)
-          .eq('name', rule.pipeline_stage_name)
+          .eq('name', disposition.pipeline_stage)
           .single();
 
         if (!pipelineBoard) {
-          // Create pipeline board
           const { data: newBoard } = await supabase
             .from('pipeline_boards')
             .insert({
               user_id: user.id,
-              name: rule.pipeline_stage_name,
+              name: disposition.pipeline_stage,
               description: `Auto-created for ${params.dispositionName}`,
               disposition_id: disposition.id,
               position: 999,
@@ -226,7 +191,6 @@ export const useDispositionAutomation = () => {
         }
 
         if (pipelineBoard) {
-          // Move lead to pipeline stage
           await supabase
             .from('lead_pipeline_positions')
             .upsert({
@@ -241,36 +205,20 @@ export const useDispositionAutomation = () => {
         }
       }
 
-      // Schedule follow-up if rule specifies
-      if (rule?.follow_up_action === 'callback' && rule.follow_up_delay_minutes) {
+      // Schedule follow-up callback if needed
+      if (dispConfig?.follow_up === 'callback') {
         const scheduledAt = new Date();
-        scheduledAt.setMinutes(scheduledAt.getMinutes() + rule.follow_up_delay_minutes);
+        scheduledAt.setMinutes(scheduledAt.getMinutes() + 1440); // 24 hours
 
-        await supabase
-          .from('scheduled_follow_ups')
-          .insert({
-            user_id: user.id,
-            lead_id: params.leadId,
-            scheduled_at: scheduledAt.toISOString(),
-            action_type: 'callback',
-            status: 'pending'
-          });
-
-        // Also update lead's next_callback_at
         await supabase
           .from('leads')
           .update({ next_callback_at: scheduledAt.toISOString() })
           .eq('id', params.leadId);
       }
 
-      // Start sequence if rule specifies
-      if (rule?.follow_up_action === 'sequence' && rule.sequence_id) {
-        await startSequence(params.leadId, rule.sequence_id);
-      }
-
       toast({
         title: "Disposition Applied",
-        description: `${params.dispositionName} applied with automation rules`,
+        description: `${params.dispositionName} applied successfully`,
       });
 
       return true;
@@ -287,200 +235,38 @@ export const useDispositionAutomation = () => {
     }
   }, [toast]);
 
-  // Start a follow-up sequence
+  // Start a follow-up sequence (placeholder - tables not yet created)
   const startSequence = useCallback(async (leadId: string, sequenceId: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Get sequence steps
-      const { data: steps } = await supabase
-        .from('sequence_steps')
-        .select('*')
-        .eq('sequence_id', sequenceId)
-        .order('step_number');
-
-      if (!steps || steps.length === 0) return;
-
-      // Schedule each step
-      let cumulativeDelay = 0;
-      for (const step of steps) {
-        cumulativeDelay += step.delay_minutes;
-        const scheduledAt = new Date();
-        scheduledAt.setMinutes(scheduledAt.getMinutes() + cumulativeDelay);
-
-        await supabase
-          .from('scheduled_follow_ups')
-          .insert({
-            user_id: user.id,
-            lead_id: leadId,
-            scheduled_at: scheduledAt.toISOString(),
-            action_type: 'sequence_step',
-            sequence_step_id: step.id,
-            status: 'pending'
-          });
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error starting sequence:', error);
-      return false;
-    }
+    console.log('Start sequence: Tables not configured', { leadId, sequenceId });
+    return false;
   }, []);
 
-  // Create a new follow-up sequence
+  // Create a new follow-up sequence (placeholder - tables not yet created)
   const createSequence = useCallback(async (params: {
     name: string;
     description: string;
     pipelineStageId?: string;
     steps: Omit<SequenceStep, 'id' | 'sequence_id' | 'completed'>[];
   }) => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Create sequence
-      const { data: sequence, error: seqError } = await supabase
-        .from('follow_up_sequences')
-        .insert({
-          user_id: user.id,
-          name: params.name,
-          description: params.description,
-          pipeline_stage_id: params.pipelineStageId,
-          active: true
-        })
-        .select()
-        .single();
-
-      if (seqError) throw seqError;
-
-      // Create steps
-      const steps = params.steps.map((step, index) => ({
-        user_id: user.id,
-        sequence_id: sequence.id,
-        step_number: index + 1,
-        action_type: step.action_type,
-        delay_minutes: step.delay_minutes,
-        content: step.content,
-        ai_prompt: step.ai_prompt,
-        completed: false
-      }));
-
-      const { error: stepsError } = await supabase
-        .from('sequence_steps')
-        .insert(steps);
-
-      if (stepsError) throw stepsError;
-
-      toast({
-        title: "Sequence Created",
-        description: `Created sequence "${params.name}" with ${steps.length} steps`,
-      });
-
-      return sequence;
-    } catch (error) {
-      console.error('Error creating sequence:', error);
-      toast({
-        title: "Sequence Error",
-        description: "Failed to create sequence",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
+    toast({
+      title: "Feature Not Available",
+      description: "Follow-up sequences require additional database configuration",
+      variant: "destructive"
+    });
+    return null;
   }, [toast]);
 
-  // Get pending follow-ups for execution
+  // Get pending follow-ups (placeholder - tables not yet created)
   const getPendingFollowUps = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const now = new Date().toISOString();
-
-      const { data: followUps, error } = await supabase
-        .from('scheduled_follow_ups')
-        .select(`
-          *,
-          lead:leads(id, first_name, last_name, phone_number),
-          sequence_step:sequence_steps(*)
-        `)
-        .eq('user_id', user.id)
-        .eq('status', 'pending')
-        .lte('scheduled_at', now)
-        .order('scheduled_at');
-
-      if (error) throw error;
-      return followUps || [];
-    } catch (error) {
-      console.error('Error fetching pending follow-ups:', error);
-      return [];
-    }
+    console.log('Pending follow-ups: Tables not configured');
+    return [];
   }, []);
 
-  // Execute a follow-up action
+  // Execute a follow-up action (placeholder - tables not yet created)
   const executeFollowUp = useCallback(async (followUpId: string) => {
-    try {
-      const { data: followUp } = await supabase
-        .from('scheduled_follow_ups')
-        .select(`
-          *,
-          lead:leads(*),
-          sequence_step:sequence_steps(*)
-        `)
-        .eq('id', followUpId)
-        .single();
-
-      if (!followUp) return false;
-
-      // Execute based on action type
-      if (followUp.action_type === 'callback') {
-        // Trigger callback (this would integrate with your calling system)
-        // For now, we'll just update the status
-        await supabase
-          .from('scheduled_follow_ups')
-          .update({ status: 'completed' })
-          .eq('id', followUpId);
-
-        toast({
-          title: "Follow-up Triggered",
-          description: `Callback scheduled for ${followUp.lead?.first_name} ${followUp.lead?.last_name}`,
-        });
-      } else if (followUp.action_type === 'sequence_step' && followUp.sequence_step) {
-        const step = followUp.sequence_step;
-
-        // Execute based on step type
-        switch (step.action_type) {
-          case 'ai_call':
-            // Trigger AI call through your calling system
-            // This would integrate with Retell AI or similar
-            break;
-          case 'ai_sms':
-          case 'manual_sms':
-            // Send SMS through your SMS system
-            break;
-          case 'email':
-            // Send email
-            break;
-          case 'wait':
-            // Just wait (no action)
-            break;
-        }
-
-        await supabase
-          .from('scheduled_follow_ups')
-          .update({ status: 'completed' })
-          .eq('id', followUpId);
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error executing follow-up:', error);
-      return false;
-    }
-  }, [toast]);
+    console.log('Execute follow-up: Tables not configured', { followUpId });
+    return false;
+  }, []);
 
   return {
     isLoading,
