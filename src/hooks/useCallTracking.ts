@@ -132,7 +132,6 @@ export const useCallTracking = () => {
     outcome: string;
     disposition?: string;
     notes?: string;
-    transcript?: string;
   }) => {
     setIsLoading(true);
     try {
@@ -148,10 +147,8 @@ export const useCallTracking = () => {
           phone_number: params.phoneNumber,
           caller_id: params.callerId,
           duration_seconds: params.duration,
-          outcome: params.outcome,
-          auto_disposition: params.disposition,
+          outcome: params.disposition || params.outcome,
           notes: params.notes,
-          transcript: params.transcript,
           status: 'completed',
           created_at: new Date().toISOString()
         });
@@ -232,7 +229,7 @@ export const useCallTracking = () => {
 
         const dispositions: Record<string, number> = {};
         logs.forEach(l => {
-          const disp = l.auto_disposition || l.outcome;
+          const disp = l.outcome;
           if (disp && disp !== 'none') {
             dispositions[disp] = (dispositions[disp] || 0) + 1;
           }
