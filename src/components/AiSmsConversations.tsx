@@ -72,6 +72,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
 
 // Pre-defined SMS templates
 const SMS_TEMPLATES = [
@@ -406,12 +407,27 @@ const AiSmsConversations: React.FC = () => {
       return;
     }
 
-    // Format phone number
-    let formattedPhone = newContactPhone.replace(/\D/g, '');
-    if (!formattedPhone.startsWith('1') && formattedPhone.length === 10) {
-      formattedPhone = '1' + formattedPhone;
+    // Validate phone number
+    const validationError = getPhoneValidationError(newContactPhone);
+    if (validationError) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
     }
-    formattedPhone = '+' + formattedPhone;
+
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(newContactPhone);
+    if (!normalizedPhone) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: 'Could not normalize phone number. Please use format: +1234567890',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -429,7 +445,7 @@ const AiSmsConversations: React.FC = () => {
         .from('sms_conversations')
         .select('*')
         .eq('user_id', user.id)
-        .eq('contact_phone', formattedPhone)
+        .eq('contact_phone', normalizedPhone)
         .maybeSingle();
 
       if (existing) {
@@ -449,7 +465,7 @@ const AiSmsConversations: React.FC = () => {
         .from('sms_conversations')
         .insert({
           user_id: user.id,
-          contact_phone: formattedPhone,
+          contact_phone: normalizedPhone,
           contact_name: newContactName.trim() || null,
         })
         .select()
@@ -459,7 +475,7 @@ const AiSmsConversations: React.FC = () => {
 
       toast({
         title: 'Conversation Created',
-        description: `Started conversation with ${formattedPhone}`,
+        description: `Started conversation with ${formatPhoneNumber(normalizedPhone)}`,
       });
 
       await loadConversations();
@@ -501,14 +517,6 @@ const AiSmsConversations: React.FC = () => {
       default:
         return <Clock className="h-3 w-3 text-gray-400" />;
     }
-  };
-
-  const formatPhone = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 11 && cleaned.startsWith('1')) {
-      return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
-    }
-    return phone;
   };
 
   const filteredConversations = conversations.filter(conv => {
@@ -1236,7 +1244,7 @@ COMMON OBJECTIONS:
                             <SelectItem key={num.number} value={num.number}>
                               <div className="flex items-center gap-2">
                                 <Phone className="h-4 w-4" />
-                                {formatPhone(num.number)}
+                                {formatPhoneNumber(num.number)}
                                 {num.friendly_name && (
                                   <span className="text-muted-foreground">({num.friendly_name})</span>
                                 )}
@@ -1348,7 +1356,7 @@ COMMON OBJECTIONS:
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
                             <p className="font-medium truncate">
-                              {conv.contact_name || formatPhone(conv.contact_phone)}
+                              {conv.contact_name || formatPhoneNumber(conv.contact_phone)}
                             </p>
                             {conv.unread_count > 0 && (
                               <Badge variant="default" className="ml-2">
@@ -1357,7 +1365,7 @@ COMMON OBJECTIONS:
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground truncate">
-                            {formatPhone(conv.contact_phone)}
+                            {formatPhoneNumber(conv.contact_phone)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
                             {formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true })}

@@ -32,6 +32,7 @@ import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loa
 import { useSmsMessaging, type SmsMessage } from '@/hooks/useSmsMessaging';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
 
 interface TwilioNumber {
   number: string;
@@ -70,15 +71,31 @@ const SmsMessaging: React.FC = () => {
 
   const handleSendSms = async () => {
     if (!toNumber || !fromNumber || !messageBody.trim()) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
       return;
     }
 
     // Validate phone number format
-    const cleanToNumber = toNumber.replace(/[^\d+]/g, '');
-    if (!cleanToNumber.startsWith('+') && cleanToNumber.length < 10) {
+    const validationError = getPhoneValidationError(toNumber);
+    if (validationError) {
       toast({
         title: 'Invalid Phone Number',
-        description: 'Please enter a valid phone number with country code (e.g., +1234567890)',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Normalize phone number
+    const normalizedToNumber = normalizePhoneNumber(toNumber);
+    if (!normalizedToNumber) {
+      toast({
+        title: 'Invalid Phone Number',
+        description: 'Could not normalize phone number. Please check the format.',
         variant: 'destructive',
       });
       return;
@@ -87,7 +104,7 @@ const SmsMessaging: React.FC = () => {
     setIsSending(true);
     try {
       const success = await sendSms({
-        to: toNumber,
+        to: normalizedToNumber,
         from: fromNumber,
         body: messageBody.trim(),
       });
@@ -123,14 +140,6 @@ const SmsMessaging: React.FC = () => {
         {status}
       </Badge>
     );
-  };
-
-  const formatPhoneNumber = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 11 && cleaned.startsWith('1')) {
-      return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
-    }
-    return phone;
   };
 
   return (
