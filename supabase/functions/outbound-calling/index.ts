@@ -15,6 +15,7 @@ interface OutboundCallRequest {
   callerId?: string;
   agentId?: string;
   retellCallId?: string;
+  userId?: string; // For service-role calls from call-dispatcher
 }
 
 serve(async (req) => {
@@ -58,30 +59,46 @@ serve(async (req) => {
     // Extract JWT token from Authorization header
     const token = authHeader.replace('Bearer ', '');
     
-    // Verify the JWT token directly
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    // Check if this is a service-role call (from call-dispatcher)
+    const isServiceRoleCall = token === serviceRoleKey;
     
-    console.log('[Outbound Calling] Auth verification:', { 
-      hasUser: !!user, 
-      userId: user?.id,
-      error: authError?.message 
-    });
+    let userId: string;
     
-    if (authError || !user) {
-      console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
-      return new Response(
-        JSON.stringify({ 
-          error: 'Authentication failed: Auth session missing!',
-          details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
-        }), 
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    if (isServiceRoleCall) {
+      // Service role call - get userId from request body
+      console.log('[Outbound Calling] Service role call detected');
+      const body = await req.clone().json();
+      if (!body.userId) {
+        return new Response(
+          JSON.stringify({ error: 'userId required for service role calls' }), 
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      userId = body.userId;
+      console.log('[Outbound Calling] ✓ Service role auth, userId from body:', userId);
+    } else {
+      // User JWT call - verify the token
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      
+      console.log('[Outbound Calling] Auth verification:', { 
+        hasUser: !!user, 
+        userId: user?.id,
+        error: authError?.message 
+      });
+      
+      if (authError || !user) {
+        console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
+        return new Response(
+          JSON.stringify({ 
+            error: 'Authentication failed: Auth session missing!',
+            details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
+          }), 
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      userId = user.id;
+      console.log('[Outbound Calling] ✓ User verified:', userId);
     }
-
-    console.log('[Outbound Calling] ✓ User verified:', user.id);
 
     
     const { 
@@ -99,7 +116,7 @@ serve(async (req) => {
       throw new Error('RETELL_AI_API_KEY is not configured');
     }
 
-    console.log(`[Outbound Calling] Processing ${action} request for user:`, user.id);
+    console.log(`[Outbound Calling] Processing ${action} request for user:`, userId);
 
 
     const baseUrl = 'https://api.retellai.com/v2';
@@ -117,13 +134,13 @@ serve(async (req) => {
           throw new Error('Phone number, caller ID, and agent ID are required');
         }
 
-        console.log('[Outbound Calling] Creating call log for user:', user.id);
+        console.log('[Outbound Calling] Creating call log for user:', userId);
 
         // Use admin client for database operations
         const { data: callLog, error: callLogError } = await supabaseAdmin
           .from('call_logs')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             campaign_id: campaignId,
             lead_id: leadId,
             phone_number: phoneNumber,
