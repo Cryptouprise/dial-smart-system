@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Phone, PhoneOff, Activity, TrendingUp, Settings as SettingsIcon } from 'lucide-react';
+import { Phone, PhoneOff, Activity, TrendingUp, Settings as SettingsIcon, Trash2, RefreshCw } from 'lucide-react';
 import { useConcurrencyManager } from '@/hooks/useConcurrencyManager';
 import {
   Dialog,
@@ -22,7 +22,10 @@ const ConcurrencyMonitor = () => {
     activeCalls, 
     getConcurrencySettings, 
     updateConcurrencySettings,
-    calculateDialingRate 
+    calculateDialingRate,
+    cleanupStuckCalls,
+    loadActiveCalls,
+    isLoading
   } = useConcurrencyManager();
   
   const [settings, setSettings] = useState({
@@ -93,13 +96,32 @@ const ConcurrencyMonitor = () => {
                 Real-time concurrent call tracking and capacity management
               </CardDescription>
             </div>
-            <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <SettingsIcon className="h-4 w-4 mr-2" />
-                  Settings
-                </Button>
-              </DialogTrigger>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => loadActiveCalls()}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={cleanupStuckCalls}
+                disabled={isLoading}
+                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear Stuck
+              </Button>
+              <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <SettingsIcon className="h-4 w-4 mr-2" />
+                    Settings
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Concurrency Settings</DialogTitle>
@@ -176,7 +198,8 @@ const ConcurrencyMonitor = () => {
                   </Button>
                 </div>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

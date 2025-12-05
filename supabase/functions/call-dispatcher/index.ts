@@ -15,7 +15,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -32,6 +31,53 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check for special actions in request body
+    let requestBody = {};
+    try {
+      requestBody = await req.json();
+    } catch {
+      // No body or invalid JSON is fine
+    }
+
+    const action = (requestBody as any).action;
+
+    // Handle cleanup action
+    if (action === 'cleanup_stuck_calls') {
+      console.log('Cleaning up stuck calls for user:', user.id);
+      
+      // Mark old "ringing" or "initiated" calls as "no_answer" if older than 5 minutes
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      const { data: stuckCalls, error: cleanupError } = await supabase
+        .from('call_logs')
+        .update({ 
+          status: 'no_answer',
+          ended_at: new Date().toISOString(),
+          notes: 'Auto-cleaned: stuck in ringing state'
+        })
+        .eq('user_id', user.id)
+        .in('status', ['initiated', 'ringing', 'in_progress'])
+        .lt('created_at', fiveMinutesAgo)
+        .select();
+
+      if (cleanupError) {
+        console.error('Cleanup error:', cleanupError);
+        throw cleanupError;
+      }
+
+      const cleanedCount = stuckCalls?.length || 0;
+      console.log(`Cleaned up ${cleanedCount} stuck calls`);
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          cleaned: cleanedCount,
+          message: `Cleaned up ${cleanedCount} stuck calls`
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -97,7 +143,7 @@ serve(async (req) => {
 
     // Add leads to dialing queue
     if (leadsToQueue.length > 0) {
-      const campaign = activeCampaigns[0]; // Use first campaign for defaults
+      const campaign = activeCampaigns[0];
       const queueEntries = leadsToQueue.map(cl => {
         const lead = cl.leads as any;
         return {
@@ -166,17 +212,25 @@ serve(async (req) => {
 
     console.log(`Found ${userCalls.length} pending calls to dispatch`);
 
-    // Get available phone numbers from pool
+    // Get available phone numbers - PRIORITIZE numbers with retell_phone_id
     const { data: availableNumbers, error: numbersError } = await supabase
       .from('phone_numbers')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'active')
-      .is('quarantine_until', null);
+      .is('quarantine_until', null)
+      .order('retell_phone_id', { ascending: false, nullsFirst: false }); // Prioritize numbers WITH retell_phone_id
 
     if (numbersError) throw numbersError;
 
-    if (!availableNumbers || availableNumbers.length === 0) {
+    // Filter to only include numbers registered with Retell (have retell_phone_id)
+    const retellNumbers = (availableNumbers || []).filter(n => n.retell_phone_id);
+    
+    // If no Retell-registered numbers, use all available but warn
+    const numbersToUse = retellNumbers.length > 0 ? retellNumbers : availableNumbers;
+    const usingUnregisteredNumbers = retellNumbers.length === 0 && (availableNumbers?.length || 0) > 0;
+
+    if (!numbersToUse || numbersToUse.length === 0) {
       console.log('No available numbers in pool');
       return new Response(
         JSON.stringify({ 
@@ -187,7 +241,11 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Found ${availableNumbers.length} available numbers in pool`);
+    if (usingUnregisteredNumbers) {
+      console.warn('WARNING: No numbers with retell_phone_id found. Using unregistered numbers - calls may fail!');
+    }
+
+    console.log(`Found ${numbersToUse.length} available numbers (${retellNumbers.length} registered with Retell)`);
 
     // Get Retell AI key from environment
     const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
@@ -201,7 +259,7 @@ serve(async (req) => {
 
     let dispatchedCount = 0;
     const dispatchResults: any[] = [];
-    const numberPool = [...availableNumbers];
+    const numberPool = [...numbersToUse];
 
     // Process each pending call
     for (const call of userCalls.slice(0, 5)) {
@@ -231,14 +289,11 @@ serve(async (req) => {
           .eq('id', call.id);
 
         // Initiate the call via outbound-calling function with service role auth
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        
         const callResponse = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`,
+            'Authorization': `Bearer ${supabaseKey}`,
           },
           body: JSON.stringify({
             action: 'create_call',
@@ -295,7 +350,7 @@ serve(async (req) => {
           lead: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unknown',
           phone: lead.phone_number,
           number_used: selectedNumber.number,
-          call_id: callResponse.data?.call_id
+          call_id: callData?.call_id
         });
 
         console.log(`Successfully dispatched call ${call.id}`);
@@ -315,6 +370,7 @@ serve(async (req) => {
         success: true,
         dispatched: dispatchedCount,
         results: dispatchResults,
+        warning: usingUnregisteredNumbers ? 'Using phone numbers not registered with Retell - some calls may fail' : undefined,
         message: dispatchedCount > 0 
           ? `Successfully dispatched ${dispatchedCount} calls` 
           : 'No calls dispatched - check logs for details'
@@ -342,6 +398,11 @@ function selectBestNumber(availableNumbers: any[], targetPhone: string): any | n
   const scored = availableNumbers.map(n => {
     let score = 100;
     
+    // HEAVILY prefer numbers registered with Retell
+    if (n.retell_phone_id) {
+      score += 100;
+    }
+    
     // Prefer matching area code
     if (n.area_code === targetAreaCode) {
       score += 20;
@@ -366,6 +427,6 @@ function selectBestNumber(availableNumbers: any[], targetPhone: string): any | n
   // Sort by score descending and return best
   scored.sort((a, b) => b.score - a.score);
   
-  console.log(`Best number: ${scored[0].number.number} (score: ${scored[0].score})`);
+  console.log(`Best number: ${scored[0].number.number} (score: ${scored[0].score}, retell_id: ${scored[0].number.retell_phone_id || 'none'})`);
   return scored[0].number;
 }

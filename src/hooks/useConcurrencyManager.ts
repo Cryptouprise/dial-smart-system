@@ -23,13 +23,16 @@ export const useConcurrencyManager = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Load active calls from database
+  // Load active calls from database - only recent ones (last 5 minutes)
   const loadActiveCalls = async () => {
     try {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
       const { data, error } = await supabase
         .from('call_logs')
         .select('id, phone_number, status, created_at, retell_call_id')
         .in('status', ['initiated', 'ringing', 'in_progress'])
+        .gte('created_at', fiveMinutesAgo) // Only show recent calls
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -47,6 +50,36 @@ export const useConcurrencyManager = () => {
     } catch (error: any) {
       console.error('Error loading active calls:', error);
       return [];
+    }
+  };
+
+  // Clean up stuck calls
+  const cleanupStuckCalls = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('call-dispatcher', {
+        body: { action: 'cleanup_stuck_calls' }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Cleanup Complete",
+        description: data.message || `Cleaned up ${data.cleaned} stuck calls`,
+      });
+
+      await loadActiveCalls();
+      return data;
+    } catch (error: any) {
+      console.error('Error cleaning up stuck calls:', error);
+      toast({
+        title: "Cleanup Failed",
+        description: error.message || "Failed to clean up stuck calls",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -195,6 +228,7 @@ export const useConcurrencyManager = () => {
     getConcurrencySettings,
     updateConcurrencySettings,
     canMakeCall,
-    calculateDialingRate
+    calculateDialingRate,
+    cleanupStuckCalls
   };
 };
