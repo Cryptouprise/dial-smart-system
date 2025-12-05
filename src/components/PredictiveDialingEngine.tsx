@@ -221,8 +221,8 @@ const PredictiveDialingEngine = () => {
                     <span className="text-sm text-slate-700 dark:text-slate-300">
                       Efficiency Score
                     </span>
-                    <Badge variant="default">
-                      {Math.round((params.availableAgents / Math.max(1, metrics.optimalConcurrency)) * 100)}%
+                    <Badge variant={metrics.efficiency >= 80 ? "default" : metrics.efficiency >= 60 ? "secondary" : "destructive"}>
+                      {metrics.efficiency}%
                     </Badge>
                   </div>
 
@@ -230,8 +230,14 @@ const PredictiveDialingEngine = () => {
                     <span className="text-sm text-slate-700 dark:text-slate-300">
                       Compliance Status
                     </span>
-                    <Badge variant={metrics.estimatedAbandonments <= params.targetAbandonmentRate ? "default" : "destructive"}>
-                      {metrics.estimatedAbandonments <= params.targetAbandonmentRate ? "✓ Compliant" : "⚠️ Risk"}
+                    <Badge variant={
+                      metrics.complianceStatus === 'compliant' ? "default" : 
+                      metrics.complianceStatus === 'warning' ? "secondary" : 
+                      "destructive"
+                    }>
+                      {metrics.complianceStatus === 'compliant' && "✓ Compliant"}
+                      {metrics.complianceStatus === 'warning' && "⚠️ Warning"}
+                      {metrics.complianceStatus === 'violation' && "❌ Violation"}
                     </Badge>
                   </div>
                 </CardContent>
