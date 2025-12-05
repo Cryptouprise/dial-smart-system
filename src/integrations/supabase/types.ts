@@ -53,6 +53,59 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_decisions: {
+        Row: {
+          action_taken: string | null
+          approved_by: string | null
+          created_at: string | null
+          decision_type: string
+          executed_at: string | null
+          id: string
+          lead_id: string | null
+          lead_name: string | null
+          outcome: string | null
+          reasoning: string | null
+          success: boolean | null
+          user_id: string
+        }
+        Insert: {
+          action_taken?: string | null
+          approved_by?: string | null
+          created_at?: string | null
+          decision_type: string
+          executed_at?: string | null
+          id?: string
+          lead_id?: string | null
+          lead_name?: string | null
+          outcome?: string | null
+          reasoning?: string | null
+          success?: boolean | null
+          user_id: string
+        }
+        Update: {
+          action_taken?: string | null
+          approved_by?: string | null
+          created_at?: string | null
+          decision_type?: string
+          executed_at?: string | null
+          id?: string
+          lead_id?: string | null
+          lead_name?: string | null
+          outcome?: string | null
+          reasoning?: string | null
+          success?: boolean | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_decisions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_chatbot_settings: {
         Row: {
           ai_actions_enabled: boolean | null
@@ -175,6 +228,45 @@ export type Database = {
           retell_voice_id?: string | null
           updated_at?: string
           use_number_rotation?: boolean | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      autonomous_settings: {
+        Row: {
+          auto_approve_script_changes: boolean | null
+          auto_execute_recommendations: boolean | null
+          created_at: string | null
+          decision_tracking_enabled: boolean | null
+          enabled: boolean | null
+          id: string
+          max_daily_autonomous_actions: number | null
+          require_approval_for_high_priority: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          auto_approve_script_changes?: boolean | null
+          auto_execute_recommendations?: boolean | null
+          created_at?: string | null
+          decision_tracking_enabled?: boolean | null
+          enabled?: boolean | null
+          id?: string
+          max_daily_autonomous_actions?: number | null
+          require_approval_for_high_priority?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          auto_approve_script_changes?: boolean | null
+          auto_execute_recommendations?: boolean | null
+          created_at?: string | null
+          decision_tracking_enabled?: boolean | null
+          enabled?: boolean | null
+          id?: string
+          max_daily_autonomous_actions?: number | null
+          require_approval_for_high_priority?: boolean | null
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -591,6 +683,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      follow_up_sequences: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          pipeline_stage_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          pipeline_stage_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          pipeline_stage_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequences_pipeline_stage_id_fkey"
+            columns: ["pipeline_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_boards"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lead_pipeline_positions: {
         Row: {
@@ -1148,6 +1281,111 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      scheduled_follow_ups: {
+        Row: {
+          action_type: string
+          created_at: string | null
+          current_step_id: string | null
+          error_message: string | null
+          executed_at: string | null
+          id: string
+          lead_id: string
+          scheduled_at: string
+          sequence_id: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string | null
+          current_step_id?: string | null
+          error_message?: string | null
+          executed_at?: string | null
+          id?: string
+          lead_id: string
+          scheduled_at: string
+          sequence_id?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string | null
+          current_step_id?: string | null
+          error_message?: string | null
+          executed_at?: string | null
+          id?: string
+          lead_id?: string
+          scheduled_at?: string
+          sequence_id?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_follow_ups_current_step_id_fkey"
+            columns: ["current_step_id"]
+            isOneToOne: false
+            referencedRelation: "sequence_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_follow_ups_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_follow_ups_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sequence_steps: {
+        Row: {
+          action_type: string
+          ai_prompt: string | null
+          content: string | null
+          created_at: string | null
+          delay_minutes: number | null
+          id: string
+          sequence_id: string
+          step_number: number
+        }
+        Insert: {
+          action_type: string
+          ai_prompt?: string | null
+          content?: string | null
+          created_at?: string | null
+          delay_minutes?: number | null
+          id?: string
+          sequence_id: string
+          step_number: number
+        }
+        Update: {
+          action_type?: string
+          ai_prompt?: string | null
+          content?: string | null
+          created_at?: string | null
+          delay_minutes?: number | null
+          id?: string
+          sequence_id?: string
+          step_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sequence_steps_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sms_context_history: {
         Row: {
