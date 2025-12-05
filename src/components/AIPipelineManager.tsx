@@ -29,6 +29,7 @@ import { useAIPipelineManager, useCallTracking } from '@/hooks/useCallTracking';
 import { useAutonomousAgent } from '@/hooks/useAutonomousAgent';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import ScriptManager from './ScriptManager';
 
 const AIPipelineManager: React.FC = () => {
   const { 
@@ -41,14 +42,9 @@ const AIPipelineManager: React.FC = () => {
     isExecuting,
     settings,
     decisions,
-    scriptSuggestions,
     updateSettings,
     executeRecommendation,
-    loadDecisionHistory,
-    analyzeScriptPerformance,
-    generateScriptSuggestions,
-    applyScriptSuggestion,
-    loadScriptSuggestions
+    loadDecisionHistory
   } = useAutonomousAgent();
   const { toast } = useToast();
 
@@ -58,7 +54,6 @@ const AIPipelineManager: React.FC = () => {
   const [callStats, setCallStats] = useState<Map<string, any>>(new Map());
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [scriptPerformance, setScriptPerformance] = useState<any[]>([]);
 
   useEffect(() => {
     loadLeads();
@@ -219,28 +214,6 @@ const AIPipelineManager: React.FC = () => {
     
     // Reload data
     await loadDecisionHistory();
-  };
-
-  const handleAnalyzeScripts = async () => {
-    const performance = await analyzeScriptPerformance('call');
-    setScriptPerformance(performance);
-    
-    if (performance.length > 0) {
-      toast({
-        title: "Script Analysis Complete",
-        description: `Analyzed ${performance.length} scripts`,
-      });
-    }
-  };
-
-  const handleGenerateScriptSuggestions = async () => {
-    await generateScriptSuggestions('call');
-    await loadScriptSuggestions();
-    
-    toast({
-      title: "Script Suggestions Generated",
-      description: "Review suggestions in the Script Optimizer tab",
-    });
   };
 
   return (
@@ -578,145 +551,7 @@ const AIPipelineManager: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="scripts" className="space-y-4">
-          <div className="flex gap-2">
-            <Button onClick={handleAnalyzeScripts}>
-              <Activity className="h-4 w-4 mr-2" />
-              Analyze Scripts
-            </Button>
-            <Button onClick={handleGenerateScriptSuggestions}>
-              <Brain className="h-4 w-4 mr-2" />
-              Generate Suggestions
-            </Button>
-          </div>
-
-          {scriptPerformance.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Script Performance</CardTitle>
-                <CardDescription>
-                  Performance metrics for your calling scripts
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {scriptPerformance.map((script: any) => (
-                    <div 
-                      key={script.script_id}
-                      className="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="font-medium mb-1">Performance Score: {script.performance_score}/100</div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400">
-                            {script.script_content.substring(0, 100)}...
-                          </div>
-                        </div>
-                        <Badge variant={script.performance_score >= 70 ? 'default' : 'destructive'}>
-                          {script.performance_score >= 70 ? 'Good' : 'Needs Improvement'}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="text-slate-500">Uses:</span>
-                          <div className="font-medium">{script.total_uses}</div>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Conversion:</span>
-                          <div className="font-medium">{script.conversion_rate}%</div>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Positive:</span>
-                          <div className="font-medium text-green-600">{script.positive_outcomes}</div>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Negative:</span>
-                          <div className="font-medium text-red-600">{script.negative_outcomes}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {scriptSuggestions.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Script Improvement Suggestions
-                </CardTitle>
-                <CardDescription>
-                  AI-generated suggestions based on performance data
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {scriptSuggestions.map((suggestion: any) => (
-                    <Card key={suggestion.id} className="border-blue-200">
-                      <CardContent className="pt-6">
-                        <div className="space-y-3">
-                          <div>
-                            <div className="font-semibold text-sm mb-2">Current Performance:</div>
-                            <div className="text-xs text-slate-600 dark:text-slate-400">
-                              Conversion: {suggestion.based_on_data.conversionRate}% | 
-                              Total Calls: {suggestion.based_on_data.totalCalls}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="font-semibold text-sm mb-2">Reasoning:</div>
-                            <ul className="text-sm space-y-1">
-                              {suggestion.reasoning.map((reason: string, idx: number) => (
-                                <li key={idx} className="text-slate-600 dark:text-slate-400">
-                                  • {reason}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-
-                          <div>
-                            <div className="font-semibold text-sm mb-2">Suggested Changes:</div>
-                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
-                              {suggestion.suggested_script}
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => applyScriptSuggestion(suggestion.id, false)}
-                              disabled={isExecuting}
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Apply Changes
-                            </Button>
-                            {settings.auto_approve_script_changes && settings.enabled && (
-                              <Badge className="bg-green-500">
-                                <Zap className="h-3 w-3 mr-1" />
-                                Auto-Applied
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {scriptSuggestions.length === 0 && scriptPerformance.length === 0 && (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Brain className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600 dark:text-slate-400">
-                  Click "Analyze Scripts" to review performance and get AI suggestions
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <ScriptManager />
         </TabsContent>
 
         <TabsContent value="daily-plan" className="space-y-4">
