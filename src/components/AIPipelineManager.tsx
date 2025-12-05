@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Brain, 
@@ -15,9 +17,16 @@ import {
   User,
   Target,
   Calendar,
-  Activity
+  Activity,
+  Settings,
+  Zap,
+  History,
+  FileText,
+  Play,
+  Pause
 } from 'lucide-react';
 import { useAIPipelineManager, useCallTracking } from '@/hooks/useCallTracking';
+import { useAutonomousAgent } from '@/hooks/useAutonomousAgent';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,6 +37,19 @@ const AIPipelineManager: React.FC = () => {
     getDailyActionPlan 
   } = useAIPipelineManager();
   const { getBatchCallStats } = useCallTracking();
+  const {
+    isExecuting,
+    settings,
+    decisions,
+    scriptSuggestions,
+    updateSettings,
+    executeRecommendation,
+    loadDecisionHistory,
+    analyzeScriptPerformance,
+    generateScriptSuggestions,
+    applyScriptSuggestion,
+    loadScriptSuggestions
+  } = useAutonomousAgent();
   const { toast } = useToast();
 
   const [leads, setLeads] = useState<any[]>([]);
@@ -35,6 +57,8 @@ const AIPipelineManager: React.FC = () => {
   const [dailyPlan, setDailyPlan] = useState<any>(null);
   const [callStats, setCallStats] = useState<Map<string, any>>(new Map());
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [scriptPerformance, setScriptPerformance] = useState<any[]>([]);
 
   useEffect(() => {
     loadLeads();
@@ -185,6 +209,40 @@ const AIPipelineManager: React.FC = () => {
     );
   };
 
+  const handleExecuteAction = async (recommendation: any, leadId: string, leadName: string) => {
+    await executeRecommendation({
+      recommendation,
+      leadId,
+      leadName,
+      isAutonomous: false
+    });
+    
+    // Reload data
+    await loadDecisionHistory();
+  };
+
+  const handleAnalyzeScripts = async () => {
+    const performance = await analyzeScriptPerformance('call');
+    setScriptPerformance(performance);
+    
+    if (performance.length > 0) {
+      toast({
+        title: "Script Analysis Complete",
+        description: `Analyzed ${performance.length} scripts`,
+      });
+    }
+  };
+
+  const handleGenerateScriptSuggestions = async () => {
+    await generateScriptSuggestions('call');
+    await loadScriptSuggestions();
+    
+    toast({
+      title: "Script Suggestions Generated",
+      description: "Review suggestions in the Script Optimizer tab",
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -192,12 +250,25 @@ const AIPipelineManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <Brain className="h-6 w-6 text-purple-600" />
             AI Pipeline Manager
+            {settings.enabled && (
+              <Badge className="bg-green-500">
+                <Zap className="h-3 w-3 mr-1" />
+                Autonomous
+              </Badge>
+            )}
           </h2>
           <p className="text-slate-600 dark:text-slate-400">
             Your AI sales manager - getting leads across the finish line
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant={showSettings ? "default" : "outline"}
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
+          </Button>
           <Button onClick={handleAnalyzePipeline} disabled={isAnalyzing || leads.length === 0}>
             <Target className="h-4 w-4 mr-2" />
             Analyze Pipeline
@@ -209,10 +280,102 @@ const AIPipelineManager: React.FC = () => {
         </div>
       </div>
 
+      {showSettings && (
+        <Card className="border-purple-200 bg-purple-50 dark:bg-purple-900/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Autonomous Agent Settings
+            </CardTitle>
+            <CardDescription>
+              Configure how the AI makes decisions and executes actions
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base">Autonomous Mode</Label>
+                <div className="text-sm text-slate-500">
+                  Allow AI to make decisions automatically
+                </div>
+              </div>
+              <Switch
+                checked={settings.enabled}
+                onCheckedChange={(checked) => updateSettings({ enabled: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base">Auto-Execute Recommendations</Label>
+                <div className="text-sm text-slate-500">
+                  AI executes follow-up actions without approval
+                </div>
+              </div>
+              <Switch
+                checked={settings.auto_execute_recommendations}
+                onCheckedChange={(checked) => updateSettings({ auto_execute_recommendations: checked })}
+                disabled={!settings.enabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base">Auto-Approve Script Changes</Label>
+                <div className="text-sm text-slate-500">
+                  AI can update scripts based on performance data
+                </div>
+              </div>
+              <Switch
+                checked={settings.auto_approve_script_changes}
+                onCheckedChange={(checked) => updateSettings({ auto_approve_script_changes: checked })}
+                disabled={!settings.enabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base">Require Approval for High Priority</Label>
+                <div className="text-sm text-slate-500">
+                  Always require human approval for high-priority leads
+                </div>
+              </div>
+              <Switch
+                checked={settings.require_approval_for_high_priority}
+                onCheckedChange={(checked) => updateSettings({ require_approval_for_high_priority: checked })}
+                disabled={!settings.enabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base">Decision Tracking</Label>
+                <div className="text-sm text-slate-500">
+                  Track all AI decisions and outcomes
+                </div>
+              </div>
+              <Switch
+                checked={settings.decision_tracking_enabled}
+                onCheckedChange={(checked) => updateSettings({ decision_tracking_enabled: checked })}
+              />
+            </div>
+
+            <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded">
+              <div className="text-sm font-medium">Daily Action Limit</div>
+              <div className="text-xs text-slate-500 mb-2">
+                Maximum autonomous actions per day: {settings.max_daily_autonomous_actions}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs defaultValue="recommendations" className="w-full">
         <TabsList>
           <TabsTrigger value="recommendations">AI Recommendations</TabsTrigger>
           <TabsTrigger value="daily-plan">Daily Action Plan</TabsTrigger>
+          <TabsTrigger value="decisions">Decision History</TabsTrigger>
+          <TabsTrigger value="scripts">Script Optimizer</TabsTrigger>
           <TabsTrigger value="lead-details">Lead Details</TabsTrigger>
         </TabsList>
 
@@ -321,9 +484,239 @@ const AIPipelineManager: React.FC = () => {
                 {selectedLead === rec.leadId && (
                   <LeadCallHistory leadId={rec.leadId} />
                 )}
+
+                <div className="flex gap-2 mt-4">
+                  <Button 
+                    onClick={() => handleExecuteAction(rec, rec.leadId, rec.leadName)}
+                    disabled={isExecuting}
+                    className="flex-1"
+                  >
+                    {settings.auto_execute_recommendations && settings.enabled ? (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Execute (Auto)
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Execute Action
+                      </>
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
+        </TabsContent>
+
+        <TabsContent value="decisions" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Decision History
+                  </CardTitle>
+                  <CardDescription>
+                    Track all AI decisions and their outcomes
+                  </CardDescription>
+                </div>
+                <Button onClick={() => loadDecisionHistory()} variant="outline" size="sm">
+                  <Activity className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {decisions.length === 0 ? (
+                <p className="text-center text-slate-500 py-8">
+                  No decisions tracked yet. Execute recommendations to see history.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {decisions.map((decision: any) => (
+                    <div 
+                      key={decision.id}
+                      className="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="font-medium">{decision.lead_name}</div>
+                          <div className="text-xs text-slate-500">
+                            {new Date(decision.timestamp || decision.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Badge variant={decision.approved_by === 'autonomous' ? 'default' : 'secondary'}>
+                            {decision.approved_by === 'autonomous' ? 'Auto' : 'Manual'}
+                          </Badge>
+                          {decision.success !== null && (
+                            <Badge variant={decision.success ? 'default' : 'destructive'}>
+                              {decision.success ? 'Success' : 'Failed'}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-sm">
+                        <div className="font-medium capitalize">{decision.decision_type} Action</div>
+                        <div className="text-slate-600 dark:text-slate-400 mt-1">
+                          {decision.action_taken}
+                        </div>
+                        {decision.reasoning && (
+                          <div className="text-xs text-slate-500 mt-2">
+                            Reasoning: {decision.reasoning}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="scripts" className="space-y-4">
+          <div className="flex gap-2">
+            <Button onClick={handleAnalyzeScripts}>
+              <Activity className="h-4 w-4 mr-2" />
+              Analyze Scripts
+            </Button>
+            <Button onClick={handleGenerateScriptSuggestions}>
+              <Brain className="h-4 w-4 mr-2" />
+              Generate Suggestions
+            </Button>
+          </div>
+
+          {scriptPerformance.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Script Performance</CardTitle>
+                <CardDescription>
+                  Performance metrics for your calling scripts
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {scriptPerformance.map((script: any) => (
+                    <div 
+                      key={script.script_id}
+                      className="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="font-medium mb-1">Performance Score: {script.performance_score}/100</div>
+                          <div className="text-sm text-slate-600 dark:text-slate-400">
+                            {script.script_content.substring(0, 100)}...
+                          </div>
+                        </div>
+                        <Badge variant={script.performance_score >= 70 ? 'default' : 'destructive'}>
+                          {script.performance_score >= 70 ? 'Good' : 'Needs Improvement'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-slate-500">Uses:</span>
+                          <div className="font-medium">{script.total_uses}</div>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Conversion:</span>
+                          <div className="font-medium">{script.conversion_rate}%</div>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Positive:</span>
+                          <div className="font-medium text-green-600">{script.positive_outcomes}</div>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Negative:</span>
+                          <div className="font-medium text-red-600">{script.negative_outcomes}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {scriptSuggestions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Script Improvement Suggestions
+                </CardTitle>
+                <CardDescription>
+                  AI-generated suggestions based on performance data
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {scriptSuggestions.map((suggestion: any) => (
+                    <Card key={suggestion.id} className="border-blue-200">
+                      <CardContent className="pt-6">
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-semibold text-sm mb-2">Current Performance:</div>
+                            <div className="text-xs text-slate-600 dark:text-slate-400">
+                              Conversion: {suggestion.based_on_data.conversionRate}% | 
+                              Total Calls: {suggestion.based_on_data.totalCalls}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="font-semibold text-sm mb-2">Reasoning:</div>
+                            <ul className="text-sm space-y-1">
+                              {suggestion.reasoning.map((reason: string, idx: number) => (
+                                <li key={idx} className="text-slate-600 dark:text-slate-400">
+                                  • {reason}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div>
+                            <div className="font-semibold text-sm mb-2">Suggested Changes:</div>
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
+                              {suggestion.suggested_script}
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => applyScriptSuggestion(suggestion.id, false)}
+                              disabled={isExecuting}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-2" />
+                              Apply Changes
+                            </Button>
+                            {settings.auto_approve_script_changes && settings.enabled && (
+                              <Badge className="bg-green-500">
+                                <Zap className="h-3 w-3 mr-1" />
+                                Auto-Applied
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {scriptSuggestions.length === 0 && scriptPerformance.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Brain className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                <p className="text-slate-600 dark:text-slate-400">
+                  Click "Analyze Scripts" to review performance and get AI suggestions
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="daily-plan" className="space-y-4">
