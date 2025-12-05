@@ -189,18 +189,12 @@ serve(async (req) => {
 
     console.log(`Found ${availableNumbers.length} available numbers in pool`);
 
-    // Get Retell AI key from user credentials
-    const { data: retellCred } = await supabase
-      .from('user_credentials')
-      .select('credential_value_encrypted')
-      .eq('user_id', user.id)
-      .eq('service_name', 'retell_ai')
-      .eq('credential_key', 'api_key')
-      .maybeSingle();
+    // Get Retell AI key from environment
+    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
 
-    if (!retellCred) {
+    if (!retellApiKey) {
       return new Response(
-        JSON.stringify({ error: 'Retell AI credentials not configured. Please add your API key in Settings.' }),
+        JSON.stringify({ error: 'RETELL_AI_API_KEY not configured in Supabase secrets' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -245,7 +239,7 @@ serve(async (req) => {
             phoneNumber: lead.phone_number,
             callerId: selectedNumber.number,
             agentId: campaign.agent_id,
-            apiKey: retellCred.credential_value_encrypted
+            apiKey: retellApiKey
           }
         });
 
