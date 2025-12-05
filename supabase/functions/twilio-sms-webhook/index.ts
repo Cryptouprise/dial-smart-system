@@ -183,7 +183,7 @@ serve(async (req) => {
     
     const { data: existingConv } = await supabaseAdmin
       .from('sms_conversations')
-      .select('id')
+      .select('id, unread_count')
       .eq('user_id', userId)
       .eq('contact_phone', From)
       .maybeSingle();
