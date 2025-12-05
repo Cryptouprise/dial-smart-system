@@ -12,6 +12,7 @@ import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
 import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
 import AdvancedDialerSettings from '@/components/AdvancedDialerSettings';
 import DialingPerformanceDashboard from '@/components/DialingPerformanceDashboard';
+import QuickTestCampaign from '@/components/QuickTestCampaign';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
@@ -66,8 +67,11 @@ const PredictiveDialingDashboard = () => {
         </p>
       </div>
 
-      {/* Concurrency Monitor */}
-      <ConcurrencyMonitor />
+      {/* Quick Test & Concurrency Monitor */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <QuickTestCampaign />
+        <ConcurrencyMonitor />
+      </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
