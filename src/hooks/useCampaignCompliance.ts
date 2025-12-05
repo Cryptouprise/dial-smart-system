@@ -166,15 +166,8 @@ export const useCampaignCompliance = (campaignId: string | null) => {
 
       if (error) throw error;
 
-      // Log compliance violation
-      await supabase
-        .from('compliance_violations')
-        .insert({
-          campaign_id: campaignId,
-          violation_type: 'auto_pause',
-          reason: reason,
-          detected_at: new Date().toISOString()
-        });
+      // Log compliance violation (note: compliance_violations table not yet created)
+      console.log('Compliance violation logged:', { campaignId, reason });
 
       toast({
         title: "Campaign Auto-Paused",
