@@ -954,6 +954,584 @@ const HelpSystem = () => {
         }
       ]
     },
+    'predictive-dialing-advanced': {
+      title: 'Advanced Predictive Dialing',
+      icon: Target,
+      articles: [
+        {
+          title: 'FCC Compliance & Monitoring',
+          content: 'Automated FCC compliance enforcement with real-time monitoring and auto-pause capabilities.',
+          features: [
+            'Real-time compliance status tracking (compliant/warning/violation)',
+            '3% abandonment rate limit enforcement per FCC regulations',
+            'Automatic campaign pause on compliance violations',
+            'TCPA-compliant calling hours validation',
+            'Timezone-aware calling windows',
+            'DNC (Do Not Call) list verification before each call',
+            'Automatic compliance checks every minute',
+            'Overlap prevention to avoid duplicate checks'
+          ],
+          complianceMetrics: [
+            'Abandonment Rate: Must stay below 3% per FCC requirements',
+            'Calling Hours: Automatic enforcement of 8 AM - 9 PM local time',
+            'DNC Violations: Zero tolerance with automatic checking',
+            'Timezone Compliance: Lead timezone detected and respected',
+            'Compliance Status: Real-time dashboard monitoring'
+          ],
+          steps: [
+            'Navigate to Predictive Dialing dashboard',
+            'View compliance status badge in campaign manager',
+            'Monitor abandonment rate in real-time metrics',
+            'System automatically pauses campaigns on violations',
+            'Review compliance logs in campaign history',
+            'Adjust dialing ratios to maintain compliance',
+            'Enable timezone-aware calling in settings',
+            'Configure calling hours per campaign'
+          ]
+        },
+        {
+          title: 'Lead Prioritization Algorithm',
+          content: 'Intelligent multi-factor lead scoring system for optimal dialing order.',
+          features: [
+            '5-factor weighted scoring algorithm',
+            'Recency score (20%): How recently lead was added',
+            'Call History score (25%): Previous interaction quality',
+            'Time Optimization score (15%): Best time to call',
+            'Response Rate score (15%): Historical response patterns',
+            'Priority Level score (25%): Manual priority setting',
+            'Callback boost: 30% priority increase for scheduled callbacks',
+            'Parallel database updates for efficiency',
+            'Real-time score recalculation'
+          ],
+          scoringLogic: [
+            'Recency (0-20 points): Higher for newly added leads',
+            'Call History (0-25 points): Positive outcomes increase score',
+            'Time Optimization (0-15 points): Based on timezone and best calling times',
+            'Response Rate (0-15 points): Higher for leads who answer frequently',
+            'Priority Level (0-25 points): Manual priority from 1-5',
+            'Callback Leads: Receive additional 30% boost',
+            'Total Score: 0-100 scale determines dialing order'
+          ],
+          steps: [
+            'Import leads with priority levels (1-5)',
+            'System automatically calculates scores',
+            'Highest scoring leads are called first',
+            'Scores update after each call attempt',
+            'Callback leads prioritized automatically',
+            'Monitor lead scores in lead manager',
+            'Adjust manual priorities as needed',
+            'View scoring factors in lead details'
+          ]
+        },
+        {
+          title: 'Campaign Optimization Engine',
+          content: 'AI-powered campaign optimization with 6-metric health scoring.',
+          features: [
+            '6-metric health scoring system',
+            'Answer Rate analysis (weight: 25%)',
+            'Conversion Rate tracking (weight: 30%)',
+            'Lead Quality assessment (weight: 15%)',
+            'Agent Performance monitoring (weight: 15%)',
+            'Compliance Status (weight: 10%)',
+            'Efficiency Score (weight: 5%)',
+            'Automatic calling hours optimization',
+            'Dialing rate tuning for compliance/efficiency balance',
+            'Performance-based recommendations'
+          ],
+          healthMetrics: [
+            'Overall Health Score: 0-100 composite score',
+            'Answer Rate: Percentage of answered calls',
+            'Conversion Rate: Successful outcomes percentage',
+            'Lead Quality: Based on response and conversion',
+            'Agent Performance: Average agent metrics',
+            'Compliance: Adherence to regulations',
+            'Efficiency: Resource utilization'
+          ],
+          autoAdjustments: [
+            'Calling Hours: Optimized based on performance data',
+            'Dialing Rate: Adjusted for compliance and efficiency',
+            'Lead Selection: Modified based on conversion patterns',
+            'Campaign Pacing: Adaptive speed adjustments',
+            'Resource Allocation: Dynamic agent assignment'
+          ]
+        },
+        {
+          title: 'Pipeline Analytics & Bottleneck Detection',
+          content: 'Comprehensive pipeline analytics with automatic bottleneck identification.',
+          features: [
+            'Real-time bottleneck detection',
+            'Stage-by-stage performance metrics',
+            'Lead movement velocity tracking',
+            'Conversion rate analysis per stage',
+            'Drop-off rate monitoring',
+            'Dwell time analysis',
+            'Actionable recommendations',
+            'Visual pipeline health dashboard'
+          ],
+          analytics: [
+            'Stage Performance: Conversion and drop-off rates',
+            'Lead Velocity: Average time in each stage',
+            'Movement Patterns: Flow between stages',
+            'Bottleneck Alerts: Automatic detection of stuck stages',
+            'Recommendations: Data-driven suggestions',
+            'Trend Analysis: Historical performance tracking'
+          ],
+          steps: [
+            'Navigate to Pipeline Analytics Dashboard',
+            'View stage-by-stage metrics',
+            'Identify bottlenecks with visual indicators',
+            'Read AI-generated recommendations',
+            'Implement suggested improvements',
+            'Monitor impact of changes',
+            'Export analytics for reporting'
+          ]
+        }
+      ]
+    },
+    'disposition-automation-advanced': {
+      title: 'Disposition & Follow-up Automation',
+      icon: Zap,
+      articles: [
+        {
+          title: 'Automated Disposition System',
+          content: 'Comprehensive disposition management with sentiment tracking and automatic actions.',
+          features: [
+            '12 standard dispositions with sentiment tracking',
+            'Automatic lead status updates based on sentiment',
+            'Pipeline stage automation',
+            'Configurable disposition rules',
+            'Callback scheduling automation',
+            'Sequence initiation on disposition',
+            'Custom disposition creation',
+            'One-click standard disposition setup'
+          ],
+          standardDispositions: [
+            'Wrong Number (negative): Invalid contact information',
+            'Not Interested (negative): Lead declined offer',
+            'Already Has Solar (negative): Not qualified',
+            'Potential Prospect (neutral): Requires nurturing',
+            'Follow Up (neutral): General follow-up needed',
+            'Not Connected (neutral): Call didn\'t reach lead',
+            'Voicemail (neutral): Message left',
+            'Dropped Call (neutral): Call disconnected',
+            'Dial Tree Workflow (neutral): In automated process',
+            'Hot Lead (positive): High interest, immediate action',
+            'Interested (positive): Showed interest',
+            'Appointment Booked (positive): Scheduled meeting'
+          ],
+          steps: [
+            'Navigate to Dashboard > Dispositions tab',
+            'Click "Initialize Standard Dispositions" for quick setup',
+            'Or create custom dispositions with specific rules',
+            'Configure disposition rules: callback, sequence, or no action',
+            'Set auto-create pipeline stage option',
+            'Define follow-up delays (default 24 hours)',
+            'Apply dispositions during or after calls',
+            'System automatically executes configured actions'
+          ]
+        },
+        {
+          title: 'Multi-Step Follow-up Sequences',
+          content: 'Create intelligent multi-step engagement sequences with AI integration.',
+          features: [
+            '5 action types: AI Call, AI SMS, Manual SMS, Email, Wait',
+            'Configurable delays between steps',
+            'AI prompts for intelligent conversations',
+            'Message templates for consistency',
+            'Sequence assignment to pipeline stages',
+            'Real-time execution tracking',
+            'Sequence completion monitoring',
+            'Step reordering and management'
+          ],
+          actionTypes: [
+            'AI Phone Call: Automated calls using Retell AI integration',
+            'AI SMS: AI-generated text messages based on context',
+            'Manual SMS: Predefined message templates',
+            'Email: Automated email communications',
+            'Wait: Delay steps for proper pacing'
+          ],
+          steps: [
+            'Go to Dispositions > Follow-up Sequences tab',
+            'Click "Create Sequence" button',
+            'Name your sequence descriptively',
+            'Add steps one by one with action types',
+            'Set delays between steps (in minutes)',
+            'Write AI prompts for AI actions',
+            'Create message templates for manual actions',
+            'Assign sequence to pipeline stages',
+            'Enable sequence and monitor execution'
+          ],
+          bestPractices: [
+            'Start with immediate action (SMS or email)',
+            'Space calls appropriately (24-48 hours)',
+            'Limit sequence length (3-5 steps optimal)',
+            'Include wait steps for proper pacing',
+            'Customize AI prompts for context',
+            'Test sequences before applying to all leads',
+            'Monitor completion rates and adjust'
+          ]
+        },
+        {
+          title: 'Scheduled Follow-ups & Callbacks',
+          content: 'Automatic callback scheduling and execution at specified times.',
+          features: [
+            'Automatic callback scheduling',
+            'Time-based execution',
+            'Calendar integration',
+            'Real-time monitoring dashboard',
+            'Pending follow-ups view',
+            'Execution status tracking',
+            'Reschedule capabilities',
+            'Completion notifications'
+          ],
+          steps: [
+            'Disposition applied with callback rule',
+            'System schedules callback at configured time',
+            'Callback appears in "Scheduled Follow-ups" tab',
+            'System automatically executes at scheduled time',
+            'Lead called or sequence initiated',
+            'Outcome logged automatically',
+            'Next actions determined by result',
+            'Process repeats as needed'
+          ]
+        }
+      ]
+    },
+    'call-tracking-analytics': {
+      title: 'Call Tracking & History',
+      icon: Phone,
+      articles: [
+        {
+          title: 'Comprehensive Call Tracking',
+          content: 'Complete call history and statistics tracking for every lead.',
+          features: [
+            'Every call tracked with full metadata',
+            'Timestamp, duration, outcome, disposition',
+            'Call times recorded with millisecond precision',
+            'Recording URLs stored',
+            'Transcript capture and storage',
+            'Integrated throughout the platform',
+            'Real-time statistics calculation',
+            'Batch operations for efficiency'
+          ],
+          trackedInformation: [
+            'Total calls made to each lead',
+            'All call timestamps (complete history)',
+            'Last call date and time',
+            'Total duration across all calls',
+            'Average call duration',
+            'Outcomes breakdown by type',
+            'Dispositions applied per call',
+            'Success/failure status'
+          ],
+          steps: [
+            'All calls automatically tracked',
+            'View call history in lead details',
+            'See quick stats in lead cards',
+            'Access full history in pipeline views',
+            'Review stats in campaign manager',
+            'Export call data for analysis',
+            'Monitor trends over time'
+          ],
+          visibility: [
+            'Campaign Lead Manager: Quick stats per lead',
+            'Pipeline Views: Call history in lead cards',
+            'Lead Details: Complete call timeline',
+            'AI Manager: Call stats for recommendations',
+            'Analytics Dashboard: Aggregate statistics'
+          ]
+        },
+        {
+          title: 'Call Statistics & Analytics',
+          content: 'Automatically calculated statistics and performance metrics.',
+          features: [
+            'Per-lead statistics automatically calculated',
+            'Batch statistics for multiple leads',
+            'Real-time updates across system',
+            'Outcome analysis and categorization',
+            'Disposition tracking and reporting',
+            'Duration analysis and trends',
+            'Conversion tracking',
+            'Performance comparison'
+          ],
+          calculatedMetrics: [
+            'Total Calls: Count of all attempts',
+            'Call Times: Complete timestamp history',
+            'Last Call Time: Most recent contact',
+            'Total Duration: Cumulative talk time',
+            'Average Duration: Mean call length',
+            'Outcomes: Breakdown by result type',
+            'Dispositions: Applied disposition counts',
+            'Success Rate: Positive outcome percentage'
+          ]
+        }
+      ]
+    },
+    'ai-pipeline-manager': {
+      title: 'AI Pipeline Manager',
+      icon: Brain,
+      articles: [
+        {
+          title: 'AI-Powered Sales Manager',
+          content: 'Virtual sales manager that analyzes leads and provides actionable recommendations.',
+          features: [
+            'Complete lead analysis based on call history',
+            'Priority ranking (high/medium/low)',
+            'Specific recommendations with reasoning',
+            'Next best action suggestions',
+            'Daily action plan generation',
+            'Success tracking and learning',
+            'Pipeline health monitoring',
+            'Conversion optimization'
+          ],
+          intelligenceFactors: [
+            'Call frequency and recency',
+            'Call outcomes and patterns',
+            'Lead status and qualification',
+            'Time since last contact',
+            'Scheduled callbacks',
+            'Engagement trends',
+            'Positive vs negative interactions',
+            'Historical conversion data'
+          ],
+          steps: [
+            'Navigate to Dashboard > AI Manager tab',
+            'Click "Analyze Pipeline" to run analysis',
+            'Review AI recommendations per lead',
+            'Read reasoning and suggested actions',
+            'View next best action with timing',
+            'Execute actions manually or automatically',
+            'Generate daily action plan',
+            'Monitor results and adjust'
+          ]
+        },
+        {
+          title: 'Smart Recommendations',
+          content: 'Data-driven recommendations for each lead with detailed reasoning.',
+          features: [
+            'Clear action guidance for each lead',
+            'Detailed reasoning explanations',
+            'Step-by-step suggested actions',
+            'Optimal timing recommendations',
+            'Channel selection (call/SMS/email)',
+            'Conversation guidance',
+            'Priority-based urgency',
+            'Context-aware suggestions'
+          ],
+          exampleRecommendations: [
+            'NEW LEAD: Make first contact to introduce and qualify',
+            'HOT LEAD: Strike while iron is hot - close the deal!',
+            'URGENT: Re-engage this lead before they go cold',
+            'LOW PRIORITY: Recent contact - give them time to respond',
+            'FOLLOW-UP: Scheduled callback due today',
+            'ALTERNATIVE APPROACH: Try SMS after multiple no-answers'
+          ]
+        },
+        {
+          title: 'Daily Action Plan',
+          content: 'Prioritized task list generated daily for maximum efficiency.',
+          features: [
+            'High priority actions (hot leads, overdue)',
+            'Calls to make today (scheduled + recommended)',
+            'Follow-ups due (24-48 hours)',
+            'Nurture activities (long-term)',
+            'Organized by urgency',
+            'Actionable and specific',
+            'Real-time updates',
+            'Progress tracking'
+          ],
+          categories: [
+            'High Priority: Must-handle today items',
+            'Calls Today: Scheduled and recommended calls',
+            'Follow-ups: Actions due soon',
+            'Nurture: Low priority, long-term engagement'
+          ]
+        }
+      ]
+    },
+    'autonomous-agent': {
+      title: 'Autonomous Agent System',
+      icon: Zap,
+      articles: [
+        {
+          title: 'Autonomous Mode Configuration',
+          content: 'Complete control over AI autonomous operation with safety controls.',
+          features: [
+            'Master autonomous toggle',
+            'Auto-execute recommendations',
+            'Auto-approve script changes',
+            'High priority protection',
+            'Daily action limits (default: 50)',
+            'Decision tracking enabled/disabled',
+            'Granular control per feature',
+            'Emergency stop capability'
+          ],
+          settings: [
+            'Autonomous Mode: Master switch for AI autonomy',
+            'Auto-Execute: AI executes follow-up actions without approval',
+            'Auto-Approve Scripts: AI updates scripts based on performance',
+            'High Priority Approval: Require manual approval for critical leads',
+            'Daily Limits: Maximum autonomous actions per day',
+            'Decision Tracking: Log all AI decisions'
+          ],
+          steps: [
+            'Navigate to AI Manager > Settings button',
+            'Review autonomous configuration options',
+            'Enable autonomous mode toggle',
+            'Configure auto-execute recommendations',
+            'Set high priority protection',
+            'Adjust daily action limits',
+            'Enable decision tracking',
+            'Monitor autonomous operations'
+          ],
+          safetyFeatures: [
+            'Daily limits prevent runaway automation',
+            'High-priority lead protection',
+            'All decisions tracked for accountability',
+            'Easy emergency off switch',
+            'Granular control over each feature',
+            'Real-time monitoring dashboard'
+          ]
+        },
+        {
+          title: 'Decision Tracking & Monitoring',
+          content: 'Complete audit trail of all AI decisions and outcomes.',
+          features: [
+            'Every decision logged with full context',
+            'Lead name and action type recorded',
+            'Reasoning behind each decision',
+            'Execution timestamp tracked',
+            'Success/failure status monitored',
+            'Autonomous vs manual distinction',
+            'Complete history in dedicated tab',
+            'Performance analytics'
+          ],
+          trackedInformation: [
+            'Lead Name: Which lead was affected',
+            'Decision Type: call, SMS, email, wait, move stage',
+            'Reasoning: Why the decision was made',
+            'Action Taken: Specific action executed',
+            'Timestamp: When decision was made',
+            'Outcome: Result of the action',
+            'Success Status: Whether action succeeded',
+            'Approval Method: Autonomous or manual'
+          ],
+          steps: [
+            'Go to AI Manager > Decision History tab',
+            'View complete list of AI decisions',
+            'See timestamps and lead names',
+            'Read reasoning for each decision',
+            'Check success/failure status',
+            'Filter by autonomous vs manual',
+            'Analyze what\'s working',
+            'Use insights to improve'
+          ]
+        },
+        {
+          title: 'Script Performance Monitoring',
+          content: 'Real-time analysis of calling and texting script performance.',
+          features: [
+            'Performance scoring (0-100)',
+            'Conversion rate tracking',
+            'Positive vs negative outcomes',
+            'Usage statistics',
+            'Average call duration',
+            'Continuous monitoring',
+            'Performance alerts',
+            'Trend analysis'
+          ],
+          metrics: [
+            'Total Uses: Number of times script used',
+            'Conversion Rate: Percentage of positive outcomes',
+            'Positive Outcomes: Successful interactions',
+            'Negative Outcomes: Unsuccessful interactions',
+            'Average Duration: Mean call length (for call scripts)',
+            'Performance Score: 0-100 composite score',
+            'Last Used: Most recent usage timestamp'
+          ],
+          steps: [
+            'Go to AI Manager > Script Optimizer tab',
+            'Click "Analyze Scripts" button',
+            'View performance metrics per script',
+            'Identify underperforming scripts',
+            'Read AI-generated suggestions',
+            'Review reasoning for changes',
+            'Apply improvements manually or auto',
+            'Monitor results after changes'
+          ]
+        },
+        {
+          title: 'AI Script Optimization',
+          content: 'Data-driven script improvements with automatic or manual approval.',
+          features: [
+            'Automatic performance monitoring',
+            'AI-generated improvement suggestions',
+            'Data-backed reasoning',
+            'Expected improvement calculations',
+            'Manual or autonomous application',
+            'Version control',
+            'A/B testing support',
+            'Results validation'
+          ],
+          triggerConditions: [
+            'Performance score < 70 with 10+ uses',
+            'Conversion rate < 20%',
+            'More negative than positive outcomes',
+            'Very short calls (< 60 seconds)',
+            'Declining performance trends',
+            'Specific error patterns detected'
+          ],
+          suggestionTypes: [
+            'Opening Hook: Improve engagement in first 10 seconds',
+            'Value Proposition: Clarify benefits and offers',
+            'Call-to-Action: Strengthen closing statements',
+            'Objection Handling: Better responses to concerns',
+            'Tone Adjustment: Modify formality level',
+            'Pacing Changes: Speed up or slow down delivery'
+          ],
+          steps: [
+            'System monitors script performance continuously',
+            'AI detects underperforming scripts',
+            'Suggestions generated with reasoning',
+            'Manual Mode: Review and click "Apply Changes"',
+            'Autonomous Mode: Auto-applies with notification',
+            'Changes tracked in version history',
+            'Performance monitored post-change',
+            'Results validated and refined'
+          ]
+        },
+        {
+          title: 'Smooth Execution Flow',
+          content: 'Seamless transition between manual and autonomous operation.',
+          features: [
+            'Execute action buttons on every recommendation',
+            'Visual indicators for autonomous mode',
+            'One-click execution in manual mode',
+            'Automatic execution in autonomous mode',
+            'Complete logging of all actions',
+            'Real-time status updates',
+            'Error handling and recovery',
+            'Performance tracking'
+          ],
+          manualFlow: [
+            '1. AI generates recommendations',
+            '2. User reviews suggestions',
+            '3. Click "Execute Action" button',
+            '4. Decision logged automatically',
+            '5. Results tracked for analysis',
+            '6. Success/failure recorded'
+          ],
+          autonomousFlow: [
+            '1. AI analyzes leads continuously',
+            '2. Evaluates recommendations against rules',
+            '3. Automatically executes approved actions',
+            '4. Logs all decisions for review',
+            '5. Respects daily limits and priority rules',
+            '6. Monitors outcomes and learns'
+          ]
+        }
+      ]
+    },
     'sms-messaging': {
       title: 'SMS Messaging',
       icon: Globe,
