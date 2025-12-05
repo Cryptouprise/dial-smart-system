@@ -67,10 +67,11 @@ const AVAILABLE_TOOLS = [
   { icon: X, name: 'Delete Automation', description: 'Remove automation rules' },
   { icon: FileText, name: 'Daily Report', description: 'Generate performance report' },
   { icon: Phone, name: 'Import Number', description: 'Add phone numbers' },
+  { icon: Phone, name: 'List SMS Numbers', description: 'Show available SMS numbers' },
   { icon: Users, name: 'Update Lead', description: 'Change lead status' },
   { icon: FileText, name: 'Create Campaign', description: 'Start new campaigns' },
   { icon: Settings, name: 'Update Campaign', description: 'Modify campaigns' },
-  { icon: MessageSquare, name: 'Send SMS', description: 'Send text messages' },
+  { icon: MessageSquare, name: 'Send SMS', description: 'Send from specific number' },
   { icon: ShieldAlert, name: 'Quarantine Number', description: 'Flag problematic numbers' },
 ];
 
