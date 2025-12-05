@@ -24,6 +24,8 @@ import SmsMessaging from '@/components/SmsMessaging';
 import TabErrorBoundary from '@/components/TabErrorBoundary';
 import DailyReports from '@/components/DailyReports';
 import CampaignAutomation from '@/components/CampaignAutomation';
+import DispositionAutomationManager from '@/components/DispositionAutomationManager';
+import AIPipelineManager from '@/components/AIPipelineManager';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -180,6 +182,14 @@ const Dashboard = () => {
               <TabsTrigger value="automation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <Calendar className="h-4 w-4 mr-2" />
                 Automation
+              </TabsTrigger>
+              <TabsTrigger value="dispositions" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Zap className="h-4 w-4 mr-2" />
+                Dispositions
+              </TabsTrigger>
+              <TabsTrigger value="ai-manager" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Brain className="h-4 w-4 mr-2" />
+                AI Manager
               </TabsTrigger>
             </TabsList>
           </div>
@@ -422,6 +432,18 @@ const Dashboard = () => {
           <TabsContent value="automation">
             <TabErrorBoundary tabName="Automation">
               <CampaignAutomation />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="dispositions">
+            <TabErrorBoundary tabName="Dispositions">
+              <DispositionAutomationManager />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="ai-manager">
+            <TabErrorBoundary tabName="AI Manager">
+              <AIPipelineManager />
             </TabErrorBoundary>
           </TabsContent>
         </Tabs>

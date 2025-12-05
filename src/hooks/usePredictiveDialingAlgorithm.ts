@@ -15,6 +15,8 @@ interface PredictiveMetrics {
   predictedAnswers: number;
   estimatedAbandonments: number;
   recommendation: string;
+  complianceStatus: 'compliant' | 'warning' | 'violation';
+  efficiency: number;
 }
 
 export const usePredictiveDialingAlgorithm = () => {
@@ -39,6 +41,17 @@ export const usePredictiveDialingAlgorithm = () => {
     }
   };
 
+  // Validate input parameters
+  const validateParams = (params: DialingAlgorithmParams): string | null => {
+    if (params.avgCallDuration < 1) return 'Average call duration must be at least 1 second';
+    if (params.avgAnswerRate < 1 || params.avgAnswerRate > 100) return 'Answer rate must be between 1% and 100%';
+    if (params.avgAnswerRate === 0) return 'Answer rate cannot be 0% - system cannot calculate optimal ratios';
+    if (params.avgAgentWrapTime < 0) return 'Wrap time cannot be negative';
+    if (params.availableAgents < 0) return 'Available agents cannot be negative';
+    if (params.targetAbandonmentRate < 0 || params.targetAbandonmentRate > 10) return 'Target abandonment rate should be between 0% and 10%';
+    return null;
+  };
+
   // Calculate optimal dialing ratio using VICIdial-style algorithm
   const calculateDialingRatio = (params: DialingAlgorithmParams): number => {
     const {
@@ -48,6 +61,13 @@ export const usePredictiveDialingAlgorithm = () => {
       availableAgents,
       targetAbandonmentRate
     } = params;
+
+    // Validate inputs
+    const validationError = validateParams(params);
+    if (validationError) {
+      console.warn('Invalid parameters:', validationError);
+      return 1.0; // Return conservative ratio on invalid input
+    }
 
     // Base ratio calculation
     // Formula: (1 + (drop_call_percent / 100)) / (answer_rate / 100)
@@ -61,7 +81,8 @@ export const usePredictiveDialingAlgorithm = () => {
     const adjustedRatio = baseRatio * (1 + (agentUtilization * 0.2));
 
     // Safety bounds - never go below 1.0 or above 4.0
-    return Math.max(1.0, Math.min(4.0, adjustedRatio));
+    // More conservative upper bound of 3.5 for better FCC compliance
+    return Math.max(1.0, Math.min(3.5, adjustedRatio));
   };
 
   // Calculate optimal concurrent calls (similar to Caller.io approach)
@@ -123,10 +144,48 @@ export const usePredictiveDialingAlgorithm = () => {
     return `✅ Optimal performance: Maintain current dialing ratio of ${dialingRatio.toFixed(2)}`;
   };
 
+  // Determine compliance status
+  const determineComplianceStatus = (
+    estimatedAbandonmentRate: number,
+    targetRate: number
+  ): 'compliant' | 'warning' | 'violation' => {
+    if (estimatedAbandonmentRate <= targetRate) return 'compliant';
+    if (estimatedAbandonmentRate <= targetRate * 1.2) return 'warning'; // Within 20% of target
+    return 'violation';
+  };
+
+  // Calculate efficiency score
+  const calculateEfficiency = (
+    optimalConcurrency: number,
+    availableAgents: number,
+    dialingRatio: number
+  ): number => {
+    if (availableAgents === 0) return 0;
+    
+    // Efficiency based on agent utilization and dialing strategy
+    const agentUtilization = (optimalConcurrency / (availableAgents * dialingRatio)) * 100;
+    const targetUtilization = 85;
+    
+    // Score drops off as we deviate from target utilization
+    const utilizationScore = Math.max(0, 100 - Math.abs(agentUtilization - targetUtilization));
+    
+    // Bonus for staying within optimal dialing ratio range (1.5-2.5)
+    const ratioScore = dialingRatio >= 1.5 && dialingRatio <= 2.5 ? 100 : 80;
+    
+    return Math.round((utilizationScore * 0.7 + ratioScore * 0.3));
+  };
+
   // Main calculation function
   const calculatePredictiveMetrics = async (
     params: DialingAlgorithmParams
   ): Promise<PredictiveMetrics> => {
+    // Validate parameters first
+    const validationError = validateParams(params);
+    if (validationError) {
+      console.error('Parameter validation failed:', validationError);
+      throw new Error(validationError);
+    }
+
     // Calculate dialing ratio
     const dialingRatio = calculateDialingRatio(params);
 
@@ -144,12 +203,27 @@ export const usePredictiveDialingAlgorithm = () => {
     );
     const estimatedAbandonments = predictedAnswers * (estimatedAbandonmentRate / 100);
 
+    // Calculate compliance status
+    const complianceStatus = determineComplianceStatus(
+      estimatedAbandonmentRate,
+      params.targetAbandonmentRate
+    );
+
+    // Calculate efficiency
+    const efficiency = calculateEfficiency(
+      optimalConcurrency,
+      params.availableAgents,
+      dialingRatio
+    );
+
     const metrics: PredictiveMetrics = {
       dialingRatio: parseFloat(dialingRatio.toFixed(2)),
       optimalConcurrency,
       predictedAnswers: Math.round(predictedAnswers),
       estimatedAbandonments: Math.round(estimatedAbandonments),
-      recommendation: ''
+      recommendation: '',
+      complianceStatus,
+      efficiency
     };
 
     // Generate recommendation
