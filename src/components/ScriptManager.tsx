@@ -26,6 +26,12 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+// Configuration constants
+const MIN_SCRIPT_USES_FOR_SUGGESTIONS = 10;
+const LOW_CONVERSION_THRESHOLD = 20;
+const MIN_PERFORMANCE_SCORE = 70;
+const MIN_CALL_DURATION = 60;
+
 interface Script {
   id: string;
   agent_name: string;
@@ -268,10 +274,10 @@ export const ScriptManager: React.FC = () => {
         return;
       }
 
-      if (performance.total_uses < 10) {
+      if (performance.total_uses < MIN_SCRIPT_USES_FOR_SUGGESTIONS) {
         toast({
           title: 'Insufficient Data',
-          description: `Script needs at least 10 uses. Current: ${performance.total_uses}`,
+          description: `Script needs at least ${MIN_SCRIPT_USES_FOR_SUGGESTIONS} uses. Current: ${performance.total_uses}`,
           variant: 'destructive'
         });
         return;
@@ -282,18 +288,35 @@ export const ScriptManager: React.FC = () => {
       if (!script) return;
 
       const reasoning = [];
-      if (performance.conversion_rate < 20) {
+      if (performance.conversion_rate < LOW_CONVERSION_THRESHOLD) {
         reasoning.push(`Low conversion rate (${performance.conversion_rate}%) - script needs stronger value proposition`);
       }
       if (performance.negative_outcomes > performance.positive_outcomes) {
         reasoning.push(`More negative than positive outcomes - needs better objection handling`);
       }
-      if (performance.average_call_duration < 60) {
+      if (performance.average_call_duration < MIN_CALL_DURATION) {
         reasoning.push(`Short call duration (${performance.average_call_duration}s) - script may be too brief or disengaging`);
       }
-      if (performance.performance_score < 70) {
+      if (performance.performance_score < MIN_PERFORMANCE_SCORE) {
         reasoning.push(`Overall performance score is ${performance.performance_score}/100 - needs optimization`);
       }
+
+      // Generate dynamic suggestion based on specific issues
+      const suggestions = [];
+      if (performance.conversion_rate < LOW_CONVERSION_THRESHOLD) {
+        suggestions.push('Add a stronger value proposition highlighting key benefits');
+        suggestions.push('Include social proof and success stories');
+      }
+      if (performance.negative_outcomes > performance.positive_outcomes) {
+        suggestions.push('Enhance objection handling techniques');
+        suggestions.push('Add empathy statements and active listening prompts');
+      }
+      if (performance.average_call_duration < MIN_CALL_DURATION) {
+        suggestions.push('Add engaging questions to extend conversation');
+        suggestions.push('Include more discovery and qualification sections');
+      }
+
+      const suggestedContent = `${script.script_content}\n\n--- AI SUGGESTED IMPROVEMENTS ---\n${suggestions.join('\n- ')}\n\nBased on ${performance.total_uses} calls with ${performance.conversion_rate}% conversion rate.`;
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
@@ -308,7 +331,7 @@ export const ScriptManager: React.FC = () => {
             performance_score: performance.performance_score,
             total_uses: performance.total_uses
           },
-          suggested_script: `${script.script_content}\n\n[AI SUGGESTION: Add more engaging opening, stronger value proposition, and better objection handling based on performance data]`,
+          suggested_script: suggestedContent,
           reasoning: reasoning,
           expected_improvement: `Expected ${Math.min(30, Math.round(100 - performance.performance_score) / 2)}% improvement in performance score`,
           based_on_data: {

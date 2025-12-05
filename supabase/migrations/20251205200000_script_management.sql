@@ -99,6 +99,11 @@ CREATE INDEX idx_script_performance_script ON public.script_performance_metrics(
 CREATE INDEX idx_script_suggestions_script_status ON public.script_suggestions(script_id, status);
 
 -- Function to update script performance metrics
+-- This function is automatically triggered when a new script usage log is inserted
+-- It calculates and updates aggregated metrics including:
+-- - Total uses, positive/negative/neutral outcomes
+-- - Conversion rate, average call duration, average sentiment
+-- - Performance score (0-100) based on weighted factors
 CREATE OR REPLACE FUNCTION update_script_performance_metrics()
 RETURNS TRIGGER AS $$
 DECLARE
