@@ -52,6 +52,29 @@ export const AIAssistantChat: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Load conversation history from localStorage on mount
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('ai-assistant-history');
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages);
+        setMessages(parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        })));
+      } catch (error) {
+        console.error('Error loading conversation history:', error);
+      }
+    }
+  }, []);
+
+  // Save conversation history to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('ai-assistant-history', JSON.stringify(messages));
+    }
+  }, [messages]);
+
   // Load settings from database
   useEffect(() => {
     const loadSettings = async () => {
@@ -234,6 +257,24 @@ export const AIAssistantChat: React.FC = () => {
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-1">
+            {messages.length > 0 && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20"
+                onClick={() => {
+                  setMessages([]);
+                  localStorage.removeItem('ai-assistant-history');
+                  toast({
+                    title: 'Conversation Cleared',
+                    description: 'Chat history has been cleared',
+                  });
+                }}
+                title="Clear conversation"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               size="icon" 

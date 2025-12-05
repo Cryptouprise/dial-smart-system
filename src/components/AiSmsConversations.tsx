@@ -68,6 +68,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
 import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
+import { useDebounce } from '@/hooks/useDebounce';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -189,6 +190,7 @@ const AiSmsConversations: React.FC = () => {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300); // Debounce search input
   const [availableTwilioNumbers, setAvailableTwilioNumbers] = useState<Array<{number: string, friendly_name?: string}>>([]);
   const [selectedFromNumber, setSelectedFromNumber] = useState('');
   const [loadingNumbers, setLoadingNumbers] = useState(false);
@@ -520,8 +522,8 @@ const AiSmsConversations: React.FC = () => {
   };
 
   const filteredConversations = conversations.filter(conv => {
-    if (!searchQuery) return true;
-    const search = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery) return true;
+    const search = debouncedSearchQuery.toLowerCase();
     return (
       conv.contact_phone.includes(search) ||
       (conv.contact_name && conv.contact_name.toLowerCase().includes(search))
