@@ -592,6 +592,15 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'send_sms': {
+      // Get Twilio credentials
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      
+      if (!twilioAccountSid || !twilioAuthToken) {
+        return { success: false, message: 'Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.' };
+      }
+      
+      // Get an active phone number to send from
       const { data: numbers } = await supabase
         .from('phone_numbers')
         .select('number')
@@ -599,23 +608,94 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .eq('status', 'active')
         .limit(1);
       
-      const fromNumber = numbers?.[0]?.number || '+10000000000';
+      if (!numbers || numbers.length === 0) {
+        return { success: false, message: 'No active phone numbers found. Please add a phone number to send SMS from.' };
+      }
       
-      const { data, error } = await supabase
+      const fromNumber = numbers[0].number;
+      const toNumber = args.to_number.replace(/[^\d+]/g, '');
+      const cleanFrom = fromNumber.startsWith('+') ? fromNumber : '+' + fromNumber;
+      const cleanTo = toNumber.startsWith('+') ? toNumber : '+1' + toNumber; // Assume US if no country code
+      
+      // Create SMS record first
+      const { data: smsRecord, error: insertError } = await supabase
         .from('sms_messages')
         .insert({
           user_id: userId,
-          from_number: fromNumber,
-          to_number: args.to_number,
+          from_number: cleanFrom,
+          to_number: cleanTo,
           body: args.message,
           direction: 'outbound',
-          status: 'pending'
+          status: 'pending',
+          provider_type: 'twilio'
         })
         .select()
         .single();
       
-      if (error) throw error;
-      return { success: true, message: `SMS sent to ${args.to_number}!`, data };
+      if (insertError) {
+        console.error('[AI Assistant] SMS insert error:', insertError);
+        return { success: false, message: 'Failed to create SMS record in database.' };
+      }
+      
+      // Send via Twilio API
+      try {
+        const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+        
+        const formData = new URLSearchParams();
+        formData.append('To', cleanTo);
+        formData.append('From', cleanFrom);
+        formData.append('Body', args.message);
+        
+        console.log('[AI Assistant] Sending SMS via Twilio:', { to: cleanTo, from: cleanFrom });
+        
+        const twilioResponse = await fetch(twilioUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + credentials,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: formData.toString(),
+        });
+        
+        const twilioData = await twilioResponse.json();
+        
+        if (!twilioResponse.ok) {
+          console.error('[AI Assistant] Twilio error:', twilioData);
+          // Update SMS record with error
+          await supabase
+            .from('sms_messages')
+            .update({ status: 'failed', error_message: twilioData.message || 'Twilio API error' })
+            .eq('id', smsRecord.id);
+          
+          return { success: false, message: `Twilio error: ${twilioData.message || 'Failed to send SMS'}` };
+        }
+        
+        console.log('[AI Assistant] SMS sent successfully:', twilioData.sid);
+        
+        // Update SMS record with success
+        await supabase
+          .from('sms_messages')
+          .update({ 
+            status: 'sent', 
+            provider_message_id: twilioData.sid,
+            sent_at: new Date().toISOString()
+          })
+          .eq('id', smsRecord.id);
+        
+        return { 
+          success: true, 
+          message: `SMS successfully sent to ${cleanTo} from ${cleanFrom}. Message: "${args.message.substring(0, 50)}${args.message.length > 50 ? '...' : ''}"`,
+          data: { messageId: twilioData.sid, to: cleanTo, from: cleanFrom }
+        };
+      } catch (twilioError: any) {
+        console.error('[AI Assistant] Twilio send error:', twilioError);
+        await supabase
+          .from('sms_messages')
+          .update({ status: 'failed', error_message: twilioError.message })
+          .eq('id', smsRecord.id);
+        return { success: false, message: `Failed to send SMS: ${twilioError.message}` };
+      }
     }
 
     case 'quarantine_number': {
@@ -1077,10 +1157,16 @@ serve(async (req) => {
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash',
           messages: [
-            { role: 'system', content: 'Summarize what actions were taken concisely.' },
-            { role: 'user', content: `User asked: "${message}"\nActions: ${results.join(', ')}` }
+            { role: 'system', content: `You are a helpful AI assistant. Explain EXACTLY what you did in a clear, natural way. Be specific about:
+- What action was taken
+- Whether it succeeded or failed
+- Key details (names, numbers, counts)
+- If something failed, explain why
+
+DO NOT be vague. DO NOT just repeat what the user asked. Tell them what ACTUALLY happened.` },
+            { role: 'user', content: `User request: "${message}"\n\nActions taken:\n${results.join('\n')}\n\nExplain what happened in a clear, helpful response.` }
           ],
-          max_tokens: 300,
+          max_tokens: 400,
         }),
       });
 
