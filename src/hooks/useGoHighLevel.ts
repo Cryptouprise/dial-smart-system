@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -37,21 +37,120 @@ export const useGoHighLevel = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const getGHLCredentials = (): GHLCredentials | null => {
-    const credentials = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const ghlCreds = credentials.find((cred: any) => cred.service === 'gohighlevel');
-    return ghlCreds?.credentials || null;
-  };
+  const getGHLCredentials = useCallback(async (): Promise<GHLCredentials | null> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
 
-  const saveGHLCredentials = (credentials: GHLCredentials) => {
-    const existingCreds = JSON.parse(localStorage.getItem('api-credentials') || '[]');
-    const updatedCreds = existingCreds.filter((cred: any) => cred.service !== 'gohighlevel');
-    updatedCreds.push({
-      service: 'gohighlevel',
-      credentials
-    });
-    localStorage.setItem('api-credentials', JSON.stringify(updatedCreds));
-  };
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('credential_key, credential_value_encrypted')
+        .eq('user_id', user.id)
+        .eq('service_name', 'gohighlevel');
+
+      if (error || !data || data.length === 0) return null;
+
+      const credentials: GHLCredentials = {
+        apiKey: '',
+        locationId: '',
+        webhookKey: ''
+      };
+
+      data.forEach((cred) => {
+        try {
+          const value = atob(cred.credential_value_encrypted);
+          if (cred.credential_key === 'apiKey') credentials.apiKey = value;
+          if (cred.credential_key === 'locationId') credentials.locationId = value;
+          if (cred.credential_key === 'webhookKey') credentials.webhookKey = value;
+        } catch {
+          // Invalid base64, skip
+        }
+      });
+
+      if (!credentials.apiKey || !credentials.locationId) return null;
+      return credentials;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const saveGHLCredentials = useCallback(async (credentials: GHLCredentials): Promise<boolean> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to save credentials",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      // Delete existing GHL credentials
+      await supabase
+        .from('user_credentials')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('service_name', 'gohighlevel');
+
+      // Insert new credentials
+      const credentialsToInsert = [
+        {
+          user_id: user.id,
+          service_name: 'gohighlevel',
+          credential_key: 'apiKey',
+          credential_value_encrypted: btoa(credentials.apiKey)
+        },
+        {
+          user_id: user.id,
+          service_name: 'gohighlevel',
+          credential_key: 'locationId',
+          credential_value_encrypted: btoa(credentials.locationId)
+        }
+      ];
+
+      if (credentials.webhookKey) {
+        credentialsToInsert.push({
+          user_id: user.id,
+          service_name: 'gohighlevel',
+          credential_key: 'webhookKey',
+          credential_value_encrypted: btoa(credentials.webhookKey)
+        });
+      }
+
+      const { error } = await supabase
+        .from('user_credentials')
+        .insert(credentialsToInsert);
+
+      if (error) throw error;
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save credentials",
+        variant: "destructive"
+      });
+      return false;
+    }
+  }, [toast]);
+
+  const deleteGHLCredentials = useCallback(async (): Promise<boolean> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { error } = await supabase
+        .from('user_credentials')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('service_name', 'gohighlevel');
+
+      if (error) throw error;
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   const testConnection = async (credentials: GHLCredentials) => {
     setIsLoading(true);
@@ -84,7 +183,7 @@ export const useGoHighLevel = () => {
   };
 
   const syncContacts = async (direction: 'import' | 'export' | 'bidirectional' = 'import') => {
-    const credentials = getGHLCredentials();
+    const credentials = await getGHLCredentials();
     if (!credentials) {
       toast({
         title: "Error",
@@ -131,7 +230,7 @@ export const useGoHighLevel = () => {
     callStatus: string;
     nextAction?: string;
   }) => {
-    const credentials = getGHLCredentials();
+    const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
     setIsLoading(true);
@@ -162,7 +261,7 @@ export const useGoHighLevel = () => {
     pipelineId: string;
     stageId: string;
   }) => {
-    const credentials = getGHLCredentials();
+    const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
     setIsLoading(true);
@@ -197,7 +296,7 @@ export const useGoHighLevel = () => {
   };
 
   const getPipelines = async () => {
-    const credentials = getGHLCredentials();
+    const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
     setIsLoading(true);
@@ -228,7 +327,7 @@ export const useGoHighLevel = () => {
     dateRange?: { start: string; end: string };
     search?: string;
   }) => {
-    const credentials = getGHLCredentials();
+    const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
     setIsLoading(true);
@@ -260,6 +359,7 @@ export const useGoHighLevel = () => {
     testConnection,
     saveGHLCredentials,
     getGHLCredentials,
+    deleteGHLCredentials,
     syncContacts,
     updateContactAfterCall,
     createOpportunity,
