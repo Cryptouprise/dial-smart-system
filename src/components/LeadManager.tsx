@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail } from 'lucide-react';
+import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 
@@ -17,13 +18,14 @@ interface LeadManagerProps {
 }
 
 const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
-  const { createLead, updateLead, getLeads, importLeads, isLoading } = usePredictiveDialing();
+  const { createLead, updateLead, getLeads, importLeads, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const [leads, setLeads] = useState<any[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
   const [importText, setImportText] = useState('');
   const [filters, setFilters] = useState({ status: 'all', search: '' });
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -136,6 +138,23 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
     }
   };
 
+  const toggleLeadSelection = (leadId: string) => {
+    setSelectedLeads(prev => 
+      prev.includes(leadId) 
+        ? prev.filter(id => id !== leadId)
+        : [...prev, leadId]
+    );
+  };
+
+  const handleResetForCalling = async () => {
+    if (selectedLeads.length === 0) return;
+    const result = await resetLeadsForCalling(selectedLeads);
+    if (result) {
+      setSelectedLeads([]);
+      loadLeads();
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Actions */}
@@ -167,6 +186,16 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
         </div>
 
         <div className="flex gap-2">
+          {selectedLeads.length > 0 && (
+            <Button 
+              variant="outline" 
+              onClick={handleResetForCalling}
+              disabled={isLoading}
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset for Calling ({selectedLeads.length})
+            </Button>
+          )}
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
@@ -355,6 +384,18 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedLeads.length === leads.length && leads.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedLeads(leads.map(l => l.id));
+                        } else {
+                          setSelectedLeads([]);
+                        }
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Company</TableHead>
@@ -366,7 +407,13 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
               </TableHeader>
               <TableBody>
                 {leads.map((lead) => (
-                  <TableRow key={lead.id}>
+                  <TableRow key={lead.id} className={selectedLeads.includes(lead.id) ? 'bg-muted/50' : ''}>
+                    <TableCell>
+                      <Checkbox 
+                        checked={selectedLeads.includes(lead.id)}
+                        onCheckedChange={() => toggleLeadSelection(lead.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-slate-400" />
