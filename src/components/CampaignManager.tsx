@@ -7,8 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
+import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
+import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
 import { CampaignLeadManager } from './CampaignLeadManager';
 import { CampaignCallActivity } from './CampaignCallActivity';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,6 +36,7 @@ interface CampaignManagerProps {
 
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, isLoading } = usePredictiveDialing();
+  const { prioritizeLeads, isCalculating } = useLeadPrioritization();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
@@ -42,6 +45,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
+  const [prioritizingCampaignId, setPrioritizingCampaignId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -143,6 +147,45 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     await updateCampaign(campaign.id, { status: newStatus });
     loadCampaigns();
     onRefresh?.();
+  };
+
+  const handlePrioritizeLeads = async (campaignId: string, timezone: string) => {
+    setPrioritizingCampaignId(campaignId);
+    try {
+      await prioritizeLeads({
+        campaignId,
+        timeZone: timezone,
+        maxLeads: 500 // Prioritize top 500 leads
+      });
+      toast({
+        title: "Success",
+        description: "Leads have been prioritized for optimal calling",
+      });
+    } catch (error) {
+      console.error('Error prioritizing leads:', error);
+    } finally {
+      setPrioritizingCampaignId(null);
+    }
+  };
+
+  // Render compliance status badge
+  const CampaignComplianceStatus = ({ campaignId }: { campaignId: string }) => {
+    const { metrics } = useCampaignCompliance(campaignId);
+    
+    if (!metrics) return null;
+
+    return (
+      <div className="flex items-center gap-2 text-xs">
+        <Shield className={`h-4 w-4 ${
+          metrics.abandonmentRate <= 3 ? 'text-green-500' : 'text-red-500'
+        }`} />
+        <span className={
+          metrics.abandonmentRate <= 3 ? 'text-green-600' : 'text-red-600'
+        }>
+          {metrics.abandonmentRate.toFixed(2)}% abandon rate
+        </span>
+      </div>
+    );
   };
 
   return (
@@ -361,7 +404,14 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                {/* Compliance Status */}
+                {campaign.status === 'active' && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                    <CampaignComplianceStatus campaignId={campaign.id} />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                   <Button
                     variant="outline"
                     onClick={() => setExpandedCampaignId(
@@ -380,6 +430,15 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   >
                     <Activity className="h-4 w-4 mr-2" />
                     {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Call Activity
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePrioritizeLeads(campaign.id, campaign.timezone)}
+                    disabled={prioritizingCampaignId === campaign.id || isCalculating}
+                  >
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    {prioritizingCampaignId === campaign.id ? 'Prioritizing...' : 'Prioritize Leads'}
                   </Button>
                 </div>
 
