@@ -283,10 +283,10 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return 'bg-red-500';
+      case 'high': return 'bg-destructive';
       case 'medium': return 'bg-yellow-500';
-      case 'low': return 'bg-blue-500';
-      default: return 'bg-gray-500';
+      case 'low': return 'bg-primary';
+      default: return 'bg-muted';
     }
   };
 
@@ -307,7 +307,7 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-purple-600" />
+            <Brain className="h-5 w-5 text-primary" />
             AI Decision Engine
           </CardTitle>
           <CardDescription>
@@ -320,14 +320,13 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
               <div className="text-sm text-gray-600">
                 Last Analysis: {lastAnalysis?.toLocaleString() || 'Never'}
               </div>
-              <Badge variant="outline" className="text-purple-600">
+              <Badge variant="outline" className="text-primary">
                 {recommendations.length} Recommendations
               </Badge>
             </div>
             <Button 
               onClick={generateRecommendations}
               disabled={isAnalyzing}
-              className="bg-purple-600 hover:bg-purple-700"
             >
               <Brain className={`h-4 w-4 mr-2 ${isAnalyzing ? 'animate-pulse' : ''}`} />
               {isAnalyzing ? 'Analyzing...' : 'Analyze Now'}
