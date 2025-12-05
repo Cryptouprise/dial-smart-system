@@ -31,12 +31,12 @@ interface Message {
 }
 
 const QUICK_ACTIONS = [
-  { label: '📊 Today\'s Stats', message: 'How many calls were made today? Give me a full breakdown of outcomes.' },
-  { label: '📅 Appointments', message: 'How many appointments were booked? Rate each one on a scale of 1-10 and explain why.' },
-  { label: '📈 Answer Rate', message: 'What is our current answer rate and how does it compare to this week?' },
-  { label: '📱 SMS Analytics', message: 'How many SMS messages sent vs received? What\'s our response rate?' },
+  { label: '📊 Today\'s Stats', message: 'Get my stats for today - calls, answer rate, appointments, SMS activity' },
+  { label: '🔍 Search Leads', message: 'Search for leads that need follow-up' },
+  { label: '📞 Number Health', message: 'Check the health of my phone numbers - any spam flagged or quarantined?' },
   { label: '📋 Daily Report', message: 'Generate my daily performance report with wins, improvements, and recommendations.' },
-  { label: '🔥 Top Leads', message: 'Show me our best leads based on engagement and call quality.' },
+  { label: '📈 Weekly Stats', message: 'Get my stats for this week - compare calls, appointments, and answer rates' },
+  { label: '💾 Export Leads', message: 'Export all my leads to CSV format' },
 ];
 
 export const AIAssistantChat: React.FC = () => {
