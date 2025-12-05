@@ -348,7 +348,7 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
           <CardContent>
             <div className="space-y-4">
               {recommendations.map((rec) => (
-                <div key={rec.id} className="border rounded-lg p-4 space-y-3">
+                  <div key={rec.id} className="border border-border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2">
@@ -364,26 +364,26 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
                     <Button
                       size="sm"
                       onClick={() => executeRecommendation(rec)}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-primary hover:bg-primary/90"
                     >
                       Execute
                     </Button>
                   </div>
                   
                   <div>
-                    <h4 className="font-semibold text-gray-900">{rec.title}</h4>
-                    <p className="text-gray-600 text-sm mt-1">{rec.description}</p>
-                    <p className="font-medium text-blue-600 text-sm mt-2">
+                    <h4 className="font-semibold text-foreground">{rec.title}</h4>
+                    <p className="text-muted-foreground text-sm mt-1">{rec.description}</p>
+                    <p className="font-medium text-primary text-sm mt-2">
                       Recommended Action: {rec.action}
                     </p>
                   </div>
 
-                  <div className="bg-gray-50 rounded p-3">
-                    <p className="text-xs font-medium text-gray-700 mb-2">AI Reasoning:</p>
-                    <ul className="text-xs text-gray-600 space-y-1">
+                  <div className="bg-muted rounded p-3">
+                    <p className="text-xs font-medium text-foreground mb-2">AI Reasoning:</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
                       {rec.reasoning.map((reason, idx) => (
                         <li key={idx} className="flex items-start gap-2">
-                          <span className="text-purple-500">•</span>
+                          <span className="text-primary">•</span>
                           {reason}
                         </li>
                       ))}
@@ -405,30 +405,30 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-2xl font-bold text-primary">
                   {numbers.filter(n => n.status === 'active').length}
                 </div>
-                <div className="text-sm text-gray-600">Active Numbers</div>
+                <div className="text-sm text-muted-foreground">Active Numbers</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-2xl font-bold text-destructive">
                   {numbers.filter(n => n.daily_calls > 40).length}
                 </div>
-                <div className="text-sm text-gray-600">High Risk</div>
+                <div className="text-sm text-muted-foreground">High Risk</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="text-2xl font-bold text-primary">
                   {numbers.length > 0 
                     ? Math.round((numbers.filter(n => n.status === 'active').length / numbers.length) * 100)
                     : 0}%
                 </div>
-                <div className="text-sm text-gray-600">Pool Utilization</div>
+                <div className="text-sm text-muted-foreground">Pool Utilization</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
+                <div className="text-2xl font-bold text-primary">
                   {new Set(numbers.map(n => n.area_code)).size}
                 </div>
-                <div className="text-sm text-gray-600">Area Codes</div>
+                <div className="text-sm text-muted-foreground">Area Codes</div>
               </div>
             </div>
           </CardContent>
