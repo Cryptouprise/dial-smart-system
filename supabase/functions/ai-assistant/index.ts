@@ -244,14 +244,28 @@ const TOOLS = [
     type: "function",
     function: {
       name: "send_sms",
-      description: "Send an SMS message",
+      description: "Send an SMS message. Can specify which number to send from. If not specified, will use the first available SMS-capable number.",
       parameters: {
         type: "object",
         properties: {
-          to_number: { type: "string", description: "Recipient phone" },
-          message: { type: "string", description: "Message content" }
+          to_number: { type: "string", description: "Recipient phone number" },
+          message: { type: "string", description: "Message content" },
+          from_number: { type: "string", description: "Phone number to send from (optional). Use list_sms_numbers to see available numbers." }
         },
         required: ["to_number", "message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_sms_numbers",
+      description: "List all available phone numbers that can send SMS. Shows which numbers are SMS-capable and their status. Use this before sending SMS to see your options.",
+      parameters: {
+        type: "object",
+        properties: {
+          only_sms_capable: { type: "boolean", description: "Only show SMS-capable numbers (default: true)" }
+        }
       }
     }
   },
@@ -605,8 +619,58 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       return { success: true, message: `Campaign updated!` };
     }
 
+    case 'list_sms_numbers': {
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      
+      if (!twilioAccountSid || !twilioAuthToken) {
+        return { success: false, message: 'Twilio credentials not configured.' };
+      }
+      
+      try {
+        const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`;
+        
+        const response = await fetch(twilioUrl, {
+          headers: { 'Authorization': 'Basic ' + credentials }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch numbers from Twilio');
+        }
+        
+        const data = await response.json();
+        const allNumbers = data.incoming_phone_numbers || [];
+        
+        // Filter for SMS-capable numbers
+        const smsNumbers = allNumbers.filter((n: any) => 
+          n.capabilities?.sms === true || n.capabilities?.mms === true
+        );
+        
+        const numberList = smsNumbers.map((n: any) => ({
+          number: n.phone_number,
+          friendlyName: n.friendly_name,
+          smsCapable: n.capabilities?.sms || false,
+          mmsCapable: n.capabilities?.mms || false,
+          voiceCapable: n.capabilities?.voice || false
+        }));
+        
+        const formattedList = numberList.map((n: any) => 
+          `• ${n.number} ${n.friendlyName ? `(${n.friendlyName})` : ''} - SMS: ${n.smsCapable ? '✓' : '✗'}, MMS: ${n.mmsCapable ? '✓' : '✗'}`
+        ).join('\n');
+        
+        return { 
+          success: true, 
+          message: `Found ${numberList.length} SMS-capable numbers:\n${formattedList}`,
+          data: { numbers: numberList, total: numberList.length }
+        };
+      } catch (error: any) {
+        console.error('[AI Assistant] Error listing SMS numbers:', error);
+        return { success: false, message: `Failed to list numbers: ${error.message}` };
+      }
+    }
+
     case 'send_sms': {
-      // Get Twilio credentials
       const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
       const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
       
@@ -614,29 +678,52 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         return { success: false, message: 'Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.' };
       }
       
-      // Get an active phone number to send from
-      const { data: numbers } = await supabase
-        .from('phone_numbers')
-        .select('number')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .limit(1);
+      const toNumber = args.to_number.replace(/[^\d+]/g, '');
+      const cleanTo = toNumber.startsWith('+') ? toNumber : '+1' + toNumber;
+      let fromNumber = args.from_number;
       
-      if (!numbers || numbers.length === 0) {
-        return { success: false, message: 'No active phone numbers found. Please add a phone number to send SMS from.' };
+      // If from_number specified, use it directly
+      if (fromNumber) {
+        fromNumber = fromNumber.replace(/[^\d+]/g, '');
+        fromNumber = fromNumber.startsWith('+') ? fromNumber : '+1' + fromNumber;
+      } else {
+        // Fetch SMS-capable numbers from Twilio directly
+        try {
+          const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=50`;
+          
+          const response = await fetch(twilioUrl, {
+            headers: { 'Authorization': 'Basic ' + credentials }
+          });
+          
+          if (!response.ok) {
+            return { success: false, message: 'Failed to fetch available numbers from Twilio. Please specify a from_number.' };
+          }
+          
+          const data = await response.json();
+          const smsNumbers = (data.incoming_phone_numbers || []).filter((n: any) => 
+            n.capabilities?.sms === true
+          );
+          
+          if (smsNumbers.length === 0) {
+            return { success: false, message: 'No SMS-capable numbers found in your Twilio account. Please purchase an SMS-enabled number.' };
+          }
+          
+          // Use the first SMS-capable number
+          fromNumber = smsNumbers[0].phone_number;
+          console.log(`[AI Assistant] Auto-selected SMS number: ${fromNumber} from ${smsNumbers.length} available`);
+        } catch (error: any) {
+          console.error('[AI Assistant] Error fetching Twilio numbers:', error);
+          return { success: false, message: `Failed to find an SMS-capable number: ${error.message}. Use list_sms_numbers to see available options.` };
+        }
       }
       
-      const fromNumber = numbers[0].number;
-      const toNumber = args.to_number.replace(/[^\d+]/g, '');
-      const cleanFrom = fromNumber.startsWith('+') ? fromNumber : '+' + fromNumber;
-      const cleanTo = toNumber.startsWith('+') ? toNumber : '+1' + toNumber; // Assume US if no country code
-      
-      // Create SMS record first
+      // Create SMS record
       const { data: smsRecord, error: insertError } = await supabase
         .from('sms_messages')
         .insert({
           user_id: userId,
-          from_number: cleanFrom,
+          from_number: fromNumber,
           to_number: cleanTo,
           body: args.message,
           direction: 'outbound',
@@ -658,10 +745,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         
         const formData = new URLSearchParams();
         formData.append('To', cleanTo);
-        formData.append('From', cleanFrom);
+        formData.append('From', fromNumber);
         formData.append('Body', args.message);
         
-        console.log('[AI Assistant] Sending SMS via Twilio:', { to: cleanTo, from: cleanFrom });
+        console.log('[AI Assistant] Sending SMS via Twilio:', { to: cleanTo, from: fromNumber });
         
         const twilioResponse = await fetch(twilioUrl, {
           method: 'POST',
@@ -676,18 +763,41 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         
         if (!twilioResponse.ok) {
           console.error('[AI Assistant] Twilio error:', twilioData);
-          // Update SMS record with error
           await supabase
             .from('sms_messages')
             .update({ status: 'failed', error_message: twilioData.message || 'Twilio API error' })
             .eq('id', smsRecord.id);
+          
+          // Check if it's an A2P/registration error and provide helpful message
+          const errorMsg = twilioData.message || '';
+          if (errorMsg.includes('unregistered') || errorMsg.includes('A2P') || errorMsg.includes('10DLC')) {
+            // Suggest alternative numbers
+            try {
+              const creds = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+              const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=10`;
+              const resp = await fetch(numbersUrl, { headers: { 'Authorization': 'Basic ' + creds } });
+              const numbersData = await resp.json();
+              const smsNums = (numbersData.incoming_phone_numbers || [])
+                .filter((n: any) => n.capabilities?.sms && n.phone_number !== fromNumber)
+                .slice(0, 5)
+                .map((n: any) => n.phone_number);
+              
+              if (smsNums.length > 0) {
+                return { 
+                  success: false, 
+                  message: `❌ Number ${fromNumber} cannot send SMS (likely not A2P registered).\n\nTry one of these numbers instead:\n${smsNums.map((n: string) => `• ${n}`).join('\n')}\n\nUse: send_sms with from_number parameter to specify which number to use.`
+                };
+              }
+            } catch {}
+            
+            return { success: false, message: `❌ Number ${fromNumber} cannot send SMS - it may not be A2P/10DLC registered. Use list_sms_numbers to see available options.` };
+          }
           
           return { success: false, message: `Twilio error: ${twilioData.message || 'Failed to send SMS'}` };
         }
         
         console.log('[AI Assistant] SMS sent successfully:', twilioData.sid);
         
-        // Update SMS record with success
         await supabase
           .from('sms_messages')
           .update({ 
@@ -697,7 +807,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           })
           .eq('id', smsRecord.id);
         
-        return { 
+        return {
           success: true, 
           message: `SMS successfully sent to ${cleanTo} from ${cleanFrom}. Message: "${args.message.substring(0, 50)}${args.message.length > 50 ? '...' : ''}"`,
           data: { messageId: twilioData.sid, to: cleanTo, from: cleanFrom }
