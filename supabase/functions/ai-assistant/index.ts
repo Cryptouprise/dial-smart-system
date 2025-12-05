@@ -809,8 +809,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         
         return {
           success: true, 
-          message: `SMS successfully sent to ${cleanTo} from ${cleanFrom}. Message: "${args.message.substring(0, 50)}${args.message.length > 50 ? '...' : ''}"`,
-          data: { messageId: twilioData.sid, to: cleanTo, from: cleanFrom }
+          message: `✅ SMS successfully sent to ${cleanTo} from ${fromNumber}. Message: "${args.message.substring(0, 50)}${args.message.length > 50 ? '...' : ''}"`,
+          data: { messageId: twilioData.sid, to: cleanTo, from: fromNumber }
         };
       } catch (twilioError: any) {
         console.error('[AI Assistant] Twilio send error:', twilioError);
