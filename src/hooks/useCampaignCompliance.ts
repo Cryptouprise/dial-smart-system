@@ -194,37 +194,46 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     if (!campaignId || isMonitoring) return;
 
     setIsMonitoring(true);
+    let isChecking = false;
 
     const monitorInterval = setInterval(async () => {
-      const check = await performComplianceCheck(campaignId);
+      // Skip if previous check is still running
+      if (isChecking) return;
       
-      if (!check.passed) {
-        // Auto-pause campaign on violation
-        await autoPauseCampaign(campaignId, check.violations.join('; '));
-        clearInterval(monitorInterval);
-        setIsMonitoring(false);
-      } else if (check.warnings.length > 0) {
-        // Show warnings but don't pause
-        toast({
-          title: "Compliance Warning",
-          description: check.warnings.join('; '),
-          variant: "default"
+      isChecking = true;
+      try {
+        const check = await performComplianceCheck(campaignId);
+        
+        if (!check.passed) {
+          // Auto-pause campaign on violation
+          await autoPauseCampaign(campaignId, check.violations.join('; '));
+          clearInterval(monitorInterval);
+          setIsMonitoring(false);
+        } else if (check.warnings.length > 0) {
+          // Show warnings but don't pause
+          toast({
+            title: "Compliance Warning",
+            description: check.warnings.join('; '),
+            variant: "default"
+          });
+        }
+
+        // Update metrics
+        const abandonmentRate = await calculateAbandonmentRate(campaignId);
+        const withinHours = await checkCallingHours(campaignId);
+        const dncViolations = await checkDNCCompliance(campaignId);
+
+        setMetrics({
+          abandonmentRate,
+          callsToday: 0, // TODO: Implement
+          callsThisHour: 0, // TODO: Implement
+          complianceViolations: check.violations.length,
+          isWithinCallingHours: withinHours,
+          dncViolations
         });
+      } finally {
+        isChecking = false;
       }
-
-      // Update metrics
-      const abandonmentRate = await calculateAbandonmentRate(campaignId);
-      const withinHours = await checkCallingHours(campaignId);
-      const dncViolations = await checkDNCCompliance(campaignId);
-
-      setMetrics({
-        abandonmentRate,
-        callsToday: 0, // TODO: Implement
-        callsThisHour: 0, // TODO: Implement
-        complianceViolations: check.violations.length,
-        isWithinCallingHours: withinHours,
-        dncViolations
-      });
     }, 60000); // Check every minute
 
     return () => {

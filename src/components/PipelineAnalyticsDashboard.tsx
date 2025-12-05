@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { usePipelineAnalytics } from '@/hooks/usePipelineAnalytics';
 
+const LEAD_ID_DISPLAY_LENGTH = 8;
+
 const PipelineAnalyticsDashboard: React.FC = () => {
   const { metrics, movements, isAnalyzing, analyzePipeline } = usePipelineAnalytics();
 
@@ -251,7 +253,7 @@ const PipelineAnalyticsDashboard: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <Badge variant="outline" className="font-mono text-xs">
-                      {movement.leadId.slice(0, 8)}
+                      {movement.leadId.slice(0, LEAD_ID_DISPLAY_LENGTH)}
                     </Badge>
                     <span className="text-slate-600 dark:text-slate-400">
                       {movement.fromStage}

@@ -240,25 +240,19 @@ export const useLeadPrioritization = () => {
   // Update lead priorities in the database
   const updateLeadPriorities = async (scoredLeads: LeadScore[]) => {
     try {
-      // Update each lead's priority based on score
-      const updates = scoredLeads.map((sl, index) => ({
-        id: sl.leadId,
-        priority: Math.ceil(sl.score / 20), // Convert 0-100 score to 1-5 priority
-        updated_at: new Date().toISOString()
-      }));
+      // Batch update priorities in parallel
+      const updatePromises = scoredLeads.map(sl => 
+        supabase
+          .from('leads')
+          .update({ 
+            priority: Math.ceil(sl.score / 20), // Convert 0-100 score to 1-5 priority
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sl.leadId)
+      );
 
-      // Batch update (Supabase doesn't support batch upsert well, so we'll do it in chunks)
-      const chunkSize = 50;
-      for (let i = 0; i < updates.length; i += chunkSize) {
-        const chunk = updates.slice(i, i + chunkSize);
-        
-        for (const update of chunk) {
-          await supabase
-            .from('leads')
-            .update({ priority: update.priority, updated_at: update.updated_at })
-            .eq('id', update.id);
-        }
-      }
+      // Execute all updates in parallel
+      await Promise.all(updatePromises);
     } catch (error) {
       console.error('Error updating lead priorities:', error);
     }

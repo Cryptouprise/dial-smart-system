@@ -45,6 +45,7 @@ export const usePredictiveDialingAlgorithm = () => {
   const validateParams = (params: DialingAlgorithmParams): string | null => {
     if (params.avgCallDuration < 1) return 'Average call duration must be at least 1 second';
     if (params.avgAnswerRate < 1 || params.avgAnswerRate > 100) return 'Answer rate must be between 1% and 100%';
+    if (params.avgAnswerRate === 0) return 'Answer rate cannot be 0% - system cannot calculate optimal ratios';
     if (params.avgAgentWrapTime < 0) return 'Wrap time cannot be negative';
     if (params.availableAgents < 0) return 'Available agents cannot be negative';
     if (params.targetAbandonmentRate < 0 || params.targetAbandonmentRate > 10) return 'Target abandonment rate should be between 0% and 10%';
@@ -66,12 +67,6 @@ export const usePredictiveDialingAlgorithm = () => {
     if (validationError) {
       console.warn('Invalid parameters:', validationError);
       return 1.0; // Return conservative ratio on invalid input
-    }
-
-    // Prevent division by zero
-    if (avgAnswerRate === 0) {
-      console.warn('Answer rate is 0%, using conservative dialing ratio');
-      return 1.0;
     }
 
     // Base ratio calculation
