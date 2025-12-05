@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,6 +7,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { 
   MoreVertical, 
@@ -14,11 +18,13 @@ import {
   AlertCircle, 
   Shield, 
   MessageSquare,
-  Phone,
   ShoppingCart,
   Upload,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  Info,
+  RefreshCw
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -37,45 +43,57 @@ interface PhoneNumberRowProps {
   onRefresh?: () => void;
 }
 
+interface TrustProfile {
+  sid: string;
+  friendlyName: string;
+  status: string;
+  type: string;
+}
+
 const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [actionType, setActionType] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<TrustProfile[]>([]);
+  const [currentAssignment, setCurrentAssignment] = useState<any>(null);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const { toast } = useToast();
 
   // Determine if number was purchased or imported based on retell_phone_id
   const isPurchased = !!number.retell_phone_id;
   const source = isPurchased ? 'Purchased' : 'Imported';
   
-  // Determine carrier - default to checking if it looks like Twilio number
-  const carrier = number.carrier_name || (number.number.startsWith('+1') ? 'Unknown' : 'Unknown');
+  // Determine carrier
+  const carrier = number.carrier_name || null;
   
   // Check registration statuses
   const hasStirShaken = number.stir_shaken_attestation && number.stir_shaken_attestation !== '';
   const stirShakenLevel = number.stir_shaken_attestation;
 
-  const handlePushToStirShaken = async () => {
-    setIsLoading(true);
-    setActionType('stirshaken');
+  // Load available profiles when dropdown opens
+  const loadProfiles = async () => {
+    if (profiles.length > 0) return; // Already loaded
     
+    setIsLoadingProfiles(true);
     try {
-      // First list available profiles
-      const { data: profileData, error: profileError } = await supabase.functions.invoke('enhanced-spam-lookup', {
+      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
         body: { listApprovedProfiles: true }
       });
 
-      if (profileError) throw profileError;
+      if (error) throw error;
+      
+      setProfiles(data?.approvedProfiles || []);
+    } catch (error: any) {
+      console.error('Failed to load profiles:', error);
+    } finally {
+      setIsLoadingProfiles(false);
+    }
+  };
 
-      if (!profileData?.approvedProfiles?.length) {
-        toast({
-          title: "No Eligible Profiles",
-          description: "You need an approved SHAKEN Business Profile in Twilio Trust Hub. Go to Twilio Console → Trust Hub to create one.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // Try to transfer to first available profile
-      const profile = profileData.approvedProfiles[0];
+  const handleAssignToProfile = async (profile: TrustProfile) => {
+    setIsLoading(true);
+    setActionType('assign');
+    
+    try {
       const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
         body: { 
           transferToProfile: true, 
@@ -85,7 +103,6 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       });
 
       if (error) {
-        // Parse error for helpful message
         let errorData: any = null;
         try {
           if (error.context?.body) {
@@ -102,7 +119,7 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
         } else if (errorData?.needsVoiceIntegrity) {
           toast({
             title: "SHAKEN Profile Required",
-            description: "This requires a SHAKEN Business Profile for voice. Complete Trust Hub setup first.",
+            description: "This profile type doesn't support phone assignments. Use a SHAKEN Business Profile.",
             variant: "destructive"
           });
         } else {
@@ -116,41 +133,16 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       }
 
       toast({
-        title: "Success",
-        description: `${number.number} assigned to STIR/SHAKEN profile`,
+        title: "Number Assigned",
+        description: `${number.number} added to "${profile.friendlyName}"`,
       });
 
       onRefresh?.();
     } catch (error: any) {
-      console.error('STIR/SHAKEN push failed:', error);
+      console.error('Assignment failed:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to push to STIR/SHAKEN",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-      setActionType(null);
-    }
-  };
-
-  const handlePushToA2P = async () => {
-    setIsLoading(true);
-    setActionType('a2p');
-    
-    try {
-      // A2P 10DLC registration typically goes through Twilio
-      toast({
-        title: "A2P Registration",
-        description: "A2P 10DLC registration must be completed in Twilio Console. Opening Trust Hub...",
-      });
-      
-      // Open Twilio Trust Hub in new tab
-      window.open('https://console.twilio.com/us1/develop/trust-hub/customer-profiles', '_blank');
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
+        description: error.message || "Failed to assign number",
         variant: "destructive"
       });
     } finally {
@@ -174,14 +166,20 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       if (error) throw error;
 
       if (data?.profile) {
+        setCurrentAssignment(data.profile);
         toast({
-          title: "Number Profile Found",
-          description: `Assigned to: ${data.profile.friendlyName || data.profile.trustProductSid}`,
+          title: "Currently Assigned",
+          description: `Profile: ${data.profile.friendlyName || data.profile.trustProductSid}`,
+        });
+      } else if (data?.assignments?.length > 0) {
+        toast({
+          title: "Assignment Found",
+          description: `Assigned to ${data.assignments.length} profile(s)`,
         });
       } else {
         toast({
           title: "Not Assigned",
-          description: "This number is not currently assigned to any Trust Product",
+          description: "This number is not assigned to any Trust Product or Campaign",
         });
       }
 
@@ -198,6 +196,18 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
     }
   };
 
+  const handleOpenA2PRegistration = () => {
+    toast({
+      title: "Opening A2P Registration",
+      description: "You'll be redirected to Twilio to complete A2P 10DLC registration",
+    });
+    window.open('https://console.twilio.com/us1/develop/sms/regulatory-compliance/messaging-campaigns', '_blank');
+  };
+
+  const handleOpenMessagingServices = () => {
+    window.open('https://console.twilio.com/us1/develop/sms/services', '_blank');
+  };
+
   return (
     <div className="p-3 flex items-center justify-between hover:bg-muted/50 transition-colors">
       <div className="flex items-center gap-3 flex-wrap">
@@ -211,7 +221,7 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
         </Badge>
         
         {/* Carrier Badge */}
-        {carrier && carrier !== 'Unknown' && (
+        {carrier && (
           <Badge variant="secondary" className="text-xs">
             {carrier}
           </Badge>
@@ -250,7 +260,7 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
         )}
 
         {/* 3-dot Menu */}
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => open && loadProfiles()}>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isLoading}>
               {isLoading ? (
@@ -260,26 +270,87 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-64">
+            {/* Status Section */}
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Status</DropdownMenuLabel>
             <DropdownMenuItem onClick={handleCheckStatus} disabled={isLoading}>
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Check Registration Status
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Check Current Assignment
             </DropdownMenuItem>
             
             <DropdownMenuSeparator />
             
-            <DropdownMenuItem onClick={handlePushToStirShaken} disabled={isLoading || hasStirShaken}>
-              <Shield className="h-4 w-4 mr-2" />
-              {hasStirShaken ? 'Already STIR/SHAKEN' : 'Push to STIR/SHAKEN'}
+            {/* STIR/SHAKEN Section */}
+            <DropdownMenuLabel className="text-xs text-muted-foreground">STIR/SHAKEN (Voice)</DropdownMenuLabel>
+            
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger disabled={isLoading}>
+                <Shield className="h-4 w-4 mr-2" />
+                Add to SHAKEN Campaign
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-56">
+                {isLoadingProfiles ? (
+                  <DropdownMenuItem disabled>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading profiles...
+                  </DropdownMenuItem>
+                ) : profiles.length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    No approved profiles found
+                  </DropdownMenuItem>
+                ) : (
+                  profiles.map((profile) => (
+                    <DropdownMenuItem 
+                      key={profile.sid}
+                      onClick={() => handleAssignToProfile(profile)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      <div className="flex flex-col">
+                        <span className="text-sm truncate max-w-[180px]">
+                          {profile.friendlyName || profile.sid.slice(0, 15) + '...'}
+                        </span>
+                        <span className="text-xs text-muted-foreground capitalize">
+                          {profile.type?.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a 
+                    href="https://console.twilio.com/us1/develop/trust-hub/business-profiles" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Create New Profile
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSeparator />
+            
+            {/* A2P Section */}
+            <DropdownMenuLabel className="text-xs text-muted-foreground">A2P 10DLC (SMS)</DropdownMenuLabel>
+            
+            <DropdownMenuItem onClick={handleOpenMessagingServices}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add to Messaging Service
             </DropdownMenuItem>
             
-            <DropdownMenuItem onClick={handlePushToA2P} disabled={isLoading}>
+            <DropdownMenuItem onClick={handleOpenA2PRegistration}>
               <MessageSquare className="h-4 w-4 mr-2" />
-              Register for A2P 10DLC
+              Register A2P Campaign
             </DropdownMenuItem>
             
             <DropdownMenuSeparator />
             
+            {/* Help Links */}
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Resources</DropdownMenuLabel>
             <DropdownMenuItem asChild>
               <a 
                 href="https://console.twilio.com/us1/develop/trust-hub" 
@@ -288,7 +359,18 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
                 className="flex items-center"
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Open Twilio Trust Hub
+                Twilio Trust Hub
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a 
+                href="https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center"
+              >
+                <Info className="h-4 w-4 mr-2" />
+                STIR/SHAKEN Guide
               </a>
             </DropdownMenuItem>
           </DropdownMenuContent>
