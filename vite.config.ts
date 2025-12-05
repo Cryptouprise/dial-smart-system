@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Define global constants to fix HMR WebSocket token issues in Loveable environment
   define: {
     __WS_TOKEN__: JSON.stringify(process.env.WS_TOKEN || ''),
   },
