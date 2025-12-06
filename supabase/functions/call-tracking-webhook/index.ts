@@ -484,19 +484,16 @@ async function updatePipelinePosition(
     'Callback Requested': 'Callback',
     'Not Interested': 'Not Interested',
     'Left Voicemail': 'Follow Up',
-    'Contacted': 'Contacted'
+    'Contacted': 'Contacted',
+    'Hot Lead': 'Hot Lead',
+    'Warm Lead': 'Warm Lead',
+    'Cold Lead': 'Cold Lead'
   };
 
-  const stageName = stageMapping[disposition];
-  if (!stageName) return;
+  const stageName = stageMapping[disposition] || disposition;
 
   // Find or create the pipeline stage
-  const { data: stage } = await supabase
-    .from('pipeline_boards')
-    .select('id')
-    .eq('user_id', userId)
-    .ilike('name', `%${stageName}%`)
-    .maybeSingle();
+  let stage = await findOrCreatePipelineStage(supabase, userId, stageName, disposition);
 
   if (stage) {
     // Check if lead already has a position
@@ -530,6 +527,77 @@ async function updatePipelinePosition(
     
     console.log(`Updated pipeline position to ${stageName} for lead ${leadId}`);
   }
+}
+
+// Auto-create pipeline stages when they don't exist
+async function findOrCreatePipelineStage(
+  supabase: any,
+  userId: string,
+  stageName: string,
+  disposition: string
+) {
+  // First try to find existing stage
+  const { data: existingStage } = await supabase
+    .from('pipeline_boards')
+    .select('id, position')
+    .eq('user_id', userId)
+    .ilike('name', `%${stageName}%`)
+    .maybeSingle();
+
+  if (existingStage) {
+    return existingStage;
+  }
+
+  // Stage doesn't exist - create it autonomously
+  console.log(`[Autonomous] Creating new pipeline stage: ${stageName}`);
+
+  // Get the highest position to add new stage at the end
+  const { data: lastStage } = await supabase
+    .from('pipeline_boards')
+    .select('position')
+    .eq('user_id', userId)
+    .order('position', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const newPosition = (lastStage?.position || 0) + 1;
+
+  // Create the new stage
+  const { data: newStage, error: createError } = await supabase
+    .from('pipeline_boards')
+    .insert({
+      user_id: userId,
+      name: stageName,
+      description: `Auto-created for disposition: ${disposition}`,
+      position: newPosition,
+      settings: {
+        auto_created: true,
+        created_from: 'call_webhook',
+        created_at: new Date().toISOString()
+      }
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error('Error creating pipeline stage:', createError);
+    return null;
+  }
+
+  // Log the autonomous decision
+  await supabase
+    .from('agent_decisions')
+    .insert({
+      user_id: userId,
+      decision_type: 'create_pipeline_stage',
+      reasoning: `Created new pipeline stage "${stageName}" to handle disposition: ${disposition}`,
+      action_taken: `Created pipeline stage with position ${newPosition}`,
+      executed_at: new Date().toISOString(),
+      success: true
+    });
+
+  console.log(`[Autonomous] Created new pipeline stage: ${stageName} (id: ${newStage.id})`);
+  return newStage;
 }
 
 function formatTranscript(transcriptObject: Array<{ role: string; content: string }>, rawTranscript?: string): string | null {
