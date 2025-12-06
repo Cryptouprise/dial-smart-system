@@ -610,7 +610,18 @@ ${processedKnowledge}`;
                     .update({ last_message_at: new Date().toISOString() })
                     .eq('id', conversationId);
 
-                  console.log('[Twilio SMS Webhook] Auto-response stored in database');
+                  // Autonomous SMS analysis and pipeline management
+                  await analyzeAndUpdateFromSms(
+                    supabaseAdmin,
+                    userId,
+                    From,
+                    messageBody,
+                    generatedText,
+                    leadData,
+                    conversationHistory
+                  );
+
+                  console.log('[Twilio SMS Webhook] Auto-response stored and pipeline updated');
                 } else {
                   const errorText = await twilioResponse.text();
                   console.error('[Twilio SMS Webhook] Failed to send Twilio message:', errorText);
@@ -645,3 +656,360 @@ ${processedKnowledge}`;
     );
   }
 });
+
+// Autonomous SMS Analysis and Pipeline Management
+async function analyzeAndUpdateFromSms(
+  supabase: any,
+  userId: string,
+  contactPhone: string,
+  incomingMessage: string,
+  aiResponse: string,
+  leadData: any,
+  conversationHistory: any[]
+) {
+  console.log('[Autonomous SMS] Analyzing conversation for disposition...');
+  
+  // Find or create lead
+  let leadId = leadData?.id;
+  
+  if (!leadId) {
+    // Check if lead exists
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('phone_number', contactPhone)
+      .maybeSingle();
+    
+    if (existingLead) {
+      leadId = existingLead.id;
+    } else {
+      // Create new lead autonomously
+      const { data: newLead, error: leadError } = await supabase
+        .from('leads')
+        .insert({
+          user_id: userId,
+          phone_number: contactPhone,
+          status: 'new',
+          lead_source: 'sms_inbound'
+        })
+        .select()
+        .single();
+      
+      if (!leadError && newLead) {
+        leadId = newLead.id;
+        console.log('[Autonomous SMS] Created new lead from SMS:', leadId);
+        
+        // Log the decision
+        await supabase.from('agent_decisions').insert({
+          user_id: userId,
+          lead_id: leadId,
+          decision_type: 'create_lead',
+          reasoning: 'New inbound SMS from unknown number - created lead for tracking',
+          action_taken: 'Created lead from SMS conversation',
+          executed_at: new Date().toISOString(),
+          success: true
+        });
+      }
+    }
+  }
+
+  if (!leadId) {
+    console.log('[Autonomous SMS] Could not get or create lead, skipping pipeline update');
+    return;
+  }
+
+  // Analyze the conversation for intent/disposition
+  const disposition = analyzeMessageIntent(incomingMessage, aiResponse, conversationHistory);
+  console.log('[Autonomous SMS] Detected disposition:', disposition);
+
+  // Update lead status based on SMS
+  const statusMapping: Record<string, string> = {
+    'Interested': 'qualified',
+    'Appointment Request': 'appointment',
+    'Callback Request': 'callback',
+    'Not Interested': 'not-interested',
+    'Question': 'engaged',
+    'Engaged': 'engaged',
+    'Hot Lead': 'hot',
+    'New': 'new'
+  };
+
+  const newStatus = statusMapping[disposition] || 'engaged';
+  
+  await supabase
+    .from('leads')
+    .update({
+      status: newStatus,
+      last_contacted_at: new Date().toISOString()
+    })
+    .eq('id', leadId);
+
+  // Update pipeline position
+  await updateSmsPipelinePosition(supabase, userId, leadId, disposition);
+
+  // Schedule follow-up if needed
+  await scheduleFollowUpFromSms(supabase, userId, leadId, disposition, incomingMessage);
+
+  // Log the agent decision
+  await supabase.from('agent_decisions').insert({
+    user_id: userId,
+    lead_id: leadId,
+    decision_type: 'sms_disposition',
+    reasoning: `SMS conversation analyzed. User message indicates: ${disposition}`,
+    action_taken: `Set status to ${newStatus}, updated pipeline to ${disposition}`,
+    executed_at: new Date().toISOString(),
+    success: true
+  });
+}
+
+function analyzeMessageIntent(
+  incomingMessage: string,
+  aiResponse: string,
+  conversationHistory: any[]
+): string {
+  const lowerMessage = incomingMessage.toLowerCase();
+  
+  // Check for explicit interest signals
+  if (
+    lowerMessage.includes('interested') ||
+    lowerMessage.includes('tell me more') ||
+    lowerMessage.includes('how much') ||
+    lowerMessage.includes('pricing') ||
+    lowerMessage.includes('sign up') ||
+    lowerMessage.includes('sign me up') ||
+    lowerMessage.includes('yes') && lowerMessage.length < 20
+  ) {
+    return 'Interested';
+  }
+  
+  // Check for appointment requests
+  if (
+    lowerMessage.includes('schedule') ||
+    lowerMessage.includes('appointment') ||
+    lowerMessage.includes('meet') ||
+    lowerMessage.includes('call me') ||
+    lowerMessage.includes('when can') ||
+    lowerMessage.includes('available')
+  ) {
+    return 'Appointment Request';
+  }
+  
+  // Check for callback requests
+  if (
+    lowerMessage.includes('call me back') ||
+    lowerMessage.includes('callback') ||
+    lowerMessage.includes('give me a call') ||
+    lowerMessage.includes('phone call')
+  ) {
+    return 'Callback Request';
+  }
+  
+  // Check for not interested
+  if (
+    lowerMessage.includes('not interested') ||
+    lowerMessage.includes('stop') ||
+    lowerMessage.includes('unsubscribe') ||
+    lowerMessage.includes('remove me') ||
+    lowerMessage.includes('do not contact') ||
+    lowerMessage.includes('leave me alone')
+  ) {
+    return 'Not Interested';
+  }
+  
+  // Check for questions (indicates engagement)
+  if (
+    lowerMessage.includes('?') ||
+    lowerMessage.includes('what') ||
+    lowerMessage.includes('how') ||
+    lowerMessage.includes('who') ||
+    lowerMessage.includes('where') ||
+    lowerMessage.includes('when') ||
+    lowerMessage.includes('why')
+  ) {
+    return 'Question';
+  }
+  
+  // Check for high-interest signals
+  if (
+    lowerMessage.includes('asap') ||
+    lowerMessage.includes('urgent') ||
+    lowerMessage.includes('today') ||
+    lowerMessage.includes('right now') ||
+    lowerMessage.includes('immediately')
+  ) {
+    return 'Hot Lead';
+  }
+  
+  // Default to engaged if they're responding
+  if (conversationHistory.length > 2) {
+    return 'Engaged';
+  }
+  
+  return 'New';
+}
+
+async function updateSmsPipelinePosition(
+  supabase: any,
+  userId: string,
+  leadId: string,
+  disposition: string
+) {
+  // Find or create the pipeline stage
+  let stage = await findOrCreateSmsPipelineStage(supabase, userId, disposition);
+
+  if (stage) {
+    // Check if lead already has a position
+    const { data: existingPosition } = await supabase
+      .from('lead_pipeline_positions')
+      .select('id')
+      .eq('lead_id', leadId)
+      .maybeSingle();
+
+    if (existingPosition) {
+      await supabase
+        .from('lead_pipeline_positions')
+        .update({
+          pipeline_board_id: stage.id,
+          moved_at: new Date().toISOString(),
+          moved_by_user: false,
+          notes: `Auto-moved by SMS disposition: ${disposition}`
+        })
+        .eq('id', existingPosition.id);
+    } else {
+      await supabase
+        .from('lead_pipeline_positions')
+        .insert({
+          user_id: userId,
+          lead_id: leadId,
+          pipeline_board_id: stage.id,
+          moved_by_user: false,
+          notes: `Auto-added by SMS disposition: ${disposition}`
+        });
+    }
+    
+    console.log(`[Autonomous SMS] Updated pipeline position to ${disposition} for lead ${leadId}`);
+  }
+}
+
+async function findOrCreateSmsPipelineStage(
+  supabase: any,
+  userId: string,
+  stageName: string
+) {
+  // First try to find existing stage
+  const { data: existingStage } = await supabase
+    .from('pipeline_boards')
+    .select('id, position')
+    .eq('user_id', userId)
+    .ilike('name', `%${stageName}%`)
+    .maybeSingle();
+
+  if (existingStage) {
+    return existingStage;
+  }
+
+  // Stage doesn't exist - create it autonomously
+  console.log(`[Autonomous SMS] Creating new pipeline stage: ${stageName}`);
+
+  // Get the highest position to add new stage at the end
+  const { data: lastStage } = await supabase
+    .from('pipeline_boards')
+    .select('position')
+    .eq('user_id', userId)
+    .order('position', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const newPosition = (lastStage?.position || 0) + 1;
+
+  // Create the new stage
+  const { data: newStage, error: createError } = await supabase
+    .from('pipeline_boards')
+    .insert({
+      user_id: userId,
+      name: stageName,
+      description: `Auto-created from SMS disposition`,
+      position: newPosition,
+      settings: {
+        auto_created: true,
+        created_from: 'sms_webhook',
+        created_at: new Date().toISOString()
+      }
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error('[Autonomous SMS] Error creating pipeline stage:', createError);
+    return null;
+  }
+
+  // Log the autonomous decision
+  await supabase.from('agent_decisions').insert({
+    user_id: userId,
+    decision_type: 'create_pipeline_stage',
+    reasoning: `Created new pipeline stage "${stageName}" to handle SMS disposition`,
+    action_taken: `Created pipeline stage with position ${newPosition}`,
+    executed_at: new Date().toISOString(),
+    success: true
+  });
+
+  console.log(`[Autonomous SMS] Created new pipeline stage: ${stageName} (id: ${newStage.id})`);
+  return newStage;
+}
+
+async function scheduleFollowUpFromSms(
+  supabase: any,
+  userId: string,
+  leadId: string,
+  disposition: string,
+  message: string
+) {
+  // Determine follow-up action based on disposition
+  const followUpConfig: Record<string, { action: string; delayMinutes: number }> = {
+    'Callback Request': { action: 'ai_call', delayMinutes: 5 }, // Call soon
+    'Appointment Request': { action: 'ai_sms', delayMinutes: 30 }, // Confirm SMS
+    'Interested': { action: 'ai_sms', delayMinutes: 60 }, // Follow-up in 1 hour
+    'Question': { action: 'ai_sms', delayMinutes: 120 }, // Check in later
+    'Hot Lead': { action: 'ai_call', delayMinutes: 10 }, // Call quickly
+  };
+
+  const config = followUpConfig[disposition];
+  if (!config) {
+    console.log(`[Autonomous SMS] No follow-up configured for disposition: ${disposition}`);
+    return;
+  }
+
+  // Check if there's already a pending follow-up
+  const { data: existingFollowUp } = await supabase
+    .from('scheduled_follow_ups')
+    .select('id')
+    .eq('lead_id', leadId)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (existingFollowUp) {
+    console.log(`[Autonomous SMS] Follow-up already scheduled for lead ${leadId}`);
+    return;
+  }
+
+  const scheduledAt = new Date();
+  scheduledAt.setMinutes(scheduledAt.getMinutes() + config.delayMinutes);
+
+  const { error } = await supabase
+    .from('scheduled_follow_ups')
+    .insert({
+      user_id: userId,
+      lead_id: leadId,
+      action_type: config.action,
+      scheduled_at: scheduledAt.toISOString(),
+      status: 'pending'
+    });
+
+  if (error) {
+    console.error('[Autonomous SMS] Error scheduling follow-up:', error);
+  } else {
+    console.log(`[Autonomous SMS] Scheduled ${config.action} follow-up for ${disposition} at ${scheduledAt.toISOString()}`);
+  }
+}
