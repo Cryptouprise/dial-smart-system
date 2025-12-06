@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -34,12 +34,20 @@ interface CampaignManagerProps {
   onRefresh?: () => void;
 }
 
+interface AgentWithPhoneStatus {
+  agent_id: string;
+  agent_name: string;
+  voice_id?: string;
+  hasActivePhone: boolean;
+  phoneNumber?: string;
+}
+
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, isLoading } = usePredictiveDialing();
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
@@ -59,7 +67,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
   useEffect(() => {
     loadCampaigns();
-    loadAgents();
+    loadAgentsWithPhoneStatus();
   }, []);
 
   const loadCampaigns = async () => {
@@ -67,25 +75,54 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     if (data) setCampaigns(data);
   };
 
-  const loadAgents = async () => {
+  const loadAgentsWithPhoneStatus = async () => {
     setLoadingAgents(true);
     try {
-      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
-        body: { action: 'list' }
+      // Load agents and phone numbers in parallel
+      const [agentsResponse, phonesResponse] = await Promise.all([
+        supabase.functions.invoke('retell-agent-management', { body: { action: 'list' } }),
+        supabase.functions.invoke('retell-phone-management', { body: { action: 'list' } })
+      ]);
+      
+      if (agentsResponse.error) throw agentsResponse.error;
+      
+      const agentArray = Array.isArray(agentsResponse.data) ? agentsResponse.data : (agentsResponse.data?.agents || []);
+      const phoneArray = Array.isArray(phonesResponse.data) ? phonesResponse.data : (phonesResponse.data?.phone_numbers || []);
+      
+      // Create a map of agent_id to phone numbers
+      const agentPhoneMap = new Map<string, string>();
+      phoneArray.forEach((phone: any) => {
+        if (phone.inbound_agent_id) {
+          agentPhoneMap.set(phone.inbound_agent_id, phone.phone_number);
+        }
+        if (phone.outbound_agent_id) {
+          agentPhoneMap.set(phone.outbound_agent_id, phone.phone_number);
+        }
       });
       
-      if (error) throw error;
-      
-      // Deduplicate agents by agent_id to prevent React key conflicts
-      const agentArray = Array.isArray(data) ? data : (data?.agents || []);
-      const uniqueAgents = agentArray.reduce((acc: any[], agent: any) => {
+      // Deduplicate and enrich agents with phone status
+      const uniqueAgents: AgentWithPhoneStatus[] = agentArray.reduce((acc: AgentWithPhoneStatus[], agent: any) => {
         if (!acc.find(a => a.agent_id === agent.agent_id)) {
-          acc.push(agent);
+          const phoneNumber = agentPhoneMap.get(agent.agent_id);
+          acc.push({
+            agent_id: agent.agent_id,
+            agent_name: agent.agent_name,
+            voice_id: agent.voice_id,
+            hasActivePhone: !!phoneNumber,
+            phoneNumber
+          });
         }
         return acc;
       }, []);
       
-      console.log('Loaded unique agents:', uniqueAgents.length);
+      // Sort: agents with phones first
+      uniqueAgents.sort((a, b) => {
+        if (a.hasActivePhone && !b.hasActivePhone) return -1;
+        if (!a.hasActivePhone && b.hasActivePhone) return 1;
+        return a.agent_name.localeCompare(b.agent_name);
+      });
+      
+      console.log('Loaded agents with phone status:', uniqueAgents.length);
       setAgents(uniqueAgents);
     } catch (error) {
       console.error('Error loading agents:', error);
@@ -257,11 +294,27 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <SelectContent className="bg-background z-50">
                     {agents.map((agent) => (
                       <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        {agent.agent_name}
+                        <div className="flex items-center gap-2">
+                          {agent.hasActivePhone ? (
+                            <Phone className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <PhoneOff className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span>{agent.agent_name}</span>
+                          {!agent.hasActivePhone && (
+                            <span className="text-xs text-muted-foreground">(No active phone)</span>
+                          )}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    This agent has no active phone number - calls won't work
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -346,6 +399,23 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                   campaign.status === 'paused' ? 'secondary' : 'outline'}>
                       {campaign.status}
                     </Badge>
+                    {campaign.agent_id && (() => {
+                      const agent = agents.find(a => a.agent_id === campaign.agent_id);
+                      if (agent) {
+                        return agent.hasActivePhone ? (
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            <Phone className="h-3 w-3 mr-1" />
+                            {agent.agent_name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-amber-600 border-amber-600">
+                            <PhoneOff className="h-3 w-3 mr-1" />
+                            {agent.agent_name} (No phone)
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
                   </CardTitle>
                   {campaign.description && (
                     <CardDescription>{campaign.description}</CardDescription>
