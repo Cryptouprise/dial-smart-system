@@ -42,12 +42,20 @@ interface AgentWithPhoneStatus {
   phoneNumber?: string;
 }
 
+interface PhoneNumberStatus {
+  number: string;
+  hasRetellId: boolean;
+  status: string;
+  quarantine_until?: string;
+}
+
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, isLoading } = usePredictiveDialing();
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
+  const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumberStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
@@ -68,7 +76,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   useEffect(() => {
     loadCampaigns();
     loadAgentsWithPhoneStatus();
+    loadPhoneNumberStatus();
   }, []);
+
+  const loadPhoneNumberStatus = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('number, retell_phone_id, status, quarantine_until')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      const phoneStatus: PhoneNumberStatus[] = (data || []).map(p => ({
+        number: p.number,
+        hasRetellId: !!p.retell_phone_id,
+        status: p.status,
+        quarantine_until: p.quarantine_until || undefined
+      }));
+
+      setPhoneNumbers(phoneStatus);
+    } catch (error) {
+      console.error('Error loading phone numbers:', error);
+    }
+  };
 
   const loadCampaigns = async () => {
     const data = await getCampaigns();
@@ -312,7 +346,49 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
-                    This agent has no active phone number - calls won't work
+                    This agent has no active phone number in Retell - calls won't work
+                  </p>
+                )}
+              </div>
+
+              {/* Phone Number Status Section */}
+              <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <Phone className="h-4 w-4" />
+                  Your Phone Numbers
+                </label>
+                {phoneNumbers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No phone numbers configured</p>
+                ) : (
+                  <div className="space-y-1">
+                    {phoneNumbers.map((phone) => (
+                      <div key={phone.number} className="flex items-center justify-between text-xs">
+                        <span className="font-mono">{phone.number}</span>
+                        <div className="flex items-center gap-2">
+                          {phone.quarantine_until ? (
+                            <Badge variant="outline" className="text-amber-600 border-amber-600 text-xs">
+                              Quarantined
+                            </Badge>
+                          ) : phone.hasRetellId ? (
+                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                              <Phone className="h-3 w-3 mr-1" />
+                              Retell Ready
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
+                              <PhoneOff className="h-3 w-3 mr-1" />
+                              Not in Retell
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {phoneNumbers.length > 0 && !phoneNumbers.some(p => p.hasRetellId && !p.quarantine_until) && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-2 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    No Retell-ready phone numbers! Calls will fail.
                   </p>
                 )}
               </div>
