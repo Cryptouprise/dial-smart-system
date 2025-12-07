@@ -776,6 +776,90 @@ export type Database = {
           },
         ]
       }
+      lead_scoring_settings: {
+        Row: {
+          callback_request_bonus: number
+          created_at: string
+          days_before_score_decay: number
+          decay_rate_per_day: number
+          email_open_bonus: number
+          id: string
+          negative_keywords: Json
+          negative_sentiment_penalty: number
+          neutral_keywords: Json
+          neutral_sentiment_adjustment: number
+          no_answer_penalty: number
+          positive_keywords: Json
+          positive_sentiment_bonus: number
+          quick_response_bonus: number
+          quick_response_minutes: number
+          sms_reply_bonus: number
+          updated_at: string
+          user_id: string
+          voicemail_left_penalty: number
+          weight_call_history: number
+          weight_engagement: number
+          weight_manual_priority: number
+          weight_recency: number
+          weight_response_rate: number
+          weight_sentiment: number
+        }
+        Insert: {
+          callback_request_bonus?: number
+          created_at?: string
+          days_before_score_decay?: number
+          decay_rate_per_day?: number
+          email_open_bonus?: number
+          id?: string
+          negative_keywords?: Json
+          negative_sentiment_penalty?: number
+          neutral_keywords?: Json
+          neutral_sentiment_adjustment?: number
+          no_answer_penalty?: number
+          positive_keywords?: Json
+          positive_sentiment_bonus?: number
+          quick_response_bonus?: number
+          quick_response_minutes?: number
+          sms_reply_bonus?: number
+          updated_at?: string
+          user_id: string
+          voicemail_left_penalty?: number
+          weight_call_history?: number
+          weight_engagement?: number
+          weight_manual_priority?: number
+          weight_recency?: number
+          weight_response_rate?: number
+          weight_sentiment?: number
+        }
+        Update: {
+          callback_request_bonus?: number
+          created_at?: string
+          days_before_score_decay?: number
+          decay_rate_per_day?: number
+          email_open_bonus?: number
+          id?: string
+          negative_keywords?: Json
+          negative_sentiment_penalty?: number
+          neutral_keywords?: Json
+          neutral_sentiment_adjustment?: number
+          no_answer_penalty?: number
+          positive_keywords?: Json
+          positive_sentiment_bonus?: number
+          quick_response_bonus?: number
+          quick_response_minutes?: number
+          sms_reply_bonus?: number
+          updated_at?: string
+          user_id?: string
+          voicemail_left_penalty?: number
+          weight_call_history?: number
+          weight_engagement?: number
+          weight_manual_priority?: number
+          weight_recency?: number
+          weight_response_rate?: number
+          weight_sentiment?: number
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           company: string | null
