@@ -285,7 +285,7 @@ export const useCalendarIntegration = () => {
       if (!session) {
         toast({ 
           title: 'Sign In Required', 
-          description: 'Please sign in with Google to connect your calendar.',
+          description: 'Please sign in with the "Continue with Google" button on the login page.',
           variant: 'destructive' 
         });
         return;
@@ -296,9 +296,10 @@ export const useCalendarIntegration = () => {
       const providerRefreshToken = session.provider_refresh_token;
       
       if (!providerToken) {
+        // User is signed in but not with Google OAuth
         toast({ 
           title: 'Google Sign-In Required', 
-          description: 'Please sign out and sign back in with Google to enable calendar sync.',
+          description: 'You signed in with email/password. To connect Google Calendar, please use the "Continue with Google" button on the login page instead.',
           variant: 'destructive' 
         });
         return;
