@@ -144,7 +144,7 @@ const TwilioNumbersOverview: React.FC = () => {
     }
   };
 
-  const configureSelectedNumbers = async () => {
+  const configureSelectedNumbers = async (action: 'app' | 'clear') => {
     if (selectedNumbers.size === 0) {
       toast({
         title: 'No Numbers Selected',
@@ -158,7 +158,7 @@ const TwilioNumbersOverview: React.FC = () => {
     try {
       const { data, error } = await supabase.functions.invoke('twilio-integration', {
         body: { 
-          action: 'configure_selected_webhooks',
+          action: action === 'app' ? 'configure_selected_webhooks' : 'clear_selected_webhooks',
           phoneNumbers: Array.from(selectedNumbers)
         }
       });
@@ -166,8 +166,10 @@ const TwilioNumbersOverview: React.FC = () => {
       if (error) throw error;
 
       toast({
-        title: 'Webhooks Configured',
-        description: `Successfully configured ${data.configured_count} numbers`,
+        title: action === 'app' ? 'Webhooks Configured' : 'Webhooks Cleared',
+        description: action === 'app' 
+          ? `Successfully configured ${data.configured_count} numbers for this app`
+          : `Cleared webhooks on ${data.configured_count} numbers (they will no longer route to this app)`,
       });
 
       setSelectedNumbers(new Set());
@@ -379,7 +381,7 @@ const TwilioNumbersOverview: React.FC = () => {
                 className="pl-10"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {selectedNumbers.size > 0 && (
                 <>
                   <span className="text-sm text-muted-foreground">
@@ -393,7 +395,16 @@ const TwilioNumbersOverview: React.FC = () => {
                     onClick={() => setShowConfigureDialog(true)}
                   >
                     <Settings className="h-4 w-4 mr-2" />
-                    Configure Selected for This App
+                    Route to This App
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => configureSelectedNumbers('clear')}
+                    disabled={isConfiguring}
+                  >
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    Clear Webhooks (Revert)
                   </Button>
                 </>
               )}
@@ -530,7 +541,7 @@ const TwilioNumbersOverview: React.FC = () => {
             <Button variant="outline" onClick={() => setShowConfigureDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={configureSelectedNumbers} disabled={isConfiguring}>
+            <Button onClick={() => configureSelectedNumbers('app')} disabled={isConfiguring}>
               {isConfiguring ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
