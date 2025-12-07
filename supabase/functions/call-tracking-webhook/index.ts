@@ -529,6 +529,73 @@ async function updatePipelinePosition(
   }
 }
 
+// Auto-create dispositions when they don't exist
+async function findOrCreateDisposition(
+  supabase: any,
+  userId: string,
+  dispositionName: string
+) {
+  // First try to find existing disposition
+  const { data: existingDisp } = await supabase
+    .from('dispositions')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('name', `%${dispositionName}%`)
+    .maybeSingle();
+
+  if (existingDisp) {
+    return existingDisp;
+  }
+
+  // Disposition doesn't exist - create it autonomously
+  console.log(`[Autonomous] Creating new disposition: ${dispositionName}`);
+
+  // Color mapping for dispositions
+  const colorMapping: Record<string, string> = {
+    'Interested': '#22C55E',
+    'Appointment Set': '#3B82F6',
+    'Callback Requested': '#F59E0B',
+    'Not Interested': '#EF4444',
+    'Left Voicemail': '#8B5CF6',
+    'No Answer': '#6B7280',
+    'Contacted': '#06B6D4',
+    'Hot Lead': '#DC2626',
+    'Warm Lead': '#F97316',
+    'Cold Lead': '#64748B'
+  };
+
+  const { data: newDisp, error: createError } = await supabase
+    .from('dispositions')
+    .insert({
+      user_id: userId,
+      name: dispositionName,
+      description: `Auto-created disposition for: ${dispositionName}`,
+      color: colorMapping[dispositionName] || '#3B82F6',
+      pipeline_stage: dispositionName.toLowerCase().replace(/\s+/g, '_'),
+      auto_actions: []
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error('Error creating disposition:', createError);
+    return null;
+  }
+
+  // Log the autonomous decision
+  await supabase.from('agent_decisions').insert({
+    user_id: userId,
+    decision_type: 'create_disposition',
+    reasoning: `Created new disposition "${dispositionName}" to categorize call outcomes`,
+    action_taken: `Created disposition with color ${colorMapping[dispositionName] || '#3B82F6'}`,
+    executed_at: new Date().toISOString(),
+    success: true
+  });
+
+  console.log(`[Autonomous] Created new disposition: ${dispositionName} (id: ${newDisp.id})`);
+  return newDisp;
+}
+
 // Auto-create pipeline stages when they don't exist
 async function findOrCreatePipelineStage(
   supabase: any,
@@ -536,7 +603,10 @@ async function findOrCreatePipelineStage(
   stageName: string,
   disposition: string
 ) {
-  // First try to find existing stage
+  // First ensure the disposition exists
+  const dispRecord = await findOrCreateDisposition(supabase, userId, disposition);
+
+  // Then try to find existing stage
   const { data: existingStage } = await supabase
     .from('pipeline_boards')
     .select('id, position')
@@ -545,6 +615,13 @@ async function findOrCreatePipelineStage(
     .maybeSingle();
 
   if (existingStage) {
+    // Link disposition if not already linked
+    if (dispRecord && !existingStage.disposition_id) {
+      await supabase
+        .from('pipeline_boards')
+        .update({ disposition_id: dispRecord.id })
+        .eq('id', existingStage.id);
+    }
     return existingStage;
   }
 
@@ -562,7 +639,7 @@ async function findOrCreatePipelineStage(
 
   const newPosition = (lastStage?.position || 0) + 1;
 
-  // Create the new stage
+  // Create the new stage with disposition link
   const { data: newStage, error: createError } = await supabase
     .from('pipeline_boards')
     .insert({
@@ -570,6 +647,7 @@ async function findOrCreatePipelineStage(
       name: stageName,
       description: `Auto-created for disposition: ${disposition}`,
       position: newPosition,
+      disposition_id: dispRecord?.id || null,
       settings: {
         auto_created: true,
         created_from: 'call_webhook',
