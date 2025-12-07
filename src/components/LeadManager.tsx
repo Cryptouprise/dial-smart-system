@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw, Bot } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
-
+import LeadActivityTimeline from './LeadActivityTimeline';
 interface LeadManagerProps {
   onStatsUpdate: (count: number) => void;
 }
@@ -246,126 +247,257 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                 Add Lead
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className={editingLead ? "sm:max-w-2xl" : "sm:max-w-md"}>
               <DialogHeader>
                 <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
                 <DialogDescription>
-                  {editingLead ? 'Update lead information' : 'Enter the lead details below'}
+                  {editingLead ? 'Update lead information and view AI activity' : 'Enter the lead details below'}
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+              
+              {editingLead ? (
+                <Tabs defaultValue="details" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="details">Lead Details</TabsTrigger>
+                    <TabsTrigger value="activity" className="flex items-center gap-1">
+                      <Bot className="h-3 w-3" />
+                      AI Activity
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="details" className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="first-name">First Name</Label>
+                        <Input
+                          id="first-name"
+                          value={formData.first_name}
+                          onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="last-name">Last Name</Label>
+                        <Input
+                          id="last-name"
+                          value={formData.last_name}
+                          onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="phone">Phone Number *</Label>
+                      <Input
+                        id="phone"
+                        value={formData.phone_number}
+                        onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
+                        placeholder="+1 555 123 4567"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="email">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="company">Company</Label>
+                      <Input
+                        id="company"
+                        value={formData.company}
+                        onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="status">Status</Label>
+                        <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="new">New</SelectItem>
+                            <SelectItem value="contacted">Contacted</SelectItem>
+                            <SelectItem value="interested">Interested</SelectItem>
+                            <SelectItem value="not_interested">Not Interested</SelectItem>
+                            <SelectItem value="callback">Callback</SelectItem>
+                            <SelectItem value="converted">Converted</SelectItem>
+                            <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="priority">Priority</Label>
+                        <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1 - Low</SelectItem>
+                            <SelectItem value="2">2 - Normal</SelectItem>
+                            <SelectItem value="3">3 - Medium</SelectItem>
+                            <SelectItem value="4">4 - High</SelectItem>
+                            <SelectItem value="5">5 - Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="notes">Notes</Label>
+                      <Textarea
+                        id="notes"
+                        value={formData.notes}
+                        onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          setIsCreateDialogOpen(false);
+                          setEditingLead(null);
+                          resetForm();
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={handleUpdateLead}
+                        disabled={!formData.phone_number || isLoading}
+                      >
+                        Update Lead
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="activity" className="mt-4">
+                    <LeadActivityTimeline leadId={editingLead.id} />
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="first-name">First Name</Label>
+                      <Input
+                        id="first-name"
+                        value={formData.first_name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="last-name">Last Name</Label>
+                      <Input
+                        id="last-name"
+                        value={formData.last_name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <Label htmlFor="first-name">First Name</Label>
+                    <Label htmlFor="phone">Phone Number *</Label>
                     <Input
-                      id="first-name"
-                      value={formData.first_name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+                      id="phone"
+                      value={formData.phone_number}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
+                      placeholder="+1 555 123 4567"
                     />
                   </div>
+
                   <div>
-                    <Label htmlFor="last-name">Last Name</Label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
-                      id="last-name"
-                      value={formData.last_name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     />
                   </div>
-                </div>
 
-                <div>
-                  <Label htmlFor="phone">Phone Number *</Label>
-                  <Input
-                    id="phone"
-                    value={formData.phone_number}
-                    onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
-                    placeholder="+1 555 123 4567"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="company">Company</Label>
-                  <Input
-                    id="company"
-                    value={formData.company}
-                    onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="new">New</SelectItem>
-                        <SelectItem value="contacted">Contacted</SelectItem>
-                        <SelectItem value="interested">Interested</SelectItem>
-                        <SelectItem value="not_interested">Not Interested</SelectItem>
-                        <SelectItem value="callback">Callback</SelectItem>
-                        <SelectItem value="converted">Converted</SelectItem>
-                        <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="company">Company</Label>
+                    <Input
+                      id="company"
+                      value={formData.company}
+                      onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
+                    />
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="status">Status</Label>
+                      <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="new">New</SelectItem>
+                          <SelectItem value="contacted">Contacted</SelectItem>
+                          <SelectItem value="interested">Interested</SelectItem>
+                          <SelectItem value="not_interested">Not Interested</SelectItem>
+                          <SelectItem value="callback">Callback</SelectItem>
+                          <SelectItem value="converted">Converted</SelectItem>
+                          <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="priority">Priority</Label>
+                      <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 - Low</SelectItem>
+                          <SelectItem value="2">2 - Normal</SelectItem>
+                          <SelectItem value="3">3 - Medium</SelectItem>
+                          <SelectItem value="4">4 - High</SelectItem>
+                          <SelectItem value="5">5 - Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   <div>
-                    <Label htmlFor="priority">Priority</Label>
-                    <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 - Low</SelectItem>
-                        <SelectItem value="2">2 - Normal</SelectItem>
-                        <SelectItem value="3">3 - Medium</SelectItem>
-                        <SelectItem value="4">4 - High</SelectItem>
-                        <SelectItem value="5">5 - Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="notes">Notes</Label>
+                    <Textarea
+                      id="notes"
+                      value={formData.notes}
+                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setIsCreateDialogOpen(false);
+                        setEditingLead(null);
+                        resetForm();
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleCreateLead}
+                      disabled={!formData.phone_number || isLoading}
+                    >
+                      Create Lead
+                    </Button>
                   </div>
                 </div>
-
-                <div>
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setIsCreateDialogOpen(false);
-                      setEditingLead(null);
-                      resetForm();
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={editingLead ? handleUpdateLead : handleCreateLead}
-                    disabled={!formData.phone_number || isLoading}
-                  >
-                    {editingLead ? 'Update' : 'Create'} Lead
-                  </Button>
-                </div>
-              </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>
