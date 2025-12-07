@@ -8,12 +8,12 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook';
   phoneNumberSid?: string;
   phoneNumber?: string;
   phoneNumbers?: string[]; // For configuring selected numbers
   messagingServiceSid?: string;
-  webhookUrl?: string;
+  webhookUrl?: string; // For setting custom webhook URL
 }
 
 serve(async (req) => {
@@ -827,6 +827,90 @@ serve(async (req) => {
       
       return new Response(JSON.stringify({ 
         success: true,
+        configured_count: configured.length,
+        failed_count: failed.length,
+        configured,
+        failed
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Set a CUSTOM webhook URL for selected numbers (e.g., GHL URL)
+    if (action === 'set_custom_webhook' && phoneNumbers && phoneNumbers.length > 0 && webhookUrl) {
+      console.log('🔧 Setting custom webhook for selected numbers:', phoneNumbers.length);
+      console.log('📍 Custom webhook URL:', webhookUrl);
+      
+      // Get all phone numbers to find their SIDs
+      const numbersResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!numbersResponse.ok) {
+        const errorText = await numbersResponse.text();
+        console.error('❌ Failed to fetch phone numbers:', errorText);
+        return new Response(JSON.stringify({ error: 'Failed to fetch phone numbers' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const numbersData = await numbersResponse.json();
+      const allNumbers = numbersData.incoming_phone_numbers || [];
+      
+      // Create a map of phone number to SID
+      const numberToSid = new Map<string, string>();
+      allNumbers.forEach((num: any) => {
+        numberToSid.set(num.phone_number, num.sid);
+      });
+      
+      const configured: string[] = [];
+      const failed: { number: string; error: string }[] = [];
+
+      for (const targetNumber of phoneNumbers) {
+        const sid = numberToSid.get(targetNumber);
+        
+        if (!sid) {
+          console.log('❌ Number not found in Twilio:', targetNumber);
+          failed.push({ number: targetNumber, error: 'Number not found in Twilio account' });
+          continue;
+        }
+
+        console.log('📲 Setting custom webhook for:', targetNumber, '->', webhookUrl);
+        
+        // Update the phone number's SMS webhook to the custom URL
+        const updateResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${sid}.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `SmsUrl=${encodeURIComponent(webhookUrl)}&SmsMethod=POST`
+          }
+        );
+
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error('❌ Failed to set webhook:', targetNumber, errorText);
+          failed.push({ number: targetNumber, error: 'Failed to update webhook' });
+        } else {
+          console.log('✅ Custom webhook set:', targetNumber);
+          configured.push(targetNumber);
+        }
+      }
+
+      console.log('🎉 Custom webhook configuration complete - Configured:', configured.length, 'Failed:', failed.length);
+      
+      return new Response(JSON.stringify({ 
+        success: true,
+        webhook_url: webhookUrl,
         configured_count: configured.length,
         failed_count: failed.length,
         configured,

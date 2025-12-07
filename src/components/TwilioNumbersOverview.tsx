@@ -68,6 +68,8 @@ interface TwilioNumberDetail {
   in_app_database: boolean;
 }
 
+const GHL_WEBHOOK_URL = 'https://services.msgsndr.com/conversations/providers/twilio/inbound_message';
+
 const TwilioNumbersOverview: React.FC = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -75,6 +77,8 @@ const TwilioNumbersOverview: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNumbers, setSelectedNumbers] = useState<Set<string>>(new Set());
   const [showConfigureDialog, setShowConfigureDialog] = useState(false);
+  const [showRevertDialog, setShowRevertDialog] = useState(false);
+  const [revertAction, setRevertAction] = useState<'ghl' | 'clear'>('ghl');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [appWebhookUrl, setAppWebhookUrl] = useState('');
 
@@ -144,7 +148,7 @@ const TwilioNumbersOverview: React.FC = () => {
     }
   };
 
-  const configureSelectedNumbers = async (action: 'app' | 'clear') => {
+  const configureSelectedNumbers = async (action: 'app' | 'ghl' | 'clear') => {
     if (selectedNumbers.size === 0) {
       toast({
         title: 'No Numbers Selected',
@@ -156,24 +160,42 @@ const TwilioNumbersOverview: React.FC = () => {
 
     setIsConfiguring(true);
     try {
+      let edgeAction = '';
+      let customWebhookUrl: string | undefined;
+      
+      if (action === 'app') {
+        edgeAction = 'configure_selected_webhooks';
+      } else if (action === 'ghl') {
+        edgeAction = 'set_custom_webhook';
+        customWebhookUrl = GHL_WEBHOOK_URL;
+      } else {
+        edgeAction = 'clear_selected_webhooks';
+      }
+
       const { data, error } = await supabase.functions.invoke('twilio-integration', {
         body: { 
-          action: action === 'app' ? 'configure_selected_webhooks' : 'clear_selected_webhooks',
-          phoneNumbers: Array.from(selectedNumbers)
+          action: edgeAction,
+          phoneNumbers: Array.from(selectedNumbers),
+          webhookUrl: customWebhookUrl
         }
       });
 
       if (error) throw error;
 
+      const actionDescriptions = {
+        app: `Successfully configured ${data.configured_count} numbers for this app`,
+        ghl: `Successfully reverted ${data.configured_count} numbers to GoHighLevel`,
+        clear: `Cleared webhooks on ${data.configured_count} numbers`
+      };
+
       toast({
-        title: action === 'app' ? 'Webhooks Configured' : 'Webhooks Cleared',
-        description: action === 'app' 
-          ? `Successfully configured ${data.configured_count} numbers for this app`
-          : `Cleared webhooks on ${data.configured_count} numbers (they will no longer route to this app)`,
+        title: action === 'app' ? 'Webhooks Configured' : action === 'ghl' ? 'Reverted to GHL' : 'Webhooks Cleared',
+        description: actionDescriptions[action],
       });
 
       setSelectedNumbers(new Set());
       setShowConfigureDialog(false);
+      setShowRevertDialog(false);
       await loadNumbers();
     } catch (error) {
       console.error('Failed to configure webhooks:', error);
@@ -400,11 +422,27 @@ const TwilioNumbersOverview: React.FC = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => configureSelectedNumbers('clear')}
+                    className="border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/20"
+                    onClick={() => {
+                      setRevertAction('ghl');
+                      setShowRevertDialog(true);
+                    }}
+                    disabled={isConfiguring}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Revert to GHL
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setRevertAction('clear');
+                      setShowRevertDialog(true);
+                    }}
                     disabled={isConfiguring}
                   >
                     <AlertTriangle className="h-4 w-4 mr-2" />
-                    Clear Webhooks (Revert)
+                    Clear (No Webhook)
                   </Button>
                 </>
               )}
@@ -549,6 +587,87 @@ const TwilioNumbersOverview: React.FC = () => {
                 </>
               ) : (
                 'Configure for This App'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revert Confirmation Dialog */}
+      <Dialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {revertAction === 'ghl' ? (
+                <>
+                  <ExternalLink className="h-5 w-5 text-orange-500" />
+                  Revert to GoHighLevel
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                  Clear Webhooks
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {revertAction === 'ghl' 
+                ? 'This will send all inbound SMS replies for these numbers back to GoHighLevel.'
+                : 'This will remove the webhook URL, so inbound SMS will not be forwarded anywhere.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {revertAction === 'ghl' ? (
+              <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                <p className="text-sm text-orange-800 dark:text-orange-200 mb-2">
+                  <strong>GoHighLevel Webhook URL:</strong>
+                </p>
+                <code className="block p-2 bg-white dark:bg-slate-900 rounded text-xs break-all border">
+                  {GHL_WEBHOOK_URL}
+                </code>
+                <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                  SMS replies will be sent to this URL and appear in your GHL conversations.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  <strong>Warning:</strong> With no webhook configured, inbound SMS messages will not be forwarded anywhere. 
+                  They may only be visible in your Twilio console logs.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Selected Numbers ({selectedNumbers.size}):</Label>
+              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/50">
+                {Array.from(selectedNumbers).map(num => (
+                  <div key={num} className="font-mono text-sm">{formatPhoneNumber(num)}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowRevertDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => configureSelectedNumbers(revertAction)} 
+              disabled={isConfiguring}
+              className={revertAction === 'ghl' ? 'bg-orange-600 hover:bg-orange-700' : ''}
+              variant={revertAction === 'clear' ? 'secondary' : 'default'}
+            >
+              {isConfiguring ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : revertAction === 'ghl' ? (
+                'Revert to GoHighLevel'
+              ) : (
+                'Clear Webhooks'
               )}
             </Button>
           </DialogFooter>
