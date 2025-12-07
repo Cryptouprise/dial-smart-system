@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -27,6 +27,8 @@ import CampaignAutomation from '@/components/CampaignAutomation';
 import DispositionAutomationManager from '@/components/DispositionAutomationManager';
 import AIPipelineManager from '@/components/AIPipelineManager';
 import FollowUpScheduler from '@/components/FollowUpScheduler';
+import AgentActivityDashboard from '@/components/AgentActivityDashboard';
+import AgentActivityWidget from '@/components/AgentActivityWidget';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -196,6 +198,10 @@ const Dashboard = () => {
                 <Clock className="h-4 w-4 mr-2" />
                 Follow-ups
               </TabsTrigger>
+              <TabsTrigger value="agent-activity" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Bot className="h-4 w-4 mr-2" />
+                Agent Activity
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -270,6 +276,9 @@ const Dashboard = () => {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* AI Activity Widget on Overview */}
+              <AgentActivityWidget />
 
               {/* Number Management Component */}
               <PhoneNumberPurchasing />
@@ -455,6 +464,12 @@ const Dashboard = () => {
           <TabsContent value="follow-ups">
             <TabErrorBoundary tabName="Follow-ups">
               <FollowUpScheduler />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="agent-activity">
+            <TabErrorBoundary tabName="Agent Activity">
+              <AgentActivityDashboard />
             </TabErrorBoundary>
           </TabsContent>
         </Tabs>

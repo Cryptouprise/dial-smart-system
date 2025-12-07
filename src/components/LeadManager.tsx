@@ -10,9 +10,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw, Bot } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
+import { supabase } from '@/integrations/supabase/client';
 import LeadActivityTimeline from './LeadActivityTimeline';
 interface LeadManagerProps {
   onStatsUpdate: (count: number) => void;
@@ -21,6 +23,7 @@ interface LeadManagerProps {
 const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const { createLead, updateLead, getLeads, importLeads, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const [leads, setLeads] = useState<any[]>([]);
+  const [leadsWithActivity, setLeadsWithActivity] = useState<Set<string>>(new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
@@ -41,7 +44,25 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
 
   useEffect(() => {
     loadLeads();
+    loadLeadsWithActivity();
   }, [filters]);
+
+  const loadLeadsWithActivity = async () => {
+    // Get leads that have recent agent decisions (last 24 hours)
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    
+    const { data } = await supabase
+      .from('agent_decisions')
+      .select('lead_id')
+      .gte('created_at', oneDayAgo.toISOString())
+      .not('lead_id', 'is', null);
+    
+    if (data) {
+      const leadIds = new Set(data.map(d => d.lead_id).filter(Boolean) as string[]);
+      setLeadsWithActivity(leadIds);
+    }
+  };
 
   const loadLeads = async () => {
     const leadsData = await getLeads(filters.status && filters.status !== 'all' ? { status: filters.status } : undefined);
@@ -550,8 +571,20 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-slate-400" />
                         <div>
-                          <div className="font-medium">
+                          <div className="font-medium flex items-center gap-1.5">
                             {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                            {leadsWithActivity.has(lead.id) && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <Bot className="h-3.5 w-3.5 text-purple-500" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Recent AI activity</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                           </div>
                           {lead.email && (
                             <div className="text-sm text-slate-500 flex items-center gap-1">
