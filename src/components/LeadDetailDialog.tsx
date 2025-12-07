@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
 import { 
   User, 
   Phone, 
@@ -29,7 +30,8 @@ import {
   Save,
   X,
   FileText,
-  Tag
+  Tag,
+  Star
 } from 'lucide-react';
 
 interface Lead {
@@ -290,44 +292,42 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
+      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden flex flex-col p-4 md:p-6">
+        <DialogHeader className="pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <DialogTitle className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                 <User className="h-5 w-5 text-primary" />
               </div>
-              <div>
-                <span className="text-xl">{fullName}</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={lead.status === 'new' ? 'default' : 'secondary'}>
+              <div className="min-w-0">
+                <span className="text-lg md:text-xl block truncate">{fullName}</span>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                  <Badge variant={lead.status === 'new' ? 'default' : 'secondary'} className="text-xs">
                     {lead.status}
                   </Badge>
                   {lead.do_not_call && (
-                    <Badge variant="destructive">DNC</Badge>
+                    <Badge variant="destructive" className="text-xs">DNC</Badge>
                   )}
-                  {lead.priority && lead.priority > 5 && (
-                    <Badge variant="outline">Priority: {lead.priority}</Badge>
-                  )}
+                  <LeadScoreIndicator priority={lead.priority} size="sm" />
                 </div>
               </div>
             </DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {isEditing ? (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>
-                    <X className="h-4 w-4 mr-1" />
-                    Cancel
+                    <X className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Cancel</span>
                   </Button>
                   <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                    <Save className="h-4 w-4 mr-1" />
-                    {isSaving ? 'Saving...' : 'Save'}
+                    <Save className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save'}</span>
                   </Button>
                 </>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  <Edit3 className="h-4 w-4 mr-1" />
-                  Edit
+                  <Edit3 className="h-4 w-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Edit</span>
                 </Button>
               )}
             </div>
@@ -335,31 +335,37 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="details">
-              <User className="h-4 w-4 mr-2" />
-              Details
+          <TabsList className="grid w-full grid-cols-4 h-auto">
+            <TabsTrigger value="details" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <User className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Details</span>
             </TabsTrigger>
-            <TabsTrigger value="activity">
-              <Activity className="h-4 w-4 mr-2" />
-              Activity ({activities.length})
+            <TabsTrigger value="activity" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <Activity className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Activity</span>
+              <span className="ml-1 text-xs">({activities.length})</span>
             </TabsTrigger>
-            <TabsTrigger value="calls">
-              <Phone className="h-4 w-4 mr-2" />
-              Calls ({callLogs.length})
+            <TabsTrigger value="calls" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <Phone className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Calls</span>
+              <span className="ml-1 text-xs">({callLogs.length})</span>
             </TabsTrigger>
-            <TabsTrigger value="messages">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Messages ({smsMessages.length})
+            <TabsTrigger value="messages" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">SMS</span>
+              <span className="ml-1 text-xs">({smsMessages.length})</span>
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 mt-4">
-            <TabsContent value="details" className="mt-0 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+          <ScrollArea className="flex-1 mt-3 md:mt-4">
+            <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4">
+              {/* Lead Score Card - Prominent on mobile */}
+              <LeadScoreIndicator priority={lead.priority} showDetails />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 {/* Contact Info */}
                 <Card>
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2 md:pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <User className="h-4 w-4" />
                       Contact Information
