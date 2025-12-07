@@ -39,6 +39,7 @@ interface PhoneNumberRowProps {
     retell_phone_id?: string;
     is_voip?: boolean;
     created_at?: string;
+    provider?: 'twilio' | 'retell' | 'telnyx' | 'unknown';
   };
   onRefresh?: () => void;
 }
@@ -58,6 +59,9 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const { toast } = useToast();
 
+  // Determine provider - prioritize explicit provider, then infer from retell_phone_id
+  const provider = number.provider || (number.retell_phone_id ? 'retell' : 'twilio');
+  
   // Determine if number was purchased or imported based on retell_phone_id
   const isPurchased = !!number.retell_phone_id;
   const source = isPurchased ? 'Purchased' : 'Imported';
@@ -68,6 +72,21 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
   // Check registration statuses
   const hasStirShaken = number.stir_shaken_attestation && number.stir_shaken_attestation !== '';
   const stirShakenLevel = number.stir_shaken_attestation;
+  
+  // Provider badge config
+  const getProviderBadge = () => {
+    switch (provider) {
+      case 'retell':
+        return { label: 'Retell AI', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' };
+      case 'telnyx':
+        return { label: 'Telnyx', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' };
+      case 'twilio':
+      default:
+        return { label: 'Twilio', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' };
+    }
+  };
+  
+  const providerBadge = getProviderBadge();
 
   // Load available profiles when dropdown opens
   const loadProfiles = async () => {
@@ -244,6 +263,11 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       <div className="flex items-center gap-3 flex-wrap">
         {/* Phone Number */}
         <span className="font-mono text-sm font-medium">{number.number}</span>
+        
+        {/* Provider Badge - Most Important */}
+        <Badge className={`text-xs font-medium ${providerBadge.className}`}>
+          {providerBadge.label}
+        </Badge>
         
         {/* Source Badge */}
         <Badge variant="outline" className="text-xs gap-1">
