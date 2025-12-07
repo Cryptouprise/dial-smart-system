@@ -13,9 +13,10 @@ import Navigation from '@/components/Navigation';
 import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 import ChatbotSettings from '@/components/ChatbotSettings';
 import PhoneNumberRow from '@/components/PhoneNumberRow';
+import { LeadScoringSettings } from '@/components/LeadScoringSettings';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
@@ -210,6 +211,9 @@ const Settings = () => {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Lead Scoring Configuration */}
+        <LeadScoringSettings />
 
         {/* AI Assistant / Chatbot Settings */}
         <ChatbotSettings />
