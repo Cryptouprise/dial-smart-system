@@ -92,15 +92,35 @@ const FollowUpScheduler = () => {
         })));
       }
 
-      // Load pending follow-ups
-      const followUps = await getPendingFollowUps();
-      setPendingFollowUps(followUps);
+      // Load pending follow-ups with lead details
+      const { data: followUpData } = await supabase
+        .from('scheduled_follow_ups')
+        .select(`
+          *,
+          leads (id, first_name, last_name, phone_number, company, email)
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .order('scheduled_at', { ascending: true });
+
+      if (followUpData) {
+        setPendingFollowUps(followUpData.map(fu => ({
+          id: fu.id,
+          lead_id: fu.lead_id,
+          sequence_id: fu.sequence_id || undefined,
+          current_step_id: fu.current_step_id || undefined,
+          scheduled_at: fu.scheduled_at,
+          status: fu.status || 'pending',
+          action_type: fu.action_type,
+          lead: fu.leads
+        })) as any);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [getPendingFollowUps]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -502,42 +522,65 @@ const FollowUpScheduler = () => {
             </Card>
           ) : (
             <div className="space-y-2">
-              {pendingFollowUps.map(followUp => (
-                <Card key={followUp.id}>
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <Badge variant="outline">
-                          {followUp.action_type === 'callback' ? 'Callback' : 'Sequence Step'}
-                        </Badge>
-                        <div>
-                          <p className="text-sm font-medium">Lead: {followUp.lead_id}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Scheduled: {format(new Date(followUp.scheduled_at), 'PPp')}
-                          </p>
+              {pendingFollowUps.map((followUp: any) => {
+                const lead = followUp.lead;
+                const leadName = lead 
+                  ? [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'
+                  : 'Unknown Lead';
+                
+                return (
+                  <Card key={followUp.id}>
+                    <CardContent className="py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            {getActionIcon(followUp.action_type)}
+                          </div>
+                          <div>
+                            <p className="font-medium">{leadName}</p>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              {lead?.phone_number && (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3" />
+                                  {lead.phone_number}
+                                </span>
+                              )}
+                              {lead?.company && (
+                                <span className="text-xs">• {lead.company}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {getActionLabel(followUp.action_type)}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(followUp.scheduled_at), 'PPp')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge 
+                            variant={followUp.status === 'pending' ? 'default' : 
+                                     followUp.status === 'completed' ? 'secondary' : 'destructive'}
+                          >
+                            {followUp.status}
+                          </Badge>
+                          {followUp.status === 'pending' && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleExecuteFollowUp(followUp.id)}
+                            >
+                              <Play className="h-4 w-4 mr-1" />
+                              Execute
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge 
-                          variant={followUp.status === 'pending' ? 'default' : 
-                                   followUp.status === 'completed' ? 'secondary' : 'destructive'}
-                        >
-                          {followUp.status}
-                        </Badge>
-                        {followUp.status === 'pending' && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleExecuteFollowUp(followUp.id)}
-                          >
-                            <Play className="h-4 w-4 mr-1" />
-                            Execute
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
