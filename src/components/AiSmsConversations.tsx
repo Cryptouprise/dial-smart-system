@@ -64,6 +64,7 @@ import {
   ShieldAlert,
   Loader2,
   ChevronRight,
+  Globe,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
@@ -875,19 +876,14 @@ COMMON OBJECTIONS:
               </div>
             </div>
             <div className="flex gap-2">
-              {/* Configure Webhook Button */}
+              {/* Number Webhook Overview - Shows what's configured where */}
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={handleConfigureWebhook}
-                disabled={configuringWebhook}
+                onClick={() => navigate('/number-webhooks')}
               >
-                {configuringWebhook ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Zap className="h-4 w-4 mr-2" />
-                )}
-                {configuringWebhook ? 'Configuring...' : 'Setup Inbound SMS'}
+                <Globe className="h-4 w-4 mr-2" />
+                Number Webhooks
               </Button>
               
               {/* A2P Status Dialog */}
