@@ -277,6 +277,7 @@ export const useCalendarIntegration = () => {
   };
 
   const connectGoogleCalendar = async () => {
+    setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('calendar-integration', {
         body: { action: 'get_google_auth_url' }
@@ -284,11 +285,34 @@ export const useCalendarIntegration = () => {
 
       if (error) throw error;
       
+      // Check for error in response data
+      if (data?.error) {
+        toast({ 
+          title: 'Google Calendar Not Configured', 
+          description: 'Please add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI secrets in Supabase Edge Function settings.',
+          variant: 'destructive' 
+        });
+        return;
+      }
+      
       if (data?.authUrl) {
         window.open(data.authUrl, '_blank', 'width=500,height=600');
+      } else {
+        toast({ 
+          title: 'Configuration Required', 
+          description: 'Google Calendar OAuth is not configured. Contact your administrator.',
+          variant: 'destructive' 
+        });
       }
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      console.error('Google Calendar connect error:', error);
+      toast({ 
+        title: 'Connection Failed', 
+        description: error.message || 'Failed to connect to Google Calendar',
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
