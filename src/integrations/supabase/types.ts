@@ -271,6 +271,194 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_appointments: {
+        Row: {
+          created_at: string
+          description: string | null
+          end_time: string
+          ghl_appointment_id: string | null
+          google_event_id: string | null
+          id: string
+          lead_id: string | null
+          location: string | null
+          meeting_link: string | null
+          metadata: Json | null
+          notes: string | null
+          outcome: string | null
+          outlook_event_id: string | null
+          reminder_at: string | null
+          reminder_sent: boolean | null
+          start_time: string
+          status: string
+          timezone: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          end_time: string
+          ghl_appointment_id?: string | null
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string | null
+          location?: string | null
+          meeting_link?: string | null
+          metadata?: Json | null
+          notes?: string | null
+          outcome?: string | null
+          outlook_event_id?: string | null
+          reminder_at?: string | null
+          reminder_sent?: boolean | null
+          start_time: string
+          status?: string
+          timezone?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          end_time?: string
+          ghl_appointment_id?: string | null
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string | null
+          location?: string | null
+          meeting_link?: string | null
+          metadata?: Json | null
+          notes?: string | null
+          outcome?: string | null
+          outlook_event_id?: string | null
+          reminder_at?: string | null
+          reminder_sent?: boolean | null
+          start_time?: string
+          status?: string
+          timezone?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_availability: {
+        Row: {
+          buffer_after_minutes: number | null
+          buffer_before_minutes: number | null
+          check_calendar_conflicts: boolean | null
+          created_at: string
+          default_meeting_duration: number | null
+          id: string
+          max_days_ahead: number | null
+          min_notice_hours: number | null
+          slot_interval_minutes: number | null
+          timezone: string
+          updated_at: string
+          user_id: string
+          weekly_schedule: Json
+        }
+        Insert: {
+          buffer_after_minutes?: number | null
+          buffer_before_minutes?: number | null
+          check_calendar_conflicts?: boolean | null
+          created_at?: string
+          default_meeting_duration?: number | null
+          id?: string
+          max_days_ahead?: number | null
+          min_notice_hours?: number | null
+          slot_interval_minutes?: number | null
+          timezone?: string
+          updated_at?: string
+          user_id: string
+          weekly_schedule?: Json
+        }
+        Update: {
+          buffer_after_minutes?: number | null
+          buffer_before_minutes?: number | null
+          check_calendar_conflicts?: boolean | null
+          created_at?: string
+          default_meeting_duration?: number | null
+          id?: string
+          max_days_ahead?: number | null
+          min_notice_hours?: number | null
+          slot_interval_minutes?: number | null
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+          weekly_schedule?: Json
+        }
+        Relationships: []
+      }
+      calendar_integrations: {
+        Row: {
+          access_token_encrypted: string | null
+          calendar_id: string | null
+          calendar_name: string | null
+          created_at: string
+          id: string
+          is_primary: boolean | null
+          last_sync_at: string | null
+          provider: string
+          provider_account_email: string | null
+          provider_account_id: string | null
+          refresh_token_encrypted: string | null
+          sync_direction: string | null
+          sync_enabled: boolean | null
+          sync_errors: Json | null
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          calendar_id?: string | null
+          calendar_name?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          last_sync_at?: string | null
+          provider: string
+          provider_account_email?: string | null
+          provider_account_id?: string | null
+          refresh_token_encrypted?: string | null
+          sync_direction?: string | null
+          sync_enabled?: boolean | null
+          sync_errors?: Json | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          calendar_id?: string | null
+          calendar_name?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          last_sync_at?: string | null
+          provider?: string
+          provider_account_email?: string | null
+          provider_account_id?: string | null
+          refresh_token_encrypted?: string | null
+          sync_direction?: string | null
+          sync_enabled?: boolean | null
+          sync_errors?: Json | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       call_logs: {
         Row: {
           amd_result: string | null

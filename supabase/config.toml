@@ -109,3 +109,6 @@ verify_jwt = false
 
 [functions.automation-scheduler]
 verify_jwt = false
+
+[functions.calendar-integration]
+verify_jwt = false
