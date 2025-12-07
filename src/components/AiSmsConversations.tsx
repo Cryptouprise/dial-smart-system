@@ -1530,6 +1530,37 @@ COMMON OBJECTIONS:
                     </div>
                   )}
 
+                  {/* From Number Selector */}
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-dashed">
+                    <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">Sending from:</span>
+                    <Select value={selectedFromNumber} onValueChange={setSelectedFromNumber}>
+                      <SelectTrigger className="h-8 flex-1 max-w-[250px]">
+                        <SelectValue placeholder={loadingNumbers ? "Loading numbers..." : "Select number"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTwilioNumbers.length === 0 ? (
+                          <SelectItem value="none" disabled>
+                            No SMS numbers available
+                          </SelectItem>
+                        ) : (
+                          availableTwilioNumbers.map((num) => (
+                            <SelectItem key={num.number} value={num.number}>
+                              {formatPhoneNumber(num.number)}
+                              {num.friendly_name && ` (${num.friendly_name})`}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {selectedFromNumber && (
+                      <Badge variant="outline" className="text-xs">
+                        <Check className="h-3 w-3 mr-1" />
+                        Ready
+                      </Badge>
+                    )}
+                  </div>
+
                   <div className="flex gap-2">
                     <Textarea
                       placeholder="Type your message..."
@@ -1545,7 +1576,7 @@ COMMON OBJECTIONS:
                     />
                     <Button
                       onClick={handleSendMessage}
-                      disabled={!messageText.trim() || isLoading}
+                      disabled={!messageText.trim() || isLoading || !selectedFromNumber}
                       className="self-end"
                     >
                       <Send className="h-4 w-4" />
