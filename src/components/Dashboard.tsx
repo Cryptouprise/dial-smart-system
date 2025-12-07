@@ -38,6 +38,8 @@ interface PhoneNumber {
   dailyCalls: number;
   spamScore: number;
   dateAdded: string;
+  provider: 'twilio' | 'retell' | 'telnyx' | 'unknown';
+  retellPhoneId?: string;
 }
 
 interface SystemHealth {
@@ -66,14 +68,29 @@ const Dashboard = () => {
 
       if (error) throw error;
 
-      const formattedNumbers: PhoneNumber[] = (data || []).map(num => ({
-        id: num.id,
-        phoneNumber: num.number,
-        status: num.status as 'active' | 'quarantined' | 'inactive',
-        dailyCalls: num.daily_calls,
-        spamScore: num.is_spam ? 100 : 0,
-        dateAdded: new Date(num.created_at).toISOString().split('T')[0],
-      }));
+      const formattedNumbers: PhoneNumber[] = (data || []).map(num => {
+        // Determine provider based on retell_phone_id or other indicators
+        let provider: 'twilio' | 'retell' | 'telnyx' | 'unknown' = 'unknown';
+        if (num.retell_phone_id) {
+          provider = 'retell';
+        } else if (num.carrier_name?.toLowerCase().includes('telnyx')) {
+          provider = 'telnyx';
+        } else {
+          // Default to Twilio for imported numbers without retell_phone_id
+          provider = 'twilio';
+        }
+        
+        return {
+          id: num.id,
+          phoneNumber: num.number,
+          status: num.status as 'active' | 'quarantined' | 'inactive',
+          dailyCalls: num.daily_calls,
+          spamScore: num.is_spam ? 100 : 0,
+          dateAdded: new Date(num.created_at).toISOString().split('T')[0],
+          provider,
+          retellPhoneId: num.retell_phone_id || undefined,
+        };
+      });
 
       setNumbers(formattedNumbers);
     } catch (error) {
@@ -303,9 +320,10 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent className="px-3 sm:px-6">
                   <div className="overflow-x-auto">
-                    <div className="min-w-[600px]">
-                      <div className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
+                    <div className="min-w-[700px]">
+                      <div className="grid grid-cols-7 gap-2 sm:gap-3 lg:gap-4 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 pb-2 sm:pb-3 border-b border-slate-200 dark:border-slate-700">
                         <div>Phone Number</div>
+                        <div>Provider</div>
                         <div>Status</div>
                         <div>Daily Calls</div>
                         <div>Spam Score</div>
@@ -314,9 +332,23 @@ const Dashboard = () => {
                       </div>
                       <div className="space-y-1 sm:space-y-2 mt-2 sm:mt-3">
                         {numbers.map((number) => (
-                          <div key={number.id} className="grid grid-cols-6 gap-2 sm:gap-3 lg:gap-4 items-center py-1.5 sm:py-2 px-1 sm:px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                          <div key={number.id} className="grid grid-cols-7 gap-2 sm:gap-3 lg:gap-4 items-center py-1.5 sm:py-2 px-1 sm:px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                             <div className="font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
                               {number.phoneNumber}
+                            </div>
+                            <div>
+                              <Badge 
+                                className={`text-xs px-1.5 py-0.5 font-medium ${
+                                  number.provider === 'retell' 
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' 
+                                    : number.provider === 'telnyx'
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                }`}
+                              >
+                                {number.provider === 'retell' ? 'Retell AI' : 
+                                 number.provider === 'telnyx' ? 'Telnyx' : 'Twilio'}
+                              </Badge>
                             </div>
                             <div>
                               <Badge 
