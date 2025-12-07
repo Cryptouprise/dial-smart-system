@@ -279,31 +279,53 @@ export const useCalendarIntegration = () => {
   const connectGoogleCalendar = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('calendar-integration', {
-        body: { action: 'get_google_auth_url' }
-      });
-
-      if (error) throw error;
+      // Check if user signed in with Google and has calendar tokens
+      const { data: { session } } = await supabase.auth.getSession();
       
-      // Check for error in response data
-      if (data?.error) {
+      if (!session) {
         toast({ 
-          title: 'Google Calendar Not Configured', 
-          description: 'Please add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI secrets in Supabase Edge Function settings.',
+          title: 'Sign In Required', 
+          description: 'Please sign in with Google to connect your calendar.',
           variant: 'destructive' 
         });
         return;
       }
+
+      // Check if signed in with Google (has provider token)
+      const providerToken = session.provider_token;
+      const providerRefreshToken = session.provider_refresh_token;
       
-      if (data?.authUrl) {
-        window.open(data.authUrl, '_blank', 'width=500,height=600');
-      } else {
+      if (!providerToken) {
         toast({ 
-          title: 'Configuration Required', 
-          description: 'Google Calendar OAuth is not configured. Contact your administrator.',
+          title: 'Google Sign-In Required', 
+          description: 'Please sign out and sign back in with Google to enable calendar sync.',
           variant: 'destructive' 
         });
+        return;
       }
+
+      // Save the Google tokens to calendar_integrations
+      const { error: saveError } = await supabase.from('calendar_integrations').upsert({
+        user_id: session.user.id,
+        provider: 'google',
+        provider_account_email: session.user.email,
+        access_token_encrypted: providerToken,
+        refresh_token_encrypted: providerRefreshToken || null,
+        sync_enabled: true,
+        is_primary: true,
+        calendar_name: 'Google Calendar',
+      }, {
+        onConflict: 'user_id,provider'
+      });
+
+      if (saveError) throw saveError;
+
+      toast({ 
+        title: 'Google Calendar Connected', 
+        description: 'Your Google Calendar has been connected successfully!',
+      });
+      
+      await loadIntegrations();
     } catch (error: any) {
       console.error('Google Calendar connect error:', error);
       toast({ 
