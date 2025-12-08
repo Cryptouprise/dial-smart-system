@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Default webhook URL for call tracking
+const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+
 interface RetellAgentRequest {
   action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice';
   agentName?: string;
@@ -14,6 +17,7 @@ interface RetellAgentRequest {
   llmId?: string;
   agentConfig?: any;
   text?: string; // For voice preview
+  webhookUrl?: string; // Optional custom webhook URL
 }
 
 serve(async (req) => {
@@ -23,7 +27,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, agentName, agentId, voiceId, llmId, agentConfig, text }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, webhookUrl }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -55,7 +59,9 @@ serve(async (req) => {
           response_engine: {
             type: 'retell-llm',
             llm_id: llmId
-          }
+          },
+          // Auto-configure webhook URL for call tracking
+          webhook_url: webhookUrl || DEFAULT_WEBHOOK_URL
         };
         
         console.log('[Retell Agent] Creating agent with payload:', JSON.stringify(createPayload));

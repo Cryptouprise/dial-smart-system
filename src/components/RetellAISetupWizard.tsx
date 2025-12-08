@@ -7,7 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, Copy, ExternalLink } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+// Webhook URL for call tracking
+const WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
 
 interface RetellLLM {
   llm_id: string;
@@ -22,6 +26,7 @@ interface Agent {
 }
 
 export const RetellAISetupWizard = () => {
+  const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [llmPrompt, setLlmPrompt] = useState(
     "You are a helpful call center agent. Answer questions clearly and professionally. Keep responses concise."
@@ -50,11 +55,20 @@ export const RetellAISetupWizard = () => {
   const handleCreateAgent = async () => {
     if (!createdLLM) return;
     
-    const agent = await createAgent(agentName, createdLLM.llm_id, agentVoice);
+    // Create agent with webhook URL auto-configured
+    const agent = await createAgent(agentName, createdLLM.llm_id, agentVoice, WEBHOOK_URL);
     if (agent) {
       setCreatedAgent(agent);
       setCurrentStep(3);
     }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: 'Copied!',
+      description: `${label} copied to clipboard`,
+    });
   };
 
   const steps = [
@@ -150,7 +164,7 @@ export const RetellAISetupWizard = () => {
           <CardHeader>
             <CardTitle>Step 2: Create Agent</CardTitle>
             <CardDescription>
-              Create an agent that uses the LLM you just created
+              Create an agent that uses the LLM you just created. Webhook URL will be auto-configured.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -183,6 +197,17 @@ export const RetellAISetupWizard = () => {
               </Select>
             </div>
 
+            {/* Webhook Auto-Config Notice */}
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <p className="text-sm font-medium text-green-800 dark:text-green-200 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Webhook will be auto-configured
+              </p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-mono break-all">
+                {WEBHOOK_URL}
+              </p>
+            </div>
+
             <Button 
               onClick={handleCreateAgent} 
               disabled={agentLoading || !agentName}
@@ -200,18 +225,56 @@ export const RetellAISetupWizard = () => {
           <CardHeader>
             <CardTitle>Setup Complete! 🎉</CardTitle>
             <CardDescription>
-              Your Retell AI agent is ready to use
+              Your Retell AI agent is ready to use with webhooks configured
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium">LLM ID: {createdLLM?.llm_id}</p>
+              <div className="p-4 bg-muted rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">LLM ID: {createdLLM?.llm_id}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(createdLLM?.llm_id || '', 'LLM ID')}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
               </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium">Agent ID: {createdAgent.agent_id}</p>
-                <p className="text-sm text-muted-foreground mt-1">Name: {createdAgent.agent_name}</p>
+              <div className="p-4 bg-muted rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Agent ID: {createdAgent.agent_id}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Name: {createdAgent.agent_name}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(createdAgent.agent_id, 'Agent ID')}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
               </div>
+            </div>
+
+            {/* Webhook URL with copy button */}
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-green-800 dark:text-green-200 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Webhook URL (Auto-configured)
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(WEBHOOK_URL, 'Webhook URL')}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-green-600 dark:text-green-400 font-mono break-all">
+                {WEBHOOK_URL}
+              </p>
             </div>
 
             <div className="space-y-2">

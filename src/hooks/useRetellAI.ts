@@ -228,17 +228,18 @@ export const useRetellAI = () => {
     }
   };
 
-  const createAgent = async (agentName: string, llmId: string, voiceId?: string): Promise<Agent | null> => {
+  const createAgent = async (agentName: string, llmId: string, voiceId?: string, webhookUrl?: string): Promise<Agent | null> => {
     setIsLoading(true);
     try {
-      console.log('[useRetellAI] Creating agent:', { agentName, llmId, voiceId });
+      console.log('[useRetellAI] Creating agent:', { agentName, llmId, voiceId, webhookUrl });
       
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
         body: {
           action: 'create',
           agentName,
           llmId,
-          voiceId
+          voiceId,
+          webhookUrl
         }
       });
 
@@ -251,7 +252,7 @@ export const useRetellAI = () => {
 
       toast({
         title: "Success",
-        description: `Agent "${agentName}" created successfully`,
+        description: `Agent "${agentName}" created successfully with webhook configured`,
       });
 
       return data;

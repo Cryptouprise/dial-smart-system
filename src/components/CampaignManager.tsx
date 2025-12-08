@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -22,12 +22,20 @@ interface Campaign {
   description?: string;
   status: string;
   agent_id?: string;
+  workflow_id?: string;
   calls_per_minute: number;
   max_attempts: number;
   calling_hours_start: string;
   calling_hours_end: string;
   timezone: string;
   created_at: string;
+}
+
+interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  active: boolean;
 }
 
 interface CampaignManagerProps {
@@ -54,6 +62,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumberStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -66,6 +75,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     name: '',
     description: '',
     agent_id: '',
+    workflow_id: '',
     calls_per_minute: 5,
     max_attempts: 3,
     calling_hours_start: '09:00',
@@ -77,7 +87,26 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     loadCampaigns();
     loadAgentsWithPhoneStatus();
     loadPhoneNumberStatus();
+    loadWorkflows();
   }, []);
+
+  const loadWorkflows = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('campaign_workflows')
+        .select('id, name, description, active')
+        .eq('user_id', user.id)
+        .order('name');
+
+      if (error) throw error;
+      setWorkflows(data || []);
+    } catch (error) {
+      console.error('Error loading workflows:', error);
+    }
+  };
 
   const loadPhoneNumberStatus = async () => {
     try {
@@ -191,6 +220,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       name: '',
       description: '',
       agent_id: '',
+      workflow_id: '',
       calls_per_minute: 5,
       max_attempts: 3,
       calling_hours_start: '09:00',
@@ -205,6 +235,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       name: campaign.name,
       description: campaign.description || '',
       agent_id: campaign.agent_id || '',
+      workflow_id: campaign.workflow_id || '',
       calls_per_minute: campaign.calls_per_minute,
       max_attempts: campaign.max_attempts,
       calling_hours_start: campaign.calling_hours_start,
@@ -351,6 +382,40 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 )}
               </div>
 
+              {/* Workflow Selector */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <Workflow className="h-4 w-4" />
+                  Link Workflow (Optional)
+                </label>
+                <Select
+                  value={formData.workflow_id}
+                  onValueChange={(value) => setFormData({ ...formData, workflow_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a workflow" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="">No Workflow</SelectItem>
+                    {workflows.map((workflow) => (
+                      <SelectItem key={workflow.id} value={workflow.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{workflow.name}</span>
+                          {!workflow.active && (
+                            <Badge variant="outline" className="text-xs">Inactive</Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.workflow_id && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leads will be enrolled in this workflow when the campaign starts.
+                  </p>
+                )}
+              </div>
+
               {/* Phone Number Status Section */}
               <div className="bg-muted/50 rounded-lg p-3 space-y-2">
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
@@ -487,6 +552,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                           <Badge variant="outline" className="text-amber-600 border-amber-600">
                             <PhoneOff className="h-3 w-3 mr-1" />
                             {agent.agent_name} (No phone)
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {campaign.workflow_id && (() => {
+                      const workflow = workflows.find(w => w.id === campaign.workflow_id);
+                      if (workflow) {
+                        return (
+                          <Badge variant="outline" className="text-purple-600 border-purple-600">
+                            <Workflow className="h-3 w-3 mr-1" />
+                            {workflow.name}
                           </Badge>
                         );
                       }
