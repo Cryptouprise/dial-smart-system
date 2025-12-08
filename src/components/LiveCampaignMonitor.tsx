@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Phone, PhoneIncoming, PhoneOff, Clock, Pause, Play, Activity, RefreshCw } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOff, Clock, Pause, Play, Activity, RefreshCw, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -161,13 +161,55 @@ export const LiveCampaignMonitor: React.FC = () => {
     }
   };
 
+  const clearStuckCalls = async () => {
+    if (!selectedCampaignId) return;
+
+    // Find calls that have been "ringing" for more than 5 minutes
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    const { data: stuckCalls, error: fetchError } = await supabase
+      .from('call_logs')
+      .select('id')
+      .eq('campaign_id', selectedCampaignId)
+      .in('status', ['ringing', 'in-progress'])
+      .lt('created_at', fiveMinAgo);
+
+    if (fetchError) {
+      toast({ title: 'Error', description: fetchError.message, variant: 'destructive' });
+      return;
+    }
+
+    if (!stuckCalls || stuckCalls.length === 0) {
+      toast({ title: 'No Stuck Calls', description: 'No stale calls found to clear' });
+      return;
+    }
+
+    // Update stuck calls to "timed_out" status
+    const { error: updateError } = await supabase
+      .from('call_logs')
+      .update({ status: 'timed_out', outcome: 'call_timed_out' })
+      .in('id', stuckCalls.map(c => c.id));
+
+    if (updateError) {
+      toast({ title: 'Error', description: updateError.message, variant: 'destructive' });
+    } else {
+      toast({ 
+        title: 'Cleared Stuck Calls', 
+        description: `Marked ${stuckCalls.length} stale calls as timed out` 
+      });
+      loadCampaignData();
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed': return 'bg-green-500';
       case 'in-progress': return 'bg-blue-500';
       case 'ringing': return 'bg-amber-500';
       case 'failed': return 'bg-red-500';
-      case 'no-answer': return 'bg-slate-500';
+      case 'no-answer': 
+      case 'no_answer': return 'bg-slate-500';
+      case 'timed_out': return 'bg-orange-500';
       default: return 'bg-slate-400';
     }
   };
@@ -223,6 +265,10 @@ export const LiveCampaignMonitor: React.FC = () => {
                 Resume Campaign
               </Button>
             )}
+            <Button variant="outline" onClick={clearStuckCalls}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear Stuck Calls
+            </Button>
           </div>
 
           {/* Live Stats */}
