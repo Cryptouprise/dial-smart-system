@@ -1,0 +1,260 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// Dispositions that should trigger DNC
+const DNC_DISPOSITIONS = [
+  'dnc', 'do_not_call', 'not_interested', 'stop', 'remove', 
+  'threatening', 'rude', 'hostile', 'abusive'
+];
+
+// Dispositions that should remove from all campaigns
+const REMOVE_ALL_DISPOSITIONS = [
+  'not_interested', 'wrong_number', 'already_has_solar', 'already_has_service',
+  'deceased', 'business_closed', 'invalid_number', 'disconnected'
+];
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript } = await req.json();
+
+    if (action === 'process_disposition') {
+      const normalizedDisposition = dispositionName?.toLowerCase().replace(/[^a-z0-9]/g, '_') || '';
+      const actions: string[] = [];
+
+      // 1. Check for user-defined auto-actions
+      const { data: autoActions } = await supabase
+        .from('disposition_auto_actions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('active', true)
+        .or(`disposition_id.eq.${dispositionId},disposition_name.ilike.%${dispositionName}%`)
+        .order('priority', { ascending: true });
+
+      // Execute user-defined actions
+      for (const autoAction of autoActions || []) {
+        await executeAction(supabase, leadId, userId, autoAction);
+        actions.push(`Executed: ${autoAction.action_type}`);
+      }
+
+      // 2. Check for DNC trigger
+      if (DNC_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+        // Add to DNC list
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('phone_number')
+          .eq('id', leadId)
+          .single();
+
+        if (lead) {
+          await supabase.from('dnc_list').upsert({
+            user_id: userId,
+            phone_number: lead.phone_number,
+            reason: `Disposition: ${dispositionName}`,
+            added_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,phone_number' });
+
+          // Update lead
+          await supabase
+            .from('leads')
+            .update({ do_not_call: true, status: 'dnc' })
+            .eq('id', leadId);
+
+          actions.push('Added to DNC list');
+        }
+      }
+
+      // 3. Check for remove from all campaigns trigger
+      if (REMOVE_ALL_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+        // Remove from all active workflows
+        await supabase
+          .from('lead_workflow_progress')
+          .update({
+            status: 'removed',
+            removal_reason: `Disposition: ${dispositionName}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('lead_id', leadId)
+          .eq('status', 'active');
+
+        // Remove from dialing queues
+        await supabase
+          .from('dialing_queues')
+          .update({ status: 'removed' })
+          .eq('lead_id', leadId)
+          .in('status', ['pending', 'scheduled']);
+
+        actions.push('Removed from all active campaigns and workflows');
+      }
+
+      // 4. Detect negative sentiment from transcript (if provided)
+      if (transcript) {
+        const negativePhrases = [
+          'stop calling', 'don\'t call again', 'leave me alone', 
+          'harassment', 'sue you', 'lawyer', 'block you',
+          'f*** you', 'go to hell', 'threatening'
+        ];
+        
+        const transcriptLower = transcript.toLowerCase();
+        const hasNegativeSentiment = negativePhrases.some(phrase => 
+          transcriptLower.includes(phrase)
+        );
+
+        if (hasNegativeSentiment) {
+          // Auto-DNC for very negative responses
+          const { data: lead } = await supabase
+            .from('leads')
+            .select('phone_number')
+            .eq('id', leadId)
+            .single();
+
+          if (lead) {
+            await supabase.from('dnc_list').upsert({
+              user_id: userId,
+              phone_number: lead.phone_number,
+              reason: 'Negative sentiment detected in transcript',
+              added_at: new Date().toISOString(),
+            }, { onConflict: 'user_id,phone_number' });
+
+            await supabase
+              .from('leads')
+              .update({ do_not_call: true, status: 'dnc' })
+              .eq('id', leadId);
+
+            actions.push('Auto-DNC: Negative sentiment detected');
+          }
+        }
+      }
+
+      // 5. Update lead pipeline position based on disposition
+      const { data: disposition } = await supabase
+        .from('dispositions')
+        .select('pipeline_stage')
+        .eq('id', dispositionId)
+        .single();
+
+      if (disposition?.pipeline_stage) {
+        // Find the pipeline board for this stage
+        const { data: pipelineBoard } = await supabase
+          .from('pipeline_boards')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('name', disposition.pipeline_stage)
+          .single();
+
+        if (pipelineBoard) {
+          await supabase.from('lead_pipeline_positions').upsert({
+            user_id: userId,
+            lead_id: leadId,
+            pipeline_board_id: pipelineBoard.id,
+            moved_at: new Date().toISOString(),
+            moved_by_user: false,
+            notes: `Auto-moved by disposition: ${dispositionName}`,
+          }, { onConflict: 'user_id,lead_id,pipeline_board_id' });
+
+          actions.push(`Moved to pipeline stage: ${disposition.pipeline_stage}`);
+        }
+      }
+
+      // 6. Record reachability event
+      await supabase.from('reachability_events').insert({
+        user_id: userId,
+        lead_id: leadId,
+        event_type: 'disposition_set',
+        event_outcome: dispositionName,
+        metadata: { dispositionId, callOutcome },
+      });
+
+      return new Response(JSON.stringify({ success: true, actions }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    throw new Error('Unknown action');
+  } catch (error) {
+    console.error('Error in disposition-router:', error);
+    return new Response(JSON.stringify({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});
+
+async function executeAction(supabase: any, leadId: string, userId: string, autoAction: any) {
+  const config = autoAction.action_config || {};
+
+  switch (autoAction.action_type) {
+    case 'remove_all_campaigns':
+      await supabase
+        .from('lead_workflow_progress')
+        .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
+        .eq('lead_id', leadId)
+        .eq('status', 'active');
+      break;
+
+    case 'remove_from_campaign':
+      if (config.campaign_id) {
+        await supabase
+          .from('lead_workflow_progress')
+          .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
+          .eq('lead_id', leadId)
+          .eq('campaign_id', config.campaign_id);
+      }
+      break;
+
+    case 'move_to_stage':
+      if (config.target_stage_id) {
+        await supabase.from('lead_pipeline_positions').upsert({
+          user_id: userId,
+          lead_id: leadId,
+          pipeline_board_id: config.target_stage_id,
+          moved_at: new Date().toISOString(),
+          moved_by_user: false,
+        }, { onConflict: 'user_id,lead_id,pipeline_board_id' });
+      }
+      break;
+
+    case 'add_to_dnc':
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('phone_number')
+        .eq('id', leadId)
+        .single();
+
+      if (lead) {
+        await supabase.from('dnc_list').upsert({
+          user_id: userId,
+          phone_number: lead.phone_number,
+          reason: 'Auto-action from disposition',
+          added_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,phone_number' });
+
+        await supabase
+          .from('leads')
+          .update({ do_not_call: true })
+          .eq('id', leadId);
+      }
+      break;
+
+    case 'start_workflow':
+      if (config.target_workflow_id) {
+        // Would call workflow-executor to start a new workflow
+        console.log(`Would start workflow ${config.target_workflow_id} for lead ${leadId}`);
+      }
+      break;
+  }
+}

@@ -29,6 +29,8 @@ import AgentActivityDashboard from '@/components/AgentActivityDashboard';
 import AgentActivityWidget from '@/components/AgentActivityWidget';
 import WorkflowBuilder from '@/components/WorkflowBuilder';
 import LeadUpload from '@/components/LeadUpload';
+import AIWorkflowGenerator from '@/components/AIWorkflowGenerator';
+import ReachabilityDashboard from '@/components/ReachabilityDashboard';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
