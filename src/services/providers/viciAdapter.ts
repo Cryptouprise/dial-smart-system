@@ -80,13 +80,16 @@ export class ViciAdapter implements IProviderAdapter {
   
   /**
    * Initialize configuration from database or environment
+   * Note: In production, VICIdial credentials should be stored server-side
+   * and accessed through Supabase Edge Functions, not client-side env vars
    */
   private async getConfig(): Promise<ViciConfig> {
     if (this.config) {
       return this.config;
     }
     
-    // Try to load from environment variables
+    // TODO: In production, fetch from Supabase secrets or Edge Function
+    // For now, using environment variables (should be server-side only)
     const envConfig: ViciConfig = {
       server_url: import.meta.env.VITE_VICI_SERVER_URL || '',
       api_user: import.meta.env.VITE_VICI_API_USER || '',
@@ -131,7 +134,11 @@ export class ViciAdapter implements IProviderAdapter {
       url.searchParams.append(key, String(value));
     });
     
-    console.log('[ViciAdapter] Making request to:', url.toString().replace(config.api_pass, '***'));
+    // Sanitize URL for logging (mask password)
+    const sanitizedUrl = url.toString()
+      .replace(encodeURIComponent(config.api_pass), '***')
+      .replace(config.api_pass, '***');
+    console.log('[ViciAdapter] Making request to:', sanitizedUrl);
     
     try {
       const response = await fetch(url.toString(), {
@@ -269,9 +276,11 @@ export class ViciAdapter implements IProviderAdapter {
       const result = await this.makeRequest(ViciAgentAction.DIAL, dialParams);
       
       if (result.success) {
+        // Generate unique call ID using crypto API for better uniqueness
+        const callId = `vici-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         return {
           success: true,
-          provider_call_id: `vici-${Date.now()}`,
+          provider_call_id: callId,
           provider: this.providerType,
           from_number: params.from,
           to_number: params.to,

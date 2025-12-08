@@ -184,6 +184,10 @@ export const AgentBenchmarking = () => {
         const score = calculateAgentScore(metrics);
         const tier = determineAgentTier(score);
         
+        // Deterministic trend based on agent ID for consistent mock data
+        const agentNumber = parseInt(metrics.agent_id.replace('agent', ''), 10);
+        const trend = agentNumber % 3 === 0 ? 'down' : agentNumber % 2 === 0 ? 'stable' : 'up';
+        
         return {
           agent_id: metrics.agent_id,
           agent_name: metrics.agent_name,
@@ -193,7 +197,7 @@ export const AgentBenchmarking = () => {
           metrics,
           strengths: identifyStrengths(metrics),
           improvements: identifyImprovements(metrics),
-          trend: Math.random() > 0.5 ? 'up' : Math.random() > 0.25 ? 'stable' : 'down',
+          trend,
         };
       })
       .sort((a, b) => b.score - a.score)
