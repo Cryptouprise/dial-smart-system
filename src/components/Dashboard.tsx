@@ -5,19 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 import CallAnalytics from '@/components/CallAnalytics';
 import NumberRotationManager from '@/components/NumberRotationManager';
 import SpamDetectionManager from '@/components/SpamDetectionManager';
-import YellowstoneManager from '@/components/YellowstoneManager';
 import AIDecisionEngine from '@/components/AIDecisionEngine';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
 import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard';
 import RetellAIManager from '@/components/RetellAIManager';
-import GoHighLevelManager from '@/components/GoHighLevelManager';
 import PipelineKanban from '@/components/PipelineKanban';
 import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 import SmsMessaging from '@/components/SmsMessaging';
@@ -29,6 +27,8 @@ import AIPipelineManager from '@/components/AIPipelineManager';
 import FollowUpScheduler from '@/components/FollowUpScheduler';
 import AgentActivityDashboard from '@/components/AgentActivityDashboard';
 import AgentActivityWidget from '@/components/AgentActivityWidget';
+import WorkflowBuilder from '@/components/WorkflowBuilder';
+import LeadUpload from '@/components/LeadUpload';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -156,34 +156,18 @@ const Dashboard = () => {
 
         <Tabs defaultValue={defaultTab} className="w-full">
           <div className="w-full overflow-x-auto pb-2">
-            <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
+          <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto flex-wrap">
+              {/* Overview */}
               <TabsTrigger value="overview" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Overview
               </TabsTrigger>
-              <TabsTrigger value="pipeline" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Workflow className="h-4 w-4 mr-2" />
-                Pipeline
-              </TabsTrigger>
+              {/* Phone & Messaging */}
               <TabsTrigger value="predictive" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Target className="h-4 w-4 mr-2" />
-                Predictive Dialing
-              </TabsTrigger>
-              <TabsTrigger value="retell" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Settings className="h-4 w-4 mr-2" />
-                Retell AI
-              </TabsTrigger>
-              <TabsTrigger value="gohighlevel" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Link className="h-4 w-4 mr-2" />
-                Go High Level
+                <Target className="h-4 w-4 mr-1" />
+                Dialing
               </TabsTrigger>
               <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Analytics
-              </TabsTrigger>
-              <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                AI Engine
-              </TabsTrigger>
-              <TabsTrigger value="yellowstone" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                Yellowstone
               </TabsTrigger>
               <TabsTrigger value="rotation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 Rotation
@@ -192,32 +176,54 @@ const Dashboard = () => {
                 Spam
               </TabsTrigger>
               <TabsTrigger value="sms" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <MessageSquare className="h-4 w-4 mr-2" />
+                <MessageSquare className="h-4 w-4 mr-1" />
                 SMS
               </TabsTrigger>
-              <TabsTrigger value="reports" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <FileText className="h-4 w-4 mr-2" />
-                Reports
+              {/* Leads & Pipeline */}
+              <TabsTrigger value="pipeline" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Workflow className="h-4 w-4 mr-1" />
+                Pipeline
               </TabsTrigger>
-              <TabsTrigger value="automation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Calendar className="h-4 w-4 mr-2" />
-                Automation
+              <TabsTrigger value="lead-upload" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Upload className="h-4 w-4 mr-1" />
+                Lead Upload
               </TabsTrigger>
               <TabsTrigger value="dispositions" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Zap className="h-4 w-4 mr-2" />
+                <Zap className="h-4 w-4 mr-1" />
                 Dispositions
               </TabsTrigger>
-              <TabsTrigger value="ai-manager" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Brain className="h-4 w-4 mr-2" />
-                AI Manager
-              </TabsTrigger>
               <TabsTrigger value="follow-ups" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Clock className="h-4 w-4 mr-2" />
+                <Clock className="h-4 w-4 mr-1" />
                 Follow-ups
               </TabsTrigger>
+              {/* AI & Automation */}
+              <TabsTrigger value="retell" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Settings className="h-4 w-4 mr-1" />
+                Retell AI
+              </TabsTrigger>
+              <TabsTrigger value="workflows" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Zap className="h-4 w-4 mr-1" />
+                Workflows
+              </TabsTrigger>
+              <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                AI Engine
+              </TabsTrigger>
+              <TabsTrigger value="automation" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Calendar className="h-4 w-4 mr-1" />
+                Automation
+              </TabsTrigger>
+              <TabsTrigger value="ai-manager" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Brain className="h-4 w-4 mr-1" />
+                AI Manager
+              </TabsTrigger>
               <TabsTrigger value="agent-activity" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-                <Bot className="h-4 w-4 mr-2" />
+                <Bot className="h-4 w-4 mr-1" />
                 Agent Activity
+              </TabsTrigger>
+              {/* Reports */}
+              <TabsTrigger value="reports" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <FileText className="h-4 w-4 mr-1" />
+                Reports
               </TabsTrigger>
             </TabsList>
           </div>
