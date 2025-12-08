@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot, Upload } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot, Upload, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -221,6 +221,14 @@ const Dashboard = () => {
               <TabsTrigger value="agent-activity" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <Bot className="h-4 w-4 mr-1" />
                 Agent Activity
+              </TabsTrigger>
+              <TabsTrigger value="ai-workflows" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Sparkles className="h-4 w-4 mr-1" />
+                AI Workflows
+              </TabsTrigger>
+              <TabsTrigger value="reachability" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <TrendingUp className="h-4 w-4 mr-1" />
+                Reachability
               </TabsTrigger>
               {/* Reports */}
               <TabsTrigger value="reports" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
@@ -512,6 +520,18 @@ const Dashboard = () => {
           <TabsContent value="agent-activity">
             <TabErrorBoundary tabName="Agent Activity">
               <AgentActivityDashboard />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="ai-workflows">
+            <TabErrorBoundary tabName="AI Workflows">
+              <AIWorkflowGenerator />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="reachability">
+            <TabErrorBoundary tabName="Reachability">
+              <ReachabilityDashboard />
             </TabErrorBoundary>
           </TabsContent>
         </Tabs>

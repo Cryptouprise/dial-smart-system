@@ -112,3 +112,15 @@ verify_jwt = false
 
 [functions.calendar-integration]
 verify_jwt = false
+
+[functions.ai-workflow-generator]
+verify_jwt = false
+
+[functions.reachability-scoring]
+verify_jwt = false
+
+[functions.workflow-executor]
+verify_jwt = false
+
+[functions.disposition-router]
+verify_jwt = false
