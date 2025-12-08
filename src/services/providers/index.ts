@@ -16,12 +16,14 @@ export * from './constants';
 export { RetellAdapter } from './retellAdapter';
 export { TelnyxAdapter } from './telnyxAdapter';
 export { TwilioAdapter } from './twilioAdapter';
+export { ViciAdapter } from './viciAdapter';
 
 // Factory function to get adapter by provider type
 import type { IProviderAdapter, ProviderType } from './types';
 import { RetellAdapter } from './retellAdapter';
 import { TelnyxAdapter } from './telnyxAdapter';
 import { TwilioAdapter } from './twilioAdapter';
+import { ViciAdapter } from './viciAdapter';
 
 export function createProviderAdapter(providerType: ProviderType): IProviderAdapter {
   switch (providerType) {
@@ -31,6 +33,8 @@ export function createProviderAdapter(providerType: ProviderType): IProviderAdap
       return new TelnyxAdapter();
     case 'twilio':
       return new TwilioAdapter();
+    case 'vicidial':
+      return new ViciAdapter();
     case 'custom':
       throw new Error('Custom provider adapter requires specific implementation');
     default:
