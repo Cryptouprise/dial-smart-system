@@ -14,13 +14,16 @@ import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
 import ChatbotSettings from '@/components/ChatbotSettings';
 import PhoneNumberRow from '@/components/PhoneNumberRow';
 import { LeadScoringSettings } from '@/components/LeadScoringSettings';
+import GoHighLevelManager from '@/components/GoHighLevelManager';
+import YellowstoneManager from '@/components/YellowstoneManager';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
 import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -513,6 +516,31 @@ const Settings = () => {
 
         {/* Enhanced Spam Detection & STIR/SHAKEN */}
         <EnhancedSpamDashboard />
+
+        {/* Integrations Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link className="h-5 w-5" />
+              Integrations
+            </CardTitle>
+            <CardDescription>Connect to external services and platforms</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="gohighlevel" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="gohighlevel">Go High Level</TabsTrigger>
+                <TabsTrigger value="yellowstone">Yellowstone</TabsTrigger>
+              </TabsList>
+              <TabsContent value="gohighlevel">
+                <GoHighLevelManager />
+              </TabsContent>
+              <TabsContent value="yellowstone">
+                <YellowstoneManager />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

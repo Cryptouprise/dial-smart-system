@@ -433,6 +433,18 @@ const Dashboard = () => {
             </TabErrorBoundary>
           </TabsContent>
 
+          <TabsContent value="workflows">
+            <TabErrorBoundary tabName="Workflows">
+              <WorkflowBuilder />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="lead-upload">
+            <TabErrorBoundary tabName="Lead Upload">
+              <LeadUpload />
+            </TabErrorBoundary>
+          </TabsContent>
+
 
           <TabsContent value="analytics">
             <TabErrorBoundary tabName="Analytics">
