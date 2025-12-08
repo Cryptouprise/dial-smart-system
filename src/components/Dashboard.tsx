@@ -433,11 +433,6 @@ const Dashboard = () => {
             </TabErrorBoundary>
           </TabsContent>
 
-          <TabsContent value="gohighlevel">
-            <TabErrorBoundary tabName="Go High Level">
-              <GoHighLevelManager />
-            </TabErrorBoundary>
-          </TabsContent>
 
           <TabsContent value="analytics">
             <TabErrorBoundary tabName="Analytics">
@@ -451,11 +446,6 @@ const Dashboard = () => {
             </TabErrorBoundary>
           </TabsContent>
 
-          <TabsContent value="yellowstone">
-            <TabErrorBoundary tabName="Yellowstone">
-              <YellowstoneManager numbers={numbers} onRefreshNumbers={refreshNumbers} />
-            </TabErrorBoundary>
-          </TabsContent>
 
           <TabsContent value="rotation">
             <TabErrorBoundary tabName="Rotation">
