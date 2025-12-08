@@ -13,7 +13,7 @@ import { useRetellAI } from '@/hooks/useRetellAI';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle } from 'lucide-react';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -52,6 +52,7 @@ const RetellAIManager = () => {
   });
   const [editingAgent, setEditingAgent] = useState<any>(null);
   const [showAgentEditDialog, setShowAgentEditDialog] = useState(false);
+  const [isConfiguringWebhooks, setIsConfiguringWebhooks] = useState(false);
   const { toast } = useToast();
   const { 
     listPhoneNumbers, 
@@ -62,6 +63,7 @@ const RetellAIManager = () => {
     getAgent,
     updateAgent,
     deleteAgent,
+    configureWebhooksOnAllAgents,
     isLoading 
   } = useRetellAI();
   
@@ -98,6 +100,21 @@ const RetellAIManager = () => {
       title: "Data Refreshed",
       description: "Retell AI data has been updated",
     });
+  };
+
+  const handleConfigureWebhooks = async () => {
+    setIsConfiguringWebhooks(true);
+    try {
+      const results = await configureWebhooksOnAllAgents();
+      if (results.success > 0) {
+        toast({
+          title: "Webhooks Configured",
+          description: `Successfully configured ${results.success} agent(s) to track call results. Call data will now be recorded properly.`,
+        });
+      }
+    } finally {
+      setIsConfiguringWebhooks(false);
+    }
   };
 
   const handleEditStart = (number: RetellPhoneNumber) => {
@@ -204,14 +221,28 @@ const RetellAIManager = () => {
             Configure AI-powered phone agents
           </p>
         </div>
-        <Button 
-          onClick={handleRefresh} 
-          variant="outline"
-          disabled={isLoading || llmLoading}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${(isLoading || llmLoading) ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={handleConfigureWebhooks} 
+            variant="default"
+            disabled={isConfiguringWebhooks || agents.length === 0}
+          >
+            {isConfiguringWebhooks ? (
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Webhook className="h-4 w-4 mr-2" />
+            )}
+            {isConfiguringWebhooks ? 'Configuring...' : 'Fix Call Tracking'}
+          </Button>
+          <Button 
+            onClick={handleRefresh} 
+            variant="outline"
+            disabled={isLoading || llmLoading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${(isLoading || llmLoading) ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Status Overview */}

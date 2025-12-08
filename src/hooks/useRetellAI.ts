@@ -354,6 +354,68 @@ export const useRetellAI = () => {
     }
   };
 
+  const configureWebhooksOnAllAgents = async (): Promise<{ success: number; failed: number }> => {
+    setIsLoading(true);
+    const results = { success: 0, failed: 0 };
+    
+    try {
+      // First, list all agents
+      const agents = await listAgents();
+      if (!agents || agents.length === 0) {
+        toast({
+          title: "No Agents Found",
+          description: "No agents to configure webhooks for",
+        });
+        return results;
+      }
+
+      const webhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+
+      // Update each agent with the webhook URL
+      for (const agent of agents) {
+        try {
+          const { error } = await supabase.functions.invoke('retell-agent-management', {
+            body: {
+              action: 'update',
+              agentId: agent.agent_id,
+              agentConfig: {
+                webhook_url: webhookUrl
+              }
+            }
+          });
+
+          if (error) {
+            console.error(`Failed to update agent ${agent.agent_id}:`, error);
+            results.failed++;
+          } else {
+            console.log(`Successfully configured webhook for agent ${agent.agent_id}`);
+            results.success++;
+          }
+        } catch (err) {
+          console.error(`Error updating agent ${agent.agent_id}:`, err);
+          results.failed++;
+        }
+      }
+
+      toast({
+        title: "Webhook Configuration Complete",
+        description: `Updated ${results.success} agents. ${results.failed > 0 ? `${results.failed} failed.` : ''}`,
+      });
+
+      return results;
+    } catch (error: any) {
+      console.error('Failed to configure webhooks:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to configure webhooks",
+        variant: "destructive"
+      });
+      return results;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     importPhoneNumber,
     updatePhoneNumber,
@@ -366,6 +428,7 @@ export const useRetellAI = () => {
     getAgent,
     updateAgent,
     deleteAgent,
+    configureWebhooksOnAllAgents,
     isLoading
   };
 };
