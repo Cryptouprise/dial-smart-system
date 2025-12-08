@@ -14,6 +14,7 @@ export interface CampaignMetrics {
   leadStatuses: Record<string, number>;
   callsByHour: { hour: number; count: number; connected: number }[];
   callsByDay: { date: string; count: number; connected: number }[];
+  callStatuses: Record<string, number>; // Raw status breakdown for debugging
 }
 
 export const useCampaignResults = () => {
@@ -68,11 +69,23 @@ export const useCampaignResults = () => {
         smsReplies = (smsData || []).filter(s => s.direction === 'inbound').length;
       }
 
-      // Calculate metrics
+      // Calculate metrics - improved connected detection
       const calls = callLogs || [];
       const totalCalls = calls.length;
+      
+      // Count connected calls more accurately - check multiple indicators
       const connectedCalls = calls.filter(c => 
-        c.status === 'completed' || c.status === 'answered' || c.duration_seconds > 0
+        c.status === 'completed' || 
+        c.status === 'answered' || 
+        c.status === 'in-progress' ||
+        c.duration_seconds > 0 ||
+        c.answered_at !== null ||
+        c.outcome === 'completed' ||
+        c.outcome === 'Interested' ||
+        c.outcome === 'Appointment Set' ||
+        c.outcome === 'Callback Requested' ||
+        c.outcome === 'Left Voicemail' ||
+        c.outcome === 'Contacted'
       ).length;
       
       const connectionRate = totalCalls > 0 ? (connectedCalls / totalCalls) * 100 : 0;
@@ -82,15 +95,19 @@ export const useCampaignResults = () => {
         ? durations.reduce((a, b) => a + b, 0) / durations.length 
         : 0;
 
-      // Count dispositions
+      // Count dispositions and raw statuses
       const dispositions: Record<string, number> = {};
+      const callStatuses: Record<string, number> = {};
       calls.forEach(c => {
         const outcome = c.outcome || 'No Outcome';
         dispositions[outcome] = (dispositions[outcome] || 0) + 1;
+        
+        const status = c.status || 'unknown';
+        callStatuses[status] = (callStatuses[status] || 0) + 1;
       });
 
       const appointmentsSet = dispositions['Appointment Set'] || dispositions['appointment_set'] || 0;
-      const voicemailsLeft = dispositions['Voicemail'] || dispositions['voicemail'] || 0;
+      const voicemailsLeft = dispositions['Voicemail'] || dispositions['voicemail'] || dispositions['Left Voicemail'] || 0;
 
       // Count lead statuses
       const leadStatuses: Record<string, number> = {};
@@ -99,14 +116,21 @@ export const useCampaignResults = () => {
         leadStatuses[status] = (leadStatuses[status] || 0) + 1;
       });
 
-      // Calls by hour
+      // Calls by hour - use connected logic
+      const isConnected = (c: any) => 
+        c.status === 'completed' || 
+        c.status === 'answered' || 
+        c.status === 'in-progress' ||
+        c.duration_seconds > 0 ||
+        c.answered_at !== null;
+        
       const callsByHour: { hour: number; count: number; connected: number }[] = [];
       for (let i = 0; i < 24; i++) {
         const hourCalls = calls.filter(c => new Date(c.created_at).getHours() === i);
         callsByHour.push({
           hour: i,
           count: hourCalls.length,
-          connected: hourCalls.filter(c => c.duration_seconds > 0).length
+          connected: hourCalls.filter(isConnected).length
         });
       }
 
@@ -122,7 +146,7 @@ export const useCampaignResults = () => {
         callsByDay.push({
           date: dateStr,
           count: dayCalls.length,
-          connected: dayCalls.filter(c => c.duration_seconds > 0).length
+          connected: dayCalls.filter(isConnected).length
         });
       }
 
@@ -138,7 +162,8 @@ export const useCampaignResults = () => {
         dispositions,
         leadStatuses,
         callsByHour,
-        callsByDay
+        callsByDay,
+        callStatuses
       };
 
       setMetrics(result);
