@@ -45,7 +45,8 @@ import {
   Settings,
   Globe,
   MessageSquare,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -81,6 +82,9 @@ const TwilioNumbersOverview: React.FC = () => {
   const [revertAction, setRevertAction] = useState<'ghl' | 'clear'>('ghl');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [appWebhookUrl, setAppWebhookUrl] = useState('');
+  // Friendly name editing
+  const [editingFriendlyName, setEditingFriendlyName] = useState<string | null>(null);
+  const [friendlyNameValue, setFriendlyNameValue] = useState('');
 
   useEffect(() => {
     loadNumbers();
@@ -227,6 +231,45 @@ const TwilioNumbersOverview: React.FC = () => {
 
   const deselectAll = () => {
     setSelectedNumbers(new Set());
+  };
+
+  const handleEditFriendlyName = (phoneNumber: string, currentName: string) => {
+    setEditingFriendlyName(phoneNumber);
+    setFriendlyNameValue(currentName || '');
+  };
+
+  const handleSaveFriendlyName = async (phoneNumber: string) => {
+    try {
+      // Save to local database
+      const { error } = await supabase
+        .from('phone_numbers')
+        .update({ friendly_name: friendlyNameValue || null })
+        .eq('number', phoneNumber);
+
+      if (error) throw error;
+
+      // Update local state
+      setNumbers(prev => prev.map(n => 
+        n.phone_number === phoneNumber 
+          ? { ...n, friendly_name: friendlyNameValue }
+          : n
+      ));
+
+      toast({
+        title: 'Name Updated',
+        description: `Friendly name saved for ${formatPhoneNumber(phoneNumber)}`,
+      });
+
+      setEditingFriendlyName(null);
+      setFriendlyNameValue('');
+    } catch (error) {
+      console.error('Failed to save friendly name:', error);
+      toast({
+        title: 'Save Failed',
+        description: 'Could not update the friendly name',
+        variant: 'destructive',
+      });
+    }
   };
 
   const getDestinationBadge = (destination: TwilioNumberDetail['webhook_destination'], smsUrl: string | null) => {
@@ -492,8 +535,54 @@ const TwilioNumbersOverview: React.FC = () => {
                         <TableCell className="font-mono">
                           {formatPhoneNumber(num.phone_number)}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {num.friendly_name || '-'}
+                        <TableCell>
+                          {editingFriendlyName === num.phone_number ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={friendlyNameValue}
+                                onChange={(e) => setFriendlyNameValue(e.target.value)}
+                                placeholder="e.g., Main Line"
+                                className="h-7 w-32 text-sm"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveFriendlyName(num.phone_number);
+                                  if (e.key === 'Escape') setEditingFriendlyName(null);
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => handleSaveFriendlyName(num.phone_number)}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => setEditingFriendlyName(null)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button 
+                                    onClick={() => handleEditFriendlyName(num.phone_number, num.friendly_name)}
+                                    className="text-left hover:text-primary transition-colors cursor-pointer"
+                                  >
+                                    {num.friendly_name || <span className="text-muted-foreground italic">Click to add name</span>}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Click to edit friendly name</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                         </TableCell>
                         <TableCell>
                           {num.capabilities.sms ? (

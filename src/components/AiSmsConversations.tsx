@@ -65,6 +65,7 @@ import {
   Loader2,
   ChevronRight,
   Globe,
+  Search,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
@@ -317,8 +318,16 @@ const AiSmsConversations: React.FC = () => {
     };
   }, [selectedConversation, loadConversations, loadMessages]);
 
-  const handleSelectConversation = (conversation: SmsConversation) => {
+  const handleSelectConversation = async (conversation: SmsConversation) => {
     setSelectedConversation(conversation);
+    
+    // Auto-select the last used "from" number for this conversation
+    if (conversation.last_from_number) {
+      const numberExists = availableTwilioNumbers.some(n => n.number === conversation.last_from_number);
+      if (numberExists) {
+        setSelectedFromNumber(conversation.last_from_number);
+      }
+    }
   };
 
   const handleSendMessage = async () => {
@@ -345,6 +354,16 @@ const AiSmsConversations: React.FC = () => {
 
     if (success) {
       setMessageText('');
+      
+      // Save the "from" number for this conversation so it auto-selects next time
+      try {
+        await supabase
+          .from('sms_conversations')
+          .update({ last_from_number: fromNumber })
+          .eq('id', selectedConversation.id);
+      } catch (error) {
+        console.error('Failed to save last from number:', error);
+      }
     }
   };
 
@@ -485,9 +504,11 @@ const AiSmsConversations: React.FC = () => {
   const filteredConversations = conversations.filter(conv => {
     if (!debouncedSearchQuery) return true;
     const search = debouncedSearchQuery.toLowerCase();
+    // Search by phone number, contact name, or context summary
     return (
       conv.contact_phone.includes(search) ||
-      (conv.contact_name && conv.contact_name.toLowerCase().includes(search))
+      (conv.contact_name && conv.contact_name.toLowerCase().includes(search)) ||
+      (conv.context_summary && conv.context_summary.toLowerCase().includes(search))
     );
   });
 
@@ -1276,10 +1297,11 @@ COMMON OBJECTIONS:
         <CardContent className="flex-1 flex gap-4 overflow-hidden">
           {/* Conversation List */}
           <div className="w-80 border-r flex flex-col">
-            <div className="mb-4">
+            <div className="mb-4 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Search conversations..." 
-                className="w-full"
+                placeholder="Search by name, number, or context..." 
+                className="w-full pl-9"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
