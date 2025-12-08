@@ -1,8 +1,32 @@
 # Dial Smart System - World-Class Predictive Dialer
 
-A comprehensive, AI-powered predictive dialing system with industry-leading features comparable to VICIdial, Caller.io, and Call.io.
+A comprehensive, AI-powered predictive dialing system with industry-leading features comparable to VICIdial, Caller.io, and Call.io. Now with **VICIdial integration**, **real-time agent coaching**, and **performance-based agent ranking**.
 
 ## 🎯 Key Features
+
+### Enterprise VICIdial Integration 🆕
+- **Native VICIdial integration** through Agent and Non-Agent APIs
+- **Hybrid AI-human workflows** without platform migration
+- **Agent control**: dial, hangup, status, pause operations
+- **Lead management**: add and update leads in real-time
+- **Configuration UI** with connection testing
+- **Complete documentation** with integration patterns
+
+See [VICIDIAL_INTEGRATION.md](./VICIDIAL_INTEGRATION.md) for setup guide.
+
+### Real-Time Agent Coaching 🆕
+- **AI-powered coaching** during live calls (like Taalk's "Magic Coaching")
+- **6 prompt types**: suggestions, objections, compliance, next-actions, script, warnings
+- **Priority-based alerts** with real-time notifications
+- **Performance tracking** and action acknowledgment
+- **Configurable intervals** for optimal coaching
+
+### Agent Benchmarking & Ranking 🆕
+- **Multi-metric scoring** (conversion, transfer success, compliance, objection handling, script adherence, sentiment)
+- **4-tier ranking system**: Elite, Advanced, Proficient, Developing
+- **Real-time leaderboard** with trend indicators
+- **Performance-based lead routing** - high-value leads to top performers
+- **Strengths/improvements analysis** with actionable insights
 
 ### Real-Time Concurrency Management
 - **Live concurrent call tracking** with automatic updates every 10 seconds
@@ -31,7 +55,7 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 - **Intelligent insights**: Automatic recommendations and compliance alerts
 
 ### Multi-Carrier Provider Integration
-- **Multiple provider support**: Retell AI, Telnyx, and Twilio
+- **Multiple provider support**: Retell AI, Telnyx, Twilio, and **VICIdial**
 - **Intelligent carrier routing**: Auto-select best provider based on capabilities
 - **STIR/SHAKEN compliance**: Verified caller ID with attestation
 - **SMS messaging**: Send/receive with templates and opt-out handling
@@ -39,6 +63,21 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 - **Provider management UI**: Easy setup and number import
 
 ## 📚 Documentation
+
+### Integration & Setup Guides
+- [VICIDIAL_INTEGRATION.md](./VICIDIAL_INTEGRATION.md) - Complete VICIdial integration guide
+- [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) - Multi-carrier setup guide
+- [PREDICTIVE_DIALING_GUIDE.md](./PREDICTIVE_DIALING_GUIDE.md) - Predictive dialing features
+- [DISPOSITION_AUTOMATION_GUIDE.md](./DISPOSITION_AUTOMATION_GUIDE.md) - Disposition system guide
+
+### Analysis & Comparison
+- [TAALK_COMPARISON.md](./TAALK_COMPARISON.md) - Taalk.ai feature comparison
+- [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) - Recent enhancements summary
+- [AI_KNOWLEDGE_BASE.md](./AI_KNOWLEDGE_BASE.md) - AI assistant documentation
+
+### Other Resources
+- [IMPROVEMENTS_SUMMARY.md](./IMPROVEMENTS_SUMMARY.md) - Platform improvements
+- [FEATURES.md](./FEATURES.md) - Complete feature list
 
 See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup guide including:
 - Environment variable configuration
