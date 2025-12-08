@@ -54,6 +54,8 @@ const AIPipelineManager: React.FC = () => {
   const [callStats, setCallStats] = useState<Map<string, any>>(new Map());
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState('recommendations');
+  const [isLoadingPlan, setIsLoadingPlan] = useState(false);
 
   useEffect(() => {
     loadLeads();
@@ -89,23 +91,36 @@ const AIPipelineManager: React.FC = () => {
   const handleAnalyzePipeline = async () => {
     const recs = await analyzePipelineForRecommendations(leads);
     setRecommendations(recs);
+    setActiveTab('recommendations'); // Switch to recommendations tab
     
     if (recs.length > 0) {
       toast({
         title: "Pipeline Analyzed",
-        description: `Generated recommendations for ${recs.length} leads`,
+        description: `Generated ${recs.length} recommendations - view them below`,
+      });
+    } else {
+      toast({
+        title: "No Recommendations",
+        description: "All leads are on track or no actionable insights found",
       });
     }
   };
 
   const handleGetDailyPlan = async () => {
-    const plan = await getDailyActionPlan(leads);
-    setDailyPlan(plan);
-    
-    toast({
-      title: "Daily Action Plan Ready",
-      description: `${plan.highPriority.length} high priority actions`,
-    });
+    setIsLoadingPlan(true);
+    try {
+      const plan = await getDailyActionPlan(leads);
+      setDailyPlan(plan);
+      setActiveTab('daily-plan'); // Switch to daily plan tab
+      
+      const totalActions = plan.highPriority.length + plan.callsToday.length + plan.followUps.length;
+      toast({
+        title: "Daily Action Plan Ready",
+        description: `${plan.highPriority.length} high priority, ${totalActions} total actions`,
+      });
+    } finally {
+      setIsLoadingPlan(false);
+    }
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -243,12 +258,30 @@ const AIPipelineManager: React.FC = () => {
             Settings
           </Button>
           <Button onClick={handleAnalyzePipeline} disabled={isAnalyzing || leads.length === 0}>
-            <Target className="h-4 w-4 mr-2" />
-            Analyze Pipeline
+            {isAnalyzing ? (
+              <>
+                <Brain className="h-4 w-4 mr-2 animate-pulse" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Target className="h-4 w-4 mr-2" />
+                Analyze Pipeline
+              </>
+            )}
           </Button>
-          <Button onClick={handleGetDailyPlan} disabled={isAnalyzing || leads.length === 0}>
-            <Calendar className="h-4 w-4 mr-2" />
-            Daily Action Plan
+          <Button onClick={handleGetDailyPlan} disabled={isLoadingPlan || leads.length === 0}>
+            {isLoadingPlan ? (
+              <>
+                <Calendar className="h-4 w-4 mr-2 animate-pulse" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Calendar className="h-4 w-4 mr-2" />
+                Daily Action Plan
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -343,7 +376,7 @@ const AIPipelineManager: React.FC = () => {
         </Card>
       )}
 
-      <Tabs defaultValue="recommendations" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="recommendations">AI Recommendations</TabsTrigger>
           <TabsTrigger value="daily-plan">Daily Action Plan</TabsTrigger>
