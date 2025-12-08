@@ -1,0 +1,406 @@
+import React, { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { CheckCircle2, Circle, ArrowRight, ArrowLeft, Phone, PhoneOff, Loader2, Rocket, AlertCircle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { CampaignReadinessChecker } from './CampaignReadinessChecker';
+
+interface CampaignSetupWizardProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onComplete?: (campaignId: string) => void;
+}
+
+const WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+
+export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
+  open,
+  onOpenChange,
+  onComplete
+}) => {
+  const { toast } = useToast();
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
+
+  // Form data
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const [workflowId, setWorkflowId] = useState('');
+  const [callingHoursStart, setCallingHoursStart] = useState('09:00');
+  const [callingHoursEnd, setCallingHoursEnd] = useState('17:00');
+  const [callsPerMinute, setCallsPerMinute] = useState(5);
+  const [maxAttempts, setMaxAttempts] = useState(3);
+
+  // Data
+  const [agents, setAgents] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [leadCount, setLeadCount] = useState(0);
+
+  useEffect(() => {
+    if (open) {
+      loadData();
+    }
+  }, [open]);
+
+  const loadData = async () => {
+    // Load agents
+    try {
+      const { data: agentData } = await supabase.functions.invoke('retell-agent-management', {
+        body: { action: 'list' }
+      });
+      const agentArray = Array.isArray(agentData) ? agentData : (agentData?.agents || []);
+      
+      // Get phone mappings
+      const { data: phoneData } = await supabase.functions.invoke('retell-phone-management', {
+        body: { action: 'list' }
+      });
+      const phones = Array.isArray(phoneData) ? phoneData : (phoneData?.phone_numbers || []);
+      
+      const enrichedAgents = agentArray.map((agent: any) => ({
+        ...agent,
+        hasPhone: phones.some((p: any) => 
+          p.inbound_agent_id === agent.agent_id || p.outbound_agent_id === agent.agent_id
+        )
+      }));
+      
+      setAgents(enrichedAgents);
+    } catch (e) {
+      console.error('Error loading agents:', e);
+    }
+
+    // Load workflows
+    const { data: workflowData } = await supabase
+      .from('campaign_workflows')
+      .select('id, name, active')
+      .eq('active', true)
+      .order('name');
+    setWorkflows(workflowData || []);
+
+    // Load lead count
+    const { count } = await supabase
+      .from('leads')
+      .select('*', { count: 'exact', head: true });
+    setLeadCount(count || 0);
+  };
+
+  const handleCreateCampaign = async () => {
+    setIsLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert({
+          user_id: user.id,
+          name,
+          description,
+          agent_id: agentId,
+          workflow_id: workflowId || null,
+          calling_hours_start: callingHoursStart,
+          calling_hours_end: callingHoursEnd,
+          calls_per_minute: callsPerMinute,
+          max_attempts: maxAttempts,
+          status: 'draft'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setCreatedCampaignId(data.id);
+      toast({ title: 'Campaign created', description: 'Now add leads to your campaign' });
+      setCurrentStep(5);
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const steps = [
+    { number: 1, title: 'Basic Info' },
+    { number: 2, title: 'AI Agent' },
+    { number: 3, title: 'Workflow' },
+    { number: 4, title: 'Schedule' },
+    { number: 5, title: 'Review' },
+  ];
+
+  const canProceed = () => {
+    switch (currentStep) {
+      case 1: return !!name;
+      case 2: return !!agentId;
+      case 3: return true; // Workflow is optional
+      case 4: return true;
+      default: return true;
+    }
+  };
+
+  const handleNext = () => {
+    if (currentStep === 4) {
+      handleCreateCampaign();
+    } else {
+      setCurrentStep(prev => prev + 1);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Campaign Setup Wizard</DialogTitle>
+          <DialogDescription>
+            Step-by-step guide to create and launch your campaign
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Progress Steps */}
+        <div className="flex items-center justify-between py-4">
+          {steps.map((step, index) => (
+            <React.Fragment key={step.number}>
+              <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  currentStep > step.number ? 'bg-green-500 text-white' :
+                  currentStep === step.number ? 'bg-primary text-primary-foreground' :
+                  'bg-muted text-muted-foreground'
+                }`}>
+                  {currentStep > step.number ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
+                    step.number
+                  )}
+                </div>
+                <span className="text-xs mt-1">{step.title}</span>
+              </div>
+              {index < steps.length - 1 && (
+                <div className={`flex-1 h-1 mx-2 ${
+                  currentStep > step.number ? 'bg-green-500' : 'bg-muted'
+                }`} />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Step Content */}
+        <div className="min-h-[300px]">
+          {currentStep === 1 && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Campaign Name *</label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Q4 Sales Outreach"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Description</label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Campaign objectives and notes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          {currentStep === 2 && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Select Retell AI Agent *</label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Choose an agent with an active phone number
+                </p>
+                <Select value={agentId} onValueChange={setAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                        <div className="flex items-center gap-2">
+                          {agent.hasPhone ? (
+                            <Phone className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <PhoneOff className="h-4 w-4 text-red-500" />
+                          )}
+                          <span>{agent.agent_name}</span>
+                          {!agent.hasPhone && (
+                            <Badge variant="outline" className="text-xs">No phone</Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {agentId && !agents.find(a => a.agent_id === agentId)?.hasPhone && (
+                <Card className="border-amber-500 bg-amber-50 dark:bg-amber-900/20">
+                  <CardContent className="pt-4">
+                    <div className="flex gap-2">
+                      <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
+                      <div className="text-sm">
+                        <p className="font-medium">Agent needs a phone number</p>
+                        <p className="text-muted-foreground">
+                          Go to Retell AI tab and assign a phone number to this agent before launching.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card className="bg-muted/50">
+                <CardContent className="pt-4 text-sm">
+                  <p className="font-medium mb-1">Webhook Auto-Configuration</p>
+                  <p className="text-muted-foreground text-xs">
+                    Your agent's webhook will be set to:
+                  </p>
+                  <code className="text-xs bg-background p-1 rounded mt-1 block break-all">
+                    {WEBHOOK_URL}
+                  </code>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Attach Workflow (Optional)</label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Workflows automate follow-ups and lead progression
+                </p>
+                <Select value={workflowId} onValueChange={setWorkflowId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="No workflow (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No workflow</SelectItem>
+                    {workflows.map((wf) => (
+                      <SelectItem key={wf.id} value={wf.id}>
+                        {wf.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {leadCount > 0 && (
+                <Card className="bg-muted/50">
+                  <CardContent className="pt-4 text-sm">
+                    <p className="font-medium">{leadCount} leads available</p>
+                    <p className="text-muted-foreground text-xs">
+                      You can assign leads after campaign creation
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {currentStep === 4 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Start Time</label>
+                  <Input
+                    type="time"
+                    value={callingHoursStart}
+                    onChange={(e) => setCallingHoursStart(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">End Time</label>
+                  <Input
+                    type="time"
+                    value={callingHoursEnd}
+                    onChange={(e) => setCallingHoursEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Calls per Minute</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={callsPerMinute}
+                    onChange={(e) => setCallsPerMinute(parseInt(e.target.value) || 5)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Max Attempts</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={maxAttempts}
+                    onChange={(e) => setMaxAttempts(parseInt(e.target.value) || 3)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {currentStep === 5 && createdCampaignId && (
+            <div className="space-y-4">
+              <CampaignReadinessChecker
+                campaignId={createdCampaignId}
+                onLaunch={() => {
+                  onComplete?.(createdCampaignId);
+                  onOpenChange(false);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <div className="flex justify-between pt-4 border-t">
+          <Button
+            variant="outline"
+            onClick={() => setCurrentStep(prev => prev - 1)}
+            disabled={currentStep === 1 || currentStep === 5}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back
+          </Button>
+
+          {currentStep < 5 && (
+            <Button onClick={handleNext} disabled={!canProceed() || isLoading}>
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : currentStep === 4 ? (
+                <Rocket className="h-4 w-4 mr-1" />
+              ) : (
+                <ArrowRight className="h-4 w-4 mr-1" />
+              )}
+              {currentStep === 4 ? 'Create Campaign' : 'Next'}
+            </Button>
+          )}
+
+          {currentStep === 5 && (
+            <Button onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default CampaignSetupWizard;
