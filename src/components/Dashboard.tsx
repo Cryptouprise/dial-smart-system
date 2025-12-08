@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot, Upload, Sparkles } from 'lucide-react';
+import { Plus, Phone, AlertTriangle, TrendingUp, Users, Clock, Shield, RotateCw, Database, Zap, Brain, Settings, Link, Workflow, Target, MessageSquare, FileText, Calendar, Bot, Upload, Sparkles, BarChart3, Activity, Beaker } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -31,6 +31,9 @@ import WorkflowBuilder from '@/components/WorkflowBuilder';
 import LeadUpload from '@/components/LeadUpload';
 import AIWorkflowGenerator from '@/components/AIWorkflowGenerator';
 import ReachabilityDashboard from '@/components/ReachabilityDashboard';
+import CampaignResultsDashboard from '@/components/CampaignResultsDashboard';
+import LiveCampaignMonitor from '@/components/LiveCampaignMonitor';
+import WorkflowABTesting from '@/components/WorkflowABTesting';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PhoneNumber {
@@ -234,6 +237,18 @@ const Dashboard = () => {
               <TabsTrigger value="reports" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
                 <FileText className="h-4 w-4 mr-1" />
                 Reports
+              </TabsTrigger>
+              <TabsTrigger value="campaign-results" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <BarChart3 className="h-4 w-4 mr-1" />
+                Results
+              </TabsTrigger>
+              <TabsTrigger value="live-monitor" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Activity className="h-4 w-4 mr-1" />
+                Live Monitor
+              </TabsTrigger>
+              <TabsTrigger value="ab-testing" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+                <Beaker className="h-4 w-4 mr-1" />
+                A/B Testing
               </TabsTrigger>
             </TabsList>
           </div>
