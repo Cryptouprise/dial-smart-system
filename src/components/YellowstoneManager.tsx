@@ -20,11 +20,11 @@ interface YellowstoneSnapshot {
 }
 
 interface YellowstoneManagerProps {
-  numbers: any[];
-  onRefreshNumbers: () => void;
+  numbers?: any[];
+  onRefreshNumbers?: () => void;
 }
 
-const YellowstoneManager = ({ numbers, onRefreshNumbers }: YellowstoneManagerProps) => {
+const YellowstoneManager = ({ numbers = [], onRefreshNumbers = () => {} }: YellowstoneManagerProps) => {
   const [isEnabled, setIsEnabled] = useState(false);
   const [useAI, setUseAI] = useState(false);
   const [snapshots, setSnapshots] = useState<YellowstoneSnapshot[]>([]);
