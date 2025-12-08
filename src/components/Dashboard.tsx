@@ -131,6 +131,9 @@ const Dashboard = () => {
         return (
           <TabErrorBoundary tabName="Overview">
             <div className="space-y-4 lg:space-y-6">
+              {/* System Health - Only on Overview */}
+              <SystemHealthDashboard />
+              
               {/* Quick Stats */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
                 <Card className="bg-card/80 backdrop-blur-sm">
@@ -335,9 +338,6 @@ const Dashboard = () => {
           </header>
           <main className="flex-1 p-4 lg:p-6">
             {renderContent()}
-            <div className="mt-6">
-              <SystemHealthDashboard />
-            </div>
           </main>
         </SidebarInset>
       </div>
