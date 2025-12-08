@@ -189,6 +189,35 @@ export const CampaignResultsDashboard: React.FC = () => {
               </CardContent>
             </Card>
 
+            {/* Call Status Breakdown - Debug Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Call Status Breakdown</CardTitle>
+                <CardDescription>Raw status values from call logs</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {metrics.callStatuses && Object.keys(metrics.callStatuses).length > 0 ? (
+                  <div className="space-y-2">
+                    {Object.entries(metrics.callStatuses).map(([status, count]) => (
+                      <div key={status} className="flex justify-between items-center">
+                        <Badge variant={
+                          status === 'completed' || status === 'answered' ? 'default' :
+                          status === 'failed' ? 'destructive' :
+                          status === 'ringing' || status === 'in-progress' ? 'secondary' :
+                          'outline'
+                        }>
+                          {status}
+                        </Badge>
+                        <span className="font-semibold">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">No status data</p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Disposition Breakdown */}
             <Card>
               <CardHeader>
@@ -220,29 +249,29 @@ export const CampaignResultsDashboard: React.FC = () => {
                 )}
               </CardContent>
             </Card>
-
-            {/* Lead Status Funnel */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Lead Status Distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {leadStatusData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={leadStatusData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tick={{ fontSize: 12 }} />
-                      <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={80} />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#8B5CF6" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">No lead status data</p>
-                )}
-              </CardContent>
-            </Card>
           </div>
+
+          {/* Lead Status Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Lead Status Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {leadStatusData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={leadStatusData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={80} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#8B5CF6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-center text-muted-foreground py-8">No lead status data</p>
+              )}
+            </CardContent>
+          </Card>
         </>
       ) : (
         <Card>
