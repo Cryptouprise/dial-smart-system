@@ -1167,6 +1167,7 @@ export type Database = {
           created_at: string
           daily_calls: number
           external_spam_score: number | null
+          friendly_name: string | null
           id: string
           is_spam: boolean
           is_voip: boolean | null
@@ -1188,6 +1189,7 @@ export type Database = {
           created_at?: string
           daily_calls?: number
           external_spam_score?: number | null
+          friendly_name?: string | null
           id?: string
           is_spam?: boolean
           is_voip?: boolean | null
@@ -1209,6 +1211,7 @@ export type Database = {
           created_at?: string
           daily_calls?: number
           external_spam_score?: number | null
+          friendly_name?: string | null
           id?: string
           is_spam?: boolean
           is_voip?: boolean | null
@@ -1704,6 +1707,7 @@ export type Database = {
           context_summary: string | null
           created_at: string
           id: string
+          last_from_number: string | null
           last_message_at: string
           metadata: Json | null
           unread_count: number | null
@@ -1716,6 +1720,7 @@ export type Database = {
           context_summary?: string | null
           created_at?: string
           id?: string
+          last_from_number?: string | null
           last_message_at?: string
           metadata?: Json | null
           unread_count?: number | null
@@ -1728,6 +1733,7 @@ export type Database = {
           context_summary?: string | null
           created_at?: string
           id?: string
+          last_from_number?: string | null
           last_message_at?: string
           metadata?: Json | null
           unread_count?: number | null

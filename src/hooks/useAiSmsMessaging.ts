@@ -24,6 +24,7 @@ export interface SmsConversation {
   metadata: any;
   created_at: string;
   updated_at: string;
+  last_from_number: string | null;
 }
 
 export interface SmsMessage {
