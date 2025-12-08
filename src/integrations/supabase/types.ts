@@ -629,6 +629,45 @@ export type Database = {
           },
         ]
       }
+      campaign_workflows: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_template: boolean | null
+          name: string
+          settings: Json | null
+          updated_at: string | null
+          user_id: string
+          workflow_type: string
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_template?: boolean | null
+          name: string
+          settings?: Json | null
+          updated_at?: string | null
+          user_id: string
+          workflow_type?: string
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_template?: boolean | null
+          name?: string
+          settings?: Json | null
+          updated_at?: string | null
+          user_id?: string
+          workflow_type?: string
+        }
+        Relationships: []
+      }
       campaigns: {
         Row: {
           agent_id: string | null
@@ -639,12 +678,17 @@ export type Database = {
           description: string | null
           id: string
           max_attempts: number | null
+          max_calls_per_day: number | null
           name: string
+          retry_delay_minutes: number | null
           script: string | null
+          sms_on_no_answer: boolean | null
+          sms_template: string | null
           status: string
           timezone: string | null
           updated_at: string
           user_id: string
+          workflow_id: string | null
         }
         Insert: {
           agent_id?: string | null
@@ -655,12 +699,17 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          max_calls_per_day?: number | null
           name: string
+          retry_delay_minutes?: number | null
           script?: string | null
+          sms_on_no_answer?: boolean | null
+          sms_template?: string | null
           status?: string
           timezone?: string | null
           updated_at?: string
           user_id: string
+          workflow_id?: string | null
         }
         Update: {
           agent_id?: string | null
@@ -671,14 +720,27 @@ export type Database = {
           description?: string | null
           id?: string
           max_attempts?: number | null
+          max_calls_per_day?: number | null
           name?: string
+          retry_delay_minutes?: number | null
           script?: string | null
+          sms_on_no_answer?: boolean | null
+          sms_template?: string | null
           status?: string
           timezone?: string | null
           updated_at?: string
           user_id?: string
+          workflow_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       daily_reports: {
         Row: {
@@ -805,6 +867,53 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      disposition_auto_actions: {
+        Row: {
+          action_config: Json | null
+          action_type: string
+          active: boolean | null
+          created_at: string | null
+          disposition_id: string | null
+          disposition_name: string | null
+          id: string
+          priority: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          action_config?: Json | null
+          action_type: string
+          active?: boolean | null
+          created_at?: string | null
+          disposition_id?: string | null
+          disposition_name?: string | null
+          id?: string
+          priority?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          action_config?: Json | null
+          action_type?: string
+          active?: boolean | null
+          created_at?: string | null
+          disposition_id?: string | null
+          disposition_name?: string | null
+          id?: string
+          priority?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disposition_auto_actions_disposition_id_fkey"
+            columns: ["disposition_id"]
+            isOneToOne: false
+            referencedRelation: "dispositions"
             referencedColumns: ["id"]
           },
         ]
@@ -1047,6 +1156,86 @@ export type Database = {
           weight_sentiment?: number
         }
         Relationships: []
+      }
+      lead_workflow_progress: {
+        Row: {
+          campaign_id: string | null
+          completed_at: string | null
+          created_at: string | null
+          current_step_id: string | null
+          id: string
+          last_action_at: string | null
+          lead_id: string
+          next_action_at: string | null
+          removal_reason: string | null
+          started_at: string | null
+          status: string
+          updated_at: string | null
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          id?: string
+          last_action_at?: string | null
+          lead_id: string
+          next_action_at?: string | null
+          removal_reason?: string | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          campaign_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          id?: string
+          last_action_at?: string | null
+          lead_id?: string
+          next_action_at?: string | null
+          removal_reason?: string | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_workflow_progress_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_workflow_progress_current_step_id_fkey"
+            columns: ["current_step_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_workflow_progress_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_workflow_progress_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       leads: {
         Row: {
@@ -1951,6 +2140,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      workflow_steps: {
+        Row: {
+          created_at: string | null
+          id: string
+          step_config: Json
+          step_number: number
+          step_type: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          step_config?: Json
+          step_number: number
+          step_type: string
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          step_config?: Json
+          step_number?: number
+          step_type?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_steps_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       yellowstone_settings: {
         Row: {
