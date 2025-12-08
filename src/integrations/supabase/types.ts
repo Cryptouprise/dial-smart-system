@@ -232,6 +232,47 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_workflow_generations: {
+        Row: {
+          created_at: string | null
+          generated_steps: Json
+          generated_workflow_id: string | null
+          id: string
+          modifications_made: Json | null
+          user_feedback: string | null
+          user_id: string
+          user_prompt: string
+        }
+        Insert: {
+          created_at?: string | null
+          generated_steps: Json
+          generated_workflow_id?: string | null
+          id?: string
+          modifications_made?: Json | null
+          user_feedback?: string | null
+          user_id: string
+          user_prompt: string
+        }
+        Update: {
+          created_at?: string | null
+          generated_steps?: Json
+          generated_workflow_id?: string | null
+          id?: string
+          modifications_made?: Json | null
+          user_feedback?: string | null
+          user_id?: string
+          user_prompt?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_workflow_generations_generated_workflow_id_fkey"
+            columns: ["generated_workflow_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       autonomous_settings: {
         Row: {
           auto_approve_script_changes: boolean | null
@@ -1073,6 +1114,86 @@ export type Database = {
           },
         ]
       }
+      lead_reachability_scores: {
+        Row: {
+          ai_notes: string | null
+          best_contact_day: string | null
+          best_contact_time: string | null
+          confidence_level: number | null
+          created_at: string | null
+          decay_applied: boolean | null
+          emails_opened: number | null
+          emails_sent: number | null
+          id: string
+          last_successful_contact: string | null
+          lead_id: string
+          preferred_channel: string | null
+          reachability_score: number
+          score_factors: Json | null
+          sms_replies: number | null
+          sms_sent: number | null
+          successful_calls: number | null
+          total_call_attempts: number | null
+          updated_at: string | null
+          user_id: string
+          voicemails_left: number | null
+        }
+        Insert: {
+          ai_notes?: string | null
+          best_contact_day?: string | null
+          best_contact_time?: string | null
+          confidence_level?: number | null
+          created_at?: string | null
+          decay_applied?: boolean | null
+          emails_opened?: number | null
+          emails_sent?: number | null
+          id?: string
+          last_successful_contact?: string | null
+          lead_id: string
+          preferred_channel?: string | null
+          reachability_score?: number
+          score_factors?: Json | null
+          sms_replies?: number | null
+          sms_sent?: number | null
+          successful_calls?: number | null
+          total_call_attempts?: number | null
+          updated_at?: string | null
+          user_id: string
+          voicemails_left?: number | null
+        }
+        Update: {
+          ai_notes?: string | null
+          best_contact_day?: string | null
+          best_contact_time?: string | null
+          confidence_level?: number | null
+          created_at?: string | null
+          decay_applied?: boolean | null
+          emails_opened?: number | null
+          emails_sent?: number | null
+          id?: string
+          last_successful_contact?: string | null
+          lead_id?: string
+          preferred_channel?: string | null
+          reachability_score?: number
+          score_factors?: Json | null
+          sms_replies?: number | null
+          sms_sent?: number | null
+          successful_calls?: number | null
+          total_call_attempts?: number | null
+          updated_at?: string | null
+          user_id?: string
+          voicemails_left?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_reachability_scores_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_scoring_settings: {
         Row: {
           callback_request_bonus: number
@@ -1507,6 +1628,59 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reachability_events: {
+        Row: {
+          caller_id: string | null
+          contact_day: string | null
+          contact_time: string | null
+          created_at: string | null
+          duration_seconds: number | null
+          event_outcome: string | null
+          event_type: string
+          id: string
+          lead_id: string
+          metadata: Json | null
+          response_time_minutes: number | null
+          user_id: string
+        }
+        Insert: {
+          caller_id?: string | null
+          contact_day?: string | null
+          contact_time?: string | null
+          created_at?: string | null
+          duration_seconds?: number | null
+          event_outcome?: string | null
+          event_type: string
+          id?: string
+          lead_id: string
+          metadata?: Json | null
+          response_time_minutes?: number | null
+          user_id: string
+        }
+        Update: {
+          caller_id?: string | null
+          contact_day?: string | null
+          contact_time?: string | null
+          created_at?: string | null
+          duration_seconds?: number | null
+          event_outcome?: string | null
+          event_type?: string
+          id?: string
+          lead_id?: string
+          metadata?: Json | null
+          response_time_minutes?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reachability_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
