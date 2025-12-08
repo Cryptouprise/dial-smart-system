@@ -92,12 +92,14 @@ const FollowUpScheduler = () => {
         })));
       }
 
-      // Load pending follow-ups with lead details
+      // Load pending follow-ups with lead details, sequence, and step info
       const { data: followUpData } = await supabase
         .from('scheduled_follow_ups')
         .select(`
           *,
-          leads (id, first_name, last_name, phone_number, company, email)
+          leads (id, first_name, last_name, phone_number, company, email, status, notes),
+          follow_up_sequences (id, name, description),
+          sequence_steps (id, step_number, action_type, content, ai_prompt, delay_minutes)
         `)
         .eq('user_id', user.id)
         .eq('status', 'pending')
@@ -112,7 +114,9 @@ const FollowUpScheduler = () => {
           scheduled_at: fu.scheduled_at,
           status: fu.status || 'pending',
           action_type: fu.action_type,
-          lead: fu.leads
+          lead: fu.leads,
+          sequence: fu.follow_up_sequences,
+          step: fu.sequence_steps
         })) as any);
       }
     } catch (error) {
@@ -521,59 +525,109 @@ const FollowUpScheduler = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {pendingFollowUps.map((followUp: any) => {
                 const lead = followUp.lead;
+                const sequence = followUp.sequence;
+                const step = followUp.step;
                 const leadName = lead 
                   ? [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'
                   : 'Unknown Lead';
+                const aiPrompt = step?.ai_prompt || step?.content || '';
                 
                 return (
-                  <Card key={followUp.id}>
+                  <Card key={followUp.id} className="border-l-4 border-l-primary">
                     <CardContent className="py-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            {getActionIcon(followUp.action_type)}
+                      <div className="space-y-3">
+                        {/* Header with lead info and actions */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              {getActionIcon(followUp.action_type)}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground">{leadName}</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                {lead?.phone_number && (
+                                  <span className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3" />
+                                    {lead.phone_number}
+                                  </span>
+                                )}
+                                {lead?.company && (
+                                  <span>• {lead.company}</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">{leadName}</p>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              {lead?.phone_number && (
-                                <span className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3" />
-                                  {lead.phone_number}
-                                </span>
-                              )}
-                              {lead?.company && (
-                                <span className="text-xs">• {lead.company}</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="outline" className="text-xs">
-                                {getActionLabel(followUp.action_type)}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(followUp.scheduled_at), 'PPp')}
-                              </span>
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <Badge 
+                              variant={followUp.status === 'pending' ? 'default' : 
+                                       followUp.status === 'completed' ? 'secondary' : 'destructive'}
+                            >
+                              {followUp.status}
+                            </Badge>
+                            {followUp.status === 'pending' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleExecuteFollowUp(followUp.id)}
+                              >
+                                <Play className="h-4 w-4 mr-1" />
+                                Execute
+                              </Button>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge 
-                            variant={followUp.status === 'pending' ? 'default' : 
-                                     followUp.status === 'completed' ? 'secondary' : 'destructive'}
-                          >
-                            {followUp.status}
-                          </Badge>
-                          {followUp.status === 'pending' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleExecuteFollowUp(followUp.id)}
-                            >
-                              <Play className="h-4 w-4 mr-1" />
-                              Execute
-                            </Button>
+
+                        {/* Sequence & Reason Context */}
+                        <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {sequence && (
+                              <Badge variant="secondary" className="text-xs">
+                                <Calendar className="h-3 w-3 mr-1" />
+                                {sequence.name}
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {getActionLabel(followUp.action_type)}
+                            </Badge>
+                            {step?.step_number && (
+                              <Badge variant="outline" className="text-xs">
+                                Step {step.step_number}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              Scheduled: {format(new Date(followUp.scheduled_at), 'PPp')}
+                            </span>
+                          </div>
+                          
+                          {/* AI Prompt / What will happen */}
+                          {aiPrompt && (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">What will happen:</p>
+                              <p className="text-sm text-foreground bg-background rounded p-2 border">
+                                {aiPrompt}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Lead context */}
+                          {(lead?.status || lead?.notes) && (
+                            <div className="mt-2 pt-2 border-t border-border">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">Lead context:</p>
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                {lead?.status && (
+                                  <Badge variant="outline" className="text-xs capitalize">
+                                    Status: {lead.status}
+                                  </Badge>
+                                )}
+                                {lead?.notes && (
+                                  <span className="text-muted-foreground truncate max-w-xs">
+                                    Notes: {lead.notes}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
