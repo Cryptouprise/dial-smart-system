@@ -11,7 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square } from 'lucide-react';
+import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -500,12 +500,55 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
               <div className="space-y-2">
                 <Label htmlFor="webhook_url">Webhook URL</Label>
-                <Input
-                  id="webhook_url"
-                  value={config.webhook_url || ''}
-                  onChange={(e) => updateConfig('webhook_url', e.target.value)}
-                  placeholder="https://your-webhook-url.com"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="webhook_url"
+                    value={config.webhook_url || ''}
+                    onChange={(e) => updateConfig('webhook_url', e.target.value)}
+                    placeholder="https://your-webhook-url.com"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const defaultUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+                      updateConfig('webhook_url', defaultUrl);
+                      toast({
+                        title: 'Webhook Auto-filled',
+                        description: 'Call tracking webhook URL has been set',
+                      });
+                    }}
+                    className="shrink-0"
+                  >
+                    <Wand2 className="h-4 w-4 mr-1" />
+                    Auto-fill
+                  </Button>
+                  {config.webhook_url && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(config.webhook_url);
+                        toast({
+                          title: 'Copied!',
+                          description: 'Webhook URL copied to clipboard',
+                        });
+                      }}
+                      className="shrink-0"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {config.webhook_url === 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook' && (
+                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Using auto-configured call tracking webhook
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

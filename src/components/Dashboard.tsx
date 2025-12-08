@@ -549,6 +549,24 @@ const Dashboard = () => {
               <ReachabilityDashboard />
             </TabErrorBoundary>
           </TabsContent>
+
+          <TabsContent value="campaign-results">
+            <TabErrorBoundary tabName="Campaign Results">
+              <CampaignResultsDashboard />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="live-monitor">
+            <TabErrorBoundary tabName="Live Monitor">
+              <LiveCampaignMonitor />
+            </TabErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="ab-testing">
+            <TabErrorBoundary tabName="A/B Testing">
+              <WorkflowABTesting />
+            </TabErrorBoundary>
+          </TabsContent>
         </Tabs>
 
         {/* System Health */}
