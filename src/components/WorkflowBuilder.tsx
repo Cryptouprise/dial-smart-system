@@ -106,6 +106,12 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
       defaultConfig.sms_content = '';
     } else if (type === 'call') {
       defaultConfig.time_of_day = '09:00';
+    } else if (type === 'condition') {
+      defaultConfig.condition_type = 'disposition';
+      defaultConfig.condition_operator = 'equals';
+      defaultConfig.condition_value = '';
+      defaultConfig.then_action = 'continue';
+      defaultConfig.else_action = 'skip';
     }
 
     setNewWorkflow(prev => ({
@@ -284,6 +290,255 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                       }
                       rows={3}
                     />
+                  </div>
+                )}
+
+                {step.step_type === 'condition' && (
+                  <div className="space-y-4 bg-muted/50 rounded-lg p-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      {/* Condition Type */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium">If...</Label>
+                        <Select
+                          value={step.step_config.condition_type || 'disposition'}
+                          onValueChange={(v) => updateStep(index, { 
+                            step_config: { ...step.step_config, condition_type: v as any }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select condition" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="disposition">Call Disposition</SelectItem>
+                            <SelectItem value="lead_status">Lead Status</SelectItem>
+                            <SelectItem value="call_outcome">Call Outcome</SelectItem>
+                            <SelectItem value="attempts">Number of Attempts</SelectItem>
+                            <SelectItem value="time_of_day">Time of Day</SelectItem>
+                            <SelectItem value="day_of_week">Day of Week</SelectItem>
+                            <SelectItem value="tag_exists">Tag Exists</SelectItem>
+                            <SelectItem value="custom_field">Custom Field</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Operator */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium">Operator</Label>
+                        <Select
+                          value={step.step_config.condition_operator || 'equals'}
+                          onValueChange={(v) => updateStep(index, { 
+                            step_config: { ...step.step_config, condition_operator: v as any }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="equals">Equals</SelectItem>
+                            <SelectItem value="not_equals">Not Equals</SelectItem>
+                            <SelectItem value="contains">Contains</SelectItem>
+                            <SelectItem value="greater_than">Greater Than</SelectItem>
+                            <SelectItem value="less_than">Less Than</SelectItem>
+                            <SelectItem value="is_empty">Is Empty</SelectItem>
+                            <SelectItem value="is_not_empty">Is Not Empty</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Value */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium">Value</Label>
+                        {step.step_config.condition_type === 'disposition' ? (
+                          <Select
+                            value={step.step_config.condition_value || ''}
+                            onValueChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: v }
+                            })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select disposition" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="interested">Interested</SelectItem>
+                              <SelectItem value="not_interested">Not Interested</SelectItem>
+                              <SelectItem value="callback">Callback Requested</SelectItem>
+                              <SelectItem value="no_answer">No Answer</SelectItem>
+                              <SelectItem value="voicemail">Voicemail</SelectItem>
+                              <SelectItem value="busy">Busy</SelectItem>
+                              <SelectItem value="wrong_number">Wrong Number</SelectItem>
+                              <SelectItem value="dnc">Do Not Call</SelectItem>
+                              <SelectItem value="appointment_set">Appointment Set</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : step.step_config.condition_type === 'lead_status' ? (
+                          <Select
+                            value={step.step_config.condition_value || ''}
+                            onValueChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: v }
+                            })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">New</SelectItem>
+                              <SelectItem value="contacted">Contacted</SelectItem>
+                              <SelectItem value="qualified">Qualified</SelectItem>
+                              <SelectItem value="proposal">Proposal</SelectItem>
+                              <SelectItem value="negotiation">Negotiation</SelectItem>
+                              <SelectItem value="won">Won</SelectItem>
+                              <SelectItem value="lost">Lost</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : step.step_config.condition_type === 'day_of_week' ? (
+                          <Select
+                            value={step.step_config.condition_value || ''}
+                            onValueChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: v }
+                            })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select day" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="monday">Monday</SelectItem>
+                              <SelectItem value="tuesday">Tuesday</SelectItem>
+                              <SelectItem value="wednesday">Wednesday</SelectItem>
+                              <SelectItem value="thursday">Thursday</SelectItem>
+                              <SelectItem value="friday">Friday</SelectItem>
+                              <SelectItem value="saturday">Saturday</SelectItem>
+                              <SelectItem value="sunday">Sunday</SelectItem>
+                              <SelectItem value="weekday">Any Weekday</SelectItem>
+                              <SelectItem value="weekend">Any Weekend</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : step.step_config.condition_type === 'call_outcome' ? (
+                          <Select
+                            value={step.step_config.condition_value || ''}
+                            onValueChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: v }
+                            })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select outcome" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="answered">Answered</SelectItem>
+                              <SelectItem value="no_answer">No Answer</SelectItem>
+                              <SelectItem value="busy">Busy</SelectItem>
+                              <SelectItem value="voicemail">Voicemail</SelectItem>
+                              <SelectItem value="failed">Failed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={step.step_config.condition_value || ''}
+                            onChange={(e) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: e.target.value }
+                            })}
+                            placeholder={
+                              step.step_config.condition_type === 'attempts' ? "e.g., 3" :
+                              step.step_config.condition_type === 'time_of_day' ? "e.g., 09:00" :
+                              step.step_config.condition_type === 'tag_exists' ? "Tag name" :
+                              "Enter value..."
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Custom field name if condition_type is custom_field */}
+                    {step.step_config.condition_type === 'custom_field' && (
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium">Custom Field Name</Label>
+                        <Input
+                          value={step.step_config.condition_field || ''}
+                          onChange={(e) => updateStep(index, { 
+                            step_config: { ...step.step_config, condition_field: e.target.value }
+                          })}
+                          placeholder="e.g., budget, source, industry"
+                        />
+                      </div>
+                    )}
+
+                    {/* Then/Else Actions */}
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t border-border">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-green-600">✓ If TRUE, then...</Label>
+                        <Select
+                          value={step.step_config.then_action || 'continue'}
+                          onValueChange={(v) => updateStep(index, { 
+                            step_config: { ...step.step_config, then_action: v as any }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="continue">Continue to Next Step</SelectItem>
+                            <SelectItem value="skip">Skip Next Step</SelectItem>
+                            <SelectItem value="end_workflow">End Workflow</SelectItem>
+                            <SelectItem value="jump_to_step">Jump to Step #</SelectItem>
+                            <SelectItem value="start_workflow">Start Another Workflow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {step.step_config.then_action === 'jump_to_step' && (
+                          <Input
+                            type="number"
+                            value={step.step_config.then_target || ''}
+                            onChange={(e) => updateStep(index, { 
+                              step_config: { ...step.step_config, then_target: e.target.value }
+                            })}
+                            placeholder="Step number"
+                            min={1}
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-red-600">✗ If FALSE, then...</Label>
+                        <Select
+                          value={step.step_config.else_action || 'skip'}
+                          onValueChange={(v) => updateStep(index, { 
+                            step_config: { ...step.step_config, else_action: v as any }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="continue">Continue to Next Step</SelectItem>
+                            <SelectItem value="skip">Skip Next Step</SelectItem>
+                            <SelectItem value="end_workflow">End Workflow</SelectItem>
+                            <SelectItem value="jump_to_step">Jump to Step #</SelectItem>
+                            <SelectItem value="start_workflow">Start Another Workflow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {step.step_config.else_action === 'jump_to_step' && (
+                          <Input
+                            type="number"
+                            value={step.step_config.else_target || ''}
+                            onChange={(e) => updateStep(index, { 
+                              step_config: { ...step.step_config, else_target: e.target.value }
+                            })}
+                            placeholder="Step number"
+                            min={1}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Preview of condition logic */}
+                    <div className="bg-background rounded p-3 text-sm border">
+                      <p className="text-muted-foreground">
+                        <span className="font-medium text-foreground">Logic Preview: </span>
+                        If <span className="text-primary font-medium">{step.step_config.condition_type || 'condition'}</span>
+                        {' '}<span className="text-orange-500">{step.step_config.condition_operator?.replace('_', ' ') || 'equals'}</span>
+                        {' '}"<span className="text-green-600 font-medium">{step.step_config.condition_value || '...'}</span>"
+                        {' → '}<span className="text-blue-500">{step.step_config.then_action?.replace('_', ' ') || 'continue'}</span>
+                        {', else → '}<span className="text-red-500">{step.step_config.else_action?.replace('_', ' ') || 'skip'}</span>
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

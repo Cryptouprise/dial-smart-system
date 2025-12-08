@@ -14,8 +14,15 @@ export interface WorkflowStep {
     time_of_day?: string;
     sms_content?: string;
     ai_prompt?: string;
-    condition_type?: string;
+    // Condition-specific fields
+    condition_type?: 'disposition' | 'lead_status' | 'call_outcome' | 'attempts' | 'time_of_day' | 'day_of_week' | 'tag_exists' | 'custom_field';
+    condition_operator?: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'is_empty' | 'is_not_empty';
     condition_value?: string;
+    condition_field?: string; // For custom_field type
+    then_action?: 'continue' | 'skip' | 'end_workflow' | 'jump_to_step' | 'start_workflow';
+    else_action?: 'continue' | 'skip' | 'end_workflow' | 'jump_to_step' | 'start_workflow';
+    then_target?: string; // step number or workflow id
+    else_target?: string;
   };
 }
 
