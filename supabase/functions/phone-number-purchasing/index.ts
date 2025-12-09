@@ -1,18 +1,17 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const PurchaseRequestSchema = z.object({
-  areaCode: z.string().regex(/^\d{3}$/, 'Area code must be exactly 3 digits'),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Maximum 100 numbers per order'),
-  provider: z.enum(['telnyx', 'twilio']).default('telnyx')
-});
+interface PurchaseRequest {
+  areaCode: string;
+  quantity: number;
+  provider?: string;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -36,21 +35,8 @@ serve(async (req) => {
     }
 
     if (req.method === 'POST') {
-      const body = await req.json();
-      
-      // Validate input
-      const validationResult = PurchaseRequestSchema.safeParse(body);
-      if (!validationResult.success) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'Invalid request data',
-            details: validationResult.error.issues.map(i => i.message)
-          }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      const { areaCode, quantity, provider = 'telnyx' }: PurchaseRequest = await req.json();
 
-      const { areaCode, quantity, provider } = validationResult.data;
       console.log(`Processing order: ${quantity} numbers in area code ${areaCode}`);
 
       // Create order record
@@ -232,16 +218,10 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   } catch (error) {
-    console.error('Error in phone-number-purchasing:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: 'An error occurred processing your phone number purchase',
-        code: 'PURCHASE_ERROR'
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
+    console.error('Function error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 });

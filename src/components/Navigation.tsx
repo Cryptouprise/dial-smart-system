@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare } from 'lucide-react';
+import { Home, BarChart3, Settings, HelpCircle, Key, Workflow, Menu, X } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 
 const Navigation = () => {
@@ -14,8 +14,8 @@ const Navigation = () => {
 
   const navLinks = [
     { path: '/', label: 'Dashboard', icon: Home },
-    { path: '/sms-conversations', label: 'AI SMS', icon: MessageSquare },
     { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { path: '/?tab=pipeline', label: 'Pipeline', icon: Workflow },
     { path: '/api-keys', label: 'API Keys', icon: Key },
     { path: '/settings', label: 'Settings', icon: Settings },
     { path: '/help', label: 'Help', icon: HelpCircle },

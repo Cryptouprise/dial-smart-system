@@ -12,9 +12,6 @@ import ApiKeys from "./pages/ApiKeys";
 import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
-import AiSmsConversations from "./components/AiSmsConversations";
-import AIAssistantChat from "./components/AIAssistantChat";
-import NumberWebhooks from "./pages/NumberWebhooks";
 
 const queryClient = new QueryClient();
 
@@ -27,8 +24,6 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/sms-conversations" element={<AiSmsConversations />} />
-            <Route path="/number-webhooks" element={<NumberWebhooks />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/api-keys" element={<ApiKeys />} />
@@ -37,8 +32,6 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-          {/* Global AI Assistant - available on all pages */}
-          <AIAssistantChat />
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>

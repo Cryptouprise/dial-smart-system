@@ -20,12 +20,8 @@ import {
   RefreshCw,
   TrendingUp,
   Info,
-  Activity,
-  Cloud,
-  Download
+  Activity
 } from 'lucide-react';
-
-type NumberProvider = 'twilio' | 'telnyx' | 'local';
 
 export const EnhancedSpamDashboard = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -37,8 +33,6 @@ export const EnhancedSpamDashboard = () => {
   const [approvedProfiles, setApprovedProfiles] = useState<any[]>([]);
   const [transferringNumber, setTransferringNumber] = useState<string | null>(null);
   const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
-  const [numberProviders, setNumberProviders] = useState<Map<string, NumberProvider>>(new Map());
-  const [isSyncingTelnyx, setIsSyncingTelnyx] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -97,36 +91,6 @@ export const EnhancedSpamDashboard = () => {
       
       if (error) throw error;
       
-      // Check for business logic errors in the response
-      if (data?.error) {
-        if (data.needsVoiceIntegrity) {
-          toast({
-            title: "Voice Integrity Profile Required",
-            description: "This number requires a Voice Integrity trust product for STIR/SHAKEN. Complete A2P 10DLC registration first.",
-            variant: "destructive"
-          });
-        } else if (data.notInTwilio) {
-          toast({
-            title: "Number Not in Twilio",
-            description: "Only Twilio numbers can be assigned to STIR/SHAKEN profiles. This number may be from another provider.",
-            variant: "destructive"
-          });
-        } else if (data.needsApproval) {
-          toast({
-            title: "Profile Not Approved",
-            description: data.error,
-            variant: "destructive"
-          });
-        } else {
-          toast({
-            title: "Transfer Failed",
-            description: data.error,
-            variant: "destructive"
-          });
-        }
-        return;
-      }
-      
       toast({
         title: "Number Transferred",
         description: `${phoneNumber} has been assigned to the approved STIR/SHAKEN profile`,
@@ -135,48 +99,13 @@ export const EnhancedSpamDashboard = () => {
       // Refresh the number profile
       await checkNumberProfile(phoneNumber);
       await runEnhancedScan(phoneNumber);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Transfer failed:', error);
-      
-      // Try to parse error response for helpful info
-      let errorData: any = null;
-      try {
-        if (error.context?.body) {
-          errorData = JSON.parse(error.context.body);
-        }
-      } catch {}
-      
-      if (errorData?.needsVoiceIntegrity) {
-        toast({
-          title: "Voice Integrity Profile Required",
-          description: "STIR/SHAKEN requires a Voice Integrity profile. Complete A2P 10DLC registration in Twilio Console first.",
-          variant: "destructive"
-        });
-      } else if (errorData?.notInTwilio) {
-        toast({
-          title: "Number Not in Twilio",
-          description: "Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
-          variant: "destructive"
-        });
-      } else if (errorData?.needsApproval) {
-        toast({
-          title: "Profile Not Approved",
-          description: errorData.error || "The trust profile is not yet approved.",
-          variant: "destructive"
-        });
-      } else if (errorData?.incompleteSetup) {
-        toast({
-          title: "Trust Hub Setup Incomplete",
-          description: "Your SHAKEN Business Profile needs all supporting entities linked. Check Twilio Trust Hub to complete setup.",
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Transfer Failed", 
-          description: errorData?.error || error.message || "Failed to transfer number",
-          variant: "destructive"
-        });
-      }
+      toast({
+        title: "Transfer Failed",
+        description: error.message || "Failed to transfer number",
+        variant: "destructive"
+      });
     } finally {
       setTransferringNumber(null);
     }
@@ -207,77 +136,6 @@ export const EnhancedSpamDashboard = () => {
 
     if (!error && data) {
       setNumbers(data);
-      // Check provider for each number
-      data.forEach(num => checkNumberProvider(num.number));
-    }
-  };
-
-  const checkNumberProvider = async (phoneNumber: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
-        body: { checkNumberProfile: true, phoneNumber }
-      });
-      
-      if (error) {
-        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
-        return;
-      }
-      
-      // If we got a response and the number was found in Twilio
-      if (data && !data.notInTwilio) {
-        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'twilio'));
-      } else {
-        setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
-      }
-    } catch (error) {
-      setNumberProviders(prev => new Map(prev).set(phoneNumber, 'local'));
-    }
-  };
-
-  const syncTelnyxNumbers = async () => {
-    setIsSyncingTelnyx(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
-        body: { syncTelnyxNumbers: true }
-      });
-
-      if (error) throw error;
-
-      if (data.error === 'TELNYX_API_KEY_NOT_CONFIGURED') {
-        toast({
-          title: "Telnyx API Key Required",
-          description: "Please add your TELNYX_API_KEY in project secrets to sync Telnyx numbers.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      toast({
-        title: "Telnyx Sync Complete",
-        description: `Synced ${data.imported || 0} numbers from Telnyx`,
-      });
-      
-      await loadNumbers();
-    } catch (error: any) {
-      toast({
-        title: "Sync Failed",
-        description: error.message || "Failed to sync Telnyx numbers",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSyncingTelnyx(false);
-    }
-  };
-
-  const getProviderBadge = (phoneNumber: string) => {
-    const provider = numberProviders.get(phoneNumber);
-    switch (provider) {
-      case 'twilio':
-        return <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-300"><Cloud className="h-3 w-3 mr-1" />Twilio</Badge>;
-      case 'telnyx':
-        return <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-300"><Cloud className="h-3 w-3 mr-1" />Telnyx</Badge>;
-      default:
-        return <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-600 border-slate-300"><Phone className="h-3 w-3 mr-1" />Local</Badge>;
     }
   };
 
@@ -361,42 +219,23 @@ export const EnhancedSpamDashboard = () => {
                 Real-time carrier lookups, STIR/SHAKEN attestation, and comprehensive spam analysis
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={syncTelnyxNumbers}
-                disabled={isSyncingTelnyx}
-                variant="outline"
-              >
-                {isSyncingTelnyx ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 mr-2" />
-                    Sync Telnyx
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={() => runEnhancedScan()}
-                disabled={isScanning}
-                size="lg"
-              >
-                {isScanning ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Scanning...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Scan All Numbers
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button
+              onClick={() => runEnhancedScan()}
+              disabled={isScanning}
+              size="lg"
+            >
+              {isScanning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Scanning...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Scan All Numbers
+                </>
+              )}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -564,10 +403,7 @@ export const EnhancedSpamDashboard = () => {
                           <div className="flex items-center gap-3">
                             {getLineTypeIcon(number.line_type)}
                             <div>
-                              <div className="font-mono text-lg font-semibold flex items-center gap-2">
-                                {number.number}
-                                {getProviderBadge(number.number)}
-                              </div>
+                              <div className="font-mono text-lg font-semibold">{number.number}</div>
                               <div className="text-sm text-muted-foreground flex items-center gap-2">
                                 {number.carrier_name || 'Unknown Carrier'}
                                 {number.line_type && (
@@ -626,65 +462,35 @@ export const EnhancedSpamDashboard = () => {
                             </div>
                           )}
 
-                          {/* STIR/SHAKEN Registration Options */}
-                          {numberProviders.get(number.number) === 'twilio' && (
-                            <div className="pt-2 border-t space-y-2">
-                              {needsTransfer && approvedProfiles.length > 0 ? (
-                                <Alert className="border-yellow-500 bg-yellow-500/10">
-                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                                  <AlertDescription>
-                                    <div className="space-y-2">
-                                      <p className="text-sm font-medium">Assign to STIR/SHAKEN Profile</p>
-                                      <div className="space-y-1">
-                                        {approvedProfiles.map(prof => (
-                                          <Button
-                                            key={prof.sid}
-                                            size="sm"
-                                            variant="outline"
-                                            className="w-full justify-start text-xs"
-                                            onClick={() => transferNumberToProfile(number.number, prof.sid)}
-                                            disabled={transferringNumber === number.number}
-                                          >
-                                            {transferringNumber === number.number ? (
-                                              <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                                            ) : (
-                                              <Shield className="h-3 w-3 mr-2" />
-                                            )}
-                                            {prof.friendlyName} ({prof.type === 'trust_product' ? 'Trust' : 'Customer'})
-                                          </Button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </AlertDescription>
-                                </Alert>
-                              ) : approvedProfiles.length === 0 ? (
-                                <Alert className="border-blue-500 bg-blue-500/10">
-                                  <Info className="h-4 w-4 text-blue-600" />
-                                  <AlertDescription>
-                                    <p className="text-sm font-medium mb-2">No approved STIR/SHAKEN profiles found</p>
-                                    <a 
-                                      href="https://console.twilio.com/us1/develop/trust-hub"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary text-xs hover:underline"
-                                    >
-                                      Create a Trust Hub profile →
-                                    </a>
-                                  </AlertDescription>
-                                </Alert>
-                              ) : null}
-                            </div>
-                          )}
-                          
-                          {numberProviders.get(number.number) !== 'twilio' && (
-                            <div className="pt-2 border-t">
-                              <Alert className="border-slate-500 bg-slate-500/10">
-                                <Info className="h-4 w-4 text-slate-600" />
-                                <AlertDescription className="text-xs">
-                                  STIR/SHAKEN profile assignment requires Twilio numbers. This number is from {numberProviders.get(number.number) || 'another provider'}.
-                                </AlertDescription>
-                              </Alert>
-                            </div>
+                          {needsTransfer && (
+                            <Alert className="border-yellow-500 bg-yellow-500/10">
+                              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                              <AlertDescription>
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">Number not on approved STIR/SHAKEN profile</p>
+                                  <div className="space-y-1">
+                                    <p className="text-xs text-muted-foreground">Transfer to:</p>
+                                    {approvedProfiles.map(prof => (
+                                      <Button
+                                        key={prof.sid}
+                                        size="sm"
+                                        variant="outline"
+                                        className="w-full justify-start text-xs"
+                                        onClick={() => transferNumberToProfile(number.number, prof.sid)}
+                                        disabled={transferringNumber === number.number}
+                                      >
+                                        {transferringNumber === number.number ? (
+                                          <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                        ) : (
+                                          <Shield className="h-3 w-3 mr-2" />
+                                        )}
+                                        {prof.friendlyName}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </AlertDescription>
+                            </Alert>
                           )}
 
                           {number.is_voip && (

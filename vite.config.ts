@@ -19,32 +19,4 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          // Core vendor libraries
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          // UI libraries
-          'vendor-ui': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-toast',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-label',
-          ],
-          // Chart and visualization
-          'vendor-charts': ['recharts'],
-          // Form handling
-          'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
-          // Data fetching
-          'vendor-data': ['@tanstack/react-query', '@supabase/supabase-js'],
-        },
-      },
-    },
-    chunkSizeWarningLimit: 600, // Increase from default 500
-    sourcemap: mode === 'development',
-  },
 }));
