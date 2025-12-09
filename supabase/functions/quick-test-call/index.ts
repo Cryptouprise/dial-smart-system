@@ -18,7 +18,6 @@ serve(async (req) => {
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}`);
 
   // Handle TwiML request - Twilio fetches this to get call instructions
-  // This MUST return valid TwiML XML for the call to work
   if (action === 'twiml') {
     try {
       console.log('Twilio requesting TwiML...');
@@ -33,7 +32,6 @@ serve(async (req) => {
       try {
         message = decodeURIComponent(messageParam);
       } catch (e) {
-        // If decode fails, use as-is
         console.log('Message decode note:', e);
       }
       
@@ -49,15 +47,15 @@ serve(async (req) => {
       
       const safeMessage = escapeXml(message);
       
-      // Use 'alice' voice - Twilio's default enhanced voice that works on all accounts
-      // Polly voices require additional account configuration
+      // Use no voice attribute - Twilio will use its default basic voice
+      // This is the most compatible option across all Twilio accounts
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
-    <Say voice="alice">${safeMessage}</Say>
-    <Say voice="alice">Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
+    <Say>${safeMessage}</Say>
+    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
   </Gather>
-  <Say voice="alice">We did not receive a response. Goodbye!</Say>
+  <Say>We did not receive a response. Goodbye!</Say>
   <Hangup/>
 </Response>`;
 
@@ -71,10 +69,9 @@ serve(async (req) => {
       });
     } catch (error: any) {
       console.error('TwiML generation error:', error.message);
-      // Return a simple fallback TwiML
       return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Sorry, there was an error. Please try again later.</Say>
+  <Say>Sorry, there was an error. Please try again later.</Say>
   <Hangup/>
 </Response>`, {
         status: 200,
@@ -100,20 +97,20 @@ serve(async (req) => {
       
       if (digits === '1') {
         if (transferNumber) {
-        console.log(`Transferring call to ${transferNumber}`);
+          console.log(`Transferring call to ${transferNumber}`);
           twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Great! Connecting you now. Please hold.</Say>
+  <Say>Great! Connecting you now. Please hold.</Say>
   <Dial callerId="${to}" timeout="30">
     <Number>${transferNumber}</Number>
   </Dial>
-  <Say voice="alice">Sorry, we could not connect you. Please try again later.</Say>
+  <Say>Sorry, we could not connect you. Please try again later.</Say>
   <Hangup/>
 </Response>`;
         } else {
           twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thank you for your interest! A representative will call you back shortly.</Say>
+  <Say>Thank you for your interest! A representative will call you back shortly.</Say>
   <Hangup/>
 </Response>`;
         }
@@ -121,20 +118,20 @@ serve(async (req) => {
         console.log(`Callback requested for ${from}`);
         twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Perfect! We have scheduled a callback for you. You will hear from us within 24 hours. Goodbye!</Say>
+  <Say>Perfect! We have scheduled a callback for you. You will hear from us within 24 hours. Goodbye!</Say>
   <Hangup/>
 </Response>`;
       } else if (digits === '3') {
         console.log(`Opt-out requested for ${from}`);
         twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">We have removed you from our call list. You will not receive any more calls from us. Goodbye!</Say>
+  <Say>We have removed you from our call list. You will not receive any more calls from us. Goodbye!</Say>
   <Hangup/>
 </Response>`;
       } else {
         twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Sorry, I did not understand that. Goodbye!</Say>
+  <Say>Sorry, I did not understand that. Goodbye!</Say>
   <Hangup/>
 </Response>`;
       }
@@ -149,7 +146,7 @@ serve(async (req) => {
       console.error('DTMF processing error:', error.message);
       return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">An error occurred. Goodbye!</Say>
+  <Say>An error occurred. Goodbye!</Say>
   <Hangup/>
 </Response>`, {
         status: 200,
@@ -219,7 +216,7 @@ serve(async (req) => {
           To: formattedTo,
           From: fromNumber,
           Url: twimlUrl,
-          Method: 'GET',  // Use GET method which is simpler
+          Method: 'GET',
         }),
       }
     );
