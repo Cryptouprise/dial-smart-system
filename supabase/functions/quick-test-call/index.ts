@@ -6,6 +6,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Escape XML special characters
+const escapeXml = (str: string) => {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+};
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -14,13 +24,16 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}`);
+
   // Handle TwiML request - Twilio fetches this to get call instructions
   if (action === 'twiml') {
     try {
       console.log('Twilio requesting TwiML...');
       const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
+      const transferNumber = url.searchParams.get('transfer') || '';
       
       let message = messageParam;
       try {
@@ -29,26 +42,22 @@ serve(async (req) => {
         console.log('Message decode note:', e);
       }
       
-      // Escape XML special characters
-      const escapeXml = (str: string) => {
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;');
-      };
-      
       const safeMessage = escapeXml(message);
       
-      // Simple TwiML - just say the message and hang up
+      // Build DTMF action URL
+      const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+      
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>${safeMessage}</Say>
+  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
+    <Say>${safeMessage}</Say>
+    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out.</Say>
+  </Gather>
+  <Say>We did not receive a response. Goodbye.</Say>
   <Hangup/>
 </Response>`;
 
-      console.log('Returning simple TwiML to Twilio');
+      console.log('Returning TwiML with DTMF menu');
       return new Response(twiml, {
         status: 200,
         headers: { 
@@ -69,6 +78,80 @@ serve(async (req) => {
     }
   }
 
+  // Handle DTMF webhooks from Twilio (when user presses a key)
+  if (action === 'dtmf') {
+    console.log('Processing DTMF webhook...');
+    try {
+      const formData = await req.formData();
+      const digits = formData.get('Digits')?.toString() || '';
+      const callSid = formData.get('CallSid')?.toString() || '';
+      const from = formData.get('From')?.toString() || '';
+      const to = formData.get('To')?.toString() || '';
+      const transferNumber = url.searchParams.get('transfer') || '';
+      
+      console.log(`DTMF received: digits=${digits}, callSid=${callSid}, transfer=${transferNumber}`);
+
+      let twiml = '';
+      
+      if (digits === '1') {
+        if (transferNumber) {
+          console.log(`Transferring call to ${transferNumber}`);
+          twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Connecting you now. Please hold.</Say>
+  <Dial callerId="${to}" timeout="30">
+    <Number>${transferNumber}</Number>
+  </Dial>
+  <Say>Sorry, we could not connect you. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+        } else {
+          twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Thank you for your interest. A representative will call you back shortly. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+        }
+      } else if (digits === '2') {
+        console.log(`Callback requested for ${from}`);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>We have scheduled a callback for you. You will hear from us soon. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+      } else if (digits === '3') {
+        console.log(`Opt-out requested for ${from}`);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>You have been removed from our call list. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+      } else {
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Invalid selection. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+      }
+
+      return new Response(twiml, {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+      });
+      
+    } catch (error: any) {
+      console.error('DTMF processing error:', error.message);
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>An error occurred. Goodbye.</Say>
+  <Hangup/>
+</Response>`, {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+      });
+    }
+  }
+
   // Main call initiation (POST from frontend)
   console.log('Processing call initiation...');
   try {
@@ -77,7 +160,6 @@ serve(async (req) => {
       throw new Error('Missing authorization header');
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -110,14 +192,14 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}`);
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
 
     // Build TwiML URL that Twilio will fetch
-    const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}`;
+    const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
     
     console.log('TwiML URL:', twimlUrl);
 
-    // Make Twilio call with inline TwiML using the 'Twiml' parameter
+    // Make Twilio call
     const twilioResponse = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
       {
