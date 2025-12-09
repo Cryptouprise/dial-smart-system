@@ -1,5 +1,8 @@
 project_id = "emonjusymdripmkvtttc"
 
+[functions.quick-test-call]
+verify_jwt = true
+
 [api]
 enabled = true
 port = 54321

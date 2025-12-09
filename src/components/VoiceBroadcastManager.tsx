@@ -19,6 +19,7 @@ import {
   Phone, PhoneOff, Clock, Settings, BarChart3, 
   MessageSquare, Bot, Hash, RefreshCw
 } from 'lucide-react';
+import QuickTestBroadcast from '@/components/QuickTestBroadcast';
 
 const ELEVENLABS_VOICES = [
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Default)' },
@@ -186,6 +187,8 @@ export const VoiceBroadcastManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Quick Test Section */}
+      <QuickTestBroadcast />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
