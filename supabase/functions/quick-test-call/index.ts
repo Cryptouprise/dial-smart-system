@@ -15,9 +15,35 @@ serve(async (req) => {
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
 
-  console.log(`Request received - Method: ${req.method}, Action: ${action || 'initiate'}`);
+  console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}, URL: ${req.url}`);
 
-  // Handle Twilio DTMF webhooks
+  // Handle TwiML request (Twilio fetches this URL to get initial instructions)
+  if (action === 'twiml') {
+    console.log('Returning TwiML for initial call...');
+    const message = url.searchParams.get('message') || 'Hello, this is a test call.';
+    const transferNumber = url.searchParams.get('transfer') || '';
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    
+    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+    
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
+    <Say voice="Polly.Joanna">${message}</Say>
+    <Say voice="Polly.Joanna">Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
+  </Gather>
+  <Say voice="Polly.Joanna">We did not receive a response. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+
+    console.log('TwiML response:', twiml);
+    return new Response(twiml, {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml' },
+    });
+  }
+
+  // Handle DTMF webhooks from Twilio
   if (action === 'dtmf') {
     console.log('Processing DTMF webhook...');
     try {
@@ -28,13 +54,13 @@ serve(async (req) => {
       const to = formData.get('To')?.toString() || '';
       const transferNumber = url.searchParams.get('transfer') || '';
       
-      console.log(`DTMF: digits=${digits}, callSid=${callSid}, from=${from}, to=${to}, transfer=${transferNumber}`);
+      console.log(`DTMF received: digits=${digits}, callSid=${callSid}, from=${from}, to=${to}, transfer=${transferNumber}`);
 
       let twimlResponse = '';
       
       if (digits === '1') {
         if (transferNumber) {
-          console.log(`Transferring to ${transferNumber}`);
+          console.log(`Transferring call to ${transferNumber}`);
           twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">Great! Connecting you now. Please hold.</Say>
@@ -73,14 +99,14 @@ serve(async (req) => {
 </Response>`;
       }
 
-      console.log('Returning TwiML response for DTMF');
+      console.log('Returning DTMF TwiML response');
       return new Response(twimlResponse, {
         status: 200,
         headers: { 'Content-Type': 'text/xml' },
       });
       
     } catch (error: any) {
-      console.error('DTMF error:', error.message);
+      console.error('DTMF processing error:', error.message);
       return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna">An error occurred. Goodbye!</Say>
@@ -97,15 +123,15 @@ serve(async (req) => {
     console.log('Processing status webhook...');
     try {
       const formData = await req.formData();
-      console.log(`Status: ${formData.get('CallStatus')}, SID: ${formData.get('CallSid')}`);
+      console.log(`Call status update: ${formData.get('CallStatus')}, SID: ${formData.get('CallSid')}`);
       return new Response('OK', { status: 200 });
     } catch (error) {
-      console.error('Status error:', error);
+      console.error('Status processing error:', error);
       return new Response('OK', { status: 200 });
     }
   }
 
-  // Main call initiation
+  // Main call initiation (POST from frontend)
   console.log('Processing call initiation...');
   try {
     const authHeader = req.headers.get('Authorization');
@@ -133,7 +159,7 @@ serve(async (req) => {
     const { toNumber, fromNumber, message, transferNumber } = await req.json();
 
     if (!toNumber || !fromNumber || !message) {
-      throw new Error('Missing required fields');
+      throw new Error('Missing required fields: toNumber, fromNumber, message');
     }
 
     // Format phone numbers
@@ -146,25 +172,14 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer}`);
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
 
-    // Build callback URL for DTMF
-    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
+    // Build the TwiML URL that Twilio will fetch
+    const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
     
-    console.log(`DTMF callback URL: ${dtmfUrl}`);
+    console.log(`TwiML URL: ${twimlUrl}`);
 
-    // Create TwiML
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
-    <Say voice="Polly.Joanna">${message}</Say>
-    <Say voice="Polly.Joanna">Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
-  </Gather>
-  <Say voice="Polly.Joanna">We did not receive a response. Goodbye!</Say>
-  <Hangup/>
-</Response>`;
-
-    // Make Twilio call
+    // Make Twilio call using URL parameter (not inline TwiML)
     const twilioResponse = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
       {
@@ -176,21 +191,21 @@ serve(async (req) => {
         body: new URLSearchParams({
           To: formattedTo,
           From: fromNumber,
-          Twiml: twiml,
+          Url: twimlUrl,
         }),
       }
     );
 
     if (!twilioResponse.ok) {
       const errorText = await twilioResponse.text();
-      console.error('Twilio error:', errorText);
+      console.error('Twilio API error:', errorText);
       throw new Error(`Twilio error: ${errorText}`);
     }
 
     const result = await twilioResponse.json();
     console.log('Call initiated successfully:', result.sid);
 
-    // Log call (non-blocking, ignore errors)
+    // Log call (non-blocking)
     supabase.from('call_logs').insert({
       user_id: user.id,
       phone_number: formattedTo,
