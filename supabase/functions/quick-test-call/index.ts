@@ -44,19 +44,19 @@ serve(async (req) => {
       
       const safeMessage = escapeXml(message);
       
-      // Build DTMF action URL - put action last to avoid encoding issues
+      // Use separate DTMF handler function for webhook
       const dtmfUrl = transferNumber 
-        ? `${supabaseUrl}/functions/v1/quick-test-call?transfer=${encodeURIComponent(transferNumber)}&action=dtmf`
-        : `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf`;
+        ? `${supabaseUrl}/functions/v1/twilio-dtmf-handler?transfer=${encodeURIComponent(transferNumber)}`
+        : `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
       
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
     <Say>${safeMessage}</Say>
     <Pause length="1"/>
-    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out.</Say>
+    <Say>Press 1 to speak with someone. Press 2 for a callback. Press 3 to opt out.</Say>
   </Gather>
-  <Say>We did not receive a response. Goodbye.</Say>
+  <Say>No response received. Goodbye.</Say>
   <Hangup/>
 </Response>`;
 
@@ -81,79 +81,7 @@ serve(async (req) => {
     }
   }
 
-  // Handle DTMF webhooks from Twilio (when user presses a key)
-  if (action === 'dtmf') {
-    console.log('Processing DTMF webhook...');
-    try {
-      const formData = await req.formData();
-      const digits = formData.get('Digits')?.toString() || '';
-      const callSid = formData.get('CallSid')?.toString() || '';
-      const from = formData.get('From')?.toString() || '';
-      const to = formData.get('To')?.toString() || '';
-      const transferNumber = url.searchParams.get('transfer') || '';
-      
-      console.log(`DTMF received: digits=${digits}, callSid=${callSid}, transfer=${transferNumber}`);
-
-      let twiml = '';
-      
-      if (digits === '1') {
-        if (transferNumber) {
-          console.log(`Transferring call to ${transferNumber}`);
-          twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Connecting you now. Please hold.</Say>
-  <Dial callerId="${to}" timeout="30">
-    <Number>${transferNumber}</Number>
-  </Dial>
-  <Say>Sorry, we could not connect you. Goodbye.</Say>
-  <Hangup/>
-</Response>`;
-        } else {
-          twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Thank you for your interest. A representative will call you back shortly. Goodbye.</Say>
-  <Hangup/>
-</Response>`;
-        }
-      } else if (digits === '2') {
-        console.log(`Callback requested for ${from}`);
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>We have scheduled a callback for you. You will hear from us soon. Goodbye.</Say>
-  <Hangup/>
-</Response>`;
-      } else if (digits === '3') {
-        console.log(`Opt-out requested for ${from}`);
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>You have been removed from our call list. Goodbye.</Say>
-  <Hangup/>
-</Response>`;
-      } else {
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Invalid selection. Goodbye.</Say>
-  <Hangup/>
-</Response>`;
-      }
-
-      return new Response(twiml, {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-      });
-      
-    } catch (error: any) {
-      console.error('DTMF processing error:', error.message);
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>An error occurred. Goodbye.</Say>
-  <Hangup/>
-</Response>`, {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-      });
-    }
-  }
+  // DTMF handling moved to separate twilio-dtmf-handler function
 
   // Main call initiation (POST from frontend)
   console.log('Processing call initiation...');
