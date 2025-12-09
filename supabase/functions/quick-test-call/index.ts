@@ -11,6 +11,113 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const url = new URL(req.url);
+  const action = url.searchParams.get('action');
+
+  // Handle Twilio webhooks (DTMF responses)
+  if (action === 'dtmf') {
+    try {
+      const formData = await req.formData();
+      const digits = formData.get('Digits')?.toString() || '';
+      const callSid = formData.get('CallSid')?.toString() || '';
+      const from = formData.get('From')?.toString() || '';
+      const to = formData.get('To')?.toString() || '';
+      
+      console.log(`DTMF received: ${digits} for call ${callSid}`);
+      console.log(`From: ${from}, To: ${to}`);
+
+      // Get transfer number from the CallUrl or default
+      const transferNumber = url.searchParams.get('transfer') || '';
+
+      let twimlResponse = '';
+      
+      switch (digits) {
+        case '1':
+          // Transfer to agent/AI number
+          if (transferNumber) {
+            console.log(`Transferring call to ${transferNumber}`);
+            twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Great! Connecting you now. Please hold.</Say>
+  <Dial callerId="${to}" timeout="30">
+    <Number>${transferNumber}</Number>
+  </Dial>
+  <Say voice="Polly.Joanna">Sorry, we couldn't connect you. Please try again later.</Say>
+  <Hangup/>
+</Response>`;
+          } else {
+            twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Thank you for your interest! A representative will call you back shortly.</Say>
+  <Hangup/>
+</Response>`;
+          }
+          break;
+          
+        case '2':
+          // Schedule callback
+          console.log(`Callback requested for ${from}`);
+          twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Perfect! We've scheduled a callback for you. You'll hear from us within 24 hours. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+          break;
+          
+        case '3':
+          // Opt out / DNC
+          console.log(`Opt-out requested for ${from}`);
+          twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">We've removed you from our call list. You will not receive any more calls from us. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+          break;
+          
+        default:
+          // Invalid option
+          twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Sorry, I didn't understand that. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+      }
+
+      return new Response(twimlResponse, {
+        headers: { 'Content-Type': 'text/xml' },
+      });
+      
+    } catch (error: any) {
+      console.error('DTMF handling error:', error);
+      const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">An error occurred. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+      return new Response(errorTwiml, {
+        headers: { 'Content-Type': 'text/xml' },
+      });
+    }
+  }
+
+  // Handle status callbacks
+  if (action === 'status') {
+    try {
+      const formData = await req.formData();
+      const callSid = formData.get('CallSid')?.toString() || '';
+      const callStatus = formData.get('CallStatus')?.toString() || '';
+      const callDuration = formData.get('CallDuration')?.toString() || '0';
+      
+      console.log(`Call ${callSid} status: ${callStatus}, duration: ${callDuration}s`);
+      
+      return new Response('OK', { status: 200 });
+    } catch (error) {
+      console.error('Status webhook error:', error);
+      return new Response('OK', { status: 200 });
+    }
+  }
+
+  // Main call initiation
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -35,7 +142,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { toNumber, fromNumber, message } = await req.json();
+    const { toNumber, fromNumber, message, transferNumber } = await req.json();
 
     if (!toNumber || !fromNumber || !message) {
       throw new Error('Missing required fields: toNumber, fromNumber, message');
@@ -44,16 +151,27 @@ serve(async (req) => {
     // Format numbers
     const formattedTo = toNumber.replace(/\D/g, '');
     const formattedToE164 = formattedTo.startsWith('1') ? `+${formattedTo}` : `+1${formattedTo}`;
+    
+    // Format transfer number if provided
+    let formattedTransfer = '';
+    if (transferNumber) {
+      const cleanTransfer = transferNumber.replace(/\D/g, '');
+      formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
+    }
 
     console.log(`Making test call from ${fromNumber} to ${formattedToE164}`);
+    console.log(`Transfer number: ${formattedTransfer || 'Not configured'}`);
     console.log(`Message: ${message}`);
+
+    // Build the DTMF action URL with transfer number
+    const dtmfActionUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
 
     // Create TwiML for the call with DTMF gathering
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="dtmf" numDigits="1" action="${supabaseUrl}/functions/v1/quick-test-call?action=dtmf" method="POST" timeout="15">
+  <Gather input="dtmf" numDigits="1" action="${dtmfActionUrl}" method="POST" timeout="15">
     <Say voice="Polly.Joanna">${message}</Say>
-    <Say voice="Polly.Joanna">Press 1 if you are interested. Press 2 to schedule a callback. Press 3 to opt out.</Say>
+    <Say voice="Polly.Joanna">Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We didn't receive a response. Goodbye!</Say>
   <Hangup/>
@@ -93,7 +211,7 @@ serve(async (req) => {
       phone_number: formattedToE164,
       caller_id: fromNumber,
       status: 'initiated',
-      notes: `Test broadcast: ${message}`,
+      notes: `Test broadcast: ${message}${formattedTransfer ? ` | Transfer: ${formattedTransfer}` : ''}`,
     });
 
     return new Response(
@@ -102,6 +220,7 @@ serve(async (req) => {
         callSid: result.sid,
         to: formattedToE164,
         from: fromNumber,
+        transferNumber: formattedTransfer || null,
         message: 'Test call initiated! You should receive a call shortly.',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
