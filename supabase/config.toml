@@ -1,7 +1,7 @@
 project_id = "emonjusymdripmkvtttc"
 
 [functions.quick-test-call]
-verify_jwt = true
+verify_jwt = false
 
 [api]
 enabled = true
