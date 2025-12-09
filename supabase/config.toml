@@ -143,3 +143,6 @@ verify_jwt = false
 
 [functions.telnyx-webhook]
 verify_jwt = false
+
+[functions.ai-error-analyzer]
+verify_jwt = true
