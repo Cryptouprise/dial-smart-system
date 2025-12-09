@@ -17,69 +17,6 @@ serve(async (req) => {
 
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}`);
 
-  // Handle TwiML request - Twilio fetches this to get call instructions
-  if (action === 'twiml') {
-    try {
-      console.log('Twilio requesting TwiML...');
-      const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
-      const transferNumber = url.searchParams.get('transfer') || '';
-      
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
-      
-      // Decode URI encoded message
-      let message = messageParam;
-      try {
-        message = decodeURIComponent(messageParam);
-      } catch (e) {
-        console.log('Message decode note:', e);
-      }
-      
-      // Escape XML special characters
-      const escapeXml = (str: string) => {
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;');
-      };
-      
-      const safeMessage = escapeXml(message);
-      
-      // Use no voice attribute - Twilio will use its default basic voice
-      // This is the most compatible option across all Twilio accounts
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
-    <Say>${safeMessage}</Say>
-    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
-  </Gather>
-  <Say>We did not receive a response. Goodbye!</Say>
-  <Hangup/>
-</Response>`;
-
-      console.log('Returning TwiML to Twilio');
-      return new Response(twiml, {
-        status: 200,
-        headers: { 
-          'Content-Type': 'text/xml; charset=utf-8',
-          'Cache-Control': 'no-cache'
-        },
-      });
-    } catch (error: any) {
-      console.error('TwiML generation error:', error.message);
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Sorry, there was an error. Please try again later.</Say>
-  <Hangup/>
-</Response>`, {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-      });
-    }
-  }
-
   // Handle DTMF webhooks from Twilio
   if (action === 'dtmf') {
     console.log('Processing DTMF webhook...');
@@ -198,12 +135,23 @@ serve(async (req) => {
 
     console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
 
-    // Build TwiML URL that Twilio will fetch
-    const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
-    
-    console.log('TwiML URL:', twimlUrl);
+    // Build the DTMF action URL for button presses
+    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
 
-    // Make Twilio call
+    // Create inline TwiML - this is passed directly to Twilio, no URL fetch needed
+    const inlineTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
+    <Say>${message}</Say>
+    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
+  </Gather>
+  <Say>We did not receive a response. Goodbye!</Say>
+  <Hangup/>
+</Response>`;
+
+    console.log('Using inline TwiML (no URL fetch)');
+
+    // Make Twilio call with inline TwiML using the 'Twiml' parameter
     const twilioResponse = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
       {
@@ -215,8 +163,7 @@ serve(async (req) => {
         body: new URLSearchParams({
           To: formattedTo,
           From: fromNumber,
-          Url: twimlUrl,
-          Method: 'GET',
+          Twiml: inlineTwiml,  // Use Twiml parameter for inline TwiML
         }),
       }
     );
