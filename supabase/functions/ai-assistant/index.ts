@@ -1398,7 +1398,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           lead_id: lead_id,
           status: 'pending'
         }));
-        await supabase.from('broadcast_queue').insert(queueItems);
+        const { error: queueError } = await supabase.from('broadcast_queue').insert(queueItems);
+        if (queueError) {
+          return { success: false, message: `Failed to queue leads: ${queueError.message}` };
+        }
       }
       
       return { 
@@ -1510,7 +1513,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         tier: agent.tier,
         calls: agent.total_calls,
         conversions: agent.conversions,
-        conversion_rate: (agent.conversions / agent.total_calls * 100).toFixed(1) + '%'
+        conversion_rate: agent.total_calls > 0 
+          ? (agent.conversions / agent.total_calls * 100).toFixed(1) + '%'
+          : '0%'
       }));
       
       return { 

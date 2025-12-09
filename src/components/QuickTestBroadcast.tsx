@@ -24,7 +24,7 @@ const QuickTestBroadcast: React.FC = () => {
   const [callResult, setCallResult] = useState<any>(null);
 
   const [formData, setFormData] = useState({
-    toNumber: '214-529-1531',
+    toNumber: '',
     fromNumber: '',
     transferNumber: '',
     message: 'Hello! This is a test call. We are selling solar panels in your area. Are you interested in saving money on your electricity bill?',
