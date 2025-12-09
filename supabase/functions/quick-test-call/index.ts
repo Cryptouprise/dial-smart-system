@@ -23,8 +23,9 @@ serve(async (req) => {
     const message = url.searchParams.get('message') || 'Hello, this is a test call.';
     const transferNumber = url.searchParams.get('transfer') || '';
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const baseUrl = `${supabaseUrl}/functions/v1/quick-test-call`;
     
-    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+    const dtmfUrl = `${baseUrl}?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
     
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
