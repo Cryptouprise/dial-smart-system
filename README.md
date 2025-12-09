@@ -1,60 +1,4 @@
-# Dial Smart System - World-Class Predictive Dialer
-
-A comprehensive, AI-powered predictive dialing system with industry-leading features comparable to VICIdial, Caller.io, and Call.io.
-
-## 🎯 Key Features
-
-### Real-Time Concurrency Management
-- **Live concurrent call tracking** with automatic updates every 10 seconds
-- **Visual utilization monitoring** with color-coded progress bars
-- **Configurable limits**: max concurrent calls, CPM, calls per agent
-- **Capacity warnings** and intelligent recommendations
-- **Active call list** with real-time status indicators
-
-### AI Predictive Dialing Engine
-- **VICIdial-inspired algorithms** for optimal dialing ratios
-- **Adaptive pacing** based on agent availability and performance
-- **Real-time recommendations**: Conservative/Moderate/Aggressive strategies
-- **Historical learning** from past performance data
-- **FCC compliance monitoring** (abandonment rate <3%)
-
-### Advanced Dialer Features
-- **Answer Machine Detection (AMD)**: Automatic voicemail filtering, ~30% efficiency gain
-- **Local Presence Dialing**: Area code matching for up to 40% higher answer rates
-- **Time Zone Compliance**: TCPA/FCC compliant calling windows
-- **Do Not Call (DNC) Management**: Automatic list scrubbing and validation
-
-### Performance Monitoring
-- **Real-time performance score** (0-100) based on multiple metrics
-- **Live metrics dashboard**: answer rate, abandonment rate, utilization, CPM
-- **Performance charts**: Answer rate trends, concurrency analysis
-- **Intelligent insights**: Automatic recommendations and compliance alerts
-
-### Multi-Carrier Provider Integration
-- **Multiple provider support**: Retell AI, Telnyx, and Twilio
-- **Intelligent carrier routing**: Auto-select best provider based on capabilities
-- **STIR/SHAKEN compliance**: Verified caller ID with attestation
-- **SMS messaging**: Send/receive with templates and opt-out handling
-- **Ringless Voicemail (RVM)**: Queue and deliver voicemails without ringing
-- **Provider management UI**: Easy setup and number import
-
-## 📚 Documentation
-
-See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup guide including:
-- Environment variable configuration
-- Provider credential setup
-- Number import and routing configuration
-- STIR/SHAKEN and SMS setup
-- API reference and troubleshooting
-
-See [PREDICTIVE_DIALING_GUIDE.md](./PREDICTIVE_DIALING_GUIDE.md) for comprehensive documentation including:
-- Feature descriptions and usage examples
-- Integration guide with code samples
-- Best practices and optimization tips
-- Compliance guidelines (TCPA/FTC/FCC)
-- Troubleshooting and performance tuning
-
-## 🚀 Getting Started
+# Welcome to your Lovable project
 
 ## Project info
 
@@ -115,40 +59,147 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
-- Supabase (Backend & Database)
-- Recharts (Data Visualization)
 
-## Predictive Dialing System Components
+## Supabase Edge Functions and Integrations
 
-### New Components (4)
-1. **ConcurrencyMonitor**: Real-time concurrent call tracking and management
-2. **PredictiveDialingEngine**: AI-powered dialing algorithm visualization
-3. **AdvancedDialerSettings**: Configuration for AMD, local presence, timezone, DNC
-4. **DialingPerformanceDashboard**: Performance scoring and intelligent insights
+This project includes several Supabase Edge Functions for outbound calling and integrations with Twilio and Retell AI.
 
-### New Hooks (3)
-1. **useConcurrencyManager**: Manages concurrent calls and capacity
-2. **usePredictiveDialingAlgorithm**: Implements predictive dialing algorithms
-3. **useAdvancedDialerFeatures**: Handles advanced dialer features
+### Required Environment Variables
 
-### Database Schema (8 new tables)
-- `system_settings`: Concurrency configuration
-- `predictive_dialing_stats`: Performance tracking
-- `dialing_queue_priorities`: Priority management
-- `advanced_dialer_settings`: Feature configuration
-- `dnc_list`: Do Not Call list
-- `timezone_rules`: Custom calling windows
-- `caller_id_pool`: Local presence management
-- `contact_list_filters`: List optimization
+The following environment variables must be set in your Supabase project:
 
-## 📈 Performance Improvements
+1. **Twilio Credentials** (required for outbound calling):
+   - `TWILIO_ACCOUNT_SID` - Your Twilio Account SID
+   - `TWILIO_AUTH_TOKEN` - Your Twilio Auth Token
 
-- **Answer Rates**: +40% with local presence dialing
-- **Agent Efficiency**: +30% with AMD filtering
-- **Compliance**: 100% TCPA/FTC/FCC compliance
-- **Monitoring**: 3x better with real-time scoring
-- **Automation**: AI-powered recommendations
-- **Capacity**: Automatic concurrency management
+2. **Retell AI Credentials** (required for AI-powered calling):
+   - `RETELL_AI_API_KEY` - Your Retell AI API Key
+
+3. **Supabase Configuration** (automatically set):
+   - `SUPABASE_URL` - Your Supabase project URL
+   - `SUPABASE_ANON_KEY` - Your Supabase anonymous key
+   - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
+
+### Setting Environment Variables
+
+To set environment variables in Supabase:
+
+```sh
+# Using Supabase CLI
+supabase secrets set TWILIO_ACCOUNT_SID=your_account_sid
+supabase secrets set TWILIO_AUTH_TOKEN=your_auth_token
+supabase secrets set RETELL_AI_API_KEY=your_retell_api_key
+```
+
+Or use the Supabase Dashboard:
+1. Go to Project Settings > Edge Functions
+2. Add secrets under "Function Secrets"
+
+### Deploying Edge Functions
+
+Deploy all edge functions to your Supabase project:
+
+```sh
+# Deploy all functions
+supabase functions deploy
+
+# Or deploy individual functions
+supabase functions deploy retell-credentials-check
+supabase functions deploy twilio-termination-proxy
+supabase functions deploy twilio-outbound-call
+supabase functions deploy twilio-integration
+supabase functions deploy outbound-calling
+```
+
+### Testing Edge Functions
+
+#### Test Credentials Check
+
+```bash
+curl -X POST https://your-project.supabase.co/functions/v1/retell-credentials-check \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json"
+```
+
+Expected response:
+```json
+{
+  "retell_configured": true,
+  "twilio_configured": true,
+  "message": "All credentials are configured and valid"
+}
+```
+
+#### Test Twilio Outbound Call
+
+```bash
+curl -X POST https://your-project.supabase.co/functions/v1/twilio-outbound-call \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+14155551234",
+    "from": "+14155556789",
+    "twiml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Say>Hello World</Say></Response>"
+  }'
+```
+
+Expected response:
+```json
+{
+  "sid": "CAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "status": "queued",
+  "to": "+14155551234",
+  "from": "+14155556789"
+}
+```
+
+#### Test Outbound Calling (Retell AI)
+
+```bash
+curl -X POST https://your-project.supabase.co/functions/v1/outbound-calling \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "create_call",
+    "phoneNumber": "+14155551234",
+    "callerId": "+14155556789",
+    "agentId": "your-retell-agent-id"
+  }'
+```
+
+Expected response:
+```json
+{
+  "call_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "call_log_id": "uuid",
+  "status": "created"
+}
+```
+
+### Running Integration Tests
+
+The project includes an integration test script that validates the end-to-end flow:
+
+```sh
+# Set required environment variables
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_ANON_KEY="your-anon-key"
+export SUPABASE_ACCESS_TOKEN="your-jwt-token"
+export TEST_TO_NUMBER="+14155551234"
+export TEST_FROM_NUMBER="+14155556789"
+
+# Run the test script
+node scripts/integration/test-outbound-call.js
+```
+
+The test script will:
+1. Validate all environment variables are set
+2. Test the credentials check endpoint
+3. Test creating an outbound call (if credentials are valid)
+4. Display detailed request/response information
 
 ## How can I deploy this project?
 

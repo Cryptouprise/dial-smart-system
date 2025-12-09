@@ -51,7 +51,6 @@ const GoHighLevelManager = () => {
     testConnection,
     saveGHLCredentials,
     getGHLCredentials,
-    deleteGHLCredentials,
     syncContacts,
     getPipelines,
     getContacts,
@@ -63,7 +62,7 @@ const GoHighLevelManager = () => {
   }, []);
 
   const loadSettings = async () => {
-    const savedCreds = await getGHLCredentials();
+    const savedCreds = getGHLCredentials();
     if (savedCreds) {
       setCredentials({
         apiKey: savedCreds.apiKey,
@@ -79,6 +78,16 @@ const GoHighLevelManager = () => {
         loadContacts();
       }
     }
+
+    const savedSyncSettings = localStorage.getItem('ghl-sync-settings');
+    if (savedSyncSettings) {
+      setSyncSettings(JSON.parse(savedSyncSettings));
+    }
+
+    const savedStats = localStorage.getItem('ghl-sync-stats');
+    if (savedStats) {
+      setSyncStats(JSON.parse(savedStats));
+    }
   };
 
   const handleConnect = async () => {
@@ -93,13 +102,11 @@ const GoHighLevelManager = () => {
 
     const result = await testConnection(credentials);
     if (result) {
-      const saved = await saveGHLCredentials(credentials);
-      if (saved) {
-        setIsConnected(true);
-        setConnectionData(result);
-        loadPipelines();
-        loadContacts();
-      }
+      saveGHLCredentials(credentials);
+      setIsConnected(true);
+      setConnectionData(result);
+      loadPipelines();
+      loadContacts();
     }
   };
 
@@ -127,6 +134,7 @@ const GoHighLevelManager = () => {
         errors: result.errors || 0
       };
       setSyncStats(newStats);
+      localStorage.setItem('ghl-sync-stats', JSON.stringify(newStats));
       loadContacts(); // Refresh contacts after sync
     }
   };
@@ -155,19 +163,21 @@ const GoHighLevelManager = () => {
   };
 
   const saveSyncSettings = () => {
-    // Sync settings are non-sensitive, can stay in component state
+    localStorage.setItem('ghl-sync-settings', JSON.stringify(syncSettings));
     toast({
       title: "Settings Saved",
       description: "Go High Level sync settings have been saved",
     });
   };
 
-  const handleDisconnect = async () => {
-    await deleteGHLCredentials();
+  const handleDisconnect = () => {
     setIsConnected(false);
     setConnectionData(null);
     setCredentials({ apiKey: '', locationId: '', webhookKey: '' });
     setContacts([]);
+    const creds = JSON.parse(localStorage.getItem('api-credentials') || '[]');
+    const filtered = creds.filter((c: any) => c.service !== 'gohighlevel');
+    localStorage.setItem('api-credentials', JSON.stringify(filtered));
     toast({
       title: "Disconnected",
       description: "Go High Level connection has been removed",

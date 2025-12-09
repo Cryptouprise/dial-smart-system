@@ -101,19 +101,15 @@ serve(async (req) => {
       const body = await req.json();
       
       if (body.action === 'configure') {
-        // Validate input
-        const validationResult = YellowstoneConfigSchema.safeParse(body);
-        if (!validationResult.success) {
-          return new Response(
-            JSON.stringify({ 
-              error: 'Invalid configuration data',
-              details: validationResult.error.issues.map(i => i.message)
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        const { apiKey, webhookUrl, autoSyncEnabled, syncIntervalMinutes }: YellowstoneConfig = body;
+        
+        // Validate required fields
+        if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+          return new Response(JSON.stringify({ error: 'Valid API key is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
-
-        const { apiKey, webhookUrl, autoSyncEnabled, syncIntervalMinutes } = validationResult.data;
 
         // Encrypt API key (basic encryption - use proper encryption in production)
         const encryptedApiKey = btoa(apiKey); // Simple base64 encoding

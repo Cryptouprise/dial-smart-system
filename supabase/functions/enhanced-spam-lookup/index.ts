@@ -17,7 +17,6 @@ interface SpamLookupRequest {
   listApprovedProfiles?: boolean;
   transferToProfile?: boolean;
   customerProfileSid?: string;
-  syncTelnyxNumbers?: boolean;
 }
 
 serve(async (req) => {
@@ -31,16 +30,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const authHeader = req.headers.get('Authorization');
-    let userId: string | null = null;
-    
-    if (authHeader) {
-      const { data: { user }, error } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-      if (!error && user) {
-        userId = user.id;
-      }
-    }
-
     const { 
       phoneNumberId, 
       phoneNumber, 
@@ -50,14 +39,8 @@ serve(async (req) => {
       checkNumberProfile,
       listApprovedProfiles,
       transferToProfile,
-      customerProfileSid,
-      syncTelnyxNumbers
+      customerProfileSid
     }: SpamLookupRequest = await req.json();
-
-    // Sync numbers from Telnyx
-    if (syncTelnyxNumbers) {
-      return await syncNumbersFromTelnyx(supabase, userId);
-    }
 
     // Check Twilio registration status
     if (checkRegistrationStatus) {
@@ -341,7 +324,7 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     const e164Number = cleanNumber.startsWith('1') ? `+${cleanNumber}` : `+1${cleanNumber}`;
     
     // Check recent calls FROM this number to see attestation history
-    const callsUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(e164Number)}&PageSize=50`;
+    const callsUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(e164Number)}&PageSize=20`;
     
     const encoder = new TextEncoder();
     const credentials = encoder.encode(`${accountSid}:${authToken}`);
@@ -359,30 +342,90 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
 
     const data = await response.json();
     
-    // Analyze calls for StirVerstat (STIR/SHAKEN attestation)
-    const callsWithAttestation = data.calls?.filter((call: any) => call.answered_by !== 'machine_start');
-    
-    if (!callsWithAttestation || callsWithAttestation.length === 0) {
+    if (!data.calls || data.calls.length === 0) {
       return {
         level: 'not_verified' as 'A' | 'B' | 'C' | 'not_verified',
         checked: true,
-        note: 'No call history found. Make outbound calls to verify STIR/SHAKEN attestation. Register with Twilio A2P 10DLC for best attestation.',
+        note: 'No call history found. Make outbound calls to verify STIR/SHAKEN attestation. Register number with Twilio Trust Hub for A-level attestation.',
         registrationRequired: true,
         callCount: 0
       };
     }
 
-    // Check the most recent attestation levels
+    // Fetch detailed call records to get StirVerstat (STIR/SHAKEN attestation)
+    // StirVerstat values: TN-Validation-Passed-A, TN-Validation-Passed-B, TN-Validation-Passed-C, TN-Validation-Failed, No-TN-Validation
     let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
     let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
+    let checkedCalls = 0;
+    
+    // Check up to 10 most recent calls for attestation
+    for (const call of data.calls.slice(0, 10)) {
+      try {
+        const callDetailUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${call.sid}.json`;
+        const callDetailResponse = await fetch(callDetailUrl, {
+          headers: {
+            'Authorization': `Basic ${base64Creds}`
+          }
+        });
+
+        if (callDetailResponse.ok) {
+          const callDetail = await callDetailResponse.json();
+          checkedCalls++;
+          
+          // Parse StirVerstat (STIR/SHAKEN attestation level)
+          const stirVerstat = callDetail.stir_verstat || callDetail.StirVerstat;
+          
+          if (stirVerstat) {
+            if (stirVerstat.includes('Passed-A') || stirVerstat === 'TN-Validation-Passed-A') {
+              attestationCounts.A++;
+              if (bestAttestation === 'not_verified' || bestAttestation === 'C' || bestAttestation === 'B') {
+                bestAttestation = 'A';
+              }
+            } else if (stirVerstat.includes('Passed-B') || stirVerstat === 'TN-Validation-Passed-B') {
+              attestationCounts.B++;
+              if (bestAttestation === 'not_verified' || bestAttestation === 'C') {
+                bestAttestation = 'B';
+              }
+            } else if (stirVerstat.includes('Passed-C') || stirVerstat === 'TN-Validation-Passed-C') {
+              attestationCounts.C++;
+              if (bestAttestation === 'not_verified') {
+                bestAttestation = 'C';
+              }
+            } else if (stirVerstat.includes('Failed')) {
+              attestationCounts.failed++;
+            } else {
+              attestationCounts.none++;
+            }
+          } else {
+            attestationCounts.none++;
+          }
+        }
+      } catch (callError) {
+        console.error('Error fetching call detail:', callError);
+      }
+    }
+
+    let note = '';
+    if (checkedCalls === 0) {
+      note = `Found ${data.calls.length} calls but couldn't fetch attestation details. Check Twilio console for StirVerstat values.`;
+    } else if (bestAttestation === 'A') {
+      note = `✅ A-Level attestation (${attestationCounts.A}/${checkedCalls} calls). Number is registered with Trust Hub and has full caller ID authority.`;
+    } else if (bestAttestation === 'B') {
+      note = `⚠️ B-Level attestation (${attestationCounts.B}/${checkedCalls} calls). Number authenticated but not fully verified. Register with Trust Hub for A-level.`;
+    } else if (bestAttestation === 'C') {
+      note = `⚠️ C-Level attestation (${attestationCounts.C}/${checkedCalls} calls). Gateway-level only. Register number with Twilio Trust Hub for better attestation.`;
+    } else {
+      note = `❌ No STIR/SHAKEN attestation found (${checkedCalls} calls checked). Register number with Twilio Trust Hub to get A-level attestation.`;
+    }
 
     return {
       level: bestAttestation,
       checked: true,
-      note: `Found ${callsWithAttestation.length} calls. STIR/SHAKEN attestation requires: 1) Twilio A2P 10DLC registration, 2) CNAM registration. Check individual call logs for StirVerstat values.`,
-      registrationRequired: true,
-      callCount: callsWithAttestation.length,
-      attestationCounts
+      note,
+      registrationRequired: bestAttestation !== 'A',
+      callCount: data.calls.length,
+      attestationCounts,
+      checkedCallDetails: checkedCalls
     };
 
   } catch (error) {
@@ -390,7 +433,7 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     return {
       level: 'not_verified' as 'A' | 'B' | 'C' | 'not_verified',
       checked: false,
-      note: `Error checking attestation: ${error.message}. Ensure Twilio A2P 10DLC and CNAM registration completed.`,
+      note: `Error checking attestation: ${error.message}. Ensure number is registered with Twilio Trust Hub.`,
       registrationRequired: true
     };
   }
@@ -560,6 +603,192 @@ function getRegistrationRecommendation(hasTrustProduct: boolean, approvedBrands:
   return `✅ Fully registered! You have ${verifiedTrustProducts} verified business profile(s) and ${approvedBrands} approved brand(s). STIR/SHAKEN attestation will be applied to your outbound calls.`;
 }
 
+async function checkNumberProfile(phoneNumber: string) {
+  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const encoder = new TextEncoder();
+  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
+  const base64Creds = base64Encode(credentials);
+
+  try {
+    // First get the phone number SID
+    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
+    const numbersResponse = await fetch(numbersUrl, {
+      headers: { 'Authorization': `Basic ${base64Creds}` }
+    });
+    const numbersData = await numbersResponse.json();
+    
+    if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
+      return new Response(JSON.stringify({ error: 'Phone number not found in Twilio account' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const phoneSid = numbersData.incoming_phone_numbers[0].sid;
+
+    // Check which Customer Profile this number is assigned to
+    const assignmentsUrl = `https://trusthub.twilio.com/v1/CustomerProfiles?ChannelEndpointSid=${phoneSid}`;
+    const assignmentsResponse = await fetch(assignmentsUrl, {
+      headers: { 'Authorization': `Basic ${base64Creds}` }
+    });
+    
+    const assignmentsData = await assignmentsResponse.json();
+    const currentProfile = assignmentsData.results?.[0] || null;
+
+    return new Response(JSON.stringify({
+      phoneNumber,
+      phoneSid,
+      currentProfile: currentProfile ? {
+        sid: currentProfile.sid,
+        friendlyName: currentProfile.friendly_name,
+        status: currentProfile.status,
+        isApproved: currentProfile.status === 'twilio-approved'
+      } : null,
+      hasProfile: !!currentProfile
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error checking number profile:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function listApprovedProfiles() {
+  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const encoder = new TextEncoder();
+  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
+  const base64Creds = base64Encode(credentials);
+
+  try {
+    const trustProductsUrl = `https://trusthub.twilio.com/v1/TrustProducts`;
+    const response = await fetch(trustProductsUrl, {
+      headers: { 'Authorization': `Basic ${base64Creds}` }
+    });
+
+    const data = await response.json();
+    const approvedProfiles = (data.trust_products || [])
+      .filter((tp: any) => tp.status === 'twilio-approved')
+      .map((tp: any) => ({
+        sid: tp.sid,
+        friendlyName: tp.friendly_name,
+        status: tp.status,
+        dateCreated: tp.date_created
+      }));
+
+    return new Response(JSON.stringify({
+      approvedProfiles,
+      count: approvedProfiles.length
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error listing approved profiles:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function transferNumberToProfile(phoneNumber: string, customerProfileSid: string) {
+  const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+  const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const encoder = new TextEncoder();
+  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
+  const base64Creds = base64Encode(credentials);
+
+  try {
+    // Get phone number SID
+    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
+    const numbersResponse = await fetch(numbersUrl, {
+      headers: { 'Authorization': `Basic ${base64Creds}` }
+    });
+    const numbersData = await numbersResponse.json();
+    
+    if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
+      return new Response(JSON.stringify({ error: 'Phone number not found' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const phoneSid = numbersData.incoming_phone_numbers[0].sid;
+
+    // Create Channel Endpoint Assignment to associate number with approved profile
+    const assignmentUrl = `https://trusthub.twilio.com/v1/CustomerProfiles/${customerProfileSid}/ChannelEndpointAssignments`;
+    const assignmentResponse = await fetch(assignmentUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${base64Creds}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        'ChannelEndpointType': 'phone-number',
+        'ChannelEndpointSid': phoneSid
+      })
+    });
+
+    const assignmentData = await assignmentResponse.json();
+
+    if (!assignmentResponse.ok) {
+      throw new Error(assignmentData.message || 'Failed to assign number to profile');
+    }
+
+    console.log(`✅ Number ${phoneNumber} assigned to Customer Profile ${customerProfileSid}`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Number successfully assigned to approved STIR/SHAKEN profile',
+      assignment: {
+        sid: assignmentData.sid,
+        profileSid: customerProfileSid,
+        phoneSid: phoneSid
+      }
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error transferring number to profile:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 async function checkPhoneNumberProfile(phoneNumber: string) {
   const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -584,14 +813,8 @@ async function checkPhoneNumberProfile(phoneNumber: string) {
     const numbersData = await numbersResponse.json();
     
     if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
-      // Return 200 with notFound flag instead of 404 - this is expected for numbers not in Twilio
-      return new Response(JSON.stringify({ 
-        phoneNumber,
-        found: false,
-        notInTwilio: true,
-        message: 'Phone number exists locally but is not in Twilio account'
-      }), {
-        status: 200,
+      return new Response(JSON.stringify({ error: 'Phone number not found in Twilio account' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -662,57 +885,24 @@ async function listApprovedTrustProducts() {
   const base64Creds = base64Encode(credentials);
 
   try {
-    // Get Trust Products (for SHAKEN business profiles) - these support phone number assignments
     const trustProductsUrl = `https://trusthub.twilio.com/v1/TrustProducts`;
-    const trustResponse = await fetch(trustProductsUrl, {
+    const response = await fetch(trustProductsUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
     });
 
-    const trustData = await trustResponse.json();
-    const trustProducts = (trustData.results || trustData.trust_products || [])
+    const data = await response.json();
+    const approvedProfiles = (data.results || [])
       .filter((tp: any) => tp.status === 'twilio-approved')
       .map((tp: any) => ({
         sid: tp.sid,
         friendlyName: tp.friendly_name,
         status: tp.status,
-        dateCreated: tp.date_created,
-        policySid: tp.policy_sid,
-        type: 'trust_product',
-        supportsPhoneAssignment: true // Trust Products support phone assignments
+        dateCreated: tp.date_created
       }));
-
-    // Get Customer Profiles - note: these are for A2P messaging, not STIR/SHAKEN voice
-    const customerProfilesUrl = `https://trusthub.twilio.com/v1/CustomerProfiles`;
-    const customerResponse = await fetch(customerProfilesUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-
-    const customerData = await customerResponse.json();
-    const customerProfiles = (customerData.results || [])
-      .filter((cp: any) => cp.status === 'twilio-approved')
-      .map((cp: any) => ({
-        sid: cp.sid,
-        friendlyName: cp.friendly_name,
-        status: cp.status,
-        dateCreated: cp.date_created,
-        policySid: cp.policy_sid,
-        type: 'customer_profile',
-        supportsPhoneAssignment: false // Customer Profiles don't support direct phone assignments for STIR/SHAKEN
-      }));
-
-    // Only return profiles that support phone number assignment for STIR/SHAKEN
-    const eligibleProfiles = trustProducts.filter((tp: any) => tp.supportsPhoneAssignment);
 
     return new Response(JSON.stringify({
-      approvedProfiles: eligibleProfiles, // Only eligible profiles
-      trustProducts: trustProducts,
-      customerProfiles: customerProfiles,
-      count: eligibleProfiles.length,
-      hasVoiceIntegrity: trustProducts.some((tp: any) => 
-        tp.friendlyName?.toLowerCase().includes('voice') || 
-        tp.friendlyName?.toLowerCase().includes('shaken')
-      ),
-      note: 'Only Trust Products with SHAKEN Business Profile support phone number assignments for STIR/SHAKEN. Customer Profiles are for A2P messaging.'
+      approvedProfiles,
+      count: approvedProfiles.length
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -726,7 +916,7 @@ async function listApprovedTrustProducts() {
   }
 }
 
-async function transferNumberToProfile(phoneNumber: string, profileSid: string) {
+async function transferNumberToProfile(phoneNumber: string, customerProfileSid: string) {
   const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
   const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
 
@@ -742,91 +932,24 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
   const base64Creds = base64Encode(credentials);
 
   try {
-    // Determine profile type based on SID prefix
-    // BU = Trust Product (Business Profile)
-    // Customer Profiles also start with BU but are accessed via different endpoint
-    // We need to try TrustProducts first, then CustomerProfiles
-    
-    // Get phone number SID from Twilio
-    const cleanNumber = phoneNumber.replace(/\D/g, '');
-    const e164Number = cleanNumber.startsWith('1') ? `+${cleanNumber}` : `+1${cleanNumber}`;
-    
-    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(e164Number)}`;
+    // Get phone number SID
+    const numbersUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
     const numbersResponse = await fetch(numbersUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
     });
     const numbersData = await numbersResponse.json();
     
     if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
-      return new Response(JSON.stringify({ 
-        error: 'Phone number not found in Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.',
-        notInTwilio: true 
-      }), {
-        status: 400,
+      return new Response(JSON.stringify({ error: 'Phone number not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const phoneSid = numbersData.incoming_phone_numbers[0].sid;
 
-    // Try TrustProducts endpoint first
-    let trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
-    let profileResponse = await fetch(trustProductUrl, {
-      headers: { 'Authorization': `Basic ${base64Creds}` }
-    });
-    
-    let isTrustProduct = profileResponse.ok;
-    let profile: any = null;
-    
-    if (isTrustProduct) {
-      profile = await profileResponse.json();
-      console.log('Found Trust Product:', JSON.stringify(profile));
-    } else {
-      // Try CustomerProfiles endpoint
-      const customerProfileUrl = `https://trusthub.twilio.com/v1/CustomerProfiles/${profileSid}`;
-      profileResponse = await fetch(customerProfileUrl, {
-        headers: { 'Authorization': `Basic ${base64Creds}` }
-      });
-      
-      if (profileResponse.ok) {
-        profile = await profileResponse.json();
-        console.log('Found Customer Profile:', JSON.stringify(profile));
-        
-        // Customer Profiles don't support direct phone number assignments for STIR/SHAKEN
-        return new Response(JSON.stringify({ 
-          error: 'Customer Profiles cannot be used for STIR/SHAKEN phone number registration. You need a SHAKEN Business Profile (Trust Product).',
-          details: 'Customer Profiles are for A2P 10DLC messaging registration, not voice STIR/SHAKEN.',
-          needsVoiceIntegrity: true,
-          helpUrl: 'https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir'
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      } else {
-        return new Response(JSON.stringify({ 
-          error: 'Profile not found. Please ensure your SHAKEN Business Profile exists and is approved.',
-          details: `Profile SID: ${profileSid}`
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-    }
-
-    // Check if status is approved
-    if (profile.status !== 'twilio-approved') {
-      return new Response(JSON.stringify({ 
-        error: `Trust Product is not approved (status: ${profile.status}). Please complete verification in Twilio Trust Hub first.`,
-        status: profile.status,
-        needsApproval: true
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Try to create Channel Endpoint Assignment for Trust Product
-    const assignmentUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}/ChannelEndpointAssignments`;
+    // Create Channel Endpoint Assignment to associate number with approved profile
+    const assignmentUrl = `https://trusthub.twilio.com/v1/CustomerProfiles/${customerProfileSid}/ChannelEndpointAssignments`;
     const assignmentResponse = await fetch(assignmentUrl, {
       method: 'POST',
       headers: {
@@ -840,55 +963,19 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
     });
 
     const assignmentData = await assignmentResponse.json();
-    console.log('Assignment response:', JSON.stringify(assignmentData));
 
     if (!assignmentResponse.ok) {
-      const errorMessage = assignmentData.message || assignmentData.error_message || 'Unknown error';
-      
-      if (errorMessage.includes('not eligible') || errorMessage.includes('ChannelEndpointAssignment')) {
-        return new Response(JSON.stringify({ 
-          error: 'This Trust Product type does not support phone number assignments. For STIR/SHAKEN, you need a SHAKEN Business Profile specifically designed for voice caller ID.',
-          details: errorMessage,
-          needsVoiceIntegrity: true,
-          helpUrl: 'https://www.twilio.com/docs/voice/trusted-calling-with-shakenstir'
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      
-      // Handle incomplete Trust Hub setup error
-      if (errorMessage.includes('required supporting Trust products') || errorMessage.includes('Customer profile')) {
-        return new Response(JSON.stringify({ 
-          error: 'Your SHAKEN Business Profile is not fully configured. In Twilio Trust Hub, ensure all required supporting entities (Customer Profile, Business Info, Authorized Representative) are linked to your SHAKEN Business Profile.',
-          details: errorMessage,
-          incompleteSetup: true,
-          helpUrl: 'https://www.twilio.com/docs/trust-hub/trusthub-and-branded-calls',
-          steps: [
-            '1. Go to Twilio Console → Trust Hub',
-            '2. Open your SHAKEN Business Profile',
-            '3. Ensure Customer Profile is linked',
-            '4. Ensure Business Information is complete',
-            '5. Ensure Authorized Representative is assigned',
-            '6. Submit for review if not already approved'
-          ]
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      
-      throw new Error(errorMessage);
+      throw new Error(assignmentData.message || 'Failed to assign number to profile');
     }
 
-    console.log(`✅ Number ${phoneNumber} assigned to Trust Product ${profileSid}`);
+    console.log(`✅ Number ${phoneNumber} assigned to Customer Profile ${customerProfileSid}`);
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Number successfully assigned to STIR/SHAKEN profile',
+      message: 'Number successfully assigned to approved STIR/SHAKEN profile',
       assignment: {
         sid: assignmentData.sid,
-        profileSid: profileSid,
+        profileSid: customerProfileSid,
         phoneSid: phoneSid
       }
     }), {
@@ -897,96 +984,6 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
 
   } catch (error) {
     console.error('Error transferring number to profile:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message,
-      suggestion: 'For STIR/SHAKEN attestation, ensure you have completed Twilio Trust Hub registration and have an approved SHAKEN Business Profile.'
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
-  const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
-  
-  if (!telnyxApiKey) {
-    return new Response(JSON.stringify({ 
-      error: 'TELNYX_API_KEY_NOT_CONFIGURED',
-      message: 'Telnyx API key not configured' 
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (!userId) {
-    return new Response(JSON.stringify({ error: 'Authentication required' }), {
-      status: 401,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  try {
-    // Fetch numbers from Telnyx API
-    const response = await fetch('https://api.telnyx.com/v2/phone_numbers', {
-      headers: {
-        'Authorization': `Bearer ${telnyxApiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Telnyx API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const telnyxNumbers = data.data || [];
-    let imported = 0;
-
-    for (const num of telnyxNumbers) {
-      const phoneNumber = num.phone_number;
-      const areaCode = phoneNumber.slice(2, 5); // Extract area code from +1XXXNNNNNNN
-
-      // Check if number already exists
-      const { data: existing } = await supabase
-        .from('phone_numbers')
-        .select('id')
-        .eq('number', phoneNumber)
-        .eq('user_id', userId)
-        .single();
-
-      if (!existing) {
-        // Insert new number
-        const { error: insertError } = await supabase
-          .from('phone_numbers')
-          .insert({
-            number: phoneNumber,
-            area_code: areaCode,
-            user_id: userId,
-            status: num.status === 'active' ? 'active' : 'inactive',
-            carrier_name: 'Telnyx',
-            line_type: num.phone_number_type || 'unknown'
-          });
-
-        if (!insertError) {
-          imported++;
-        }
-      }
-    }
-
-    return new Response(JSON.stringify({
-      success: true,
-      imported,
-      total: telnyxNumbers.length,
-      message: `Synced ${imported} new numbers from Telnyx`
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    console.error('Error syncing Telnyx numbers:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -996,6 +993,7 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
 
 function getRecommendation(riskLevel: string, reasons: string[]) {
   const hasSTIRSHAKEN = reasons.some(r => r.includes('STIR/SHAKEN'));
+  const hasCarrier = reasons.some(r => r.includes('VoIP') || r.includes('carrier'));
   
   switch (riskLevel) {
     case 'critical':

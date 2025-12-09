@@ -30,13 +30,12 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
   const [lastAnalysis, setLastAnalysis] = useState<Date | null>(null);
   const { toast } = useToast();
 
-  // Generate recommendations when component mounts, but not on every numbers change
-  // to prevent excessive API calls and toast spam
   useEffect(() => {
-    if (numbers.length > 0 && recommendations.length === 0) {
+    // Auto-analyze on component mount and when numbers change
+    if (numbers.length > 0) {
       generateRecommendations();
     }
-  }, [numbers.length]); // Only trigger when count changes, not on every reference change
+  }, [numbers]);
 
   const generateRecommendations = async () => {
     setIsAnalyzing(true);
@@ -283,10 +282,10 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return 'bg-destructive';
+      case 'high': return 'bg-red-500';
       case 'medium': return 'bg-yellow-500';
-      case 'low': return 'bg-primary';
-      default: return 'bg-muted';
+      case 'low': return 'bg-blue-500';
+      default: return 'bg-gray-500';
     }
   };
 
@@ -307,7 +306,7 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
+            <Brain className="h-5 w-5 text-purple-600" />
             AI Decision Engine
           </CardTitle>
           <CardDescription>
@@ -320,13 +319,14 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
               <div className="text-sm text-gray-600">
                 Last Analysis: {lastAnalysis?.toLocaleString() || 'Never'}
               </div>
-              <Badge variant="outline" className="text-primary">
+              <Badge variant="outline" className="text-purple-600">
                 {recommendations.length} Recommendations
               </Badge>
             </div>
             <Button 
               onClick={generateRecommendations}
               disabled={isAnalyzing}
+              className="bg-purple-600 hover:bg-purple-700"
             >
               <Brain className={`h-4 w-4 mr-2 ${isAnalyzing ? 'animate-pulse' : ''}`} />
               {isAnalyzing ? 'Analyzing...' : 'Analyze Now'}
@@ -347,7 +347,7 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
           <CardContent>
             <div className="space-y-4">
               {recommendations.map((rec) => (
-                  <div key={rec.id} className="border border-border rounded-lg p-4 space-y-3">
+                <div key={rec.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2">
@@ -363,26 +363,26 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
                     <Button
                       size="sm"
                       onClick={() => executeRecommendation(rec)}
-                      className="bg-primary hover:bg-primary/90"
+                      className="bg-green-600 hover:bg-green-700"
                     >
                       Execute
                     </Button>
                   </div>
                   
                   <div>
-                    <h4 className="font-semibold text-foreground">{rec.title}</h4>
-                    <p className="text-muted-foreground text-sm mt-1">{rec.description}</p>
-                    <p className="font-medium text-primary text-sm mt-2">
+                    <h4 className="font-semibold text-gray-900">{rec.title}</h4>
+                    <p className="text-gray-600 text-sm mt-1">{rec.description}</p>
+                    <p className="font-medium text-blue-600 text-sm mt-2">
                       Recommended Action: {rec.action}
                     </p>
                   </div>
 
-                  <div className="bg-muted rounded p-3">
-                    <p className="text-xs font-medium text-foreground mb-2">AI Reasoning:</p>
-                    <ul className="text-xs text-muted-foreground space-y-1">
+                  <div className="bg-gray-50 rounded p-3">
+                    <p className="text-xs font-medium text-gray-700 mb-2">AI Reasoning:</p>
+                    <ul className="text-xs text-gray-600 space-y-1">
                       {rec.reasoning.map((reason, idx) => (
                         <li key={idx} className="flex items-start gap-2">
-                          <span className="text-primary">•</span>
+                          <span className="text-purple-500">•</span>
                           {reason}
                         </li>
                       ))}
@@ -404,30 +404,28 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">
+                <div className="text-2xl font-bold text-green-600">
                   {numbers.filter(n => n.status === 'active').length}
                 </div>
-                <div className="text-sm text-muted-foreground">Active Numbers</div>
+                <div className="text-sm text-gray-600">Active Numbers</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-destructive">
+                <div className="text-2xl font-bold text-red-600">
                   {numbers.filter(n => n.daily_calls > 40).length}
                 </div>
-                <div className="text-sm text-muted-foreground">High Risk</div>
+                <div className="text-sm text-gray-600">High Risk</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">
-                  {numbers.length > 0 
-                    ? Math.round((numbers.filter(n => n.status === 'active').length / numbers.length) * 100)
-                    : 0}%
+                <div className="text-2xl font-bold text-blue-600">
+                  {Math.round((numbers.filter(n => n.status === 'active').length / numbers.length) * 100)}%
                 </div>
-                <div className="text-sm text-muted-foreground">Pool Utilization</div>
+                <div className="text-sm text-gray-600">Pool Utilization</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">
+                <div className="text-2xl font-bold text-purple-600">
                   {new Set(numbers.map(n => n.area_code)).size}
                 </div>
-                <div className="text-sm text-muted-foreground">Area Codes</div>
+                <div className="text-sm text-gray-600">Area Codes</div>
               </div>
             </div>
           </CardContent>

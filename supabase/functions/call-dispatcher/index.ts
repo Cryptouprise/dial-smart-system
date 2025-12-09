@@ -6,6 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface NumberScore {
+  number: any;
+  score: number;
+  reason: string;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -15,6 +21,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -34,142 +41,9 @@ serve(async (req) => {
       );
     }
 
-    // Check for special actions in request body
-    let requestBody = {};
-    try {
-      requestBody = await req.json();
-    } catch {
-      // No body or invalid JSON is fine
-    }
-
-    const action = (requestBody as any).action;
-
-    // Handle cleanup action
-    if (action === 'cleanup_stuck_calls') {
-      console.log('Cleaning up stuck calls for user:', user.id);
-      
-      // Mark old "ringing" or "initiated" calls as "no_answer" if older than 5 minutes
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      
-      const { data: stuckCalls, error: cleanupError } = await supabase
-        .from('call_logs')
-        .update({ 
-          status: 'no_answer',
-          ended_at: new Date().toISOString(),
-          notes: 'Auto-cleaned: stuck in ringing state'
-        })
-        .eq('user_id', user.id)
-        .in('status', ['initiated', 'ringing', 'in_progress'])
-        .lt('created_at', fiveMinutesAgo)
-        .select();
-
-      if (cleanupError) {
-        console.error('Cleanup error:', cleanupError);
-        throw cleanupError;
-      }
-
-      const cleanedCount = stuckCalls?.length || 0;
-      console.log(`Cleaned up ${cleanedCount} stuck calls`);
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          cleaned: cleanedCount,
-          message: `Cleaned up ${cleanedCount} stuck calls`
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     console.log('Call Dispatcher running for user:', user.id);
 
-    // Get user's active campaigns
-    const { data: activeCampaigns, error: campaignError } = await supabase
-      .from('campaigns')
-      .select('id, name, agent_id, max_attempts')
-      .eq('user_id', user.id)
-      .eq('status', 'active');
-
-    if (campaignError) throw campaignError;
-
-    if (!activeCampaigns || activeCampaigns.length === 0) {
-      return new Response(
-        JSON.stringify({ message: 'No active campaigns', dispatched: 0 }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const campaignIds = activeCampaigns.map(c => c.id);
-    console.log('Active campaigns:', campaignIds);
-
-    // Check existing queue entries
-    const { data: existingQueue } = await supabase
-      .from('dialing_queues')
-      .select('lead_id')
-      .in('campaign_id', campaignIds)
-      .in('status', ['pending', 'calling']);
-
-    const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
-
-    // Get leads from campaign_leads that need to be queued
-    const { data: campaignLeads, error: leadsError } = await supabase
-      .from('campaign_leads')
-      .select(`
-        campaign_id,
-        lead_id,
-        leads (
-          id,
-          phone_number,
-          status,
-          do_not_call
-        )
-      `)
-      .in('campaign_id', campaignIds);
-
-    if (leadsError) throw leadsError;
-
-    // Filter leads that need to be added to queue
-    const leadsToQueue = (campaignLeads || []).filter(cl => {
-      const lead = cl.leads as any;
-      if (!lead || !lead.phone_number) return false;
-      if (lead.do_not_call) return false;
-      if (existingLeadIds.has(cl.lead_id)) return false;
-      // Only queue leads with status 'new' or 'contacted'
-      if (!['new', 'contacted', 'callback'].includes(lead.status)) return false;
-      return true;
-    });
-
-    console.log(`Found ${leadsToQueue.length} leads to add to queue`);
-
-    // Add leads to dialing queue
-    if (leadsToQueue.length > 0) {
-      const campaign = activeCampaigns[0];
-      const queueEntries = leadsToQueue.map(cl => {
-        const lead = cl.leads as any;
-        return {
-          campaign_id: cl.campaign_id,
-          lead_id: cl.lead_id,
-          phone_number: lead.phone_number,
-          status: 'pending',
-          priority: 1,
-          max_attempts: campaign.max_attempts || 3,
-          attempts: 0,
-          scheduled_at: new Date().toISOString()
-        };
-      });
-
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .insert(queueEntries);
-
-      if (queueError) {
-        console.error('Error adding to queue:', queueError);
-      } else {
-        console.log(`Added ${queueEntries.length} leads to dialing queue`);
-      }
-    }
-
-    // Now get pending calls from queue
+    // Get pending calls from queue
     const { data: pendingCalls, error: queueError } = await supabase
       .from('dialing_queues')
       .select(`
@@ -189,7 +63,6 @@ serve(async (req) => {
           phone_number
         )
       `)
-      .in('campaign_id', campaignIds)
       .eq('status', 'pending')
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
@@ -197,14 +70,16 @@ serve(async (req) => {
 
     if (queueError) throw queueError;
 
-    const userCalls = pendingCalls || [];
+    // Filter to only user's campaigns
+    const userCalls = pendingCalls?.filter(
+      call => call.campaigns?.user_id === user.id && call.campaigns?.status === 'active'
+    ) || [];
 
     if (userCalls.length === 0) {
       return new Response(
         JSON.stringify({ 
-          message: 'No pending calls to dispatch - all leads may have been contacted or are ineligible',
-          dispatched: 0,
-          queued: leadsToQueue.length
+          message: 'No pending calls to dispatch',
+          dispatched: 0 
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -212,118 +87,99 @@ serve(async (req) => {
 
     console.log(`Found ${userCalls.length} pending calls to dispatch`);
 
-    // Get available phone numbers - PRIORITIZE numbers with retell_phone_id
+    // Get available phone numbers from pool
     const { data: availableNumbers, error: numbersError } = await supabase
       .from('phone_numbers')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'active')
-      .is('quarantine_until', null)
-      .order('retell_phone_id', { ascending: false, nullsFirst: false }); // Prioritize numbers WITH retell_phone_id
+      .is('quarantine_until', null);
 
     if (numbersError) throw numbersError;
 
-    // Filter to only include numbers registered with Retell (have retell_phone_id)
-    const retellNumbers = (availableNumbers || []).filter(n => n.retell_phone_id);
-    
-    // If no Retell-registered numbers, use all available but warn
-    const numbersToUse = retellNumbers.length > 0 ? retellNumbers : availableNumbers;
-    const usingUnregisteredNumbers = retellNumbers.length === 0 && (availableNumbers?.length || 0) > 0;
-
-    if (!numbersToUse || numbersToUse.length === 0) {
+    if (!availableNumbers || availableNumbers.length === 0) {
       console.log('No available numbers in pool');
       return new Response(
         JSON.stringify({ 
-          error: 'No available phone numbers in pool. Please add active phone numbers first.',
+          error: 'No available numbers in pool',
           dispatched: 0 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (usingUnregisteredNumbers) {
-      console.warn('WARNING: No numbers with retell_phone_id found. Using unregistered numbers - calls may fail!');
-    }
+    console.log(`Found ${availableNumbers.length} available numbers in pool`);
 
-    console.log(`Found ${numbersToUse.length} available numbers (${retellNumbers.length} registered with Retell)`);
+    // Get Retell AI key from user credentials
+    const { data: retellCred } = await supabase
+      .from('user_credentials')
+      .select('credential_value_encrypted')
+      .eq('user_id', user.id)
+      .eq('service_name', 'retell_ai')
+      .eq('credential_key', 'api_key')
+      .single();
 
-    // Get Retell AI key from environment
-    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-
-    if (!retellApiKey) {
+    if (!retellCred) {
       return new Response(
-        JSON.stringify({ error: 'RETELL_AI_API_KEY not configured in Supabase secrets' }),
+        JSON.stringify({ error: 'Retell AI credentials not configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     let dispatchedCount = 0;
-    const dispatchResults: any[] = [];
-    const numberPool = [...numbersToUse];
+    const dispatchResults = [];
 
     // Process each pending call
-    for (const call of userCalls.slice(0, 5)) {
+    for (const call of userCalls.slice(0, 5)) { // Process max 5 at a time
       try {
-        const lead = call.leads as any;
-        const campaign = call.campaigns as any;
-        
-        if (!lead?.phone_number || !campaign?.agent_id) {
-          console.log('Skipping call - missing lead phone or agent:', call.id);
-          continue;
-        }
-
-        // Select best number
-        const selectedNumber = selectBestNumber(numberPool, lead.phone_number);
+        // Select best number using AI
+        const selectedNumber = await selectBestNumber(
+          availableNumbers,
+          call,
+          lovableApiKey,
+          supabase
+        );
 
         if (!selectedNumber) {
           console.log('No suitable number found for call:', call.id);
           continue;
         }
 
-        console.log(`Selected number ${selectedNumber.number} for call to ${lead.phone_number}`);
+        console.log(`Selected number ${selectedNumber.number} for call to ${call.leads?.phone_number}`);
 
         // Mark queue entry as calling
         await supabase
           .from('dialing_queues')
-          .update({ status: 'calling', updated_at: new Date().toISOString() })
+          .update({ status: 'calling' })
           .eq('id', call.id);
 
-        // Initiate the call via outbound-calling function with service role auth
-        const callResponse = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseKey}`,
-          },
-          body: JSON.stringify({
+        // Initiate the call via outbound-calling function
+        const callResponse = await supabase.functions.invoke('outbound-calling', {
+          body: {
             action: 'create_call',
-            userId: user.id,
             campaignId: call.campaign_id,
             leadId: call.lead_id,
-            phoneNumber: lead.phone_number,
+            phoneNumber: call.leads?.phone_number,
             callerId: selectedNumber.number,
-            agentId: campaign.agent_id,
-          })
+            agentId: call.campaigns?.agent_id,
+            apiKey: retellCred.credential_value_encrypted
+          }
         });
 
-        const callData = await callResponse.json();
-
-        if (!callResponse.ok || callData.error) {
-          console.error('Call creation failed:', callData.error || `HTTP ${callResponse.status}`);
+        if (callResponse.error) {
+          console.error('Call creation failed:', callResponse.error);
           
+          // Mark as failed
           await supabase
             .from('dialing_queues')
             .update({ 
               status: 'failed',
-              attempts: call.attempts + 1,
-              updated_at: new Date().toISOString()
+              attempts: call.attempts + 1
             })
             .eq('id', call.id);
           
           continue;
         }
-
-        console.log('Call created successfully:', callData);
 
         // Update number usage statistics
         await supabase
@@ -334,34 +190,24 @@ serve(async (req) => {
           })
           .eq('id', selectedNumber.id);
 
-        // Mark queue entry as completed
-        await supabase
-          .from('dialing_queues')
-          .update({ 
-            status: 'completed',
-            attempts: call.attempts + 1,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', call.id);
-
         dispatchedCount++;
         dispatchResults.push({
           queue_id: call.id,
-          lead: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unknown',
-          phone: lead.phone_number,
+          lead: call.leads?.first_name + ' ' + call.leads?.last_name,
           number_used: selectedNumber.number,
-          call_id: callData?.call_id
+          call_id: callResponse.data?.call_id
         });
 
         console.log(`Successfully dispatched call ${call.id}`);
 
-        // Remove number from pool to prevent reuse in this batch
-        const idx = numberPool.findIndex(n => n.id === selectedNumber.id);
-        if (idx !== -1) numberPool.splice(idx, 1);
+        // Remove from available pool to prevent reuse in this batch
+        availableNumbers.splice(
+          availableNumbers.findIndex(n => n.id === selectedNumber.id),
+          1
+        );
 
-      } catch (err: unknown) {
-        const error = err as Error;
-        console.error('Error dispatching call:', call.id, error.message);
+      } catch (error) {
+        console.error('Error dispatching call:', call.id, error);
       }
     }
 
@@ -370,16 +216,12 @@ serve(async (req) => {
         success: true,
         dispatched: dispatchedCount,
         results: dispatchResults,
-        warning: usingUnregisteredNumbers ? 'Using phone numbers not registered with Retell - some calls may fail' : undefined,
-        message: dispatchedCount > 0 
-          ? `Successfully dispatched ${dispatchedCount} calls` 
-          : 'No calls dispatched - check logs for details'
+        message: `Successfully dispatched ${dispatchedCount} calls`
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (err: unknown) {
-    const error = err as Error;
+  } catch (error) {
     console.error('Error in call-dispatcher:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
@@ -388,45 +230,124 @@ serve(async (req) => {
   }
 });
 
-function selectBestNumber(availableNumbers: any[], targetPhone: string): any | null {
+async function selectBestNumber(
+  availableNumbers: any[],
+  call: any,
+  lovableApiKey: string | undefined,
+  supabase: any
+): Promise<any | null> {
+  
   if (availableNumbers.length === 0) return null;
 
-  // Extract area code from target phone
-  const targetAreaCode = targetPhone.replace(/\D/g, '').slice(-10, -7);
+  // If AI is not available, use simple selection logic
+  if (!lovableApiKey) {
+    console.log('Using fallback number selection (no AI)');
+    return selectNumberFallback(availableNumbers);
+  }
 
-  // Score each number
-  const scored = availableNumbers.map(n => {
-    let score = 100;
-    
-    // HEAVILY prefer numbers registered with Retell
-    if (n.retell_phone_id) {
-      score += 100;
+  try {
+    // Prepare number data for AI analysis
+    const numbersData = availableNumbers.map(n => ({
+      id: n.id,
+      number: n.number,
+      area_code: n.area_code,
+      daily_calls: n.daily_calls,
+      last_used: n.last_used,
+      is_spam: n.is_spam,
+      created_at: n.created_at
+    }));
+
+    const prompt = `You are an AI system optimizing phone number selection for outbound calling campaigns.
+
+AVAILABLE NUMBERS:
+${JSON.stringify(numbersData, null, 2)}
+
+CALL TO BE MADE:
+- Lead Phone: ${call.leads?.phone_number}
+- Campaign: ${call.campaigns?.name}
+- Priority: ${call.priority}
+
+SELECTION CRITERIA (in order of importance):
+1. Minimize spam risk - avoid numbers with high daily_calls
+2. Area code matching - prefer numbers with same area code as lead if possible
+3. Recent usage - avoid recently used numbers (distribute load)
+4. Freshness - prefer numbers that haven't been flagged as spam
+
+Analyze these numbers and select the SINGLE BEST number to use for this call.
+Return the number's ID and a brief reason for the selection.`;
+
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: 'You are an expert at selecting optimal phone numbers for outbound calling to maximize answer rates and minimize spam detection.' },
+          { role: 'user', content: prompt }
+        ],
+        tools: [{
+          type: 'function',
+          function: {
+            name: 'select_number',
+            description: 'Select the best phone number for making the call',
+            parameters: {
+              type: 'object',
+              properties: {
+                number_id: { type: 'string', description: 'The ID of the selected number' },
+                reason: { type: 'string', description: 'Brief explanation of why this number was chosen' }
+              },
+              required: ['number_id', 'reason'],
+              additionalProperties: false
+            }
+          }
+        }],
+        tool_choice: { type: 'function', function: { name: 'select_number' } }
+      })
+    });
+
+    if (!aiResponse.ok) {
+      console.log('AI request failed, using fallback');
+      return selectNumberFallback(availableNumbers);
     }
+
+    const aiData = await aiResponse.json();
+    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     
-    // Prefer matching area code
-    if (n.area_code === targetAreaCode) {
-      score += 20;
+    if (toolCall?.function?.arguments) {
+      const selection = JSON.parse(toolCall.function.arguments);
+      const selectedNumber = availableNumbers.find(n => n.id === selection.number_id);
+      
+      if (selectedNumber) {
+        console.log(`AI selected number: ${selectedNumber.number} - ${selection.reason}`);
+        return selectedNumber;
+      }
     }
-    
-    // Penalize high daily usage
-    score -= Math.min(n.daily_calls * 2, 50);
-    
-    // Penalize recently used numbers
-    if (n.last_used) {
-      const minutesSinceUse = (Date.now() - new Date(n.last_used).getTime()) / 60000;
-      if (minutesSinceUse < 5) score -= 30;
-      else if (minutesSinceUse < 30) score -= 10;
+
+    // Fallback if AI response is invalid
+    return selectNumberFallback(availableNumbers);
+
+  } catch (error) {
+    console.error('AI selection error:', error);
+    return selectNumberFallback(availableNumbers);
+  }
+}
+
+function selectNumberFallback(availableNumbers: any[]): any {
+  // Simple selection: lowest daily_calls, least recently used
+  const sorted = [...availableNumbers].sort((a, b) => {
+    // First by daily calls (lower is better)
+    if (a.daily_calls !== b.daily_calls) {
+      return a.daily_calls - b.daily_calls;
     }
-    
-    // Penalize spam-flagged numbers
-    if (n.is_spam) score -= 50;
-    
-    return { number: n, score };
+    // Then by last used (older is better)
+    const aTime = a.last_used ? new Date(a.last_used).getTime() : 0;
+    const bTime = b.last_used ? new Date(b.last_used).getTime() : 0;
+    return aTime - bTime;
   });
 
-  // Sort by score descending and return best
-  scored.sort((a, b) => b.score - a.score);
-  
-  console.log(`Best number: ${scored[0].number.number} (score: ${scored[0].score}, retell_id: ${scored[0].number.retell_phone_id || 'none'})`);
-  return scored[0].number;
+  console.log(`Fallback selected: ${sorted[0].number} (${sorted[0].daily_calls} calls)`);
+  return sorted[0];
 }

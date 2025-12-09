@@ -8,45 +8,6 @@ interface TwilioNumber {
   friendly_name: string;
 }
 
-interface A2PPhoneNumber {
-  phone_number: string;
-  sid: string;
-  friendly_name: string;
-  capabilities: { sms: boolean; voice: boolean; mms: boolean };
-  status: string;
-  a2p_registered?: boolean;
-  messaging_service_sid?: string;
-  messaging_service_name?: string;
-}
-
-interface A2PStatus {
-  phone_numbers: A2PPhoneNumber[];
-  messaging_services: Array<{
-    sid: string;
-    friendly_name: string;
-    use_case?: string;
-    us_app_to_person_registered?: boolean;
-    associated_phone_numbers?: string[];
-  }>;
-  brand_registrations: Array<{
-    sid: string;
-    brand_type: string;
-    status: string;
-  }>;
-  campaigns: Array<{
-    sid: string;
-    use_case: string;
-    status: string;
-    messaging_service_name?: string;
-  }>;
-  summary: {
-    total_numbers: number;
-    registered_numbers: number;
-    pending_numbers: number;
-    unregistered_numbers: number;
-  };
-}
-
 export const useTwilioIntegration = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -64,7 +25,7 @@ export const useTwilioIntegration = () => {
       console.error('Failed to list Twilio numbers:', error);
       toast({
         title: "Failed to Load Twilio Numbers",
-        description: error instanceof Error ? error.message : "Could not fetch numbers from Twilio",
+        description: error.message || "Could not fetch numbers from Twilio",
         variant: "destructive"
       });
       return [];
@@ -95,7 +56,7 @@ export const useTwilioIntegration = () => {
       console.error('Import error:', error);
       toast({
         title: "Import Failed",
-        description: error instanceof Error ? error.message : "Failed to import number",
+        description: error.message || "Failed to import number",
         variant: "destructive"
       });
       throw error;
@@ -123,91 +84,7 @@ export const useTwilioIntegration = () => {
       console.error('Sync error:', error);
       toast({
         title: "Sync Failed",
-        description: error instanceof Error ? error.message : "Failed to sync Twilio numbers",
-        variant: "destructive"
-      });
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const checkA2PStatus = async (): Promise<A2PStatus | null> => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('twilio-integration', {
-        body: { action: 'check_a2p_status' }
-      });
-
-      if (error) throw error;
-      return data as A2PStatus;
-    } catch (error) {
-      console.error('A2P status check error:', error);
-      toast({
-        title: "A2P Status Check Failed",
-        description: error instanceof Error ? error.message : "Could not fetch A2P registration status",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const addNumberToCampaign = async (phoneNumber: string, messagingServiceSid: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('twilio-integration', {
-        body: { 
-          action: 'add_number_to_campaign',
-          phoneNumber,
-          messagingServiceSid
-        }
-      });
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      toast({
-        title: "Number Added to Campaign",
-        description: `${phoneNumber} is now registered for A2P messaging`,
-      });
-
-      return data;
-    } catch (error) {
-      console.error('Add to campaign error:', error);
-      toast({
-        title: "Failed to Add Number",
-        description: error instanceof Error ? error.message : "Could not add number to campaign",
-        variant: "destructive"
-      });
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const configureSmsWebhook = async () => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('twilio-integration', {
-        body: { action: 'configure_sms_webhook' }
-      });
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      toast({
-        title: "SMS Webhooks Configured",
-        description: `Configured ${data.configured_count} numbers to receive inbound SMS. ${data.failed_count > 0 ? `${data.failed_count} failed.` : ''}`,
-      });
-
-      return data;
-    } catch (error) {
-      console.error('Configure webhook error:', error);
-      toast({
-        title: "Configuration Failed",
-        description: error instanceof Error ? error.message : "Could not configure SMS webhooks",
+        description: error.message || "Failed to sync Twilio numbers",
         variant: "destructive"
       });
       throw error;
@@ -220,9 +97,6 @@ export const useTwilioIntegration = () => {
     listTwilioNumbers,
     importNumber,
     syncAllNumbers,
-    checkA2PStatus,
-    addNumberToCampaign,
-    configureSmsWebhook,
     isLoading
   };
 };

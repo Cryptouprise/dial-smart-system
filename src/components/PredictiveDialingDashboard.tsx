@@ -1,21 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, PlayCircle, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
+import { Phone, Users, Target, BarChart3, PlayCircle, PauseCircle } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
-import { supabase } from '@/integrations/supabase/client';
 import LeadManager from '@/components/LeadManager';
 import CampaignManager from '@/components/CampaignManager';
 import CallCenter from '@/components/CallCenter';
 import DialingAnalytics from '@/components/DialingAnalytics';
-import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
-import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
-import AdvancedDialerSettings from '@/components/AdvancedDialerSettings';
-import DialingPerformanceDashboard from '@/components/DialingPerformanceDashboard';
-import QuickTestCampaign from '@/components/QuickTestCampaign';
-import IntelligentPacingPanel from '@/components/IntelligentPacingPanel';
-import SmartRetryPanel from '@/components/SmartRetryPanel';
-import LiveCallMonitor from '@/components/LiveCallMonitor';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
@@ -30,36 +22,6 @@ const PredictiveDialingDashboard = () => {
 
   useEffect(() => {
     loadDashboardData();
-
-    // Set up real-time subscriptions for call_logs
-    const callLogsChannel = supabase
-      .channel('call-logs-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'call_logs' },
-        (payload) => {
-          console.log('Call log update:', payload);
-          loadDashboardData(); // Refresh data on changes
-        }
-      )
-      .subscribe();
-
-    // Set up real-time subscriptions for dialing_queues
-    const dialingQueuesChannel = supabase
-      .channel('dialing-queues-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'dialing_queues' },
-        (payload) => {
-          console.log('Dialing queue update:', payload);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(callLogsChannel);
-      supabase.removeChannel(dialingQueuesChannel);
-    };
   }, []);
 
   const loadDashboardData = async () => {
@@ -98,12 +60,6 @@ const PredictiveDialingDashboard = () => {
         <p className="text-slate-600 dark:text-slate-400">
           Manage leads, campaigns, and outbound calling operations
         </p>
-      </div>
-
-      {/* Quick Test & Concurrency Monitor */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <QuickTestCampaign />
-        <ConcurrencyMonitor />
       </div>
 
       {/* Quick Stats */}
@@ -173,30 +129,6 @@ const PredictiveDialingDashboard = () => {
               <PlayCircle className="h-4 w-4 mr-2" />
               Call Center
             </TabsTrigger>
-            <TabsTrigger value="performance" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Activity className="h-4 w-4 mr-2" />
-              Performance
-            </TabsTrigger>
-            <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Brain className="h-4 w-4 mr-2" />
-              AI Engine
-            </TabsTrigger>
-            <TabsTrigger value="advanced-settings" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Settings className="h-4 w-4 mr-2" />
-              Advanced
-            </TabsTrigger>
-            <TabsTrigger value="pacing" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Gauge className="h-4 w-4 mr-2" />
-              Pacing
-            </TabsTrigger>
-            <TabsTrigger value="retry" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Smart Retry
-            </TabsTrigger>
-            <TabsTrigger value="live-monitor" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Radio className="h-4 w-4 mr-2" />
-              Live Monitor
-            </TabsTrigger>
             <TabsTrigger value="campaigns" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Target className="h-4 w-4 mr-2" />
               Campaigns
@@ -214,30 +146,6 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="call-center">
           <CallCenter onStatsUpdate={setStats} />
-        </TabsContent>
-
-        <TabsContent value="performance">
-          <DialingPerformanceDashboard />
-        </TabsContent>
-
-        <TabsContent value="ai-engine">
-          <PredictiveDialingEngine />
-        </TabsContent>
-
-        <TabsContent value="advanced-settings">
-          <AdvancedDialerSettings />
-        </TabsContent>
-
-        <TabsContent value="pacing">
-          <IntelligentPacingPanel />
-        </TabsContent>
-
-        <TabsContent value="retry">
-          <SmartRetryPanel />
-        </TabsContent>
-
-        <TabsContent value="live-monitor">
-          <LiveCallMonitor />
         </TabsContent>
 
         <TabsContent value="campaigns">

@@ -1,16 +1,15 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const DialingRequestSchema = z.object({
-  campaignId: z.string().uuid('Invalid campaign ID format'),
-  action: z.enum(['start', 'stop', 'status'])
-});
+interface DialingRequest {
+  campaignId: string;
+  action: 'start' | 'stop' | 'status';
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -74,21 +73,21 @@ serve(async (req) => {
       );
     }
 
-    const body = await req.json();
-    
-    // Validate input
-    const validationResult = DialingRequestSchema.safeParse(body);
-    if (!validationResult.success) {
+    const { campaignId, action }: DialingRequest = await req.json();
+
+    if (!campaignId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignId)) {
       return new Response(
-        JSON.stringify({ 
-          error: 'Invalid request data',
-          details: validationResult.error.issues.map(i => i.message)
-        }),
+        JSON.stringify({ error: 'Valid UUID campaign ID is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const { campaignId, action } = validationResult.data;
+    
+    if (!action || !['start', 'stop', 'pause', 'resume'].includes(action)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid action. Must be one of: start, stop, pause, resume' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
@@ -128,27 +127,16 @@ serve(async (req) => {
           cl.leads && ['new', 'contacted', 'qualified'].includes(cl.leads.status)
         ) || [];
 
-        // Check which leads are already in queue
-        const { data: existingQueue } = await supabase
-          .from('dialing_queues')
-          .select('lead_id')
-          .eq('campaign_id', campaignId)
-          .in('status', ['pending', 'calling']);
-        
-        const existingLeadIds = new Set(existingQueue?.map(q => q.lead_id) || []);
-
-        const queueEntries = callableLeads
-          .filter((cl) => !existingLeadIds.has(cl.leads.id))
-          .map((cl) => ({
-            campaign_id: campaignId,
-            lead_id: cl.leads.id,
-            phone_number: cl.leads.phone_number,
-            priority: 1,
-            scheduled_at: new Date().toISOString(),
-            status: 'pending',
-            attempts: 0,
-            max_attempts: campaign.max_attempts || 3,
-          }));
+        const queueEntries = callableLeads.map((cl) => ({
+          campaign_id: campaignId,
+          lead_id: cl.leads.id,
+          phone_number: cl.leads.phone_number,
+          priority: 1,
+          scheduled_at: new Date().toISOString(),
+          status: 'pending',
+          attempts: 0,
+          max_attempts: campaign.max_attempts || 3,
+        }));
 
         if (queueEntries.length > 0) {
           const { error: insertError } = await supabase
@@ -235,7 +223,7 @@ serve(async (req) => {
 
       default:
         return new Response(
-          JSON.stringify({ error: 'Invalid action' }),
+          JSON.stringify({ error: 'Invalid action. Use: start, stop, or status' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
@@ -243,10 +231,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in predictive-dialing-engine:', error);
     return new Response(
-      JSON.stringify({ 
-        error: 'An error occurred processing your dialing request',
-        code: 'DIALING_ERROR'
-      }),
+      JSON.stringify({ error: error.message || 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

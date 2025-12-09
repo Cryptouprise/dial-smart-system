@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { extractAreaCode } from '../_shared/phone-parser.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +16,6 @@ interface OutboundCallRequest {
   callerId?: string;
   agentId?: string;
   retellCallId?: string;
-  userId?: string; // For service-role calls from call-dispatcher
 }
 
 serve(async (req) => {
@@ -59,46 +59,30 @@ serve(async (req) => {
     // Extract JWT token from Authorization header
     const token = authHeader.replace('Bearer ', '');
     
-    // Check if this is a service-role call (from call-dispatcher)
-    const isServiceRoleCall = token === serviceRoleKey;
+    // Verify the JWT token directly
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     
-    let userId: string;
+    console.log('[Outbound Calling] Auth verification:', { 
+      hasUser: !!user, 
+      userId: user?.id,
+      error: authError?.message 
+    });
     
-    if (isServiceRoleCall) {
-      // Service role call - get userId from request body
-      console.log('[Outbound Calling] Service role call detected');
-      const body = await req.clone().json();
-      if (!body.userId) {
-        return new Response(
-          JSON.stringify({ error: 'userId required for service role calls' }), 
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      userId = body.userId;
-      console.log('[Outbound Calling] ✓ Service role auth, userId from body:', userId);
-    } else {
-      // User JWT call - verify the token
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      
-      console.log('[Outbound Calling] Auth verification:', { 
-        hasUser: !!user, 
-        userId: user?.id,
-        error: authError?.message 
-      });
-      
-      if (authError || !user) {
-        console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
-        return new Response(
-          JSON.stringify({ 
-            error: 'Authentication failed: Auth session missing!',
-            details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
-          }), 
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      userId = user.id;
-      console.log('[Outbound Calling] ✓ User verified:', userId);
+    if (authError || !user) {
+      console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentication failed: Auth session missing!',
+          details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
+        }), 
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
+
+    console.log('[Outbound Calling] ✓ User verified:', user.id);
 
     
     const { 
@@ -116,7 +100,7 @@ serve(async (req) => {
       throw new Error('RETELL_AI_API_KEY is not configured');
     }
 
-    console.log(`[Outbound Calling] Processing ${action} request for user:`, userId);
+    console.log(`[Outbound Calling] Processing ${action} request for user:`, user.id);
 
 
     const baseUrl = 'https://api.retellai.com/v2';
@@ -134,13 +118,31 @@ serve(async (req) => {
           throw new Error('Phone number, caller ID, and agent ID are required');
         }
 
-        console.log('[Outbound Calling] Creating call log for user:', userId);
+        console.log('[Outbound Calling] Creating call log for user:', user.id);
+
+        // Fetch lead details for personalization
+        let leadData = null;
+        if (leadId) {
+          const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('first_name, last_name, email, company, phone_number, status, priority, notes, lead_source, tags, custom_fields, timezone, preferred_contact_time, ghl_contact_id')
+            .eq('id', leadId)
+            .single();
+          
+          if (!leadError && lead) {
+            leadData = lead;
+            console.log('[Outbound Calling] Lead data retrieved:', {
+              name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+              company: lead.company
+            });
+          }
+        }
 
         // Use admin client for database operations
         const { data: callLog, error: callLogError } = await supabaseAdmin
           .from('call_logs')
           .insert({
-            user_id: userId,
+            user_id: user.id,
             campaign_id: campaignId,
             lead_id: leadId,
             phone_number: phoneNumber,
@@ -158,43 +160,62 @@ serve(async (req) => {
         console.log('[Outbound Calling] Call log created:', callLog.id);
 
         // Create outbound call via Retell AI
-        console.log('[Outbound Calling] Initiating Retell AI call:', {
-          from: callerId,
-          to: phoneNumber,
-          agent: agentId
-        });
+        const retellPayload = {
+          from_number: callerId,
+          to_number: phoneNumber,
+          override_agent_id: agentId,
+          // metadata is for internal tracking only
+          metadata: {
+            campaign_id: campaignId,
+            lead_id: leadId,
+            call_log_id: callLog.id,
+          },
+          // dynamic_variables makes data accessible in agent prompt using {{variable_name}}
+          ...(leadData && {
+            dynamic_variables: {
+              // Basic contact info
+              first_name: leadData.first_name || '',
+              last_name: leadData.last_name || '',
+              full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+              contact_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there',
+              email: leadData.email || '',
+              phone: leadData.phone_number || '',
+              company: leadData.company || '',
+              
+              // Lead status and tracking
+              status: leadData.status || '',
+              priority: leadData.priority?.toString() || '',
+              lead_source: leadData.lead_source || '',
+              tags: Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '',
+              
+              // Notes and history
+              notes: leadData.notes || '',
+              
+              // Contact preferences
+              timezone: leadData.timezone || '',
+              preferred_contact_time: leadData.preferred_contact_time || '',
+              
+              // Integration IDs
+              ghl_contact_id: leadData.ghl_contact_id || '',
+              
+              // Custom fields (flatten JSONB into individual variables)
+              ...(leadData.custom_fields && typeof leadData.custom_fields === 'object' 
+                ? Object.entries(leadData.custom_fields).reduce((acc, [key, value]) => {
+                    acc[`custom_${key}`] = String(value || '');
+                    return acc;
+                  }, {} as Record<string, string>)
+                : {}
+              )
+            }
+          })
+        };
 
-        // First, set the outbound agent on the phone number
-        console.log('[Outbound Calling] Setting outbound agent on phone number...');
-        const updatePhoneResponse = await fetch(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
-          method: 'PATCH',
-          headers: retellHeaders,
-          body: JSON.stringify({
-            outbound_agent_id: agentId
-          }),
-        });
-
-        if (!updatePhoneResponse.ok) {
-          const updateError = await updatePhoneResponse.text();
-          console.error('[Outbound Calling] Failed to set outbound agent:', updateError);
-          // Continue anyway, maybe it's already set
-        } else {
-          console.log('[Outbound Calling] Outbound agent set successfully');
-        }
+        console.log('[Outbound Calling] Initiating Retell AI call with payload:', JSON.stringify(retellPayload, null, 2));
 
         response = await fetch(`${baseUrl}/create-phone-call`, {
           method: 'POST',
           headers: retellHeaders,
-          body: JSON.stringify({
-            from_number: callerId,
-            to_number: phoneNumber,
-            agent_id: agentId,
-            metadata: {
-              campaign_id: campaignId,
-              lead_id: leadId,
-              call_log_id: callLog.id
-            }
-          }),
+          body: JSON.stringify(retellPayload),
         });
 
         if (!response.ok) {
@@ -234,7 +255,7 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
+        response = await fetch(`${baseUrl}/get-call/${retellCallId}`, {
           method: 'GET',
           headers: retellHeaders,
         });
@@ -252,8 +273,8 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
-          method: 'DELETE',
+        response = await fetch(`${baseUrl}/stop-call/${retellCallId}`, {
+          method: 'POST',
           headers: retellHeaders,
         });
 

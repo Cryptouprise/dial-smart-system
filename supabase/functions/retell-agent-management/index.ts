@@ -6,18 +6,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Default webhook URL for call tracking
-const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
-
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice';
+  action: 'create' | 'get' | 'list' | 'update' | 'delete';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
   llmId?: string;
-  agentConfig?: any;
-  text?: string; // For voice preview
-  webhookUrl?: string; // Optional custom webhook URL
+  llmWebsocketUrl?: string;
+  responseEngineType?: 'retell-llm' | 'custom-llm';
+  language?: string;
+  webhookUrl?: string;
+  voiceTemperature?: number;
+  voiceSpeed?: number;
+  enableBackchannel?: boolean;
+  boostedKeywords?: string[];
+  ambientSound?: string;
+  responsiveness?: number;
+  interruptionSensitivity?: number;
+  enableVoicemailDetection?: boolean;
+  voicemailMessage?: string;
+  optOutSensitiveDataStorage?: boolean;
 }
 
 serve(async (req) => {
@@ -27,7 +35,11 @@ serve(async (req) => {
   }
 
   try {
-    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, webhookUrl }: RetellAgentRequest = await req.json();
+    const request: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, llmWebsocketUrl, responseEngineType,
+      language, webhookUrl, voiceTemperature, voiceSpeed, enableBackchannel, boostedKeywords,
+      ambientSound, responsiveness, interruptionSensitivity, enableVoicemailDetection,
+      voicemailMessage, optOutSensitiveDataStorage } = request;
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -49,20 +61,39 @@ serve(async (req) => {
         if (!agentName) {
           throw new Error('Agent name is required for creation');
         }
-        if (!llmId) {
-          throw new Error('LLM ID is required for creation');
+        if (!llmId && !llmWebsocketUrl) {
+          throw new Error('Either LLM ID or LLM WebSocket URL is required for creation');
         }
         
-        const createPayload = {
+        const createPayload: any = {
           agent_name: agentName,
           voice_id: voiceId || '11labs-Adrian',
-          response_engine: {
+        };
+
+        // Set response engine
+        if (responseEngineType === 'custom-llm' && llmWebsocketUrl) {
+          createPayload.response_engine = {
+            type: 'custom-llm',
+            llm_websocket_url: llmWebsocketUrl
+          };
+        } else {
+          createPayload.response_engine = {
             type: 'retell-llm',
             llm_id: llmId
-          },
-          // Auto-configure webhook URL for call tracking
-          webhook_url: webhookUrl || DEFAULT_WEBHOOK_URL
-        };
+          };
+        }
+
+        // Add optional parameters
+        if (language) createPayload.language = language;
+        if (webhookUrl) createPayload.webhook_url = webhookUrl;
+        if (voiceTemperature !== undefined) createPayload.voice_temperature = voiceTemperature;
+        if (voiceSpeed !== undefined) createPayload.voice_speed = voiceSpeed;
+        if (enableBackchannel !== undefined) createPayload.enable_backchannel = enableBackchannel;
+        if (ambientSound) createPayload.ambient_sound = ambientSound;
+        if (responsiveness !== undefined) createPayload.responsiveness = responsiveness;
+        if (interruptionSensitivity !== undefined) createPayload.interruption_sensitivity = interruptionSensitivity;
+        if (enableVoicemailDetection !== undefined) createPayload.enable_voicemail_detection = enableVoicemailDetection;
+        if (optOutSensitiveDataStorage !== undefined) createPayload.opt_out_sensitive_data_storage = optOutSensitiveDataStorage;
         
         console.log('[Retell Agent] Creating agent with payload:', JSON.stringify(createPayload));
         
@@ -73,19 +104,21 @@ serve(async (req) => {
         });
         break;
 
-      case 'list':
-        response = await fetch(`${baseUrl}/list-agents`, {
-          method: 'GET',
-          headers,
-        });
-        break;
-
       case 'get':
         if (!agentId) {
           throw new Error('Agent ID is required for get');
         }
         
+        console.log(`[Retell Agent] Getting agent: ${agentId}`);
         response = await fetch(`${baseUrl}/get-agent/${agentId}`, {
+          method: 'GET',
+          headers,
+        });
+        break;
+
+      case 'list':
+        console.log('[Retell Agent] Listing all agents');
+        response = await fetch(`${baseUrl}/list-agents`, {
           method: 'GET',
           headers,
         });
@@ -96,14 +129,29 @@ serve(async (req) => {
           throw new Error('Agent ID is required for update');
         }
         
-        // Use agentConfig if provided (full update), otherwise use individual fields
-        const updateData: any = agentConfig || {};
+        const updateData: any = {};
+        if (agentName) updateData.agent_name = agentName;
+        if (voiceId) updateData.voice_id = voiceId;
+        if (language) updateData.language = language;
+        if (webhookUrl) updateData.webhook_url = webhookUrl;
+        if (voiceTemperature !== undefined) updateData.voice_temperature = voiceTemperature;
+        if (voiceSpeed !== undefined) updateData.voice_speed = voiceSpeed;
+        if (enableBackchannel !== undefined) updateData.enable_backchannel = enableBackchannel;
+        if (boostedKeywords) updateData.boosted_keywords = boostedKeywords;
+        if (ambientSound) updateData.ambient_sound = ambientSound;
+        if (responsiveness !== undefined) updateData.responsiveness = responsiveness;
+        if (interruptionSensitivity !== undefined) updateData.interruption_sensitivity = interruptionSensitivity;
+        if (enableVoicemailDetection !== undefined) updateData.enable_voicemail_detection = enableVoicemailDetection;
+        if (voicemailMessage) updateData.voicemail_message = voicemailMessage;
+        if (optOutSensitiveDataStorage !== undefined) updateData.opt_out_sensitive_data_storage = optOutSensitiveDataStorage;
         
-        // If no agentConfig provided, build from individual fields
-        if (!agentConfig) {
-          if (agentName) updateData.agent_name = agentName;
-          if (voiceId) updateData.voice_id = voiceId;
-          if (llmId) {
+        if (llmId || llmWebsocketUrl) {
+          if (responseEngineType === 'custom-llm' && llmWebsocketUrl) {
+            updateData.response_engine = {
+              type: 'custom-llm',
+              llm_websocket_url: llmWebsocketUrl
+            };
+          } else if (llmId) {
             updateData.response_engine = {
               type: 'retell-llm',
               llm_id: llmId
@@ -125,29 +173,12 @@ serve(async (req) => {
           throw new Error('Agent ID is required for delete');
         }
         
+        console.log(`[Retell Agent] Deleting agent: ${agentId}`);
         response = await fetch(`${baseUrl}/delete-agent/${agentId}`, {
           method: 'DELETE',
           headers,
         });
         break;
-
-      case 'preview_voice':
-        if (!voiceId) {
-          throw new Error('Voice ID is required for preview');
-        }
-        
-        const previewText = text || 'Hello! This is a preview of how I sound. I can help you with various tasks and have natural conversations.';
-        
-        // Retell doesn't have a direct voice preview API, so we return voice info
-        // The frontend should use pre-recorded samples or ElevenLabs directly
-        return new Response(JSON.stringify({ 
-          success: true,
-          voiceId: voiceId,
-          message: 'Voice preview requested. Use the voice samples in the UI for preview.',
-          sampleText: previewText
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
 
       default:
         throw new Error(`Unsupported action: ${action}`);
