@@ -26,7 +26,7 @@ serve(async (req) => {
   const action = url.searchParams.get('action');
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 
-  console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}`);
+  console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}, Full URL: ${req.url}`);
 
   // Handle TwiML request - Twilio fetches this to get call instructions
   if (action === 'twiml') {
@@ -44,8 +44,10 @@ serve(async (req) => {
       
       const safeMessage = escapeXml(message);
       
-      // Build DTMF action URL - Twilio will POST here when user presses a key
-      const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+      // Build DTMF action URL - put action last to avoid encoding issues
+      const dtmfUrl = transferNumber 
+        ? `${supabaseUrl}/functions/v1/quick-test-call?transfer=${encodeURIComponent(transferNumber)}&action=dtmf`
+        : `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf`;
       
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
