@@ -286,7 +286,7 @@ export const useVoiceBroadcast = () => {
 
       toast({
         title: "Leads Added",
-        description: `${data.added} leads added to broadcast queue`,
+        description: `${data.added} leads added to broadcast queue${data.skipped > 0 ? ` (${data.skipped} already in queue)` : ''}`,
       });
 
       await loadBroadcasts();
@@ -296,6 +296,64 @@ export const useVoiceBroadcast = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to add leads",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const addPhoneNumbersToBroadcast = async (broadcastId: string, phoneNumbers: string[]) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'add_numbers', broadcastId, phoneNumbers }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Phone Numbers Added",
+        description: `${data.added} numbers added${data.dnc_filtered > 0 ? ` (${data.dnc_filtered} filtered by DNC)` : ''}`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error adding phone numbers:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add phone numbers",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearBroadcastQueue = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'clear_queue', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Queue Cleared",
+        description: "Pending queue items have been removed",
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error clearing queue:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to clear queue",
         variant: "destructive",
       });
       throw error;
@@ -406,6 +464,8 @@ export const useVoiceBroadcast = () => {
     deleteBroadcast,
     generateAudio,
     addLeadsToBroadcast,
+    addPhoneNumbersToBroadcast,
+    clearBroadcastQueue,
     startBroadcast,
     stopBroadcast,
     getBroadcastStats,

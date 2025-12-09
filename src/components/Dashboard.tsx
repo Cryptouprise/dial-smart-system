@@ -30,6 +30,7 @@ import ReachabilityDashboard from '@/components/ReachabilityDashboard';
 import CampaignResultsDashboard from '@/components/CampaignResultsDashboard';
 import LiveCampaignMonitor from '@/components/LiveCampaignMonitor';
 import WorkflowABTesting from '@/components/WorkflowABTesting';
+import VoiceBroadcastManager from '@/components/VoiceBroadcastManager';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
@@ -320,6 +321,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Live Monitor"><LiveCampaignMonitor /></TabErrorBoundary>;
       case 'ab-testing':
         return <TabErrorBoundary tabName="A/B Testing"><WorkflowABTesting /></TabErrorBoundary>;
+      case 'broadcast':
+        return <TabErrorBoundary tabName="Voice Broadcasting"><VoiceBroadcastManager /></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
