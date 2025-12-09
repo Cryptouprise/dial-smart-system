@@ -44,18 +44,21 @@ serve(async (req) => {
       
       const safeMessage = escapeXml(message);
       
-      // Simple TwiML without DTMF callback - just play message
+      // Build DTMF action URL - Twilio will POST here when user presses a key
+      const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+      
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>${safeMessage}</Say>
-  <Pause length="1"/>
-  <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out.</Say>
-  <Pause length="5"/>
-  <Say>Thank you for your time. Goodbye.</Say>
+  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
+    <Say>${safeMessage}</Say>
+    <Pause length="1"/>
+    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out.</Say>
+  </Gather>
+  <Say>We did not receive a response. Goodbye.</Say>
   <Hangup/>
 </Response>`;
 
-      console.log('Returning TwiML');
+      console.log('Returning TwiML with DTMF, action URL:', dtmfUrl);
       return new Response(twiml, {
         status: 200,
         headers: { 
