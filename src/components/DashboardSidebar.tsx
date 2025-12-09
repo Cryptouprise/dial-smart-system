@@ -24,6 +24,8 @@ import {
   ChevronDown,
   PanelLeftClose,
   PanelLeft,
+  Radio,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -71,6 +73,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Predictive Dialer', value: 'predictive', icon: Target },
+      { title: 'Voice Broadcast', value: 'broadcast', icon: Radio },
       { title: 'Number Rotation', value: 'rotation', icon: RotateCw },
       { title: 'Spam Detection', value: 'spam', icon: Shield },
       { title: 'SMS Messaging', value: 'sms', icon: MessageSquare },
@@ -98,6 +101,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'Agent Activity', value: 'agent-activity', icon: Bot },
       { title: 'AI Workflows', value: 'ai-workflows', icon: Sparkles },
       { title: 'Reachability', value: 'reachability', icon: TrendingUp },
+      { title: 'AI Error Handler', value: 'ai-errors', icon: AlertCircle },
     ],
   },
   {

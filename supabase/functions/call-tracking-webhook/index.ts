@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -7,31 +6,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Schema validation for Retell webhook payload
+interface RetellCallData {
+  call_id: string;
+  call_status: string;
+  from_number?: string;
+  to_number?: string;
+  direction?: string;
+  start_timestamp?: number;
+  end_timestamp?: number;
+  duration_ms?: number;
+  transcript?: string;
+  transcript_object?: Array<{
+    role: string;
+    content: string;
+  }>;
+  call_analysis?: {
+    call_summary?: string;
+    user_sentiment?: string;
+    call_successful?: boolean;
+    custom_analysis_data?: Record<string, unknown>;
+  };
+  disconnection_reason?: string;
+  agent_id?: string;
+}
+
 interface RetellCallEvent {
   event?: string;
-  call?: {
-    call_id: string;
-    call_status: string;
-    from_number: string;
-    to_number: string;
-    direction: string;
-    start_timestamp?: number;
-    end_timestamp?: number;
-    duration_ms?: number;
-    transcript?: string;
-    transcript_object?: Array<{
-      role: string;
-      content: string;
-    }>;
-    call_analysis?: {
-      call_summary?: string;
-      user_sentiment?: string;
-      call_successful?: boolean;
-      custom_analysis_data?: Record<string, unknown>;
-    };
-    disconnection_reason?: string;
-    agent_id?: string;
-  };
+  call?: RetellCallData;
   // Legacy format support
   phone_number?: string;
   call_type?: 'inbound' | 'outbound';
@@ -41,6 +43,87 @@ interface RetellCallEvent {
   recipient?: string;
   call_sid?: string;
   transcript?: string;
+}
+
+// Validation function for webhook payload
+function validateWebhookPayload(payload: unknown): { valid: boolean; error?: string; data?: RetellCallEvent } {
+  if (typeof payload !== 'object' || payload === null) {
+    return { valid: false, error: 'Invalid payload: expected object' };
+  }
+
+  const data = payload as Record<string, unknown>;
+
+  // Check for Retell format
+  if (data.event && data.call) {
+    const event = data.event;
+    const call = data.call as Record<string, unknown>;
+
+    // Validate event type
+    if (typeof event !== 'string') {
+      return { valid: false, error: 'Invalid event type' };
+    }
+
+    const validEvents = ['call_started', 'call_ended', 'call_analyzed'];
+    if (!validEvents.includes(event)) {
+      console.warn(`Unknown event type: ${event}, but proceeding`);
+    }
+
+    // Validate call_id
+    if (!call.call_id || typeof call.call_id !== 'string') {
+      return { valid: false, error: 'Missing or invalid call_id' };
+    }
+
+    // Validate call_id format (Retell call IDs are typically UUIDs or similar)
+    if (call.call_id.length < 10 || call.call_id.length > 100) {
+      return { valid: false, error: 'Invalid call_id length' };
+    }
+
+    // Validate phone numbers if present
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    if (call.from_number && typeof call.from_number === 'string') {
+      if (!phoneRegex.test(call.from_number.replace(/[\s()-]/g, ''))) {
+        console.warn('Unusual from_number format:', call.from_number);
+      }
+    }
+    if (call.to_number && typeof call.to_number === 'string') {
+      if (!phoneRegex.test(call.to_number.replace(/[\s()-]/g, ''))) {
+        console.warn('Unusual to_number format:', call.to_number);
+      }
+    }
+
+    // Validate duration if present
+    if (call.duration_ms !== undefined && (typeof call.duration_ms !== 'number' || call.duration_ms < 0)) {
+      return { valid: false, error: 'Invalid duration_ms value' };
+    }
+
+    // Validate transcript length
+    if (call.transcript && typeof call.transcript === 'string' && call.transcript.length > 100000) {
+      return { valid: false, error: 'Transcript too large' };
+    }
+
+    return { valid: true, data: data as RetellCallEvent };
+  }
+
+  // Check for legacy format
+  if (data.phone_number || data.caller_id || data.call_sid) {
+    // Validate phone numbers
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    
+    if (data.phone_number && typeof data.phone_number === 'string') {
+      if (!phoneRegex.test(data.phone_number.replace(/[\s()-]/g, ''))) {
+        console.warn('Unusual phone_number format:', data.phone_number);
+      }
+    }
+
+    // Validate duration
+    if (data.duration !== undefined && (typeof data.duration !== 'number' || data.duration < 0)) {
+      return { valid: false, error: 'Invalid duration value' };
+    }
+
+    return { valid: true, data: data as RetellCallEvent };
+  }
+
+  return { valid: false, error: 'Unrecognized webhook format' };
 }
 
 serve(async (req) => {
@@ -54,8 +137,39 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const payload: RetellCallEvent = await req.json();
-    console.log('Received webhook payload:', JSON.stringify(payload, null, 2));
+    let rawPayload: unknown;
+    try {
+      rawPayload = await req.json();
+    } catch (parseError) {
+      console.error('Failed to parse JSON payload:', parseError);
+      return new Response(JSON.stringify({ 
+        error: 'Invalid JSON payload',
+        timestamp: new Date().toISOString()
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Validate the webhook payload
+    const validation = validateWebhookPayload(rawPayload);
+    if (!validation.valid) {
+      console.error('Webhook validation failed:', validation.error);
+      return new Response(JSON.stringify({ 
+        error: validation.error,
+        timestamp: new Date().toISOString()
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const payload = validation.data!;
+    console.log('Received validated webhook payload:', JSON.stringify({
+      event: payload.event,
+      call_id: payload.call?.call_id,
+      call_status: payload.call?.call_status,
+    }));
 
     // Handle Retell webhook format
     if (payload.event && payload.call) {
@@ -504,309 +618,222 @@ async function updatePipelinePosition(
       .maybeSingle();
 
     if (existingPosition) {
-      await supabase
+      // Update existing position
+      const { error } = await supabase
         .from('lead_pipeline_positions')
         .update({
           pipeline_board_id: stage.id,
           moved_at: new Date().toISOString(),
           moved_by_user: false,
-          notes: `Auto-moved by call disposition: ${disposition}`
+          notes: `Auto-moved based on disposition: ${disposition}`
         })
         .eq('id', existingPosition.id);
+
+      if (error) {
+        console.error('Error updating pipeline position:', error);
+      } else {
+        console.log(`Lead moved to ${stageName} stage`);
+      }
     } else {
-      await supabase
+      // Create new position
+      const { error } = await supabase
         .from('lead_pipeline_positions')
         .insert({
           user_id: userId,
           lead_id: leadId,
           pipeline_board_id: stage.id,
+          moved_at: new Date().toISOString(),
           moved_by_user: false,
-          notes: `Auto-added by call disposition: ${disposition}`
+          notes: `Auto-placed based on disposition: ${disposition}`
         });
+
+      if (error) {
+        console.error('Error creating pipeline position:', error);
+      } else {
+        console.log(`Lead placed in ${stageName} stage`);
+      }
     }
-    
-    console.log(`Updated pipeline position to ${stageName} for lead ${leadId}`);
   }
 }
 
-// Auto-create dispositions when they don't exist
-async function findOrCreateDisposition(
-  supabase: any,
-  userId: string,
-  dispositionName: string
-) {
-  // First try to find existing disposition
-  const { data: existingDisp } = await supabase
-    .from('dispositions')
-    .select('id')
-    .eq('user_id', userId)
-    .ilike('name', `%${dispositionName}%`)
-    .maybeSingle();
-
-  if (existingDisp) {
-    return existingDisp;
-  }
-
-  // Disposition doesn't exist - create it autonomously
-  console.log(`[Autonomous] Creating new disposition: ${dispositionName}`);
-
-  // Color mapping for dispositions
-  const colorMapping: Record<string, string> = {
-    'Interested': '#22C55E',
-    'Appointment Set': '#3B82F6',
-    'Callback Requested': '#F59E0B',
-    'Not Interested': '#EF4444',
-    'Left Voicemail': '#8B5CF6',
-    'No Answer': '#6B7280',
-    'Contacted': '#06B6D4',
-    'Hot Lead': '#DC2626',
-    'Warm Lead': '#F97316',
-    'Cold Lead': '#64748B'
-  };
-
-  const { data: newDisp, error: createError } = await supabase
-    .from('dispositions')
-    .insert({
-      user_id: userId,
-      name: dispositionName,
-      description: `Auto-created disposition for: ${dispositionName}`,
-      color: colorMapping[dispositionName] || '#3B82F6',
-      pipeline_stage: dispositionName.toLowerCase().replace(/\s+/g, '_'),
-      auto_actions: []
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    console.error('Error creating disposition:', createError);
-    return null;
-  }
-
-  // Log the autonomous decision
-  await supabase.from('agent_decisions').insert({
-    user_id: userId,
-    decision_type: 'create_disposition',
-    reasoning: `Created new disposition "${dispositionName}" to categorize call outcomes`,
-    action_taken: `Created disposition with color ${colorMapping[dispositionName] || '#3B82F6'}`,
-    executed_at: new Date().toISOString(),
-    success: true
-  });
-
-  console.log(`[Autonomous] Created new disposition: ${dispositionName} (id: ${newDisp.id})`);
-  return newDisp;
-}
-
-// Auto-create pipeline stages when they don't exist
 async function findOrCreatePipelineStage(
   supabase: any,
   userId: string,
   stageName: string,
   disposition: string
 ) {
-  // First ensure the disposition exists
-  const dispRecord = await findOrCreateDisposition(supabase, userId, disposition);
-
-  // Then try to find existing stage
+  // First try to find existing stage
   const { data: existingStage } = await supabase
     .from('pipeline_boards')
-    .select('id, position')
+    .select('id, name')
     .eq('user_id', userId)
-    .ilike('name', `%${stageName}%`)
+    .eq('name', stageName)
     .maybeSingle();
 
   if (existingStage) {
-    // Link disposition if not already linked
-    if (dispRecord && !existingStage.disposition_id) {
-      await supabase
-        .from('pipeline_boards')
-        .update({ disposition_id: dispRecord.id })
-        .eq('id', existingStage.id);
-    }
     return existingStage;
   }
 
-  // Stage doesn't exist - create it autonomously
-  console.log(`[Autonomous] Creating new pipeline stage: ${stageName}`);
+  // Get or create disposition
+  const dispositionRecord = await findOrCreateDisposition(supabase, userId, disposition, stageName);
 
-  // Get the highest position to add new stage at the end
-  const { data: lastStage } = await supabase
-    .from('pipeline_boards')
-    .select('position')
-    .eq('user_id', userId)
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const newPosition = (lastStage?.position || 0) + 1;
-
-  // Create the new stage with disposition link
-  const { data: newStage, error: createError } = await supabase
+  // Create new stage
+  const { data: newStage, error } = await supabase
     .from('pipeline_boards')
     .insert({
       user_id: userId,
       name: stageName,
-      description: `Auto-created for disposition: ${disposition}`,
-      position: newPosition,
-      disposition_id: dispRecord?.id || null,
-      settings: {
-        auto_created: true,
-        created_from: 'call_webhook',
-        created_at: new Date().toISOString()
-      }
+      disposition_id: dispositionRecord?.id,
+      position: 0
     })
     .select()
     .single();
 
-  if (createError) {
-    console.error('Error creating pipeline stage:', createError);
+  if (error) {
+    console.error('Error creating pipeline stage:', error);
     return null;
   }
 
-  // Log the autonomous decision
-  await supabase
-    .from('agent_decisions')
+  return newStage;
+}
+
+async function findOrCreateDisposition(
+  supabase: any,
+  userId: string,
+  dispositionName: string,
+  pipelineStage: string
+) {
+  // Try to find existing disposition
+  const { data: existing } = await supabase
+    .from('dispositions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('name', dispositionName)
+    .maybeSingle();
+
+  if (existing) {
+    return existing;
+  }
+
+  // Create new disposition
+  const colors: Record<string, string> = {
+    'Interested': '#22C55E',
+    'Appointment Set': '#3B82F6',
+    'Callback Requested': '#F59E0B',
+    'Not Interested': '#EF4444',
+    'Left Voicemail': '#8B5CF6',
+    'No Answer': '#6B7280',
+    'Contacted': '#06B6D4'
+  };
+
+  const { data: newDisposition, error } = await supabase
+    .from('dispositions')
     .insert({
       user_id: userId,
-      decision_type: 'create_pipeline_stage',
-      reasoning: `Created new pipeline stage "${stageName}" to handle disposition: ${disposition}`,
-      action_taken: `Created pipeline stage with position ${newPosition}`,
-      executed_at: new Date().toISOString(),
-      success: true
-    });
+      name: dispositionName,
+      pipeline_stage: pipelineStage,
+      color: colors[dispositionName] || '#3B82F6'
+    })
+    .select()
+    .single();
 
-  console.log(`[Autonomous] Created new pipeline stage: ${stageName} (id: ${newStage.id})`);
-  return newStage;
+  if (error) {
+    console.error('Error creating disposition:', error);
+    return null;
+  }
+
+  return newDisposition;
 }
 
 function formatTranscript(transcriptObject: Array<{ role: string; content: string }>, rawTranscript?: string): string | null {
   if (transcriptObject && transcriptObject.length > 0) {
     return transcriptObject
-      .map(t => `${t.role === 'agent' ? 'Agent' : 'Customer'}: ${t.content}`)
+      .map(entry => `${entry.role}: ${entry.content}`)
       .join('\n');
   }
   return rawTranscript || null;
 }
 
-async function createCallLogFromRetell(supabase: any, call: any, updateData: Record<string, unknown>) {
+async function createCallLogFromRetell(supabase: any, call: any, additionalData: Record<string, unknown>) {
   // Try to find user by phone number
-  const phoneNumber = call.from_number || call.to_number;
+  const phoneNumber = call.to_number || call.from_number;
   
+  if (!phoneNumber) {
+    console.error('No phone number available to create call log');
+    return;
+  }
+
+  // Try to find user through phone_numbers table
   const { data: phoneRecord } = await supabase
     .from('phone_numbers')
     .select('user_id')
-    .or(`number.eq.${phoneNumber},number.ilike.%${phoneNumber.replace(/\D/g, '')}%`)
+    .or(`number.eq.${phoneNumber},number.eq.${call.from_number}`)
+    .limit(1)
     .maybeSingle();
 
-  if (!phoneRecord) {
+  if (!phoneRecord?.user_id) {
     console.log('Could not find user for phone number:', phoneNumber);
     return;
   }
 
+  const callLogData = {
+    user_id: phoneRecord.user_id,
+    phone_number: call.to_number || phoneNumber,
+    caller_id: call.from_number || phoneNumber,
+    retell_call_id: call.call_id,
+    status: additionalData.status || 'completed',
+    ...additionalData
+  };
+
   const { error } = await supabase
     .from('call_logs')
-    .insert({
-      user_id: phoneRecord.user_id,
-      phone_number: call.to_number,
-      caller_id: call.from_number,
-      retell_call_id: call.call_id,
-      ...updateData
-    });
+    .insert(callLogData);
 
   if (error) {
     console.error('Error creating call log:', error);
+  } else {
+    console.log('Created new call log from Retell webhook');
   }
 }
 
-// Legacy webhook handler for non-Retell sources
-async function handleLegacyWebhook(supabase: any, callData: RetellCallEvent) {
+async function handleLegacyWebhook(supabase: any, payload: RetellCallEvent) {
   console.log('Processing legacy webhook format');
   
-  if (!callData.phone_number) {
-    return new Response(JSON.stringify({ error: 'No phone number provided' }), {
+  const phoneNumber = payload.phone_number || payload.caller_id || '';
+  
+  if (!phoneNumber) {
+    return new Response(JSON.stringify({ 
+      error: 'No phone number in payload' 
+    }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 
-  const cleanPhoneNumber = callData.phone_number.replace(/\D/g, '');
-  
-  const { data: phoneNumbers, error: phoneError } = await supabase
+  // Update phone number usage tracking
+  const { data: phoneRecord } = await supabase
     .from('phone_numbers')
     .select('*')
-    .or(`number.eq.${callData.phone_number},number.ilike.%${cleanPhoneNumber}%`);
+    .eq('number', phoneNumber)
+    .maybeSingle();
 
-  if (phoneError) {
-    console.error('Database error:', phoneError);
-    return new Response(JSON.stringify({ 
-      error: 'Database error',
-      details: phoneError.message 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (!phoneNumbers || phoneNumbers.length === 0) {
-    const areaCodeMatch = cleanPhoneNumber.match(/^1?(\d{3})/);
-    const areaCode = areaCodeMatch ? areaCodeMatch[1] : '000';
+  if (phoneRecord) {
+    const newDailyCalls = (phoneRecord.daily_calls || 0) + 1;
     
-    const { data: newPhoneNumber, error: createError } = await supabase
+    await supabase
       .from('phone_numbers')
-      .insert({
-        number: callData.phone_number,
-        area_code: areaCode,
-        daily_calls: 1,
-        status: 'active',
+      .update({
+        daily_calls: newDailyCalls,
         last_used: new Date().toISOString()
       })
-      .select()
-      .single();
+      .eq('id', phoneRecord.id);
 
-    if (createError) {
-      console.error('Error creating phone number:', createError);
-      return new Response(JSON.stringify({ 
-        error: 'Failed to create phone number record',
-        details: createError.message 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    return new Response(JSON.stringify({
-      success: true,
-      phone_number: callData.phone_number,
-      daily_calls: 1,
-      new_record_created: true
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    console.log(`Updated phone ${phoneNumber} - daily calls: ${newDailyCalls}`);
   }
 
-  const phoneNumber = phoneNumbers[0];
-  const newDailyCount = phoneNumber.daily_calls + 1;
-  
-  await supabase
-    .from('phone_numbers')
-    .update({
-      daily_calls: newDailyCount,
-      last_used: new Date().toISOString()
-    })
-    .eq('id', phoneNumber.id);
-
-  // Trigger spam detection if call count is high
-  if (newDailyCount >= 40) {
-    console.log(`High call volume detected: ${newDailyCount} calls`);
-    await supabase.functions.invoke('spam-detection', {
-      body: { phoneNumberId: phoneNumber.id }
-    });
-  }
-
-  return new Response(JSON.stringify({
+  return new Response(JSON.stringify({ 
     success: true,
-    phone_number: callData.phone_number,
-    daily_calls: newDailyCount,
-    spam_check_triggered: newDailyCount >= 40
+    message: 'Legacy webhook processed'
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });

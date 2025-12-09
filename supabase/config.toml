@@ -1,5 +1,8 @@
 project_id = "emonjusymdripmkvtttc"
 
+[functions.quick-test-call]
+verify_jwt = false
+
 [api]
 enabled = true
 port = 54321
@@ -20,107 +23,129 @@ api_url = "http://localhost"
 enabled = true
 site_url = "http://localhost:3000"
 
+# =============================================
+# EDGE FUNCTIONS WITH JWT VERIFICATION ENABLED
+# These require authentication (default behavior)
+# =============================================
+
 [functions.ai-assistant]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-daily-report]
-verify_jwt = false
+verify_jwt = true
 
 [functions.system-health-monitor]
-verify_jwt = false
+verify_jwt = true
 
 [functions.spam-detection]
-verify_jwt = false
+verify_jwt = true
 
 [functions.scheduled-spam-check]
-verify_jwt = false
+verify_jwt = true
 
 [functions.enhanced-spam-lookup]
-verify_jwt = false
+verify_jwt = true
 
 [functions.advanced-spam-detection]
-verify_jwt = false
+verify_jwt = true
 
 [functions.enhanced-rotation-manager]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sms-messaging]
-verify_jwt = false
-
-[functions.twilio-sms-webhook]
-verify_jwt = false
+verify_jwt = true
 
 [functions.ai-sms-processor]
-verify_jwt = false
+verify_jwt = true
 
 [functions.retell-agent-management]
-verify_jwt = false
+verify_jwt = true
 
 [functions.retell-llm-management]
-verify_jwt = false
+verify_jwt = true
 
 [functions.retell-phone-management]
-verify_jwt = false
+verify_jwt = true
 
 [functions.outbound-calling]
-verify_jwt = false
+verify_jwt = true
 
 [functions.call-dispatcher]
-verify_jwt = false
+verify_jwt = true
 
 [functions.predictive-dialing-engine]
-verify_jwt = false
+verify_jwt = true
 
 [functions.phone-number-purchasing]
-verify_jwt = false
+verify_jwt = true
 
 [functions.ghl-integration]
-verify_jwt = false
+verify_jwt = true
 
 [functions.twilio-integration]
-verify_jwt = false
+verify_jwt = true
 
 [functions.airtable-sync]
+verify_jwt = true
+
+[functions.provider-management]
+verify_jwt = true
+
+[functions.pipeline-management]
+verify_jwt = true
+
+[functions.yellowstone-integration]
+verify_jwt = true
+
+[functions.analyze-call-transcript]
+verify_jwt = true
+
+[functions.retell-business-verification]
+verify_jwt = true
+
+[functions.elevenlabs-tts]
+verify_jwt = true
+
+[functions.automation-scheduler]
+verify_jwt = true
+
+[functions.calendar-integration]
+verify_jwt = true
+
+[functions.ai-workflow-generator]
+verify_jwt = true
+
+[functions.reachability-scoring]
+verify_jwt = true
+
+[functions.workflow-executor]
+verify_jwt = true
+
+[functions.disposition-router]
+verify_jwt = true
+
+[functions.voice-broadcast-tts]
+verify_jwt = true
+
+[functions.voice-broadcast-queue]
+verify_jwt = true
+
+[functions.voice-broadcast-engine]
+verify_jwt = true
+
+# =============================================
+# EXTERNAL WEBHOOKS - JWT VERIFICATION DISABLED
+# These receive external callbacks and cannot use JWT
+# =============================================
+
+[functions.twilio-sms-webhook]
 verify_jwt = false
 
 [functions.call-tracking-webhook]
 verify_jwt = false
 
-[functions.provider-management]
-verify_jwt = false
-
 [functions.telnyx-webhook]
 verify_jwt = false
 
-[functions.pipeline-management]
-verify_jwt = false
-
-[functions.yellowstone-integration]
-verify_jwt = false
-
-[functions.analyze-call-transcript]
-verify_jwt = false
-
-[functions.retell-business-verification]
-verify_jwt = false
-
-[functions.elevenlabs-tts]
-verify_jwt = false
-
-[functions.automation-scheduler]
-verify_jwt = false
-
-[functions.calendar-integration]
-verify_jwt = false
-
-[functions.ai-workflow-generator]
-verify_jwt = false
-
-[functions.reachability-scoring]
-verify_jwt = false
-
-[functions.workflow-executor]
-verify_jwt = false
-
-[functions.disposition-router]
-verify_jwt = false
+[functions.ai-error-analyzer]
+verify_jwt = true

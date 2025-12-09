@@ -15,6 +15,98 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Input validation schema for Twilio webhook data
+interface TwilioWebhookData {
+  MessageSid?: string;
+  From?: string;
+  To?: string;
+  Body?: string;
+  NumMedia?: string;
+  MediaUrl0?: string;
+  MediaContentType0?: string;
+  AccountSid?: string;
+  ApiVersion?: string;
+  FromCity?: string;
+  FromState?: string;
+  FromZip?: string;
+  FromCountry?: string;
+  ToCity?: string;
+  ToState?: string;
+  ToZip?: string;
+  ToCountry?: string;
+}
+
+// Validation function for Twilio webhook payload
+function validateTwilioPayload(data: Record<string, string>): { valid: boolean; error?: string; data?: TwilioWebhookData } {
+  // Basic structure validation
+  if (typeof data !== 'object' || data === null) {
+    return { valid: false, error: 'Invalid payload: expected object' };
+  }
+
+  // Validate phone number formats if present
+  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+  
+  if (data.From && !phoneRegex.test(data.From.replace(/\s/g, ''))) {
+    return { valid: false, error: 'Invalid From phone number format' };
+  }
+  
+  if (data.To && !phoneRegex.test(data.To.replace(/\s/g, ''))) {
+    return { valid: false, error: 'Invalid To phone number format' };
+  }
+
+  // Validate MessageSid format if present (Twilio SIDs start with SM or MM)
+  if (data.MessageSid && !/^(SM|MM)[a-f0-9]{32}$/i.test(data.MessageSid)) {
+    console.warn('[Twilio SMS Webhook] Unusual MessageSid format:', data.MessageSid);
+    // Don't reject - Twilio might change formats
+  }
+
+  // Validate NumMedia is a valid number if present
+  if (data.NumMedia && isNaN(parseInt(data.NumMedia))) {
+    return { valid: false, error: 'Invalid NumMedia value' };
+  }
+
+  // Sanitize body length (prevent extremely large payloads)
+  if (data.Body && data.Body.length > 10000) {
+    return { valid: false, error: 'Message body too large' };
+  }
+
+  // Validate MediaUrl if present
+  if (data.MediaUrl0) {
+    try {
+      const url = new URL(data.MediaUrl0);
+      // Twilio media URLs should come from Twilio's domain
+      if (!url.hostname.includes('twilio.com') && !url.hostname.includes('cloudfront.net')) {
+        console.warn('[Twilio SMS Webhook] Non-Twilio media URL:', url.hostname);
+      }
+    } catch {
+      return { valid: false, error: 'Invalid MediaUrl0 format' };
+    }
+  }
+
+  return { 
+    valid: true, 
+    data: {
+      MessageSid: data.MessageSid,
+      From: data.From,
+      To: data.To,
+      Body: data.Body,
+      NumMedia: data.NumMedia,
+      MediaUrl0: data.MediaUrl0,
+      MediaContentType0: data.MediaContentType0,
+      AccountSid: data.AccountSid,
+      ApiVersion: data.ApiVersion,
+      FromCity: data.FromCity,
+      FromState: data.FromState,
+      FromZip: data.FromZip,
+      FromCountry: data.FromCountry,
+      ToCity: data.ToCity,
+      ToState: data.ToState,
+      ToZip: data.ToZip,
+      ToCountry: data.ToCountry,
+    }
+  };
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -36,25 +128,42 @@ serve(async (req) => {
 
     // Parse the webhook data - Twilio sends form-urlencoded data
     const contentType = req.headers.get('content-type') || '';
-    let webhookData: Record<string, string> = {};
+    let rawData: Record<string, string> = {};
 
     if (contentType.includes('application/x-www-form-urlencoded')) {
       const formData = await req.formData();
       formData.forEach((value, key) => {
-        webhookData[key] = value.toString();
+        rawData[key] = value.toString();
       });
     } else if (contentType.includes('application/json')) {
-      webhookData = await req.json();
+      rawData = await req.json();
     } else {
       // Try to parse as text and decode
       const text = await req.text();
       const params = new URLSearchParams(text);
       params.forEach((value, key) => {
-        webhookData[key] = value;
+        rawData[key] = value;
       });
     }
 
-    console.log('[Twilio SMS Webhook] Webhook data:', JSON.stringify(webhookData));
+    // Validate the webhook payload
+    const validation = validateTwilioPayload(rawData);
+    if (!validation.valid) {
+      console.error('[Twilio SMS Webhook] Validation failed:', validation.error);
+      return new Response(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+      );
+    }
+
+    const webhookData = validation.data!;
+    console.log('[Twilio SMS Webhook] Validated webhook data:', JSON.stringify({
+      MessageSid: webhookData.MessageSid,
+      From: webhookData.From,
+      To: webhookData.To,
+      BodyLength: webhookData.Body?.length || 0,
+      NumMedia: webhookData.NumMedia,
+    }));
 
     // Extract SMS data from Twilio webhook
     const {
@@ -480,164 +589,141 @@ ${processedKnowledge}`;
           // Add general SMS guidelines
           systemPrompt += `\n\nSMS GUIDELINES:
 - Keep responses concise and appropriate for SMS (under 300 characters when possible)
-- Be natural and conversational
-- Emojis are allowed and encouraged when appropriate to add warmth and personality 😊
-- Avoid special formatting like markdown, bullet points, or numbered lists that don't render well in SMS
-- If the user sends an image, describe what you see and respond appropriately`;
+- Be conversational and natural
+- Don't use markdown formatting
+- If asked about scheduling, be helpful and suggest specific times
+- Never pretend to be human - you can acknowledge you're an AI assistant if asked
+- Be direct and get to the point`;
 
-          console.log('[Twilio SMS Webhook] System prompt built, length:', systemPrompt.length);
+          console.log('[Twilio SMS Webhook] System prompt length:', systemPrompt.length);
 
-          // Build the current message - include image if present and image analysis is enabled
-          let currentUserMessage: any;
-          
-          if (hasMedia && settings.enable_image_analysis && MediaUrl0) {
-            console.log('[Twilio SMS Webhook] Fetching image for analysis...');
-            try {
-              // Twilio media URLs require authentication
-              const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-              const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-              
-              const imageResponse = await fetch(MediaUrl0, {
-                headers: {
-                  'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
+          // Build messages array for AI with image support
+          const aiMessages: any[] = [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory
+          ];
+
+          // Add current message with image if present
+          if (hasMedia && MediaUrl0) {
+            console.log('[Twilio SMS Webhook] Including image in AI request');
+            aiMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: { url: MediaUrl0 }
                 },
-              });
-              
-              if (imageResponse.ok) {
-                const imageBuffer = await imageResponse.arrayBuffer();
-                const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
-                const mimeType = MediaContentType0 || 'image/jpeg';
-                
-                console.log('[Twilio SMS Webhook] Image fetched and converted to base64');
-                
-                currentUserMessage = {
-                  role: 'user',
-                  content: [
-                    { type: 'text', text: messageBody || 'What do you see in this image?' },
-                    { 
-                      type: 'image_url', 
-                      image_url: { url: `data:${mimeType};base64,${base64Image}` }
-                    }
-                  ]
-                };
-              } else {
-                console.error('[Twilio SMS Webhook] Failed to fetch image:', imageResponse.status);
-                currentUserMessage = { role: 'user', content: messageBody };
-              }
-            } catch (imgError) {
-              console.error('[Twilio SMS Webhook] Error fetching image:', imgError);
-              currentUserMessage = { role: 'user', content: messageBody };
-            }
+                {
+                  type: 'text',
+                  text: messageBody || 'What is this image?'
+                }
+              ]
+            });
           } else {
-            currentUserMessage = { role: 'user', content: messageBody };
+            aiMessages.push({
+              role: 'user',
+              content: messageBody
+            });
           }
 
-          const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          console.log('[Twilio SMS Webhook] Sending request to Lovable AI');
+          
+          const aiResponse = await fetch('https://api.lovable.dev/v1/chat/completions', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${lovableApiKey}`,
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${lovableApiKey}`,
             },
             body: JSON.stringify({
-              model: 'google/gemini-2.5-flash',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...conversationHistory,
-                currentUserMessage
-              ],
+              model: 'gpt-4o',
+              messages: aiMessages,
+              max_tokens: 500,
+              temperature: 0.7,
             }),
           });
 
           if (!aiResponse.ok) {
-            console.error('[Twilio SMS Webhook] AI generation failed:', aiResponse.status);
+            const errorText = await aiResponse.text();
+            console.error('[Twilio SMS Webhook] Lovable AI error:', aiResponse.status, errorText);
           } else {
             const aiData = await aiResponse.json();
-            const generatedText = aiData.choices?.[0]?.message?.content;
+            const aiReply = aiData.choices?.[0]?.message?.content;
+            
+            if (aiReply) {
+              console.log('[Twilio SMS Webhook] AI response generated:', aiReply.substring(0, 100));
+              
+              // Store AI response
+              const { data: aiMessage, error: aiMsgError } = await supabaseAdmin
+                .from('sms_messages')
+                .insert({
+                  user_id: userId,
+                  conversation_id: conversationId,
+                  to_number: From, // Reply to sender
+                  from_number: To, // From our number
+                  body: aiReply,
+                  direction: 'outbound',
+                  status: 'pending',
+                  provider_type: 'twilio',
+                  is_ai_generated: true,
+                })
+                .select()
+                .single();
 
-            if (generatedText) {
-              console.log('[Twilio SMS Webhook] AI generated response:', generatedText.substring(0, 50) + '...');
-
-              // Wait for the configured delay
-              const delayMs = (settings.double_text_delay_seconds || 2) * 1000;
-              console.log(`[Twilio SMS Webhook] Waiting ${delayMs}ms before sending...`);
-              await new Promise(resolve => setTimeout(resolve, delayMs));
-
-              // Send the response via Twilio
-              const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-              const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-
-              if (twilioAccountSid && twilioAuthToken) {
-                const twilioResponse = await fetch(
-                  `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-                  {
+              if (aiMsgError) {
+                console.error('[Twilio SMS Webhook] Failed to store AI message:', aiMsgError);
+              } else {
+                console.log('[Twilio SMS Webhook] AI message stored:', aiMessage.id);
+                
+                // Send via SMS messaging function
+                try {
+                  const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
                     method: 'POST',
                     headers: {
-                      'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
-                      'Content-Type': 'application/x-www-form-urlencoded',
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${serviceRoleKey}`,
                     },
-                    body: new URLSearchParams({
-                      To: From, // Reply to the sender
-                      From: To, // Use the same number they texted
-                      Body: generatedText,
+                    body: JSON.stringify({
+                      action: 'send',
+                      to: From,
+                      from: To,
+                      body: aiReply,
+                      userId: userId,
+                      conversationId: conversationId,
+                      isAiGenerated: true,
                     }),
+                  });
+
+                  if (!smsResponse.ok) {
+                    const smsError = await smsResponse.text();
+                    console.error('[Twilio SMS Webhook] Failed to send SMS:', smsError);
+                    
+                    // Update message status to failed
+                    await supabaseAdmin
+                      .from('sms_messages')
+                      .update({ status: 'failed', error_message: smsError })
+                      .eq('id', aiMessage.id);
+                  } else {
+                    console.log('[Twilio SMS Webhook] SMS sent successfully');
+                    
+                    // Update message status
+                    await supabaseAdmin
+                      .from('sms_messages')
+                      .update({ status: 'sent', sent_at: new Date().toISOString() })
+                      .eq('id', aiMessage.id);
                   }
-                );
-
-                if (twilioResponse.ok) {
-                  const twilioData = await twilioResponse.json();
-                  console.log('[Twilio SMS Webhook] Auto-response sent successfully:', twilioData.sid);
-
-                  // Store the outbound message
-                  await supabaseAdmin
-                    .from('sms_messages')
-                    .insert({
-                      user_id: userId,
-                      conversation_id: conversationId,
-                      to_number: From,
-                      from_number: To,
-                      body: generatedText,
-                      direction: 'outbound',
-                      status: 'sent',
-                      provider_type: 'twilio',
-                      provider_message_id: twilioData.sid,
-                      is_ai_generated: true,
-                      sent_at: new Date().toISOString(),
-                    });
-
-                  // Update conversation
-                  await supabaseAdmin
-                    .from('sms_conversations')
-                    .update({ last_message_at: new Date().toISOString() })
-                    .eq('id', conversationId);
-
-                  // Autonomous SMS analysis and pipeline management
-                  await analyzeAndUpdateFromSms(
-                    supabaseAdmin,
-                    userId,
-                    From,
-                    messageBody,
-                    generatedText,
-                    leadData,
-                    conversationHistory
-                  );
-
-                  console.log('[Twilio SMS Webhook] Auto-response stored and pipeline updated');
-                } else {
-                  const errorText = await twilioResponse.text();
-                  console.error('[Twilio SMS Webhook] Failed to send Twilio message:', errorText);
+                } catch (sendError) {
+                  console.error('[Twilio SMS Webhook] Error sending SMS:', sendError);
                 }
-              } else {
-                console.error('[Twilio SMS Webhook] Twilio credentials not configured');
               }
             }
           }
         }
-      } catch (autoError) {
-        console.error('[Twilio SMS Webhook] Auto-response error:', autoError);
+      } catch (aiError) {
+        console.error('[Twilio SMS Webhook] AI processing error:', aiError);
       }
     }
 
-    // Return TwiML response (empty response = no auto-reply from Twilio itself)
+    // Return TwiML response (empty response - we handle replies ourselves)
     return new Response(
       '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
       { 
@@ -647,445 +733,14 @@ ${processedKnowledge}`;
 
   } catch (error) {
     console.error('[Twilio SMS Webhook] Error:', error);
-    // Return TwiML even on error to prevent Twilio retries
+    
+    // Return TwiML response even on error
     return new Response(
       '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
       { 
+        status: 200, // Return 200 to prevent Twilio retries
         headers: { ...corsHeaders, 'Content-Type': 'text/xml' },
       }
     );
   }
 });
-
-// Autonomous SMS Analysis and Pipeline Management
-async function analyzeAndUpdateFromSms(
-  supabase: any,
-  userId: string,
-  contactPhone: string,
-  incomingMessage: string,
-  aiResponse: string,
-  leadData: any,
-  conversationHistory: any[]
-) {
-  console.log('[Autonomous SMS] Analyzing conversation for disposition...');
-  
-  // Find or create lead
-  let leadId = leadData?.id;
-  
-  if (!leadId) {
-    // Check if lead exists
-    const { data: existingLead } = await supabase
-      .from('leads')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('phone_number', contactPhone)
-      .maybeSingle();
-    
-    if (existingLead) {
-      leadId = existingLead.id;
-    } else {
-      // Create new lead autonomously
-      const { data: newLead, error: leadError } = await supabase
-        .from('leads')
-        .insert({
-          user_id: userId,
-          phone_number: contactPhone,
-          status: 'new',
-          lead_source: 'sms_inbound'
-        })
-        .select()
-        .single();
-      
-      if (!leadError && newLead) {
-        leadId = newLead.id;
-        console.log('[Autonomous SMS] Created new lead from SMS:', leadId);
-        
-        // Log the decision
-        await supabase.from('agent_decisions').insert({
-          user_id: userId,
-          lead_id: leadId,
-          decision_type: 'create_lead',
-          reasoning: 'New inbound SMS from unknown number - created lead for tracking',
-          action_taken: 'Created lead from SMS conversation',
-          executed_at: new Date().toISOString(),
-          success: true
-        });
-      }
-    }
-  }
-
-  if (!leadId) {
-    console.log('[Autonomous SMS] Could not get or create lead, skipping pipeline update');
-    return;
-  }
-
-  // Analyze the conversation for intent/disposition
-  const disposition = analyzeMessageIntent(incomingMessage, aiResponse, conversationHistory);
-  console.log('[Autonomous SMS] Detected disposition:', disposition);
-
-  // Update lead status based on SMS
-  const statusMapping: Record<string, string> = {
-    'Interested': 'qualified',
-    'Appointment Request': 'appointment',
-    'Callback Request': 'callback',
-    'Not Interested': 'not-interested',
-    'Question': 'engaged',
-    'Engaged': 'engaged',
-    'Hot Lead': 'hot',
-    'New': 'new'
-  };
-
-  const newStatus = statusMapping[disposition] || 'engaged';
-  
-  await supabase
-    .from('leads')
-    .update({
-      status: newStatus,
-      last_contacted_at: new Date().toISOString()
-    })
-    .eq('id', leadId);
-
-  // Update pipeline position
-  await updateSmsPipelinePosition(supabase, userId, leadId, disposition);
-
-  // Schedule follow-up if needed
-  await scheduleFollowUpFromSms(supabase, userId, leadId, disposition, incomingMessage);
-
-  // Log the agent decision
-  await supabase.from('agent_decisions').insert({
-    user_id: userId,
-    lead_id: leadId,
-    decision_type: 'sms_disposition',
-    reasoning: `SMS conversation analyzed. User message indicates: ${disposition}`,
-    action_taken: `Set status to ${newStatus}, updated pipeline to ${disposition}`,
-    executed_at: new Date().toISOString(),
-    success: true
-  });
-}
-
-function analyzeMessageIntent(
-  incomingMessage: string,
-  aiResponse: string,
-  conversationHistory: any[]
-): string {
-  const lowerMessage = incomingMessage.toLowerCase();
-  
-  // Check for explicit interest signals
-  if (
-    lowerMessage.includes('interested') ||
-    lowerMessage.includes('tell me more') ||
-    lowerMessage.includes('how much') ||
-    lowerMessage.includes('pricing') ||
-    lowerMessage.includes('sign up') ||
-    lowerMessage.includes('sign me up') ||
-    lowerMessage.includes('yes') && lowerMessage.length < 20
-  ) {
-    return 'Interested';
-  }
-  
-  // Check for appointment requests
-  if (
-    lowerMessage.includes('schedule') ||
-    lowerMessage.includes('appointment') ||
-    lowerMessage.includes('meet') ||
-    lowerMessage.includes('call me') ||
-    lowerMessage.includes('when can') ||
-    lowerMessage.includes('available')
-  ) {
-    return 'Appointment Request';
-  }
-  
-  // Check for callback requests
-  if (
-    lowerMessage.includes('call me back') ||
-    lowerMessage.includes('callback') ||
-    lowerMessage.includes('give me a call') ||
-    lowerMessage.includes('phone call')
-  ) {
-    return 'Callback Request';
-  }
-  
-  // Check for not interested
-  if (
-    lowerMessage.includes('not interested') ||
-    lowerMessage.includes('stop') ||
-    lowerMessage.includes('unsubscribe') ||
-    lowerMessage.includes('remove me') ||
-    lowerMessage.includes('do not contact') ||
-    lowerMessage.includes('leave me alone')
-  ) {
-    return 'Not Interested';
-  }
-  
-  // Check for questions (indicates engagement)
-  if (
-    lowerMessage.includes('?') ||
-    lowerMessage.includes('what') ||
-    lowerMessage.includes('how') ||
-    lowerMessage.includes('who') ||
-    lowerMessage.includes('where') ||
-    lowerMessage.includes('when') ||
-    lowerMessage.includes('why')
-  ) {
-    return 'Question';
-  }
-  
-  // Check for high-interest signals
-  if (
-    lowerMessage.includes('asap') ||
-    lowerMessage.includes('urgent') ||
-    lowerMessage.includes('today') ||
-    lowerMessage.includes('right now') ||
-    lowerMessage.includes('immediately')
-  ) {
-    return 'Hot Lead';
-  }
-  
-  // Default to engaged if they're responding
-  if (conversationHistory.length > 2) {
-    return 'Engaged';
-  }
-  
-  return 'New';
-}
-
-async function updateSmsPipelinePosition(
-  supabase: any,
-  userId: string,
-  leadId: string,
-  disposition: string
-) {
-  // Find or create the pipeline stage
-  let stage = await findOrCreateSmsPipelineStage(supabase, userId, disposition);
-
-  if (stage) {
-    // Check if lead already has a position
-    const { data: existingPosition } = await supabase
-      .from('lead_pipeline_positions')
-      .select('id')
-      .eq('lead_id', leadId)
-      .maybeSingle();
-
-    if (existingPosition) {
-      await supabase
-        .from('lead_pipeline_positions')
-        .update({
-          pipeline_board_id: stage.id,
-          moved_at: new Date().toISOString(),
-          moved_by_user: false,
-          notes: `Auto-moved by SMS disposition: ${disposition}`
-        })
-        .eq('id', existingPosition.id);
-    } else {
-      await supabase
-        .from('lead_pipeline_positions')
-        .insert({
-          user_id: userId,
-          lead_id: leadId,
-          pipeline_board_id: stage.id,
-          moved_by_user: false,
-          notes: `Auto-added by SMS disposition: ${disposition}`
-        });
-    }
-    
-    console.log(`[Autonomous SMS] Updated pipeline position to ${disposition} for lead ${leadId}`);
-  }
-}
-
-// Auto-create dispositions for SMS when they don't exist
-async function findOrCreateSmsDisposition(
-  supabase: any,
-  userId: string,
-  dispositionName: string
-) {
-  // First try to find existing disposition
-  const { data: existingDisp } = await supabase
-    .from('dispositions')
-    .select('id')
-    .eq('user_id', userId)
-    .ilike('name', `%${dispositionName}%`)
-    .maybeSingle();
-
-  if (existingDisp) {
-    return existingDisp;
-  }
-
-  // Disposition doesn't exist - create it autonomously
-  console.log(`[Autonomous SMS] Creating new disposition: ${dispositionName}`);
-
-  // Color mapping for SMS dispositions
-  const colorMapping: Record<string, string> = {
-    'Interested': '#22C55E',
-    'Appointment Request': '#3B82F6',
-    'Callback Request': '#F59E0B',
-    'Not Interested': '#EF4444',
-    'Question': '#8B5CF6',
-    'Engaged': '#06B6D4',
-    'Hot Lead': '#DC2626',
-    'New': '#64748B'
-  };
-
-  const { data: newDisp, error: createError } = await supabase
-    .from('dispositions')
-    .insert({
-      user_id: userId,
-      name: dispositionName,
-      description: `Auto-created from SMS disposition`,
-      color: colorMapping[dispositionName] || '#3B82F6',
-      pipeline_stage: dispositionName.toLowerCase().replace(/\s+/g, '_'),
-      auto_actions: []
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    console.error('[Autonomous SMS] Error creating disposition:', createError);
-    return null;
-  }
-
-  // Log the autonomous decision
-  await supabase.from('agent_decisions').insert({
-    user_id: userId,
-    decision_type: 'create_disposition',
-    reasoning: `Created new disposition "${dispositionName}" from SMS conversation analysis`,
-    action_taken: `Created disposition with color ${colorMapping[dispositionName] || '#3B82F6'}`,
-    executed_at: new Date().toISOString(),
-    success: true
-  });
-
-  console.log(`[Autonomous SMS] Created new disposition: ${dispositionName} (id: ${newDisp.id})`);
-  return newDisp;
-}
-
-async function findOrCreateSmsPipelineStage(
-  supabase: any,
-  userId: string,
-  stageName: string
-) {
-  // First ensure the disposition exists
-  const dispRecord = await findOrCreateSmsDisposition(supabase, userId, stageName);
-
-  // Then try to find existing stage
-  const { data: existingStage } = await supabase
-    .from('pipeline_boards')
-    .select('id, position, disposition_id')
-    .eq('user_id', userId)
-    .ilike('name', `%${stageName}%`)
-    .maybeSingle();
-
-  if (existingStage) {
-    // Link disposition if not already linked
-    if (dispRecord && !existingStage.disposition_id) {
-      await supabase
-        .from('pipeline_boards')
-        .update({ disposition_id: dispRecord.id })
-        .eq('id', existingStage.id);
-    }
-    return existingStage;
-  }
-
-  // Stage doesn't exist - create it autonomously
-  console.log(`[Autonomous SMS] Creating new pipeline stage: ${stageName}`);
-
-  // Get the highest position to add new stage at the end
-  const { data: lastStage } = await supabase
-    .from('pipeline_boards')
-    .select('position')
-    .eq('user_id', userId)
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const newPosition = (lastStage?.position || 0) + 1;
-
-  // Create the new stage with disposition link
-  const { data: newStage, error: createError } = await supabase
-    .from('pipeline_boards')
-    .insert({
-      user_id: userId,
-      name: stageName,
-      description: `Auto-created from SMS disposition`,
-      position: newPosition,
-      disposition_id: dispRecord?.id || null,
-      settings: {
-        auto_created: true,
-        created_from: 'sms_webhook',
-        created_at: new Date().toISOString()
-      }
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    console.error('[Autonomous SMS] Error creating pipeline stage:', createError);
-    return null;
-  }
-
-  // Log the autonomous decision
-  await supabase.from('agent_decisions').insert({
-    user_id: userId,
-    decision_type: 'create_pipeline_stage',
-    reasoning: `Created new pipeline stage "${stageName}" to handle SMS disposition`,
-    action_taken: `Created pipeline stage with position ${newPosition}`,
-    executed_at: new Date().toISOString(),
-    success: true
-  });
-
-  console.log(`[Autonomous SMS] Created new pipeline stage: ${stageName} (id: ${newStage.id})`);
-  return newStage;
-}
-
-async function scheduleFollowUpFromSms(
-  supabase: any,
-  userId: string,
-  leadId: string,
-  disposition: string,
-  message: string
-) {
-  // Determine follow-up action based on disposition
-  const followUpConfig: Record<string, { action: string; delayMinutes: number }> = {
-    'Callback Request': { action: 'ai_call', delayMinutes: 5 }, // Call soon
-    'Appointment Request': { action: 'ai_sms', delayMinutes: 30 }, // Confirm SMS
-    'Interested': { action: 'ai_sms', delayMinutes: 60 }, // Follow-up in 1 hour
-    'Question': { action: 'ai_sms', delayMinutes: 120 }, // Check in later
-    'Hot Lead': { action: 'ai_call', delayMinutes: 10 }, // Call quickly
-  };
-
-  const config = followUpConfig[disposition];
-  if (!config) {
-    console.log(`[Autonomous SMS] No follow-up configured for disposition: ${disposition}`);
-    return;
-  }
-
-  // Check if there's already a pending follow-up
-  const { data: existingFollowUp } = await supabase
-    .from('scheduled_follow_ups')
-    .select('id')
-    .eq('lead_id', leadId)
-    .eq('status', 'pending')
-    .maybeSingle();
-
-  if (existingFollowUp) {
-    console.log(`[Autonomous SMS] Follow-up already scheduled for lead ${leadId}`);
-    return;
-  }
-
-  const scheduledAt = new Date();
-  scheduledAt.setMinutes(scheduledAt.getMinutes() + config.delayMinutes);
-
-  const { error } = await supabase
-    .from('scheduled_follow_ups')
-    .insert({
-      user_id: userId,
-      lead_id: leadId,
-      action_type: config.action,
-      scheduled_at: scheduledAt.toISOString(),
-      status: 'pending'
-    });
-
-  if (error) {
-    console.error('[Autonomous SMS] Error scheduling follow-up:', error);
-  } else {
-    console.log(`[Autonomous SMS] Scheduled ${config.action} follow-up for ${disposition} at ${scheduledAt.toISOString()}`);
-  }
-}

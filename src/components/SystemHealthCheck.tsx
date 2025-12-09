@@ -171,12 +171,18 @@ export const SystemHealthCheck = () => {
 
     // Check 8: Go High Level API Connection
     try {
-      const ghlCredentials = localStorage.getItem('ghl_credentials');
-      if (ghlCredentials) {
-        const parsed = JSON.parse(ghlCredentials);
-        if (parsed.apiKey) {
+      // Check GHL credentials from secure database storage
+      const { data: ghlCreds } = await supabase
+        .from('user_credentials')
+        .select('credential_key')
+        .eq('service_name', 'ghl');
+      
+      if (ghlCreds && ghlCreds.length > 0) {
+        const hasApiKey = ghlCreds.some(c => c.credential_key === 'api_key');
+        if (hasApiKey) {
+          // Test connection through edge function (which retrieves credentials server-side)
           const { data, error } = await supabase.functions.invoke('ghl-integration', {
-            body: { action: 'test_connection', apiKey: parsed.apiKey, locationId: parsed.locationId }
+            body: { action: 'test_connection' }
           });
           if (error) throw error;
           updateResult(8, 'success', 'GHL API Connected', 'Connection verified');
@@ -192,11 +198,15 @@ export const SystemHealthCheck = () => {
 
     // Check 9: GHL Credentials
     try {
-      const ghlCredentials = localStorage.getItem('ghl_credentials');
-      if (ghlCredentials) {
-        const parsed = JSON.parse(ghlCredentials);
-        const hasApiKey = !!parsed.apiKey;
-        const hasLocationId = !!parsed.locationId;
+      // Check GHL credentials from secure database storage
+      const { data: ghlCreds } = await supabase
+        .from('user_credentials')
+        .select('credential_key')
+        .eq('service_name', 'ghl');
+      
+      if (ghlCreds && ghlCreds.length > 0) {
+        const hasApiKey = ghlCreds.some(c => c.credential_key === 'api_key');
+        const hasLocationId = ghlCreds.some(c => c.credential_key === 'location_id');
         if (hasApiKey && hasLocationId) {
           updateResult(9, 'success', 'Credentials Configured', 'API Key and Location ID set');
         } else if (hasApiKey) {
