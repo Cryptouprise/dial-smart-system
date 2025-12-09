@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Phone, Send, Loader2, Radio, CheckCircle } from 'lucide-react';
+import { Phone, Send, Loader2, Radio, CheckCircle, ArrowRight, PhoneForwarded } from 'lucide-react';
 
 interface PhoneNumber {
   id: string;
@@ -26,6 +26,7 @@ const QuickTestBroadcast: React.FC = () => {
   const [formData, setFormData] = useState({
     toNumber: '214-529-1531',
     fromNumber: '',
+    transferNumber: '',
     message: 'Hello! This is a test call. We are selling solar panels in your area. Are you interested in saving money on your electricity bill?',
   });
 
@@ -69,7 +70,7 @@ const QuickTestBroadcast: React.FC = () => {
     if (!formData.toNumber || !formData.fromNumber || !formData.message) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all fields",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
@@ -84,6 +85,7 @@ const QuickTestBroadcast: React.FC = () => {
           toNumber: formData.toNumber,
           fromNumber: formData.fromNumber,
           message: formData.message,
+          transferNumber: formData.transferNumber,
         },
       });
 
@@ -130,7 +132,7 @@ const QuickTestBroadcast: React.FC = () => {
           Quick Test Broadcast
         </CardTitle>
         <CardDescription>
-          Send a test voice broadcast via Twilio to verify your setup
+          Send a test voice broadcast via Twilio with IVR options
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -173,7 +175,7 @@ const QuickTestBroadcast: React.FC = () => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                This is the number that will appear on the recipient's caller ID
+                This number will appear on the recipient's caller ID
               </p>
             </div>
 
@@ -183,11 +185,28 @@ const QuickTestBroadcast: React.FC = () => {
               <Input
                 value={formData.toNumber}
                 onChange={(e) => setFormData({ ...formData, toNumber: e.target.value })}
-                placeholder="Enter phone number"
+                placeholder="Enter phone number to call"
                 className="bg-background"
               />
               <p className="text-xs text-muted-foreground">
                 The phone number that will receive the test call
+              </p>
+            </div>
+
+            {/* Transfer Number - NEW */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <PhoneForwarded className="h-4 w-4 text-blue-500" />
+                Transfer Number (Press 1)
+              </Label>
+              <Input
+                value={formData.transferNumber}
+                onChange={(e) => setFormData({ ...formData, transferNumber: e.target.value })}
+                placeholder="e.g., 469-555-1234 (your AI agent number)"
+                className="bg-background"
+              />
+              <p className="text-xs text-muted-foreground">
+                When recipient presses 1, they'll be transferred to this number (your Retell AI agent, etc.)
               </p>
             </div>
 
@@ -201,9 +220,6 @@ const QuickTestBroadcast: React.FC = () => {
                 rows={3}
                 className="bg-background resize-none"
               />
-              <p className="text-xs text-muted-foreground">
-                This message will be spoken via Twilio's text-to-speech (Polly.Joanna voice)
-              </p>
             </div>
 
             {/* Call Button */}
@@ -236,22 +252,37 @@ const QuickTestBroadcast: React.FC = () => {
                 <div className="mt-2 text-sm text-muted-foreground space-y-1">
                   <p><strong>From:</strong> {formatPhoneDisplay(callResult.from)}</p>
                   <p><strong>To:</strong> {formatPhoneDisplay(callResult.to)}</p>
-                  <p><strong>Call SID:</strong> {callResult.callSid}</p>
+                  {callResult.transferNumber && (
+                    <p><strong>Transfer To:</strong> {formatPhoneDisplay(callResult.transferNumber)}</p>
+                  )}
+                  <p><strong>Call SID:</strong> <span className="font-mono text-xs">{callResult.callSid}</span></p>
                 </div>
                 <p className="text-sm mt-2 text-green-600 dark:text-green-400">
-                  Check your phone! Press 1 when prompted to test the IVR.
+                  Check your phone! Test the IVR options.
                 </p>
               </div>
             )}
 
-            {/* Info Box */}
-            <div className="p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-              <strong>How it works:</strong>
-              <ul className="mt-1 space-y-1 list-disc list-inside">
-                <li>Call goes through Twilio using your selected caller ID</li>
-                <li>Recipient hears your message via text-to-speech</li>
-                <li>After the message: Press 1 = Interested, Press 2 = Callback, Press 3 = Opt-out</li>
-              </ul>
+            {/* IVR Options Info */}
+            <div className="p-3 rounded-lg bg-muted/50 text-xs space-y-2">
+              <p className="font-medium text-sm">IVR Options:</p>
+              <div className="grid grid-cols-1 gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="bg-primary/20 text-primary px-2 py-0.5 rounded font-mono">1</span>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <span>{formData.transferNumber ? `Transfer to ${formatPhoneDisplay(formData.transferNumber)}` : 'Interest noted (no transfer configured)'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded font-mono">2</span>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <span>Schedule callback (24 hours)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-red-500/20 text-red-600 px-2 py-0.5 rounded font-mono">3</span>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <span>Opt-out / Do Not Call</span>
+                </div>
+              </div>
             </div>
           </>
         )}
