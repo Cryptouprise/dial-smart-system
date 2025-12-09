@@ -205,12 +205,12 @@ serve(async (req) => {
     const result = await response.json();
     console.log('Call initiated:', result.sid);
 
-    // Log the test call
+    // Log the test call (use 'queued' status which is allowed by constraint)
     await supabase.from('call_logs').insert({
       user_id: user.id,
       phone_number: formattedToE164,
       caller_id: fromNumber,
-      status: 'initiated',
+      status: 'queued',
       notes: `Test broadcast: ${message}${formattedTransfer ? ` | Transfer: ${formattedTransfer}` : ''}`,
     });
 
