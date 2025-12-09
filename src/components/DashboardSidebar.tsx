@@ -25,6 +25,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Radio,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -100,6 +101,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'Agent Activity', value: 'agent-activity', icon: Bot },
       { title: 'AI Workflows', value: 'ai-workflows', icon: Sparkles },
       { title: 'Reachability', value: 'reachability', icon: TrendingUp },
+      { title: 'AI Error Handler', value: 'ai-errors', icon: AlertCircle },
     ],
   },
   {
