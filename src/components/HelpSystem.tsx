@@ -15,7 +15,11 @@ import {
   Link,
   Database,
   Bot,
-  ExternalLink
+  ExternalLink,
+  Radio,
+  Trophy,
+  Lightbulb,
+  Headphones
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 
@@ -27,6 +31,30 @@ interface FeatureDoc {
 }
 
 const features: FeatureDoc[] = [
+  {
+    name: 'Voice Broadcast System',
+    description: 'Send mass voice broadcasts with IVR (press 1, press 2) and DTMF actions',
+    icon: Radio,
+    docSection: 'voice-broadcast'
+  },
+  {
+    name: 'VICIdial Integration',
+    description: 'Connect with VICIdial for hybrid AI-human workflows and agent control',
+    icon: Headphones,
+    docSection: 'vicidial'
+  },
+  {
+    name: 'Real-Time Agent Coaching',
+    description: 'AI-powered coaching prompts during live calls to improve performance',
+    icon: Lightbulb,
+    docSection: 'agent-coaching'
+  },
+  {
+    name: 'Agent Benchmarking & Ranking',
+    description: 'Multi-metric performance scoring with automatic lead routing to top agents',
+    icon: Trophy,
+    docSection: 'agent-ranking'
+  },
   {
     name: 'Predictive Dialing',
     description: 'AI-powered calling campaigns with intelligent lead prioritization',
@@ -120,6 +148,10 @@ const features: FeatureDoc[] = [
 ];
 
 const docLinks: Record<string, string> = {
+  'voice-broadcast': '#voice-broadcast',
+  'vicidial': '#vicidial',
+  'agent-coaching': '#agent-coaching',
+  'agent-ranking': '#agent-ranking',
   'predictive-dialing': '#predictive-dialing',
   'retell-ai': '#retell-ai',
   'phone-numbers': '#phone-numbers',
@@ -189,6 +221,212 @@ const HelpSystem = () => {
         {/* Quick Start Section */}
         <div className="mt-12 space-y-8">
           <h2 className="text-2xl font-bold text-foreground">Quick Start Guides</h2>
+          
+          {/* Voice Broadcast System */}
+          <div className="space-y-6" id="voice-broadcast">
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Radio className="h-5 w-5 text-primary" />
+                  Voice Broadcast System
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="prose dark:prose-invert max-w-none">
+                <p className="text-muted-foreground mb-4">Send mass voice broadcasts with interactive IVR (press 1, press 2) options and DTMF actions.</p>
+                
+                <h3 className="text-lg font-semibold mt-4">Quick Test Broadcast</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Navigate to the Voice Broadcast section</li>
+                  <li>Enter the recipient phone number</li>
+                  <li>Select your caller ID from available numbers</li>
+                  <li>Write your broadcast message</li>
+                  <li>Optionally add a transfer number for live agent handoff</li>
+                  <li>Click "Send Test Call" to send immediately</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">Creating a Broadcast Campaign</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Click "Create New Broadcast"</li>
+                  <li>Enter campaign name and description</li>
+                  <li>Write your message text (converted to speech via ElevenLabs)</li>
+                  <li>Select a voice for your broadcast</li>
+                  <li>Configure IVR options:
+                    <ul className="ml-6 mt-2 space-y-1">
+                      <li>• Press 1: Transfer to agent (enter transfer number)</li>
+                      <li>• Press 2: Schedule callback (set delay hours)</li>
+                      <li>• Press 3: Add to Do Not Call list</li>
+                    </ul>
+                  </li>
+                  <li>Set calling rate (calls per minute)</li>
+                  <li>Add leads to the broadcast</li>
+                  <li>Generate audio preview</li>
+                  <li>Start the broadcast campaign</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">DTMF Actions</h3>
+                <p className="text-muted-foreground">Configure what happens when recipients press different keys:</p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li><strong>Transfer:</strong> Connect caller to live agent</li>
+                  <li><strong>Callback:</strong> Schedule automated callback at specified time</li>
+                  <li><strong>DNC:</strong> Add to Do Not Call list</li>
+                  <li><strong>Replay:</strong> Replay the message</li>
+                  <li><strong>Voicemail:</strong> Leave voicemail option</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* VICIdial Integration */}
+          <div className="space-y-6" id="vicidial">
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Headphones className="h-5 w-5 text-primary" />
+                  VICIdial Integration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="prose dark:prose-invert max-w-none">
+                <p className="text-muted-foreground mb-4">Connect with your existing VICIdial infrastructure for hybrid AI-human workflows.</p>
+                
+                <h3 className="text-lg font-semibold mt-4">Setup</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Navigate to Settings → Providers</li>
+                  <li>Click "Add Provider" and select "VICIdial"</li>
+                  <li>Enter your VICIdial server URL</li>
+                  <li>Enter API credentials (username and password)</li>
+                  <li>Configure default agent and campaign settings</li>
+                  <li>Click "Test Connection" to verify</li>
+                  <li>Save configuration</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">Features</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li><strong>Agent Control:</strong> Dial, hangup, pause/resume agents remotely</li>
+                  <li><strong>Dispositions:</strong> Set call outcomes and statuses</li>
+                  <li><strong>Lead Management:</strong> Add and update leads in VICIdial</li>
+                  <li><strong>Hybrid Workflows:</strong> AI qualifies leads, transfers to VICIdial agents</li>
+                  <li><strong>Campaign Sync:</strong> Sync campaign data bidirectionally</li>
+                </ul>
+                
+                <h3 className="text-lg font-semibold mt-4">Use Cases</h3>
+                <p className="text-muted-foreground">Perfect for enterprises with existing VICIdial infrastructure:</p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li>AI pre-qualifies leads, hot transfers to human agents</li>
+                  <li>Use AI for high-volume screening, humans for closing</li>
+                  <li>Gradual adoption without platform migration</li>
+                  <li>Preserve existing agent training and processes</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Real-Time Agent Coaching */}
+          <div className="space-y-6" id="agent-coaching">
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Lightbulb className="h-5 w-5 text-primary" />
+                  Real-Time Agent Coaching
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="prose dark:prose-invert max-w-none">
+                <p className="text-muted-foreground mb-4">AI-powered coaching prompts appear during live calls to help agents perform at their best.</p>
+                
+                <h3 className="text-lg font-semibold mt-4">How It Works</h3>
+                <p className="text-muted-foreground">During active calls, the AI Coach analyzes the conversation in real-time and provides contextual suggestions:</p>
+                
+                <h3 className="text-lg font-semibold mt-4">Prompt Types</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li><strong>Suggestions:</strong> Build rapport, timing recommendations</li>
+                  <li><strong>Objection Handling:</strong> Pre-loaded response templates for common objections</li>
+                  <li><strong>Compliance:</strong> TCPA/regulatory reminders and disclosures</li>
+                  <li><strong>Next Actions:</strong> Buying signals detected, suggest next steps</li>
+                  <li><strong>Script Guidance:</strong> Value propositions and key talking points</li>
+                  <li><strong>Warnings:</strong> Risky language alerts (income guarantees, false claims)</li>
+                </ul>
+                
+                <h3 className="text-lg font-semibold mt-4">Configuration</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Coaching activates automatically during live calls</li>
+                  <li>High-priority prompts appear as notifications</li>
+                  <li>Adjust prompt interval in settings (default: 15 seconds)</li>
+                  <li>View prompt history and action tracking</li>
+                  <li>Mark prompts as "Applied" or "Dismiss"</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">Benefits</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li>15-25% improvement in agent performance</li>
+                  <li>Consistent quality across all agents</li>
+                  <li>Reduced training time for new hires</li>
+                  <li>Real-time compliance enforcement</li>
+                  <li>Turn average agents into top performers</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Agent Benchmarking & Ranking */}
+          <div className="space-y-6" id="agent-ranking">
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy className="h-5 w-5 text-primary" />
+                  Agent Benchmarking & Ranking
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="prose dark:prose-invert max-w-none">
+                <p className="text-muted-foreground mb-4">Multi-metric performance scoring system with automatic lead routing to your best performers.</p>
+                
+                <h3 className="text-lg font-semibold mt-4">Performance Scoring</h3>
+                <p className="text-muted-foreground">Agents are scored using 6 weighted metrics:</p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li><strong>Conversion Rate (30%):</strong> Calls that result in appointments/sales</li>
+                  <li><strong>Transfer Success (20%):</strong> Successful warm transfers to closers</li>
+                  <li><strong>Compliance (15%):</strong> Adherence to regulatory requirements</li>
+                  <li><strong>Objection Handling (15%):</strong> Ability to overcome objections</li>
+                  <li><strong>Script Adherence (10%):</strong> Following approved scripts</li>
+                  <li><strong>Customer Sentiment (10%):</strong> Customer satisfaction and rapport</li>
+                </ul>
+                
+                <h3 className="text-lg font-semibold mt-4">Ranking Tiers</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li><strong>🏆 Elite (85-100):</strong> Top performers - get high-value leads and complex situations</li>
+                  <li><strong>🔵 Advanced (70-84):</strong> Strong performers - handle standard qualified leads</li>
+                  <li><strong>🟢 Proficient (55-69):</strong> Developing agents - general leads and follow-ups</li>
+                  <li><strong>⚪ Developing (0-54):</strong> Training - practice leads with AI coaching</li>
+                </ul>
+                
+                <h3 className="text-lg font-semibold mt-4">Smart Lead Routing</h3>
+                <p className="text-muted-foreground">High-value leads are automatically routed to your best agents:</p>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>System calculates real-time agent scores</li>
+                  <li>New leads are prioritized by potential value</li>
+                  <li>Elite agents receive high-value prospects first</li>
+                  <li>Developing agents get training opportunities</li>
+                  <li>Performance trends tracked over time</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">Viewing Performance</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Navigate to Analytics → Agent Benchmarking</li>
+                  <li>View real-time leaderboard</li>
+                  <li>Click any agent for detailed metrics</li>
+                  <li>Review strengths and improvement areas</li>
+                  <li>Track performance trends (up/down/stable)</li>
+                </ol>
+                
+                <h3 className="text-lg font-semibold mt-4">Benefits</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
+                  <li>10-20% conversion improvement on high-value leads</li>
+                  <li>Optimized agent utilization</li>
+                  <li>Data-driven coaching and training</li>
+                  <li>Fair, objective performance reviews</li>
+                  <li>Automatic optimization - no manual routing needed</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
           
           <div className="space-y-6" id="predictive-dialing">
             <Card>

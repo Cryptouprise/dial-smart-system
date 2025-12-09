@@ -5,7 +5,7 @@
  * All provider adapters must implement the IProviderAdapter interface.
  */
 
-export type ProviderType = 'retell' | 'telnyx' | 'twilio' | 'custom';
+export type ProviderType = 'retell' | 'telnyx' | 'twilio' | 'vicidial' | 'custom';
 
 export type NumberCapability = 'voice' | 'sms' | 'rvm' | 'shaken';
 

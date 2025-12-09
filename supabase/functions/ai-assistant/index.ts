@@ -17,6 +17,32 @@ const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant with FULL CONTRO
 ## YOUR SUPERPOWERS
 You can control EVERYTHING in the Smart Dialer platform:
 
+### Voice Broadcast System (NEW!)
+- Create voice broadcast campaigns with IVR (press 1, press 2)
+- Send test broadcasts to verify messages
+- Start and stop broadcast campaigns
+- Configure DTMF actions (transfer, callback, DNC)
+- Get real-time broadcast statistics
+- ElevenLabs text-to-speech integration
+
+### VICIdial Integration (NEW!)
+- Configure VICIdial server connection
+- Hybrid AI-human workflows
+- Agent control and campaign sync
+- Enterprise contact center integration
+
+### Real-Time Agent Coaching (NEW!)
+- Configure AI coaching during live calls
+- Set prompt intervals and priority levels
+- 6 types of coaching prompts
+- Performance improvement tracking
+
+### Agent Benchmarking & Ranking (NEW!)
+- View agent performance rankings
+- Multi-metric scoring (conversion, compliance, etc.)
+- 4-tier ranking system (Elite, Advanced, Proficient, Developing)
+- Smart lead routing based on performance
+
 ### Settings & Toggles
 - enable_amd: Answering Machine Detection on/off
 - amd_sensitivity: low, medium, or high sensitivity level
@@ -80,6 +106,7 @@ You can control EVERYTHING in the Smart Dialer platform:
 - campaign_automation_rules, ai_chatbot_settings, ai_sms_settings
 - daily_reports, rotation_settings, advanced_dialer_settings, system_settings
 - sms_messages, sms_conversations, pipeline_boards, dispositions, lead_pipeline_positions
+- voice_broadcasts, broadcast_queue, broadcast_dtmf_actions, agent_coaching_settings, agent_metrics, provider_configs
 
 ## WHEN TO USE TOOLS
 - "turn on/off X" → toggle_setting
@@ -101,6 +128,13 @@ You can control EVERYTHING in the Smart Dialer platform:
 - "check number health/spam score" → check_number_health
 - "move lead to stage/pipeline" → move_lead_pipeline
 - "export data/download" → export_data
+- "create voice broadcast" → create_voice_broadcast
+- "start/stop broadcast" → start_voice_broadcast / stop_voice_broadcast
+- "send test call/broadcast" → send_test_broadcast
+- "broadcast stats/status" → get_broadcast_stats
+- "configure coaching" → configure_agent_coaching
+- "view agent rankings/performance" → view_agent_rankings
+- "setup VICIdial/configure VICIdial" → configure_vicidial
 
 Be proactive! When they ask to do something, USE THE TOOLS to do it immediately.`;
 
@@ -402,6 +436,132 @@ const TOOLS = [
           notes: { type: "string", description: "Notes about why the lead was moved" }
         },
         required: ["pipeline_board_name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_voice_broadcast",
+      description: "Create a new voice broadcast campaign with IVR options (press 1, press 2, etc.)",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Broadcast campaign name" },
+          message_text: { type: "string", description: "Message to convert to speech" },
+          voice_id: { type: "string", description: "ElevenLabs voice ID (default: EXAVITQu4vr4xnSDxMaL)" },
+          ivr_prompt: { type: "string", description: "IVR instructions (e.g., 'Press 1 to speak with agent')" },
+          transfer_number: { type: "string", description: "Phone number for press 1 transfers" },
+          calls_per_minute: { type: "number", description: "Calling rate (default: 50)" }
+        },
+        required: ["name", "message_text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_voice_broadcast",
+      description: "Start a voice broadcast campaign",
+      parameters: {
+        type: "object",
+        properties: {
+          broadcast_id: { type: "string", description: "ID of the broadcast to start" },
+          lead_ids: { type: "array", items: { type: "string" }, description: "Optional: specific leads to broadcast to" }
+        },
+        required: ["broadcast_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "stop_voice_broadcast",
+      description: "Stop an active voice broadcast campaign",
+      parameters: {
+        type: "object",
+        properties: {
+          broadcast_id: { type: "string", description: "ID of the broadcast to stop" }
+        },
+        required: ["broadcast_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_test_broadcast",
+      description: "Send a quick test voice broadcast to a single number",
+      parameters: {
+        type: "object",
+        properties: {
+          to_number: { type: "string", description: "Phone number to call" },
+          from_number: { type: "string", description: "Caller ID to use" },
+          message: { type: "string", description: "Message to deliver" },
+          transfer_number: { type: "string", description: "Optional transfer number for press 1" }
+        },
+        required: ["to_number", "from_number", "message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_broadcast_stats",
+      description: "Get statistics for a voice broadcast campaign",
+      parameters: {
+        type: "object",
+        properties: {
+          broadcast_id: { type: "string", description: "ID of the broadcast" }
+        },
+        required: ["broadcast_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_agent_coaching",
+      description: "Configure real-time agent coaching settings",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean", description: "Enable/disable coaching" },
+          prompt_interval: { type: "number", description: "Seconds between prompts (default: 15)" },
+          priority_threshold: { type: "string", description: "Show prompts: all, high, or critical" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "view_agent_rankings",
+      description: "View agent performance rankings and benchmarks",
+      parameters: {
+        type: "object",
+        properties: {
+          time_period: { type: "string", description: "Period: today, week, month, all" },
+          tier_filter: { type: "string", description: "Filter by tier: elite, advanced, proficient, developing" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_vicidial",
+      description: "Configure VICIdial integration settings",
+      parameters: {
+        type: "object",
+        properties: {
+          server_url: { type: "string", description: "VICIdial server URL" },
+          api_user: { type: "string", description: "API username" },
+          agent_user: { type: "string", description: "Default agent username" },
+          campaign_id: { type: "string", description: "Default campaign ID" },
+          test_connection: { type: "boolean", description: "Test connection after configuration" }
+        },
+        required: ["server_url", "api_user"]
       }
     }
   },
@@ -1182,6 +1342,208 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       return { 
         success: true, 
         message: `Lead "${leadName}" moved to "${boards[0].name}" pipeline stage` 
+      };
+    }
+
+    case 'create_voice_broadcast': {
+      const voiceId = args.voice_id || 'EXAVITQu4vr4xnSDxMaL';
+      const callsPerMinute = args.calls_per_minute || 50;
+      
+      // Create broadcast record
+      const { data: broadcast, error } = await supabase.from('voice_broadcasts').insert({
+        user_id: userId,
+        name: args.name,
+        message_text: args.message_text,
+        voice_id: voiceId,
+        ivr_enabled: true,
+        ivr_prompt: args.ivr_prompt || 'Press 1 to speak with a representative.',
+        calls_per_minute: callsPerMinute,
+        status: 'draft'
+      }).select().single();
+      
+      if (error) return { success: false, message: `Failed to create broadcast: ${error.message}` };
+      
+      // Configure DTMF actions if transfer number provided
+      if (args.transfer_number) {
+        await supabase.from('broadcast_dtmf_actions').insert({
+          broadcast_id: broadcast.id,
+          digit: '1',
+          action: 'transfer',
+          transfer_number: args.transfer_number
+        });
+      }
+      
+      return { 
+        success: true, 
+        message: `Voice broadcast "${args.name}" created successfully. ID: ${broadcast.id}`,
+        data: { broadcast_id: broadcast.id }
+      };
+    }
+
+    case 'start_voice_broadcast': {
+      const { data: broadcast } = await supabase.from('voice_broadcasts')
+        .select('*').eq('id', args.broadcast_id).single();
+      
+      if (!broadcast) return { success: false, message: 'Broadcast not found' };
+      
+      // Update status to active
+      await supabase.from('voice_broadcasts')
+        .update({ status: 'active', started_at: new Date().toISOString() })
+        .eq('id', args.broadcast_id);
+      
+      // If lead_ids provided, add them to queue
+      if (args.lead_ids && args.lead_ids.length > 0) {
+        const queueItems = args.lead_ids.map((lead_id: string) => ({
+          broadcast_id: args.broadcast_id,
+          lead_id: lead_id,
+          status: 'pending'
+        }));
+        await supabase.from('broadcast_queue').insert(queueItems);
+      }
+      
+      return { 
+        success: true, 
+        message: `Broadcast started. ${args.lead_ids?.length || 0} leads queued for calling.`
+      };
+    }
+
+    case 'stop_voice_broadcast': {
+      await supabase.from('voice_broadcasts')
+        .update({ status: 'paused', paused_at: new Date().toISOString() })
+        .eq('id', args.broadcast_id);
+      
+      return { success: true, message: 'Broadcast stopped successfully' };
+    }
+
+    case 'send_test_broadcast': {
+      // Call quick-test-call edge function
+      const { data, error } = await supabase.functions.invoke('quick-test-call', {
+        body: {
+          toNumber: args.to_number,
+          fromNumber: args.from_number,
+          message: args.message,
+          transferNumber: args.transfer_number
+        }
+      });
+      
+      if (error) return { success: false, message: `Test call failed: ${error.message}` };
+      
+      return { 
+        success: true, 
+        message: `Test broadcast sent to ${args.to_number}`,
+        data: data
+      };
+    }
+
+    case 'get_broadcast_stats': {
+      const { data: broadcast } = await supabase.from('voice_broadcasts')
+        .select('*').eq('id', args.broadcast_id).single();
+      
+      if (!broadcast) return { success: false, message: 'Broadcast not found' };
+      
+      const { data: queue } = await supabase.from('broadcast_queue')
+        .select('status').eq('broadcast_id', args.broadcast_id);
+      
+      const stats = {
+        name: broadcast.name,
+        status: broadcast.status,
+        total_leads: queue?.length || 0,
+        completed: queue?.filter((q: any) => q.status === 'completed').length || 0,
+        pending: queue?.filter((q: any) => q.status === 'pending').length || 0,
+        failed: queue?.filter((q: any) => q.status === 'failed').length || 0,
+        started_at: broadcast.started_at,
+        calls_per_minute: broadcast.calls_per_minute
+      };
+      
+      return { success: true, message: 'Broadcast stats retrieved', data: stats };
+    }
+
+    case 'configure_agent_coaching': {
+      const { data, error } = await supabase.from('agent_coaching_settings')
+        .upsert({
+          user_id: userId,
+          enabled: args.enabled !== undefined ? args.enabled : true,
+          prompt_interval: args.prompt_interval || 15,
+          priority_threshold: args.priority_threshold || 'all',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' })
+        .select().single();
+      
+      if (error) return { success: false, message: `Failed to configure coaching: ${error.message}` };
+      
+      return { 
+        success: true, 
+        message: `Agent coaching ${args.enabled ? 'enabled' : 'configured'}. Prompts every ${args.prompt_interval || 15} seconds.`
+      };
+    }
+
+    case 'view_agent_rankings': {
+      const timePeriod = args.time_period || 'all';
+      let timeFilter = '';
+      
+      if (timePeriod === 'today') {
+        timeFilter = new Date().toISOString().split('T')[0];
+      } else if (timePeriod === 'week') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        timeFilter = weekAgo.toISOString();
+      } else if (timePeriod === 'month') {
+        const monthAgo = new Date();
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        timeFilter = monthAgo.toISOString();
+      }
+      
+      // Get agent metrics
+      const { data: agents } = await supabase.from('agent_metrics')
+        .select('*')
+        .eq('user_id', userId)
+        .order('performance_score', { ascending: false });
+      
+      if (!agents || agents.length === 0) {
+        return { success: true, message: 'No agent performance data available yet', data: [] };
+      }
+      
+      const rankings = agents.map((agent: any, index: number) => ({
+        rank: index + 1,
+        agent_name: agent.agent_name,
+        score: agent.performance_score,
+        tier: agent.tier,
+        calls: agent.total_calls,
+        conversions: agent.conversions,
+        conversion_rate: (agent.conversions / agent.total_calls * 100).toFixed(1) + '%'
+      }));
+      
+      return { 
+        success: true, 
+        message: `${agents.length} agents ranked`,
+        data: rankings
+      };
+    }
+
+    case 'configure_vicidial': {
+      const { data, error } = await supabase.from('provider_configs')
+        .upsert({
+          user_id: userId,
+          provider_type: 'vicidial',
+          server_url: args.server_url,
+          api_user: args.api_user,
+          agent_user: args.agent_user,
+          campaign_id: args.campaign_id,
+          active: true,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,provider_type' })
+        .select().single();
+      
+      if (error) return { success: false, message: `Failed to configure VICIdial: ${error.message}` };
+      
+      let testResult = '';
+      if (args.test_connection) {
+        testResult = ' Connection test would be performed here.';
+      }
+      
+      return { 
+        success: true, 
+        message: `VICIdial configured successfully.${testResult} Server: ${args.server_url}`
       };
     }
 

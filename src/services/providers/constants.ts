@@ -8,13 +8,14 @@
 import type { ProviderType, NumberCapability } from './types';
 
 /** Available provider types */
-export const PROVIDER_TYPES: readonly ProviderType[] = ['retell', 'telnyx', 'twilio'] as const;
+export const PROVIDER_TYPES: readonly ProviderType[] = ['retell', 'telnyx', 'twilio', 'vicidial'] as const;
 
 /** Human-readable labels for each provider */
 export const PROVIDER_LABELS: Record<ProviderType, string> = {
   retell: 'Retell AI',
   telnyx: 'Telnyx',
   twilio: 'Twilio',
+  vicidial: 'VICIdial',
   custom: 'Custom',
 } as const;
 
@@ -23,6 +24,7 @@ export const PROVIDER_DESCRIPTIONS: Record<ProviderType, string> = {
   retell: 'AI-powered voice conversations',
   telnyx: 'Voice, SMS, and RVM with STIR/SHAKEN',
   twilio: 'Voice and SMS with wide coverage',
+  vicidial: 'Open-source contact center with agent control',
   custom: 'Custom provider integration',
 } as const;
 

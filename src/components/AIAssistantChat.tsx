@@ -50,6 +50,9 @@ const QUICK_ACTIONS = [
   { label: '📋 Daily Report', message: 'Generate my daily performance report with wins, improvements, and recommendations.' },
   { label: '📈 Weekly Stats', message: 'Get my stats for this week - compare calls, appointments, and answer rates' },
   { label: '💾 Export Leads', message: 'Export all my leads to CSV format' },
+  { label: '📻 Test Broadcast', message: 'Send a quick test voice broadcast with IVR options' },
+  { label: '🏆 Agent Rankings', message: 'Show me the agent performance leaderboard and rankings' },
+  { label: '💡 Configure Coaching', message: 'Set up real-time agent coaching with AI prompts during calls' },
 ];
 
 const AVAILABLE_TOOLS = [
@@ -73,6 +76,11 @@ const AVAILABLE_TOOLS = [
   { icon: Settings, name: 'Update Campaign', description: 'Modify campaigns' },
   { icon: MessageSquare, name: 'Send SMS', description: 'Send from specific number' },
   { icon: ShieldAlert, name: 'Quarantine Number', description: 'Flag problematic numbers' },
+  { icon: Phone, name: 'Voice Broadcast', description: 'Create voice broadcast campaigns' },
+  { icon: Phone, name: 'Test Broadcast', description: 'Send test voice call' },
+  { icon: Zap, name: 'Agent Coaching', description: 'Configure real-time coaching' },
+  { icon: Users, name: 'Agent Rankings', description: 'View performance rankings' },
+  { icon: Settings, name: 'VICIdial Config', description: 'Setup VICIdial integration' },
 ];
 
 export const AIAssistantChat: React.FC = () => {
