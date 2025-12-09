@@ -124,3 +124,12 @@ verify_jwt = false
 
 [functions.disposition-router]
 verify_jwt = false
+
+[functions.voice-broadcast-tts]
+verify_jwt = false
+
+[functions.voice-broadcast-queue]
+verify_jwt = false
+
+[functions.voice-broadcast-engine]
+verify_jwt = false
