@@ -312,6 +312,78 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcast_queue: {
+        Row: {
+          ai_transcript: string | null
+          attempts: number | null
+          broadcast_id: string
+          call_duration_seconds: number | null
+          callback_scheduled_at: string | null
+          created_at: string | null
+          dtmf_pressed: string | null
+          id: string
+          lead_id: string | null
+          lead_name: string | null
+          max_attempts: number | null
+          phone_number: string
+          scheduled_at: string | null
+          status: string
+          transfer_status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          ai_transcript?: string | null
+          attempts?: number | null
+          broadcast_id: string
+          call_duration_seconds?: number | null
+          callback_scheduled_at?: string | null
+          created_at?: string | null
+          dtmf_pressed?: string | null
+          id?: string
+          lead_id?: string | null
+          lead_name?: string | null
+          max_attempts?: number | null
+          phone_number: string
+          scheduled_at?: string | null
+          status?: string
+          transfer_status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          ai_transcript?: string | null
+          attempts?: number | null
+          broadcast_id?: string
+          call_duration_seconds?: number | null
+          callback_scheduled_at?: string | null
+          created_at?: string | null
+          dtmf_pressed?: string | null
+          id?: string
+          lead_id?: string | null
+          lead_name?: string | null
+          max_attempts?: number | null
+          phone_number?: string
+          scheduled_at?: string | null
+          status?: string
+          transfer_status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcast_queue_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "voice_broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broadcast_queue_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar_appointments: {
         Row: {
           created_at: string
@@ -2312,6 +2384,102 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      voice_broadcasts: {
+        Row: {
+          ai_system_prompt: string | null
+          ai_transfer_keywords: string[] | null
+          audio_url: string | null
+          callbacks_scheduled: number | null
+          calling_hours_end: string | null
+          calling_hours_start: string | null
+          calls_answered: number | null
+          calls_made: number | null
+          calls_per_minute: number | null
+          created_at: string | null
+          description: string | null
+          dnc_requests: number | null
+          dtmf_actions: Json | null
+          id: string
+          ivr_enabled: boolean | null
+          ivr_mode: string | null
+          ivr_prompt: string | null
+          max_attempts: number | null
+          message_text: string
+          name: string
+          retry_delay_minutes: number | null
+          status: string
+          timezone: string | null
+          total_leads: number | null
+          transfers_completed: number | null
+          updated_at: string | null
+          user_id: string
+          voice_id: string | null
+          voice_model: string | null
+        }
+        Insert: {
+          ai_system_prompt?: string | null
+          ai_transfer_keywords?: string[] | null
+          audio_url?: string | null
+          callbacks_scheduled?: number | null
+          calling_hours_end?: string | null
+          calling_hours_start?: string | null
+          calls_answered?: number | null
+          calls_made?: number | null
+          calls_per_minute?: number | null
+          created_at?: string | null
+          description?: string | null
+          dnc_requests?: number | null
+          dtmf_actions?: Json | null
+          id?: string
+          ivr_enabled?: boolean | null
+          ivr_mode?: string | null
+          ivr_prompt?: string | null
+          max_attempts?: number | null
+          message_text: string
+          name: string
+          retry_delay_minutes?: number | null
+          status?: string
+          timezone?: string | null
+          total_leads?: number | null
+          transfers_completed?: number | null
+          updated_at?: string | null
+          user_id: string
+          voice_id?: string | null
+          voice_model?: string | null
+        }
+        Update: {
+          ai_system_prompt?: string | null
+          ai_transfer_keywords?: string[] | null
+          audio_url?: string | null
+          callbacks_scheduled?: number | null
+          calling_hours_end?: string | null
+          calling_hours_start?: string | null
+          calls_answered?: number | null
+          calls_made?: number | null
+          calls_per_minute?: number | null
+          created_at?: string | null
+          description?: string | null
+          dnc_requests?: number | null
+          dtmf_actions?: Json | null
+          id?: string
+          ivr_enabled?: boolean | null
+          ivr_mode?: string | null
+          ivr_prompt?: string | null
+          max_attempts?: number | null
+          message_text?: string
+          name?: string
+          retry_delay_minutes?: number | null
+          status?: string
+          timezone?: string | null
+          total_leads?: number | null
+          transfers_completed?: number | null
+          updated_at?: string | null
+          user_id?: string
+          voice_id?: string | null
+          voice_model?: string | null
         }
         Relationships: []
       }

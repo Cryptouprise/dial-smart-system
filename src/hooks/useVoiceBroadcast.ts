@@ -1,0 +1,415 @@
+import { useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { Json } from '@/integrations/supabase/types';
+
+export interface VoiceBroadcast {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  message_text: string;
+  voice_id: string | null;
+  voice_model: string | null;
+  audio_url?: string | null;
+  ivr_enabled: boolean | null;
+  ivr_mode: string | null;
+  ivr_prompt: string | null;
+  dtmf_actions: Json;
+  ai_system_prompt: string | null;
+  ai_transfer_keywords: string[] | null;
+  max_attempts: number | null;
+  retry_delay_minutes: number | null;
+  calling_hours_start: string | null;
+  calling_hours_end: string | null;
+  timezone: string | null;
+  calls_per_minute: number | null;
+  total_leads: number | null;
+  calls_made: number | null;
+  calls_answered: number | null;
+  transfers_completed: number | null;
+  callbacks_scheduled: number | null;
+  dnc_requests: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DTMFAction {
+  digit: string;
+  action: 'transfer' | 'callback' | 'dnc' | 'replay' | 'custom';
+  transfer_to?: string;
+  delay_hours?: number;
+  label: string;
+  custom_message?: string;
+}
+
+export interface BroadcastQueueItem {
+  id: string;
+  broadcast_id: string;
+  lead_id?: string | null;
+  phone_number: string;
+  lead_name?: string | null;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  scheduled_at: string;
+  dtmf_pressed?: string | null;
+  call_duration_seconds?: number | null;
+  transfer_status?: string | null;
+  callback_scheduled_at?: string | null;
+  ai_transcript?: string | null;
+}
+
+// Helper to parse DTMF actions from JSON
+export const parseDTMFActions = (json: Json): DTMFAction[] => {
+  if (Array.isArray(json)) {
+    return json as unknown as DTMFAction[];
+  }
+  return [];
+};
+
+export const useVoiceBroadcast = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [broadcasts, setBroadcasts] = useState<VoiceBroadcast[]>([]);
+  const { toast } = useToast();
+
+  const loadBroadcasts = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from('voice_broadcasts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setBroadcasts(data || []);
+      return data;
+    } catch (error: any) {
+      console.error('Error loading broadcasts:', error);
+      return [];
+    }
+  };
+
+  const createBroadcast = async (broadcast: {
+    name: string;
+    description?: string;
+    message_text: string;
+    voice_id?: string;
+    voice_model?: string;
+    ivr_enabled?: boolean;
+    ivr_mode?: string;
+    ivr_prompt?: string;
+    dtmf_actions?: DTMFAction[];
+    ai_system_prompt?: string;
+    ai_transfer_keywords?: string[];
+    max_attempts?: number;
+    calling_hours_start?: string;
+    calling_hours_end?: string;
+    timezone?: string;
+    calls_per_minute?: number;
+  }) => {
+    setIsLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error } = await supabase
+        .from('voice_broadcasts')
+        .insert({
+          user_id: user.id,
+          name: broadcast.name,
+          description: broadcast.description,
+          message_text: broadcast.message_text,
+          voice_id: broadcast.voice_id || 'EXAVITQu4vr4xnSDxMaL',
+          voice_model: broadcast.voice_model || 'eleven_turbo_v2_5',
+          ivr_enabled: broadcast.ivr_enabled ?? true,
+          ivr_mode: broadcast.ivr_mode || 'dtmf',
+          ivr_prompt: broadcast.ivr_prompt,
+          dtmf_actions: broadcast.dtmf_actions as unknown as Json,
+          ai_system_prompt: broadcast.ai_system_prompt,
+          ai_transfer_keywords: broadcast.ai_transfer_keywords,
+          max_attempts: broadcast.max_attempts || 1,
+          calling_hours_start: broadcast.calling_hours_start || '09:00',
+          calling_hours_end: broadcast.calling_hours_end || '17:00',
+          timezone: broadcast.timezone || 'America/New_York',
+          calls_per_minute: broadcast.calls_per_minute || 50,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Broadcast Created",
+        description: `${broadcast.name} has been created successfully`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error creating broadcast:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create broadcast",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateBroadcast = async (id: string, updates: Partial<{
+    name: string;
+    description: string;
+    message_text: string;
+    voice_id: string;
+    voice_model: string;
+    ivr_enabled: boolean;
+    ivr_mode: string;
+    ivr_prompt: string;
+    dtmf_actions: DTMFAction[];
+    ai_system_prompt: string;
+    ai_transfer_keywords: string[];
+    max_attempts: number;
+    calling_hours_start: string;
+    calling_hours_end: string;
+    timezone: string;
+    calls_per_minute: number;
+    status: string;
+  }>) => {
+    setIsLoading(true);
+    try {
+      const updateData: Record<string, unknown> = { ...updates };
+      if (updates.dtmf_actions) {
+        updateData.dtmf_actions = updates.dtmf_actions as unknown as Json;
+      }
+
+      const { data, error } = await supabase
+        .from('voice_broadcasts')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Broadcast Updated",
+        description: "Changes have been saved",
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error updating broadcast:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update broadcast",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteBroadcast = async (id: string) => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('voice_broadcasts')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Broadcast Deleted",
+        description: "The broadcast has been removed",
+      });
+
+      await loadBroadcasts();
+    } catch (error: any) {
+      console.error('Error deleting broadcast:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete broadcast",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateAudio = async (broadcastId: string, messageText: string, voiceId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-tts', {
+        body: { broadcastId, messageText, voiceId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Audio Generated",
+        description: "Your message has been converted to speech",
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error generating audio:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate audio",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const addLeadsToBroadcast = async (broadcastId: string, leadIds: string[]) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'add_leads', broadcastId, leadIds }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Leads Added",
+        description: `${data.added} leads added to broadcast queue`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error adding leads:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add leads",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startBroadcast = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { action: 'start', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Broadcast Started",
+        description: "Calls are now being made",
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error starting broadcast:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start broadcast",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const stopBroadcast = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { action: 'stop', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Broadcast Stopped",
+        description: "All calls have been paused",
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error stopping broadcast:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to stop broadcast",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getBroadcastStats = async (broadcastId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { action: 'stats', broadcastId }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      console.error('Error getting stats:', error);
+      return null;
+    }
+  };
+
+  const getQueueItems = async (broadcastId: string, status?: string) => {
+    try {
+      let query = supabase
+        .from('broadcast_queue')
+        .select('*')
+        .eq('broadcast_id', broadcastId)
+        .order('scheduled_at', { ascending: true });
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as BroadcastQueueItem[];
+    } catch (error: any) {
+      console.error('Error loading queue:', error);
+      return [];
+    }
+  };
+
+  return {
+    broadcasts,
+    isLoading,
+    loadBroadcasts,
+    createBroadcast,
+    updateBroadcast,
+    deleteBroadcast,
+    generateAudio,
+    addLeadsToBroadcast,
+    startBroadcast,
+    stopBroadcast,
+    getBroadcastStats,
+    getQueueItems,
+    parseDTMFActions,
+  };
+};
