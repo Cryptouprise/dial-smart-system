@@ -18,32 +18,67 @@ serve(async (req) => {
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}`);
 
   // Handle TwiML request - Twilio fetches this to get call instructions
+  // This MUST return valid TwiML XML for the call to work
   if (action === 'twiml') {
-    console.log('Returning TwiML for call...');
-    const message = url.searchParams.get('message') || 'Hello, this is a test call.';
-    const transferNumber = url.searchParams.get('transfer') || '';
-    
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
-    
-    // Decode the message (it comes URL encoded)
-    const decodedMessage = decodeURIComponent(message);
-    
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+    try {
+      console.log('Twilio requesting TwiML...');
+      const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
+      const transferNumber = url.searchParams.get('transfer') || '';
+      
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${transferNumber ? `&transfer=${encodeURIComponent(transferNumber)}` : ''}`;
+      
+      // Decode URI encoded message
+      let message = messageParam;
+      try {
+        message = decodeURIComponent(messageParam);
+      } catch (e) {
+        // If decode fails, use as-is
+        console.log('Message decode note:', e);
+      }
+      
+      // Escape XML special characters
+      const escapeXml = (str: string) => {
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+      };
+      
+      const safeMessage = escapeXml(message);
+      
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
-    <Say voice="Polly.Joanna">${decodedMessage}</Say>
+    <Say voice="Polly.Joanna">${safeMessage}</Say>
     <Say voice="Polly.Joanna">Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
   </Gather>
   <Say voice="Polly.Joanna">We did not receive a response. Goodbye!</Say>
   <Hangup/>
 </Response>`;
 
-    console.log('TwiML response:', twiml);
-    return new Response(twiml, {
-      status: 200,
-      headers: { 'Content-Type': 'text/xml' },
-    });
+      console.log('Returning TwiML to Twilio');
+      return new Response(twiml, {
+        status: 200,
+        headers: { 
+          'Content-Type': 'text/xml; charset=utf-8',
+          'Cache-Control': 'no-cache'
+        },
+      });
+    } catch (error: any) {
+      console.error('TwiML generation error:', error.message);
+      // Return a simple fallback TwiML
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">Sorry, there was an error. Please try again later.</Say>
+  <Hangup/>
+</Response>`, {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+      });
+    }
   }
 
   // Handle DTMF webhooks from Twilio
@@ -105,7 +140,7 @@ serve(async (req) => {
       console.log('Returning DTMF TwiML response');
       return new Response(twimlResponse, {
         status: 200,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
       });
       
     } catch (error: any) {
@@ -116,7 +151,7 @@ serve(async (req) => {
   <Hangup/>
 </Response>`, {
         status: 200,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml; charset=utf-8' },
       });
     }
   }
@@ -164,12 +199,12 @@ serve(async (req) => {
 
     console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
 
-    // Build TwiML URL that Twilio will fetch (using full path with /functions/v1/)
+    // Build TwiML URL that Twilio will fetch
     const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
     
     console.log('TwiML URL:', twimlUrl);
 
-    // Make Twilio call - Twilio will fetch TwiML from our URL
+    // Make Twilio call
     const twilioResponse = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`,
       {
@@ -182,6 +217,7 @@ serve(async (req) => {
           To: formattedTo,
           From: fromNumber,
           Url: twimlUrl,
+          Method: 'GET',  // Use GET method which is simpler
         }),
       }
     );
