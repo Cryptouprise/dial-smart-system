@@ -41,6 +41,20 @@ serve(async (req) => {
 
       if (body.action === 'save_settings') {
         const settings: RotationSettings = body.settings;
+        
+        // Validate settings
+        if (settings.rotation_interval_hours && (settings.rotation_interval_hours < 1 || settings.rotation_interval_hours > 168)) {
+          return new Response(JSON.stringify({ error: 'rotation_interval_hours must be between 1 and 168' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        if (settings.high_volume_threshold && (settings.high_volume_threshold < 1 || settings.high_volume_threshold > 1000)) {
+          return new Response(JSON.stringify({ error: 'high_volume_threshold must be between 1 and 1000' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
         // Save or update rotation settings
         const { data: existingSettings } = await supabaseClient

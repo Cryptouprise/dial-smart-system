@@ -102,6 +102,14 @@ serve(async (req) => {
       
       if (body.action === 'configure') {
         const { apiKey, webhookUrl, autoSyncEnabled, syncIntervalMinutes }: YellowstoneConfig = body;
+        
+        // Validate required fields
+        if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+          return new Response(JSON.stringify({ error: 'Valid API key is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
         // Encrypt API key (basic encryption - use proper encryption in production)
         const encryptedApiKey = btoa(apiKey); // Simple base64 encoding

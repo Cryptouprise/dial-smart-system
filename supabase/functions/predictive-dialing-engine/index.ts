@@ -75,9 +75,16 @@ serve(async (req) => {
 
     const { campaignId, action }: DialingRequest = await req.json();
 
-    if (!campaignId || !action) {
+    if (!campaignId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignId)) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: campaignId, action' }),
+        JSON.stringify({ error: 'Valid UUID campaign ID is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    if (!action || !['start', 'stop', 'pause', 'resume'].includes(action)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid action. Must be one of: start, stop, pause, resume' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

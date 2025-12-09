@@ -37,6 +37,20 @@ serve(async (req) => {
     if (req.method === 'POST') {
       const { areaCode, quantity, provider = 'telnyx' }: PurchaseRequest = await req.json();
 
+      // Validate inputs
+      if (!areaCode || !/^\d{3}$/.test(areaCode)) {
+        return new Response(JSON.stringify({ error: 'Valid 3-digit area code is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      if (!quantity || quantity < 1 || quantity > 100) {
+        return new Response(JSON.stringify({ error: 'Quantity must be between 1 and 100' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       console.log(`Processing order: ${quantity} numbers in area code ${areaCode}`);
 
       // Create order record
