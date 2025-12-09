@@ -133,23 +133,16 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}`);
 
-    // Build the DTMF action URL for button presses
-    const dtmfUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=dtmf${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
-
-    // Create inline TwiML - this is passed directly to Twilio, no URL fetch needed
+    // Simple TwiML - just play the message
     const inlineTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="15">
-    <Say>${message}</Say>
-    <Say>Press 1 to speak with someone now. Press 2 to schedule a callback. Press 3 to opt out of future calls.</Say>
-  </Gather>
-  <Say>We did not receive a response. Goodbye!</Say>
+  <Say>${message}</Say>
   <Hangup/>
 </Response>`;
 
-    console.log('Using inline TwiML (no URL fetch)');
+    console.log('Using simple inline TwiML');
 
     // Make Twilio call with inline TwiML using the 'Twiml' parameter
     const twilioResponse = await fetch(
