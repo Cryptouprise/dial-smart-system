@@ -922,14 +922,14 @@ serve(async (req) => {
     }
 
     // Configure VOICE webhook for inbound calls
-    if (action === 'configure_voice_webhook' && phoneNumbers && phoneNumbers.length > 0) {
+    if (action === 'configure_voice_webhook') {
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
       const voiceUrl = voiceWebhookUrl || `${supabaseUrl}/functions/v1/twilio-inbound-handler`;
       
-      console.log('📞 Configuring voice webhook for numbers:', phoneNumbers.length);
+      console.log('📞 Configuring voice webhook for inbound calls');
       console.log('📍 Voice webhook URL:', voiceUrl);
       
-      // Get all phone numbers to find their SIDs
+      // Get all phone numbers from Twilio
       const numbersResponse = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
         {
@@ -951,29 +951,22 @@ serve(async (req) => {
       const numbersData = await numbersResponse.json();
       const allNumbers = numbersData.incoming_phone_numbers || [];
       
-      // Create a map of phone number to SID
-      const numberToSid = new Map<string, string>();
-      allNumbers.forEach((num: any) => {
-        numberToSid.set(num.phone_number, num.sid);
-      });
+      // If specific numbers provided, filter to those; otherwise configure ALL
+      const numbersToConfig = phoneNumbers && phoneNumbers.length > 0 
+        ? allNumbers.filter((num: any) => phoneNumbers.includes(num.phone_number))
+        : allNumbers;
+      
+      console.log(`📲 Configuring ${numbersToConfig.length} numbers for inbound calls`);
       
       const configured: string[] = [];
       const failed: { number: string; error: string }[] = [];
 
-      for (const targetNumber of phoneNumbers) {
-        const sid = numberToSid.get(targetNumber);
-        
-        if (!sid) {
-          console.log('❌ Number not found in Twilio:', targetNumber);
-          failed.push({ number: targetNumber, error: 'Number not found in Twilio account' });
-          continue;
-        }
-
-        console.log('📲 Setting voice webhook for:', targetNumber, '->', voiceUrl);
+      for (const num of numbersToConfig) {
+        console.log('📲 Setting voice webhook for:', num.phone_number, '->', voiceUrl);
         
         // Update the phone number's Voice webhook
         const updateResponse = await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${sid}.json`,
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${num.sid}.json`,
           {
             method: 'POST',
             headers: {
@@ -986,11 +979,11 @@ serve(async (req) => {
 
         if (!updateResponse.ok) {
           const errorText = await updateResponse.text();
-          console.error('❌ Failed to set voice webhook:', targetNumber, errorText);
-          failed.push({ number: targetNumber, error: 'Failed to update voice webhook' });
+          console.error('❌ Failed to set voice webhook:', num.phone_number, errorText);
+          failed.push({ number: num.phone_number, error: 'Failed to update voice webhook' });
         } else {
-          console.log('✅ Voice webhook set:', targetNumber);
-          configured.push(targetNumber);
+          console.log('✅ Voice webhook set:', num.phone_number);
+          configured.push(num.phone_number);
         }
       }
 
