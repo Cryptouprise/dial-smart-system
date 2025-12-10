@@ -8,12 +8,13 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook';
   phoneNumberSid?: string;
   phoneNumber?: string;
   phoneNumbers?: string[]; // For configuring selected numbers
   messagingServiceSid?: string;
   webhookUrl?: string; // For setting custom webhook URL
+  voiceWebhookUrl?: string; // For setting voice/inbound webhook URL
 }
 
 serve(async (req) => {
@@ -911,6 +912,93 @@ serve(async (req) => {
       return new Response(JSON.stringify({ 
         success: true,
         webhook_url: webhookUrl,
+        configured_count: configured.length,
+        failed_count: failed.length,
+        configured,
+        failed
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Configure VOICE webhook for inbound calls
+    if (action === 'configure_voice_webhook' && phoneNumbers && phoneNumbers.length > 0) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const voiceUrl = voiceWebhookUrl || `${supabaseUrl}/functions/v1/twilio-inbound-handler`;
+      
+      console.log('📞 Configuring voice webhook for numbers:', phoneNumbers.length);
+      console.log('📍 Voice webhook URL:', voiceUrl);
+      
+      // Get all phone numbers to find their SIDs
+      const numbersResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!numbersResponse.ok) {
+        const errorText = await numbersResponse.text();
+        console.error('❌ Failed to fetch phone numbers:', errorText);
+        return new Response(JSON.stringify({ error: 'Failed to fetch phone numbers' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const numbersData = await numbersResponse.json();
+      const allNumbers = numbersData.incoming_phone_numbers || [];
+      
+      // Create a map of phone number to SID
+      const numberToSid = new Map<string, string>();
+      allNumbers.forEach((num: any) => {
+        numberToSid.set(num.phone_number, num.sid);
+      });
+      
+      const configured: string[] = [];
+      const failed: { number: string; error: string }[] = [];
+
+      for (const targetNumber of phoneNumbers) {
+        const sid = numberToSid.get(targetNumber);
+        
+        if (!sid) {
+          console.log('❌ Number not found in Twilio:', targetNumber);
+          failed.push({ number: targetNumber, error: 'Number not found in Twilio account' });
+          continue;
+        }
+
+        console.log('📲 Setting voice webhook for:', targetNumber, '->', voiceUrl);
+        
+        // Update the phone number's Voice webhook
+        const updateResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${sid}.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `VoiceUrl=${encodeURIComponent(voiceUrl)}&VoiceMethod=POST`
+          }
+        );
+
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error('❌ Failed to set voice webhook:', targetNumber, errorText);
+          failed.push({ number: targetNumber, error: 'Failed to update voice webhook' });
+        } else {
+          console.log('✅ Voice webhook set:', targetNumber);
+          configured.push(targetNumber);
+        }
+      }
+
+      console.log('🎉 Voice webhook configuration complete - Configured:', configured.length, 'Failed:', failed.length);
+      
+      return new Response(JSON.stringify({ 
+        success: true,
+        voice_webhook_url: voiceUrl,
         configured_count: configured.length,
         failed_count: failed.length,
         configured,
