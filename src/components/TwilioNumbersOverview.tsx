@@ -46,7 +46,8 @@ import {
   Globe,
   MessageSquare,
   Loader2,
-  X
+  X,
+  PhoneIncoming
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +83,7 @@ const TwilioNumbersOverview: React.FC = () => {
   const [revertAction, setRevertAction] = useState<'ghl' | 'clear'>('ghl');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [appWebhookUrl, setAppWebhookUrl] = useState('');
+  const [isConfiguringVoice, setIsConfiguringVoice] = useState(false);
   // Friendly name editing
   const [editingFriendlyName, setEditingFriendlyName] = useState<string | null>(null);
   const [friendlyNameValue, setFriendlyNameValue] = useState('');
@@ -210,6 +212,46 @@ const TwilioNumbersOverview: React.FC = () => {
       });
     } finally {
       setIsConfiguring(false);
+    }
+  };
+
+  const configureVoiceWebhooks = async () => {
+    if (selectedNumbers.size === 0) {
+      toast({
+        title: 'No Numbers Selected',
+        description: 'Please select at least one number to configure for inbound calls',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsConfiguringVoice(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { 
+          action: 'configure_voice_webhook',
+          phoneNumbers: Array.from(selectedNumbers)
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Voice Webhooks Configured',
+        description: `Configured ${data.configured_count} numbers for inbound calls. Callers will hear an IVR menu when calling back.`,
+      });
+
+      setSelectedNumbers(new Set());
+      await loadNumbers();
+    } catch (error) {
+      console.error('Failed to configure voice webhooks:', error);
+      toast({
+        title: 'Configuration Failed',
+        description: error instanceof Error ? error.message : 'Could not configure voice webhooks',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsConfiguringVoice(false);
     }
   };
 
@@ -486,6 +528,19 @@ const TwilioNumbersOverview: React.FC = () => {
                   >
                     <AlertTriangle className="h-4 w-4 mr-2" />
                     Clear (No Webhook)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={configureVoiceWebhooks}
+                    disabled={isConfiguringVoice}
+                  >
+                    {isConfiguringVoice ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <PhoneIncoming className="h-4 w-4 mr-2" />
+                    )}
+                    Enable Inbound Calls
                   </Button>
                 </>
               )}

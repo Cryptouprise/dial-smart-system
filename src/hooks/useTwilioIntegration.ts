@@ -216,6 +216,39 @@ export const useTwilioIntegration = () => {
     }
   };
 
+  const configureVoiceWebhook = async (phoneNumbers: string[], customWebhookUrl?: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { 
+          action: 'configure_voice_webhook',
+          phoneNumbers,
+          voiceWebhookUrl: customWebhookUrl
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast({
+        title: "Voice Webhooks Configured",
+        description: `Configured ${data.configured_count} numbers for inbound calls. ${data.failed_count > 0 ? `${data.failed_count} failed.` : ''}`,
+      });
+
+      return data;
+    } catch (error) {
+      console.error('Configure voice webhook error:', error);
+      toast({
+        title: "Configuration Failed",
+        description: error instanceof Error ? error.message : "Could not configure voice webhooks",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     listTwilioNumbers,
     importNumber,
@@ -223,6 +256,7 @@ export const useTwilioIntegration = () => {
     checkA2PStatus,
     addNumberToCampaign,
     configureSmsWebhook,
+    configureVoiceWebhook,
     isLoading
   };
 };
