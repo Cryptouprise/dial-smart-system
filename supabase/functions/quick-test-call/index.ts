@@ -16,6 +16,72 @@ const escapeXml = (str: string) => {
     .replace(/'/g, '&apos;');
 };
 
+// Generate audio with ElevenLabs and upload to storage
+async function generateAndUploadAudio(
+  supabase: any,
+  text: string,
+  voiceId: string,
+  elevenLabsKey: string,
+  supabaseUrl: string
+): Promise<string> {
+  console.log(`Generating ElevenLabs audio for text (${text.length} chars) with voice ${voiceId}`);
+  
+  const ttsResponse = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': elevenLabsKey,
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          style: 0.5,
+          use_speaker_boost: true,
+        },
+      }),
+    }
+  );
+
+  if (!ttsResponse.ok) {
+    const errorText = await ttsResponse.text();
+    console.error('ElevenLabs error:', errorText);
+    throw new Error(`ElevenLabs TTS failed: ${errorText}`);
+  }
+
+  const audioBuffer = await ttsResponse.arrayBuffer();
+  const audioBytes = new Uint8Array(audioBuffer);
+  
+  // Generate unique filename
+  const filename = `test-calls/${Date.now()}-${crypto.randomUUID()}.mp3`;
+  
+  // Upload to Supabase storage
+  const { error: uploadError } = await supabase.storage
+    .from('broadcast-audio')
+    .upload(filename, audioBytes, {
+      contentType: 'audio/mpeg',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error('Storage upload error:', uploadError);
+    throw new Error(`Failed to upload audio: ${uploadError.message}`);
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from('broadcast-audio')
+    .getPublicUrl(filename);
+
+  console.log('Audio uploaded to:', urlData.publicUrl);
+  return urlData.publicUrl;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -25,6 +91,7 @@ serve(async (req) => {
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}, Full URL: ${req.url}`);
 
@@ -32,24 +99,40 @@ serve(async (req) => {
   if (action === 'twiml') {
     try {
       console.log('Twilio requesting TwiML...');
-      const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
+      const audioUrl = url.searchParams.get('audio') || '';
       const transferNumber = url.searchParams.get('transfer') || '';
-      
-      let message = messageParam;
-      try {
-        message = decodeURIComponent(messageParam);
-      } catch (e) {
-        console.log('Message decode note:', e);
-      }
-      
-      const safeMessage = escapeXml(message);
+      const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
       
       // Use separate DTMF handler function for webhook
       const dtmfUrl = transferNumber 
         ? `${supabaseUrl}/functions/v1/twilio-dtmf-handler?transfer=${encodeURIComponent(transferNumber)}`
         : `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
       
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+      let twiml: string;
+      
+      if (audioUrl) {
+        // Use Play verb with ElevenLabs audio
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
+    <Play>${escapeXml(audioUrl)}</Play>
+    <Pause length="1"/>
+    <Say>Press 1 to speak with someone. Press 2 for a callback. Press 3 to opt out.</Say>
+  </Gather>
+  <Say>No response received. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+      } else {
+        // Fallback to Say verb
+        let message = messageParam;
+        try {
+          message = decodeURIComponent(messageParam);
+        } catch (e) {
+          console.log('Message decode note:', e);
+        }
+        const safeMessage = escapeXml(message);
+        
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
     <Say>${safeMessage}</Say>
@@ -59,8 +142,9 @@ serve(async (req) => {
   <Say>No response received. Goodbye.</Say>
   <Hangup/>
 </Response>`;
+      }
 
-      console.log('Returning TwiML with DTMF, action URL:', dtmfUrl);
+      console.log('Returning TwiML with DTMF, action URL:', dtmfUrl, 'audio:', audioUrl ? 'yes' : 'no');
       return new Response(twiml, {
         status: 200,
         headers: { 
@@ -81,8 +165,6 @@ serve(async (req) => {
     }
   }
 
-  // DTMF handling moved to separate twilio-dtmf-handler function
-
   // Main call initiation (POST from frontend)
   console.log('Processing call initiation...');
   try {
@@ -91,9 +173,9 @@ serve(async (req) => {
       throw new Error('Missing authorization header');
     }
 
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+    const elevenLabsKey = Deno.env.get('ELEVENLABS_API_KEY');
 
     if (!twilioAccountSid || !twilioAuthToken) {
       throw new Error('Twilio credentials not configured');
@@ -107,7 +189,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { toNumber, fromNumber, message, transferNumber } = await req.json();
+    const { toNumber, fromNumber, message, transferNumber, voiceId } = await req.json();
 
     if (!toNumber || !fromNumber || !message) {
       throw new Error('Missing required fields: toNumber, fromNumber, message');
@@ -123,10 +205,35 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}`);
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}, voice=${voiceId || 'default'}`);
+
+    // Generate ElevenLabs audio if API key is configured
+    let audioUrl = '';
+    if (elevenLabsKey && voiceId) {
+      try {
+        audioUrl = await generateAndUploadAudio(
+          supabase,
+          message,
+          voiceId,
+          elevenLabsKey,
+          supabaseUrl
+        );
+      } catch (audioError: any) {
+        console.warn('ElevenLabs audio generation failed, falling back to Twilio TTS:', audioError.message);
+        // Continue without audio URL - will use Twilio's Say verb
+      }
+    }
 
     // Build TwiML URL that Twilio will fetch
-    const twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml&message=${encodeURIComponent(message)}${formattedTransfer ? `&transfer=${encodeURIComponent(formattedTransfer)}` : ''}`;
+    let twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml`;
+    if (audioUrl) {
+      twimlUrl += `&audio=${encodeURIComponent(audioUrl)}`;
+    } else {
+      twimlUrl += `&message=${encodeURIComponent(message)}`;
+    }
+    if (formattedTransfer) {
+      twimlUrl += `&transfer=${encodeURIComponent(formattedTransfer)}`;
+    }
     
     console.log('TwiML URL:', twimlUrl);
 
@@ -163,7 +270,7 @@ serve(async (req) => {
       phone_number: formattedTo,
       caller_id: fromNumber,
       status: 'queued',
-      notes: `Test broadcast | Transfer: ${formattedTransfer || 'none'}`,
+      notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}) | Transfer: ${formattedTransfer || 'none'}`,
     }).then(() => console.log('Call logged')).catch(e => console.log('Log error (ignored):', e.message));
 
     return new Response(
@@ -173,6 +280,8 @@ serve(async (req) => {
         to: formattedTo,
         from: fromNumber,
         transferNumber: formattedTransfer || null,
+        voiceId: voiceId || null,
+        audioGenerated: !!audioUrl,
         message: 'Test call initiated!',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -7,7 +7,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Phone, Send, Loader2, Radio, CheckCircle, ArrowRight, PhoneForwarded } from 'lucide-react';
+import { Phone, Send, Loader2, Radio, CheckCircle, ArrowRight, PhoneForwarded, Mic } from 'lucide-react';
+
+const ELEVENLABS_VOICES = [
+  { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
+  { id: 'zrHiDhphv9ZnVXBqCLjz', name: 'Juniper ⭐' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah' },
+  { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria' },
+  { id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura' },
+  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily' },
+];
 
 interface PhoneNumber {
   id: string;
@@ -27,6 +40,7 @@ const QuickTestBroadcast: React.FC = () => {
     toNumber: '214-529-1531',
     fromNumber: '',
     transferNumber: '',
+    voiceId: 'TX3LPaxmHKxFdv7VOQHJ',
     message: 'Hello! This is a test call. We are selling solar panels in your area. Are you interested in saving money on your electricity bill?',
   });
 
@@ -86,6 +100,7 @@ const QuickTestBroadcast: React.FC = () => {
           fromNumber: formData.fromNumber,
           message: formData.message,
           transferNumber: formData.transferNumber,
+          voiceId: formData.voiceId,
         },
       });
 
@@ -208,6 +223,29 @@ const QuickTestBroadcast: React.FC = () => {
               <p className="text-xs text-muted-foreground">
                 When recipient presses 1, they'll be transferred to this number (your Retell AI agent, etc.)
               </p>
+            </div>
+
+            {/* Voice Selection */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Mic className="h-4 w-4 text-purple-500" />
+                Voice (ElevenLabs)
+              </Label>
+              <Select
+                value={formData.voiceId}
+                onValueChange={(value) => setFormData({ ...formData, voiceId: value })}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select voice" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ELEVENLABS_VOICES.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id}>
+                      {voice.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Message */}
