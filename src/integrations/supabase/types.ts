@@ -384,6 +384,112 @@ export type Database = {
           },
         ]
       }
+      budget_alerts: {
+        Row: {
+          acknowledged: boolean | null
+          acknowledged_at: string | null
+          action_taken: string | null
+          alert_type: string
+          amount_spent: number | null
+          budget_limit: number | null
+          budget_setting_id: string | null
+          created_at: string
+          id: string
+          message: string | null
+          threshold_percent: number | null
+          user_id: string
+        }
+        Insert: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          action_taken?: string | null
+          alert_type: string
+          amount_spent?: number | null
+          budget_limit?: number | null
+          budget_setting_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          threshold_percent?: number | null
+          user_id: string
+        }
+        Update: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          action_taken?: string | null
+          alert_type?: string
+          amount_spent?: number | null
+          budget_limit?: number | null
+          budget_setting_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          threshold_percent?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_alerts_budget_setting_id_fkey"
+            columns: ["budget_setting_id"]
+            isOneToOne: false
+            referencedRelation: "budget_settings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_settings: {
+        Row: {
+          alert_threshold_percent: number | null
+          auto_pause_enabled: boolean | null
+          campaign_id: string | null
+          created_at: string
+          daily_limit: number | null
+          id: string
+          is_paused: boolean | null
+          monthly_limit: number | null
+          pause_reason: string | null
+          paused_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_threshold_percent?: number | null
+          auto_pause_enabled?: boolean | null
+          campaign_id?: string | null
+          created_at?: string
+          daily_limit?: number | null
+          id?: string
+          is_paused?: boolean | null
+          monthly_limit?: number | null
+          pause_reason?: string | null
+          paused_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_threshold_percent?: number | null
+          auto_pause_enabled?: boolean | null
+          campaign_id?: string | null
+          created_at?: string
+          daily_limit?: number | null
+          id?: string
+          is_paused?: boolean | null
+          monthly_limit?: number | null
+          pause_reason?: string | null
+          paused_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_settings_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar_appointments: {
         Row: {
           created_at: string
@@ -2266,6 +2372,126 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      spending_logs: {
+        Row: {
+          amount: number
+          broadcast_id: string | null
+          call_log_id: string | null
+          campaign_id: string | null
+          cost_type: string
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          metadata: Json | null
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          broadcast_id?: string | null
+          call_log_id?: string | null
+          campaign_id?: string | null
+          cost_type: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          metadata?: Json | null
+          provider: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          broadcast_id?: string | null
+          call_log_id?: string | null
+          campaign_id?: string | null
+          cost_type?: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          metadata?: Json | null
+          provider?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spending_logs_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "voice_broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "spending_logs_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "spending_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      spending_summaries: {
+        Row: {
+          call_count: number | null
+          campaign_id: string | null
+          created_at: string
+          elevenlabs_cost: number | null
+          id: string
+          retell_cost: number | null
+          sms_count: number | null
+          summary_date: string
+          total_cost: number | null
+          total_duration_seconds: number | null
+          twilio_cost: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          call_count?: number | null
+          campaign_id?: string | null
+          created_at?: string
+          elevenlabs_cost?: number | null
+          id?: string
+          retell_cost?: number | null
+          sms_count?: number | null
+          summary_date?: string
+          total_cost?: number | null
+          total_duration_seconds?: number | null
+          twilio_cost?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          call_count?: number | null
+          campaign_id?: string | null
+          created_at?: string
+          elevenlabs_cost?: number | null
+          id?: string
+          retell_cost?: number | null
+          sms_count?: number | null
+          summary_date?: string
+          total_cost?: number | null
+          total_duration_seconds?: number | null
+          twilio_cost?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spending_summaries_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
             referencedColumns: ["id"]
           },
         ]

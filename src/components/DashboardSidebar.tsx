@@ -26,6 +26,7 @@ import {
   PanelLeft,
   Radio,
   AlertCircle,
+  DollarSign,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -113,6 +114,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'Campaign Results', value: 'campaign-results', icon: BarChart3 },
       { title: 'Live Monitor', value: 'live-monitor', icon: Activity },
       { title: 'A/B Testing', value: 'ab-testing', icon: Beaker },
+      { title: 'Budget Manager', value: 'budget', icon: DollarSign },
     ],
   },
 ];

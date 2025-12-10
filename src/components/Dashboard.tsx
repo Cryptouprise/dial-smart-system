@@ -33,6 +33,7 @@ import WorkflowABTesting from '@/components/WorkflowABTesting';
 import VoiceBroadcastManager from '@/components/VoiceBroadcastManager';
 import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import { BudgetManager } from '@/components/BudgetManager';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -326,6 +327,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Voice Broadcasting"><VoiceBroadcastManager /></TabErrorBoundary>;
       case 'ai-errors':
         return <TabErrorBoundary tabName="AI Error Handler"><AIErrorPanel /></TabErrorBoundary>;
+      case 'budget':
+        return <TabErrorBoundary tabName="Budget Manager"><BudgetManager /></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
