@@ -152,3 +152,6 @@ verify_jwt = false
 
 [functions.ai-error-analyzer]
 verify_jwt = true
+
+[functions.budget-tracker]
+verify_jwt = true
