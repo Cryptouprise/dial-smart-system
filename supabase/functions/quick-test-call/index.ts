@@ -22,9 +22,10 @@ async function generateAndUploadAudio(
   text: string,
   voiceId: string,
   elevenLabsKey: string,
-  supabaseUrl: string
+  supabaseUrl: string,
+  speed: number = 1.0
 ): Promise<string> {
-  console.log(`Generating ElevenLabs audio for text (${text.length} chars) with voice ${voiceId}`);
+  console.log(`Generating ElevenLabs audio for text (${text.length} chars) with voice ${voiceId}, speed ${speed}`);
   
   const ttsResponse = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -43,6 +44,7 @@ async function generateAndUploadAudio(
           similarity_boost: 0.75,
           style: 0.5,
           use_speaker_boost: true,
+          speed: speed,
         },
       }),
     }
@@ -100,8 +102,8 @@ serve(async (req) => {
     try {
       console.log('Twilio requesting TwiML...');
       const audioUrl = url.searchParams.get('audio') || '';
+      const promptUrl = url.searchParams.get('prompt') || '';
       const transferNumber = url.searchParams.get('transfer') || '';
-      const messageParam = url.searchParams.get('message') || 'Hello, this is a test call.';
       
       // Use separate DTMF handler function for webhook
       const dtmfUrl = transferNumber 
@@ -110,32 +112,24 @@ serve(async (req) => {
       
       let twiml: string;
       
-      if (audioUrl) {
-        // Use Play verb with ElevenLabs audio
+      if (audioUrl && promptUrl) {
+        // Use Play verb with ElevenLabs audio for both message and prompt
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
     <Play>${escapeXml(audioUrl)}</Play>
     <Pause length="1"/>
-    <Say>Press 1 to speak with someone. Press 2 for a callback. Press 3 to opt out.</Say>
+    <Play>${escapeXml(promptUrl)}</Play>
   </Gather>
   <Say>No response received. Goodbye.</Say>
   <Hangup/>
 </Response>`;
       } else {
         // Fallback to Say verb
-        let message = messageParam;
-        try {
-          message = decodeURIComponent(messageParam);
-        } catch (e) {
-          console.log('Message decode note:', e);
-        }
-        const safeMessage = escapeXml(message);
-        
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10">
-    <Say>${safeMessage}</Say>
+    <Say>Hello, this is a test call.</Say>
     <Pause length="1"/>
     <Say>Press 1 to speak with someone. Press 2 for a callback. Press 3 to opt out.</Say>
   </Gather>
@@ -144,7 +138,7 @@ serve(async (req) => {
 </Response>`;
       }
 
-      console.log('Returning TwiML with DTMF, action URL:', dtmfUrl, 'audio:', audioUrl ? 'yes' : 'no');
+      console.log('Returning TwiML with DTMF, action URL:', dtmfUrl, 'audio:', audioUrl ? 'yes' : 'no', 'prompt:', promptUrl ? 'yes' : 'no');
       return new Response(twiml, {
         status: 200,
         headers: { 
@@ -189,7 +183,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { toNumber, fromNumber, message, transferNumber, voiceId } = await req.json();
+    const { toNumber, fromNumber, message, transferNumber, voiceId, speed } = await req.json();
 
     if (!toNumber || !fromNumber || !message) {
       throw new Error('Missing required fields: toNumber, fromNumber, message');
@@ -205,22 +199,36 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}, voice=${voiceId || 'default'}`);
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}, voice=${voiceId || 'default'}, speed=${speed || 1.0}`);
 
     // Generate ElevenLabs audio if API key is configured
     let audioUrl = '';
+    let promptUrl = '';
     if (elevenLabsKey && voiceId) {
       try {
+        // Generate main message audio
         audioUrl = await generateAndUploadAudio(
           supabase,
           message,
           voiceId,
           elevenLabsKey,
-          supabaseUrl
+          supabaseUrl,
+          speed || 1.0
+        );
+        
+        // Generate IVR prompt audio with same voice
+        const promptText = 'Press 1 to speak with someone. Press 2 for a callback. Press 3 to opt out.';
+        promptUrl = await generateAndUploadAudio(
+          supabase,
+          promptText,
+          voiceId,
+          elevenLabsKey,
+          supabaseUrl,
+          speed || 1.0
         );
       } catch (audioError: any) {
         console.warn('ElevenLabs audio generation failed, falling back to Twilio TTS:', audioError.message);
-        // Continue without audio URL - will use Twilio's Say verb
+        // Continue without audio URLs - will use Twilio's Say verb
       }
     }
 
@@ -228,8 +236,9 @@ serve(async (req) => {
     let twimlUrl = `${supabaseUrl}/functions/v1/quick-test-call?action=twiml`;
     if (audioUrl) {
       twimlUrl += `&audio=${encodeURIComponent(audioUrl)}`;
-    } else {
-      twimlUrl += `&message=${encodeURIComponent(message)}`;
+    }
+    if (promptUrl) {
+      twimlUrl += `&prompt=${encodeURIComponent(promptUrl)}`;
     }
     if (formattedTransfer) {
       twimlUrl += `&transfer=${encodeURIComponent(formattedTransfer)}`;
@@ -270,7 +279,7 @@ serve(async (req) => {
       phone_number: formattedTo,
       caller_id: fromNumber,
       status: 'queued',
-      notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}) | Transfer: ${formattedTransfer || 'none'}`,
+      notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}, speed: ${speed || 1.0}) | Transfer: ${formattedTransfer || 'none'}`,
     }).then(() => console.log('Call logged')).catch(e => console.log('Log error (ignored):', e.message));
 
     return new Response(
@@ -281,7 +290,9 @@ serve(async (req) => {
         from: fromNumber,
         transferNumber: formattedTransfer || null,
         voiceId: voiceId || null,
+        speed: speed || 1.0,
         audioGenerated: !!audioUrl,
+        promptGenerated: !!promptUrl,
         message: 'Test call initiated!',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Phone, Send, Loader2, Radio, CheckCircle, ArrowRight, PhoneForwarded, Mic } from 'lucide-react';
+import { Phone, Send, Loader2, Radio, CheckCircle, ArrowRight, PhoneForwarded, Mic, Gauge } from 'lucide-react';
 
 const ELEVENLABS_VOICES = [
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
@@ -41,6 +42,7 @@ const QuickTestBroadcast: React.FC = () => {
     fromNumber: '',
     transferNumber: '',
     voiceId: 'TX3LPaxmHKxFdv7VOQHJ',
+    speed: 1.0,
     message: 'Hello! This is a test call. We are selling solar panels in your area. Are you interested in saving money on your electricity bill?',
   });
 
@@ -101,6 +103,7 @@ const QuickTestBroadcast: React.FC = () => {
           message: formData.message,
           transferNumber: formData.transferNumber,
           voiceId: formData.voiceId,
+          speed: formData.speed,
         },
       });
 
@@ -246,6 +249,27 @@ const QuickTestBroadcast: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Speed Control */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-blue-500" />
+                Voice Speed: {formData.speed.toFixed(2)}x
+              </Label>
+              <Slider
+                value={[formData.speed]}
+                onValueChange={(values) => setFormData({ ...formData, speed: values[0] })}
+                min={0.5}
+                max={1.5}
+                step={0.05}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Slower (0.5x)</span>
+                <span>Normal (1.0x)</span>
+                <span>Faster (1.5x)</span>
+              </div>
             </div>
 
             {/* Message */}
