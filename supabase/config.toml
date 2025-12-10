@@ -153,6 +153,9 @@ verify_jwt = false
 [functions.twilio-inbound-handler]
 verify_jwt = false
 
+[functions.setup-inbound-calls]
+verify_jwt = false
+
 [functions.ai-error-analyzer]
 verify_jwt = true
 
