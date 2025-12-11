@@ -162,6 +162,9 @@ verify_jwt = false
 [functions.check-number-config]
 verify_jwt = false
 
+[functions.remove-trunk]
+verify_jwt = false
+
 [functions.ai-error-analyzer]
 verify_jwt = true
 
