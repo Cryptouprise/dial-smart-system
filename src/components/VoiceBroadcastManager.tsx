@@ -17,7 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { 
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
   Phone, PhoneOff, Clock, Settings, BarChart3, 
-  MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge
+  MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
@@ -63,6 +63,7 @@ export const VoiceBroadcastManager: React.FC = () => {
     deleteBroadcast,
     generateAudio,
     addLeadsToBroadcast,
+    resetBroadcastQueue,
     startBroadcast,
     stopBroadcast,
     getBroadcastStats,
@@ -545,6 +546,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                         </Button>
                       ) : (
                         <div className="flex items-center gap-2">
+                          {/* Show "Add leads first" if no leads at all */}
                           {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
                             <Button
                               variant="link"
@@ -555,11 +557,24 @@ export const VoiceBroadcastManager: React.FC = () => {
                               Add leads first →
                             </Button>
                           )}
+                          {/* Show "Reset & Run Again" if leads exist but none are pending (all completed) */}
+                          {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => resetBroadcastQueue(broadcast.id)}
+                              disabled={isLoading}
+                              title="Reset all leads to pending and run broadcast again"
+                            >
+                              <RotateCcw className="h-4 w-4 mr-1" />
+                              Reset & Run Again
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             onClick={() => startBroadcast(broadcast.id)}
-                            disabled={isLoading || !broadcast.audio_url || ((broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0)}
-                            title={!broadcast.audio_url ? 'Generate audio first' : ((broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0) ? 'Add leads to the broadcast first' : 'Start broadcast'}
+                            disabled={isLoading || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
+                            title={!broadcast.audio_url ? 'Generate audio first' : (broadcastStats.pending || 0) === 0 ? 'No pending leads - click Reset to run again' : 'Start broadcast'}
                           >
                             <Play className="h-4 w-4 mr-1" />
                             Start

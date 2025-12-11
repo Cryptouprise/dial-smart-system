@@ -362,6 +362,35 @@ export const useVoiceBroadcast = () => {
     }
   };
 
+  const resetBroadcastQueue = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'reset_queue', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Queue Reset",
+        description: `${data?.reset_count || 0} items reset to pending. Ready to run again!`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error resetting queue:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reset queue",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const startBroadcast = async (broadcastId: string) => {
     setIsLoading(true);
     try {
@@ -473,6 +502,7 @@ export const useVoiceBroadcast = () => {
     addLeadsToBroadcast,
     addPhoneNumbersToBroadcast,
     clearBroadcastQueue,
+    resetBroadcastQueue,
     startBroadcast,
     stopBroadcast,
     getBroadcastStats,

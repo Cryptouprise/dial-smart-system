@@ -209,6 +209,47 @@ serve(async (req) => {
         );
       }
 
+      case 'reset_queue': {
+        // Reset all completed/processed queue items back to pending
+        const { data: resetData, error: resetError } = await supabase
+          .from('broadcast_queue')
+          .update({ 
+            status: 'pending', 
+            dtmf_pressed: null,
+            attempts: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('broadcast_id', broadcastId)
+          .in('status', ['completed', 'transferred', 'callback', 'dnc', 'answered', 'failed', 'in_progress'])
+          .select();
+
+        if (resetError) throw resetError;
+
+        // Reset broadcast stats
+        await supabase
+          .from('voice_broadcasts')
+          .update({
+            calls_made: 0,
+            calls_answered: 0,
+            transfers_completed: 0,
+            callbacks_scheduled: 0,
+            dnc_requests: 0,
+            status: 'draft'
+          })
+          .eq('id', broadcastId);
+
+        console.log(`Reset ${resetData?.length || 0} queue items to pending for broadcast ${broadcastId}`);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            reset_count: resetData?.length || 0,
+            message: `${resetData?.length || 0} items reset to pending` 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'get_stats': {
         const { data: stats, error: statsError } = await supabase
           .from('broadcast_queue')
