@@ -596,62 +596,98 @@ export const VoiceBroadcastManager: React.FC = () => {
                             Select leads to add to this broadcast queue
                           </DialogDescription>
                         </DialogHeader>
-                        <div className="max-h-[400px] overflow-y-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-10">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedLeads.length === leads.length}
-                                    onChange={(e) => {
-                                      setSelectedLeads(e.target.checked ? leads.map(l => l.id) : []);
-                                    }}
-                                  />
-                                </TableHead>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Phone</TableHead>
-                                <TableHead>Status</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {leads.map((lead) => (
-                                <TableRow key={lead.id}>
-                                  <TableCell>
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedLeads.includes(lead.id)}
-                                      onChange={(e) => {
-                                        setSelectedLeads(e.target.checked
-                                          ? [...selectedLeads, lead.id]
-                                          : selectedLeads.filter(id => id !== lead.id)
-                                        );
-                                      }}
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
-                                  </TableCell>
-                                  <TableCell>{lead.phone_number}</TableCell>
-                                  <TableCell>
-                                    <Badge variant="outline">{lead.status}</Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <div className="flex justify-between items-center mt-4">
-                          <span className="text-sm text-muted-foreground">
-                            {selectedLeads.length} leads selected
-                          </span>
-                          <Button 
-                            onClick={() => handleAddLeads(broadcast.id)}
-                            disabled={selectedLeads.length === 0 || isLoading}
-                          >
-                            Add to Queue
-                          </Button>
-                        </div>
+                        
+                        {leads.length === 0 ? (
+                          <div className="py-12 text-center">
+                            <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                            <p className="text-lg font-medium mb-2">No leads found</p>
+                            <p className="text-muted-foreground mb-4">
+                              Upload leads first, then come back to add them to this broadcast.
+                            </p>
+                            <Button 
+                              variant="outline"
+                              onClick={() => window.location.href = '/?tab=leads'}
+                            >
+                              Go to Leads → Upload
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 mb-4">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedLeads(leads.map(l => l.id))}
+                              >
+                                Select All ({leads.length})
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedLeads([])}
+                                disabled={selectedLeads.length === 0}
+                              >
+                                Clear
+                              </Button>
+                              <span className="text-sm text-muted-foreground ml-auto">
+                                {selectedLeads.length} of {leads.length} selected
+                              </span>
+                            </div>
+                            <div className="max-h-[350px] overflow-y-auto border rounded-md">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-10">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedLeads.length === leads.length && leads.length > 0}
+                                        onChange={(e) => {
+                                          setSelectedLeads(e.target.checked ? leads.map(l => l.id) : []);
+                                        }}
+                                      />
+                                    </TableHead>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Phone</TableHead>
+                                    <TableHead>Status</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {leads.map((lead) => (
+                                    <TableRow key={lead.id}>
+                                      <TableCell>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedLeads.includes(lead.id)}
+                                          onChange={(e) => {
+                                            setSelectedLeads(e.target.checked
+                                              ? [...selectedLeads, lead.id]
+                                              : selectedLeads.filter(id => id !== lead.id)
+                                            );
+                                          }}
+                                        />
+                                      </TableCell>
+                                      <TableCell>
+                                        {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                                      </TableCell>
+                                      <TableCell>{lead.phone_number}</TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline">{lead.status}</Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                            <div className="flex justify-end mt-4">
+                              <Button 
+                                onClick={() => handleAddLeads(broadcast.id)}
+                                disabled={selectedLeads.length === 0 || isLoading}
+                              >
+                                Add {selectedLeads.length} Leads to Queue
+                              </Button>
+                            </div>
+                          </>
+                        )}
                       </DialogContent>
                     </Dialog>
                   </div>
