@@ -848,6 +848,57 @@ export type Database = {
           },
         ]
       }
+      campaign_phone_pools: {
+        Row: {
+          campaign_id: string | null
+          created_at: string | null
+          id: string
+          is_primary: boolean | null
+          phone_number_id: string | null
+          priority: number | null
+          role: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_primary?: boolean | null
+          phone_number_id?: string | null
+          priority?: number | null
+          role?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_primary?: boolean | null
+          phone_number_id?: string | null
+          priority?: number | null
+          role?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_phone_pools_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_phone_pools_phone_number_id_fkey"
+            columns: ["phone_number_id"]
+            isOneToOne: false
+            referencedRelation: "phone_numbers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_workflows: {
         Row: {
           active: boolean | null
@@ -1237,6 +1288,62 @@ export type Database = {
             columns: ["pipeline_stage_id"]
             isOneToOne: false
             referencedRelation: "pipeline_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_nudge_tracking: {
+        Row: {
+          created_at: string | null
+          current_sequence_id: string | null
+          id: string
+          is_engaged: boolean | null
+          last_ai_contact_at: string | null
+          last_lead_response_at: string | null
+          lead_id: string | null
+          next_nudge_at: string | null
+          nudge_count: number | null
+          pause_reason: string | null
+          sequence_paused: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          current_sequence_id?: string | null
+          id?: string
+          is_engaged?: boolean | null
+          last_ai_contact_at?: string | null
+          last_lead_response_at?: string | null
+          lead_id?: string | null
+          next_nudge_at?: string | null
+          nudge_count?: number | null
+          pause_reason?: string | null
+          sequence_paused?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          current_sequence_id?: string | null
+          id?: string
+          is_engaged?: boolean | null
+          last_ai_contact_at?: string | null
+          last_lead_response_at?: string | null
+          lead_id?: string | null
+          next_nudge_at?: string | null
+          nudge_count?: number | null
+          pause_reason?: string | null
+          sequence_paused?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_nudge_tracking_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
@@ -1658,13 +1765,18 @@ export type Database = {
           friendly_name: string | null
           id: string
           is_spam: boolean
+          is_stationary: boolean | null
           is_voip: boolean | null
           last_lookup_at: string | null
           last_used: string | null
           line_type: string | null
           number: string
+          provider: string | null
+          purpose: string | null
           quarantine_until: string | null
           retell_phone_id: string | null
+          sip_trunk_config: Json | null
+          sip_trunk_provider: string | null
           status: string
           stir_shaken_attestation: string | null
           updated_at: string
@@ -1680,13 +1792,18 @@ export type Database = {
           friendly_name?: string | null
           id?: string
           is_spam?: boolean
+          is_stationary?: boolean | null
           is_voip?: boolean | null
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
           number: string
+          provider?: string | null
+          purpose?: string | null
           quarantine_until?: string | null
           retell_phone_id?: string | null
+          sip_trunk_config?: Json | null
+          sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
           updated_at?: string
@@ -1702,16 +1819,57 @@ export type Database = {
           friendly_name?: string | null
           id?: string
           is_spam?: boolean
+          is_stationary?: boolean | null
           is_voip?: boolean | null
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
           number?: string
+          provider?: string | null
+          purpose?: string | null
           quarantine_until?: string | null
           retell_phone_id?: string | null
+          sip_trunk_config?: Json | null
+          sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      phone_providers: {
+        Row: {
+          capabilities: Json | null
+          config_json: Json | null
+          created_at: string | null
+          display_name: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          capabilities?: Json | null
+          config_json?: Json | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          capabilities?: Json | null
+          config_json?: Json | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []

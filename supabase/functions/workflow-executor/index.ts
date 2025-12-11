@@ -1,3 +1,15 @@
+/**
+ * Workflow Executor Edge Function
+ * 
+ * Executes workflow steps for leads including:
+ * - Actual call placement via outbound-calling
+ * - SMS sending via sms-messaging
+ * - AI SMS via ai-sms-processor
+ * - Wait delays
+ * 
+ * This is the engine that makes workflows actually DO things.
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -58,6 +70,8 @@ serve(async (req) => {
 
       if (progressError) throw progressError;
 
+      console.log(`[Workflow] Started workflow ${workflowId} for lead ${leadId}`);
+
       return new Response(JSON.stringify({ success: true, progress }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -81,14 +95,28 @@ serve(async (req) => {
 
       if (pendingError) throw pendingError;
 
+      console.log(`[Workflow] Found ${pendingProgress?.length || 0} pending steps to execute`);
+
       const results = [];
       
       for (const progress of pendingProgress || []) {
         try {
+          // Check if lead is engaged or sequence is paused
+          const { data: nudgeStatus } = await supabase
+            .from('lead_nudge_tracking')
+            .select('is_engaged, sequence_paused')
+            .eq('lead_id', progress.lead_id)
+            .single();
+
+          if (nudgeStatus?.sequence_paused) {
+            console.log(`[Workflow] Skipping lead ${progress.lead_id} - sequence paused`);
+            continue;
+          }
+
           const result = await executeStep(supabase, progress);
           results.push({ leadId: progress.lead_id, success: true, result });
-        } catch (stepError) {
-          console.error('Error executing step for lead:', progress.lead_id, stepError);
+        } catch (stepError: any) {
+          console.error('[Workflow] Error executing step for lead:', progress.lead_id, stepError);
           results.push({ leadId: progress.lead_id, success: false, error: stepError.message });
         }
       }
@@ -117,6 +145,8 @@ serve(async (req) => {
       const { error } = await query;
       if (error) throw error;
 
+      console.log(`[Workflow] Removed lead ${leadId} from workflows`);
+
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -128,6 +158,12 @@ serve(async (req) => {
         .update({ status: 'paused', updated_at: new Date().toISOString() })
         .eq('lead_id', leadId)
         .eq('workflow_id', workflowId);
+
+      // Also update nudge tracking
+      await supabase
+        .from('lead_nudge_tracking')
+        .update({ sequence_paused: true, pause_reason: 'manual_pause' })
+        .eq('lead_id', leadId);
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -141,6 +177,12 @@ serve(async (req) => {
         .eq('lead_id', leadId)
         .eq('workflow_id', workflowId);
 
+      // Also update nudge tracking
+      await supabase
+        .from('lead_nudge_tracking')
+        .update({ sequence_paused: false, pause_reason: null })
+        .eq('lead_id', leadId);
+
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -148,7 +190,7 @@ serve(async (req) => {
 
     throw new Error('Unknown action');
   } catch (error) {
-    console.error('Error in workflow-executor:', error);
+    console.error('[Workflow] Error:', error);
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {
@@ -189,9 +231,10 @@ function calculateNextActionTime(step: any): string {
 async function executeStep(supabase: any, progress: any) {
   const step = progress.workflow_steps;
   const lead = progress.leads;
+  const campaign = progress.campaign_workflows;
   const config = step?.step_config || {};
 
-  console.log(`Executing step ${step?.step_type} for lead ${lead?.id}`);
+  console.log(`[Workflow] Executing step ${step?.step_type} for lead ${lead?.id}`);
 
   // Update last action timestamp
   await supabase
@@ -199,38 +242,335 @@ async function executeStep(supabase: any, progress: any) {
     .update({ last_action_at: new Date().toISOString() })
     .eq('id', progress.id);
 
+  let stepResult: any = { success: true };
+
   switch (step?.step_type) {
     case 'call':
-      // Trigger a call via the outbound-calling function
-      console.log(`Would initiate call to ${lead?.phone_number}`);
-      // In production, call the outbound-calling edge function
+      stepResult = await executeCallStep(supabase, lead, progress, config);
       break;
 
     case 'sms':
-      // Send SMS via the sms-messaging function
-      console.log(`Would send SMS to ${lead?.phone_number}: ${config.content}`);
-      // In production, call the sms-messaging edge function
+      stepResult = await executeSmsStep(supabase, lead, progress, config);
       break;
 
     case 'ai_sms':
-      // Generate and send AI SMS
-      console.log(`Would send AI SMS to ${lead?.phone_number}`);
-      // In production, call the ai-sms-processor edge function
+      stepResult = await executeAiSmsStep(supabase, lead, progress, config);
       break;
 
     case 'wait':
       // Wait step completed, just move to next
+      stepResult = { success: true, action: 'wait_completed' };
       break;
+
+    case 'email':
+      // Email step - placeholder for future
+      console.log(`[Workflow] Email step not yet implemented`);
+      stepResult = { success: true, action: 'email_skipped' };
+      break;
+
+    case 'webhook':
+      // Custom webhook step
+      stepResult = await executeWebhookStep(supabase, lead, progress, config);
+      break;
+
+    default:
+      console.log(`[Workflow] Unknown step type: ${step?.step_type}`);
   }
 
+  // Update nudge tracking
+  await supabase
+    .from('lead_nudge_tracking')
+    .upsert({
+      lead_id: lead.id,
+      user_id: progress.user_id,
+      last_ai_contact_at: new Date().toISOString(),
+      nudge_count: supabase.sql`nudge_count + 1`,
+    }, {
+      onConflict: 'lead_id',
+    });
+
   // Move to next step
+  await moveToNextStep(supabase, progress, step);
+
+  return { stepType: step?.step_type, completed: true, ...stepResult };
+}
+
+async function executeCallStep(supabase: any, lead: any, progress: any, config: any) {
+  console.log(`[Workflow] Initiating call to ${lead?.phone_number}`);
+
+  try {
+    // Get a caller ID from campaign phone pool (prefer stationary for follow-ups)
+    const callerId = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true);
+
+    if (!callerId) {
+      console.error('[Workflow] No caller ID available for campaign');
+      return { success: false, error: 'No caller ID available' };
+    }
+
+    // Get the campaign's agent ID
+    const { data: campaignData } = await supabase
+      .from('campaigns')
+      .select('agent_id')
+      .eq('id', progress.campaign_id)
+      .single();
+
+    const agentId = config.agent_id || campaignData?.agent_id;
+
+    if (!agentId) {
+      console.error('[Workflow] No agent ID configured');
+      return { success: false, error: 'No agent ID configured' };
+    }
+
+    // Call the outbound-calling function
+    const response = await supabase.functions.invoke('outbound-calling', {
+      body: {
+        action: 'create_call',
+        campaignId: progress.campaign_id,
+        leadId: lead.id,
+        phoneNumber: lead.phone_number,
+        callerId: callerId,
+        agentId: agentId,
+        userId: progress.user_id,
+      },
+    });
+
+    if (response.error) {
+      console.error('[Workflow] Call creation failed:', response.error);
+      return { success: false, error: response.error.message };
+    }
+
+    console.log('[Workflow] Call initiated:', response.data);
+    return { success: true, callId: response.data?.retell_call_id, action: 'call_initiated' };
+
+  } catch (error: any) {
+    console.error('[Workflow] Call step error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function executeSmsStep(supabase: any, lead: any, progress: any, config: any) {
+  console.log(`[Workflow] Sending SMS to ${lead?.phone_number}`);
+
+  try {
+    // Get sender number from campaign phone pool (prefer stationary)
+    const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
+
+    if (!fromNumber) {
+      console.error('[Workflow] No SMS number available');
+      return { success: false, error: 'No SMS number available' };
+    }
+
+    // Replace template variables in message
+    const messageBody = replaceTemplateVariables(config.content || config.message || '', lead);
+
+    // Call the sms-messaging function
+    const response = await supabase.functions.invoke('sms-messaging', {
+      body: {
+        action: 'send_sms',
+        to: lead.phone_number,
+        from: fromNumber,
+        body: messageBody,
+        lead_id: lead.id,
+      },
+    });
+
+    if (response.error) {
+      console.error('[Workflow] SMS send failed:', response.error);
+      return { success: false, error: response.error.message };
+    }
+
+    console.log('[Workflow] SMS sent:', response.data);
+    return { success: true, messageId: response.data?.message_id, action: 'sms_sent' };
+
+  } catch (error: any) {
+    console.error('[Workflow] SMS step error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function executeAiSmsStep(supabase: any, lead: any, progress: any, config: any) {
+  console.log(`[Workflow] Sending AI SMS to ${lead?.phone_number}`);
+
+  try {
+    // Get sender number from campaign phone pool
+    const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
+
+    if (!fromNumber) {
+      console.error('[Workflow] No SMS number available for AI SMS');
+      return { success: false, error: 'No SMS number available' };
+    }
+
+    // Call the ai-sms-processor function
+    const response = await supabase.functions.invoke('ai-sms-processor', {
+      body: {
+        action: 'generate_and_send',
+        leadId: lead.id,
+        userId: progress.user_id,
+        fromNumber: fromNumber,
+        context: config.context || 'follow_up',
+        prompt: config.prompt || null,
+      },
+    });
+
+    if (response.error) {
+      console.error('[Workflow] AI SMS failed:', response.error);
+      return { success: false, error: response.error.message };
+    }
+
+    console.log('[Workflow] AI SMS sent:', response.data);
+    return { success: true, action: 'ai_sms_sent' };
+
+  } catch (error: any) {
+    console.error('[Workflow] AI SMS step error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function executeWebhookStep(supabase: any, lead: any, progress: any, config: any) {
+  console.log(`[Workflow] Executing webhook for lead ${lead?.id}`);
+
+  if (!config.webhook_url) {
+    return { success: false, error: 'No webhook URL configured' };
+  }
+
+  try {
+    const payload = {
+      event: 'workflow_step',
+      lead: {
+        id: lead.id,
+        phone_number: lead.phone_number,
+        first_name: lead.first_name,
+        last_name: lead.last_name,
+        email: lead.email,
+        status: lead.status,
+      },
+      workflow_id: progress.workflow_id,
+      campaign_id: progress.campaign_id,
+      step_config: config,
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(config.webhook_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(config.headers || {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Webhook returned ${response.status}` };
+    }
+
+    return { success: true, action: 'webhook_sent' };
+  } catch (error: any) {
+    console.error('[Workflow] Webhook error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function selectCallerIdForCampaign(
+  supabase: any,
+  campaignId: string | null,
+  userId: string,
+  preferStationary: boolean = false,
+  type: 'voice' | 'sms' = 'voice'
+): Promise<string | null> {
+  try {
+    // First try to get from campaign phone pool
+    if (campaignId) {
+      const roleFilter = type === 'sms' ? ['sms_only', 'outbound'] : ['outbound', 'caller_id_only'];
+      
+      let query = supabase
+        .from('campaign_phone_pools')
+        .select(`
+          phone_number_id,
+          is_primary,
+          priority,
+          phone_numbers(number, is_stationary, purpose, status)
+        `)
+        .eq('campaign_id', campaignId)
+        .in('role', roleFilter)
+        .order('is_primary', { ascending: false })
+        .order('priority', { ascending: false });
+
+      const { data: poolNumbers } = await query;
+
+      if (poolNumbers && poolNumbers.length > 0) {
+        // Filter for active numbers
+        const activeNumbers = poolNumbers.filter(
+          (p: any) => p.phone_numbers?.status === 'active'
+        );
+
+        if (activeNumbers.length > 0) {
+          // If preferring stationary, try to find one
+          if (preferStationary) {
+            const stationary = activeNumbers.find((p: any) => p.phone_numbers?.is_stationary);
+            if (stationary) {
+              return stationary.phone_numbers.number;
+            }
+          }
+
+          // Return the highest priority active number
+          return activeNumbers[0].phone_numbers.number;
+        }
+      }
+    }
+
+    // Fallback: get any active number for this user
+    const purposeFilter = type === 'sms' 
+      ? ['sms_only', 'general_rotation'] 
+      : ['retell_agent', 'follow_up_dedicated', 'general_rotation'];
+
+    const { data: userNumbers } = await supabase
+      .from('phone_numbers')
+      .select('number')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .eq('is_spam', false)
+      .in('purpose', purposeFilter)
+      .limit(1);
+
+    if (userNumbers && userNumbers.length > 0) {
+      return userNumbers[0].number;
+    }
+
+    // Last resort: any active number
+    const { data: anyNumber } = await supabase
+      .from('phone_numbers')
+      .select('number')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .limit(1);
+
+    return anyNumber?.[0]?.number || null;
+
+  } catch (error) {
+    console.error('[Workflow] Error selecting caller ID:', error);
+    return null;
+  }
+}
+
+function replaceTemplateVariables(template: string, lead: any): string {
+  return template
+    .replace(/\{\{first_name\}\}/gi, lead.first_name || '')
+    .replace(/\{\{last_name\}\}/gi, lead.last_name || '')
+    .replace(/\{\{name\}\}/gi, `${lead.first_name || ''} ${lead.last_name || ''}`.trim())
+    .replace(/\{\{company\}\}/gi, lead.company || '')
+    .replace(/\{\{email\}\}/gi, lead.email || '')
+    .replace(/\{\{phone\}\}/gi, lead.phone_number || '');
+}
+
+async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
+  // Get all steps in order
   const { data: allSteps } = await supabase
     .from('workflow_steps')
     .select('*')
     .eq('workflow_id', progress.workflow_id)
     .order('step_number', { ascending: true });
 
-  const currentIndex = allSteps?.findIndex((s: any) => s.id === step?.id) ?? -1;
+  const currentIndex = allSteps?.findIndex((s: any) => s.id === currentStep?.id) ?? -1;
   const nextStep = allSteps?.[currentIndex + 1];
 
   if (nextStep) {
@@ -243,6 +583,8 @@ async function executeStep(supabase: any, progress: any) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', progress.id);
+
+    console.log(`[Workflow] Moved to step ${nextStep.step_number} for lead ${progress.lead_id}`);
   } else {
     // Workflow complete
     await supabase
@@ -253,7 +595,7 @@ async function executeStep(supabase: any, progress: any) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', progress.id);
-  }
 
-  return { stepType: step?.step_type, completed: true };
+    console.log(`[Workflow] Workflow completed for lead ${progress.lead_id}`);
+  }
 }
