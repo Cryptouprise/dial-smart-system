@@ -402,20 +402,21 @@ export const AIAssistantChat: React.FC = () => {
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
               <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20"
+                variant="secondary" 
+                size="sm" 
+                className="h-7 px-2 text-xs gap-1"
                 onClick={() => {
                   setMessages([]);
                   localStorage.removeItem('ai-assistant-history');
                   toast({
-                    title: 'Conversation Cleared',
-                    description: 'Chat history has been cleared',
+                    title: 'New Conversation',
+                    description: 'Started fresh chat',
                   });
                 }}
-                title="Clear conversation"
+                title="Start new conversation"
               >
-                <X className="h-4 w-4" />
+                <Sparkles className="h-3 w-3" />
+                New Chat
               </Button>
             )}
             <Button 
