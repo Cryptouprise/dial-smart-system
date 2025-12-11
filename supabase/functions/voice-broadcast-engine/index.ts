@@ -362,7 +362,7 @@ serve(async (req) => {
                   item.phone_number,
                   broadcast.audio_url || '',
                   callMetadata,
-                  webhookUrl
+                  statusCallbackUrl
                 );
                 break;
               default:
