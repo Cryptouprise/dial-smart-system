@@ -369,7 +369,7 @@ export const useRetellAI = () => {
         return results;
       }
 
-      const webhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+      const webhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
 
       // Update each agent with the webhook URL
       for (const agent of agents) {

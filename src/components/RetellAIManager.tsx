@@ -109,7 +109,7 @@ const RetellAIManager = () => {
       if (results.success > 0) {
         toast({
           title: "Webhooks Configured",
-          description: `Successfully configured ${results.success} agent(s) to track call results. Call data will now be recorded properly.`,
+          description: `${results.success} agent(s) now connected. Calls will trigger transcript analysis, disposition routing, and workflows automatically.`,
         });
       }
     } finally {
@@ -226,13 +226,14 @@ const RetellAIManager = () => {
             onClick={handleConfigureWebhooks} 
             variant="default"
             disabled={isConfiguringWebhooks || agents.length === 0}
+            title="Configure all agents to send call data to our system for transcript analysis, disposition routing, and workflow automation"
           >
             {isConfiguringWebhooks ? (
               <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Webhook className="h-4 w-4 mr-2" />
             )}
-            {isConfiguringWebhooks ? 'Configuring...' : 'Fix Call Tracking'}
+            {isConfiguringWebhooks ? 'Configuring...' : 'Auto-Configure Webhooks'}
           </Button>
           <Button 
             onClick={handleRefresh} 
