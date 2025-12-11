@@ -843,16 +843,24 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Calls Per Minute</Label>
-                    <Input
-                      type="number"
-                      defaultValue={selectedBroadcast.calls_per_minute || 50}
-                      onBlur={async (e) => {
+                    <Label>Calls Per Minute: {selectedBroadcast.calls_per_minute || 50}</Label>
+                    <Slider
+                      defaultValue={[selectedBroadcast.calls_per_minute || 50]}
+                      min={1}
+                      max={200}
+                      step={5}
+                      onValueCommit={async (values) => {
                         await updateBroadcast(selectedBroadcast.id, { 
-                          calls_per_minute: parseInt(e.target.value) || 50 
+                          calls_per_minute: values[0]
                         });
+                        setSelectedBroadcast({ ...selectedBroadcast, calls_per_minute: values[0] });
                       }}
                     />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1</span>
+                      <span>100</span>
+                      <span>200</span>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Max Attempts per Lead</Label>
