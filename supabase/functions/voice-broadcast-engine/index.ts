@@ -29,7 +29,19 @@ async function callWithRetell(
   agentId?: string
 ): Promise<CallResult> {
   try {
-    console.log(`Making Retell call from ${fromNumber} to ${toNumber}`);
+    console.log(`Making Retell call from ${fromNumber} to ${toNumber}${agentId ? ` with agent ${agentId}` : ''}`);
+    
+    // Build request body - only include override_agent_id if it's a valid string
+    const requestBody: Record<string, unknown> = {
+      from_number: fromNumber,
+      to_number: toNumber,
+      metadata,
+    };
+    
+    // Only add override_agent_id if it's a non-empty string
+    if (agentId && typeof agentId === 'string' && agentId.trim() !== '') {
+      requestBody.override_agent_id = agentId;
+    }
     
     const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
       method: 'POST',
@@ -37,12 +49,7 @@ async function callWithRetell(
         'Authorization': `Bearer ${retellKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from_number: fromNumber,
-        to_number: toNumber,
-        override_agent_id: agentId || null,
-        metadata,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
