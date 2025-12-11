@@ -6,8 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Default webhook URL for call tracking
-const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/call-tracking-webhook';
+// Default webhook URL for Retell call events (handles transcript analysis, disposition routing, workflows)
+const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
 
 interface RetellAgentRequest {
   action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice';
