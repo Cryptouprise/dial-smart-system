@@ -27,6 +27,8 @@ import {
   Radio,
   AlertCircle,
   DollarSign,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -48,17 +50,21 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { useSimpleMode } from '@/hooks/useSimpleMode';
+import { Badge } from '@/components/ui/badge';
 
 interface NavItem {
   title: string;
   value: string;
   icon: React.ElementType;
+  simpleMode?: boolean; // If true, show in simple mode
 }
 
 interface NavGroup {
   label: string;
   items: NavItem[];
   defaultOpen?: boolean;
+  simpleModeLabel?: string; // Alternative label for simple mode
 }
 
 const navigationGroups: NavGroup[] = [
@@ -66,18 +72,19 @@ const navigationGroups: NavGroup[] = [
     label: 'Overview',
     defaultOpen: true,
     items: [
-      { title: 'Dashboard', value: 'overview', icon: LayoutDashboard },
+      { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
     ],
   },
   {
     label: 'Phone & Dialing',
+    simpleModeLabel: 'Calling',
     defaultOpen: true,
     items: [
-      { title: 'Predictive Dialer', value: 'predictive', icon: Target },
-      { title: 'Voice Broadcast', value: 'broadcast', icon: Radio },
+      { title: 'Voice Broadcast', value: 'broadcast', icon: Radio, simpleMode: true },
+      { title: 'AI Campaigns', value: 'predictive', icon: Target, simpleMode: true },
       { title: 'Number Rotation', value: 'rotation', icon: RotateCw },
       { title: 'Spam Detection', value: 'spam', icon: Shield },
-      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare },
+      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare, simpleMode: true },
     ],
   },
   {
@@ -107,17 +114,31 @@ const navigationGroups: NavGroup[] = [
   },
   {
     label: 'Reports & Analytics',
+    simpleModeLabel: 'Results',
     defaultOpen: false,
     items: [
+      { title: 'Campaign Results', value: 'campaign-results', icon: BarChart3, simpleMode: true },
       { title: 'Call Analytics', value: 'analytics', icon: BarChart3 },
       { title: 'Daily Reports', value: 'reports', icon: FileText },
-      { title: 'Campaign Results', value: 'campaign-results', icon: BarChart3 },
       { title: 'Live Monitor', value: 'live-monitor', icon: Activity },
       { title: 'A/B Testing', value: 'ab-testing', icon: Beaker },
       { title: 'Budget Manager', value: 'budget', icon: DollarSign },
     ],
   },
 ];
+
+// Filter navigation for simple mode
+const getFilteredNavigation = (isSimpleMode: boolean): NavGroup[] => {
+  if (!isSimpleMode) return navigationGroups;
+  
+  return navigationGroups
+    .map(group => ({
+      ...group,
+      label: group.simpleModeLabel || group.label,
+      items: group.items.filter(item => item.simpleMode),
+    }))
+    .filter(group => group.items.length > 0);
+};
 
 interface DashboardSidebarProps {
   activeTab: string;
@@ -127,6 +148,9 @@ interface DashboardSidebarProps {
 const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
+  const { isSimpleMode, toggleMode } = useSimpleMode();
+  
+  const filteredNavigation = getFilteredNavigation(isSimpleMode);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -151,10 +175,32 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             )}
           </Button>
         </div>
+        
+        {/* Mode Toggle */}
+        {!isCollapsed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleMode}
+            className="w-full mt-2 justify-between h-8 text-xs"
+          >
+            <span className="flex items-center gap-2">
+              {isSimpleMode ? (
+                <ToggleLeft className="h-4 w-4 text-primary" />
+              ) : (
+                <ToggleRight className="h-4 w-4 text-primary" />
+              )}
+              {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
+            </span>
+            <Badge variant="outline" className="text-[10px] h-5">
+              {isSimpleMode ? '5 tabs' : '20+ tabs'}
+            </Badge>
+          </Button>
+        )}
       </SidebarHeader>
 
       <SidebarContent className="px-2">
-        {navigationGroups.map((group) => (
+        {filteredNavigation.map((group) => (
           <NavGroupCollapsible
             key={group.label}
             group={group}
@@ -167,9 +213,16 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
         {!isCollapsed && (
-          <p className="text-xs text-muted-foreground text-center">
-            Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘B</kbd> to toggle
-          </p>
+          <div className="space-y-2">
+            {isSimpleMode && (
+              <p className="text-xs text-muted-foreground text-center">
+                Need more features? Switch to <button onClick={toggleMode} className="text-primary hover:underline">Full Mode</button>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground text-center">
+              Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘B</kbd> to toggle
+            </p>
+          </div>
         )}
       </SidebarFooter>
     </Sidebar>
