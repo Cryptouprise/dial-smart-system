@@ -51,7 +51,8 @@ serve(async (req) => {
     let dtmfPressed = digits;
     
     if (digits === '1') {
-      if (transferNumber) {
+      // Check if we have a transfer number in URL params
+      if (transferNumber && transferNumber.trim() !== '') {
         console.log(`Transferring call to ${transferNumber}`);
         queueStatus = 'transferred';
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -64,6 +65,8 @@ serve(async (req) => {
   <Hangup/>
 </Response>`;
       } else {
+        // No transfer number configured - mark as answered/interested
+        console.log('No transfer number configured, marking as answered');
         queueStatus = 'answered';
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

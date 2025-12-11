@@ -17,8 +17,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { 
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
   Phone, PhoneOff, Clock, Settings, BarChart3, 
-  MessageSquare, Bot, Hash, RefreshCw
+  MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge
 } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
 
 const ELEVENLABS_VOICES = [
@@ -357,35 +358,48 @@ export const VoiceBroadcastManager: React.FC = () => {
                         <div className="space-y-3">
                           <Label>DTMF Actions</Label>
                           {formData.dtmf_actions.map((action, index) => (
-                            <div key={index} className="flex items-center gap-2 p-3 border rounded-lg">
-                              <div className="w-16">
+                            <div key={index} className="p-3 border rounded-lg space-y-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16">
+                                  <Input
+                                    value={action.digit}
+                                    onChange={(e) => updateDTMFAction(index, 'digit', e.target.value)}
+                                    placeholder="#"
+                                    maxLength={1}
+                                  />
+                                </div>
+                                <Select
+                                  value={action.action}
+                                  onValueChange={(value) => updateDTMFAction(index, 'action', value)}
+                                >
+                                  <SelectTrigger className="w-40">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="transfer">Transfer</SelectItem>
+                                    <SelectItem value="callback">Schedule Callback</SelectItem>
+                                    <SelectItem value="dnc">Add to DNC</SelectItem>
+                                    <SelectItem value="replay">Replay Message</SelectItem>
+                                  </SelectContent>
+                                </Select>
                                 <Input
-                                  value={action.digit}
-                                  onChange={(e) => updateDTMFAction(index, 'digit', e.target.value)}
-                                  placeholder="#"
-                                  maxLength={1}
+                                  value={action.label}
+                                  onChange={(e) => updateDTMFAction(index, 'label', e.target.value)}
+                                  placeholder="Button label"
+                                  className="flex-1"
                                 />
                               </div>
-                              <Select
-                                value={action.action}
-                                onValueChange={(value) => updateDTMFAction(index, 'action', value)}
-                              >
-                                <SelectTrigger className="w-40">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="transfer">Transfer</SelectItem>
-                                  <SelectItem value="callback">Schedule Callback</SelectItem>
-                                  <SelectItem value="dnc">Add to DNC</SelectItem>
-                                  <SelectItem value="replay">Replay Message</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <Input
-                                value={action.label}
-                                onChange={(e) => updateDTMFAction(index, 'label', e.target.value)}
-                                placeholder="Button label"
-                                className="flex-1"
-                              />
+                              {action.action === 'transfer' && (
+                                <div className="pl-16">
+                                  <Label className="text-xs text-muted-foreground mb-1 block">Transfer To Number</Label>
+                                  <Input
+                                    value={action.transfer_to || ''}
+                                    onChange={(e) => updateDTMFAction(index, 'transfer_to', e.target.value)}
+                                    placeholder="e.g., +14695551234 (your Retell AI agent number)"
+                                    className="w-full"
+                                  />
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -738,6 +752,164 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </Button>
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog 
+        open={selectedBroadcast !== null} 
+        onOpenChange={(open) => {
+          if (!open) setSelectedBroadcast(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Broadcast Settings: {selectedBroadcast?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Configure voice, transfer number, and other broadcast settings
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedBroadcast && (
+            <div className="space-y-6 mt-4">
+              {/* Voice Settings */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Mic className="h-4 w-4 text-purple-500" />
+                  Voice Settings
+                </h3>
+                <div className="space-y-2">
+                  <Label>Voice</Label>
+                  <Select
+                    value={selectedBroadcast.voice_id || 'TX3LPaxmHKxFdv7VOQHJ'}
+                    onValueChange={async (value) => {
+                      await updateBroadcast(selectedBroadcast.id, { voice_id: value });
+                      setSelectedBroadcast({ ...selectedBroadcast, voice_id: value });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ELEVENLABS_VOICES.map((voice) => (
+                        <SelectItem key={voice.id} value={voice.id}>
+                          {voice.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Transfer Settings */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <PhoneForwarded className="h-4 w-4 text-blue-500" />
+                  Transfer Settings (Press 1)
+                </h3>
+                <div className="space-y-2">
+                  <Label>Transfer To Number</Label>
+                  <Input
+                    defaultValue={
+                      parseDTMFActions(selectedBroadcast.dtmf_actions as any)
+                        .find(a => a.digit === '1' && a.action === 'transfer')?.transfer_to || ''
+                    }
+                    placeholder="e.g., +14695551234 (your AI agent or call center)"
+                    onBlur={async (e) => {
+                      const currentActions = parseDTMFActions(selectedBroadcast.dtmf_actions as any);
+                      const updatedActions = currentActions.map(a => 
+                        a.digit === '1' && a.action === 'transfer' 
+                          ? { ...a, transfer_to: e.target.value }
+                          : a
+                      );
+                      await updateBroadcast(selectedBroadcast.id, { dtmf_actions: updatedActions });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    When a recipient presses 1, they will be transferred to this number (Retell AI agent, call center, etc.)
+                  </p>
+                </div>
+              </div>
+
+              {/* Calling Settings */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-green-500" />
+                  Calling Settings
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Calls Per Minute</Label>
+                    <Input
+                      type="number"
+                      defaultValue={selectedBroadcast.calls_per_minute || 50}
+                      onBlur={async (e) => {
+                        await updateBroadcast(selectedBroadcast.id, { 
+                          calls_per_minute: parseInt(e.target.value) || 50 
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Attempts per Lead</Label>
+                    <Input
+                      type="number"
+                      defaultValue={selectedBroadcast.max_attempts || 1}
+                      onBlur={async (e) => {
+                        await updateBroadcast(selectedBroadcast.id, { 
+                          max_attempts: parseInt(e.target.value) || 1 
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Message Preview */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-orange-500" />
+                  Message
+                </h3>
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm">{selectedBroadcast.message_text}</p>
+                  {selectedBroadcast.ivr_enabled && selectedBroadcast.ivr_prompt && (
+                    <p className="text-sm text-muted-foreground mt-2 italic">
+                      {selectedBroadcast.ivr_prompt}
+                    </p>
+                  )}
+                </div>
+                {selectedBroadcast.audio_url && (
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-green-600">Audio generated</span>
+                    <audio controls src={selectedBroadcast.audio_url} className="h-8 flex-1" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedBroadcast(null)}
+                >
+                  Close
+                </Button>
+                <Button 
+                  onClick={() => {
+                    handleGenerateAudio(selectedBroadcast);
+                    setSelectedBroadcast(null);
+                  }}
+                >
+                  <Volume2 className="h-4 w-4 mr-2" />
+                  Regenerate Audio
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

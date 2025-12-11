@@ -515,6 +515,23 @@ serve(async (req) => {
 
         stats.avgDuration = durationCount > 0 ? Math.round(totalDuration / durationCount) : 0;
 
+        // Auto-complete broadcast if no pending or calling items remain
+        if (stats.pending === 0 && stats.calling === 0 && stats.total > 0) {
+          const { data: currentBroadcast } = await supabase
+            .from('voice_broadcasts')
+            .select('status')
+            .eq('id', broadcastId)
+            .single();
+          
+          if (currentBroadcast?.status === 'active') {
+            console.log(`Auto-completing broadcast ${broadcastId} - all calls finished`);
+            await supabase
+              .from('voice_broadcasts')
+              .update({ status: 'completed' })
+              .eq('id', broadcastId);
+          }
+        }
+
         return new Response(
           JSON.stringify({ success: true, ...stats }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
