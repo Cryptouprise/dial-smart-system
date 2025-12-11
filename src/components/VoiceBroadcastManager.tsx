@@ -467,8 +467,15 @@ export const VoiceBroadcastManager: React.FC = () => {
         ) : (
           broadcasts.map((broadcast) => {
             const broadcastStats = stats[broadcast.id] || {};
+            // Calculate completed as: answered + transferred + callback + dnc + completed + failed
+            const totalCompleted = (broadcastStats.answered || 0) + 
+              (broadcastStats.transferred || 0) + 
+              (broadcastStats.callback || 0) + 
+              (broadcastStats.dnc || 0) + 
+              (broadcastStats.completed || 0) + 
+              (broadcastStats.failed || 0);
             const progress = broadcast.total_leads 
-              ? Math.round(((broadcastStats.completed || 0) / broadcast.total_leads) * 100) 
+              ? Math.round((totalCompleted / broadcast.total_leads) * 100) 
               : 0;
 
             return (
