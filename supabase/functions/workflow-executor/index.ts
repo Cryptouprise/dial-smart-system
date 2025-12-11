@@ -278,13 +278,19 @@ async function executeStep(supabase: any, progress: any) {
   }
 
   // Update nudge tracking
+  const { data: existingNudge } = await supabase
+    .from('lead_nudge_tracking')
+    .select('nudge_count')
+    .eq('lead_id', lead.id)
+    .single();
+
   await supabase
     .from('lead_nudge_tracking')
     .upsert({
       lead_id: lead.id,
       user_id: progress.user_id,
       last_ai_contact_at: new Date().toISOString(),
-      nudge_count: supabase.sql`nudge_count + 1`,
+      nudge_count: (existingNudge?.nudge_count || 0) + 1,
     }, {
       onConflict: 'lead_id',
     });
