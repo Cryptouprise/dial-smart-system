@@ -480,14 +480,20 @@ export const VoiceBroadcastManager: React.FC = () => {
                           Pause
                         </Button>
                       ) : (
-                        <Button
-                          size="sm"
-                          onClick={() => startBroadcast(broadcast.id)}
-                          disabled={isLoading || !broadcast.audio_url}
-                        >
-                          <Play className="h-4 w-4 mr-1" />
-                          Start
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
+                            <span className="text-xs text-amber-600 mr-1">Add leads first →</span>
+                          )}
+                          <Button
+                            size="sm"
+                            onClick={() => startBroadcast(broadcast.id)}
+                            disabled={isLoading || !broadcast.audio_url || ((broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0)}
+                            title={!broadcast.audio_url ? 'Generate audio first' : ((broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0) ? 'Add leads to the broadcast first' : 'Start broadcast'}
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Start
+                          </Button>
+                        </div>
                       )}
                       <Button
                         variant="outline"
