@@ -74,7 +74,9 @@ serve(async (req) => {
           status: 'answered',
           outcome: 'answered',
           notes: `IVR: ${digits || 'timeout'}`
-        }).catch(e => console.error('[Inbound] Log error:', e.message));
+        }).then(({ error }) => {
+          if (error) console.error('[Inbound] Log error:', error.message);
+        });
       }
 
       let responseTwiml = '';
@@ -121,7 +123,9 @@ ${responseTwiml}
         status: 'initiated',
         outcome: 'answered',
         notes: 'Inbound IVR'
-      }).catch(e => console.error('[Inbound] Log error:', e.message));
+      }).then(({ error }) => {
+        if (error) console.error('[Inbound] Log error:', error.message);
+      });
     }
 
     const dtmfUrl = `${supabaseUrl}/functions/v1/twilio-inbound-handler?action=dtmf&transfer=${encodeURIComponent(transferNumber)}`;
