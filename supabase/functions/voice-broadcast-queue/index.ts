@@ -64,21 +64,32 @@ serve(async (req) => {
           throw new Error('No valid leads found');
         }
 
-        // Check for existing queue entries
+        // Check for existing queue entries (including completed/processed ones - prevent re-adding)
         const { data: existingQueue } = await supabase
           .from('broadcast_queue')
-          .select('lead_id')
+          .select('lead_id, status')
           .eq('broadcast_id', broadcastId)
           .in('lead_id', leadIds);
 
         const existingLeadIds = new Set(existingQueue?.map(q => q.lead_id) || []);
+        const processedStatuses = ['completed', 'transferred', 'callback', 'dnc', 'answered', 'failed'];
+        const processedLeadIds = new Set(
+          existingQueue?.filter(q => processedStatuses.includes(q.status)).map(q => q.lead_id) || []
+        );
 
-        // Filter out already queued leads
+        // Filter out already queued leads (any status - prevents re-running same leads)
         const newLeads = leads.filter(l => !existingLeadIds.has(l.id));
 
         if (newLeads.length === 0) {
+          const alreadyProcessed = processedLeadIds.size;
           return new Response(
-            JSON.stringify({ success: true, added: 0, message: 'All leads already in queue' }),
+            JSON.stringify({ 
+              success: true, 
+              added: 0, 
+              message: alreadyProcessed > 0 
+                ? `All ${leadIds.length} leads already processed in this broadcast` 
+                : 'All leads already in queue'
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }

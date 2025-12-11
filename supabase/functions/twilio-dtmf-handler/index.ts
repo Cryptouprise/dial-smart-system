@@ -130,7 +130,8 @@ serve(async (req) => {
         if (!broadcastError && broadcast) {
           const updates: Record<string, number> = {};
           
-          if (queueStatus === 'answered' || queueStatus === 'transferred' || queueStatus === 'callback') {
+          // Any DTMF press means the call was answered
+          if (queueStatus === 'answered' || queueStatus === 'transferred' || queueStatus === 'callback' || queueStatus === 'dnc') {
             updates.calls_answered = (broadcast.calls_answered || 0) + 1;
           }
           if (queueStatus === 'transferred') {
@@ -143,11 +144,19 @@ serve(async (req) => {
             updates.dnc_requests = (broadcast.dnc_requests || 0) + 1;
           }
           
+          console.log('Updating broadcast with:', updates);
+          
           if (Object.keys(updates).length > 0) {
-            await supabase
+            const { error: updateBroadcastError } = await supabase
               .from('voice_broadcasts')
               .update(updates)
               .eq('id', broadcastId);
+              
+            if (updateBroadcastError) {
+              console.error('Error updating broadcast stats:', updateBroadcastError);
+            } else {
+              console.log('Broadcast stats updated successfully');
+            }
           }
         }
       }
