@@ -168,6 +168,9 @@ verify_jwt = false
 [functions.twilio-tts-audio]
 verify_jwt = false
 
+[functions.retell-call-webhook]
+verify_jwt = false
+
 [functions.ai-error-analyzer]
 verify_jwt = true
 
