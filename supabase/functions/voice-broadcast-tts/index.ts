@@ -110,30 +110,49 @@ serve(async (req) => {
     }
 
     const audioBuffer = await ttsResponse.arrayBuffer();
+    const audioBytes = new Uint8Array(audioBuffer);
     
-    // Convert to base64
-    const bytes = new Uint8Array(audioBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const audioBase64 = btoa(binary);
+    // Create the bucket if it doesn't exist (will fail silently if exists)
+    await supabase.storage.createBucket('broadcast-audio', {
+      public: true,
+      allowedMimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/wav'],
+    });
 
-    // Store audio as data URL
-    const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
+    // Upload to Supabase Storage
+    const fileName = `${user.id}/${broadcastId}-${Date.now()}.mp3`;
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('broadcast-audio')
+      .upload(fileName, audioBytes, {
+        contentType: 'audio/mpeg',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError);
+      throw new Error(`Failed to upload audio: ${uploadError.message}`);
+    }
+
+    // Get the public URL
+    const { data: urlData } = supabase.storage
+      .from('broadcast-audio')
+      .getPublicUrl(fileName);
+
+    const audioUrl = urlData.publicUrl;
+    console.log(`Audio uploaded to: ${audioUrl}`);
 
     // Update the broadcast with the audio URL
     const { error: updateError } = await supabase
       .from('voice_broadcasts')
       .update({ 
-        audio_url: audioDataUrl,
+        audio_url: audioUrl,
         updated_at: new Date().toISOString(),
       })
       .eq('id', broadcastId);
 
     if (updateError) {
       console.error('Error updating broadcast:', updateError);
-      throw new Error('Failed to save audio to broadcast');
+      throw new Error('Failed to save audio URL to broadcast');
     }
 
     // Estimate duration (rough calculation: ~150 words per minute, ~5 chars per word)
@@ -144,7 +163,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        audioUrl: audioDataUrl,
+        audioUrl: audioUrl,
         duration: estimatedDuration,
         characterCount: fullMessage.length,
       }),
