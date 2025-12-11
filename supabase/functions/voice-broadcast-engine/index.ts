@@ -191,19 +191,28 @@ async function callWithTelnyx(
 }
 
 // Determine best provider based on number and availability
+// For voice broadcasts with audio files, prefer Twilio since it handles TwiML/audio playback
 function selectProvider(
   providers: ProviderConfig,
-  numberProvider?: string
+  numberProvider?: string,
+  hasAudioUrl: boolean = true
 ): 'retell' | 'twilio' | 'telnyx' | null {
   // If number has a specific provider, prefer that
   if (numberProvider === 'retell' && providers.retellKey) return 'retell';
   if (numberProvider === 'twilio' && providers.twilioAccountSid && providers.twilioAuthToken) return 'twilio';
   if (numberProvider === 'telnyx' && providers.telnyxApiKey) return 'telnyx';
   
-  // Fallback priority: Retell > Twilio > Telnyx
-  if (providers.retellKey) return 'retell';
-  if (providers.twilioAccountSid && providers.twilioAuthToken) return 'twilio';
-  if (providers.telnyxApiKey) return 'telnyx';
+  // For voice broadcasts with audio URLs, prefer Twilio (better for TwiML/audio playback)
+  if (hasAudioUrl) {
+    if (providers.twilioAccountSid && providers.twilioAuthToken) return 'twilio';
+    if (providers.telnyxApiKey) return 'telnyx';
+    if (providers.retellKey) return 'retell';
+  } else {
+    // For AI conversational mode, prefer Retell
+    if (providers.retellKey) return 'retell';
+    if (providers.twilioAccountSid && providers.twilioAuthToken) return 'twilio';
+    if (providers.telnyxApiKey) return 'telnyx';
+  }
   
   return null;
 }
@@ -297,13 +306,14 @@ serve(async (req) => {
           throw new Error('No active phone numbers available. Please add phone numbers first.');
         }
 
-        // Determine which provider to use
-        const selectedProvider = selectProvider(providers);
+        // Determine which provider to use - pass hasAudioUrl to prefer Twilio for audio playback
+        const hasAudioUrl = !!broadcast.audio_url;
+        const selectedProvider = selectProvider(providers, undefined, hasAudioUrl);
         if (!selectedProvider) {
           throw new Error('No telephony provider configured. Please configure Retell AI, Twilio, or Telnyx API keys.');
         }
 
-        console.log(`Using provider: ${selectedProvider}`);
+        console.log(`Using provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
 
         // Start dispatching calls (in batches based on calls_per_minute)
         const batchSize = Math.min(broadcast.calls_per_minute || 50, pendingCount);
@@ -357,7 +367,7 @@ serve(async (req) => {
 
             // Make the call based on provider
             let callResult: CallResult;
-            const providerToUse = selectProvider(providers, numberProvider) || selectedProvider;
+            const providerToUse = selectProvider(providers, numberProvider, hasAudioUrl) || selectedProvider;
 
             switch (providerToUse) {
               case 'retell':
