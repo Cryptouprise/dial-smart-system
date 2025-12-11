@@ -34,9 +34,11 @@ import VoiceBroadcastManager from '@/components/VoiceBroadcastManager';
 import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import QuickStartCards from '@/components/QuickStartCards';
+import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import { BudgetManager } from '@/components/BudgetManager';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
+import { useSimpleMode } from '@/hooks/useSimpleMode';
 
 interface PhoneNumber {
   id: string;
@@ -59,6 +61,25 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const { toast } = useToast();
+  const { isSimpleMode, onModeChange } = useSimpleMode();
+
+  // Auto-redirect to Dashboard when switching to Simple Mode if on a hidden tab
+  useEffect(() => {
+    const unsubscribe = onModeChange((isSimple) => {
+      if (isSimple) {
+        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results'];
+        if (!simpleTabs.includes(activeTab)) {
+          setActiveTab('overview');
+          setSearchParams({ tab: 'overview' });
+          toast({
+            title: 'Switched to Simple Mode',
+            description: 'Redirected to Dashboard',
+          });
+        }
+      }
+    });
+    return unsubscribe;
+  }, [activeTab, onModeChange, setSearchParams, toast]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -140,6 +161,9 @@ const Dashboard = () => {
         return (
           <TabErrorBoundary tabName="Overview">
             <div className="space-y-4 lg:space-y-6">
+              {/* Today's Performance - Always visible for quick stats */}
+              <TodayPerformanceCard />
+              
               {/* Quick Start Cards - AI Guided Setup */}
               <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
               
