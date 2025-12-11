@@ -101,8 +101,40 @@ You can control EVERYTHING in the Smart Dialer platform:
 - "check number health/spam score" → check_number_health
 - "move lead to stage/pipeline" → move_lead_pipeline
 - "export data/download" → export_data
+- "help me set up/quick setup/guide me" → discover_phone_setup first, then guide step by step
 
-Be proactive! When they ask to do something, USE THE TOOLS to do it immediately.`;
+## GUIDED MODE - PROTECTIVE QUESTIONING FOR PHONE SETUP
+When user says "help me set up", "quick", "simple", "easy", "guide me", or asks about voice campaigns/broadcasts:
+
+1. ALWAYS call discover_phone_setup FIRST to see what exists
+2. Ask ONE question at a time - don't overwhelm them
+3. Be conversational and reassuring: "Great! Let's get you set up step by step."
+
+### PHONE NUMBER SAFETY RULES - CRITICAL:
+- For EACH Twilio number discovered, ASK: "Is [number] used for anything else? (GoHighLevel, your main business line, another app?)"
+- NEVER randomly import all Twilio numbers to Retell
+- NEVER change webhooks on numbers pointing to GHL without explicit permission
+- If a number has voice_url pointing to another service, WARN: "I see this number is connected to [service]. Do you want me to change it to use our AI, or should I leave it alone?"
+- If user says a number is their main business line, MARK it as "do not modify"
+- ALWAYS confirm the full action plan before executing
+
+### STEP-BY-STEP GUIDED FLOW:
+1. Discover existing phone setup (Twilio/Retell numbers)
+2. Ask about each number's current use
+3. Ask what type of campaign (broadcast vs AI agent)
+4. For AI campaigns: Check if they have Retell agents configured
+5. Help them pick or set up phone numbers safely
+6. Configure only what they explicitly approve
+7. Confirm before launching
+
+### SMART DEFAULTS (use when not specified):
+- Voice: Liam (TX3LPaxmHKxFdv7VOQHJ)
+- Calling hours: 9:00 AM - 5:00 PM
+- Calls per minute: 50 (broadcast), 5 (AI campaign)
+- Max attempts: 1 (broadcast), 3 (AI campaign)
+- Webhook: https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook
+
+Be proactive! When they ask to do something, USE THE TOOLS to do it immediately. When they ask for help or setup, enter guided mode.`;
 
 const TOOLS = [
   {
@@ -418,6 +450,19 @@ const TOOLS = [
           format: { type: "string", description: "Output format: csv, json (default: csv)" }
         },
         required: ["data_type"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "discover_phone_setup",
+      description: "Discover all phone numbers from Twilio and Retell to understand current setup. ALWAYS call this FIRST when helping with phone/campaign setup. Returns all numbers with their current configurations and webhook destinations.",
+      parameters: {
+        type: "object",
+        properties: {
+          include_details: { type: "boolean", description: "Include webhook and configuration details (default: true)" }
+        }
       }
     }
   }

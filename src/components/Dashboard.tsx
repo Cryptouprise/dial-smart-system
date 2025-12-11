@@ -33,6 +33,7 @@ import WorkflowABTesting from '@/components/WorkflowABTesting';
 import VoiceBroadcastManager from '@/components/VoiceBroadcastManager';
 import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import QuickStartCards from '@/components/QuickStartCards';
 import { BudgetManager } from '@/components/BudgetManager';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
@@ -47,6 +48,11 @@ interface PhoneNumber {
   provider: 'twilio' | 'retell' | 'telnyx' | 'unknown';
   retellPhoneId?: string;
 }
+
+// Create a global event for opening AI chat with a prompt
+export const openAIChatWithPrompt = (prompt: string) => {
+  window.dispatchEvent(new CustomEvent('open-ai-chat', { detail: { prompt } }));
+};
 
 const Dashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,6 +140,9 @@ const Dashboard = () => {
         return (
           <TabErrorBoundary tabName="Overview">
             <div className="space-y-4 lg:space-y-6">
+              {/* Quick Start Cards - AI Guided Setup */}
+              <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
+              
               {/* System Health - Only on Overview */}
               <SystemHealthDashboard />
               

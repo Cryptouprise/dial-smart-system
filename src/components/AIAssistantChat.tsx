@@ -66,7 +66,7 @@ const AVAILABLE_TOOLS = [
   { icon: ListChecks, name: 'List Automations', description: 'View active rules' },
   { icon: X, name: 'Delete Automation', description: 'Remove automation rules' },
   { icon: FileText, name: 'Daily Report', description: 'Generate performance report' },
-  { icon: Phone, name: 'Import Number', description: 'Add phone numbers' },
+  { icon: Phone, name: 'Phone Setup', description: 'Guided phone number setup' },
   { icon: Phone, name: 'List SMS Numbers', description: 'Show available SMS numbers' },
   { icon: Users, name: 'Update Lead', description: 'Change lead status' },
   { icon: FileText, name: 'Create Campaign', description: 'Start new campaigns' },
@@ -87,6 +87,23 @@ export const AIAssistantChat: React.FC = () => {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Listen for external open requests (from Quick Start cards)
+  useEffect(() => {
+    const handleOpenWithPrompt = (event: CustomEvent<{ prompt: string }>) => {
+      setIsOpen(true);
+      setIsMinimized(false);
+      // Send the prompt after a short delay to ensure UI is ready
+      setTimeout(() => {
+        sendMessage(event.detail.prompt);
+      }, 100);
+    };
+
+    window.addEventListener('open-ai-chat', handleOpenWithPrompt as EventListener);
+    return () => {
+      window.removeEventListener('open-ai-chat', handleOpenWithPrompt as EventListener);
+    };
+  }, []);
 
   // Load conversation history from localStorage on mount
   useEffect(() => {
@@ -295,7 +312,7 @@ export const AIAssistantChat: React.FC = () => {
                   className="h-6 px-2 text-xs gap-1"
                 >
                   <Wrench className="h-3 w-3" />
-                  19 Tools
+                  20 Tools
                 </Button>
               </PopoverTrigger>
               <PopoverContent 
@@ -381,7 +398,7 @@ export const AIAssistantChat: React.FC = () => {
               <div className="text-center text-muted-foreground py-4">
                 <Bot className="h-12 w-12 mx-auto mb-2 opacity-50" />
                 <p className="text-sm font-medium">Hi! I'm your Smart Dialer assistant.</p>
-                <p className="text-xs">Ask me anything about the system!</p>
+                <p className="text-xs">I can guide you through setup step-by-step!</p>
               </div>
               
               <div className="space-y-2">
