@@ -101,7 +101,7 @@ async function callWithTwilio(
           To: toNumber,
           From: fromNumber,
           Twiml: twimlResponse,
-          StatusCallback: webhookUrl,
+          StatusCallback: statusCallbackUrl,
           StatusCallbackEvent: 'initiated ringing answered completed',
         }),
       }
