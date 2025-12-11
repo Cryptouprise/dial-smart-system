@@ -252,9 +252,40 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
 
     case 'start_workflow':
       if (config.target_workflow_id) {
-        // Would call workflow-executor to start a new workflow
-        console.log(`Would start workflow ${config.target_workflow_id} for lead ${leadId}`);
+        // Call workflow-executor to start the workflow
+        await supabase.functions.invoke('workflow-executor', {
+          body: {
+            action: 'start_workflow',
+            userId,
+            leadId,
+            workflowId: config.target_workflow_id,
+            campaignId: config.campaign_id || null,
+          },
+        });
+        console.log(`Started workflow ${config.target_workflow_id} for lead ${leadId}`);
       }
+      break;
+
+    case 'send_sms':
+      if (config.message) {
+        await supabase.functions.invoke('sms-messaging', {
+          body: {
+            action: 'send_sms',
+            to: (await supabase.from('leads').select('phone_number').eq('id', leadId).single()).data?.phone_number,
+            body: config.message,
+            lead_id: leadId,
+          },
+        });
+      }
+      break;
+
+    case 'schedule_callback':
+      const delayHours = config.delay_hours || 24;
+      const callbackTime = new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString();
+      await supabase
+        .from('leads')
+        .update({ next_callback_at: callbackTime, status: 'callback' })
+        .eq('id', leadId);
       break;
   }
 }

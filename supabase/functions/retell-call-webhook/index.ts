@@ -210,11 +210,18 @@ serve(async (req) => {
 
     // 7. Update phone number usage stats
     if (call.from_number) {
+      // First get current daily_calls count
+      const { data: phoneData } = await supabase
+        .from('phone_numbers')
+        .select('daily_calls')
+        .eq('number', call.from_number)
+        .single();
+
       await supabase
         .from('phone_numbers')
         .update({
           last_used: new Date().toISOString(),
-          daily_calls: supabase.rpc('increment_daily_calls', { number_id: call.from_number }),
+          daily_calls: (phoneData?.daily_calls || 0) + 1,
         })
         .eq('number', call.from_number);
     }
