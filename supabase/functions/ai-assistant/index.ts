@@ -465,6 +465,74 @@ const TOOLS = [
         }
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "classify_phone_number",
+      description: "Safely configure a phone number for a specific purpose. ALWAYS ask user permission first. Can set up SIP trunking to Retell, configure webhooks, and link to agents.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number: { type: "string", description: "Phone number to configure" },
+          purpose: { type: "string", description: "Purpose: broadcast, retell_agent, sms_only, follow_up_dedicated, general_rotation" },
+          sip_trunk_to_retell: { type: "boolean", description: "Import to Retell via SIP trunk (only for Twilio numbers)" },
+          retell_agent_id: { type: "string", description: "Retell agent ID to link (if purpose is retell_agent)" },
+          preserve_sms_webhook: { type: "boolean", description: "Keep existing SMS webhook (default: true, important for GHL)" }
+        },
+        required: ["phone_number", "purpose"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "quick_voice_broadcast",
+      description: "Create a voice broadcast campaign with smart defaults. Will check for available numbers first.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Broadcast name (auto-generated if not provided)" },
+          message_script: { type: "string", description: "The message to broadcast" },
+          voice_id: { type: "string", description: "ElevenLabs voice ID (default: Liam - TX3LPaxmHKxFdv7VOQHJ)" },
+          lead_filter: { type: "string", description: "Filter leads: all, new, or tag:tagname (default: all)" },
+          calls_per_minute: { type: "number", description: "Dialing pace (default: 50)" }
+        },
+        required: ["message_script"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "quick_ai_campaign",
+      description: "Create an AI voice campaign using Retell agents. Will verify phone numbers and agent configuration.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Campaign name (auto-generated if not provided)" },
+          agent_id: { type: "string", description: "Retell agent ID (will list available if not specified)" },
+          lead_filter: { type: "string", description: "Filter leads: all, new, or tag:tagname (default: all)" },
+          calling_hours_start: { type: "string", description: "Start time (default: 09:00)" },
+          calling_hours_end: { type: "string", description: "End time (default: 17:00)" },
+          max_concurrent: { type: "number", description: "Max concurrent calls (default: 5)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "launch_now",
+      description: "Launch a campaign or broadcast immediately after running preflight checks.",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string", description: "Campaign ID to launch" },
+          broadcast_id: { type: "string", description: "Broadcast ID to launch" }
+        }
+      }
+    }
   }
 ];
 
@@ -1283,6 +1351,547 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           data: { format: 'json', rowCount: data.length, records: data }
         };
       }
+    }
+
+    case 'discover_phone_setup': {
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      
+      const result: any = {
+        twilio_numbers: [],
+        retell_numbers: [],
+        database_numbers: [],
+        has_twilio_credentials: !!twilioAccountSid && !!twilioAuthToken,
+        has_retell_credentials: !!retellApiKey,
+        warnings: []
+      };
+      
+      // Get numbers from our database first
+      const { data: dbNumbers } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .eq('user_id', userId);
+      
+      result.database_numbers = (dbNumbers || []).map((n: any) => ({
+        number: n.number,
+        friendly_name: n.friendly_name,
+        purpose: n.purpose || 'general',
+        provider: n.provider || 'unknown',
+        status: n.status,
+        retell_phone_id: n.retell_phone_id,
+        sip_trunk_config: n.sip_trunk_config,
+        in_database: true
+      }));
+      
+      // Fetch from Twilio if credentials exist
+      if (twilioAccountSid && twilioAuthToken) {
+        try {
+          const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`;
+          
+          const response = await fetch(twilioUrl, {
+            headers: { 'Authorization': 'Basic ' + credentials }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            result.twilio_numbers = (data.incoming_phone_numbers || []).map((n: any) => {
+              // Detect if pointing to GHL or other services
+              let webhook_destination = 'none';
+              const voiceUrl = n.voice_url || '';
+              const smsUrl = n.sms_url || '';
+              
+              if (voiceUrl.includes('gohighlevel') || smsUrl.includes('gohighlevel') || 
+                  voiceUrl.includes('leadconnector') || smsUrl.includes('leadconnector')) {
+                webhook_destination = 'ghl';
+              } else if (voiceUrl.includes('retell') || voiceUrl.includes('emonjusymdripmkvtttc')) {
+                webhook_destination = 'retell_configured';
+              } else if (voiceUrl || smsUrl) {
+                webhook_destination = 'other';
+              }
+              
+              const inDb = result.database_numbers.find((d: any) => d.number === n.phone_number);
+              
+              return {
+                number: n.phone_number,
+                friendly_name: n.friendly_name,
+                voice_url: args.include_details !== false ? voiceUrl : undefined,
+                sms_url: args.include_details !== false ? smsUrl : undefined,
+                webhook_destination,
+                capabilities: n.capabilities,
+                in_our_database: !!inDb,
+                purpose: inDb?.purpose || 'not_configured'
+              };
+            });
+          }
+        } catch (err) {
+          console.error('[AI Assistant] Error fetching Twilio numbers:', err);
+          result.warnings.push('Failed to fetch Twilio numbers');
+        }
+      }
+      
+      // Fetch from Retell if credentials exist
+      if (retellApiKey) {
+        try {
+          const response = await fetch('https://api.retellai.com/list-phone-numbers', {
+            headers: { 'Authorization': `Bearer ${retellApiKey}` }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            result.retell_numbers = (data || []).map((n: any) => ({
+              number: n.phone_number,
+              phone_number_id: n.phone_number_id,
+              agent_id: n.agent_id,
+              inbound_agent_id: n.inbound_agent_id,
+              nickname: n.nickname,
+              is_sip_trunk: n.phone_number_type === 'sip_trunk'
+            }));
+          }
+        } catch (err) {
+          console.error('[AI Assistant] Error fetching Retell numbers:', err);
+          result.warnings.push('Failed to fetch Retell numbers');
+        }
+      }
+      
+      // Generate summary message
+      const twilioCount = result.twilio_numbers.length;
+      const retellCount = result.retell_numbers.length;
+      const ghlNumbers = result.twilio_numbers.filter((n: any) => n.webhook_destination === 'ghl');
+      
+      let message = `📱 Phone Setup Discovery:\n`;
+      message += `• Twilio: ${twilioCount} numbers${!result.has_twilio_credentials ? ' (credentials not configured)' : ''}\n`;
+      message += `• Retell: ${retellCount} numbers${!result.has_retell_credentials ? ' (credentials not configured)' : ''}\n`;
+      message += `• In Database: ${result.database_numbers.length} numbers\n`;
+      
+      if (ghlNumbers.length > 0) {
+        message += `\n⚠️ WARNING: ${ghlNumbers.length} number(s) are connected to GoHighLevel:\n`;
+        ghlNumbers.slice(0, 5).forEach((n: any) => {
+          message += `  • ${n.number} ${n.friendly_name ? `(${n.friendly_name})` : ''}\n`;
+        });
+        message += `I will NOT modify these without your explicit permission.\n`;
+      }
+      
+      return { success: true, message, data: result };
+    }
+
+    case 'classify_phone_number': {
+      const { phone_number, purpose, sip_trunk_to_retell, retell_agent_id, preserve_sms_webhook } = args;
+      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      
+      // Normalize phone number
+      const cleanNumber = phone_number.replace(/[^\d+]/g, '').startsWith('+') 
+        ? phone_number.replace(/[^\d+]/g, '') 
+        : '+1' + phone_number.replace(/\D/g, '');
+      
+      const actions_taken: string[] = [];
+      let retell_phone_id = null;
+      
+      // If SIP trunking to Retell requested
+      if (sip_trunk_to_retell && retellApiKey && twilioAccountSid) {
+        try {
+          // Import number to Retell via SIP trunk
+          const importResponse = await fetch('https://api.retellai.com/create-phone-number', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${retellApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              phone_number: cleanNumber,
+              phone_number_type: 'sip_trunk',
+              sip_trunk_auth_username: twilioAccountSid,
+              sip_trunk_auth_password: twilioAuthToken,
+              inbound_agent_id: retell_agent_id || undefined,
+              termination_uri: `sip:${cleanNumber.replace('+', '')}@${twilioAccountSid}.sip.twilio.com`
+            })
+          });
+          
+          if (importResponse.ok) {
+            const data = await importResponse.json();
+            retell_phone_id = data.phone_number_id;
+            actions_taken.push(`Imported to Retell via SIP trunk (ID: ${retell_phone_id})`);
+            
+            if (retell_agent_id) {
+              actions_taken.push(`Linked to Retell agent: ${retell_agent_id}`);
+            }
+          } else {
+            const err = await importResponse.text();
+            console.error('[AI Assistant] Retell import error:', err);
+            return { success: false, message: `Failed to import to Retell: ${err}` };
+          }
+        } catch (err) {
+          console.error('[AI Assistant] SIP trunk setup error:', err);
+          return { success: false, message: `SIP trunk setup failed: ${err}` };
+        }
+      }
+      
+      // Update database record
+      const { data: existing } = await supabase
+        .from('phone_numbers')
+        .select('id')
+        .eq('number', cleanNumber)
+        .eq('user_id', userId)
+        .single();
+      
+      const phoneData: any = {
+        user_id: userId,
+        number: cleanNumber,
+        area_code: cleanNumber.slice(-10, -7),
+        purpose: purpose,
+        status: 'active',
+        updated_at: new Date().toISOString()
+      };
+      
+      if (retell_phone_id) {
+        phoneData.retell_phone_id = retell_phone_id;
+        phoneData.sip_trunk_provider = 'twilio';
+        phoneData.sip_trunk_config = { 
+          type: 'twilio_sip',
+          configured_at: new Date().toISOString(),
+          preserve_sms_webhook: preserve_sms_webhook !== false
+        };
+      }
+      
+      if (existing) {
+        await supabase.from('phone_numbers').update(phoneData).eq('id', existing.id);
+        actions_taken.push('Updated database record');
+      } else {
+        phoneData.created_at = new Date().toISOString();
+        await supabase.from('phone_numbers').insert(phoneData);
+        actions_taken.push('Created database record');
+      }
+      
+      return {
+        success: true,
+        message: `✅ Phone number ${cleanNumber} configured for: ${purpose}\n\nActions taken:\n${actions_taken.map(a => `• ${a}`).join('\n')}`,
+        data: { number: cleanNumber, purpose, retell_phone_id, actions_taken }
+      };
+    }
+
+    case 'quick_voice_broadcast': {
+      const { name, message_script, voice_id, lead_filter, calls_per_minute } = args;
+      
+      // Check for available phone numbers
+      const { data: numbers } = await supabase
+        .from('phone_numbers')
+        .select('number, purpose')
+        .eq('user_id', userId)
+        .eq('status', 'active');
+      
+      if (!numbers || numbers.length === 0) {
+        return {
+          success: false,
+          message: '❌ No phone numbers available. Let me help you set up phone numbers first.\n\nWould you like to:\n1. Import numbers from Twilio\n2. Purchase numbers from Retell\n3. See what numbers you have configured'
+        };
+      }
+      
+      // Get leads based on filter
+      let leadQuery = supabase.from('leads').select('id, phone_number, first_name, last_name').eq('user_id', userId);
+      
+      if (lead_filter === 'new') {
+        leadQuery = leadQuery.eq('status', 'new');
+      } else if (lead_filter?.startsWith('tag:')) {
+        const tag = lead_filter.replace('tag:', '');
+        leadQuery = leadQuery.contains('tags', [tag]);
+      }
+      
+      const { data: leads } = await leadQuery.limit(1000);
+      
+      if (!leads || leads.length === 0) {
+        return {
+          success: false,
+          message: '❌ No leads found matching your filter. Upload some leads first or change the filter.'
+        };
+      }
+      
+      // Create the broadcast with smart defaults
+      const broadcastName = name || `Voice Broadcast - ${new Date().toLocaleDateString()}`;
+      
+      const { data: broadcast, error } = await supabase
+        .from('voice_broadcasts')
+        .insert({
+          user_id: userId,
+          name: broadcastName,
+          message_text: message_script,
+          voice_id: voice_id || 'TX3LPaxmHKxFdv7VOQHJ', // Liam
+          voice_model: 'eleven_turbo_v2_5',
+          status: 'draft',
+          calls_per_minute: calls_per_minute || 50,
+          total_leads: leads.length,
+          ivr_enabled: true,
+          ivr_mode: 'dtmf',
+          ivr_prompt: 'Press 1 to speak with a representative. Press 2 to schedule a callback. Press 3 to opt out.',
+          calling_hours_start: '09:00',
+          calling_hours_end: '17:00',
+          max_attempts: 1
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Add leads to broadcast queue
+      const queueEntries = leads.map((lead: any) => ({
+        broadcast_id: broadcast.id,
+        phone_number: lead.phone_number,
+        lead_id: lead.id,
+        lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || null,
+        status: 'pending',
+        attempts: 0,
+        max_attempts: 1
+      }));
+      
+      await supabase.from('broadcast_queue').insert(queueEntries);
+      
+      return {
+        success: true,
+        message: `✅ Voice Broadcast Created!\n\n📢 "${broadcastName}"\n• ${leads.length} leads queued\n• Voice: ${voice_id || 'Liam (default)'}\n• Pace: ${calls_per_minute || 50} calls/min\n• Status: Draft (ready to launch)\n\n🎙️ Message preview:\n"${message_script.substring(0, 100)}${message_script.length > 100 ? '...' : ''}"\n\nSay "launch now" to start the broadcast!`,
+        data: { broadcast_id: broadcast.id, leads_count: leads.length }
+      };
+    }
+
+    case 'quick_ai_campaign': {
+      const { name, agent_id, lead_filter, calling_hours_start, calling_hours_end, max_concurrent } = args;
+      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      
+      // Check for Retell agents if none specified
+      if (!agent_id && retellApiKey) {
+        try {
+          const response = await fetch('https://api.retellai.com/list-agents', {
+            headers: { 'Authorization': `Bearer ${retellApiKey}` }
+          });
+          
+          if (response.ok) {
+            const agents = await response.json();
+            if (agents.length === 0) {
+              return {
+                success: false,
+                message: '❌ No Retell AI agents found. Please create an agent in Retell first.\n\nGo to the Retell AI tab to set up your first agent.'
+              };
+            }
+            
+            const agentList = agents.slice(0, 5).map((a: any, i: number) => 
+              `${i + 1}. ${a.agent_name || 'Unnamed'} (${a.agent_id})`
+            ).join('\n');
+            
+            return {
+              success: false,
+              message: `🤖 I found ${agents.length} Retell agent(s). Which one should I use?\n\n${agentList}\n\nTell me the number or name of the agent you'd like to use.`,
+              data: { agents: agents.map((a: any) => ({ id: a.agent_id, name: a.agent_name })) }
+            };
+          }
+        } catch (err) {
+          console.error('[AI Assistant] Error fetching agents:', err);
+        }
+      }
+      
+      if (!agent_id) {
+        return {
+          success: false,
+          message: '❌ Please specify which Retell agent to use for this campaign.'
+        };
+      }
+      
+      // Check for phone numbers linked to Retell
+      const { data: numbers } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .not('retell_phone_id', 'is', null);
+      
+      if (!numbers || numbers.length === 0) {
+        return {
+          success: false,
+          message: '❌ No phone numbers are linked to Retell AI yet.\n\nWould you like me to:\n1. Import a Twilio number to Retell via SIP trunk\n2. Check what numbers you have available\n\nSay "discover phone setup" to see your options.'
+        };
+      }
+      
+      // Get leads
+      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId);
+      if (lead_filter === 'new') leadQuery = leadQuery.eq('status', 'new');
+      else if (lead_filter?.startsWith('tag:')) {
+        leadQuery = leadQuery.contains('tags', [lead_filter.replace('tag:', '')]);
+      }
+      
+      const { data: leads } = await leadQuery.limit(1000);
+      
+      if (!leads || leads.length === 0) {
+        return {
+          success: false,
+          message: '❌ No leads found. Upload some leads first.'
+        };
+      }
+      
+      // Create campaign
+      const campaignName = name || `AI Campaign - ${new Date().toLocaleDateString()}`;
+      
+      const { data: campaign, error } = await supabase
+        .from('campaigns')
+        .insert({
+          user_id: userId,
+          name: campaignName,
+          agent_id: agent_id,
+          status: 'draft',
+          calls_per_minute: max_concurrent || 5,
+          max_attempts: 3,
+          calling_hours_start: calling_hours_start || '09:00',
+          calling_hours_end: calling_hours_end || '17:00'
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Link leads to campaign
+      const campaignLeads = leads.map((lead: any) => ({
+        campaign_id: campaign.id,
+        lead_id: lead.id
+      }));
+      
+      await supabase.from('campaign_leads').insert(campaignLeads);
+      
+      return {
+        success: true,
+        message: `✅ AI Campaign Created!\n\n🤖 "${campaignName}"\n• Agent: ${agent_id}\n• ${leads.length} leads added\n• Calling hours: ${calling_hours_start || '09:00'} - ${calling_hours_end || '17:00'}\n• Max concurrent: ${max_concurrent || 5}\n• Status: Draft\n\nSay "launch now" when ready to start!`,
+        data: { campaign_id: campaign.id, leads_count: leads.length }
+      };
+    }
+
+    case 'launch_now': {
+      const { campaign_id, broadcast_id } = args;
+      
+      if (broadcast_id) {
+        // Launch broadcast
+        const { data: broadcast, error: fetchError } = await supabase
+          .from('voice_broadcasts')
+          .select('*')
+          .eq('id', broadcast_id)
+          .eq('user_id', userId)
+          .single();
+        
+        if (fetchError || !broadcast) {
+          return { success: false, message: '❌ Broadcast not found.' };
+        }
+        
+        // Check queue
+        const { count } = await supabase
+          .from('broadcast_queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcast_id)
+          .eq('status', 'pending');
+        
+        if (!count || count === 0) {
+          return { success: false, message: '❌ No pending calls in queue. Add leads first.' };
+        }
+        
+        // Update status to active
+        const { error: updateError } = await supabase
+          .from('voice_broadcasts')
+          .update({ status: 'active' })
+          .eq('id', broadcast_id);
+        
+        if (updateError) throw updateError;
+        
+        // Trigger the broadcast engine
+        try {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL');
+          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          
+          await fetch(`${supabaseUrl}/functions/v1/voice-broadcast-engine`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceKey}`
+            },
+            body: JSON.stringify({ broadcastId: broadcast_id })
+          });
+        } catch (err) {
+          console.error('[AI Assistant] Error triggering broadcast:', err);
+        }
+        
+        return {
+          success: true,
+          message: `🚀 Broadcast "${broadcast.name}" is now LIVE!\n\n• ${count} calls queued\n• Pace: ${broadcast.calls_per_minute} calls/min\n\nI'll start dialing now. You can monitor progress in the Voice Broadcast tab.`
+        };
+      }
+      
+      if (campaign_id) {
+        // Launch campaign
+        const { data: campaign, error: fetchError } = await supabase
+          .from('campaigns')
+          .select('*')
+          .eq('id', campaign_id)
+          .eq('user_id', userId)
+          .single();
+        
+        if (fetchError || !campaign) {
+          return { success: false, message: '❌ Campaign not found.' };
+        }
+        
+        // Check leads
+        const { count } = await supabase
+          .from('campaign_leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('campaign_id', campaign_id);
+        
+        if (!count || count === 0) {
+          return { success: false, message: '❌ No leads in campaign. Add leads first.' };
+        }
+        
+        // Verify agent if AI campaign
+        if (campaign.agent_id) {
+          const retellApiKey = Deno.env.get('RETELL_API_KEY');
+          if (retellApiKey) {
+            try {
+              const response = await fetch(`https://api.retellai.com/get-agent/${campaign.agent_id}`, {
+                headers: { 'Authorization': `Bearer ${retellApiKey}` }
+              });
+              if (!response.ok) {
+                return { success: false, message: `❌ Retell agent ${campaign.agent_id} not found or inaccessible.` };
+              }
+            } catch (err) {
+              console.error('[AI Assistant] Agent verification error:', err);
+            }
+          }
+        }
+        
+        // Update status
+        const { error: updateError } = await supabase
+          .from('campaigns')
+          .update({ status: 'active' })
+          .eq('id', campaign_id);
+        
+        if (updateError) throw updateError;
+        
+        // Trigger dispatcher
+        try {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL');
+          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          
+          await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceKey}`
+            },
+            body: JSON.stringify({ campaignId: campaign_id })
+          });
+        } catch (err) {
+          console.error('[AI Assistant] Error triggering dispatcher:', err);
+        }
+        
+        return {
+          success: true,
+          message: `🚀 Campaign "${campaign.name}" is now ACTIVE!\n\n• ${count} leads queued\n• Calling hours: ${campaign.calling_hours_start || '09:00'} - ${campaign.calling_hours_end || '17:00'}\n\nCalls are starting now. Monitor in the AI Campaigns tab.`
+        };
+      }
+      
+      return { success: false, message: '❌ Please specify a campaign_id or broadcast_id to launch.' };
     }
 
     default:

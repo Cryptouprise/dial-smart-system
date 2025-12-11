@@ -93,10 +93,57 @@ export const AIAssistantChat: React.FC = () => {
     const handleOpenWithPrompt = (event: CustomEvent<{ prompt: string }>) => {
       setIsOpen(true);
       setIsMinimized(false);
-      // Send the prompt after a short delay to ensure UI is ready
+      const promptToSend = event.detail.prompt;
+      // Use a ref to avoid stale closure issues
       setTimeout(() => {
-        sendMessage(event.detail.prompt);
-      }, 100);
+        // Create user message directly to avoid closure issues
+        const userMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: promptToSend,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setIsLoading(true);
+        
+        // Make the API call directly
+        (async () => {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const { data, error } = await supabase.functions.invoke('ai-assistant', {
+              body: { 
+                message: promptToSend,
+                conversationHistory: [],
+                userId: user?.id,
+              },
+            });
+
+            if (error) throw error;
+
+            const responseText = data.response || 'Sorry, I could not generate a response.';
+            
+            const assistantMessage: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: responseText,
+              timestamp: new Date(),
+            };
+
+            setMessages(prev => [...prev, assistantMessage]);
+          } catch (error) {
+            console.error('AI Assistant error:', error);
+            const errorMessage: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: 'Sorry, I encountered an error. Please try again.',
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          } finally {
+            setIsLoading(false);
+          }
+        })();
+      }, 150);
     };
 
     window.addEventListener('open-ai-chat', handleOpenWithPrompt as EventListener);
