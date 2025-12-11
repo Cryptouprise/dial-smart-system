@@ -10,16 +10,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Default voice - Sarah (clear, professional)
-const DEFAULT_VOICE = 'EXAVITQu4vr4xnSDxMaL';
+// Default voice - Liam (clear, distinctive)
+const DEFAULT_VOICE = 'TX3LPaxmHKxFdv7VOQHJ';
 
 // Pre-defined messages for IVR to cache
 const IVR_MESSAGES: Record<string, string> = {
   'greeting': 'Thank you for calling back. Press 1 to speak with an agent. Press 2 to request a callback at a different time. Press 3 to be removed from our calling list.',
   'no_input': 'We did not receive a response. Goodbye.',
+  'no_response': 'We did not receive a response. Goodbye.',
   'connecting': 'Connecting you to an agent now. Please hold.',
   'callback': 'We will call you back at a more convenient time. Goodbye.',
   'dnc': 'You have been removed from our calling list. Goodbye.',
+  'removed': 'You have been removed from our calling list. Goodbye.',
   'invalid': 'Invalid option. Goodbye.',
   'error': 'We are sorry, we are experiencing technical difficulties. Please try again later.',
   'transfer_failed': 'We could not connect you. Please try again later.',
