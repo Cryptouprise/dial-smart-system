@@ -803,6 +803,29 @@ export const VoiceBroadcastManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Voice Speed */}
+                <div className="space-y-2">
+                  <Label>Voice Speed: {((selectedBroadcast as any).voice_speed || 1.0).toFixed(2)}x</Label>
+                  <Slider
+                    defaultValue={[(selectedBroadcast as any).voice_speed || 1.0]}
+                    min={0.5}
+                    max={1.5}
+                    step={0.05}
+                    onValueCommit={async (values) => {
+                      await updateBroadcast(selectedBroadcast.id, { voice_speed: values[0] } as any);
+                      setSelectedBroadcast({ ...selectedBroadcast, voice_speed: values[0] } as any);
+                    }}
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Slower (0.5x)</span>
+                    <span>Normal (1.0x)</span>
+                    <span>Faster (1.5x)</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Adjust how fast the AI voice speaks. Regenerate audio after changing.
+                  </p>
+                </div>
               </div>
 
               {/* Transfer Settings */}

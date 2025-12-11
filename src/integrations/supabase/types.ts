@@ -2802,6 +2802,7 @@ export type Database = {
           user_id: string
           voice_id: string | null
           voice_model: string | null
+          voice_speed: number | null
         }
         Insert: {
           ai_system_prompt?: string | null
@@ -2833,6 +2834,7 @@ export type Database = {
           user_id: string
           voice_id?: string | null
           voice_model?: string | null
+          voice_speed?: number | null
         }
         Update: {
           ai_system_prompt?: string | null
@@ -2864,6 +2866,7 @@ export type Database = {
           user_id?: string
           voice_id?: string | null
           voice_model?: string | null
+          voice_speed?: number | null
         }
         Relationships: []
       }
