@@ -44,10 +44,10 @@ serve(async (req) => {
       throw new Error('Missing required parameter: messageText');
     }
 
-    // Verify broadcast ownership
+    // Verify broadcast ownership and get voice settings
     const { data: broadcast, error: broadcastError } = await supabase
       .from('voice_broadcasts')
-      .select('id, user_id')
+      .select('id, user_id, voice_speed')
       .eq('id', broadcastId)
       .eq('user_id', user.id)
       .single();
@@ -56,7 +56,9 @@ serve(async (req) => {
       throw new Error('Broadcast not found or access denied');
     }
 
-    console.log(`Generating TTS for broadcast ${broadcastId} with voice ${voiceId || 'default'}`);
+    const voiceSpeed = broadcast.voice_speed || 1.0;
+
+    console.log(`Generating TTS for broadcast ${broadcastId} with voice ${voiceId || 'default'}, speed ${voiceSpeed}`);
 
     // Combine message with IVR prompt if provided
     const fullMessage = ivrPrompt 
@@ -88,6 +90,7 @@ serve(async (req) => {
             similarity_boost: 0.75,
             style: 0.5,
             use_speaker_boost: true,
+            speed: voiceSpeed,
           },
         }),
       }
