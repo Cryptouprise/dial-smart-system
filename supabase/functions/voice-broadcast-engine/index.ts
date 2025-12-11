@@ -59,6 +59,16 @@ async function callWithRetell(
   }
 }
 
+// Helper function to escape XML special characters
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 // Make a call using Twilio
 async function callWithTwilio(
   accountSid: string,
@@ -73,21 +83,31 @@ async function callWithTwilio(
 ): Promise<CallResult> {
   try {
     console.log(`Making Twilio call from ${fromNumber} to ${toNumber}`);
+    console.log(`Audio URL: ${audioUrl}`);
     
     // Build DTMF action URL with transfer number if available
     const dtmfActionUrl = transferNumber 
       ? `${dtmfHandlerUrl}?transfer=${encodeURIComponent(transferNumber)}&queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`
       : `${dtmfHandlerUrl}?queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`;
     
+    // XML-escape URLs for TwiML
+    const escapedAudioUrl = escapeXml(audioUrl);
+    const escapedDtmfActionUrl = escapeXml(dtmfActionUrl);
+    
+    console.log(`Escaped Audio URL: ${escapedAudioUrl}`);
+    console.log(`Escaped DTMF Action URL: ${escapedDtmfActionUrl}`);
+    
     // Create TwiML for playing audio and handling DTMF
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="dtmf" numDigits="1" action="${dtmfActionUrl}" method="POST" timeout="10">
-    <Play>${audioUrl}</Play>
+  <Gather input="dtmf" numDigits="1" action="${escapedDtmfActionUrl}" method="POST" timeout="10">
+    <Play>${escapedAudioUrl}</Play>
   </Gather>
   <Say>We didn't receive a response. Goodbye.</Say>
   <Hangup/>
 </Response>`;
+    
+    console.log('TwiML Response:', twimlResponse);
 
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
