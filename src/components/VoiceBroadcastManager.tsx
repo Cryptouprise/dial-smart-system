@@ -72,6 +72,7 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [leads, setLeads] = useState<any[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [stats, setStats] = useState<Record<string, any>>({});
+  const [addLeadsDialogBroadcastId, setAddLeadsDialogBroadcastId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -482,7 +483,14 @@ export const VoiceBroadcastManager: React.FC = () => {
                       ) : (
                         <div className="flex items-center gap-2">
                           {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
-                            <span className="text-xs text-amber-600 mr-1">Add leads first →</span>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="text-amber-600 hover:text-amber-700 p-0 h-auto"
+                              onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
+                            >
+                              Add leads first →
+                            </Button>
                           )}
                           <Button
                             size="sm"
@@ -582,114 +590,14 @@ export const VoiceBroadcastManager: React.FC = () => {
                       )}
                     </div>
                     <div className="flex-1" />
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Users className="h-4 w-4 mr-1" />
-                          Add Leads
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                          <DialogTitle>Add Leads to Broadcast</DialogTitle>
-                          <DialogDescription>
-                            Select leads to add to this broadcast queue
-                          </DialogDescription>
-                        </DialogHeader>
-                        
-                        {leads.length === 0 ? (
-                          <div className="py-12 text-center">
-                            <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                            <p className="text-lg font-medium mb-2">No leads found</p>
-                            <p className="text-muted-foreground mb-4">
-                              Upload leads first, then come back to add them to this broadcast.
-                            </p>
-                            <Button 
-                              variant="outline"
-                              onClick={() => window.location.href = '/?tab=leads'}
-                            >
-                              Go to Leads → Upload
-                            </Button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2 mb-4">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSelectedLeads(leads.map(l => l.id))}
-                              >
-                                Select All ({leads.length})
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setSelectedLeads([])}
-                                disabled={selectedLeads.length === 0}
-                              >
-                                Clear
-                              </Button>
-                              <span className="text-sm text-muted-foreground ml-auto">
-                                {selectedLeads.length} of {leads.length} selected
-                              </span>
-                            </div>
-                            <div className="max-h-[350px] overflow-y-auto border rounded-md">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="w-10">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedLeads.length === leads.length && leads.length > 0}
-                                        onChange={(e) => {
-                                          setSelectedLeads(e.target.checked ? leads.map(l => l.id) : []);
-                                        }}
-                                      />
-                                    </TableHead>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Phone</TableHead>
-                                    <TableHead>Status</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {leads.map((lead) => (
-                                    <TableRow key={lead.id}>
-                                      <TableCell>
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedLeads.includes(lead.id)}
-                                          onChange={(e) => {
-                                            setSelectedLeads(e.target.checked
-                                              ? [...selectedLeads, lead.id]
-                                              : selectedLeads.filter(id => id !== lead.id)
-                                            );
-                                          }}
-                                        />
-                                      </TableCell>
-                                      <TableCell>
-                                        {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
-                                      </TableCell>
-                                      <TableCell>{lead.phone_number}</TableCell>
-                                      <TableCell>
-                                        <Badge variant="outline">{lead.status}</Badge>
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                            <div className="flex justify-end mt-4">
-                              <Button 
-                                onClick={() => handleAddLeads(broadcast.id)}
-                                disabled={selectedLeads.length === 0 || isLoading}
-                              >
-                                Add {selectedLeads.length} Leads to Queue
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </DialogContent>
-                    </Dialog>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
+                    >
+                      <Users className="h-4 w-4 mr-1" />
+                      Add Leads
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -697,6 +605,123 @@ export const VoiceBroadcastManager: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Add Leads Dialog - Controlled */}
+      <Dialog 
+        open={addLeadsDialogBroadcastId !== null} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddLeadsDialogBroadcastId(null);
+            setSelectedLeads([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Leads to Broadcast</DialogTitle>
+            <DialogDescription>
+              Select leads to add to this broadcast queue
+            </DialogDescription>
+          </DialogHeader>
+          
+          {leads.length === 0 ? (
+            <div className="py-12 text-center">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-lg font-medium mb-2">No leads found</p>
+              <p className="text-muted-foreground mb-4">
+                Upload leads first, then come back to add them to this broadcast.
+              </p>
+              <Button 
+                variant="outline"
+                onClick={() => window.location.href = '/?tab=leads'}
+              >
+                Go to Leads → Upload
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedLeads(leads.map(l => l.id))}
+                >
+                  Select All ({leads.length})
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedLeads([])}
+                  disabled={selectedLeads.length === 0}
+                >
+                  Clear
+                </Button>
+                <span className="text-sm text-muted-foreground ml-auto">
+                  {selectedLeads.length} of {leads.length} selected
+                </span>
+              </div>
+              <div className="max-h-[350px] overflow-y-auto border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedLeads.length === leads.length && leads.length > 0}
+                          onChange={(e) => {
+                            setSelectedLeads(e.target.checked ? leads.map(l => l.id) : []);
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {leads.map((lead) => (
+                      <TableRow key={lead.id}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={selectedLeads.includes(lead.id)}
+                            onChange={(e) => {
+                              setSelectedLeads(e.target.checked
+                                ? [...selectedLeads, lead.id]
+                                : selectedLeads.filter(id => id !== lead.id)
+                              );
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                        </TableCell>
+                        <TableCell>{lead.phone_number}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{lead.status}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button 
+                  onClick={() => {
+                    if (addLeadsDialogBroadcastId) {
+                      handleAddLeads(addLeadsDialogBroadcastId);
+                      setAddLeadsDialogBroadcastId(null);
+                    }
+                  }}
+                  disabled={selectedLeads.length === 0 || isLoading}
+                >
+                  Add {selectedLeads.length} Leads to Queue
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Refresh Button */}
       <div className="flex justify-center">
