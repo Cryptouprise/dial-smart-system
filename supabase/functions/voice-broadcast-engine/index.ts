@@ -67,15 +67,22 @@ async function callWithTwilio(
   toNumber: string,
   audioUrl: string,
   metadata: Record<string, unknown>,
-  webhookUrl: string
+  statusCallbackUrl: string,
+  dtmfHandlerUrl: string,
+  transferNumber?: string
 ): Promise<CallResult> {
   try {
     console.log(`Making Twilio call from ${fromNumber} to ${toNumber}`);
     
+    // Build DTMF action URL with transfer number if available
+    const dtmfActionUrl = transferNumber 
+      ? `${dtmfHandlerUrl}?transfer=${encodeURIComponent(transferNumber)}&queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`
+      : `${dtmfHandlerUrl}?queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`;
+    
     // Create TwiML for playing audio and handling DTMF
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="dtmf" numDigits="1" action="${webhookUrl}" method="POST" timeout="10">
+  <Gather input="dtmf" numDigits="1" action="${dtmfActionUrl}" method="POST" timeout="10">
     <Play>${audioUrl}</Play>
   </Gather>
   <Say>We didn't receive a response. Goodbye.</Say>
@@ -286,7 +293,13 @@ serve(async (req) => {
 
         let dispatched = 0;
         const errors: string[] = [];
-        const webhookUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
+        const statusCallbackUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
+        const dtmfHandlerUrl = `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
+        
+        // Get transfer number from DTMF actions
+        const dtmfActions = broadcast.dtmf_actions || [];
+        const transferAction = dtmfActions.find((a: any) => a.digit === '1' && a.action === 'transfer');
+        const transferNumber = transferAction?.transfer_to || '';
 
         for (const item of queueItems || []) {
           try {
@@ -337,7 +350,9 @@ serve(async (req) => {
                   item.phone_number,
                   broadcast.audio_url || '',
                   callMetadata,
-                  webhookUrl
+                  statusCallbackUrl,
+                  dtmfHandlerUrl,
+                  transferNumber
                 );
                 break;
               case 'telnyx':
