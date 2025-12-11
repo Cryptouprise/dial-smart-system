@@ -342,8 +342,13 @@ serve(async (req) => {
           try {
             // Select a phone number (round-robin)
             const callerNumber = phoneNumbers[dispatched % phoneNumbers.length];
-            const numberProvider = callerNumber.retell_phone_id ? 'retell' : 
-              callerNumber.carrier_name?.toLowerCase().includes('telnyx') ? 'telnyx' : 'twilio';
+            
+            // For voice broadcasts with audio, ALWAYS use Twilio regardless of number's retell_phone_id
+            // The number provider only matters for AI conversational mode
+            const numberProvider = hasAudioUrl 
+              ? 'twilio'  // Force Twilio for audio playback
+              : (callerNumber.retell_phone_id ? 'retell' : 
+                  callerNumber.carrier_name?.toLowerCase().includes('telnyx') ? 'telnyx' : 'twilio');
 
             // Update queue item to 'calling'
             const { error: updateItemError } = await supabase
@@ -365,9 +370,11 @@ serve(async (req) => {
               lead_id: item.lead_id,
             };
 
-            // Make the call based on provider
+            // Make the call based on provider - for audio broadcasts, always use selectedProvider (Twilio)
             let callResult: CallResult;
-            const providerToUse = selectProvider(providers, numberProvider, hasAudioUrl) || selectedProvider;
+            const providerToUse = hasAudioUrl ? selectedProvider : (selectProvider(providers, numberProvider, hasAudioUrl) || selectedProvider);
+            
+            console.log(`Dispatching call to ${item.phone_number} using ${providerToUse} from ${callerNumber.number}`);
 
             switch (providerToUse) {
               case 'retell':
