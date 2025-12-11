@@ -68,15 +68,15 @@ serve(async (req) => {
     if (action === 'dtmf' && digits) {
       console.log(`DTMF received: ${digits}`);
       
-      // Log the interaction
-      await supabase.from('call_logs').insert({
+      // Log the interaction (don't await to avoid blocking)
+      supabase.from('call_logs').insert({
         user_id: phoneNumber?.user_id,
         phone_number: from,
         caller_id: to,
         status: 'answered',
-        outcome: `inbound_dtmf_${digits}`,
-        notes: `Caller pressed ${digits}`
-      });
+        outcome: 'answered', // Use valid outcome, store details in notes
+        notes: `Inbound call - Caller pressed ${digits}`
+      }).catch(e => console.error('Failed to log DTMF:', e.message));
 
       // Handle DTMF responses
       let twiml = '';
@@ -147,15 +147,15 @@ serve(async (req) => {
         // This requires a different approach - returning TwiML that dials Retell
         // Note: Retell handles this differently, typically through their webhook
         
-        // Log the inbound call
-        await supabase.from('call_logs').insert({
+        // Log the inbound call (don't await to avoid blocking)
+        supabase.from('call_logs').insert({
           user_id: phoneNumber?.user_id,
           phone_number: from,
           caller_id: to,
           status: 'initiated',
-          outcome: 'inbound_retell',
+          outcome: 'answered',
           notes: 'Inbound call routed to Retell AI'
-        });
+        }).catch(e => console.error('Failed to log Retell call:', e.message));
       }
     }
 
@@ -177,16 +177,17 @@ serve(async (req) => {
   <Hangup/>
 </Response>`;
 
-    // Log the inbound call
+    // Log the inbound call (don't await to avoid blocking)
     if (phoneNumber?.user_id) {
-      await supabase.from('call_logs').insert({
+      supabase.from('call_logs').insert({
         user_id: phoneNumber.user_id,
         phone_number: from,
         caller_id: to,
         status: 'initiated',
-        outcome: 'inbound',
+        outcome: 'answered', // Use valid outcome value
         notes: 'Inbound call received'
-      });
+      }).then(() => console.log('Call logged successfully'))
+        .catch(e => console.error('Failed to log call:', e.message));
     }
 
     console.log('Returning inbound greeting TwiML');
