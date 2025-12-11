@@ -32,17 +32,18 @@ serve(async (req) => {
   console.log(`[Inbound] From: ${from}, To: ${to}, Action: ${action}, Digits: "${digits}"`);
 
   const dtmfUrl = `${supabaseUrl}/functions/v1/twilio-inbound-handler?action=dtmf`;
+  const ttsUrl = `${supabaseUrl}/functions/v1/twilio-tts-audio`;
 
   let twiml: string;
 
   if (action === 'dtmf') {
-    // Handle DTMF response
-    let message = 'Invalid option. Goodbye.';
-    if (digits === '1') message = 'Connecting you now.';
-    else if (digits === '2') message = 'We will call you back. Goodbye.';
-    else if (digits === '3') message = 'You have been removed from our list. Goodbye.';
+    // Handle DTMF response with ElevenLabs TTS
+    let msgKey = 'invalid';
+    if (digits === '1') msgKey = 'connecting';
+    else if (digits === '2') msgKey = 'callback';
+    else if (digits === '3') msgKey = 'removed';
     
-    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">${message}</Say><Hangup/></Response>`;
+    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Play>${ttsUrl}?msg=${msgKey}</Play><Hangup/></Response>`;
     
     // Log DTMF asynchronously (don't await)
     logCallAsync(supabaseUrl, supabaseServiceKey, from, to, `DTMF: ${digits || 'timeout'}`);
@@ -52,8 +53,8 @@ serve(async (req) => {
       addToDncAsync(supabaseUrl, supabaseServiceKey, from, to);
     }
   } else {
-    // Initial greeting with Gather
-    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10"><Say voice="alice">Thank you for calling back. Press 1 to speak with an agent. Press 2 to request a callback. Press 3 to be removed from our list.</Say></Gather><Say voice="alice">We did not receive a response. Goodbye.</Say><Hangup/></Response>`;
+    // Initial greeting with Gather using ElevenLabs TTS
+    twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10"><Play>${ttsUrl}?msg=greeting</Play></Gather><Play>${ttsUrl}?msg=no_response</Play><Hangup/></Response>`;
     
     // Log inbound call asynchronously (don't await)
     logCallAsync(supabaseUrl, supabaseServiceKey, from, to, 'Inbound IVR');
