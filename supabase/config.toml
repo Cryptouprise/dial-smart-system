@@ -165,6 +165,9 @@ verify_jwt = false
 [functions.remove-trunk]
 verify_jwt = false
 
+[functions.twilio-tts-audio]
+verify_jwt = false
+
 [functions.ai-error-analyzer]
 verify_jwt = true
 

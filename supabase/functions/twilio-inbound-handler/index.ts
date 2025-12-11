@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Inbound call handler for Twilio
-// This handles when someone calls back one of your phone numbers
+/**
+ * Twilio Inbound Call Handler with ElevenLabs TTS
+ * Uses <Play> with ElevenLabs-generated audio instead of <Say>
+ */
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,72 +14,63 @@ const corsHeaders = {
 // Helper to normalize phone numbers for database lookup
 function normalizePhoneNumber(phone: string): string[] {
   const cleaned = phone.replace(/\D/g, '');
-  // Return multiple formats to try matching
   return [
-    phone,                          // Original: +19496702566
-    `+${cleaned}`,                  // With +: +19496702566
-    cleaned,                        // Raw digits: 19496702566
-    cleaned.slice(-10),             // Last 10: 9496702566
-    `+1${cleaned.slice(-10)}`,      // US format: +19496702566
+    phone,
+    `+${cleaned}`,
+    cleaned,
+    cleaned.slice(-10),
+    `+1${cleaned.slice(-10)}`,
   ];
 }
 
+// Generate TwiML with ElevenLabs audio
+function twimlWithAudio(supabaseUrl: string, msgKey: string, extraTwiml: string = ''): string {
+  const audioUrl = `${supabaseUrl}/functions/v1/twilio-tts-audio?msg=${msgKey}`;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Play>${audioUrl}</Play>${extraTwiml}</Response>`;
+}
+
 // Generate simple TwiML response
-function generateTwiML(content: string): Response {
-  console.log('Returning TwiML:', content.substring(0, 200) + '...');
+function twiml(content: string): Response {
+  console.log('[Inbound] TwiML:', content.substring(0, 300));
   return new Response(content, {
     status: 200,
-    headers: { 
-      'Content-Type': 'text/xml',
-      ...corsHeaders 
-    },
+    headers: { 'Content-Type': 'text/xml' },
   });
 }
 
 serve(async (req) => {
   const url = new URL(req.url);
-  console.log(`[Inbound] Method: ${req.method}, Path: ${url.pathname}, Search: ${url.search}`);
+  console.log(`[Inbound] ${req.method} ${url.pathname}${url.search}`);
   
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse form data from Twilio (always URL-encoded)
-    let from = '';
-    let to = '';
-    let callSid = '';
-    let digits = '';
-    let callStatus = '';
-    
-    const contentType = req.headers.get('content-type') || '';
-    console.log('[Inbound] Content-Type:', contentType);
-    
-    // Twilio sends application/x-www-form-urlencoded
+    // Parse Twilio form data
     const body = await req.text();
-    console.log('[Inbound] Raw body length:', body.length);
-    
     const params = new URLSearchParams(body);
-    from = params.get('From') || '';
-    to = params.get('To') || '';
-    callSid = params.get('CallSid') || '';
-    digits = params.get('Digits') || '';
-    callStatus = params.get('CallStatus') || '';
     
-    console.log(`[Inbound] From: ${from}, To: ${to}, CallSid: ${callSid}, Digits: ${digits}, Status: ${callStatus}`);
+    const from = params.get('From') || '';
+    const to = params.get('To') || '';
+    const callSid = params.get('CallSid') || '';
+    const digits = params.get('Digits') || '';
+    const callStatus = params.get('CallStatus') || '';
+    
+    console.log(`[Inbound] From: ${from}, To: ${to}, Digits: ${digits}, Status: ${callStatus}`);
 
-    // Get the action from URL params (for DTMF gathering)
+    // Get action from URL
     const action = url.searchParams.get('action') || 'greeting';
     const transferNumber = url.searchParams.get('transfer') || '';
     
-    console.log(`[Inbound] Action: ${action}, Transfer: ${transferNumber}`);
+    console.log(`[Inbound] Action: ${action}`);
 
-    // Try to find the phone number in our database with multiple format attempts
+    // Find phone number in database
     let phoneNumber = null;
     const numberFormats = normalizePhoneNumber(to);
     
@@ -90,20 +83,16 @@ serve(async (req) => {
       
       if (data) {
         phoneNumber = data;
-        console.log(`[Inbound] Phone found with format: ${format}, ID: ${data.id}`);
+        console.log(`[Inbound] Phone found: ${data.id}`);
         break;
       }
-    }
-    
-    if (!phoneNumber) {
-      console.log('[Inbound] Phone number not found in database, using default greeting');
     }
 
     // Handle DTMF response
     if (action === 'dtmf') {
-      console.log(`[Inbound] DTMF received: "${digits}"`);
+      console.log(`[Inbound] DTMF: "${digits}"`);
       
-      // Log the interaction asynchronously
+      // Log asynchronously
       if (phoneNumber?.user_id) {
         supabase.from('call_logs').insert({
           user_id: phoneNumber.user_id,
@@ -111,49 +100,42 @@ serve(async (req) => {
           caller_id: to,
           status: 'answered',
           outcome: 'answered',
-          notes: `Inbound IVR - Pressed ${digits || 'nothing'}`
-        }).then(() => console.log('[Inbound] DTMF logged'))
-          .catch(e => console.error('[Inbound] Failed to log DTMF:', e.message));
+          notes: `IVR pressed: ${digits || 'timeout'}`
+        }).then(() => console.log('[Inbound] DTMF logged'));
       }
 
       if (!digits) {
-        // No input received - timeout
-        return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>We did not receive your input. Goodbye.</Say><Hangup/></Response>`);
+        return twiml(twimlWithAudio(supabaseUrl, 'no_input', '<Hangup/>'));
       }
 
       switch (digits) {
         case '1':
           if (transferNumber) {
-            return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Connecting you to an agent now. Please hold.</Say><Dial timeout="30"><Number>${transferNumber}</Number></Dial><Say>We could not connect you. Please try again later.</Say><Hangup/></Response>`);
+            return twiml(`<?xml version="1.0" encoding="UTF-8"?><Response><Play>${supabaseUrl}/functions/v1/twilio-tts-audio?msg=connecting</Play><Dial timeout="30"><Number>${transferNumber}</Number></Dial><Play>${supabaseUrl}/functions/v1/twilio-tts-audio?msg=transfer_failed</Play><Hangup/></Response>`);
           }
-          return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Thank you for your interest. Someone will contact you shortly. Goodbye.</Say><Hangup/></Response>`);
+          return twiml(twimlWithAudio(supabaseUrl, 'interest', '<Hangup/>'));
         
         case '2':
-          return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>We will call you back at a more convenient time. Goodbye.</Say><Hangup/></Response>`);
+          return twiml(twimlWithAudio(supabaseUrl, 'callback', '<Hangup/>'));
         
         case '3':
-          // Add to DNC list
           if (phoneNumber?.user_id) {
             await supabase.from('dnc_list').upsert({
               user_id: phoneNumber.user_id,
               phone_number: from,
-              reason: 'Requested via inbound IVR',
+              reason: 'IVR opt-out',
               added_at: new Date().toISOString()
             }, { onConflict: 'user_id,phone_number' });
-            console.log('[Inbound] Added to DNC list:', from);
+            console.log('[Inbound] Added to DNC:', from);
           }
-          return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>You have been removed from our calling list. Goodbye.</Say><Hangup/></Response>`);
+          return twiml(twimlWithAudio(supabaseUrl, 'dnc', '<Hangup/>'));
         
         default:
-          return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invalid option. Goodbye.</Say><Hangup/></Response>`);
+          return twiml(twimlWithAudio(supabaseUrl, 'invalid', '<Hangup/>'));
       }
     }
 
-    // Build the webhook URL for DTMF handling
-    const dtmfWebhookUrl = `${supabaseUrl}/functions/v1/twilio-inbound-handler?action=dtmf&transfer=${encodeURIComponent(transferNumber)}`;
-    console.log('[Inbound] DTMF callback URL:', dtmfWebhookUrl);
-
-    // Log the inbound call asynchronously
+    // Log incoming call
     if (phoneNumber?.user_id) {
       supabase.from('call_logs').insert({
         user_id: phoneNumber.user_id,
@@ -161,21 +143,26 @@ serve(async (req) => {
         caller_id: to,
         status: 'initiated',
         outcome: 'answered',
-        notes: 'Inbound call - IVR greeting played'
-      }).then(() => console.log('[Inbound] Call logged successfully'))
-        .catch(e => console.error('[Inbound] Failed to log call:', e.message));
+        notes: 'Inbound call - IVR started'
+      }).then(() => console.log('[Inbound] Call logged'));
     }
 
-    // Return IVR greeting with Gather
-    // Using default Twilio voice (not Polly which requires extra setup)
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" action="${dtmfWebhookUrl}" method="POST" timeout="10"><Say>Thank you for calling back. Press 1 to speak with an agent. Press 2 to request a callback at a different time. Press 3 to be removed from our calling list.</Say></Gather><Say>We did not receive a response. Goodbye.</Say><Hangup/></Response>`;
+    // Build DTMF callback URL
+    const dtmfUrl = `${supabaseUrl}/functions/v1/twilio-inbound-handler?action=dtmf&transfer=${encodeURIComponent(transferNumber)}`;
+    const greetingAudioUrl = `${supabaseUrl}/functions/v1/twilio-tts-audio?msg=greeting`;
+    const noInputAudioUrl = `${supabaseUrl}/functions/v1/twilio-tts-audio?msg=no_input`;
 
-    console.log('[Inbound] Returning IVR greeting');
-    return generateTwiML(twiml);
+    // Return IVR with Gather and ElevenLabs audio
+    const ivrTwiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" action="${dtmfUrl}" method="POST" timeout="10"><Play>${greetingAudioUrl}</Play></Gather><Play>${noInputAudioUrl}</Play><Hangup/></Response>`;
+
+    console.log('[Inbound] Returning IVR with ElevenLabs audio');
+    return twiml(ivrTwiml);
 
   } catch (error: any) {
     console.error('[Inbound] Error:', error.message, error.stack);
-    // Return a graceful error message - must still return valid TwiML
-    return generateTwiML(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>We are sorry, we are experiencing technical difficulties. Please try again later.</Say><Hangup/></Response>`);
+    
+    // Return error message with ElevenLabs
+    const errorAudioUrl = `${supabaseUrl}/functions/v1/twilio-tts-audio?msg=error`;
+    return twiml(`<?xml version="1.0" encoding="UTF-8"?><Response><Play>${errorAudioUrl}</Play><Hangup/></Response>`);
   }
 });
