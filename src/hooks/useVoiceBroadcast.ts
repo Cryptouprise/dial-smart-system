@@ -380,9 +380,16 @@ export const useVoiceBroadcast = () => {
       return data;
     } catch (error: any) {
       console.error('Error starting broadcast:', error);
+      
+      // Parse the error message for user-friendly display
+      let errorMessage = error.message || "Failed to start broadcast";
+      if (errorMessage.includes('No pending calls') || errorMessage.includes('Add leads first')) {
+        errorMessage = "No leads in the queue. Click 'Add Leads' to add contacts to this broadcast first.";
+      }
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to start broadcast",
+        title: "Cannot Start Broadcast",
+        description: errorMessage,
         variant: "destructive",
       });
       throw error;
