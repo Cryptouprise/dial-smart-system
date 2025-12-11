@@ -74,6 +74,10 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [addLeadsDialogBroadcastId, setAddLeadsDialogBroadcastId] = useState<string | null>(null);
+  const [resultsDialogBroadcastId, setResultsDialogBroadcastId] = useState<string | null>(null);
+  const [queueResults, setQueueResults] = useState<any[]>([]);
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'settings' | 'results'>('settings');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -134,6 +138,32 @@ export const VoiceBroadcastManager: React.FC = () => {
       setLeads(data || []);
     } catch (error) {
       console.error('Error loading leads:', error);
+    }
+  };
+
+  const loadQueueResults = async (broadcastId: string) => {
+    try {
+      setLoadingResults(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('broadcast_queue')
+        .select(`
+          id, phone_number, status, dtmf_pressed, lead_name,
+          created_at, updated_at, callback_scheduled_at,
+          lead:leads(first_name, last_name, phone_number, status)
+        `)
+        .eq('broadcast_id', broadcastId)
+        .order('updated_at', { ascending: false })
+        .limit(500);
+
+      if (error) throw error;
+      setQueueResults(data || []);
+    } catch (error) {
+      console.error('Error loading queue results:', error);
+    } finally {
+      setLoadingResults(false);
     }
   };
 
@@ -548,7 +578,21 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setSelectedBroadcast(broadcast)}
+                        onClick={() => {
+                          setResultsDialogBroadcastId(broadcast.id);
+                          loadQueueResults(broadcast.id);
+                        }}
+                        title="View Results"
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedBroadcast(broadcast);
+                          setSettingsTab('settings');
+                        }}
                       >
                         <Settings className="h-4 w-4" />
                       </Button>
@@ -941,6 +985,127 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </Button>
               </div>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Results Dialog */}
+      <Dialog 
+        open={resultsDialogBroadcastId !== null} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setResultsDialogBroadcastId(null);
+            setQueueResults([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Broadcast Results
+            </DialogTitle>
+            <DialogDescription>
+              View detailed results for each lead in this broadcast
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingResults ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : queueResults.length === 0 ? (
+            <div className="py-12 text-center">
+              <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No results yet. Start the broadcast to see results here.</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-5 gap-3 mb-4">
+                <Card className="p-3 text-center">
+                  <div className="text-xl font-bold">{queueResults.length}</div>
+                  <div className="text-xs text-muted-foreground">Total</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-xl font-bold text-green-600">
+                    {queueResults.filter(r => r.status === 'transferred').length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Transferred</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-xl font-bold text-blue-600">
+                    {queueResults.filter(r => r.status === 'callback').length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Callbacks</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-xl font-bold text-red-600">
+                    {queueResults.filter(r => r.status === 'dnc').length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">DNC</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-xl font-bold text-muted-foreground">
+                    {queueResults.filter(r => r.status === 'pending').length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Pending</div>
+                </Card>
+              </div>
+
+              {/* Results Table */}
+              <div className="max-h-[400px] overflow-y-auto border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Lead</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>DTMF</TableHead>
+                      <TableHead>Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {queueResults.map((result) => (
+                      <TableRow key={result.id}>
+                        <TableCell>
+                          {result.lead?.first_name || result.lead_name || 'Unknown'} {result.lead?.last_name || ''}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{result.phone_number}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant="outline"
+                            className={
+                              result.status === 'transferred' ? 'bg-green-100 text-green-800 border-green-300' :
+                              result.status === 'callback' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                              result.status === 'dnc' ? 'bg-red-100 text-red-800 border-red-300' :
+                              result.status === 'answered' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                              result.status === 'completed' ? 'bg-gray-100 text-gray-800 border-gray-300' :
+                              result.status === 'failed' ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                              ''
+                            }
+                          >
+                            {result.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {result.dtmf_pressed ? (
+                            <Badge variant="secondary">
+                              Pressed {result.dtmf_pressed}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {result.updated_at ? new Date(result.updated_at).toLocaleString() : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
