@@ -104,6 +104,18 @@ export const VoiceBroadcastManager: React.FC = () => {
     });
   }, [broadcasts]);
 
+  // Auto-refresh stats for active broadcasts every 5 seconds
+  useEffect(() => {
+    const hasActiveBroadcast = broadcasts.some(b => b.status === 'active');
+    if (!hasActiveBroadcast) return;
+
+    const interval = setInterval(() => {
+      loadBroadcasts();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [broadcasts]);
+
   const loadLeads = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
