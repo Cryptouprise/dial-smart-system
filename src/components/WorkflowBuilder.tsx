@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCampaignWorkflows, CampaignWorkflow, WorkflowStep, DispositionAutoAction } from '@/hooks/useCampaignWorkflows';
 import { useToast } from '@/hooks/use-toast';
+import { WorkflowTester } from './WorkflowTester';
 
 const STEP_TYPES = [
   { value: 'call', label: 'Phone Call', icon: Phone, color: 'bg-blue-500' },
@@ -71,6 +72,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<CampaignWorkflow | null>(null);
   const [activeTab, setActiveTab] = useState('workflows');
+  const [showTester, setShowTester] = useState(false);
 
   // New workflow form state
   const [newWorkflow, setNewWorkflow] = useState<CampaignWorkflow>({
@@ -705,6 +707,14 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
                   Cancel
                 </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowTester(true)}
+                  disabled={newWorkflow.steps.length === 0}
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  Test Workflow
+                </Button>
                 <Button onClick={handleSaveWorkflow}>
                   {editingWorkflow ? 'Update Workflow' : 'Create Workflow'}
                 </Button>
@@ -854,6 +864,20 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Workflow Tester */}
+      <WorkflowTester
+        open={showTester}
+        workflow={newWorkflow}
+        onClose={() => setShowTester(false)}
+        onTestComplete={(results) => {
+          console.log('Test results:', results);
+          toast({
+            title: 'Test Complete',
+            description: `${results.results.successfulSteps}/${results.results.totalSteps} steps successful`,
+          });
+        }}
+      />
     </div>
   );
 };
