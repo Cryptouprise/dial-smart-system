@@ -18,11 +18,12 @@ import GoHighLevelManager from '@/components/GoHighLevelManager';
 import YellowstoneManager from '@/components/YellowstoneManager';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
 import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
+import { SipTrunkManager } from '@/components/SipTrunkManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Settings = () => {
@@ -365,6 +366,9 @@ const Settings = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* SIP Trunk Configuration */}
+        <SipTrunkManager />
 
         {/* STIR/SHAKEN Settings */}
         <Card>

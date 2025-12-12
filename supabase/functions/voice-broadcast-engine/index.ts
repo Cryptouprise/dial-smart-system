@@ -13,11 +13,31 @@ interface ProviderConfig {
   telnyxApiKey?: string;
 }
 
+interface SipTrunkConfig {
+  id: string;
+  provider_type: 'twilio' | 'telnyx' | 'generic';
+  is_active: boolean;
+  is_default: boolean;
+  sip_host?: string;
+  sip_port?: number;
+  transport?: string;
+  auth_type?: string;
+  username?: string;
+  password_encrypted?: string;
+  twilio_trunk_sid?: string;
+  twilio_termination_uri?: string;
+  telnyx_connection_id?: string;
+  outbound_proxy?: string;
+  caller_id_header?: string;
+  cost_per_minute?: number;
+}
+
 interface CallResult {
   success: boolean;
   provider: string;
   callId?: string;
   error?: string;
+  usedSipTrunk?: boolean;
 }
 
 // Make a call using Retell AI
@@ -155,10 +175,11 @@ async function callWithTelnyx(
   toNumber: string,
   audioUrl: string,
   metadata: Record<string, unknown>,
-  webhookUrl: string
+  webhookUrl: string,
+  connectionId?: string
 ): Promise<CallResult> {
   try {
-    console.log(`Making Telnyx call from ${fromNumber} to ${toNumber}`);
+    console.log(`Making Telnyx call from ${fromNumber} to ${toNumber}${connectionId ? ` via connection ${connectionId}` : ''}`);
     
     const response = await fetch('https://api.telnyx.com/v2/calls', {
       method: 'POST',
@@ -167,7 +188,7 @@ async function callWithTelnyx(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        connection_id: '', // Would need to be configured
+        connection_id: connectionId || '', // Use SIP connection if provided
         to: toNumber,
         from: fromNumber,
         webhook_url: webhookUrl,
@@ -183,10 +204,84 @@ async function callWithTelnyx(
     }
 
     const result = await response.json();
-    return { success: true, provider: 'telnyx', callId: result.data?.call_control_id };
+    return { success: true, provider: 'telnyx', callId: result.data?.call_control_id, usedSipTrunk: !!connectionId };
   } catch (error: any) {
     console.error('Telnyx call error:', error);
     return { success: false, provider: 'telnyx', error: error.message };
+  }
+}
+
+// Make a call using Twilio Elastic SIP Trunk
+async function callWithTwilioSipTrunk(
+  accountSid: string,
+  authToken: string,
+  trunkSid: string,
+  terminationUri: string,
+  fromNumber: string,
+  toNumber: string,
+  audioUrl: string,
+  metadata: Record<string, unknown>,
+  statusCallbackUrl: string,
+  dtmfHandlerUrl: string,
+  transferNumber?: string
+): Promise<CallResult> {
+  try {
+    console.log(`Making Twilio SIP trunk call from ${fromNumber} to ${toNumber} via trunk ${trunkSid}`);
+    
+    // Build DTMF action URL with transfer number if available
+    const dtmfActionUrl = transferNumber 
+      ? `${dtmfHandlerUrl}?transfer=${encodeURIComponent(transferNumber)}&queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`
+      : `${dtmfHandlerUrl}?queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`;
+    
+    // XML-escape URLs for TwiML
+    const escapedAudioUrl = escapeXml(audioUrl);
+    const escapedDtmfActionUrl = escapeXml(dtmfActionUrl);
+    
+    // Create TwiML for playing audio and handling DTMF
+    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf" numDigits="1" action="${escapedDtmfActionUrl}" method="POST" timeout="10">
+    <Play>${escapedAudioUrl}</Play>
+  </Gather>
+  <Say>We didn't receive a response. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+
+    // For SIP trunk, we use the sip: URI format to route through the trunk
+    // The To field uses sip:number@terminationUri format
+    const sipTo = `sip:${toNumber.replace(/\+/g, '')}@${terminationUri}`;
+    
+    console.log(`SIP To address: ${sipTo}`);
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          To: sipTo,
+          From: fromNumber,
+          Twiml: twimlResponse,
+          StatusCallback: statusCallbackUrl,
+          StatusCallbackEvent: 'initiated ringing answered completed',
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Twilio SIP trunk API error:', errorText);
+      return { success: false, provider: 'twilio-sip', error: errorText };
+    }
+
+    const result = await response.json();
+    return { success: true, provider: 'twilio-sip', callId: result.sid, usedSipTrunk: true };
+  } catch (error: any) {
+    console.error('Twilio SIP trunk call error:', error);
+    return { success: false, provider: 'twilio-sip', error: error.message };
   }
 }
 
@@ -313,6 +408,23 @@ serve(async (req) => {
           throw new Error('No telephony provider configured. Please configure Retell AI, Twilio, or Telnyx API keys.');
         }
 
+        // Fetch SIP trunk configurations for cost savings
+        const { data: sipConfigs } = await supabase
+          .from('sip_trunk_configs')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false });
+        
+        // Get the default or first active SIP config
+        const sipConfig: SipTrunkConfig | null = sipConfigs?.[0] || null;
+        
+        if (sipConfig) {
+          console.log(`SIP trunk configured: ${sipConfig.provider_type} - ${sipConfig.id}`);
+        } else {
+          console.log('No SIP trunk configured, using standard API calls');
+        }
+
         console.log(`Using provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
 
         // Start dispatching calls (in batches based on calls_per_minute)
@@ -329,6 +441,7 @@ serve(async (req) => {
         if (queueError) throw queueError;
 
         let dispatched = 0;
+        let sipTrunkCalls = 0;
         const errors: string[] = [];
         const statusCallbackUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
         const dtmfHandlerUrl = `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
@@ -371,10 +484,21 @@ serve(async (req) => {
             };
 
             // Make the call based on provider - for audio broadcasts, always use selectedProvider (Twilio)
+            // Try SIP trunk first if configured for the provider
             let callResult: CallResult;
             const providerToUse = hasAudioUrl ? selectedProvider : (selectProvider(providers, numberProvider, hasAudioUrl) || selectedProvider);
             
             console.log(`Dispatching call to ${item.phone_number} using ${providerToUse} from ${callerNumber.number}`);
+
+            // Check if we should use SIP trunk for this provider
+            const useSipTrunk = sipConfig && (
+              (providerToUse === 'twilio' && sipConfig.provider_type === 'twilio' && sipConfig.twilio_trunk_sid && sipConfig.twilio_termination_uri) ||
+              (providerToUse === 'telnyx' && sipConfig.provider_type === 'telnyx' && sipConfig.telnyx_connection_id)
+            );
+
+            if (useSipTrunk) {
+              console.log(`Using SIP trunk: ${sipConfig.provider_type} (${sipConfig.id})`);
+            }
 
             switch (providerToUse) {
               case 'retell':
@@ -387,26 +511,48 @@ serve(async (req) => {
                 );
                 break;
               case 'twilio':
-                callResult = await callWithTwilio(
-                  providers.twilioAccountSid!,
-                  providers.twilioAuthToken!,
-                  callerNumber.number,
-                  item.phone_number,
-                  broadcast.audio_url || '',
-                  callMetadata,
-                  statusCallbackUrl,
-                  dtmfHandlerUrl,
-                  transferNumber
-                );
+                // Use SIP trunk if configured
+                if (useSipTrunk && sipConfig.provider_type === 'twilio') {
+                  callResult = await callWithTwilioSipTrunk(
+                    providers.twilioAccountSid!,
+                    providers.twilioAuthToken!,
+                    sipConfig.twilio_trunk_sid!,
+                    sipConfig.twilio_termination_uri!,
+                    callerNumber.number,
+                    item.phone_number,
+                    broadcast.audio_url || '',
+                    callMetadata,
+                    statusCallbackUrl,
+                    dtmfHandlerUrl,
+                    transferNumber
+                  );
+                } else {
+                  callResult = await callWithTwilio(
+                    providers.twilioAccountSid!,
+                    providers.twilioAuthToken!,
+                    callerNumber.number,
+                    item.phone_number,
+                    broadcast.audio_url || '',
+                    callMetadata,
+                    statusCallbackUrl,
+                    dtmfHandlerUrl,
+                    transferNumber
+                  );
+                }
                 break;
               case 'telnyx':
+                // Use SIP connection ID if configured
+                const connectionId = (useSipTrunk && sipConfig.provider_type === 'telnyx') 
+                  ? sipConfig.telnyx_connection_id 
+                  : undefined;
                 callResult = await callWithTelnyx(
                   providers.telnyxApiKey!,
                   callerNumber.number,
                   item.phone_number,
                   broadcast.audio_url || '',
                   callMetadata,
-                  statusCallbackUrl
+                  statusCallbackUrl,
+                  connectionId
                 );
                 break;
               default:
@@ -415,6 +561,9 @@ serve(async (req) => {
 
             if (callResult.success) {
               dispatched++;
+              if (callResult.usedSipTrunk) {
+                sipTrunkCalls++;
+              }
               
               // Update phone number usage
               await supabase
@@ -454,7 +603,7 @@ serve(async (req) => {
 
         if (statsUpdateError) console.error('Error updating broadcast stats:', statsUpdateError);
 
-        console.log(`Broadcast ${broadcastId} started: ${dispatched} calls dispatched`);
+        console.log(`Broadcast ${broadcastId} started: ${dispatched} calls dispatched (${sipTrunkCalls} via SIP trunk)`);
 
         return new Response(
           JSON.stringify({ 
@@ -462,6 +611,8 @@ serve(async (req) => {
             status: 'active',
             provider: selectedProvider,
             dispatched,
+            sipTrunkCalls,
+            usingSipTrunk: sipConfig ? sipConfig.provider_type : null,
             pending: (pendingCount || 0) - dispatched,
             errors: errors.length > 0 ? errors : undefined,
           }),
