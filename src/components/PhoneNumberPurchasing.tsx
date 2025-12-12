@@ -306,10 +306,12 @@ const PhoneNumberPurchasing = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="retell">Retell AI</SelectItem>
+                        <SelectItem value="twilio">Twilio</SelectItem>
+                        <SelectItem value="telnyx">Telnyx</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      More providers coming soon
+                      Retell AI recommended for AI calling
                     </p>
                   </div>
                 </div>

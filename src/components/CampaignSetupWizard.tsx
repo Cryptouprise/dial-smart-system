@@ -104,7 +104,7 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
           name,
           description,
           agent_id: agentId,
-          workflow_id: workflowId || null,
+          workflow_id: workflowId === 'none' ? null : workflowId || null,
           calling_hours_start: callingHoursStart,
           calling_hours_end: callingHoursEnd,
           calls_per_minute: callsPerMinute,
@@ -286,7 +286,7 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
                     <SelectValue placeholder="No workflow (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No workflow</SelectItem>
+                    <SelectItem value="none">No workflow</SelectItem>
                     {workflows.map((wf) => (
                       <SelectItem key={wf.id} value={wf.id}>
                         {wf.name}
