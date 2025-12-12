@@ -78,13 +78,15 @@ const AVAILABLE_TOOLS = [
 interface AIAssistantChatProps {
   initialMessage?: string;
   configurationMode?: boolean;
+  embedded?: boolean; // When true, shows inline chat without floating UI
 }
 
 export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ 
   initialMessage,
-  configurationMode = false 
+  configurationMode = false,
+  embedded = false
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(embedded); // Auto-open when embedded
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -164,8 +166,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     };
   }, []);
 
-  // Load conversation history from localStorage on mount
+  // Load conversation history from localStorage on mount (only for non-embedded)
   useEffect(() => {
+    if (embedded) return; // Don't load history for embedded mode - start fresh
+    
     const savedMessages = localStorage.getItem('ai-assistant-history');
     if (savedMessages) {
       try {
@@ -178,14 +182,25 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
         console.error('Error loading conversation history:', error);
       }
     }
-  }, []);
-
-  // Save conversation history to localStorage whenever messages change
+  }, [embedded]);
+  
+  // Auto-send initial message when provided (for embedded mode)
   useEffect(() => {
-    if (messages.length > 0) {
+    if (embedded && initialMessage && messages.length === 0) {
+      // Small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        sendMessage(initialMessage);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [embedded, initialMessage]);
+
+  // Save conversation history to localStorage whenever messages change (only for non-embedded)
+  useEffect(() => {
+    if (!embedded && messages.length > 0) {
       localStorage.setItem('ai-assistant-history', JSON.stringify(messages));
     }
-  }, [messages]);
+  }, [messages, embedded]);
 
   // Load settings from database
   useEffect(() => {
@@ -332,7 +347,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     sendMessage(message);
   };
 
-  if (!isOpen) {
+  // Floating button when not open (only for non-embedded mode)
+  if (!isOpen && !embedded) {
     return (
       <Button
         onClick={() => setIsOpen(true)}
@@ -345,7 +361,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     );
   }
 
-  if (isMinimized) {
+  // Minimized state (only for non-embedded mode)
+  if (isMinimized && !embedded) {
     return (
       <div className="fixed bottom-6 right-6 z-50">
         <Button
@@ -360,6 +377,124 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     );
   }
 
+  // Embedded/inline version for use within other components
+  if (embedded) {
+    return (
+      <div className="flex flex-col h-full min-h-[400px] border rounded-lg bg-card">
+        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+          {messages.length === 0 ? (
+            <div className="space-y-4">
+              <div className="text-center text-muted-foreground py-8">
+                <Bot className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">Hi! I'm your AI Setup Assistant.</p>
+                <p className="text-sm mt-2">Tell me what you want to set up and I'll guide you through it step-by-step!</p>
+                <p className="text-xs mt-4 text-muted-foreground">Try: "Help me create a new AI agent for solar sales"</p>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-muted-foreground">Quick setup options:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 text-left"
+                    onClick={() => sendMessage("Help me create a new AI voice agent for my calling campaigns")}
+                  >
+                    <span className="font-medium">🤖 Create AI Agent</span>
+                    <span className="text-xs text-muted-foreground">Build a voice agent</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 text-left"
+                    onClick={() => sendMessage("Help me set up a new calling campaign from scratch")}
+                  >
+                    <span className="font-medium">📞 New Campaign</span>
+                    <span className="text-xs text-muted-foreground">Create a campaign</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 text-left"
+                    onClick={() => sendMessage("Help me create a follow-up workflow with calls and SMS")}
+                  >
+                    <span className="font-medium">🔄 Build Workflow</span>
+                    <span className="text-xs text-muted-foreground">Automated follow-ups</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 text-left"
+                    onClick={() => sendMessage("Help me purchase phone numbers for my area")}
+                  >
+                    <span className="font-medium">📱 Get Numbers</span>
+                    <span className="text-xs text-muted-foreground">Buy phone numbers</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {message.role === 'assistant' && (
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Bot className="h-4 w-4 text-primary" />
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[80%] rounded-lg p-3 ${
+                      message.role === 'user'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  </div>
+                  {message.role === 'user' && (
+                    <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                      <User className="h-4 w-4 text-primary-foreground" />
+                    </div>
+                  )}
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex gap-3 justify-start">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Bot className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="bg-muted rounded-lg p-3">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </ScrollArea>
+        
+        <div className="border-t p-4">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <Input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Tell me what you want to set up..."
+              disabled={isLoading || isListening}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={isLoading || !inputValue.trim()}>
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Floating card version (original)
   return (
     <Card className="fixed bottom-6 right-6 w-96 h-[500px] shadow-2xl z-50 flex flex-col border-2">
       <CardHeader className="pb-2 flex-shrink-0 bg-primary text-primary-foreground rounded-t-lg">
