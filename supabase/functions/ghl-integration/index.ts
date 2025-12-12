@@ -162,7 +162,10 @@ serve(async (req) => {
         }
 
         // Update contact in GHL with call outcome
-        const updateData = {
+        const updateData: {
+          customFields: Record<string, any>;
+          tags?: string[];
+        } = {
           customFields: {
             last_call_outcome: callData.outcome,
             last_call_notes: callData.notes,
@@ -246,9 +249,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in ghl-integration function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

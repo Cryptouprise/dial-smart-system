@@ -65,10 +65,10 @@ serve(async (req) => {
       default:
         throw new Error(`Unknown action: ${action}`);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Budget tracker error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -103,9 +103,9 @@ async function fetchUsageFromProviders(supabase: any, userId: string, params: an
         endDate
       );
       results.twilio = twilioUsage;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Twilio usage fetch error:', error);
-      results.errors.push({ provider: 'twilio', error: error.message });
+      results.errors.push({ provider: 'twilio', error: (error as Error).message });
     }
   }
 
@@ -115,9 +115,9 @@ async function fetchUsageFromProviders(supabase: any, userId: string, params: an
     try {
       const retellUsage = await fetchRetellUsage(retellApiKey, startDate, endDate);
       results.retell = retellUsage;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Retell usage fetch error:', error);
-      results.errors.push({ provider: 'retell', error: error.message });
+      results.errors.push({ provider: 'retell', error: (error as Error).message });
     }
   }
 

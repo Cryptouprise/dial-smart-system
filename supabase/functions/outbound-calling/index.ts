@@ -273,11 +273,11 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[Outbound Calling] Error:', error);
-    console.error('[Outbound Calling] Error stack:', error.stack);
+    console.error('[Outbound Calling] Error stack:', (error as Error).stack);
     return new Response(JSON.stringify({ 
-      error: error.message,
+      error: (error as Error).message,
       details: 'Check edge function logs for more information'
     }), {
       status: 500,

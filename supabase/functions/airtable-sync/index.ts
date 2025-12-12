@@ -72,12 +72,12 @@ serve(async (req) => {
           });
         }
 
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('Error processing record:', error);
         results.push({
           record_id: record.id,
           success: false,
-          error: error.message
+          error: (error as Error).message
         });
       }
     }
@@ -92,9 +92,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Airtable sync error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

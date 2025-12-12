@@ -183,11 +183,11 @@ Respond with a JSON object containing:
       }
     )
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error analyzing transcript:', error)
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: (error as Error).message,
         details: 'Failed to analyze call transcript'
       }),
       { 

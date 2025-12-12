@@ -154,10 +154,10 @@ Format your response as:
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[AI Error Analyzer] Error:', error);
     return new Response(JSON.stringify({ 
-      error: error.message,
+      error: (error as Error).message,
       suggestion: 'An unexpected error occurred. Please try again.',
     }), {
       status: 500,
@@ -309,11 +309,11 @@ async function executeAutoFix(
       action: 'manual_fix_suggested',
     };
 
-  } catch (fixError) {
+  } catch (fixError: unknown) {
     console.error('[AI Error Analyzer] Fix execution error:', fixError);
     return {
       success: false,
-      message: `Fix attempt failed: ${fixError.message}`,
+      message: `Fix attempt failed: ${(fixError as Error).message}`,
       action: 'fix_failed',
     };
   }

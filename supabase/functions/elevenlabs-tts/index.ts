@@ -4,7 +4,6 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,10 +65,10 @@ serve(async (req) => {
       );
     }
 
-    // Convert audio to base64 using Deno's built-in encoder (handles large data)
+    // Convert audio to base64
     const arrayBuffer = await response.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
-    const base64Audio = base64Encode(uint8Array);
+    const base64Audio = btoa(String.fromCharCode(...uint8Array));
 
     console.log(`[ElevenLabs TTS] Audio generated successfully (${uint8Array.length} bytes)`);
 
@@ -78,10 +77,10 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[ElevenLabs TTS] Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message || 'An error occurred' }),
+      JSON.stringify({ error: (error as Error).message || 'An error occurred' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

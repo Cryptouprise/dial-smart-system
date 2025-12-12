@@ -35,9 +35,9 @@ serve(async (req) => {
 
     throw new Error('Invalid request parameters');
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Advanced spam detection error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -287,7 +287,7 @@ async function checkAreaCodeReputation(areaCode: string, supabase: any) {
   }
 
   const totalNumbers = areaNumbers.length;
-  const spamNumbers = areaNumbers.filter(n => n.is_spam || n.daily_calls > 40).length;
+  const spamNumbers = areaNumbers.filter((n: any) => n.is_spam || n.daily_calls > 40).length;
   const spamRatio = spamNumbers / totalNumbers;
 
   return {
