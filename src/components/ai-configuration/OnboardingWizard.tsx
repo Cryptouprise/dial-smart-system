@@ -326,16 +326,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 <AlertCircle className="h-5 w-5" />
                 Skipped ({skippedAreas.length})
               </h3>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {skippedAreas.map(area => (
                   <div key={area.id} className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-950 rounded border border-yellow-200 dark:border-yellow-800">
-                    {area.icon}
-                    <span className="text-sm">{area.title}</span>
+                    <span className="flex-shrink-0">{area.icon}</span>
+                    <span className="text-sm flex-1">{area.title}</span>
                     <Button 
-                      variant="ghost" 
+                      type="button"
+                      variant="secondary" 
                       size="sm" 
-                      className="ml-auto h-6 text-xs"
-                      onClick={() => {
+                      className="flex-shrink-0 h-7 text-xs"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setCurrentAreaId(area.id);
                         setShowCompletion(false);
                         setShowConfiguration(true);
@@ -358,17 +361,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
               <p className="text-sm text-red-700 dark:text-red-300 mb-3">
                 These are required to start making calls:
               </p>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {essentialMissing.map(area => (
-                  <div key={area.id} className="flex items-center justify-between">
+                  <div key={area.id} className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      {area.icon}
+                      <span className="flex-shrink-0">{area.icon}</span>
                       <span className="text-sm">{area.title}</span>
                     </div>
                     <Button 
+                      type="button"
                       size="sm" 
                       variant="destructive"
-                      onClick={() => {
+                      className="flex-shrink-0"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedAreas(prev => new Set([...prev, area.id]));
                         setCurrentAreaId(area.id);
                         setShowCompletion(false);
@@ -406,17 +413,30 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           
           <Separator />
           
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4 pt-2">
             <Button 
+              type="button"
               variant="outline" 
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
                 setShowCompletion(false);
                 setShowUseCaseSelection(false);
               }}
             >
               Back to Setup Checklist
             </Button>
-            <Button onClick={() => onComplete?.()}>
+            <Button 
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (onComplete) {
+                  onComplete();
+                } else {
+                  // Fallback: navigate to overview
+                  window.location.href = '/?tab=overview';
+                }
+              }}
+            >
               Go to Dashboard
             </Button>
           </div>
