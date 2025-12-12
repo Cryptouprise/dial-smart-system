@@ -13,6 +13,8 @@ import {
 import { ConfigurationProgress } from './ConfigurationProgress';
 import { useAIConfiguration } from '@/hooks/useAIConfiguration';
 import { useToast } from '@/hooks/use-toast';
+import { CONFIGURATION_INTEGRATIONS } from './ConfigurationAreaIntegrations';
+import { ConfigurationStepRenderer } from './ConfigurationStepRenderer';
 
 export interface ConfigurationArea {
   id: string;
@@ -323,41 +325,43 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
 
   if (showConfiguration && currentAreaId) {
     const currentArea = areas.find(a => a.id === currentAreaId);
+    const integration = CONFIGURATION_INTEGRATIONS[currentAreaId];
+    
     return (
-      <Card className="w-full max-w-4xl mx-auto">
+      <Card className="w-full max-w-6xl mx-auto">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {currentArea?.icon}
               <CardTitle>{currentArea?.title}</CardTitle>
+              {getCategoryBadge(currentArea?.category || 'optional')}
             </div>
             <Button variant="ghost" size="sm" onClick={() => setShowConfiguration(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
           <CardDescription>{currentArea?.description}</CardDescription>
-          <Progress value={progress} className="mt-2" />
+          
+          {integration?.instructions && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                💡 <strong>Tip:</strong> {integration.instructions}
+              </p>
+            </div>
+          )}
+          
+          <Progress value={progress} className="mt-3" />
           <div className="text-sm text-muted-foreground">
             Step {completedCount + 1} of {totalSelected}
           </div>
         </CardHeader>
-        <CardContent>
-          {/* This is where the actual configuration UI for each area would go */}
-          {/* For now, showing placeholder */}
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Configuration interface for {currentArea?.title} will be integrated here.
-              This will use your existing components like PhoneNumberPurchasing, SipTrunkManager, etc.
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={() => handleAreaComplete(currentAreaId)}>
-                Complete & Continue
-              </Button>
-              <Button variant="outline" onClick={() => handleSkipArea(currentAreaId)}>
-                Skip This Step
-              </Button>
-            </div>
-          </div>
+        <CardContent className="space-y-4">
+          {/* Render the actual configuration component */}
+          <ConfigurationStepRenderer 
+            areaId={currentAreaId}
+            onComplete={() => handleAreaComplete(currentAreaId)}
+            onSkip={() => handleSkipArea(currentAreaId)}
+          />
         </CardContent>
       </Card>
     );
