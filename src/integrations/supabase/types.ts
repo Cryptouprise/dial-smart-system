@@ -2361,6 +2361,78 @@ export type Database = {
           },
         ]
       }
+      sip_trunk_configs: {
+        Row: {
+          auth_type: string | null
+          caller_id_header: string | null
+          cost_per_minute: number | null
+          created_at: string
+          extra_headers: Json | null
+          id: string
+          is_active: boolean | null
+          is_default: boolean | null
+          name: string
+          outbound_proxy: string | null
+          password_encrypted: string | null
+          provider_type: string
+          sip_host: string | null
+          sip_port: number | null
+          telnyx_connection_id: string | null
+          transport: string | null
+          twilio_termination_uri: string | null
+          twilio_trunk_sid: string | null
+          updated_at: string
+          user_id: string
+          username: string | null
+        }
+        Insert: {
+          auth_type?: string | null
+          caller_id_header?: string | null
+          cost_per_minute?: number | null
+          created_at?: string
+          extra_headers?: Json | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name: string
+          outbound_proxy?: string | null
+          password_encrypted?: string | null
+          provider_type?: string
+          sip_host?: string | null
+          sip_port?: number | null
+          telnyx_connection_id?: string | null
+          transport?: string | null
+          twilio_termination_uri?: string | null
+          twilio_trunk_sid?: string | null
+          updated_at?: string
+          user_id: string
+          username?: string | null
+        }
+        Update: {
+          auth_type?: string | null
+          caller_id_header?: string | null
+          cost_per_minute?: number | null
+          created_at?: string
+          extra_headers?: Json | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name?: string
+          outbound_proxy?: string | null
+          password_encrypted?: string | null
+          provider_type?: string
+          sip_host?: string | null
+          sip_port?: number | null
+          telnyx_connection_id?: string | null
+          transport?: string | null
+          twilio_termination_uri?: string | null
+          twilio_trunk_sid?: string | null
+          updated_at?: string
+          user_id?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
       sms_context_history: {
         Row: {
           context_window: string
