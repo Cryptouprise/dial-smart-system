@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { 
   Phone, Settings, Zap, MessageSquare, Users, Workflow, 
   Radio, Database, Link, Shield, DollarSign, BarChart, Bot,
-  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, X
+  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, X, AlertCircle
 } from 'lucide-react';
 import { ConfigurationProgress } from './ConfigurationProgress';
 import { useAIConfiguration } from '@/hooks/useAIConfiguration';
@@ -47,12 +47,28 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
     estimatedTime: '2-3 min',
   },
   {
-    id: 'dialer_settings',
-    title: 'Dialer Settings',
-    description: 'Configure AMD, local presence, timezone compliance',
-    icon: <Settings className="h-5 w-5" />,
+    id: 'ai_agent',
+    title: 'AI Agent',
+    description: 'Create an AI voice agent for automated calling',
+    icon: <Bot className="h-5 w-5" />,
+    category: 'essential',
+    estimatedTime: '3-5 min',
+  },
+  {
+    id: 'leads',
+    title: 'Import Leads',
+    description: 'Upload or add leads to call',
+    icon: <Users className="h-5 w-5" />,
+    category: 'essential',
+    estimatedTime: '2-5 min',
+  },
+  {
+    id: 'workflows',
+    title: 'Follow-up Workflows',
+    description: 'AI-powered workflow builder for automated follow-ups',
+    icon: <Workflow className="h-5 w-5" />,
     category: 'recommended',
-    estimatedTime: '2-3 min',
+    estimatedTime: '3-5 min',
   },
   {
     id: 'campaign',
@@ -61,23 +77,15 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
     icon: <Zap className="h-5 w-5" />,
     category: 'essential',
     estimatedTime: '3-4 min',
-    dependencies: ['phone_numbers'],
+    dependencies: ['phone_numbers', 'ai_agent'],
   },
   {
-    id: 'ai_agent',
-    title: 'AI Agent',
-    description: 'Create an AI voice agent for automated calling',
-    icon: <Bot className="h-5 w-5" />,
+    id: 'dialer_settings',
+    title: 'Dialer Settings',
+    description: 'Configure AMD, local presence, timezone compliance',
+    icon: <Settings className="h-5 w-5" />,
     category: 'recommended',
     estimatedTime: '2-3 min',
-  },
-  {
-    id: 'workflows',
-    title: 'Follow-up Workflows',
-    description: 'Automate follow-up calls and SMS sequences',
-    icon: <Workflow className="h-5 w-5" />,
-    category: 'recommended',
-    estimatedTime: '3-5 min',
   },
   {
     id: 'number_pools',
@@ -149,6 +157,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const [useCase, setUseCase] = useState<string>('');
   const [showUseCaseSelection, setShowUseCaseSelection] = useState(true);
   const [showConfiguration, setShowConfiguration] = useState(false);
+  const [showCompletion, setShowCompletion] = useState(false);
   const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState('');
   const [userInput, setUserInput] = useState('');
@@ -175,19 +184,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   };
 
   const getRecommendedAreas = (useCase: string): string[] => {
-    const base = ['phone_numbers', 'campaign', 'dialer_settings', 'budget'];
+    const base = ['phone_numbers', 'sip_trunk', 'ai_agent', 'leads', 'campaign'];
     
     switch (useCase) {
       case 'cold_calling':
-        return [...base, 'ai_agent', 'workflows', 'compliance'];
+        return [...base, 'workflows', 'dialer_settings', 'compliance', 'budget'];
       case 'solar':
-        return [...base, 'ai_agent', 'workflows', 'compliance', 'lead_scoring'];
+        return [...base, 'workflows', 'dialer_settings', 'compliance', 'lead_scoring', 'budget'];
       case 'real_estate':
-        return [...base, 'workflows', 'integrations'];
+        return [...base, 'workflows', 'integrations', 'budget'];
       case 'broadcast':
-        return ['phone_numbers', 'voice_broadcast', 'budget'];
+        return ['phone_numbers', 'sip_trunk', 'voice_broadcast', 'leads', 'budget'];
       case 'sms_only':
-        return ['phone_numbers', 'campaign', 'workflows'];
+        return ['phone_numbers', 'leads', 'workflows'];
       default:
         return base;
     }
@@ -244,13 +253,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     if (nextArea) {
       setCurrentAreaId(nextArea.id);
     } else {
-      // All done!
+      // All done - show completion screen
       setCurrentAreaId(null);
-      toast({
-        title: "Setup Complete! 🎉",
-        description: "Your dialer system is ready to go!",
-      });
-      onComplete?.();
+      setShowConfiguration(false);
+      setShowCompletion(true);
     }
   };
 
@@ -273,6 +279,151 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
       </Badge>
     );
   };
+
+  // Completion screen
+  if (showCompletion) {
+    const completedAreas = areas.filter(a => selectedAreas.has(a.id) && a.completed && !a.skipped);
+    const skippedAreas = areas.filter(a => selectedAreas.has(a.id) && a.skipped);
+    const essentialMissing = areas.filter(a => a.category === 'essential' && !a.completed);
+    const hasAllEssentials = essentialMissing.length === 0;
+    
+    return (
+      <Card className="w-full max-w-4xl mx-auto">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-8 w-8 text-green-600" />
+            <CardTitle className="text-2xl">Setup Complete! 🎉</CardTitle>
+          </div>
+          <CardDescription className="text-base">
+            {hasAllEssentials 
+              ? "Your dialer system is ready to make calls!"
+              : "You've completed setup, but some essential items were skipped."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Completed Items */}
+          {completedAreas.length > 0 && (
+            <div>
+              <h3 className="font-semibold mb-3 flex items-center gap-2 text-green-600">
+                <CheckCircle2 className="h-5 w-5" />
+                Configured ({completedAreas.length})
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {completedAreas.map(area => (
+                  <div key={area.id} className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-950 rounded border border-green-200 dark:border-green-800">
+                    {area.icon}
+                    <span className="text-sm">{area.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Skipped Items */}
+          {skippedAreas.length > 0 && (
+            <div>
+              <h3 className="font-semibold mb-3 flex items-center gap-2 text-yellow-600">
+                <AlertCircle className="h-5 w-5" />
+                Skipped ({skippedAreas.length})
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {skippedAreas.map(area => (
+                  <div key={area.id} className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-950 rounded border border-yellow-200 dark:border-yellow-800">
+                    {area.icon}
+                    <span className="text-sm">{area.title}</span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="ml-auto h-6 text-xs"
+                      onClick={() => {
+                        setCurrentAreaId(area.id);
+                        setShowCompletion(false);
+                        setShowConfiguration(true);
+                      }}
+                    >
+                      Configure
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Essential Missing Warning */}
+          {!hasAllEssentials && (
+            <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">
+                ⚠️ Essential Items Not Configured
+              </h3>
+              <p className="text-sm text-red-700 dark:text-red-300 mb-3">
+                These are required to start making calls:
+              </p>
+              <div className="space-y-2">
+                {essentialMissing.map(area => (
+                  <div key={area.id} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {area.icon}
+                      <span className="text-sm">{area.title}</span>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="destructive"
+                      onClick={() => {
+                        setSelectedAreas(prev => new Set([...prev, area.id]));
+                        setCurrentAreaId(area.id);
+                        setShowCompletion(false);
+                        setShowConfiguration(true);
+                      }}
+                    >
+                      Configure Now
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Next Steps */}
+          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
+              🚀 Next Steps
+            </h3>
+            <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+              {hasAllEssentials ? (
+                <>
+                  <li>• Go to <strong>Campaigns</strong> to start your first campaign</li>
+                  <li>• Check <strong>Live Monitor</strong> to see calls in real-time</li>
+                  <li>• Review <strong>Analytics</strong> to track performance</li>
+                </>
+              ) : (
+                <>
+                  <li>• Configure the missing essential items above</li>
+                  <li>• Then you'll be ready to start calling</li>
+                </>
+              )}
+            </ul>
+          </div>
+          
+          <Separator />
+          
+          <div className="flex items-center justify-between">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCompletion(false);
+                setShowUseCaseSelection(false);
+              }}
+            >
+              Back to Setup Checklist
+            </Button>
+            <Button onClick={() => onComplete?.()}>
+              Go to Dashboard
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (showUseCaseSelection) {
     return (
