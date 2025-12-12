@@ -86,6 +86,65 @@ async function callWithRetell(
   }
 }
 
+// Smart number selection with local presence and rotation
+function selectBestNumber(
+  phoneNumbers: any[],
+  toNumber: string,
+  numberUsageCount: Map<string, number>,
+  enableLocalPresence: boolean = true,
+  enableRotation: boolean = true
+): any {
+  if (phoneNumbers.length === 0) return null;
+  if (phoneNumbers.length === 1) return phoneNumbers[0];
+
+  // Extract area code from destination number
+  const toAreaCode = toNumber.replace(/\D/g, '').slice(1, 4); // Remove +1 and get area code
+  
+  let scoredNumbers = phoneNumbers.map(num => {
+    let score = 0;
+    const numAreaCode = num.number.replace(/\D/g, '').slice(1, 4);
+    
+    // Local presence: prefer matching area codes (+50 points)
+    if (enableLocalPresence && numAreaCode === toAreaCode) {
+      score += 50;
+    }
+    
+    // Prefer Retell-registered numbers (+20 points)
+    if (num.retell_phone_id) {
+      score += 20;
+    }
+    
+    // Avoid spam-flagged numbers (-100 points)
+    if (num.is_spam) {
+      score -= 100;
+    }
+    
+    // Avoid quarantined numbers (-100 points)
+    if (num.quarantine_until && new Date(num.quarantine_until) > new Date()) {
+      score -= 100;
+    }
+    
+    // Number rotation: prefer less-used numbers today
+    if (enableRotation) {
+      const usageToday = numberUsageCount.get(num.id) || 0;
+      score -= usageToday * 2; // Penalize heavily-used numbers
+    }
+    
+    // Prefer numbers with lower daily usage
+    if (num.daily_usage) {
+      score -= Math.min(num.daily_usage, 50);
+    }
+    
+    return { number: num, score };
+  });
+  
+  // Sort by score descending
+  scoredNumbers.sort((a, b) => b.score - a.score);
+  
+  // Return the best number
+  return scoredNumbers[0].number;
+}
+
 // Helper function to escape XML special characters
 function escapeXml(str: string): string {
   return str
@@ -450,11 +509,35 @@ serve(async (req) => {
         const dtmfActions = broadcast.dtmf_actions || [];
         const transferAction = dtmfActions.find((a: any) => a.digit === '1' && a.action === 'transfer');
         const transferNumber = transferAction?.transfer_to || '';
+        
+        // Track number usage for smart rotation
+        const numberUsageCount = new Map<string, number>();
+        phoneNumbers.forEach(n => numberUsageCount.set(n.id, n.daily_usage || 0));
+        
+        // Check if dialer features are enabled (from broadcast settings or default to true)
+        const enableLocalPresence = broadcast.enable_local_presence !== false;
+        const enableNumberRotation = broadcast.enable_number_rotation !== false;
+        
+        console.log(`Dialer features - Local Presence: ${enableLocalPresence}, Number Rotation: ${enableNumberRotation}`);
 
         for (const item of queueItems || []) {
           try {
-            // Select a phone number (round-robin)
-            const callerNumber = phoneNumbers[dispatched % phoneNumbers.length];
+            // Select best phone number using smart selection with dialer features
+            const callerNumber = selectBestNumber(
+              phoneNumbers,
+              item.phone_number,
+              numberUsageCount,
+              enableLocalPresence,
+              enableNumberRotation
+            );
+            
+            if (!callerNumber) {
+              errors.push(`No suitable number for ${item.phone_number}`);
+              continue;
+            }
+            
+            // Track usage for this call
+            numberUsageCount.set(callerNumber.id, (numberUsageCount.get(callerNumber.id) || 0) + 1);
             
             // For voice broadcasts with audio, ALWAYS use Twilio regardless of number's retell_phone_id
             // The number provider only matters for AI conversational mode

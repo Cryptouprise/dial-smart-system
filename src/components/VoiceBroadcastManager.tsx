@@ -93,6 +93,9 @@ export const VoiceBroadcastManager: React.FC = () => {
     ai_system_prompt: 'You are a friendly assistant. If the caller is interested, offer to transfer them.',
     calls_per_minute: 50,
     max_attempts: 1,
+    use_dialer_features: true, // Enable number rotation & local presence for better deliverability
+    enable_local_presence: true,
+    enable_number_rotation: true,
   });
 
   useEffect(() => {
@@ -203,6 +206,9 @@ export const VoiceBroadcastManager: React.FC = () => {
       ai_system_prompt: 'You are a friendly assistant. If the caller is interested, offer to transfer them.',
       calls_per_minute: 50,
       max_attempts: 1,
+      use_dialer_features: true,
+      enable_local_presence: true,
+      enable_number_rotation: true,
     });
   };
 
@@ -483,6 +489,64 @@ export const VoiceBroadcastManager: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="settings" className="space-y-4">
+                {/* Dialer Features for Better Deliverability */}
+                <Card className="border-green-500/30 bg-green-50/50 dark:bg-green-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Gauge className="h-4 w-4 text-green-600" />
+                      Enhanced Deliverability (Recommended)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Use Dialer Features</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Enable number rotation & local presence for better answer rates
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.use_dialer_features}
+                        onCheckedChange={(checked) => setFormData({ 
+                          ...formData, 
+                          use_dialer_features: checked,
+                          enable_local_presence: checked,
+                          enable_number_rotation: checked
+                        })}
+                      />
+                    </div>
+                    
+                    {formData.use_dialer_features && (
+                      <>
+                        <div className="flex items-center justify-between pl-4 border-l-2 border-green-500/30">
+                          <div>
+                            <Label className="text-sm">Local Presence</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Use numbers matching recipient's area code
+                            </p>
+                          </div>
+                          <Switch
+                            checked={formData.enable_local_presence}
+                            onCheckedChange={(checked) => setFormData({ ...formData, enable_local_presence: checked })}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between pl-4 border-l-2 border-green-500/30">
+                          <div>
+                            <Label className="text-sm">Number Rotation</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Rotate through numbers to avoid spam flagging
+                            </p>
+                          </div>
+                          <Switch
+                            checked={formData.enable_number_rotation}
+                            onCheckedChange={(checked) => setFormData({ ...formData, enable_number_rotation: checked })}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Calls Per Minute</Label>
@@ -493,6 +557,11 @@ export const VoiceBroadcastManager: React.FC = () => {
                       min={1}
                       max={500}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {formData.use_dialer_features 
+                        ? "Dialer will optimize pacing automatically" 
+                        : "Fixed rate - consider enabling dialer features"}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>Max Attempts</Label>
