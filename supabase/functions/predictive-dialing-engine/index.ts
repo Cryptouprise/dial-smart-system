@@ -138,11 +138,11 @@ serve(async (req) => {
         const existingLeadIds = new Set(existingQueue?.map(q => q.lead_id) || []);
 
         const queueEntries = callableLeads
-          .filter((cl) => !existingLeadIds.has(cl.leads.id))
-          .map((cl) => ({
+          .filter((cl: any) => !existingLeadIds.has(cl.leads?.id))
+          .map((cl: any) => ({
             campaign_id: campaignId,
-            lead_id: cl.leads.id,
-            phone_number: cl.leads.phone_number,
+            lead_id: cl.leads?.id,
+            phone_number: cl.leads?.phone_number,
             priority: 1,
             scheduled_at: new Date().toISOString(),
             status: 'pending',

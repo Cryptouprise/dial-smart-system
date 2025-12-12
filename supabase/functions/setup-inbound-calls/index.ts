@@ -31,8 +31,7 @@ serve(async (req) => {
     // Encode credentials
     const encodeCredentials = (accountSid: string, authToken: string): string => {
       const credentials = `${accountSid}:${authToken}`;
-      const encoder = new TextEncoder();
-      return base64Encode(encoder.encode(credentials));
+      return btoa(credentials);
     };
 
     // Get all phone numbers from Twilio

@@ -27,8 +27,7 @@ serve(async (req) => {
 
     const encodeCredentials = (accountSid: string, authToken: string): string => {
       const credentials = `${accountSid}:${authToken}`;
-      const encoder = new TextEncoder();
-      return base64Encode(encoder.encode(credentials));
+      return btoa(credentials);
     };
 
     console.log('🔍 Finding number:', phoneNumber);

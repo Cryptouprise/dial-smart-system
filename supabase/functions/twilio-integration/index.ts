@@ -65,15 +65,13 @@ serve(async (req) => {
 
     console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
 
-    const { action, phoneNumberSid, phoneNumber, phoneNumbers, messagingServiceSid }: TwilioImportRequest = await req.json();
-    console.log('📥 Request action:', action, { phoneNumber, phoneNumbersCount: phoneNumbers?.length || 0, phoneNumberSid, messagingServiceSid });
+    const { action, phoneNumberSid, phoneNumber, phoneNumbers, messagingServiceSid, webhookUrl, voiceWebhookUrl }: TwilioImportRequest = await req.json();
+    console.log('📥 Request action:', action, { phoneNumber, phoneNumbersCount: phoneNumbers?.length || 0, phoneNumberSid, messagingServiceSid, webhookUrl });
 
     // Helper function to encode credentials safely (handles UTF-8)
     const encodeCredentials = (accountSid: string, authToken: string): string => {
       const credentials = `${accountSid}:${authToken}`;
-      const encoder = new TextEncoder();
-      const data = encoder.encode(credentials);
-      return base64Encode(data);
+      return btoa(credentials);
     };
 
     // List all Twilio numbers
@@ -334,7 +332,7 @@ serve(async (req) => {
 
         } catch (error) {
           console.error('❌ Failed to import:', twilioNum.phone_number, error);
-          failed.push({ number: twilioNum.phone_number, error: error.message });
+          failed.push({ number: twilioNum.phone_number, error: (error as Error).message });
         }
       }
 
@@ -1396,7 +1394,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Function error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

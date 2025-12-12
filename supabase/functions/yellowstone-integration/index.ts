@@ -14,6 +14,19 @@ interface YellowstoneConfig {
   syncIntervalMinutes: number;
 }
 
+// Simple validation function instead of Zod schema
+function validateConfig(body: any): { success: boolean; data?: YellowstoneConfig; error?: { issues: { message: string }[] } } {
+  const errors: string[] = [];
+  if (!body.apiKey || typeof body.apiKey !== 'string') errors.push('apiKey is required');
+  if (body.autoSyncEnabled === undefined) errors.push('autoSyncEnabled is required');
+  if (!body.syncIntervalMinutes || typeof body.syncIntervalMinutes !== 'number') errors.push('syncIntervalMinutes is required');
+  
+  if (errors.length > 0) {
+    return { success: false, error: { issues: errors.map(msg => ({ message: msg })) } };
+  }
+  return { success: true, data: body as YellowstoneConfig };
+}
+
 async function syncWithYellowstone(apiKey: string, supabaseClient: any, userId: string) {
   console.log('Starting Yellowstone sync...');
   
@@ -102,12 +115,12 @@ serve(async (req) => {
       
       if (body.action === 'configure') {
         // Validate input
-        const validationResult = YellowstoneConfigSchema.safeParse(body);
+        const validationResult = validateConfig(body);
         if (!validationResult.success) {
           return new Response(
             JSON.stringify({ 
               error: 'Invalid configuration data',
-              details: validationResult.error.issues.map(i => i.message)
+              details: validationResult.error?.issues.map((i: any) => i.message)
             }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -210,7 +223,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Function error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -75,9 +75,7 @@ serve(async (req) => {
     // Helper function to encode credentials
     const encodeCredentials = (accountSid: string, authToken: string): string => {
       const credentials = `${accountSid}:${authToken}`;
-      const encoder = new TextEncoder();
-      const data = encoder.encode(credentials);
-      return base64Encode(data);
+      return btoa(credentials);
     };
 
     let result: Record<string, unknown>;
