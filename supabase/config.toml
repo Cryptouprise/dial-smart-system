@@ -185,3 +185,6 @@ verify_jwt = true
 
 [functions.ai-assistant-config]
 verify_jwt = true
+
+[functions.ai-brain]
+verify_jwt = true

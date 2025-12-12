@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
 import { AIErrorProvider } from "@/contexts/AIErrorContext";
+import { AIBrainProvider } from "@/contexts/AIBrainContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
@@ -15,7 +16,7 @@ import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import AiSmsConversations from "./components/AiSmsConversations";
-import AIAssistantChat from "./components/AIAssistantChat";
+import AIBrainChat from "./components/AIBrainChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
 
 const queryClient = new QueryClient();
@@ -29,20 +30,22 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/sms-conversations" element={<AiSmsConversations />} />
-                <Route path="/number-webhooks" element={<NumberWebhooks />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/api-keys" element={<ApiKeys />} />
-                <Route path="/help" element={<HelpPage />} />
-                <Route path="/analytics" element={<Analytics />} />
-                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-              {/* Global AI Assistant - available on all pages */}
-              <AIAssistantChat />
+              <AIBrainProvider>
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/sms-conversations" element={<AiSmsConversations />} />
+                  <Route path="/number-webhooks" element={<NumberWebhooks />} />
+                  <Route path="/auth" element={<Auth />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/api-keys" element={<ApiKeys />} />
+                  <Route path="/help" element={<HelpPage />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+                {/* Global AI Brain Assistant - available on all pages */}
+                <AIBrainChat />
+              </AIBrainProvider>
             </BrowserRouter>
           </TooltipProvider>
         </AIErrorProvider>
