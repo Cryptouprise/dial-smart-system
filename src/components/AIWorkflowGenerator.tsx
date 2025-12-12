@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Loader2, Phone, MessageSquare, Clock, Zap, Check, Save } from 'lucide-react';
+import { Sparkles, Loader2, Phone, MessageSquare, Clock, Zap, Check, Save, Edit2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAIWorkflowGenerator } from '@/hooks/useAIWorkflowGenerator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const EXAMPLE_PROMPTS = [
   "Call twice a day, 5 hours apart for 3 days, then pause until Saturday morning and blast at 9am and 12pm",
@@ -36,12 +38,52 @@ const formatWaitTime = (config: any) => {
 export const AIWorkflowGenerator = () => {
   const [prompt, setPrompt] = useState('');
   const [workflowType, setWorkflowType] = useState('mixed');
-  const { isGenerating, generatedWorkflow, generateWorkflow, saveGeneratedWorkflow } = useAIWorkflowGenerator();
+  const [refinementPrompt, setRefinementPrompt] = useState('');
+  const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
+  const [editedContent, setEditedContent] = useState('');
+  const [showRefinement, setShowRefinement] = useState(false);
+  const { isGenerating, generatedWorkflow, generateWorkflow, saveGeneratedWorkflow, setGeneratedWorkflow } = useAIWorkflowGenerator();
   const [isSaving, setIsSaving] = useState(false);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
     await generateWorkflow(prompt, workflowType);
+    setShowRefinement(false);
+    setRefinementPrompt('');
+  };
+
+  const handleRefine = async () => {
+    if (!refinementPrompt.trim() || !generatedWorkflow) return;
+    const fullPrompt = `${prompt}\n\nModifications requested: ${refinementPrompt}`;
+    await generateWorkflow(fullPrompt, workflowType);
+    setRefinementPrompt('');
+  };
+
+  const handleEditStep = (index: number) => {
+    if (!generatedWorkflow) return;
+    const step = generatedWorkflow.steps[index];
+    setEditingStepIndex(index);
+    setEditedContent(step.step_config.content || step.step_config.ai_prompt || '');
+  };
+
+  const handleSaveStepEdit = () => {
+    if (editingStepIndex === null || !generatedWorkflow) return;
+    
+    const updatedSteps = [...generatedWorkflow.steps];
+    const step = updatedSteps[editingStepIndex];
+    
+    if (step.step_config.content !== undefined) {
+      step.step_config.content = editedContent;
+    } else if (step.step_config.ai_prompt !== undefined) {
+      step.step_config.ai_prompt = editedContent;
+    }
+    
+    setGeneratedWorkflow({
+      ...generatedWorkflow,
+      steps: updatedSteps
+    });
+    setEditingStepIndex(null);
+    setEditedContent('');
   };
 
   const handleSave = async () => {
@@ -50,6 +92,7 @@ export const AIWorkflowGenerator = () => {
     await saveGeneratedWorkflow(generatedWorkflow, 'good');
     setIsSaving(false);
     setPrompt('');
+    setShowRefinement(false);
   };
 
   return (
@@ -124,30 +167,75 @@ export const AIWorkflowGenerator = () => {
 
         {generatedWorkflow && (
           <div className="mt-6 space-y-4 border-t pt-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h4 className="font-semibold">{generatedWorkflow.name}</h4>
                 <p className="text-sm text-muted-foreground">{generatedWorkflow.description}</p>
               </div>
-              <Button onClick={handleSave} disabled={isSaving} size="sm">
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-1" />
-                    Save Workflow
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowRefinement(!showRefinement)}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Refine
+                </Button>
+                <Button onClick={handleSave} disabled={isSaving} size="sm">
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-1" />
+                      Save Workflow
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
+            {/* Refinement Section */}
+            {showRefinement && (
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-2">
+                <p className="text-sm font-medium">Request changes to this workflow:</p>
+                <Textarea
+                  placeholder="e.g., Add another call at 5pm, change the SMS message to be more friendly, wait 2 days instead of 1..."
+                  value={refinementPrompt}
+                  onChange={(e) => setRefinementPrompt(e.target.value)}
+                  rows={2}
+                  className="resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    onClick={handleRefine}
+                    disabled={!refinementPrompt.trim() || isGenerating}
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-1" />
+                    )}
+                    Regenerate with Changes
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="ghost"
+                    onClick={() => setShowRefinement(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <h5 className="text-sm font-medium">Steps ({generatedWorkflow.steps.length})</h5>
+              <h5 className="text-sm font-medium">Steps ({generatedWorkflow.steps.length}) - Click to edit</h5>
               <div className="space-y-2">
                 {generatedWorkflow.steps.map((step, index) => (
                   <div 
                     key={index} 
-                    className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg"
+                    className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg group hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-medium">
                       {index + 1}
@@ -164,17 +252,50 @@ export const AIWorkflowGenerator = () => {
                           </span>
                         )}
                       </div>
-                      {step.step_config.content && (
-                        <p className="text-sm text-muted-foreground mt-1 truncate">
-                          "{step.step_config.content}"
-                        </p>
-                      )}
-                      {step.step_config.ai_prompt && (
-                        <p className="text-sm text-purple-600 mt-1">
-                          AI: {step.step_config.ai_prompt}
-                        </p>
+                      
+                      {editingStepIndex === index ? (
+                        <div className="mt-2 space-y-2">
+                          <Textarea
+                            value={editedContent}
+                            onChange={(e) => setEditedContent(e.target.value)}
+                            rows={2}
+                            className="text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={handleSaveStepEdit}>
+                              <Check className="h-3 w-3 mr-1" /> Save
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingStepIndex(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {step.step_config.content && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              "{step.step_config.content}"
+                            </p>
+                          )}
+                          {step.step_config.ai_prompt && (
+                            <p className="text-sm text-purple-600 mt-1">
+                              AI: {step.step_config.ai_prompt}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
+                    
+                    {(step.step_config.content || step.step_config.ai_prompt) && editingStepIndex !== index && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleEditStep(index)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
