@@ -323,6 +323,33 @@ export const WorkflowTester: React.FC<WorkflowTesterProps> = ({
                     </Card>
                   )}
 
+                  {/* Success Banner */}
+                  {testResults.status === 'completed' && testResults.results.failedSteps === 0 && (
+                    <Card className="border-green-300 bg-green-50 dark:bg-green-950">
+                      <CardContent className="pt-6 pb-4">
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 bg-green-100 dark:bg-green-900 rounded-full">
+                            <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">
+                              Workflow Test Passed!
+                            </h3>
+                            <p className="text-sm text-green-700 dark:text-green-300">
+                              All {testResults.results.successfulSteps} steps executed successfully. 
+                              Your workflow is ready to use with real leads.
+                            </p>
+                            <div className="flex gap-4 mt-2 text-xs text-green-600 dark:text-green-400">
+                              <span>✓ {workflow?.steps?.filter(s => s.step_type === 'call').length || 0} calls configured</span>
+                              <span>✓ {workflow?.steps?.filter(s => s.step_type === 'sms' || s.step_type === 'ai_sms').length || 0} SMS messages</span>
+                              <span>✓ Est. ${testResults.results.estimatedCost.toFixed(2)}/lead</span>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {/* Summary Stats */}
                   {testResults.status === 'completed' && (
                     <>
