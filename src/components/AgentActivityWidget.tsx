@@ -162,14 +162,25 @@ const AgentActivityWidget = () => {
 
       if (fixError) throw fixError;
 
-      // Show success feedback
-      toast({
-        title: "Auto Fix Complete",
-        description: fixData?.success 
-          ? `Fix applied: ${fixData.message || 'Error has been resolved'}` 
-          : `Analysis complete: ${analyzeData?.suggestion || 'Review the error details'}`,
-        variant: fixData?.success ? "default" : "destructive",
-      });
+      // Show clear feedback about what happened
+      if (fixData?.success) {
+        toast({
+          title: "Auto Fix Applied",
+          description: fixData.message || "AI applied an automatic fix. Try the action again to confirm it's resolved.",
+          variant: "default",
+        });
+      } else {
+        const manualMessage =
+          fixData?.action === 'manual_fix_suggested'
+            ? "AI couldn't safely change anything automatically. No changes were made; please follow the suggested steps to fix this manually."
+            : "AI couldn't complete an automatic fix. No changes were made; please review the error details and fix manually.";
+
+        toast({
+          title: "Manual Fix Required",
+          description: manualMessage,
+          variant: "destructive",
+        });
+      }
 
       // Refresh the activity list to show updated status
       await loadRecentActivity();
