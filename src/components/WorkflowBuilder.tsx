@@ -224,31 +224,37 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
 
       if (error) throw error;
 
-      if (data?.steps && Array.isArray(data.steps)) {
-        // Merge AI-generated steps with existing steps
-        const existingSteps = newWorkflow.steps || [];
-        const newSteps = data.steps.map((step: any, idx: number) => ({
-          step_number: existingSteps.length + idx + 1,
+      // Handle response - steps can be at data.steps or data.workflow.steps
+      const generatedSteps = data?.steps || data?.workflow?.steps;
+      
+      if (generatedSteps && Array.isArray(generatedSteps)) {
+        // Replace existing steps with AI-generated ones (user asked to "change the workflow")
+        const newSteps = generatedSteps.map((step: any, idx: number) => ({
+          step_number: idx + 1,
           step_type: step.step_type,
           step_config: step.step_config || {}
         }));
 
         setNewWorkflow(prev => ({
           ...prev,
-          steps: [...existingSteps, ...newSteps]
+          name: data?.workflow?.name || prev.name,
+          description: data?.workflow?.description || prev.description,
+          steps: newSteps
         }));
 
         toast({
-          title: 'Steps Generated',
-          description: `AI added ${newSteps.length} steps to your workflow`,
+          title: 'Workflow Generated!',
+          description: `AI created ${newSteps.length} steps for your workflow`,
         });
 
         setShowAIHelper(false);
         setAIPrompt('');
       } else {
+        console.error('AI response missing steps:', data);
         toast({
-          title: 'AI Response',
-          description: data?.message || 'AI processed your request',
+          title: 'AI Error',
+          description: 'AI response did not include workflow steps. Please try again.',
+          variant: 'destructive'
         });
       }
     } catch (error) {
