@@ -17,6 +17,7 @@ import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import AiSmsConversations from "./components/AiSmsConversations";
 import AIBrainChat from "./components/AIBrainChat";
+import AIAssistantChat from "./components/AIAssistantChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
 
 const queryClient = new QueryClient();
@@ -43,8 +44,9 @@ const App = () => (
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-                {/* Global AI Brain Assistant - available on all pages */}
+                {/* Global AI Assistants - available on all pages */}
                 <AIBrainChat />
+                <AIAssistantChat />
               </AIBrainProvider>
             </BrowserRouter>
           </TooltipProvider>
