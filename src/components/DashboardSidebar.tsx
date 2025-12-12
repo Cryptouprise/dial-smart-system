@@ -29,6 +29,7 @@ import {
   DollarSign,
   ToggleLeft,
   ToggleRight,
+  Rocket,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -73,6 +74,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
+      { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
     ],
   },
   {
