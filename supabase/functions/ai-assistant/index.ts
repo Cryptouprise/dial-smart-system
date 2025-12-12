@@ -520,6 +520,100 @@ const TOOLS = [
         }
       }
     }
+  },
+  // WORKFLOW TOOLS
+  {
+    type: "function",
+    function: {
+      name: "create_workflow",
+      description: "Create a new workflow with steps. Workflows are multi-step sequences that run over time (calls, SMS, waits). Use this when user says 'create workflow', 'build a sequence', 'set up follow-up sequence'.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Workflow name" },
+          description: { type: "string", description: "Workflow description" },
+          workflow_type: { 
+            type: "string", 
+            description: "Type: calling_only, follow_up, sms_sequence, mixed, appointment_reminder, no_show (default: mixed)" 
+          },
+          steps: {
+            type: "array",
+            description: "Array of workflow steps. Each step has step_type and config.",
+            items: {
+              type: "object",
+              properties: {
+                step_type: { type: "string", description: "call, sms, ai_sms, wait, condition" },
+                delay_hours: { type: "number", description: "Hours to wait before this step (0 for immediate)" },
+                message: { type: "string", description: "SMS message content (for sms/ai_sms steps)" },
+                max_attempts: { type: "number", description: "Max call attempts (for call steps)" }
+              }
+            }
+          }
+        },
+        required: ["name", "steps"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_workflows",
+      description: "List all workflows with their status",
+      parameters: {
+        type: "object",
+        properties: {
+          active_only: { type: "boolean", description: "Only show active workflows" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_workflow",
+      description: "Update an existing workflow's settings, steps, or active status",
+      parameters: {
+        type: "object",
+        properties: {
+          workflow_id: { type: "string", description: "Workflow ID" },
+          workflow_name: { type: "string", description: "Workflow name (alternative to ID)" },
+          active: { type: "boolean", description: "Enable or disable the workflow" },
+          name: { type: "string", description: "New name" },
+          description: { type: "string", description: "New description" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_workflow",
+      description: "Delete a workflow",
+      parameters: {
+        type: "object",
+        properties: {
+          workflow_id: { type: "string", description: "Workflow ID" },
+          workflow_name: { type: "string", description: "Workflow name (alternative to ID)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_leads_to_workflow",
+      description: "Add leads to a workflow to start the sequence for them",
+      parameters: {
+        type: "object",
+        properties: {
+          workflow_id: { type: "string", description: "Workflow ID" },
+          workflow_name: { type: "string", description: "Workflow name (alternative to ID)" },
+          lead_filter: { type: "string", description: "Filter: all, new, contacted, or tag:tagname" },
+          lead_ids: { type: "array", items: { type: "string" }, description: "Specific lead IDs to add" },
+          limit: { type: "number", description: "Max leads to add (default: 100)" }
+        }
+      }
+    }
   }
 ];
 
@@ -2143,6 +2237,245 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       return { success: false, message: '❌ Please specify a campaign_id or broadcast_id to launch.' };
+    }
+
+    // WORKFLOW TOOLS IMPLEMENTATION
+    case 'create_workflow': {
+      const { name, description, workflow_type = 'mixed', steps } = args;
+      
+      if (!name || !steps || steps.length === 0) {
+        return { success: false, message: '❌ Workflow needs a name and at least one step.' };
+      }
+      
+      // Create the workflow
+      const { data: workflow, error: workflowError } = await supabase
+        .from('campaign_workflows')
+        .insert({
+          user_id: userId,
+          name,
+          description: description || '',
+          workflow_type,
+          settings: {},
+          active: true,
+        })
+        .select()
+        .single();
+      
+      if (workflowError) throw workflowError;
+      
+      // Create workflow steps
+      const stepsToInsert = steps.map((step: any, index: number) => ({
+        workflow_id: workflow.id,
+        step_number: index + 1,
+        step_type: step.step_type || 'sms',
+        step_config: {
+          delay_hours: step.delay_hours || 0,
+          message: step.message || '',
+          max_attempts: step.max_attempts || 3,
+          ...step
+        },
+      }));
+      
+      const { error: stepsError } = await supabase
+        .from('workflow_steps')
+        .insert(stepsToInsert);
+      
+      if (stepsError) {
+        console.error('[AI Assistant] Error creating workflow steps:', stepsError);
+      }
+      
+      // Format step summary
+      const stepSummary = steps.map((s: any, i: number) => {
+        const delay = s.delay_hours ? `(+${s.delay_hours}h)` : '(immediate)';
+        return `  ${i + 1}. ${s.step_type?.toUpperCase() || 'SMS'} ${delay}${s.message ? `: "${s.message.substring(0, 30)}..."` : ''}`;
+      }).join('\n');
+      
+      return {
+        success: true,
+        message: `✅ **Workflow Created!**\n\n📋 "${name}"\n• Type: ${workflow_type}\n• Steps: ${steps.length}\n\n**Steps:**\n${stepSummary}\n\n**Next:** Go to "Workflow Builder" tab to add leads and start the workflow.`,
+        data: { workflow_id: workflow.id, steps_count: steps.length }
+      };
+    }
+
+    case 'list_workflows': {
+      const { active_only } = args;
+      
+      let query = supabase
+        .from('campaign_workflows')
+        .select('id, name, description, workflow_type, active, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (active_only) {
+        query = query.eq('active', true);
+      }
+      
+      const { data: workflows, error } = await query;
+      
+      if (error) throw error;
+      
+      if (!workflows || workflows.length === 0) {
+        return { success: true, message: '📋 No workflows found. Say "create workflow" to build one!' };
+      }
+      
+      const list = workflows.map((w: any) => 
+        `• ${w.active ? '✅' : '⏸️'} **${w.name}** (${w.workflow_type}) - ID: ${w.id.substring(0, 8)}...`
+      ).join('\n');
+      
+      return {
+        success: true,
+        message: `📋 **Your Workflows (${workflows.length}):**\n\n${list}\n\n**Manage:** Go to "Workflow Builder" tab.`,
+        data: { workflows, count: workflows.length }
+      };
+    }
+
+    case 'update_workflow': {
+      const { workflow_id, workflow_name, active, name, description } = args;
+      
+      // Find workflow
+      let findQuery = supabase.from('campaign_workflows').select('*').eq('user_id', userId);
+      if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
+      else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
+      
+      const { data: workflow, error: findError } = await findQuery.single();
+      
+      if (findError || !workflow) {
+        return { success: false, message: '❌ Workflow not found.' };
+      }
+      
+      const updates: any = { updated_at: new Date().toISOString() };
+      if (active !== undefined) updates.active = active;
+      if (name) updates.name = name;
+      if (description) updates.description = description;
+      
+      const { error } = await supabase
+        .from('campaign_workflows')
+        .update(updates)
+        .eq('id', workflow.id);
+      
+      if (error) throw error;
+      
+      const changes = [];
+      if (active !== undefined) changes.push(active ? 'activated' : 'deactivated');
+      if (name) changes.push(`renamed to "${name}"`);
+      if (description) changes.push('description updated');
+      
+      return {
+        success: true,
+        message: `✅ Workflow "${workflow.name}" ${changes.join(', ')}. View in "Workflow Builder" tab.`
+      };
+    }
+
+    case 'delete_workflow': {
+      const { workflow_id, workflow_name } = args;
+      
+      let findQuery = supabase.from('campaign_workflows').select('id, name').eq('user_id', userId);
+      if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
+      else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
+      
+      const { data: workflow, error: findError } = await findQuery.single();
+      
+      if (findError || !workflow) {
+        return { success: false, message: '❌ Workflow not found.' };
+      }
+      
+      // Delete steps first
+      await supabase.from('workflow_steps').delete().eq('workflow_id', workflow.id);
+      
+      // Delete workflow
+      const { error } = await supabase
+        .from('campaign_workflows')
+        .delete()
+        .eq('id', workflow.id);
+      
+      if (error) throw error;
+      
+      return {
+        success: true,
+        message: `🗑️ Workflow "${workflow.name}" deleted.`
+      };
+    }
+
+    case 'add_leads_to_workflow': {
+      const { workflow_id, workflow_name, lead_filter = 'all', lead_ids, limit = 100 } = args;
+      
+      // Find workflow
+      let findQuery = supabase.from('campaign_workflows').select('id, name').eq('user_id', userId);
+      if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
+      else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
+      
+      const { data: workflow, error: findError } = await findQuery.single();
+      
+      if (findError || !workflow) {
+        return { success: false, message: '❌ Workflow not found.' };
+      }
+      
+      // Get leads
+      let leads: any[] = [];
+      
+      if (lead_ids && lead_ids.length > 0) {
+        const { data } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('user_id', userId)
+          .in('id', lead_ids);
+        leads = data || [];
+      } else {
+        let leadQuery = supabase
+          .from('leads')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('do_not_call', false)
+          .limit(limit);
+        
+        if (lead_filter !== 'all') {
+          if (lead_filter.startsWith('tag:')) {
+            leadQuery = leadQuery.contains('tags', [lead_filter.replace('tag:', '')]);
+          } else {
+            leadQuery = leadQuery.eq('status', lead_filter);
+          }
+        }
+        
+        const { data } = await leadQuery;
+        leads = data || [];
+      }
+      
+      if (leads.length === 0) {
+        return { success: false, message: `❌ No leads found matching "${lead_filter}".` };
+      }
+      
+      // Get first step
+      const { data: firstStep } = await supabase
+        .from('workflow_steps')
+        .select('id')
+        .eq('workflow_id', workflow.id)
+        .eq('step_number', 1)
+        .single();
+      
+      // Add leads to workflow progress
+      const progressRecords = leads.map((lead: any) => ({
+        user_id: userId,
+        lead_id: lead.id,
+        workflow_id: workflow.id,
+        current_step_id: firstStep?.id || null,
+        status: 'active',
+        started_at: new Date().toISOString(),
+      }));
+      
+      const { error: insertError } = await supabase
+        .from('lead_workflow_progress')
+        .insert(progressRecords);
+      
+      if (insertError) {
+        console.error('[AI Assistant] Error adding leads to workflow:', insertError);
+        return { success: false, message: '❌ Failed to add leads to workflow.' };
+      }
+      
+      return {
+        success: true,
+        message: `✅ Added ${leads.length} leads to workflow "${workflow.name}"!\n\nThe sequence will now run for these leads. Monitor progress in "Workflow Builder" tab.`,
+        data: { workflow_id: workflow.id, leads_added: leads.length }
+      };
     }
 
     default:
