@@ -1018,10 +1018,10 @@ export const VoiceBroadcastManager: React.FC = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Broadcast Results
+              Broadcast Results: {broadcasts.find(b => b.id === resultsDialogBroadcastId)?.name || 'Unknown'}
             </DialogTitle>
             <DialogDescription>
-              View detailed results for each lead in this broadcast
+              View detailed results for each lead in this broadcast campaign
             </DialogDescription>
           </DialogHeader>
           
