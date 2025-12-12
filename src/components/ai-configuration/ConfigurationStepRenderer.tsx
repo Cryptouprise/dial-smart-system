@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { CheckCircle2, AlertCircle, ArrowRight, SkipForward } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles, Upload, UserPlus } from 'lucide-react';
 
 // Import the actual configuration components
 import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
@@ -14,6 +15,9 @@ import VoiceBroadcastManager from '../VoiceBroadcastManager';
 import { LeadScoringSettings } from '../LeadScoringSettings';
 import { BudgetManager } from '../BudgetManager';
 import GoHighLevelManager from '../GoHighLevelManager';
+import { RetellAISetupWizard } from '../RetellAISetupWizard';
+import { AIWorkflowGenerator } from '../AIWorkflowGenerator';
+import { LeadUpload } from '../LeadUpload';
 
 interface ConfigurationStepRendererProps {
   areaId: string;
@@ -136,50 +140,97 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
 
       case 'ai_agent':
         return (
-          <div className="space-y-6 p-4">
-            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                🤖 AI Agent Setup
-              </h3>
-              <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
-                Create or configure an AI voice agent to handle your outbound calls automatically.
-              </p>
-              <div className="space-y-3">
-                <Button 
-                  onClick={() => {
-                    setHasInteracted(true);
-                    // Navigate to Retell AI tab
-                    window.location.href = '/?tab=retell';
-                  }}
-                  className="w-full"
-                >
-                  Open Retell AI Manager to Create Agent
-                </Button>
-                <p className="text-xs text-blue-600 dark:text-blue-400 text-center">
-                  The Retell AI Manager lets you create, configure, and test AI voice agents.
-                </p>
-              </div>
-            </div>
-            <Separator />
+          <div className="space-y-4" onClick={handleInteraction}>
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Create Your AI Voice Agent
+                </CardTitle>
+                <CardDescription>
+                  Follow the wizard below to create an AI brain (LLM) and voice agent that will handle your calls automatically.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            
+            <RetellAISetupWizard />
+            
+            <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
               onSkip={onSkip}
-              hasInteracted={true}
-              tip="Create your first agent in the Retell AI Manager, then come back to continue setup."
+              hasInteracted={hasInteracted}
+              tip="Complete the 3-step wizard above to create your first AI agent."
+            />
+          </div>
+        );
+
+      case 'leads':
+        return (
+          <div className="space-y-4" onClick={handleInteraction}>
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-primary" />
+                  Import Your Leads
+                </CardTitle>
+                <CardDescription>
+                  Upload a CSV file with your leads or add them manually. You'll need leads to run campaigns.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            
+            <LeadUpload />
+            
+            <Separator className="my-4" />
+            <CompletionFooter 
+              onComplete={handleCompleteClick} 
+              onSkip={onSkip}
+              hasInteracted={hasInteracted}
+              tip="Upload a CSV with phone numbers. The system will auto-map columns for you."
             />
           </div>
         );
 
       case 'workflows':
         return (
-          <div onClick={handleInteraction} className="space-y-4">
-            <WorkflowBuilder />
+          <div className="space-y-4" onClick={handleInteraction}>
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Build Workflows with AI
+                </CardTitle>
+                <CardDescription>
+                  Describe your follow-up strategy in plain English and AI will create the workflow for you, or build one manually.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            
+            <Tabs defaultValue="ai" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="ai" className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Workflow Builder
+                </TabsTrigger>
+                <TabsTrigger value="manual">
+                  Manual Builder
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="ai" className="mt-4">
+                <AIWorkflowGenerator />
+              </TabsContent>
+              <TabsContent value="manual" className="mt-4">
+                <WorkflowBuilder />
+              </TabsContent>
+            </Tabs>
+            
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
               onSkip={onSkip}
               hasInteracted={hasInteracted}
-              tip="Build a 3-touch follow-up sequence for best results."
+              tip="Try the AI builder - just describe what you want like 'Call twice a day for 3 days, then send SMS'."
             />
           </div>
         );
