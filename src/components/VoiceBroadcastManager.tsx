@@ -247,6 +247,33 @@ export const VoiceBroadcastManager: React.FC = () => {
     <div className="space-y-6">
       {/* Quick Test Section */}
       <QuickTestBroadcast />
+      
+      {/* Next Steps Guide */}
+      <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 via-transparent to-primary/5">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-4">
+            <div className="bg-primary/10 rounded-full p-2 mt-0.5">
+              <span className="text-lg font-bold text-primary">?</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-foreground mb-1">What's Next?</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                The test tool above lets you try a single call. Ready to broadcast to many contacts?
+              </p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-muted-foreground">👇</span>
+                <span className="text-sm font-medium">Click the</span>
+                <Button size="sm" variant="outline" className="pointer-events-none h-7 px-2">
+                  <Plus className="h-3 w-3 mr-1" />
+                  New Broadcast
+                </Button>
+                <span className="text-sm font-medium">button below to create a campaign and add leads</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
