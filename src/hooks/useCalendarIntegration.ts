@@ -285,7 +285,7 @@ export const useCalendarIntegration = () => {
       if (!session) {
         toast({ 
           title: 'Sign In Required', 
-          description: 'Please sign in with the "Continue with Google" button on the login page.',
+          description: 'Please sign in first.',
           variant: 'destructive' 
         });
         return;
@@ -299,8 +299,9 @@ export const useCalendarIntegration = () => {
         // User is signed in but not with Google OAuth
         toast({ 
           title: 'Google Sign-In Required', 
-          description: 'You signed in with email/password. To connect Google Calendar, please use the "Continue with Google" button on the login page instead.',
-          variant: 'destructive' 
+          description: 'To connect Google Calendar, you need to sign out and sign back in using the "Continue with Google" button on the login page. This grants calendar access permissions.',
+          variant: 'destructive',
+          duration: 10000, // Show for 10 seconds so user can read it
         });
         return;
       }
