@@ -179,3 +179,9 @@ verify_jwt = true
 
 [functions.test-workflow]
 verify_jwt = true
+
+[functions.ai-configuration-complete]
+verify_jwt = true
+
+[functions.ai-assistant-config]
+verify_jwt = true
