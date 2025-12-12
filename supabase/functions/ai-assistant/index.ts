@@ -1701,7 +1701,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     case 'discover_phone_setup': {
       const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
       const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
       
       const result: any = {
         twilio_numbers: [],
@@ -1823,7 +1823,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
 
     case 'classify_phone_number': {
       const { phone_number, purpose, sip_trunk_to_retell, retell_agent_id, preserve_sms_webhook } = args;
-      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
       const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
       const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
       
@@ -2001,7 +2001,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
 
     case 'quick_ai_campaign': {
       const { name, agent_id, lead_filter, calling_hours_start, calling_hours_end, max_concurrent } = args;
-      const retellApiKey = Deno.env.get('RETELL_API_KEY');
+      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
       
       // Check for Retell agents if none specified
       if (!agent_id && retellApiKey) {
@@ -2190,7 +2190,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         
         // Verify agent if AI campaign
         if (campaign.agent_id) {
-          const retellApiKey = Deno.env.get('RETELL_API_KEY');
+          const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
           if (retellApiKey) {
             try {
               const response = await fetch(`https://api.retellai.com/get-agent/${campaign.agent_id}`, {
