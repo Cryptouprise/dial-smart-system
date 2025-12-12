@@ -179,10 +179,10 @@ serve(async (req) => {
     // Handle legacy/generic format
     return await handleLegacyWebhook(supabase, payload);
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Call tracking webhook error:', error);
     return new Response(JSON.stringify({ 
-      error: error.message || 'Unknown error occurred',
+      error: (error as Error).message || 'Unknown error occurred',
       timestamp: new Date().toISOString()
     }), {
       status: 500,

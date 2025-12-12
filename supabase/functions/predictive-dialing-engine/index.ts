@@ -124,7 +124,7 @@ serve(async (req) => {
 
         if (leadsError) throw leadsError;
 
-        const callableLeads = campaignLeads?.filter(cl => 
+        const callableLeads = campaignLeads?.filter((cl: any) => 
           cl.leads && ['new', 'contacted', 'qualified'].includes(cl.leads.status)
         ) || [];
 

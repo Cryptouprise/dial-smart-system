@@ -138,7 +138,7 @@ serve(async (req) => {
         break
 
       case 'insert_default_dispositions':
-        const dispositionsWithUserId = params.dispositions.map(d => ({
+        const dispositionsWithUserId = params.dispositions.map((d: any) => ({
           ...d,
           user_id: user.id,
           created_at: new Date().toISOString(),

@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,8 +27,7 @@ serve(async (req) => {
 
     const encodeCredentials = (accountSid: string, authToken: string): string => {
       const credentials = `${accountSid}:${authToken}`;
-      const encoder = new TextEncoder();
-      return base64Encode(encoder.encode(credentials));
+      return btoa(credentials);
     };
 
     // Get all phone numbers from Twilio

@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -87,9 +86,9 @@ serve(async (req) => {
 
     throw new Error('Invalid request parameters');
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Enhanced spam lookup error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -200,8 +199,8 @@ async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAK
       }
 
       console.log(`✅ Carrier lookup: ${carrierInfo.carrier} | Type: ${carrierInfo.lineType}`);
-    } catch (error) {
-      console.error('❌ Twilio Lookup failed:', error.message);
+    } catch (error: unknown) {
+      console.error('❌ Twilio Lookup failed:', (error as Error).message);
       reasons.push('Carrier lookup unavailable');
     }
   } else {
@@ -299,9 +298,8 @@ async function getTwilioCarrierInfo(phoneNumber: string, accountSid: string, aut
   // Twilio Lookup v2 API - includes line type and caller name
   const lookupUrl = `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164Number)}?Fields=line_type_intelligence,caller_name`;
   
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${accountSid}:${authToken}`);
-  const base64Creds = base64Encode(credentials);
+  const credentials = `${accountSid}:${authToken}`;
+  const base64Creds = btoa(credentials);
   
   const response = await fetch(lookupUrl, {
     headers: {
@@ -343,9 +341,8 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     // Check recent calls FROM this number to see attestation history
     const callsUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(e164Number)}&PageSize=50`;
     
-    const encoder = new TextEncoder();
-    const credentials = encoder.encode(`${accountSid}:${authToken}`);
-    const base64Creds = base64Encode(credentials);
+    const credentials = `${accountSid}:${authToken}`;
+    const base64Creds = btoa(credentials);
     
     const response = await fetch(callsUrl, {
       headers: {
@@ -385,12 +382,12 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
       attestationCounts
     };
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('STIR/SHAKEN check error:', error);
     return {
       level: 'not_verified' as 'A' | 'B' | 'C' | 'not_verified',
       checked: false,
-      note: `Error checking attestation: ${error.message}. Ensure Twilio A2P 10DLC and CNAM registration completed.`,
+      note: `Error checking attestation: ${(error as Error).message}. Ensure Twilio A2P 10DLC and CNAM registration completed.`,
       registrationRequired: true
     };
   }
@@ -412,7 +409,7 @@ async function analyzeBehaviorPattern(number: any, supabase: any) {
   }
 
   // High failure rate
-  const failedCalls = recentCalls.filter(c => c.status === 'failed' || c.status === 'no-answer').length;
+  const failedCalls = recentCalls.filter((c: any) => c.status === 'failed' || c.status === 'no-answer').length;
   const failureRate = failedCalls / recentCalls.length;
   if (failureRate > 0.7) {
     score += 20;
@@ -420,7 +417,7 @@ async function analyzeBehaviorPattern(number: any, supabase: any) {
   }
 
   // Short duration calls (robocalling indicator)
-  const shortCalls = recentCalls.filter(c => c.duration_seconds && c.duration_seconds < 10).length;
+  const shortCalls = recentCalls.filter((c: any) => c.duration_seconds && c.duration_seconds < 10).length;
   if (shortCalls / recentCalls.length > 0.8) {
     score += 25;
     reasons.push('Predominantly short calls (< 10s)');
@@ -458,9 +455,8 @@ async function checkTwilioRegistration() {
     });
   }
 
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
+  const credentials = `${twilioAccountSid}:${twilioAuthToken}`;
+  const base64Creds = btoa(credentials);
 
   try {
     // Check A2P 10DLC registration - check for trust products (business profile)
@@ -529,10 +525,10 @@ async function checkTwilioRegistration() {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Registration check error:', error);
     return new Response(JSON.stringify({
-      error: error.message,
+      error: (error as Error).message,
       registered: false,
       details: null
     }), {
@@ -571,9 +567,8 @@ async function checkPhoneNumberProfile(phoneNumber: string) {
     });
   }
 
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
+  const credentials = `${twilioAccountSid}:${twilioAuthToken}`;
+  const base64Creds = btoa(credentials);
 
   try {
     // Get phone number SID
@@ -637,9 +632,9 @@ async function checkPhoneNumberProfile(phoneNumber: string) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error checking number profile:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -657,9 +652,8 @@ async function listApprovedTrustProducts() {
     });
   }
 
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
+  const credentials = `${twilioAccountSid}:${twilioAuthToken}`;
+  const base64Creds = btoa(credentials);
 
   try {
     // Get Trust Products (for SHAKEN business profiles) - these support phone number assignments
@@ -717,9 +711,9 @@ async function listApprovedTrustProducts() {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error listing approved profiles:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -737,9 +731,8 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
     });
   }
 
-  const encoder = new TextEncoder();
-  const credentials = encoder.encode(`${twilioAccountSid}:${twilioAuthToken}`);
-  const base64Creds = base64Encode(credentials);
+  const credentials = `${twilioAccountSid}:${twilioAuthToken}`;
+  const base64Creds = btoa(credentials);
 
   try {
     // Determine profile type based on SID prefix
@@ -895,10 +888,10 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error transferring number to profile:', error);
     return new Response(JSON.stringify({ 
-      error: error.message,
+      error: (error as Error).message,
       suggestion: 'For STIR/SHAKEN attestation, ensure you have completed Twilio Trust Hub registration and have an approved SHAKEN Business Profile.'
     }), {
       status: 500,
@@ -985,9 +978,9 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error syncing Telnyx numbers:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
