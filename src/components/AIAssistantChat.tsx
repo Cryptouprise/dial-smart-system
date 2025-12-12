@@ -75,7 +75,15 @@ const AVAILABLE_TOOLS = [
   { icon: ShieldAlert, name: 'Quarantine Number', description: 'Flag problematic numbers' },
 ];
 
-export const AIAssistantChat: React.FC = () => {
+interface AIAssistantChatProps {
+  initialMessage?: string;
+  configurationMode?: boolean;
+}
+
+export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ 
+  initialMessage,
+  configurationMode = false 
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -84,6 +92,10 @@ export const AIAssistantChat: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [voiceId, setVoiceId] = useState('EXAVITQu4vr4xnSDxMaL');
+  const [showConfigPreview, setShowConfigPreview] = useState(false);
+  const [showConfigProgress, setShowConfigProgress] = useState(false);
+  const [configPlan, setConfigPlan] = useState<any>(null);
+  const [configSteps, setConfigSteps] = useState<any[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
