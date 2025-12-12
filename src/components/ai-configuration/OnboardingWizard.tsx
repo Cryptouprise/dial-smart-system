@@ -267,6 +267,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     handleAreaComplete(areaId); // Move to next
   };
 
+  // Allow direct configuration of any area by clicking Configure button
+  const handleConfigureArea = (areaId: string) => {
+    // Make sure this area is selected
+    if (!selectedAreas.has(areaId)) {
+      setSelectedAreas(prev => new Set([...prev, areaId]));
+    }
+    setCurrentAreaId(areaId);
+    setShowConfiguration(true);
+  };
+
   const getCategoryBadge = (category: ConfigurationArea['category']) => {
     const styles = {
       essential: 'bg-red-100 text-red-800 border-red-200',
@@ -619,6 +629,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 area={area}
                 selected={selectedAreas.has(area.id)}
                 onToggle={() => toggleArea(area.id)}
+                onConfigure={() => handleConfigureArea(area.id)}
               />
             ))}
           </div>
@@ -641,6 +652,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 area={area}
                 selected={selectedAreas.has(area.id)}
                 onToggle={() => toggleArea(area.id)}
+                onConfigure={() => handleConfigureArea(area.id)}
               />
             ))}
           </div>
@@ -663,6 +675,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 area={area}
                 selected={selectedAreas.has(area.id)}
                 onToggle={() => toggleArea(area.id)}
+                onConfigure={() => handleConfigureArea(area.id)}
               />
             ))}
           </div>
@@ -702,21 +715,21 @@ interface ConfigurationAreaCardProps {
   area: ConfigurationArea;
   selected: boolean;
   onToggle: () => void;
+  onConfigure: () => void;
 }
 
-const ConfigurationAreaCard: React.FC<ConfigurationAreaCardProps> = ({ area, selected, onToggle }) => {
+const ConfigurationAreaCard: React.FC<ConfigurationAreaCardProps> = ({ area, selected, onToggle, onConfigure }) => {
   return (
     <div
-      className={`border rounded-lg p-4 cursor-pointer transition-all ${
+      className={`border rounded-lg p-4 transition-all ${
         selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-      } ${area.completed ? 'bg-green-50 border-green-200' : ''}`}
-      onClick={onToggle}
+      } ${area.completed ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800' : ''}`}
     >
       <div className="flex items-start gap-3">
         <Checkbox
           checked={selected}
           onCheckedChange={onToggle}
-          className="mt-1"
+          className="mt-1 cursor-pointer"
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -726,8 +739,21 @@ const ConfigurationAreaCard: React.FC<ConfigurationAreaCardProps> = ({ area, sel
             {area.inProgress && <Loader2 className="h-4 w-4 text-primary animate-spin ml-auto" />}
           </div>
           <p className="text-xs text-muted-foreground mb-2">{area.description}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">{area.estimatedTime}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfigure();
+              }}
+            >
+              Configure
+              <ChevronRight className="h-3 w-3" />
+            </Button>
           </div>
         </div>
       </div>
