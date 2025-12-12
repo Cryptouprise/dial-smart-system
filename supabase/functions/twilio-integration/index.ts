@@ -8,13 +8,16 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook' | 'create_sip_trunk' | 'list_sip_trunks' | 'delete_sip_trunk';
   phoneNumberSid?: string;
   phoneNumber?: string;
   phoneNumbers?: string[]; // For configuring selected numbers
   messagingServiceSid?: string;
   webhookUrl?: string; // For setting custom webhook URL
   voiceWebhookUrl?: string; // For setting voice/inbound webhook URL
+  // SIP Trunk provisioning
+  trunkName?: string;
+  trunkSid?: string;
 }
 
 serve(async (req) => {
@@ -996,6 +999,201 @@ serve(async (req) => {
         failed_count: failed.length,
         configured,
         failed
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ============= SIP TRUNK MANAGEMENT =============
+    
+    // Create a new Twilio Elastic SIP Trunk
+    if (action === 'create_sip_trunk') {
+      const { trunkName } = await req.json().catch(() => ({})) || {};
+      const name = trunkName || `Auto-Trunk-${Date.now()}`;
+      
+      console.log('🔧 Creating Twilio Elastic SIP Trunk:', name);
+      
+      // Step 1: Create the trunk
+      const createTrunkResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            FriendlyName: name,
+            DisasterRecoveryUrl: '',
+            DisasterRecoveryMethod: 'POST',
+            Recording: 'do-not-record',
+            Secure: 'false',
+            CnamLookupEnabled: 'false'
+          }).toString()
+        }
+      );
+
+      if (!createTrunkResponse.ok) {
+        const errorText = await createTrunkResponse.text();
+        console.error('❌ Failed to create trunk:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to create SIP trunk', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const trunk = await createTrunkResponse.json();
+      console.log('✅ Trunk created:', trunk.sid);
+
+      // Step 2: Create an origination URI for outbound calling
+      // The termination_sip_uri is provided by Twilio automatically
+      // We need to create an origination URI for handling the calls
+      
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const originationUri = `sip:${supabaseUrl?.replace('https://', '').split('.')[0]}.sip.twilio.com`;
+      
+      console.log('📞 Setting up origination URI:', originationUri);
+      
+      const createOriginationResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunk.sid}/OriginationUrls`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            FriendlyName: `${name}-Origination`,
+            SipUrl: `sip:+15551234567@${twilioAccountSid}.sip.twilio.com`,
+            Priority: '10',
+            Weight: '10',
+            Enabled: 'true'
+          }).toString()
+        }
+      );
+
+      let originationUrl = null;
+      if (createOriginationResponse.ok) {
+        originationUrl = await createOriginationResponse.json();
+        console.log('✅ Origination URL created:', originationUrl.sid);
+      } else {
+        console.log('⚠️ Origination URL creation skipped (optional)');
+      }
+
+      // The termination URI is the key - it's what you use to route calls through this trunk
+      // Format: {trunk_sid}.pstn.twilio.com or custom subdomain
+      const terminationUri = `${trunk.sid.toLowerCase()}.pstn.twilio.com`;
+
+      console.log('🎉 SIP Trunk fully provisioned:', {
+        sid: trunk.sid,
+        name: trunk.friendly_name,
+        termination_uri: terminationUri
+      });
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        trunk: {
+          sid: trunk.sid,
+          friendly_name: trunk.friendly_name,
+          domain_name: trunk.domain_name,
+          termination_uri: terminationUri,
+          secure: trunk.secure,
+          recording: trunk.recording,
+          date_created: trunk.date_created
+        },
+        origination_url: originationUrl,
+        message: 'SIP trunk created successfully. Use the termination URI for outbound calls.'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // List existing SIP trunks
+    if (action === 'list_sip_trunks') {
+      console.log('📋 Listing Twilio SIP Trunks...');
+      
+      const listResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks?PageSize=50`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!listResponse.ok) {
+        const errorText = await listResponse.text();
+        console.error('❌ Failed to list trunks:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to list SIP trunks', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const data = await listResponse.json();
+      const trunks = data.trunks?.map((trunk: any) => ({
+        sid: trunk.sid,
+        friendly_name: trunk.friendly_name,
+        domain_name: trunk.domain_name,
+        termination_uri: `${trunk.sid.toLowerCase()}.pstn.twilio.com`,
+        secure: trunk.secure,
+        recording: trunk.recording,
+        date_created: trunk.date_created,
+        date_updated: trunk.date_updated
+      })) || [];
+
+      console.log('✅ Found', trunks.length, 'SIP trunks');
+      return new Response(JSON.stringify({ trunks }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Delete a SIP trunk
+    if (action === 'delete_sip_trunk') {
+      const requestData = await req.json().catch(() => ({}));
+      const trunkSid = requestData.trunkSid;
+      
+      if (!trunkSid) {
+        return new Response(JSON.stringify({ error: 'trunkSid is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('🗑️ Deleting Twilio SIP Trunk:', trunkSid);
+      
+      const deleteResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunkSid}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!deleteResponse.ok && deleteResponse.status !== 204) {
+        const errorText = await deleteResponse.text();
+        console.error('❌ Failed to delete trunk:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to delete SIP trunk', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('✅ SIP trunk deleted:', trunkSid);
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: 'SIP trunk deleted successfully'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });

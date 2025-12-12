@@ -6,8 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Trash2, Plus, Edit, Phone, Server, Shield, DollarSign, Check, AlertCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Trash2, Plus, Edit, Phone, Server, Shield, DollarSign, Check, AlertCircle, Zap, RefreshCw, Loader2 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,6 +31,14 @@ interface SipTrunkConfig {
   created_at?: string;
 }
 
+interface TwilioTrunk {
+  sid: string;
+  friendly_name: string;
+  domain_name: string;
+  termination_uri: string;
+  date_created: string;
+}
+
 const defaultConfig: Partial<SipTrunkConfig> = {
   provider_type: 'generic',
   is_active: true,
@@ -48,6 +56,9 @@ export function SipTrunkManager() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<Partial<SipTrunkConfig> | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [twilioTrunks, setTwilioTrunks] = useState<TwilioTrunk[]>([]);
+  const [isLoadingTrunks, setIsLoadingTrunks] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -179,9 +190,116 @@ export function SipTrunkManager() {
     }
   };
 
+  // Auto-provision a Twilio SIP trunk
+  const provisionTwilioTrunk = async (trunkName?: string) => {
+    setIsProvisioning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'create_sip_trunk', trunkName: trunkName || `AutoDialer-${Date.now()}` }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      const trunk = data.trunk;
+      
+      // Save to our database
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error: dbError } = await supabase
+        .from('sip_trunk_configs')
+        .insert({
+          user_id: user.id,
+          name: trunk.friendly_name,
+          provider_type: 'twilio',
+          twilio_trunk_sid: trunk.sid,
+          twilio_termination_uri: trunk.termination_uri,
+          is_active: true,
+          is_default: configs.length === 0, // Make default if first one
+          cost_per_minute: 0.007,
+        });
+
+      if (dbError) throw dbError;
+
+      toast({ 
+        title: "SIP Trunk Provisioned", 
+        description: `Twilio Elastic SIP Trunk "${trunk.friendly_name}" created automatically!` 
+      });
+      loadConfigs();
+    } catch (error: any) {
+      toast({
+        title: "Provisioning Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+
+  // Fetch existing Twilio SIP trunks
+  const fetchTwilioTrunks = async () => {
+    setIsLoadingTrunks(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'list_sip_trunks' }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setTwilioTrunks(data.trunks || []);
+    } catch (error: any) {
+      console.error('Failed to fetch Twilio trunks:', error);
+    } finally {
+      setIsLoadingTrunks(false);
+    }
+  };
+
+  // Import an existing Twilio trunk
+  const importExistingTrunk = async (trunk: TwilioTrunk) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Check if already imported
+      const existing = configs.find(c => c.twilio_trunk_sid === trunk.sid);
+      if (existing) {
+        toast({ title: "Already imported", description: "This trunk is already in your configuration" });
+        return;
+      }
+
+      const { error: dbError } = await supabase
+        .from('sip_trunk_configs')
+        .insert({
+          user_id: user.id,
+          name: trunk.friendly_name,
+          provider_type: 'twilio',
+          twilio_trunk_sid: trunk.sid,
+          twilio_termination_uri: trunk.termination_uri,
+          is_active: true,
+          is_default: configs.length === 0,
+          cost_per_minute: 0.007,
+        });
+
+      if (dbError) throw dbError;
+
+      toast({ title: "Trunk Imported", description: `Imported "${trunk.friendly_name}"` });
+      loadConfigs();
+    } catch (error: any) {
+      toast({
+        title: "Import Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const openNewDialog = () => {
     setEditingConfig({ ...defaultConfig });
     setIsDialogOpen(true);
+    fetchTwilioTrunks(); // Fetch existing trunks when opening dialog
   };
 
   const openEditDialog = (config: SipTrunkConfig) => {
@@ -234,10 +352,20 @@ export function SipTrunkManager() {
             <p className="text-sm text-muted-foreground mb-4">
               SIP trunking can reduce your calling costs by up to 50%
             </p>
-            <Button onClick={openNewDialog} variant="outline" size="sm">
-              <Plus className="h-4 w-4 mr-1" />
-              Add Your First SIP Trunk
-            </Button>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={() => provisionTwilioTrunk()} disabled={isProvisioning} size="sm">
+                {isProvisioning ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 mr-1" />
+                )}
+                Auto-Create Twilio Trunk
+              </Button>
+              <Button onClick={openNewDialog} variant="outline" size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Manual Setup
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -344,10 +472,97 @@ export function SipTrunkManager() {
                 </Select>
               </div>
 
+              {editingConfig?.provider_type === 'twilio' && !editingConfig?.id && (
+                <div className="p-4 bg-muted rounded-lg space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-primary" />
+                    <span className="font-medium text-sm">Quick Setup</span>
+                  </div>
+                  
+                  <Button 
+                    onClick={() => {
+                      provisionTwilioTrunk(editingConfig?.name);
+                      setIsDialogOpen(false);
+                    }} 
+                    disabled={isProvisioning}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {isProvisioning ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Zap className="h-4 w-4 mr-2" />
+                    )}
+                    Auto-Create New Trunk in Twilio
+                  </Button>
+                  
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-muted px-2 text-muted-foreground">Or import existing</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={fetchTwilioTrunks}
+                      disabled={isLoadingTrunks}
+                      className="flex-1"
+                    >
+                      {isLoadingTrunks ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                      )}
+                      Fetch Existing Trunks
+                    </Button>
+                  </div>
+                  
+                  {twilioTrunks.length > 0 && (
+                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                      {twilioTrunks.map(trunk => (
+                        <div 
+                          key={trunk.sid} 
+                          className="flex items-center justify-between p-2 bg-background rounded border text-sm"
+                        >
+                          <div>
+                            <div className="font-medium">{trunk.friendly_name}</div>
+                            <div className="text-xs text-muted-foreground">{trunk.termination_uri}</div>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="ghost"
+                            onClick={() => {
+                              importExistingTrunk(trunk);
+                              setIsDialogOpen(false);
+                            }}
+                          >
+                            Import
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-muted px-2 text-muted-foreground">Or enter manually</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {editingConfig?.provider_type === 'twilio' && (
                 <>
                   <div>
-                    <Label>Trunk SID</Label>
+                    <Label>Trunk SID {!editingConfig?.id && "(optional - auto-filled if created above)"}</Label>
                     <Input
                       value={editingConfig?.twilio_trunk_sid || ''}
                       onChange={(e) => setEditingConfig(prev => ({ ...prev, twilio_trunk_sid: e.target.value }))}
@@ -355,7 +570,7 @@ export function SipTrunkManager() {
                     />
                   </div>
                   <div>
-                    <Label>Termination URI</Label>
+                    <Label>Termination URI {!editingConfig?.id && "(optional - auto-filled if created above)"}</Label>
                     <Input
                       value={editingConfig?.twilio_termination_uri || ''}
                       onChange={(e) => setEditingConfig(prev => ({ ...prev, twilio_termination_uri: e.target.value }))}
