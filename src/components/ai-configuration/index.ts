@@ -3,6 +3,7 @@ export { ConfigurationProgress } from './ConfigurationProgress';
 export { AISetupAssistant } from './AISetupAssistant';
 export { QuickAIAction } from './QuickAIAction';
 export { OnboardingWizard } from './OnboardingWizard';
+export { ConfigurationStepRenderer } from './ConfigurationStepRenderer';
 export { CONFIGURATION_INTEGRATIONS, getConfigurationIntegration, hasIntegration } from './ConfigurationAreaIntegrations';
 
 export type { ConfigurationPlan, ConfigurationItem } from './ConfigurationPreview';
