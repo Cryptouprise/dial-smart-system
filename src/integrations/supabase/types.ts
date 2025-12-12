@@ -145,6 +145,159 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_daily_insights: {
+        Row: {
+          created_at: string
+          id: string
+          insight_date: string
+          negative_feedback: number | null
+          patterns_learned: Json | null
+          positive_feedback: number | null
+          recommendations: Json | null
+          top_actions: Json | null
+          total_interactions: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          insight_date?: string
+          negative_feedback?: number | null
+          patterns_learned?: Json | null
+          positive_feedback?: number | null
+          recommendations?: Json | null
+          top_actions?: Json | null
+          total_interactions?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          insight_date?: string
+          negative_feedback?: number | null
+          patterns_learned?: Json | null
+          positive_feedback?: number | null
+          recommendations?: Json | null
+          top_actions?: Json | null
+          total_interactions?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ai_feedback: {
+        Row: {
+          context: Json | null
+          created_at: string
+          id: string
+          message_content: string | null
+          rating: string
+          response_content: string | null
+          response_id: string
+          user_id: string
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string
+          id?: string
+          message_content?: string | null
+          rating: string
+          response_content?: string | null
+          response_id: string
+          user_id: string
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string
+          id?: string
+          message_content?: string | null
+          rating?: string
+          response_content?: string | null
+          response_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ai_learning: {
+        Row: {
+          created_at: string
+          failure_count: number | null
+          id: string
+          last_used_at: string | null
+          pattern_key: string
+          pattern_type: string
+          pattern_value: Json
+          success_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          failure_count?: number | null
+          id?: string
+          last_used_at?: string | null
+          pattern_key: string
+          pattern_type: string
+          pattern_value?: Json
+          success_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          failure_count?: number | null
+          id?: string
+          last_used_at?: string | null
+          pattern_key?: string
+          pattern_type?: string
+          pattern_value?: Json
+          success_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ai_session_memory: {
+        Row: {
+          action_data: Json
+          action_type: string
+          can_undo: boolean | null
+          created_at: string
+          id: string
+          resource_id: string | null
+          resource_name: string | null
+          resource_type: string | null
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          action_data?: Json
+          action_type: string
+          can_undo?: boolean | null
+          created_at?: string
+          id?: string
+          resource_id?: string | null
+          resource_name?: string | null
+          resource_type?: string | null
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          action_data?: Json
+          action_type?: string
+          can_undo?: boolean | null
+          created_at?: string
+          id?: string
+          resource_id?: string | null
+          resource_name?: string | null
+          resource_type?: string | null
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_sms_settings: {
         Row: {
           ai_personality: string | null
