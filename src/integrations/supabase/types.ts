@@ -2977,6 +2977,51 @@ export type Database = {
           },
         ]
       }
+      workflow_test_logs: {
+        Row: {
+          created_at: string | null
+          estimated_cost: number | null
+          failed_steps: number | null
+          id: string
+          mode: string | null
+          speed: string | null
+          successful_steps: number | null
+          test_id: string
+          test_results: Json | null
+          total_steps: number | null
+          user_id: string | null
+          workflow_name: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          estimated_cost?: number | null
+          failed_steps?: number | null
+          id?: string
+          mode?: string | null
+          speed?: string | null
+          successful_steps?: number | null
+          test_id: string
+          test_results?: Json | null
+          total_steps?: number | null
+          user_id?: string | null
+          workflow_name?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          estimated_cost?: number | null
+          failed_steps?: number | null
+          id?: string
+          mode?: string | null
+          speed?: string | null
+          successful_steps?: number | null
+          test_id?: string
+          test_results?: Json | null
+          total_steps?: number | null
+          user_id?: string | null
+          workflow_name?: string | null
+        }
+        Relationships: []
+      }
       yellowstone_settings: {
         Row: {
           api_key_encrypted: string | null
