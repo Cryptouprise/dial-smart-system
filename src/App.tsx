@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
+import { AIErrorProvider } from "@/contexts/AIErrorContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
@@ -23,26 +24,28 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <SimpleModeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/sms-conversations" element={<AiSmsConversations />} />
-              <Route path="/number-webhooks" element={<NumberWebhooks />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/api-keys" element={<ApiKeys />} />
-              <Route path="/help" element={<HelpPage />} />
-              <Route path="/analytics" element={<Analytics />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            {/* Global AI Assistant - available on all pages */}
-            <AIAssistantChat />
-          </BrowserRouter>
-        </TooltipProvider>
+        <AIErrorProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/sms-conversations" element={<AiSmsConversations />} />
+                <Route path="/number-webhooks" element={<NumberWebhooks />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/api-keys" element={<ApiKeys />} />
+                <Route path="/help" element={<HelpPage />} />
+                <Route path="/analytics" element={<Analytics />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+              {/* Global AI Assistant - available on all pages */}
+              <AIAssistantChat />
+            </BrowserRouter>
+          </TooltipProvider>
+        </AIErrorProvider>
       </SimpleModeProvider>
     </ThemeProvider>
   </QueryClientProvider>
