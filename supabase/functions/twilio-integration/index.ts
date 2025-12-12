@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook' | 'create_sip_trunk' | 'list_sip_trunks' | 'delete_sip_trunk';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook' | 'create_sip_trunk' | 'list_sip_trunks' | 'delete_sip_trunk' | 'update_sip_trunk' | 'list_trunk_phone_numbers' | 'add_phone_to_trunk' | 'remove_phone_from_trunk';
   phoneNumberSid?: string;
   phoneNumber?: string;
   phoneNumbers?: string[]; // For configuring selected numbers
@@ -18,6 +18,12 @@ interface TwilioImportRequest {
   // SIP Trunk provisioning
   trunkName?: string;
   trunkSid?: string;
+  trunkSettings?: {
+    recording?: 'do-not-record' | 'record-from-ringing' | 'record-from-answer' | 'record-from-ringing-dual' | 'record-from-answer-dual';
+    secure?: boolean;
+    cnamLookupEnabled?: boolean;
+    disasterRecoveryUrl?: string;
+  };
 }
 
 serve(async (req) => {
@@ -1008,10 +1014,21 @@ serve(async (req) => {
     
     // Create a new Twilio Elastic SIP Trunk
     if (action === 'create_sip_trunk') {
-      const { trunkName } = await req.json().catch(() => ({})) || {};
+      const requestBody = await req.json().catch(() => ({}));
+      const { trunkName, trunkSettings } = requestBody || {};
       const name = trunkName || `Auto-Trunk-${Date.now()}`;
       
-      console.log('🔧 Creating Twilio Elastic SIP Trunk:', name);
+      console.log('🔧 Creating Twilio Elastic SIP Trunk:', name, 'with settings:', trunkSettings);
+      
+      // Build trunk parameters with user settings
+      const trunkParams: Record<string, string> = {
+        FriendlyName: name,
+        DisasterRecoveryUrl: trunkSettings?.disasterRecoveryUrl || '',
+        DisasterRecoveryMethod: 'POST',
+        Recording: trunkSettings?.recording || 'do-not-record',
+        Secure: trunkSettings?.secure ? 'true' : 'false',
+        CnamLookupEnabled: trunkSettings?.cnamLookupEnabled ? 'true' : 'false'
+      };
       
       // Step 1: Create the trunk
       const createTrunkResponse = await fetch(
@@ -1022,14 +1039,7 @@ serve(async (req) => {
             'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
             'Content-Type': 'application/x-www-form-urlencoded'
           },
-          body: new URLSearchParams({
-            FriendlyName: name,
-            DisasterRecoveryUrl: '',
-            DisasterRecoveryMethod: 'POST',
-            Recording: 'do-not-record',
-            Secure: 'false',
-            CnamLookupEnabled: 'false'
-          }).toString()
+          body: new URLSearchParams(trunkParams).toString()
         }
       );
 
@@ -1048,49 +1058,14 @@ serve(async (req) => {
       const trunk = await createTrunkResponse.json();
       console.log('✅ Trunk created:', trunk.sid);
 
-      // Step 2: Create an origination URI for outbound calling
-      // The termination_sip_uri is provided by Twilio automatically
-      // We need to create an origination URI for handling the calls
-      
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const originationUri = `sip:${supabaseUrl?.replace('https://', '').split('.')[0]}.sip.twilio.com`;
-      
-      console.log('📞 Setting up origination URI:', originationUri);
-      
-      const createOriginationResponse = await fetch(
-        `https://trunking.twilio.com/v1/Trunks/${trunk.sid}/OriginationUrls`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: new URLSearchParams({
-            FriendlyName: `${name}-Origination`,
-            SipUrl: `sip:+15551234567@${twilioAccountSid}.sip.twilio.com`,
-            Priority: '10',
-            Weight: '10',
-            Enabled: 'true'
-          }).toString()
-        }
-      );
-
-      let originationUrl = null;
-      if (createOriginationResponse.ok) {
-        originationUrl = await createOriginationResponse.json();
-        console.log('✅ Origination URL created:', originationUrl.sid);
-      } else {
-        console.log('⚠️ Origination URL creation skipped (optional)');
-      }
-
       // The termination URI is the key - it's what you use to route calls through this trunk
-      // Format: {trunk_sid}.pstn.twilio.com or custom subdomain
       const terminationUri = `${trunk.sid.toLowerCase()}.pstn.twilio.com`;
 
       console.log('🎉 SIP Trunk fully provisioned:', {
         sid: trunk.sid,
         name: trunk.friendly_name,
-        termination_uri: terminationUri
+        termination_uri: terminationUri,
+        settings: trunkSettings
       });
 
       return new Response(JSON.stringify({ 
@@ -1102,11 +1077,229 @@ serve(async (req) => {
           termination_uri: terminationUri,
           secure: trunk.secure,
           recording: trunk.recording,
+          cnam_lookup_enabled: trunk.cnam_lookup_enabled,
           date_created: trunk.date_created
         },
-        origination_url: originationUrl,
         message: 'SIP trunk created successfully. Use the termination URI for outbound calls.'
       }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Update SIP trunk settings
+    if (action === 'update_sip_trunk') {
+      const requestBody = await req.json().catch(() => ({}));
+      const { trunkSid, trunkSettings, trunkName } = requestBody || {};
+      
+      if (!trunkSid) {
+        return new Response(JSON.stringify({ error: 'trunkSid is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('📝 Updating Twilio SIP Trunk:', trunkSid, 'with settings:', trunkSettings);
+      
+      const updateParams: Record<string, string> = {};
+      if (trunkName) updateParams.FriendlyName = trunkName;
+      if (trunkSettings?.recording) updateParams.Recording = trunkSettings.recording;
+      if (trunkSettings?.secure !== undefined) updateParams.Secure = trunkSettings.secure ? 'true' : 'false';
+      if (trunkSettings?.cnamLookupEnabled !== undefined) updateParams.CnamLookupEnabled = trunkSettings.cnamLookupEnabled ? 'true' : 'false';
+      if (trunkSettings?.disasterRecoveryUrl !== undefined) updateParams.DisasterRecoveryUrl = trunkSettings.disasterRecoveryUrl;
+
+      const updateResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunkSid}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams(updateParams).toString()
+        }
+      );
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error('❌ Failed to update trunk:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to update SIP trunk', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const trunk = await updateResponse.json();
+      console.log('✅ Trunk updated:', trunk.sid);
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        trunk: {
+          sid: trunk.sid,
+          friendly_name: trunk.friendly_name,
+          secure: trunk.secure,
+          recording: trunk.recording,
+          cnam_lookup_enabled: trunk.cnam_lookup_enabled
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // List phone numbers associated with a trunk
+    if (action === 'list_trunk_phone_numbers') {
+      const requestBody = await req.json().catch(() => ({}));
+      const { trunkSid } = requestBody || {};
+      
+      if (!trunkSid) {
+        return new Response(JSON.stringify({ error: 'trunkSid is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('📋 Listing phone numbers for trunk:', trunkSid);
+
+      const listResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunkSid}/PhoneNumbers?PageSize=100`,
+        {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!listResponse.ok) {
+        const errorText = await listResponse.text();
+        console.error('❌ Failed to list trunk phone numbers:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to list trunk phone numbers', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const data = await listResponse.json();
+      const phoneNumbers = data.phone_numbers?.map((num: any) => ({
+        sid: num.sid,
+        phone_number: num.phone_number,
+        friendly_name: num.friendly_name,
+        trunk_sid: num.trunk_sid
+      })) || [];
+
+      console.log('✅ Found', phoneNumbers.length, 'phone numbers on trunk');
+      return new Response(JSON.stringify({ phone_numbers: phoneNumbers }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Add phone number to trunk
+    if (action === 'add_phone_to_trunk') {
+      const requestBody = await req.json().catch(() => ({}));
+      const { trunkSid, phoneNumberSid } = requestBody || {};
+      
+      if (!trunkSid || !phoneNumberSid) {
+        return new Response(JSON.stringify({ error: 'trunkSid and phoneNumberSid are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('📲 Adding phone number to trunk:', phoneNumberSid, '->', trunkSid);
+
+      const addResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunkSid}/PhoneNumbers`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `PhoneNumberSid=${phoneNumberSid}`
+        }
+      );
+
+      if (!addResponse.ok) {
+        const errorText = await addResponse.text();
+        console.error('❌ Failed to add phone to trunk:', errorText);
+        
+        // Check for "already exists" error
+        if (errorText.includes('already associated') || errorText.includes('already exists')) {
+          return new Response(JSON.stringify({ 
+            error: 'Phone number is already associated with a SIP trunk',
+            already_exists: true
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        return new Response(JSON.stringify({ 
+          error: 'Failed to add phone number to trunk', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const result = await addResponse.json();
+      console.log('✅ Phone number added to trunk:', result.phone_number);
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        phone_number: {
+          sid: result.sid,
+          phone_number: result.phone_number,
+          trunk_sid: result.trunk_sid
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Remove phone number from trunk
+    if (action === 'remove_phone_from_trunk') {
+      const requestBody = await req.json().catch(() => ({}));
+      const { trunkSid, phoneNumberSid } = requestBody || {};
+      
+      if (!trunkSid || !phoneNumberSid) {
+        return new Response(JSON.stringify({ error: 'trunkSid and phoneNumberSid are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('🗑️ Removing phone number from trunk:', phoneNumberSid, '<-', trunkSid);
+
+      const removeResponse = await fetch(
+        `https://trunking.twilio.com/v1/Trunks/${trunkSid}/PhoneNumbers/${phoneNumberSid}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!removeResponse.ok && removeResponse.status !== 204) {
+        const errorText = await removeResponse.text();
+        console.error('❌ Failed to remove phone from trunk:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Failed to remove phone number from trunk', 
+          details: errorText 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('✅ Phone number removed from trunk');
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
