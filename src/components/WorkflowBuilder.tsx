@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -73,6 +74,9 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
   const [editingWorkflow, setEditingWorkflow] = useState<CampaignWorkflow | null>(null);
   const [activeTab, setActiveTab] = useState('workflows');
   const [showTester, setShowTester] = useState(false);
+  const [showAIHelper, setShowAIHelper] = useState(false);
+  const [aiPrompt, setAIPrompt] = useState('');
+  const [aiLoading, setAILoading] = useState(false);
 
   // New workflow form state
   const [newWorkflow, setNewWorkflow] = useState<CampaignWorkflow>({
@@ -200,6 +204,63 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
       action_config: {},
       active: true
     });
+  };
+
+  const handleAIBuildWorkflow = async () => {
+    if (!aiPrompt.trim()) {
+      toast({ title: 'Error', description: 'Please describe what you want to build', variant: 'destructive' });
+      return;
+    }
+
+    setAILoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-workflow-generator', {
+        body: {
+          prompt: aiPrompt,
+          currentSteps: newWorkflow.steps,
+          workflowType: newWorkflow.workflow_type
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.steps && Array.isArray(data.steps)) {
+        // Merge AI-generated steps with existing steps
+        const existingSteps = newWorkflow.steps || [];
+        const newSteps = data.steps.map((step: any, idx: number) => ({
+          step_number: existingSteps.length + idx + 1,
+          step_type: step.step_type,
+          step_config: step.step_config || {}
+        }));
+
+        setNewWorkflow(prev => ({
+          ...prev,
+          steps: [...existingSteps, ...newSteps]
+        }));
+
+        toast({
+          title: 'Steps Generated',
+          description: `AI added ${newSteps.length} steps to your workflow`,
+        });
+
+        setShowAIHelper(false);
+        setAIPrompt('');
+      } else {
+        toast({
+          title: 'AI Response',
+          description: data?.message || 'AI processed your request',
+        });
+      }
+    } catch (error) {
+      console.error('AI workflow generation error:', error);
+      toast({
+        title: 'AI Error',
+        description: error instanceof Error ? error.message : 'Failed to generate workflow steps',
+        variant: 'destructive'
+      });
+    } finally {
+      setAILoading(false);
+    }
   };
 
   const renderStepEditor = (step: WorkflowStep, index: number) => {
@@ -672,9 +733,18 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
 
               {/* Steps */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <Label className="text-base">Workflow Steps</Label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => setShowAIHelper(true)}
+                      className="gap-1 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      AI: What can I help you build?
+                    </Button>
                     {STEP_TYPES.map(type => (
                       <Button
                         key={type.value}
@@ -690,11 +760,82 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                   </div>
                 </div>
 
+                {/* AI Helper Dialog */}
+                <Dialog open={showAIHelper} onOpenChange={setShowAIHelper}>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-purple-500" />
+                        AI Workflow Builder
+                      </DialogTitle>
+                      <DialogDescription>
+                        Describe what you want your workflow to do and AI will build the steps for you.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <Textarea
+                        value={aiPrompt}
+                        onChange={(e) => setAIPrompt(e.target.value)}
+                        placeholder="Example: Create a 3-day follow-up sequence that calls leads, sends an SMS if no answer, waits 1 day, then calls again..."
+                        rows={5}
+                        className="resize-none"
+                      />
+                      <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
+                        <button 
+                          type="button"
+                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                          onClick={() => setAIPrompt('Create a 3-day calling campaign with SMS follow-ups after missed calls')}
+                        >
+                          3-day calling campaign
+                        </button>
+                        <button 
+                          type="button"
+                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                          onClick={() => setAIPrompt('Build a nurture sequence with 2 calls per day and AI SMS responses')}
+                        >
+                          Nurture sequence
+                        </button>
+                        <button 
+                          type="button"
+                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                          onClick={() => setAIPrompt('Add conditional logic: if no answer, send SMS; if interested, schedule callback')}
+                        >
+                          Conditional logic
+                        </button>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setShowAIHelper(false)}>
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleAIBuildWorkflow}
+                          disabled={aiLoading || !aiPrompt.trim()}
+                          className="gap-2"
+                        >
+                          {aiLoading ? (
+                            <>
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                              Building...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-4 w-4" />
+                              Build Steps
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
                 <div className="space-y-4">
                   {newWorkflow.steps?.length === 0 ? (
                     <Card className="border-dashed">
                       <CardContent className="py-8 text-center text-muted-foreground">
-                        <p>No steps yet. Add steps above to build your workflow.</p>
+                        <Sparkles className="h-8 w-8 mx-auto mb-3 text-purple-400" />
+                        <p className="font-medium">No steps yet</p>
+                        <p className="text-sm mt-1">Click "AI: What can I help you build?" or add steps manually above</p>
                       </CardContent>
                     </Card>
                   ) : (
