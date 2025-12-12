@@ -75,6 +75,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
+      { title: 'AI Setup', value: 'ai-setup', icon: Sparkles, simpleMode: true },
     ],
   },
   {
