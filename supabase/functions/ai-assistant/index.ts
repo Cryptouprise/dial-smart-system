@@ -20,6 +20,24 @@ const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant. Be EXTREMELY BR
 3. PICK the best option and suggest it, don't list everything
 4. Ask ONE question, get ONE answer, move on
 5. When user asks about settings, ALWAYS call get_all_settings first
+6. ALWAYS tell user WHERE to find what you created (specific tab name)
+
+## SYSTEM LOCATIONS - CRITICAL!
+When you create something, ALWAYS tell user the exact tab:
+- SMS Blasts → "SMS Messaging" tab (sidebar)
+- Voice Broadcasts → "Voice Broadcast" tab (sidebar)
+- Campaigns → "Campaign Manager" tab (sidebar)
+- Workflows → "Workflow Builder" tab (sidebar)
+- Automation Rules → "Automation Engine" tab (sidebar)
+- Leads → "Lead Manager" tab (sidebar)
+- Phone Numbers → "Number Pool" tab (sidebar)
+
+## SMS BLAST vs AUTOMATION vs WORKFLOW
+- "SMS blast" = send_sms_blast tool → creates bulk SMS to multiple leads NOW
+- "Automation rule" = create_automation_rule → triggers on conditions (NOT for sending blasts)
+- "Workflow" = create_workflow → multi-step sequences over time
+
+IMPORTANT: When user says "SMS blast" or "text blast", use send_sms_blast, NOT create_automation_rule!
 
 ## READING SETTINGS
 When user asks "what are my settings?" or "show me my config":
@@ -28,8 +46,11 @@ When user asks "what are my settings?" or "show me my config":
 3. Ask if they want to change anything
 
 ## AFTER ACTIONS - BE SPECIFIC
-✅ GOOD: "Done! Created campaign 'Solar Outreach' with 50 calls/min. It's in draft mode - say 'launch it' when ready."
+✅ GOOD: "Done! Sent SMS blast to 25 leads. Check 'SMS Messaging' tab to see delivery status."
 ❌ BAD: "I've processed your request."
+
+✅ GOOD: "Created voice broadcast 'Solar Pitch'. Go to 'Voice Broadcast' tab → add leads → click Start."
+❌ BAD: "Broadcast created."
 
 ✅ GOOD: "Your AMD is now ON. Also enabled: local presence, DNC check. Disabled: timezone compliance."
 ❌ BAD: "Settings updated."
@@ -44,6 +65,8 @@ After discover_phone_setup returns:
 ## TOOLS (use immediately, explain nothing)
 - get_all_settings: Call when user asks about settings/config
 - discover_phone_setup: ALWAYS call first for phone/campaign setup
+- send_sms_blast: For "SMS blast", "text blast", "bulk SMS" - sends to leads NOW
+- send_test_sms: For testing SMS to a single number
 - quick_voice_broadcast: Create broadcast
 - All others: just use them
 
@@ -52,7 +75,7 @@ After discover_phone_setup returns:
 - Hours: 9 AM - 5 PM  
 - Pace: 50/min
 
-SHORT. CONFIRM ACTIONS. BE SPECIFIC.`;
+SHORT. CONFIRM ACTIONS. BE SPECIFIC. ALWAYS TELL WHERE TO FIND IT.`;
 
 
 const TOOLS = [
@@ -215,6 +238,40 @@ const TOOLS = [
           from_number: { type: "string", description: "Phone number to send from (optional). Use list_sms_numbers to see available numbers." }
         },
         required: ["to_number", "message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_sms_blast",
+      description: "Send an SMS blast to multiple leads at once. This is for 'SMS blast', 'text blast', 'bulk SMS' requests. NOT for creating automations or workflows - this ACTUALLY SENDS messages NOW.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: { type: "string", description: "The SMS message content to send" },
+          lead_filter: { type: "string", description: "Filter leads: 'all', 'new', 'contacted', 'qualified', or 'tag:tagname' (default: all)" },
+          from_number: { type: "string", description: "Phone number to send from (optional, will auto-select if not provided)" },
+          limit: { type: "number", description: "Maximum number of leads to send to (default: 100)" },
+          test_mode: { type: "boolean", description: "If true, only shows what would be sent without actually sending" }
+        },
+        required: ["message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_test_sms",
+      description: "Send a test SMS to a single phone number to verify SMS is working. Good for testing before a blast.",
+      parameters: {
+        type: "object",
+        properties: {
+          to_number: { type: "string", description: "Phone number to send test to" },
+          message: { type: "string", description: "Test message content (default: 'Test message from Smart Dialer')" },
+          from_number: { type: "string", description: "Phone number to send from (optional)" }
+        },
+        required: ["to_number"]
       }
     }
   },
@@ -918,6 +975,230 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
     }
 
+    case 'send_sms_blast': {
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      
+      if (!twilioAccountSid || !twilioAuthToken) {
+        return { success: false, message: '❌ Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.' };
+      }
+      
+      const { message, lead_filter = 'all', from_number, limit = 100, test_mode = false } = args;
+      
+      // Normalize phone number function
+      const normalizePhone = (phone: string): string => {
+        const cleaned = phone.replace(/[^\d+]/g, '');
+        if (cleaned.startsWith('+')) return cleaned;
+        if (cleaned.length === 10) return '+1' + cleaned;
+        if (cleaned.length === 11 && cleaned.startsWith('1')) return '+' + cleaned;
+        return '+' + cleaned;
+      };
+      
+      // Get available SMS number
+      let smsFromNumber = from_number;
+      if (!smsFromNumber) {
+        try {
+          const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=50`;
+          const response = await fetch(twilioUrl, { headers: { 'Authorization': 'Basic ' + credentials } });
+          const data = await response.json();
+          const smsNumbers = (data.incoming_phone_numbers || []).filter((n: any) => n.capabilities?.sms === true);
+          if (smsNumbers.length === 0) {
+            return { success: false, message: '❌ No SMS-capable numbers found. Please purchase an SMS-enabled number.' };
+          }
+          smsFromNumber = smsNumbers[0].phone_number;
+        } catch (err) {
+          return { success: false, message: '❌ Failed to find SMS-capable number. Please specify from_number.' };
+        }
+      } else {
+        smsFromNumber = normalizePhone(smsFromNumber);
+      }
+      
+      // Build lead query based on filter
+      let leadQuery = supabase
+        .from('leads')
+        .select('id, phone_number, first_name, last_name, status')
+        .eq('user_id', userId)
+        .eq('do_not_call', false)
+        .not('phone_number', 'is', null)
+        .limit(limit);
+      
+      if (lead_filter !== 'all') {
+        if (lead_filter.startsWith('tag:')) {
+          const tag = lead_filter.replace('tag:', '');
+          leadQuery = leadQuery.contains('tags', [tag]);
+        } else {
+          leadQuery = leadQuery.eq('status', lead_filter);
+        }
+      }
+      
+      const { data: leads, error: leadError } = await leadQuery;
+      
+      if (leadError) throw leadError;
+      
+      if (!leads || leads.length === 0) {
+        return { success: false, message: `❌ No leads found matching filter "${lead_filter}". Check Lead Manager tab for available leads.` };
+      }
+      
+      // Test mode - just show what would happen
+      if (test_mode) {
+        return {
+          success: true,
+          message: `📋 **SMS Blast Preview (Test Mode)**\n\n• Would send to: ${leads.length} leads\n• Filter: ${lead_filter}\n• From: ${smsFromNumber}\n• Message: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"\n\nTo actually send, run again with test_mode: false`,
+          data: { preview: true, lead_count: leads.length, sample_leads: leads.slice(0, 5).map((l: any) => `${l.first_name || ''} ${l.last_name || ''} (${l.phone_number})`) }
+        };
+      }
+      
+      // Actually send the SMS blast
+      const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+      
+      let successCount = 0;
+      let failCount = 0;
+      const errors: string[] = [];
+      
+      for (const lead of leads) {
+        const toNumber = normalizePhone(lead.phone_number);
+        
+        // Personalize message with lead name if available
+        let personalizedMessage = message;
+        if (lead.first_name) {
+          personalizedMessage = personalizedMessage.replace(/\{first_name\}/g, lead.first_name);
+          personalizedMessage = personalizedMessage.replace(/\{name\}/g, lead.first_name);
+        }
+        
+        try {
+          // Create SMS record
+          await supabase.from('sms_messages').insert({
+            user_id: userId,
+            lead_id: lead.id,
+            from_number: smsFromNumber,
+            to_number: toNumber,
+            body: personalizedMessage,
+            direction: 'outbound',
+            status: 'pending',
+            provider_type: 'twilio'
+          });
+          
+          // Send via Twilio
+          const formData = new URLSearchParams();
+          formData.append('To', toNumber);
+          formData.append('From', smsFromNumber);
+          formData.append('Body', personalizedMessage);
+          
+          const twilioResponse = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + credentials,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+          });
+          
+          if (twilioResponse.ok) {
+            successCount++;
+          } else {
+            failCount++;
+            const errData = await twilioResponse.json();
+            if (errors.length < 3) errors.push(`${toNumber}: ${errData.message || 'Failed'}`);
+          }
+        } catch (err) {
+          failCount++;
+        }
+        
+        // Small delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      const resultMessage = `📱 **SMS Blast Complete!**\n\n✅ Sent: ${successCount}\n❌ Failed: ${failCount}\n📍 From: ${smsFromNumber}\n\n**View results:** Go to "SMS Messaging" tab in the sidebar.${errors.length > 0 ? `\n\nErrors:\n${errors.join('\n')}` : ''}`;
+      
+      return {
+        success: true,
+        message: resultMessage,
+        data: { sent: successCount, failed: failCount, total: leads.length }
+      };
+    }
+
+    case 'send_test_sms': {
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      
+      if (!twilioAccountSid || !twilioAuthToken) {
+        return { success: false, message: '❌ Twilio credentials not configured.' };
+      }
+      
+      const { to_number, message = 'Test message from Smart Dialer - SMS is working! 🎉', from_number } = args;
+      
+      const normalizePhone = (phone: string): string => {
+        const cleaned = phone.replace(/[^\d+]/g, '');
+        if (cleaned.startsWith('+')) return cleaned;
+        if (cleaned.length === 10) return '+1' + cleaned;
+        if (cleaned.length === 11 && cleaned.startsWith('1')) return '+' + cleaned;
+        return '+' + cleaned;
+      };
+      
+      const toNum = normalizePhone(to_number);
+      let fromNum = from_number;
+      
+      if (!fromNum) {
+        const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+        const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=10`, {
+          headers: { 'Authorization': 'Basic ' + credentials }
+        });
+        const data = await response.json();
+        const smsNumbers = (data.incoming_phone_numbers || []).filter((n: any) => n.capabilities?.sms);
+        if (smsNumbers.length === 0) {
+          return { success: false, message: '❌ No SMS-capable numbers found.' };
+        }
+        fromNum = smsNumbers[0].phone_number;
+      } else {
+        fromNum = normalizePhone(fromNum);
+      }
+      
+      try {
+        const credentials = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+        const formData = new URLSearchParams();
+        formData.append('To', toNum);
+        formData.append('From', fromNum);
+        formData.append('Body', message);
+        
+        const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + credentials,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: formData.toString(),
+        });
+        
+        const twilioData = await twilioResponse.json();
+        
+        if (!twilioResponse.ok) {
+          return { success: false, message: `❌ Test SMS failed: ${twilioData.message || 'Unknown error'}` };
+        }
+        
+        // Log it
+        await supabase.from('sms_messages').insert({
+          user_id: userId,
+          from_number: fromNum,
+          to_number: toNum,
+          body: message,
+          direction: 'outbound',
+          status: 'sent',
+          provider_type: 'twilio',
+          provider_message_id: twilioData.sid
+        });
+        
+        return {
+          success: true,
+          message: `✅ **Test SMS Sent!**\n\n📱 To: ${toNum}\n📤 From: ${fromNum}\n💬 Message: "${message}"\n\nCheck your phone! View in "SMS Messaging" tab.`
+        };
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        return { success: false, message: `❌ Test SMS failed: ${errorMessage}` };
+      }
+    }
+
     case 'quarantine_number': {
       const quarantineUntil = new Date();
       quarantineUntil.setDate(quarantineUntil.getDate() + (args.days || 30));
@@ -933,7 +1214,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .eq('user_id', userId);
       
       if (error) throw error;
-      return { success: true, message: `Number ${args.phone_number} quarantined for ${args.days || 30} days` };
+      return { success: true, message: `Number ${args.phone_number} quarantined for ${args.days || 30} days. View in "Number Pool" tab.` };
     }
 
     // NEW TOOLS IMPLEMENTATION
