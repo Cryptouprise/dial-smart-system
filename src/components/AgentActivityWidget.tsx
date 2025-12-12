@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { 
   Bot, MessageSquare, Phone, ArrowRight, Clock, AlertCircle, 
-  ChevronDown, ChevronUp, CheckCircle, Loader2, X 
+  ChevronDown, ChevronUp, CheckCircle, Loader2, X, Wrench 
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Dialog,
@@ -123,14 +124,70 @@ const AgentActivityWidget = () => {
   const handleFixError = async (activity: RecentActivity) => {
     setFixingErrors(prev => new Set(prev).add(activity.id));
     
-    // Simulate fix process - in reality this would call AI to analyze and fix
-    setTimeout(() => {
+    // Show immediate feedback that we're working on it
+    toast({
+      title: "Auto Fix Started",
+      description: "AI is analyzing the error and attempting a fix...",
+    });
+
+    try {
+      // First, analyze the error
+      const { data: analyzeData, error: analyzeError } = await supabase.functions.invoke('ai-error-analyzer', {
+        body: {
+          action: 'analyze',
+          error: {
+            type: activity.decision_type === 'error_captured' ? 'runtime' : 'unknown',
+            message: activity.reasoning?.replace('Captured runtime error: ', '') || 'Unknown error',
+            stack: parseOutcome(activity.outcome)?.stack,
+            context: parseOutcome(activity.outcome)?.context
+          }
+        }
+      });
+
+      if (analyzeError) throw analyzeError;
+
+      // Then attempt to execute the fix
+      const { data: fixData, error: fixError } = await supabase.functions.invoke('ai-error-analyzer', {
+        body: {
+          action: 'execute',
+          error: {
+            type: activity.decision_type === 'error_captured' ? 'runtime' : 'unknown',
+            message: activity.reasoning?.replace('Captured runtime error: ', '') || 'Unknown error',
+            stack: parseOutcome(activity.outcome)?.stack,
+            context: parseOutcome(activity.outcome)?.context
+          },
+          suggestion: analyzeData?.suggestion
+        }
+      });
+
+      if (fixError) throw fixError;
+
+      // Show success feedback
+      toast({
+        title: "Auto Fix Complete",
+        description: fixData?.success 
+          ? `Fix applied: ${fixData.message || 'Error has been resolved'}` 
+          : `Analysis complete: ${analyzeData?.suggestion || 'Review the error details'}`,
+        variant: fixData?.success ? "default" : "destructive",
+      });
+
+      // Refresh the activity list to show updated status
+      await loadRecentActivity();
+      
+    } catch (error) {
+      console.error('Auto fix failed:', error);
+      toast({
+        title: "Auto Fix Failed",
+        description: error instanceof Error ? error.message : "Could not complete the auto-fix. Please try manually.",
+        variant: "destructive",
+      });
+    } finally {
       setFixingErrors(prev => {
         const next = new Set(prev);
         next.delete(activity.id);
         return next;
       });
-    }, 3000);
+    }
   };
 
   const getIcon = (activity: RecentActivity) => {
