@@ -363,6 +363,10 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
                   onComplete?.(createdCampaignId);
                   onOpenChange(false);
                 }}
+                onFixIssue={(checkId) => {
+                  // Close wizard to let user fix issue
+                  onOpenChange(false);
+                }}
               />
             </div>
           )}
@@ -393,7 +397,13 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
           )}
 
           {currentStep === 5 && (
-            <Button onClick={() => onOpenChange(false)}>
+            <Button 
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                onOpenChange(false);
+              }}
+            >
               Done
             </Button>
           )}

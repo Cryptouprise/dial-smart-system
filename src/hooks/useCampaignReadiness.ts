@@ -42,7 +42,7 @@ export const useCampaignReadiness = () => {
 
       // Check: Campaign has name
       checks.push({
-        id: 'name',
+        id: 'campaign_name',
         label: 'Campaign name',
         status: campaign.name ? 'pass' : 'fail',
         message: campaign.name || 'No name set',
@@ -51,7 +51,7 @@ export const useCampaignReadiness = () => {
 
       // Check: Agent selected
       checks.push({
-        id: 'agent',
+        id: 'ai_agent',
         label: 'Retell AI Agent',
         status: campaign.agent_id ? 'pass' : 'fail',
         message: campaign.agent_id ? 'Agent configured' : 'No agent selected',
@@ -119,7 +119,7 @@ export const useCampaignReadiness = () => {
 
       const leadCount = campaignLeads?.length || 0;
       checks.push({
-        id: 'leads',
+        id: 'leads_assigned',
         label: 'Leads assigned',
         status: leadCount > 0 ? 'pass' : 'fail',
         message: leadCount > 0 ? `${leadCount} leads ready` : 'No leads in campaign',

@@ -2,22 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket } from 'lucide-react';
-import { useCampaignReadiness, CampaignReadinessResult } from '@/hooks/useCampaignReadiness';
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket, ChevronRight, Wrench } from 'lucide-react';
+import { useCampaignReadiness, CampaignReadinessResult, ReadinessCheck } from '@/hooks/useCampaignReadiness';
 
 interface CampaignReadinessCheckerProps {
   campaignId: string;
   onLaunch?: () => void;
+  onFixIssue?: (checkId: string) => void;
+  onDone?: () => void;
   compact?: boolean;
 }
 
 export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> = ({
   campaignId,
   onLaunch,
+  onFixIssue,
+  onDone,
   compact = false
 }) => {
   const { checkCampaignReadiness, isChecking } = useCampaignReadiness();
   const [result, setResult] = useState<CampaignReadinessResult | null>(null);
+  const [fixingIssue, setFixingIssue] = useState<string | null>(null);
 
   const runCheck = async () => {
     const res = await checkCampaignReadiness(campaignId);
@@ -38,6 +43,40 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
         return <AlertTriangle className="h-4 w-4 text-amber-500" />;
       default:
         return <Loader2 className="h-4 w-4 animate-spin" />;
+    }
+  };
+
+  const handleFixClick = (check: ReadinessCheck) => {
+    if (check.status !== 'fail' && check.status !== 'warning') return;
+    
+    setFixingIssue(check.id);
+    
+    // Navigate based on issue type
+    const fixRoutes: Record<string, string> = {
+      'agent_phone': '/?tab=retell',
+      'leads_assigned': '/?tab=leads', 
+      'phone_numbers': '/?tab=phone-numbers',
+      'sip_trunk': '/?tab=phone-numbers',
+      'ai_agent': '/?tab=retell',
+      'workflow': '/?tab=workflows',
+      'ai_sms': '/?tab=ai-sms',
+    };
+    
+    const route = fixRoutes[check.id];
+    if (route) {
+      window.location.href = route;
+    } else if (onFixIssue) {
+      onFixIssue(check.id);
+    }
+    
+    setFixingIssue(null);
+  };
+
+  const handleFixAllIssues = () => {
+    // Find the first failing critical check and navigate to fix it
+    const firstFail = result?.checks.find(c => c.status === 'fail' && c.critical);
+    if (firstFail) {
+      handleFixClick(firstFail);
     }
   };
 
@@ -95,25 +134,37 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
         ) : result ? (
           <div className="space-y-4">
             <div className="grid gap-2">
-              {result.checks.map((check) => (
-                <div
-                  key={check.id}
-                  className={`flex items-center justify-between p-2 rounded-lg ${
-                    check.status === 'pass' ? 'bg-green-50 dark:bg-green-900/20' :
-                    check.status === 'fail' ? 'bg-red-50 dark:bg-red-900/20' :
-                    'bg-amber-50 dark:bg-amber-900/20'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(check.status)}
-                    <span className="text-sm font-medium">{check.label}</span>
-                    {check.critical && check.status === 'fail' && (
-                      <Badge variant="destructive" className="text-xs">Required</Badge>
-                    )}
-                  </div>
-                  <span className="text-sm text-muted-foreground">{check.message}</span>
-                </div>
-              ))}
+              {result.checks.map((check) => {
+                const isClickable = check.status === 'fail' || check.status === 'warning';
+                
+                return (
+                  <button
+                    key={check.id}
+                    type="button"
+                    onClick={() => isClickable && handleFixClick(check)}
+                    disabled={!isClickable}
+                    className={`flex items-center justify-between p-3 rounded-lg text-left w-full transition-all ${
+                      check.status === 'pass' ? 'bg-green-50 dark:bg-green-900/20' :
+                      check.status === 'fail' ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 cursor-pointer' :
+                      'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 cursor-pointer'
+                    } ${isClickable ? 'hover:ring-2 hover:ring-primary/50' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(check.status)}
+                      <span className="text-sm font-medium">{check.label}</span>
+                      {check.critical && check.status === 'fail' && (
+                        <Badge variant="destructive" className="text-xs">Required</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">{check.message}</span>
+                      {isClickable && (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {result.warnings > 0 && (
@@ -122,16 +173,30 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
               </p>
             )}
 
-            {onLaunch && (
-              <Button 
-                className="w-full" 
-                disabled={!result.isReady}
-                onClick={onLaunch}
-              >
-                <Rocket className="h-4 w-4 mr-2" />
-                {result.isReady ? 'Launch Campaign' : 'Fix Issues to Launch'}
-              </Button>
-            )}
+            <div className="flex gap-2 pt-2">
+              {!result.isReady && (
+                <Button 
+                  type="button"
+                  variant="secondary"
+                  className="flex-1" 
+                  onClick={handleFixAllIssues}
+                >
+                  <Wrench className="h-4 w-4 mr-2" />
+                  Fix Issues to Launch
+                </Button>
+              )}
+              
+              {result.isReady && onLaunch && (
+                <Button 
+                  type="button"
+                  className="flex-1" 
+                  onClick={onLaunch}
+                >
+                  <Rocket className="h-4 w-4 mr-2" />
+                  Launch Campaign
+                </Button>
+              )}
+            </div>
           </div>
         ) : null}
       </CardContent>
