@@ -1,12 +1,12 @@
 import React from 'react';
-import { PhoneNumberPurchasing } from '../PhoneNumberPurchasing';
+import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
 import { SipTrunkManager } from '../SipTrunkManager';
-import { AdvancedDialerSettings } from '../AdvancedDialerSettings';
-import { CampaignSetupWizard } from '../CampaignSetupWizard';
+import AdvancedDialerSettings from '../AdvancedDialerSettings';
+import CampaignSetupWizard from '../CampaignSetupWizard';
 import { AgentEditDialog } from '../AgentEditDialog';
-import { WorkflowBuilder } from '../WorkflowBuilder';
-import { NumberPoolManager } from '../NumberPoolManager';
-import { VoiceBroadcastManager } from '../VoiceBroadcastManager';
+import WorkflowBuilder from '../WorkflowBuilder';
+import NumberPoolManager from '../NumberPoolManager';
+import VoiceBroadcastManager from '../VoiceBroadcastManager';
 import { LeadScoringSettings } from '../LeadScoringSettings';
 
 /**
@@ -20,6 +20,53 @@ export interface ConfigurationAreaIntegration {
   props?: Record<string, any>;
   instructions?: string;
 }
+
+/**
+ * Placeholder component for configuration areas that don't have dedicated components yet
+ */
+interface PlaceholderComponentProps {
+  title: string;
+  description: string;
+  onComplete?: () => void;
+  onSkip?: () => void;
+}
+
+const PlaceholderComponent: React.FC<PlaceholderComponentProps> = ({ 
+  title, 
+  description, 
+  onComplete, 
+  onSkip 
+}) => {
+  return (
+    <div className="p-6 space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold mb-2">{title}</h3>
+        <p className="text-muted-foreground">{description}</p>
+      </div>
+      
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <p className="text-sm text-blue-900">
+          💡 <strong>Tip:</strong> You can configure this manually in the Settings page after completing onboarding.
+        </p>
+      </div>
+      
+      <div className="flex gap-2 pt-4">
+        <button
+          onClick={onComplete}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+        >
+          Mark as Complete
+        </button>
+        <button
+          onClick={onSkip}
+          className="px-4 py-2 border border-border rounded-md hover:bg-accent"
+        >
+          Skip for Now
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const CONFIGURATION_INTEGRATIONS: Record<string, ConfigurationAreaIntegration> = {
   phone_numbers: {
@@ -77,7 +124,6 @@ export const CONFIGURATION_INTEGRATIONS: Record<string, ConfigurationAreaIntegra
     instructions: 'Configure AI-powered lead scoring to prioritize your hottest prospects.',
   },
   
-  // For areas without dedicated components yet, we'll show placeholder instructions
   integrations: {
     id: 'integrations',
     component: PlaceholderComponent,
@@ -107,53 +153,6 @@ export const CONFIGURATION_INTEGRATIONS: Record<string, ConfigurationAreaIntegra
     },
     instructions: 'Set spending limits to control costs. Recommended: Start with $500/month limit.',
   },
-};
-
-/**
- * Placeholder component for configuration areas that don't have dedicated components yet
- */
-interface PlaceholderComponentProps {
-  title: string;
-  description: string;
-  onComplete?: () => void;
-  onSkip?: () => void;
-}
-
-const PlaceholderComponent: React.FC<PlaceholderComponentProps> = ({ 
-  title, 
-  description, 
-  onComplete, 
-  onSkip 
-}) => {
-  return (
-    <div className="p-6 space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold mb-2">{title}</h3>
-        <p className="text-muted-foreground">{description}</p>
-      </div>
-      
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-900">
-          💡 <strong>Tip:</strong> You can configure this manually in the Settings page after completing onboarding.
-        </p>
-      </div>
-      
-      <div className="flex gap-2 pt-4">
-        <button
-          onClick={onComplete}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-        >
-          Mark as Complete
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 border border-border rounded-md hover:bg-accent"
-        >
-          Skip for Now
-        </button>
-      </div>
-    </div>
-  );
 };
 
 /**

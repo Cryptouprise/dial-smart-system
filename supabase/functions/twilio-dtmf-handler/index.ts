@@ -169,12 +169,13 @@ serve(async (req) => {
           .eq('id', queueItemId)
           .single();
         
-        if (queueItem?.broadcast?.user_id) {
+        const broadcast = queueItem?.broadcast as { user_id: string } | null;
+        if (broadcast?.user_id) {
           // Add to DNC list
           await supabase
             .from('dnc_list')
             .upsert({
-              user_id: queueItem.broadcast.user_id,
+              user_id: broadcast.user_id,
               phone_number: to.replace(/\D/g, ''),
               reason: 'Opted out via voice broadcast DTMF',
               added_at: new Date().toISOString()

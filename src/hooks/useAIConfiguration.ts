@@ -1,11 +1,10 @@
 import { useState, useCallback } from 'react';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import type { ConfigurationPlan, ConfigurationItem } from '../components/ai-configuration/ConfigurationPreview';
 import type { ConfigurationStep, ConfigurationResult } from '../components/ai-configuration/ConfigurationProgress';
 
 export const useAIConfiguration = () => {
-  const supabase = useSupabaseClient();
   const { toast } = useToast();
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentSteps, setCurrentSteps] = useState<ConfigurationStep[]>([]);
@@ -69,11 +68,16 @@ export const useAIConfiguration = () => {
     try {
       updateStepStatus(stepId, 'in_progress', 'Creating campaign...');
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('campaigns')
         .insert({
           name: item.name,
-          ...item.details
+          user_id: user.id,
+          status: 'draft',
+          ...(item.details || {})
         })
         .select()
         .single();
@@ -93,8 +97,9 @@ export const useAIConfiguration = () => {
       updateStepStatus(stepId, 'in_progress', 'Creating AI agent...');
 
       // Call Retell API or your agent creation endpoint
-      const { data, error } = await supabase.functions.invoke('create-retell-agent', {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
         body: {
+          action: 'create',
           agent_name: item.name,
           ...item.details
         }
@@ -114,11 +119,16 @@ export const useAIConfiguration = () => {
     try {
       updateStepStatus(stepId, 'in_progress', 'Creating workflow...');
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('campaign_workflows')
         .insert({
           name: item.name,
-          ...item.details
+          user_id: user.id,
+          workflow_type: 'follow_up',
+          ...(item.details || {})
         })
         .select()
         .single();
@@ -231,7 +241,7 @@ export const useAIConfiguration = () => {
         return acc;
       }, {})
     };
-  }, [supabase, toast, currentSteps, updateStepStatus]);
+  }, [toast, currentSteps, updateStepStatus]);
 
   return {
     generatePlan,
