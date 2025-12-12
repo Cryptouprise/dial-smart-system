@@ -36,7 +36,22 @@ interface TwilioTrunk {
   friendly_name: string;
   domain_name: string;
   termination_uri: string;
+  secure?: boolean;
+  recording?: string;
   date_created: string;
+}
+
+interface TrunkSettings {
+  recording: 'do-not-record' | 'record-from-ringing' | 'record-from-answer' | 'record-from-ringing-dual' | 'record-from-answer-dual';
+  secure: boolean;
+  cnamLookupEnabled: boolean;
+}
+
+interface TrunkPhoneNumber {
+  sid: string;
+  phone_number: string;
+  friendly_name: string;
+  trunk_sid: string;
 }
 
 const defaultConfig: Partial<SipTrunkConfig> = {
@@ -50,6 +65,12 @@ const defaultConfig: Partial<SipTrunkConfig> = {
   cost_per_minute: 0.007,
 };
 
+const defaultTrunkSettings: TrunkSettings = {
+  recording: 'do-not-record',
+  secure: false,
+  cnamLookupEnabled: false,
+};
+
 export function SipTrunkManager() {
   const [configs, setConfigs] = useState<SipTrunkConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +80,13 @@ export function SipTrunkManager() {
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [twilioTrunks, setTwilioTrunks] = useState<TwilioTrunk[]>([]);
   const [isLoadingTrunks, setIsLoadingTrunks] = useState(false);
+  const [trunkSettings, setTrunkSettings] = useState<TrunkSettings>(defaultTrunkSettings);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [phoneNumbersDialogOpen, setPhoneNumbersDialogOpen] = useState(false);
+  const [selectedTrunk, setSelectedTrunk] = useState<SipTrunkConfig | null>(null);
+  const [trunkPhoneNumbers, setTrunkPhoneNumbers] = useState<TrunkPhoneNumber[]>([]);
+  const [availableNumbers, setAvailableNumbers] = useState<any[]>([]);
+  const [isLoadingPhoneNumbers, setIsLoadingPhoneNumbers] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -190,12 +218,16 @@ export function SipTrunkManager() {
     }
   };
 
-  // Auto-provision a Twilio SIP trunk
-  const provisionTwilioTrunk = async (trunkName?: string) => {
+  // Auto-provision a Twilio SIP trunk with settings
+  const provisionTwilioTrunk = async (trunkName?: string, settings?: TrunkSettings) => {
     setIsProvisioning(true);
     try {
       const { data, error } = await supabase.functions.invoke('twilio-integration', {
-        body: { action: 'create_sip_trunk', trunkName: trunkName || `AutoDialer-${Date.now()}` }
+        body: { 
+          action: 'create_sip_trunk', 
+          trunkName: trunkName || `AutoDialer-${Date.now()}`,
+          trunkSettings: settings || trunkSettings
+        }
       });
 
       if (error) throw error;
@@ -216,7 +248,7 @@ export function SipTrunkManager() {
           twilio_trunk_sid: trunk.sid,
           twilio_termination_uri: trunk.termination_uri,
           is_active: true,
-          is_default: configs.length === 0, // Make default if first one
+          is_default: configs.length === 0,
           cost_per_minute: 0.007,
         });
 
@@ -224,8 +256,9 @@ export function SipTrunkManager() {
 
       toast({ 
         title: "SIP Trunk Provisioned", 
-        description: `Twilio Elastic SIP Trunk "${trunk.friendly_name}" created automatically!` 
+        description: `Created "${trunk.friendly_name}" with recording: ${settings?.recording || 'do-not-record'}` 
       });
+      setTrunkSettings(defaultTrunkSettings);
       loadConfigs();
     } catch (error: any) {
       toast({
@@ -235,6 +268,96 @@ export function SipTrunkManager() {
       });
     } finally {
       setIsProvisioning(false);
+    }
+  };
+
+  // Manage phone numbers on trunk
+  const openPhoneNumbersDialog = async (config: SipTrunkConfig) => {
+    setSelectedTrunk(config);
+    setPhoneNumbersDialogOpen(true);
+    await loadTrunkPhoneNumbers(config.twilio_trunk_sid!);
+    await loadAvailableNumbers();
+  };
+
+  const loadTrunkPhoneNumbers = async (trunkSid: string) => {
+    setIsLoadingPhoneNumbers(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'list_trunk_phone_numbers', trunkSid }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setTrunkPhoneNumbers(data.phone_numbers || []);
+    } catch (error: any) {
+      toast({ title: "Error loading trunk numbers", description: error.message, variant: "destructive" });
+    } finally {
+      setIsLoadingPhoneNumbers(false);
+    }
+  };
+
+  const loadAvailableNumbers = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'list_numbers' }
+      });
+
+      if (error) throw error;
+      setAvailableNumbers(data.numbers || []);
+    } catch (error: any) {
+      console.error('Failed to load available numbers:', error);
+    }
+  };
+
+  const addPhoneToTrunk = async (phoneNumberSid: string) => {
+    if (!selectedTrunk?.twilio_trunk_sid) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { 
+          action: 'add_phone_to_trunk', 
+          trunkSid: selectedTrunk.twilio_trunk_sid,
+          phoneNumberSid 
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) {
+        if (data.already_exists) {
+          toast({ title: "Already assigned", description: "This number is already on a SIP trunk" });
+        } else {
+          throw new Error(data.error);
+        }
+        return;
+      }
+
+      toast({ title: "Phone added to trunk" });
+      await loadTrunkPhoneNumbers(selectedTrunk.twilio_trunk_sid);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const removePhoneFromTrunk = async (phoneNumberSid: string) => {
+    if (!selectedTrunk?.twilio_trunk_sid) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { 
+          action: 'remove_phone_from_trunk', 
+          trunkSid: selectedTrunk.twilio_trunk_sid,
+          phoneNumberSid 
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast({ title: "Phone removed from trunk" });
+      await loadTrunkPhoneNumbers(selectedTrunk.twilio_trunk_sid);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   };
 
@@ -402,6 +525,16 @@ export function SipTrunkManager() {
                       ${config.cost_per_minute?.toFixed(4)}/min
                     </div>
                   </div>
+                  {config.provider_type === 'twilio' && config.twilio_trunk_sid && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openPhoneNumbersDialog(config)}
+                    >
+                      <Phone className="h-4 w-4 mr-1" />
+                      Numbers
+                    </Button>
+                  )}
                   {!config.is_default && config.is_active && (
                     <Button
                       variant="ghost"
@@ -474,14 +607,60 @@ export function SipTrunkManager() {
 
               {editingConfig?.provider_type === 'twilio' && !editingConfig?.id && (
                 <div className="p-4 bg-muted rounded-lg space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-primary" />
-                    <span className="font-medium text-sm">Quick Setup</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-primary" />
+                      <span className="font-medium text-sm">Quick Setup</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                    >
+                      {showAdvancedSettings ? 'Hide' : 'Show'} Settings
+                    </Button>
                   </div>
+                  
+                  {showAdvancedSettings && (
+                    <div className="space-y-3 p-3 bg-background rounded border">
+                      <div>
+                        <Label className="text-xs">Call Recording</Label>
+                        <Select
+                          value={trunkSettings.recording}
+                          onValueChange={(value: any) => setTrunkSettings(prev => ({ ...prev, recording: value }))}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="do-not-record">Do Not Record</SelectItem>
+                            <SelectItem value="record-from-ringing">Record from Ringing</SelectItem>
+                            <SelectItem value="record-from-answer">Record from Answer</SelectItem>
+                            <SelectItem value="record-from-ringing-dual">Record Dual (from Ringing)</SelectItem>
+                            <SelectItem value="record-from-answer-dual">Record Dual (from Answer)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Secure (TLS)</Label>
+                        <Switch
+                          checked={trunkSettings.secure}
+                          onCheckedChange={(checked) => setTrunkSettings(prev => ({ ...prev, secure: checked }))}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">CNAM Lookup</Label>
+                        <Switch
+                          checked={trunkSettings.cnamLookupEnabled}
+                          onCheckedChange={(checked) => setTrunkSettings(prev => ({ ...prev, cnamLookupEnabled: checked }))}
+                        />
+                      </div>
+                    </div>
+                  )}
                   
                   <Button 
                     onClick={() => {
-                      provisionTwilioTrunk(editingConfig?.name);
+                      provisionTwilioTrunk(editingConfig?.name, trunkSettings);
                       setIsDialogOpen(false);
                     }} 
                     disabled={isProvisioning}
@@ -719,6 +898,95 @@ export function SipTrunkManager() {
               </Button>
               <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Phone Numbers Management Dialog */}
+        <Dialog open={phoneNumbersDialogOpen} onOpenChange={setPhoneNumbersDialogOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Phone className="h-5 w-5" />
+                Manage Trunk Phone Numbers
+              </DialogTitle>
+              <DialogDescription>
+                {selectedTrunk?.name} - Add or remove phone numbers from this SIP trunk
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Current trunk numbers */}
+              <div>
+                <Label className="text-sm font-medium">Numbers on This Trunk</Label>
+                {isLoadingPhoneNumbers ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : trunkPhoneNumbers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No phone numbers assigned to this trunk yet</p>
+                ) : (
+                  <div className="space-y-2 mt-2">
+                    {trunkPhoneNumbers.map(num => (
+                      <div key={num.sid} className="flex items-center justify-between p-2 border rounded bg-muted/50">
+                        <div>
+                          <span className="font-medium">{num.phone_number}</span>
+                          {num.friendly_name && (
+                            <span className="text-xs text-muted-foreground ml-2">{num.friendly_name}</span>
+                          )}
+                        </div>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => removePhoneFromTrunk(num.sid)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Available numbers to add */}
+              <div>
+                <Label className="text-sm font-medium">Add Phone Numbers</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select from your Twilio account phone numbers
+                </p>
+                {availableNumbers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No available numbers found</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {availableNumbers
+                      .filter(num => !trunkPhoneNumbers.some(tn => tn.phone_number === num.phone_number))
+                      .map(num => (
+                        <div key={num.sid} className="flex items-center justify-between p-2 border rounded">
+                          <div>
+                            <span className="font-medium">{num.phone_number}</span>
+                            {num.friendly_name && (
+                              <span className="text-xs text-muted-foreground ml-2">{num.friendly_name}</span>
+                            )}
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => addPhoneToTrunk(num.sid)}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPhoneNumbersDialogOpen(false)}>
+                Done
               </Button>
             </DialogFooter>
           </DialogContent>
