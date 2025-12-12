@@ -389,14 +389,14 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   Link Workflow (Optional)
                 </label>
                 <Select
-                  value={formData.workflow_id}
-                  onValueChange={(value) => setFormData({ ...formData, workflow_id: value })}
+                  value={formData.workflow_id || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, workflow_id: value === "none" ? "" : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a workflow" />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    <SelectItem value="">No Workflow</SelectItem>
+                    <SelectItem value="none">No Workflow</SelectItem>
                     {workflows.map((workflow) => (
                       <SelectItem key={workflow.id} value={workflow.id}>
                         <div className="flex items-center gap-2">
