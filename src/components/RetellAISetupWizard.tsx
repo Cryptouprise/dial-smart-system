@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { CheckCircle2, Circle, Copy, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Circle, Copy, ExternalLink, Calendar, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Webhook URL for call tracking
@@ -277,11 +277,54 @@ export const RetellAISetupWizard = () => {
               </p>
             </div>
 
+            {/* Cal.com Calendar Integration Guide */}
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+                  Enable Appointment Booking (Cal.com)
+                </p>
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                Retell natively integrates with Cal.com for appointment booking. Cal.com syncs with Google Calendar automatically.
+              </p>
+              <ol className="text-xs text-blue-700 dark:text-blue-300 space-y-2 list-decimal list-inside">
+                <li>Create a free account at <a href="https://cal.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">cal.com</a></li>
+                <li>Connect your Google Calendar in Cal.com Settings → Calendars</li>
+                <li>Create an Event Type (e.g., "15 min consultation")</li>
+                <li>Get your <strong>Event Type ID</strong> from the event URL</li>
+                <li>Get your <strong>API Key</strong> from Cal.com Settings → Developer → API Keys</li>
+                <li>In <a href="https://dashboard.retellai.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">Retell Dashboard</a> → Agent → Add Tool → "Book Calendar"</li>
+                <li>Enter your Cal.com credentials and save</li>
+              </ol>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-blue-700 border-blue-300 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/40"
+                  onClick={() => window.open('https://cal.com', '_blank')}
+                >
+                  <Calendar className="h-3 w-3 mr-1" />
+                  Cal.com
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-blue-700 border-blue-300 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/40"
+                  onClick={() => window.open('https://docs.retellai.com/build/book-calendar', '_blank')}
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  Retell Docs
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
                 Next steps:
               </p>
               <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
+                <li>Set up Cal.com for appointment booking (above)</li>
                 <li>Go to the "Phone Numbers" tab to import phone numbers</li>
                 <li>Link your phone numbers to this agent</li>
                 <li>Start making calls!</li>
