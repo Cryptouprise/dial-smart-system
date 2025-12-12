@@ -12,49 +12,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant. Be EXTREMELY BRIEF.
+const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant. Be EXTREMELY BRIEF and ALWAYS confirm what you did.
 
 ## GOLDEN RULES
 1. MAX 3-4 sentences per response
-2. NO walls of text - users hate reading
+2. ALWAYS tell user what you actually did (use tool results)
 3. PICK the best option and suggest it, don't list everything
 4. Ask ONE question, get ONE answer, move on
-5. NEVER repeat yourself or summarize what you found twice
+5. When user asks about settings, ALWAYS call get_all_settings first
+
+## READING SETTINGS
+When user asks "what are my settings?" or "show me my config":
+1. Call get_all_settings tool
+2. Show them the formatted results
+3. Ask if they want to change anything
+
+## AFTER ACTIONS - BE SPECIFIC
+✅ GOOD: "Done! Created campaign 'Solar Outreach' with 50 calls/min. It's in draft mode - say 'launch it' when ready."
+❌ BAD: "I've processed your request."
+
+✅ GOOD: "Your AMD is now ON. Also enabled: local presence, DNC check. Disabled: timezone compliance."
+❌ BAD: "Settings updated."
 
 ## VOICE BROADCAST SETUP
-After discover_phone_setup returns, respond EXACTLY like this:
-
-"Got 46 numbers. I'll use +1234567890.
-What's your message? (I'll convert text to audio)"
-
-That's IT. Two sentences. Don't list all providers. Don't explain what you found.
-
-## BAD vs GOOD EXAMPLES
-
-❌ BAD (walls of text):
-"I've initiated the setup process for your voice broadcast. To begin, I checked...
-Here's what I found:
-- Twilio: You have 46 phone numbers available through Twilio
-- Retell: There were 0 numbers found because..."
-
-✅ GOOD:
-"Got 46 numbers. I'll use +15551234567. What's your message?"
-
-❌ BAD: "Important Warning: I identified 1 phone number that is currently connected to GoHighLevel..."
-✅ GOOD: "(Skipping +19049214971 - it's on GHL)"
-
-❌ BAD: Mentioning Retell credentials when user wants a simple broadcast
-✅ GOOD: Don't mention it at all - they don't need Retell for broadcasts
-
-## WARNINGS (parenthetical, one line max)
-- GHL number: "(Skipping +1234567890 - GHL)"  
-- Missing Retell: Only mention IF they ask for AI campaigns
+After discover_phone_setup returns:
+"Got 46 numbers. I'll use +1234567890. What's your message? (I'll convert text to audio)"
 
 ## AFTER GETTING MESSAGE
 "Done! Created 'My Broadcast'. Go to Voice Broadcast tab to add leads and launch."
 
 ## TOOLS (use immediately, explain nothing)
-- discover_phone_setup: ALWAYS call first
+- get_all_settings: Call when user asks about settings/config
+- discover_phone_setup: ALWAYS call first for phone/campaign setup
 - quick_voice_broadcast: Create broadcast
 - All others: just use them
 
@@ -63,9 +52,21 @@ Here's what I found:
 - Hours: 9 AM - 5 PM  
 - Pace: 50/min
 
-SHORT. PICK FOR THEM. ONE QUESTION. GO.`;
+SHORT. CONFIRM ACTIONS. BE SPECIFIC.`;
+
 
 const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "get_all_settings",
+      description: "Get all current system settings and configurations. Call this when user asks about their settings, configuration, or what's enabled.",
+      parameters: {
+        type: "object",
+        properties: {}
+      }
+    }
+  },
   {
     type: "function",
     function: {
@@ -469,6 +470,46 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
   console.log(`[AI Assistant] Executing: ${toolName}`, args);
   
   switch (toolName) {
+    case 'get_all_settings': {
+      // Fetch all settings from various tables
+      const [dialerSettings, aiSmsSettings, rotationSettings, budgetSettings] = await Promise.all([
+        supabase.from('advanced_dialer_settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('ai_sms_settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('rotation_settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('budget_settings').select('*').eq('user_id', userId).maybeSingle(),
+      ]);
+      
+      const settings = {
+        dialer: dialerSettings.data || { enable_amd: false, enable_local_presence: false, enable_timezone_compliance: true, enable_dnc_check: true },
+        ai_sms: aiSmsSettings.data || { enabled: false, auto_response_enabled: false, ai_personality: 'professional' },
+        rotation: rotationSettings.data || { enabled: false },
+        budget: budgetSettings.data || { daily_limit: null, monthly_limit: null },
+      };
+      
+      const summary = `📊 **Current Settings:**
+      
+**Dialer:**
+• AMD Detection: ${settings.dialer.enable_amd ? '✅ ON' : '❌ OFF'}
+• Local Presence: ${settings.dialer.enable_local_presence ? '✅ ON' : '❌ OFF'}  
+• Timezone Compliance: ${settings.dialer.enable_timezone_compliance ? '✅ ON' : '❌ OFF'}
+• DNC Check: ${settings.dialer.enable_dnc_check ? '✅ ON' : '❌ OFF'}
+• AMD Sensitivity: ${settings.dialer.amd_sensitivity || 'medium'}
+
+**AI SMS:**
+• AI SMS: ${settings.ai_sms.enabled ? '✅ ON' : '❌ OFF'}
+• Auto-Response: ${settings.ai_sms.auto_response_enabled ? '✅ ON' : '❌ OFF'}
+• Personality: ${settings.ai_sms.ai_personality || 'professional'}
+
+**Number Rotation:**
+• Rotation: ${settings.rotation.enabled ? '✅ ON' : '❌ OFF'}
+
+**Budget:**
+• Daily Limit: ${settings.budget.daily_limit ? `$${settings.budget.daily_limit}` : 'Not set'}
+• Monthly Limit: ${settings.budget.monthly_limit ? `$${settings.budget.monthly_limit}` : 'Not set'}`;
+
+      return { success: true, message: summary, data: settings };
+    }
+
     case 'toggle_setting': {
       const { setting_name, enabled } = args;
       const settingMap: Record<string, { table: string, column: string }> = {
