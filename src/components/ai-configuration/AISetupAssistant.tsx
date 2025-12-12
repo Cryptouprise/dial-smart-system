@@ -94,7 +94,7 @@ export const AISetupAssistant: React.FC = () => {
 
   if (showChat) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full flex flex-col min-h-[600px]">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
             <Sparkles className="h-6 w-6 text-primary" />
@@ -110,10 +110,11 @@ export const AISetupAssistant: React.FC = () => {
           </Button>
         </div>
         
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden p-4">
           <AIAssistantChat 
             initialMessage={initialMessage}
             configurationMode={true}
+            embedded={true}
           />
         </div>
       </div>
