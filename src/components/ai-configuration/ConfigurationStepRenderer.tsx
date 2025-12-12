@@ -142,21 +142,30 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
                 🤖 AI Agent Setup
               </h3>
               <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
-                Create an AI voice agent to handle your outbound calls automatically.
+                Create or configure an AI voice agent to handle your outbound calls automatically.
               </p>
-              <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-2 mb-4">
-                <li>• Go to the <strong>AI Agents</strong> tab in the dashboard</li>
-                <li>• Click "Create New Agent" to set up your first agent</li>
-                <li>• Configure the voice, personality, and script</li>
-                <li>• Test your agent before using it in campaigns</li>
-              </ul>
+              <div className="space-y-3">
+                <Button 
+                  onClick={() => {
+                    setHasInteracted(true);
+                    // Navigate to Retell AI tab
+                    window.location.href = '/?tab=retell';
+                  }}
+                  className="w-full"
+                >
+                  Open Retell AI Manager to Create Agent
+                </Button>
+                <p className="text-xs text-blue-600 dark:text-blue-400 text-center">
+                  The Retell AI Manager lets you create, configure, and test AI voice agents.
+                </p>
+              </div>
             </div>
             <Separator />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
               onSkip={onSkip}
               hasInteracted={true}
-              tip="You can create AI agents from the AI Agents tab."
+              tip="Create your first agent in the Retell AI Manager, then come back to continue setup."
             />
           </div>
         );
