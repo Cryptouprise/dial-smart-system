@@ -268,11 +268,15 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       // Get current user ID for action execution
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      // Use configuration-specific endpoint in configuration mode
+      const functionName = configurationMode ? 'ai-configuration-complete' : 'ai-assistant';
+      
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body: { 
           message: messageText.trim(),
           conversationHistory,
           userId: user?.id,
+          mode: configurationMode ? 'configuration' : 'general',
         },
       });
 

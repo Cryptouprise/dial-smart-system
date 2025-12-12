@@ -283,10 +283,44 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
             <CardTitle>Welcome to Dial Smart!</CardTitle>
           </div>
           <CardDescription>
-            Let's get your dialer system set up in 10-15 minutes. First, tell me what you'll be using it for.
+            Let's get your dialer system set up. Choose how you'd like to proceed.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
+          {/* AI Setup Option */}
+          <Card className="border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <Sparkles className="h-8 w-8 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg">AI-Guided Setup (Recommended)</h3>
+                  <p className="text-sm text-muted-foreground mt-1 mb-3">
+                    Tell me what you need and I'll configure everything for you. Just describe your use case in plain English.
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      window.location.href = '/?tab=ai-setup';
+                    }}
+                    className="gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Start AI Setup Assistant
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="relative">
+            <Separator />
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-sm text-muted-foreground">
+              or choose a template
+            </span>
+          </div>
+
+          {/* Template Options */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { id: 'cold_calling', title: 'Cold Calling / Sales', icon: <Phone />, desc: 'Outbound sales calls' },

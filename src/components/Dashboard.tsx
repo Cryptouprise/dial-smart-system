@@ -37,6 +37,7 @@ import QuickStartCards from '@/components/QuickStartCards';
 import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import { BudgetManager } from '@/components/BudgetManager';
 import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
+import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
@@ -365,6 +366,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Budget Manager"><BudgetManager /></TabErrorBoundary>;
       case 'onboarding':
         return <TabErrorBoundary tabName="Setup Wizard"><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></TabErrorBoundary>;
+      case 'ai-setup':
+        return <TabErrorBoundary tabName="AI Setup"><AISetupAssistant /></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
