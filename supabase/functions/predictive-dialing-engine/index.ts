@@ -179,12 +179,54 @@ serve(async (req) => {
 
         if (updateError) throw updateError;
 
+        // === AUTO-ENROLL LEADS IN WORKFLOW IF CAMPAIGN HAS ONE ===
+        if (campaign.workflow_id) {
+          console.log(`[Dialing] Campaign has workflow ${campaign.workflow_id}, auto-enrolling ${callableLeads.length} leads`);
+          
+          let enrolledCount = 0;
+          for (const cl of callableLeads) {
+            const leadId = cl.leads?.id;
+            if (!leadId) continue;
+
+            // Check if lead is already in this workflow
+            const { data: existingProgress } = await supabase
+              .from('lead_workflow_progress')
+              .select('id')
+              .eq('lead_id', leadId)
+              .eq('workflow_id', campaign.workflow_id)
+              .in('status', ['active', 'paused'])
+              .maybeSingle();
+
+            if (!existingProgress) {
+              // Enroll lead in workflow
+              const { error: workflowError } = await supabase.functions.invoke('workflow-executor', {
+                body: {
+                  action: 'start_workflow',
+                  userId: user.id,
+                  leadId: leadId,
+                  workflowId: campaign.workflow_id,
+                  campaignId: campaignId,
+                }
+              });
+
+              if (!workflowError) {
+                enrolledCount++;
+              } else {
+                console.error(`[Dialing] Failed to enroll lead ${leadId} in workflow:`, workflowError);
+              }
+            }
+          }
+          
+          console.log(`[Dialing] Enrolled ${enrolledCount} leads in workflow ${campaign.workflow_id}`);
+        }
+
         return new Response(
           JSON.stringify({ 
             success: true,
             campaign_id: campaignId,
             leads_queued: queueEntries.length,
-            message: `Campaign started with ${queueEntries.length} leads queued`
+            workflow_id: campaign.workflow_id || null,
+            message: `Campaign started with ${queueEntries.length} leads queued${campaign.workflow_id ? ' and enrolled in workflow' : ''}`
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
