@@ -81,7 +81,7 @@ serve(async (req) => {
             status: 'draft'
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (profileError) throw profileError;
         result = profile;
@@ -111,7 +111,7 @@ serve(async (req) => {
             submitted_at: new Date().toISOString()
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (verificationError) throw verificationError;
 
@@ -137,7 +137,7 @@ serve(async (req) => {
             submitted_at: new Date().toISOString()
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (brandedError) throw brandedError;
         result = branded;

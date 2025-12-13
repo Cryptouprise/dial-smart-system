@@ -94,7 +94,7 @@ const QuickTestCampaign = () => {
             status: 'new'
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (leadError) throw leadError;
         leadId = newLead.id;

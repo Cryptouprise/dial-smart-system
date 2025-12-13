@@ -98,7 +98,7 @@ export const LiveCampaignMonitor: React.FC = () => {
       .from('campaigns')
       .select('*')
       .eq('id', selectedCampaignId)
-      .single();
+      .maybeSingle();
     setSelectedCampaign(campaign);
 
     // Get recent calls

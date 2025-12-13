@@ -320,7 +320,7 @@ serve(async (req) => {
           unread_count: 1,
         })
         .select('id')
-        .single();
+        .maybeSingle();
 
       if (newConv) {
         conversationId = newConv.id;
@@ -368,7 +368,7 @@ serve(async (req) => {
         },
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (msgError) {
       console.error('[Twilio SMS Webhook] Failed to store message:', msgError);

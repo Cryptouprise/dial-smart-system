@@ -523,7 +523,7 @@ async function executeToolCall(
             active: true
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -608,7 +608,7 @@ async function executeToolCall(
             status: 'draft'
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -663,7 +663,7 @@ async function executeToolCall(
           .update(args.updates)
           .eq('id', campaignId)
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         return { success: true, result: { campaign: data, message: 'Campaign updated' }, location: LOCATION_MAP.campaigns.route };
@@ -703,7 +703,7 @@ async function executeToolCall(
             .eq('user_id', userId)
             .eq('status', 'active')
             .limit(1)
-            .single();
+            .maybeSingle();
           fromNumber = numbers?.number;
         }
 
@@ -807,7 +807,7 @@ async function executeToolCall(
             .select('id')
             .eq('user_id', userId)
             .ilike('name', `%${args.campaign_name}%`)
-            .single();
+            .maybeSingle();
           campaignId = data?.id;
         }
 
@@ -846,7 +846,7 @@ async function executeToolCall(
             enabled: true
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -983,7 +983,7 @@ async function executeToolCall(
           .eq('can_undo', true)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (!lastAction) {
           return { success: false, result: { error: 'No undoable action in this session' } };
@@ -1035,7 +1035,7 @@ async function executeToolCall(
             status: 'draft'
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
 

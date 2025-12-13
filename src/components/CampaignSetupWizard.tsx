@@ -112,7 +112,7 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
           status: 'draft'
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

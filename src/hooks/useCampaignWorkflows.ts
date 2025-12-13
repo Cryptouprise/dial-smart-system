@@ -130,7 +130,7 @@ export function useCampaignWorkflows() {
           active: workflow.active ?? true
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (workflowError) throw workflowError;
 
