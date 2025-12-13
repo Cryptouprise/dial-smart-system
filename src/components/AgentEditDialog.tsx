@@ -1258,10 +1258,76 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                     </h4>
                     <ol className="mt-2 text-sm text-green-700 dark:text-green-300 space-y-2 list-decimal list-inside">
                       <li>Go to <strong>Settings → Calendar</strong> and connect your Google Calendar</li>
-                      <li>Copy the custom function configuration below</li>
-                      <li>In Retell Dashboard, go to your agent → Functions → Add Custom Function</li>
-                      <li>Paste the configuration and save</li>
+                      <li>Click <strong>Test Calendar Connection</strong> below</li>
+                      <li>If the test fails, click <strong>Fix in Settings</strong> and then re-test</li>
+                      <li>Once it passes, you&apos;re ready to let the agent book appointments</li>
                     </ol>
+                  </div>
+
+                  {/* Calendar Test Button (moved up so it&apos;s always visible) */}
+                  <div className="p-4 border rounded-lg space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <Label className="font-medium">Test Calendar Connection</Label>
+                        <p className="text-xs text-muted-foreground">
+                          One-click test to confirm your Google Calendar is connected and returning availability
+                        </p>
+                      </div>
+                      <Button
+                        variant={calendarTestStatus === 'success' ? 'default' : 'outline'}
+                        onClick={testCalendarConnection}
+                        disabled={calendarTestStatus === 'testing'}
+                        className={calendarTestStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : ''}
+                      >
+                        {calendarTestStatus === 'testing' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Testing...
+                          </>
+                        ) : calendarTestStatus === 'success' ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Connected
+                          </>
+                        ) : calendarTestStatus === 'error' ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Retry Test
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-2" />
+                            Test Connection
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    
+                    {calendarTestMessage && (
+                      <div className={`text-sm p-2 rounded ${
+                        calendarTestStatus === 'success' 
+                          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' 
+                          : calendarTestStatus === 'error'
+                          ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {calendarTestStatus === 'error' && <AlertCircle className="h-4 w-4 inline mr-1" />}
+                        {calendarTestStatus === 'success' && <CheckCircle2 className="h-4 w-4 inline mr-1" />}
+                        {calendarTestMessage}
+
+                        {calendarTestStatus === 'error' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-2"
+                            onClick={() => window.open('/settings', '_blank')}
+                          >
+                            <Calendar className="h-3 w-3 mr-1" />
+                            Fix in Settings
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -1334,60 +1400,6 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       <Copy className="h-4 w-4 mr-2" />
                       Copy Configuration
                     </Button>
-                  </div>
-
-                  {/* Calendar Test Button */}
-                  <div className="p-4 border rounded-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="font-medium">Test Calendar Connection</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Verify your Google Calendar is properly connected and working
-                        </p>
-                      </div>
-                      <Button
-                        variant={calendarTestStatus === 'success' ? 'default' : 'outline'}
-                        onClick={testCalendarConnection}
-                        disabled={calendarTestStatus === 'testing'}
-                        className={calendarTestStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : ''}
-                      >
-                        {calendarTestStatus === 'testing' ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Testing...
-                          </>
-                        ) : calendarTestStatus === 'success' ? (
-                          <>
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Connected
-                          </>
-                        ) : calendarTestStatus === 'error' ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            Retry Test
-                          </>
-                        ) : (
-                          <>
-                            <Play className="h-4 w-4 mr-2" />
-                            Test Connection
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                    
-                    {calendarTestMessage && (
-                      <div className={`text-sm p-2 rounded ${
-                        calendarTestStatus === 'success' 
-                          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' 
-                          : calendarTestStatus === 'error'
-                          ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {calendarTestStatus === 'error' && <AlertCircle className="h-4 w-4 inline mr-1" />}
-                        {calendarTestStatus === 'success' && <CheckCircle2 className="h-4 w-4 inline mr-1" />}
-                        {calendarTestMessage}
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex gap-2">
