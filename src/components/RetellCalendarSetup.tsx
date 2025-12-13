@@ -194,6 +194,191 @@ const GoogleCalendarConnect: React.FC = () => {
   );
 };
 
+// Availability Status Component
+const AvailabilityStatus: React.FC = () => {
+  const [availability, setAvailability] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadAvailability();
+  }, []);
+
+  const loadAvailability = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      setUserId(user.id);
+
+      const { data } = await supabase
+        .from('calendar_availability')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      setAvailability(data);
+    } catch (error) {
+      console.error('Error loading availability:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-4">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+
+  const formatSchedule = (schedule: any) => {
+    if (!schedule) return 'Not configured';
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const activeDays = days.filter(d => schedule[d]?.length > 0);
+    if (activeDays.length === 0) return 'No availability set';
+    
+    const dayNames = activeDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3));
+    const firstSlot = schedule[activeDays[0]]?.[0];
+    return `${dayNames.join(', ')} · ${firstSlot?.start || '09:00'} - ${firstSlot?.end || '17:00'}`;
+  };
+
+  return (
+    <Alert className={availability ? "border-green-200 bg-green-50 dark:bg-green-950/20" : "border-amber-200 bg-amber-50 dark:bg-amber-950/20"}>
+      <Calendar className={`h-4 w-4 ${availability ? 'text-green-600' : 'text-amber-600'}`} />
+      <AlertDescription>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <strong className={availability ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'}>
+              {availability ? 'Availability Configured' : 'No Availability Set'}
+            </strong>
+            <Button variant="outline" size="sm" onClick={() => window.location.href = '/?tab=calendar'}>
+              Edit Availability
+            </Button>
+          </div>
+          {availability && (
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p><strong>Schedule:</strong> {formatSchedule(availability.weekly_schedule)}</p>
+              <p><strong>Timezone:</strong> {availability.timezone}</p>
+              <p><strong>Meeting Duration:</strong> {availability.default_meeting_duration} mins</p>
+              <p className="font-mono text-xs mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded">
+                <strong>Your User ID:</strong> {userId}
+              </p>
+            </div>
+          )}
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+};
+
+// Retell Function Config with User ID
+const RetellFunctionConfig: React.FC = () => {
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
+    };
+    getUser();
+  }, []);
+
+  const functionConfig = `{
+  "name": "manage_calendar",
+  "description": "Check availability and book/cancel appointments. Always call get_available_slots first before booking.",
+  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
+        "description": "The calendar action to perform"
+      },
+      "user_id": {
+        "type": "string",
+        "description": "The user ID - always use: ${userId || 'YOUR_USER_ID'}",
+        "default": "${userId || 'YOUR_USER_ID'}"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date in YYYY-MM-DD format"
+      },
+      "time": {
+        "type": "string", 
+        "description": "Time in HH:MM format (24-hour)"
+      },
+      "duration_minutes": {
+        "type": "number",
+        "description": "Meeting duration in minutes (default 30)"
+      },
+      "attendee_name": {
+        "type": "string",
+        "description": "Name of the person booking"
+      },
+      "attendee_email": {
+        "type": "string",
+        "description": "Email of the person booking"
+      },
+      "attendee_phone": {
+        "type": "string",
+        "description": "Phone number of the person booking"
+      },
+      "title": {
+        "type": "string",
+        "description": "Meeting title/subject"
+      }
+    },
+    "required": ["action", "user_id"]
+  },
+  "speak_during_execution": true,
+  "speak_after_execution": true
+}`;
+
+  const copyConfig = () => {
+    navigator.clipboard.writeText(functionConfig);
+    toast.success('Configuration copied! Paste this in your Retell agent.');
+  };
+
+  return (
+    <div className="space-y-3">
+      <Label className="flex items-center gap-2">
+        Retell Function Configuration
+        <Badge variant="secondary" className="text-xs">Includes your User ID</Badge>
+      </Label>
+      
+      {!userId && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            Loading your user ID... Make sure you're logged in.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+        <pre className="text-sm font-mono whitespace-pre-wrap">{functionConfig}</pre>
+      </div>
+      
+      <div className="flex gap-2">
+        <Button onClick={copyConfig} className="flex-1">
+          <Copy className="h-4 w-4 mr-2" />
+          Copy Full Configuration
+        </Button>
+      </div>
+      
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-sm">
+          <strong>Important:</strong> The <code className="bg-muted px-1 rounded">user_id</code> field is required for the calendar function to find your availability settings. Make sure it's included when you paste this into Retell.
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+};
+
 export const RetellCalendarSetup: React.FC = () => {
   const [config, setConfig] = useState<CalendarConfig>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -511,6 +696,9 @@ export const RetellCalendarSetup: React.FC = () => {
           <TabsContent value="google" className="space-y-6 mt-6">
             <GoogleCalendarConnect />
 
+            {/* Current Availability Settings */}
+            <AvailabilityStatus />
+
             {/* Setup Guide for Google Calendar */}
             <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 space-y-4">
               <h4 className="font-semibold flex items-center gap-2">
@@ -566,106 +754,8 @@ export const RetellCalendarSetup: React.FC = () => {
               </div>
             </div>
 
-            {/* Function Configuration */}
-            <div className="space-y-3">
-              <Label>Retell Function Configuration (Copy this)</Label>
-              <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
-                <pre className="text-sm font-mono whitespace-pre-wrap">{`{
-  "name": "manage_calendar",
-  "description": "Check availability and book/cancel appointments on Google Calendar",
-  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
-        "description": "The calendar action to perform"
-      },
-      "date": {
-        "type": "string",
-        "description": "Date in YYYY-MM-DD format"
-      },
-      "time": {
-        "type": "string", 
-        "description": "Time in HH:MM format (24-hour)"
-      },
-      "duration_minutes": {
-        "type": "number",
-        "description": "Meeting duration in minutes (default 30)"
-      },
-      "attendee_name": {
-        "type": "string",
-        "description": "Name of the person booking"
-      },
-      "attendee_email": {
-        "type": "string",
-        "description": "Email of the person booking"
-      },
-      "title": {
-        "type": "string",
-        "description": "Meeting title/subject"
-      }
-    },
-    "required": ["action"]
-  },
-  "speak_during_execution": true,
-  "speak_after_execution": true
-}`}</pre>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  navigator.clipboard.writeText(`{
-  "name": "manage_calendar",
-  "description": "Check availability and book/cancel appointments on Google Calendar",
-  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
-        "description": "The calendar action to perform"
-      },
-      "date": {
-        "type": "string",
-        "description": "Date in YYYY-MM-DD format"
-      },
-      "time": {
-        "type": "string", 
-        "description": "Time in HH:MM format (24-hour)"
-      },
-      "duration_minutes": {
-        "type": "number",
-        "description": "Meeting duration in minutes (default 30)"
-      },
-      "attendee_name": {
-        "type": "string",
-        "description": "Name of the person booking"
-      },
-      "attendee_email": {
-        "type": "string",
-        "description": "Email of the person booking"
-      },
-      "title": {
-        "type": "string",
-        "description": "Meeting title/subject"
-      }
-    },
-    "required": ["action"]
-  },
-  "speak_during_execution": true,
-  "speak_after_execution": true
-}`);
-                  toast.success('Configuration copied!');
-                }}
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Full Configuration
-              </Button>
-            </div>
+            {/* Function Configuration with User ID */}
+            <RetellFunctionConfig />
 
             {/* Open Retell Button */}
             <Button
