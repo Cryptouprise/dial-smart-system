@@ -93,7 +93,7 @@ serve(async (req) => {
             last_message_at: new Date().toISOString(),
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (createError) throw createError;
         conversationId = newConv.id;
@@ -128,7 +128,7 @@ serve(async (req) => {
           reaction_type: isReaction.reactionType,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (saveError) throw saveError;
 

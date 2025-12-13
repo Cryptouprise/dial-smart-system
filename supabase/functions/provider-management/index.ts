@@ -126,7 +126,7 @@ serve(async (req) => {
             config_json: request.config.config_json || {},
           })
           .select()
-          .single();
+          .maybeSingle();
         
         if (error) throw error;
         result = { provider: data, message: 'Provider added successfully' };
@@ -150,7 +150,7 @@ serve(async (req) => {
           .eq('id', request.provider_id)
           .eq('user_id', user.id)
           .select()
-          .single();
+          .maybeSingle();
         
         if (error) throw error;
         result = { provider: data, message: 'Provider updated successfully' };
@@ -233,7 +233,7 @@ serve(async (req) => {
           .select('id')
           .eq('user_id', user.id)
           .eq('name', request.provider_type)
-          .single();
+          .maybeSingle();
 
         if (!provider) {
           throw new Error(`Provider ${request.provider_type} not configured`);
@@ -252,7 +252,7 @@ serve(async (req) => {
             last_synced: new Date().toISOString(),
           })
           .select()
-          .single();
+          .maybeSingle();
         
         if (error) throw error;
         result = { number: data, message: 'Number imported successfully' };

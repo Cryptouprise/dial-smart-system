@@ -250,7 +250,7 @@ export const useAiSmsMessaging = () => {
           .from('ai_sms_settings')
           .insert([{ user_id: user.id }])
           .select()
-          .single();
+          .maybeSingle();
 
         if (createError) throw createError;
         setSettings(newSettings as AiSmsSettings);
@@ -273,7 +273,7 @@ export const useAiSmsMessaging = () => {
         .update(updates)
         .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

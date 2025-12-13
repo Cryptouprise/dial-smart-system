@@ -126,7 +126,7 @@ async function checkSingleNumber(supabase: any, phoneNumber?: string, phoneNumbe
       .from('phone_numbers')
       .select('*')
       .eq('id', phoneNumberId)
-      .single();
+      .maybeSingle();
     if (error) throw error;
     number = data;
   } else if (phoneNumber) {

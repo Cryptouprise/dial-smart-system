@@ -119,7 +119,7 @@ export function useNurtureTemplates() {
           active: true,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (workflowError) throw workflowError;
 
