@@ -31,11 +31,11 @@ Available step types:
 For each step, provide:
 - step_type: One of the above types
 - step_config: Configuration object with:
-  - For "call": { "max_attempts": number }
-  - For "sms": { "content": "message text", "use_ai": boolean }
+  - For "call": { "time_of_day": "HH:MM" (optional) }
+  - For "sms": { "sms_content": "message text" }
   - For "wait": { "delay_minutes": number, "delay_hours": number, "delay_days": number, "time_of_day": "HH:MM" (optional, for scheduling at specific time) }
-  - For "ai_sms": { "ai_prompt": "instructions for AI", "fallback_content": "backup message" }
-  - For "condition": { "condition_type": "response_received|no_response|disposition", "value": string }
+  - For "ai_sms": { "sms_content": "instructions for AI or fallback message", "ai_prompt": "detailed AI instructions" }
+  - For "condition": { "condition_type": "disposition|lead_status|call_outcome|attempts", "condition_operator": "equals|not_equals", "condition_value": string, "then_action": "continue|skip|end_workflow", "else_action": "continue|skip|end_workflow" }
 
 IMPORTANT RULES:
 1. Always start with a call step for calling campaigns
@@ -45,6 +45,8 @@ IMPORTANT RULES:
 5. Include AI-personalized SMS for follow-ups when appropriate
 6. Generate engaging, professional SMS copy that sounds human
 7. For Saturday blasts, use time_of_day in wait steps
+8. ALWAYS use "sms_content" field for SMS message text (not "content" or "message")
+9. For ai_sms steps, include both "sms_content" (fallback) and "ai_prompt" (AI instructions)
 
 Respond with a JSON object containing:
 {

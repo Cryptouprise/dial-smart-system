@@ -366,8 +366,8 @@ async function executeSmsStep(supabase: any, lead: any, progress: any, config: a
       return { success: false, error: 'No SMS number available' };
     }
 
-    // Replace template variables in message
-    const messageBody = replaceTemplateVariables(config.content || config.message || '', lead);
+    // Replace template variables in message - check all possible field names
+    const messageBody = replaceTemplateVariables(config.sms_content || config.content || config.message || '', lead);
 
     // Call the sms-messaging function
     const response = await supabase.functions.invoke('sms-messaging', {
@@ -406,7 +406,7 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
       return { success: false, error: 'No SMS number available' };
     }
 
-    // Call the ai-sms-processor function
+    // Call the ai-sms-processor function - check all possible field names for prompt
     const response = await supabase.functions.invoke('ai-sms-processor', {
       body: {
         action: 'generate_and_send',
@@ -414,7 +414,7 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
         userId: progress.user_id,
         fromNumber: fromNumber,
         context: config.context || 'follow_up',
-        prompt: config.prompt || null,
+        prompt: config.ai_prompt || config.sms_content || config.prompt || null,
       },
     });
 

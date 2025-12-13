@@ -63,7 +63,8 @@ export const AIWorkflowGenerator = () => {
     if (!generatedWorkflow) return;
     const step = generatedWorkflow.steps[index];
     setEditingStepIndex(index);
-    setEditedContent(step.step_config.content || step.step_config.ai_prompt || '');
+    // Check all possible field names for content
+    setEditedContent(step.step_config.sms_content || step.step_config.content || step.step_config.ai_prompt || '');
   };
 
   const handleSaveStepEdit = () => {
@@ -72,10 +73,14 @@ export const AIWorkflowGenerator = () => {
     const updatedSteps = [...generatedWorkflow.steps];
     const step = updatedSteps[editingStepIndex];
     
-    if (step.step_config.content !== undefined) {
-      step.step_config.content = editedContent;
-    } else if (step.step_config.ai_prompt !== undefined) {
+    // Update the appropriate field based on step type
+    if (step.step_type === 'sms') {
+      step.step_config.sms_content = editedContent;
+    } else if (step.step_type === 'ai_sms') {
+      step.step_config.sms_content = editedContent;
       step.step_config.ai_prompt = editedContent;
+    } else if (step.step_config.content !== undefined) {
+      step.step_config.content = editedContent;
     }
     
     setGeneratedWorkflow({
@@ -272,12 +277,12 @@ export const AIWorkflowGenerator = () => {
                         </div>
                       ) : (
                         <>
-                          {step.step_config.content && (
+                          {(step.step_config.sms_content || step.step_config.content) && (
                             <p className="text-sm text-muted-foreground mt-1">
-                              "{step.step_config.content}"
+                              "{step.step_config.sms_content || step.step_config.content}"
                             </p>
                           )}
-                          {step.step_config.ai_prompt && (
+                          {step.step_config.ai_prompt && !step.step_config.sms_content && (
                             <p className="text-sm text-purple-600 mt-1">
                               AI: {step.step_config.ai_prompt}
                             </p>
@@ -286,7 +291,7 @@ export const AIWorkflowGenerator = () => {
                       )}
                     </div>
                     
-                    {(step.step_config.content || step.step_config.ai_prompt) && editingStepIndex !== index && (
+                    {(step.step_config.sms_content || step.step_config.content || step.step_config.ai_prompt) && editingStepIndex !== index && (
                       <Button
                         size="sm"
                         variant="ghost"
