@@ -11,6 +11,8 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCalendarIntegration, CalendarIntegration, CalendarAppointment } from '@/hooks/useCalendarIntegration';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Calendar, Clock, Link, RefreshCw, Plus, Settings, Check, X, 
   Video, MapPin, User, Phone, Mail, Trash2, Edit, ChevronRight,
@@ -26,6 +28,7 @@ const TIMEZONES = [
 ];
 
 export const CalendarIntegrationManager: React.FC = () => {
+  const { toast } = useToast();
   const {
     integrations,
     availability,
@@ -135,13 +138,42 @@ export const CalendarIntegrationManager: React.FC = () => {
           <CardContent>
             {googleIntegration ? (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">{googleIntegration.provider_account_email}</p>
+                <p className="text-sm text-muted-foreground">
+                  {googleIntegration.provider_account_email || googleIntegration.calendar_name || 'Connected'}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   Last sync: {googleIntegration.last_sync_at 
                     ? format(new Date(googleIntegration.last_sync_at), 'MMM d, h:mm a')
                     : 'Never'}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  <Button 
+                    size="sm" 
+                    variant="default"
+                    onClick={async () => {
+                      try {
+                        const { data, error } = await supabase.functions.invoke('calendar-integration', {
+                          body: { action: 'test_google_calendar' }
+                        });
+                        if (error) throw error;
+                        if (data.error) throw new Error(data.error);
+                        window.open(data.eventLink, '_blank');
+                        toast({
+                          title: 'Test Event Created!',
+                          description: 'Check your Google Calendar - a test event was added.',
+                        });
+                      } catch (err: any) {
+                        toast({
+                          title: 'Test Failed',
+                          description: err.message || 'Could not create test event',
+                          variant: 'destructive'
+                        });
+                      }
+                    }}
+                  >
+                    <Calendar className="h-4 w-4 mr-1" />
+                    Test Calendar
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => disconnectIntegration(googleIntegration.id)}>
                     Disconnect
                   </Button>
