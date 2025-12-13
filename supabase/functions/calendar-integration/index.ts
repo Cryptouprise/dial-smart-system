@@ -698,6 +698,97 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
+
+      case 'test_google_calendar': {
+        if (!userId) {
+          return new Response(
+            JSON.stringify({ error: 'Authentication required' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get the Google Calendar integration
+        const { data: integration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (!integration || !integration.access_token_encrypted) {
+          return new Response(
+            JSON.stringify({ error: 'Google Calendar not connected' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const accessToken = atob(integration.access_token_encrypted);
+
+        // Create a test event 1 hour from now
+        const startTime = new Date(Date.now() + 60 * 60 * 1000);
+        const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+
+        const testEvent = {
+          summary: '🧪 Test Event - AI Dialer',
+          description: 'This is a test event created by your AI Dialer to verify Google Calendar integration is working correctly. You can delete this event.',
+          start: {
+            dateTime: startTime.toISOString(),
+            timeZone: 'America/New_York'
+          },
+          end: {
+            dateTime: endTime.toISOString(),
+            timeZone: 'America/New_York'
+          }
+        };
+
+        const calendarId = integration.calendar_id || 'primary';
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(testEvent)
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Google Calendar API error:', errorText);
+          return new Response(
+            JSON.stringify({ error: 'Failed to create test event. Token may be expired.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const createdEvent = await response.json();
+        
+        // Update last_sync_at
+        await supabase
+          .from('calendar_integrations')
+          .update({ last_sync_at: new Date().toISOString() })
+          .eq('id', integration.id);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'Test event created successfully!',
+            eventId: createdEvent.id,
+            eventLink: createdEvent.htmlLink,
+            startTime: startTime.toISOString()
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      default:
+        return new Response(
+          JSON.stringify({ error: `Unknown action: ${action}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
   } catch (error) {
     console.error('Calendar integration error:', error);
     return new Response(
