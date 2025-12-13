@@ -1310,10 +1310,19 @@ serve(async (req) => {
           onConflict: 'user_id,insight_date'
         });
 
+      // Safely parse tool results
+      const parsedToolResults = toolResults.map(tr => {
+        try {
+          return JSON.parse(tr.content);
+        } catch {
+          return { raw: tr.content, parseError: true };
+        }
+      });
+
       return new Response(
         JSON.stringify({
           content: finalContent,
-          toolResults: toolResults.map(tr => JSON.parse(tr.content)),
+          toolResults: parsedToolResults,
           responseId: crypto.randomUUID()
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

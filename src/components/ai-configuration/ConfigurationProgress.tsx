@@ -90,7 +90,7 @@ export const ConfigurationProgress: React.FC<ConfigurationProgressProps> = ({
   const completedSteps = steps.filter(s => s.status === 'completed').length;
   const failedSteps = steps.filter(s => s.status === 'failed').length;
   const totalSteps = steps.length;
-  const progress = (completedSteps / totalSteps) * 100;
+  const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
   const allComplete = completedSteps + failedSteps === totalSteps;
   const hasErrors = failedSteps > 0;
 
