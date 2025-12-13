@@ -484,7 +484,7 @@ export const TOOL_IMPLEMENTATIONS = {
         .from('campaign_workflows')
         .select('*, workflow_steps(*)')
         .eq('id', workflow_id)
-        .single();
+        .maybeSingle();
       workflow = data;
     } else if (workflow_name) {
       const { data } = await supabase
@@ -492,7 +492,7 @@ export const TOOL_IMPLEMENTATIONS = {
         .select('*, workflow_steps(*)')
         .eq('user_id', userId)
         .ilike('name', workflow_name)
-        .single();
+        .maybeSingle();
       workflow = data;
     }
 
