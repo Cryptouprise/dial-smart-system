@@ -413,7 +413,7 @@ serve(async (req) => {
       .select('*')
       .eq('id', broadcastId)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (broadcastError || !broadcast) {
       throw new Error('Broadcast not found or access denied');
@@ -779,7 +779,7 @@ serve(async (req) => {
             .from('voice_broadcasts')
             .select('status')
             .eq('id', broadcastId)
-            .single();
+            .maybeSingle();
           
           if (currentBroadcast?.status === 'active') {
             console.log(`Auto-completing broadcast ${broadcastId} - all calls finished`);
@@ -821,9 +821,10 @@ serve(async (req) => {
           .from('broadcast_queue')
           .select('phone_number, lead_id')
           .eq('id', queueItemId)
-          .single();
+          .maybeSingle();
 
         if (queueItemError) throw queueItemError;
+        if (!queueItem) throw new Error('Queue item not found');
 
         switch (dtmfAction.action) {
           case 'transfer':

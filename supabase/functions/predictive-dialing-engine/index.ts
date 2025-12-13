@@ -95,7 +95,7 @@ serve(async (req) => {
       .select('*')
       .eq('id', campaignId)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (campaignError || !campaign) {
       return new Response(
