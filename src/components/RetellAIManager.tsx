@@ -14,7 +14,7 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX } from 'lucide-react';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -28,6 +28,7 @@ interface Agent {
   agent_id: string;
   agent_name: string;
   voice_id?: string;
+  hasCalendarFunction?: boolean;
 }
 
 interface RetellLLM {
@@ -90,7 +91,22 @@ const RetellAIManager = () => {
         }
         return acc;
       }, []);
-      setAgents(uniqueAgents);
+      
+      // Check each agent for calendar function
+      const agentsWithCalendarStatus = await Promise.all(
+        uniqueAgents.map(async (agent: any) => {
+          try {
+            const details = await getAgent(agent.agent_id);
+            const hasCalendarFunction = details?.functions?.some(
+              (fn: any) => fn.name === 'manage_calendar'
+            ) || false;
+            return { ...agent, hasCalendarFunction };
+          } catch {
+            return { ...agent, hasCalendarFunction: false };
+          }
+        })
+      );
+      setAgents(agentsWithCalendarStatus);
     }
     if (llmsData) setLlms(llmsData);
   };
@@ -370,6 +386,17 @@ const RetellAIManager = () => {
                           <Badge variant="outline" className="font-mono text-xs">
                             {agent.agent_id}
                           </Badge>
+                          {agent.hasCalendarFunction ? (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700">
+                              <CalendarCheck className="h-3 w-3 mr-1" />
+                              Calendar Connected
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              <CalendarX className="h-3 w-3 mr-1" />
+                              No Calendar
+                            </Badge>
+                          )}
                         </div>
                         {agent.voice_id && (
                           <p className="text-sm text-muted-foreground mt-1">
