@@ -35,6 +35,113 @@ interface GoogleIntegration {
   calendarName?: string;
 }
 
+// Calendar Test Result Component
+const CalendarTestButton: React.FC = () => {
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    details?: any;
+    step?: string;
+  } | null>(null);
+
+  const runTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('calendar-integration', {
+        body: { action: 'test_google_calendar' }
+      });
+
+      if (error) throw error;
+      
+      setTestResult(data);
+      
+      if (data.success) {
+        toast.success('Calendar test passed!');
+      } else {
+        toast.error(data.error || 'Calendar test failed');
+      }
+    } catch (error: any) {
+      console.error('Calendar test error:', error);
+      setTestResult({
+        success: false,
+        error: error.message || 'Failed to test calendar connection'
+      });
+      toast.error('Calendar test failed');
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Button
+        onClick={runTest}
+        disabled={isTesting}
+        variant="outline"
+        className="w-full"
+      >
+        {isTesting ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Testing Calendar...
+          </>
+        ) : (
+          <>
+            <Zap className="h-4 w-4 mr-2" />
+            Test Calendar Connection
+          </>
+        )}
+      </Button>
+
+      {testResult && (
+        <Alert className={testResult.success ? "border-green-500 bg-green-50 dark:bg-green-950/20" : "border-red-500 bg-red-50 dark:bg-red-950/20"}>
+          {testResult.success ? (
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          ) : (
+            <Info className="h-4 w-4 text-red-600" />
+          )}
+          <AlertDescription>
+            {testResult.success ? (
+              <div className="space-y-2">
+                <strong className="text-green-700 dark:text-green-400">✓ Calendar Ready for AI Agent!</strong>
+                <div className="text-sm text-muted-foreground grid grid-cols-2 gap-1">
+                  <span>Calendar:</span>
+                  <span className="font-medium">{testResult.details?.calendarName}</span>
+                  <span>Email:</span>
+                  <span className="font-medium">{testResult.details?.email}</span>
+                  <span>Upcoming Events:</span>
+                  <span className="font-medium">{testResult.details?.upcomingEvents}</span>
+                  <span>Tomorrow Slots:</span>
+                  <span className="font-medium">{testResult.details?.tomorrowSlots}</span>
+                  <span>Meeting Duration:</span>
+                  <span className="font-medium">{testResult.details?.meetingDuration} min</span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <strong className="text-red-700 dark:text-red-400">✗ {testResult.error}</strong>
+                {testResult.step === 'connection' && (
+                  <p className="text-sm mt-1">Connect your Google Calendar above to enable AI booking.</p>
+                )}
+                {testResult.step === 'availability' && (
+                  <p className="text-sm mt-1">Set up your availability schedule first.</p>
+                )}
+                {testResult.step === 'token' && (
+                  <p className="text-sm mt-1">Your access token has expired. Please reconnect Google Calendar.</p>
+                )}
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+};
+
 // Google Calendar One-Click Connect Component
 const GoogleCalendarConnect: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -142,20 +249,25 @@ const GoogleCalendarConnect: React.FC = () => {
 
   if (integration.connected) {
     return (
-      <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
-        <CheckCircle className="h-4 w-4 text-green-600" />
-        <AlertDescription className="flex items-center justify-between">
-          <div>
-            <strong className="text-green-700 dark:text-green-400">Google Calendar Connected!</strong>
-            <p className="text-sm text-muted-foreground mt-1">
-              {integration.email} · {integration.calendarName}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={disconnectGoogle}>
-            Disconnect
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <div className="space-y-4">
+        <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="flex items-center justify-between">
+            <div>
+              <strong className="text-green-700 dark:text-green-400">Google Calendar Connected!</strong>
+              <p className="text-sm text-muted-foreground mt-1">
+                {integration.email} · {integration.calendarName}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={disconnectGoogle}>
+              Disconnect
+            </Button>
+          </AlertDescription>
+        </Alert>
+        
+        {/* Test Button */}
+        <CalendarTestButton />
+      </div>
     );
   }
 

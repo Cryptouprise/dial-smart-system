@@ -456,6 +456,129 @@ serve(async (req) => {
         );
       }
 
+      // ===== TEST GOOGLE CALENDAR CONNECTION =====
+      case 'test_google_calendar': {
+        if (!userId) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Authentication required' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('[Calendar] Testing Google Calendar connection for user:', userId);
+
+        // Check if Google Calendar is connected
+        const { data: integration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (!integration) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: 'Google Calendar not connected',
+              step: 'connection'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check if we have availability configured
+        const { data: availability } = await supabase
+          .from('calendar_availability')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!availability) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: 'No availability settings configured',
+              step: 'availability'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Try to fetch events from Google Calendar to verify token works
+        try {
+          const accessToken = atob(integration.access_token_encrypted);
+          const calendarId = integration.calendar_id || 'primary';
+          
+          const now = new Date();
+          const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+          
+          const eventsUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${now.toISOString()}&timeMax=${nextWeek.toISOString()}&maxResults=5`;
+          
+          const eventsResponse = await fetch(eventsUrl, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          });
+
+          if (!eventsResponse.ok) {
+            const errorData = await eventsResponse.json();
+            console.error('[Calendar] Google API error:', errorData);
+            
+            // Check if token expired
+            if (eventsResponse.status === 401) {
+              return new Response(
+                JSON.stringify({ 
+                  success: false, 
+                  error: 'Google Calendar token expired. Please reconnect.',
+                  step: 'token'
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+            
+            throw new Error(errorData.error?.message || 'Failed to fetch calendar events');
+          }
+
+          const eventsData = await eventsResponse.json();
+          const eventCount = eventsData.items?.length || 0;
+
+          // Calculate available slots for tomorrow to verify availability logic works
+          const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          const dayOfWeek = tomorrow.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+          const weeklySchedule = typeof availability.weekly_schedule === 'string' 
+            ? JSON.parse(availability.weekly_schedule) 
+            : availability.weekly_schedule;
+          const daySlots = weeklySchedule[dayOfWeek] || [];
+
+          console.log('[Calendar] Test successful - Events found:', eventCount, 'Slots for tomorrow:', daySlots.length);
+
+          return new Response(
+            JSON.stringify({ 
+              success: true,
+              message: 'Calendar connection verified!',
+              details: {
+                calendarName: integration.calendar_name,
+                email: integration.provider_account_email,
+                upcomingEvents: eventCount,
+                tomorrowSlots: daySlots.length,
+                timezone: availability.timezone,
+                meetingDuration: availability.default_meeting_duration
+              }
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+
+        } catch (error: any) {
+          console.error('[Calendar] Test failed:', error);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: error.message || 'Failed to verify calendar connection',
+              step: 'api'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
       // ===== CAL.COM INTEGRATION FOR RETELL =====
       case 'test_calcom': {
         if (!userId) {
