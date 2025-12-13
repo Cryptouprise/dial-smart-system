@@ -310,5 +310,48 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
         .update({ next_callback_at: callbackTime, status: 'callback' })
         .eq('id', leadId);
       break;
+
+    case 'book_appointment':
+      // Book appointment via calendar integration
+      if (config.title) {
+        const appointmentTime = config.start_time 
+          ? new Date(config.start_time).toISOString()
+          : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // Default: tomorrow
+        
+        const endTime = new Date(new Date(appointmentTime).getTime() + (config.duration_minutes || 30) * 60000).toISOString();
+        
+        const { data: leadData } = await supabase
+          .from('leads')
+          .select('first_name, last_name, email, phone_number')
+          .eq('id', leadId)
+          .maybeSingle();
+
+        // Create appointment in our system
+        await supabase.from('calendar_appointments').insert({
+          user_id: userId,
+          lead_id: leadId,
+          title: config.title || `Appointment with ${leadData?.first_name || 'Lead'}`,
+          start_time: appointmentTime,
+          end_time: endTime,
+          timezone: 'America/New_York',
+          status: 'scheduled',
+        });
+
+        // Sync to Google Calendar if connected
+        await supabase.functions.invoke('calendar-integration', {
+          body: {
+            action: 'book_appointment',
+            date: appointmentTime.split('T')[0],
+            time: appointmentTime.split('T')[1].substring(0, 5),
+            duration_minutes: config.duration_minutes || 30,
+            attendee_name: leadData ? `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() : 'Lead',
+            attendee_email: leadData?.email,
+            title: config.title || 'Appointment',
+          },
+        });
+
+        console.log(`Booked appointment for lead ${leadId}`);
+      }
+      break;
   }
 }
