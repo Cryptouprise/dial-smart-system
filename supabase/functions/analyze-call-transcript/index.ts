@@ -13,40 +13,39 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
     const authHeader = req.headers.get('Authorization')!
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user } } = await supabaseClient.auth.getUser(token)
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token)
 
     if (!user) {
       throw new Error('Unauthorized')
     }
 
-    const { callId, transcript, openaiApiKey } = await req.json()
+    const { callId, transcript } = await req.json()
 
-    if (!callId || !transcript || !openaiApiKey) {
-      throw new Error('Missing required parameters: callId, transcript, or openaiApiKey')
+    if (!callId || !transcript) {
+      throw new Error('Missing required parameters: callId and transcript')
     }
 
-    // Analyze transcript with OpenAI
-    const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured')
+    }
+
+    // Analyze transcript with Lovable AI
+    const analysisResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'system',
@@ -78,20 +77,30 @@ Respond with a JSON object containing:
             content: `Please analyze this call transcript and provide the disposition:\n\n${transcript}`
           }
         ],
-        temperature: 0.1,
-        max_tokens: 1000,
       }),
     })
 
     if (!analysisResponse.ok) {
-      throw new Error(`OpenAI API error: ${analysisResponse.statusText}`)
+      const errorText = await analysisResponse.text();
+      console.error('[Analyze Transcript] AI API error:', errorText);
+      throw new Error(`AI API error: ${analysisResponse.status}`)
     }
 
     const analysisData = await analysisResponse.json()
-    const aiAnalysis = JSON.parse(analysisData.choices[0].message.content)
+    const content = analysisData.choices?.[0]?.message?.content;
+    
+    // Parse JSON from response (handle markdown code blocks)
+    let aiAnalysis;
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      aiAnalysis = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(content);
+    } catch (parseError) {
+      console.error('[Analyze Transcript] Failed to parse AI response:', content);
+      throw new Error('Failed to parse AI analysis response');
+    }
 
     // Update call log with analysis
-    const { error: updateError } = await supabaseClient
+    const { error: updateError } = await supabaseAdmin
       .from('call_logs')
       .update({
         transcript,
@@ -108,7 +117,7 @@ Respond with a JSON object containing:
     }
 
     // Get the lead associated with this call
-    const { data: callData } = await supabaseClient
+    const { data: callData } = await supabaseAdmin
       .from('call_logs')
       .select('lead_id')
       .eq('id', callId)
@@ -117,24 +126,24 @@ Respond with a JSON object containing:
 
     if (callData?.lead_id) {
       // Get the appropriate pipeline board for this disposition
-      const { data: dispositionData } = await supabaseClient
+      const { data: dispositionData } = await supabaseAdmin
         .from('dispositions')
         .select('id, pipeline_stage')
         .eq('name', aiAnalysis.disposition)
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
 
       if (dispositionData) {
-        const { data: pipelineBoard } = await supabaseClient
+        const { data: pipelineBoard } = await supabaseAdmin
           .from('pipeline_boards')
           .select('id')
           .eq('disposition_id', dispositionData.id)
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
 
         if (pipelineBoard) {
           // Move lead to appropriate pipeline position
-          await supabaseClient
+          await supabaseAdmin
             .from('lead_pipeline_positions')
             .upsert({
               user_id: user.id,
@@ -162,7 +171,7 @@ Respond with a JSON object containing:
         leadUpdate.next_callback_at = tomorrow.toISOString()
       }
 
-      await supabaseClient
+      await supabaseAdmin
         .from('leads')
         .update(leadUpdate)
         .eq('id', callData.lead_id)

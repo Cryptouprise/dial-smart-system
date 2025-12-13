@@ -15,7 +15,6 @@ import { useToast } from '@/hooks/use-toast';
 const TranscriptAnalyzer = () => {
   const [transcript, setTranscript] = useState('');
   const [callId, setCallId] = useState('');
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const { analyzeTranscript, isAnalyzing, analysis } = useTranscriptAnalysis();
   const { toast } = useToast();
 
@@ -32,7 +31,6 @@ const TranscriptAnalyzer = () => {
     await analyzeTranscript({
       callId: callId.trim(),
       transcript: transcript.trim(),
-      openaiApiKey: openaiApiKey.trim()
     });
   };
 
@@ -69,26 +67,14 @@ const TranscriptAnalyzer = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="callId">Call ID</Label>
-                <Input
-                  id="callId"
-                  placeholder="Enter call ID..."
-                  value={callId}
-                  onChange={(e) => setCallId(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="openaiKey">OpenAI API Key (Optional)</Label>
-                <Input
-                  id="openaiKey"
-                  type="password"
-                  placeholder="sk-..."
-                  value={openaiApiKey}
-                  onChange={(e) => setOpenaiApiKey(e.target.value)}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="callId">Call ID</Label>
+              <Input
+                id="callId"
+                placeholder="Enter call ID from your call logs..."
+                value={callId}
+                onChange={(e) => setCallId(e.target.value)}
+              />
             </div>
             
             <div className="space-y-2">
