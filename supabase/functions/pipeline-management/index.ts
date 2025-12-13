@@ -19,8 +19,13 @@ serve(async (req) => {
       throw new Error('Authorization header is required')
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error('Supabase configuration missing');
+    }
+    
     const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
     const token = authHeader.replace('Bearer ', '');

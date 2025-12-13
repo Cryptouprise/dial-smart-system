@@ -17,9 +17,13 @@ serve(async (req) => {
       throw new Error('Missing authorization header');
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const elevenLabsKey = Deno.env.get('ELEVENLABS_API_KEY');
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase configuration missing');
+    }
 
     if (!elevenLabsKey) {
       throw new Error('ElevenLabs API key not configured. Please add ELEVENLABS_API_KEY secret.');
