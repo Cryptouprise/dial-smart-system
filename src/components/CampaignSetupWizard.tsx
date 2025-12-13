@@ -10,6 +10,7 @@ import { CheckCircle2, Circle, ArrowRight, ArrowLeft, Phone, PhoneOff, Loader2, 
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CampaignReadinessChecker } from './CampaignReadinessChecker';
+import { useRetellAI } from '@/hooks/useRetellAI';
 
 interface CampaignSetupWizardProps {
   open: boolean;
@@ -44,6 +45,13 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const [agents, setAgents] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [leadCount, setLeadCount] = useState(0);
+
+  // Retell phone connection helpers
+  const { listPhoneNumbers, updatePhoneNumber, isLoading: isRetellLoading } = useRetellAI();
+  const [phoneDialogOpen, setPhoneDialogOpen] = useState(false);
+  const [phoneDialogAgent, setPhoneDialogAgent] = useState<any | null>(null);
+  const [availablePhones, setAvailablePhones] = useState<any[]>([]);
+  const [selectedPhoneNumber, setSelectedPhoneNumber] = useState('');
 
   // Helper functions for fix guidance
   const getFixLabel = (checkId: string): string => {
@@ -184,6 +192,42 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
     }
   };
 
+  // Inline flow to connect a Retell phone number to the selected agent
+  const openPhoneDialogForSelectedAgent = async () => {
+    if (!agentId) return;
+    const agent = agents.find(a => a.agent_id === agentId);
+    if (!agent) return;
+
+    setPhoneDialogAgent(agent);
+    setPhoneDialogOpen(true);
+    setSelectedPhoneNumber('');
+
+    const numbers = await listPhoneNumbers();
+    if (numbers) {
+      // Prefer numbers that are not already attached to an agent
+      const unattached = numbers.filter((n: any) => !n.inbound_agent_id && !n.outbound_agent_id);
+      setAvailablePhones(unattached.length > 0 ? unattached : numbers);
+    }
+  };
+
+  const handleAssignPhoneToAgent = async () => {
+    if (!phoneDialogAgent || !selectedPhoneNumber) return;
+
+    const result = await updatePhoneNumber(selectedPhoneNumber, phoneDialogAgent.agent_id);
+    if (result) {
+      // Mark agent as having a phone locally so the UI updates immediately
+      setAgents(prev => prev.map(a => 
+        a.agent_id === phoneDialogAgent.agent_id ? { ...a, hasPhone: true } : a
+      ));
+      setPhoneDialogOpen(false);
+      setPhoneDialogAgent(null);
+      toast({
+        title: 'Phone connected',
+        description: 'This agent now has an active phone number attached.',
+      });
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -278,15 +322,35 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
 
               {agentId && !agents.find(a => a.agent_id === agentId)?.hasPhone && (
                 <Card className="border-amber-500 bg-amber-50 dark:bg-amber-900/20">
-                  <CardContent className="pt-4">
+                  <CardContent className="pt-4 space-y-3">
                     <div className="flex gap-2">
                       <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
                       <div className="text-sm">
                         <p className="font-medium">Agent needs a phone number</p>
                         <p className="text-muted-foreground">
-                          Go to Retell AI tab and assign a phone number to this agent before launching.
+                          Connect one of your Retell phone numbers directly to this agent without leaving the wizard.
                         </p>
                       </div>
+                    </div>
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={openPhoneDialogForSelectedAgent}
+                        disabled={isRetellLoading}
+                      >
+                        {isRetellLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Loading numbers...
+                          </>
+                        ) : (
+                          <>
+                            <Phone className="h-4 w-4 mr-2" />
+                            Connect phone number to this agent
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -484,6 +548,74 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
             </Button>
           )}
         </div>
+
+        {/* Connect phone number dialog */}
+        <Dialog open={phoneDialogOpen} onOpenChange={setPhoneDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Connect phone number to agent</DialogTitle>
+              <DialogDescription>
+                Choose which Retell phone number should be used by
+                {" "}
+                <span className="font-semibold">{phoneDialogAgent?.agent_name}</span>.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {availablePhones.length === 0 ? (
+                <Card className="bg-muted/40">
+                  <CardContent className="pt-4 text-sm text-muted-foreground">
+                    You don&apos;t have any Retell phone numbers yet. Complete the
+                    <span className="font-medium"> Phone Numbers</span> step in the setup wizard first.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select phone number</label>
+                  <Select value={selectedPhoneNumber} onValueChange={setSelectedPhoneNumber}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a phone number" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePhones.map((phone: any) => (
+                        <SelectItem key={phone.phone_number} value={phone.phone_number}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{phone.phone_number}</span>
+                            {phone.nickname && (
+                              <span className="text-xs text-muted-foreground">{phone.nickname}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setPhoneDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleAssignPhoneToAgent}
+                  disabled={!selectedPhoneNumber || isRetellLoading}
+                >
+                  {isRetellLoading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Phone className="h-4 w-4 mr-2" />
+                  )}
+                  Connect
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
