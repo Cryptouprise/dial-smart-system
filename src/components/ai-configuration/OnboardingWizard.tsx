@@ -164,9 +164,34 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const [userInput, setUserInput] = useState('');
   const [fixDialogArea, setFixDialogArea] = useState<ConfigurationArea | null>(null);
   const [cameFromCompletion, setCameFromCompletion] = useState(false);
+  const [externalFixSource, setExternalFixSource] = useState<string | null>(null);
+  const [hasHandledExternalFix, setHasHandledExternalFix] = useState(false);
   
   const { toast } = useToast();
   const { executeConfiguration, isExecuting } = useAIConfiguration();
+
+  // Handle direct "fix" links coming from other parts of the app (e.g. Campaign Readiness)
+  useEffect(() => {
+    if (hasHandledExternalFix) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const fixAreaId = params.get('fixArea');
+    const source = params.get('source');
+
+    if (!fixAreaId) return;
+
+    const targetArea = areas.find(a => a.id === fixAreaId);
+    if (!targetArea) return;
+
+    setHasHandledExternalFix(true);
+    setExternalFixSource(source);
+    setSelectedAreas(prev => new Set([...prev, fixAreaId]));
+    setCurrentAreaId(fixAreaId);
+    setShowUseCaseSelection(false);
+    setShowCompletion(false);
+    setShowConfiguration(true);
+  }, [areas, hasHandledExternalFix]);
 
   // Calculate progress
   const totalSelected = selectedAreas.size;
@@ -665,6 +690,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {externalFixSource === 'campaign_readiness' && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (window.history.length > 1) {
+                      window.history.back();
+                    } else {
+                      window.location.href = '/?tab=campaigns';
+                    }
+                  }}
+                  className="gap-1"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Campaign Readiness
+                </Button>
+              )}
               {cameFromCompletion && (
                 <Button 
                   variant="secondary" 
@@ -700,6 +742,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
               </p>
             </div>
           )}
+
+          {/* Guidance when coming from external readiness checks (e.g. Campaign Wizard) */}
+          {externalFixSource && currentAreaId && (
+            <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Fixing a campaign readiness issue:</strong> Follow these steps to complete {currentArea?.title.toLowerCase()}.
+              </p>
+              <div className="text-xs text-amber-800 dark:text-amber-200">
+                <p className="font-semibold mb-1">What you'll do:</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  {getFixGuidance(currentAreaId).steps.map((step, index) => (
+                    <li key={index}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          )}
           
           {integration?.instructions && (
             <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -715,11 +774,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Render the actual configuration component */}
           <ConfigurationStepRenderer 
             areaId={currentAreaId}
             onComplete={() => {
               handleAreaComplete(currentAreaId);
+              // If this was opened from a campaign readiness fix, send the user back there
+              if (externalFixSource === 'campaign_readiness') {
+                if (window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  window.location.href = '/?tab=campaigns';
+                }
+                return;
+              }
               // If we came from completion screen, go back there
               if (cameFromCompletion) {
                 setCameFromCompletion(false);

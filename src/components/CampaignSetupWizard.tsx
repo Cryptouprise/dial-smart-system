@@ -427,13 +427,13 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
                         size="sm"
                         onClick={() => {
                           // Navigate to the fix location
-                          const routes: Record<string, string> = {
-                            'agent_phone': '/?tab=onboarding',
-                            'leads_assigned': '/?tab=onboarding',
-                            'phone_numbers': '/?tab=onboarding',
-                            'ai_agent': '/?tab=onboarding',
-                          };
-                          const route = routes[fixIssueId] || '/?tab=onboarding';
+                              const routes: Record<string, string> = {
+                                agent_phone: '/?tab=onboarding&fixArea=phone_numbers&source=campaign_readiness',
+                                leads_assigned: '/?tab=onboarding&fixArea=leads&source=campaign_readiness',
+                                phone_numbers: '/?tab=onboarding&fixArea=phone_numbers&source=campaign_readiness',
+                                ai_agent: '/?tab=onboarding&fixArea=ai_agent&source=campaign_readiness',
+                              };
+                              const route = routes[fixIssueId] || '/?tab=onboarding&source=campaign_readiness';
                           onOpenChange(false);
                           window.location.href = route;
                         }}
