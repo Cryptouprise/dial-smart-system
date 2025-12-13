@@ -153,9 +153,6 @@ export const CalendarIntegrationManager: React.FC = () => {
                   <Link className="h-4 w-4 mr-2" />
                   Connect Google Calendar
                 </Button>
-                <p className="text-xs text-muted-foreground text-center">
-                  ⚠️ Requires signing in with "Continue with Google" on the login page
-                </p>
               </div>
             )}
           </CardContent>
