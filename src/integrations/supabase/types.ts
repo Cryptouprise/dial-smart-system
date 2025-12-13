@@ -1105,6 +1105,7 @@ export type Database = {
           name: string
           retry_delay_minutes: number | null
           script: string | null
+          sms_from_number: string | null
           sms_on_no_answer: boolean | null
           sms_template: string | null
           status: string
@@ -1126,6 +1127,7 @@ export type Database = {
           name: string
           retry_delay_minutes?: number | null
           script?: string | null
+          sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
@@ -1147,6 +1149,7 @@ export type Database = {
           name?: string
           retry_delay_minutes?: number | null
           script?: string | null
+          sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
