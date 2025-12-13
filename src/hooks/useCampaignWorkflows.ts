@@ -6,7 +6,7 @@ export interface WorkflowStep {
   id?: string;
   workflow_id?: string;
   step_number: number;
-  step_type: 'call' | 'sms' | 'ai_sms' | 'wait' | 'condition';
+  step_type: 'call' | 'sms' | 'ai_sms' | 'ai_auto_reply' | 'wait' | 'condition';
   step_config: {
     delay_minutes?: number;
     delay_hours?: number;
@@ -14,8 +14,21 @@ export interface WorkflowStep {
     time_of_day?: string;
     sms_content?: string;
     ai_prompt?: string;
+    // Call step config
+    timing_mode?: 'immediate' | 'scheduled' | 'inherit';
+    max_ring_seconds?: number;
+    leave_voicemail?: boolean;
+    voicemail_message?: string;
+    // SMS step config
+    use_conversation_context?: boolean;
+    // AI auto-reply config
+    enabled?: boolean;
+    response_delay_seconds?: number;
+    channels?: string[];
+    ai_instructions?: string;
+    stop_on_human_reply?: boolean;
     // Condition-specific fields
-    condition_type?: 'disposition' | 'lead_status' | 'call_outcome' | 'attempts' | 'time_of_day' | 'day_of_week' | 'tag_exists' | 'custom_field';
+    condition_type?: 'disposition' | 'lead_status' | 'call_outcome' | 'attempts' | 'time_of_day' | 'day_of_week' | 'tag_exists' | 'custom_field' | 'call_duration' | 'sms_reply_received' | 'voicemail_left' | 'appointment_scheduled' | 'lead_score' | 'last_contact_days' | 'total_calls' | 'total_sms';
     condition_operator?: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'is_empty' | 'is_not_empty';
     condition_value?: string;
     condition_field?: string; // For custom_field type

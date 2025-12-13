@@ -23,6 +23,7 @@ const STEP_TYPES = [
   { value: 'call', label: 'Phone Call', icon: Phone, color: 'bg-blue-500' },
   { value: 'sms', label: 'SMS Message', icon: MessageSquare, color: 'bg-green-500' },
   { value: 'ai_sms', label: 'AI SMS', icon: Sparkles, color: 'bg-purple-500' },
+  { value: 'ai_auto_reply', label: 'AI Auto-Reply', icon: Zap, color: 'bg-indigo-500' },
   { value: 'wait', label: 'Wait/Delay', icon: Clock, color: 'bg-orange-500' },
   { value: 'condition', label: 'Condition', icon: GitBranch, color: 'bg-yellow-500' },
 ];
@@ -107,11 +108,23 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
     const defaultConfig: WorkflowStep['step_config'] = {};
     
     if (type === 'wait') {
-      defaultConfig.delay_hours = 5;
+      defaultConfig.delay_hours = 0;
+      defaultConfig.delay_minutes = 0;
+      defaultConfig.delay_days = 0;
     } else if (type === 'sms' || type === 'ai_sms') {
       defaultConfig.sms_content = '';
     } else if (type === 'call') {
+      defaultConfig.timing_mode = 'immediate'; // 'immediate' | 'scheduled' | 'inherit'
       defaultConfig.time_of_day = '09:00';
+      defaultConfig.max_ring_seconds = 30;
+      defaultConfig.leave_voicemail = false;
+      defaultConfig.voicemail_message = '';
+    } else if (type === 'ai_auto_reply') {
+      defaultConfig.enabled = true;
+      defaultConfig.response_delay_seconds = 5;
+      defaultConfig.channels = ['sms'];
+      defaultConfig.ai_instructions = '';
+      defaultConfig.stop_on_human_reply = true;
     } else if (type === 'condition') {
       defaultConfig.condition_type = 'disposition';
       defaultConfig.condition_operator = 'equals';
@@ -293,17 +306,96 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 </div>
 
                 {step.step_type === 'call' && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    {/* Timing Mode */}
                     <div className="space-y-2">
-                      <Label>Time of Day</Label>
-                      <Input
-                        type="time"
-                        value={step.step_config.time_of_day || '09:00'}
-                        onChange={(e) => updateStep(index, { 
-                          step_config: { ...step.step_config, time_of_day: e.target.value }
+                      <Label>When should this call happen?</Label>
+                      <Select
+                        value={step.step_config.timing_mode || 'immediate'}
+                        onValueChange={(v) => updateStep(index, { 
+                          step_config: { ...step.step_config, timing_mode: v as 'immediate' | 'scheduled' | 'inherit' }
                         })}
-                      />
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="immediate">
+                            <div className="flex flex-col">
+                              <span className="font-medium">Immediately</span>
+                              <span className="text-xs text-muted-foreground">Call as soon as this step is reached</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="inherit">
+                            <div className="flex flex-col">
+                              <span className="font-medium">After Previous Step</span>
+                              <span className="text-xs text-muted-foreground">Wait for any prior wait/condition to complete</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="scheduled">
+                            <div className="flex flex-col">
+                              <span className="font-medium">At Specific Time</span>
+                              <span className="text-xs text-muted-foreground">Schedule for a specific time of day</span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
+
+                    {/* Show time picker only for scheduled */}
+                    {step.step_config.timing_mode === 'scheduled' && (
+                      <div className="space-y-2">
+                        <Label>Time of Day</Label>
+                        <Input
+                          type="time"
+                          value={step.step_config.time_of_day || '09:00'}
+                          onChange={(e) => updateStep(index, { 
+                            step_config: { ...step.step_config, time_of_day: e.target.value }
+                          })}
+                        />
+                      </div>
+                    )}
+
+                    {/* Advanced call options */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Max Ring Time (seconds)</Label>
+                        <Input
+                          type="number"
+                          value={step.step_config.max_ring_seconds || 30}
+                          onChange={(e) => updateStep(index, { 
+                            step_config: { ...step.step_config, max_ring_seconds: parseInt(e.target.value) || 30 }
+                          })}
+                          min={10}
+                          max={120}
+                        />
+                      </div>
+                      <div className="space-y-2 flex items-end">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={step.step_config.leave_voicemail || false}
+                            onCheckedChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, leave_voicemail: v }
+                            })}
+                          />
+                          <Label className="cursor-pointer">Leave voicemail if no answer</Label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {step.step_config.leave_voicemail && (
+                      <div className="space-y-2">
+                        <Label>Voicemail Message (optional AI prompt)</Label>
+                        <Textarea
+                          value={step.step_config.voicemail_message || ''}
+                          onChange={(e) => updateStep(index, { 
+                            step_config: { ...step.step_config, voicemail_message: e.target.value }
+                          })}
+                          placeholder="Leave blank to use agent's default. Or describe what the voicemail should say..."
+                          rows={2}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -346,26 +438,139 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 )}
 
                 {(step.step_type === 'sms' || step.step_type === 'ai_sms') && (
-                  <div className="space-y-2">
-                    <Label>{step.step_type === 'ai_sms' ? 'AI Prompt / Context' : 'Message Content'}</Label>
-                    <Textarea
-                      value={step.step_config.sms_content || ''}
-                      onChange={(e) => updateStep(index, { 
-                        step_config: { ...step.step_config, sms_content: e.target.value }
-                      })}
-                      placeholder={step.step_type === 'ai_sms' 
-                        ? "Describe what the AI should say based on the conversation..."
-                        : "Enter the SMS message content. Use {first_name}, {company} for personalization..."
-                      }
-                      rows={3}
-                    />
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>{step.step_type === 'ai_sms' ? 'AI Prompt / Context' : 'Message Content'}</Label>
+                      <Textarea
+                        value={step.step_config.sms_content || ''}
+                        onChange={(e) => updateStep(index, { 
+                          step_config: { ...step.step_config, sms_content: e.target.value }
+                        })}
+                        placeholder={step.step_type === 'ai_sms' 
+                          ? "Describe what the AI should say based on the conversation..."
+                          : "Enter the SMS message content. Use {first_name}, {company} for personalization..."
+                        }
+                        rows={3}
+                      />
+                    </div>
+                    {step.step_type === 'ai_sms' && (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={step.step_config.use_conversation_context !== false}
+                          onCheckedChange={(v) => updateStep(index, { 
+                            step_config: { ...step.step_config, use_conversation_context: v }
+                          })}
+                        />
+                        <Label className="cursor-pointer">Include call transcript in AI context</Label>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* AI Auto-Reply Step */}
+                {step.step_type === 'ai_auto_reply' && (
+                  <div className="space-y-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4 border border-indigo-200 dark:border-indigo-800">
+                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                      <Zap className="h-4 w-4" />
+                      <span className="font-medium">AI Auto-Reply Settings</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Enable Auto-Reply</Label>
+                        <p className="text-xs text-muted-foreground">AI will automatically respond to incoming messages</p>
+                      </div>
+                      <Switch
+                        checked={step.step_config.enabled !== false}
+                        onCheckedChange={(v) => updateStep(index, { 
+                          step_config: { ...step.step_config, enabled: v }
+                        })}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Response Channels</Label>
+                      <div className="flex gap-4">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={step.step_config.channels?.includes('sms') !== false}
+                            onCheckedChange={(v) => {
+                              const channels = step.step_config.channels || ['sms'];
+                              const newChannels = v 
+                                ? [...new Set([...channels, 'sms'])]
+                                : channels.filter((c: string) => c !== 'sms');
+                              updateStep(index, { 
+                                step_config: { ...step.step_config, channels: newChannels }
+                              });
+                            }}
+                          />
+                          <Label className="cursor-pointer">SMS</Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={step.step_config.channels?.includes('call') || false}
+                            onCheckedChange={(v) => {
+                              const channels = step.step_config.channels || ['sms'];
+                              const newChannels = v 
+                                ? [...new Set([...channels, 'call'])]
+                                : channels.filter((c: string) => c !== 'call');
+                              updateStep(index, { 
+                                step_config: { ...step.step_config, channels: newChannels }
+                              });
+                            }}
+                          />
+                          <Label className="cursor-pointer">Inbound Calls</Label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Response Delay (seconds)</Label>
+                      <Input
+                        type="number"
+                        value={step.step_config.response_delay_seconds || 5}
+                        onChange={(e) => updateStep(index, { 
+                          step_config: { ...step.step_config, response_delay_seconds: parseInt(e.target.value) || 5 }
+                        })}
+                        min={0}
+                        max={300}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Wait this many seconds before responding (makes it feel more human)
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>AI Instructions (Optional)</Label>
+                      <Textarea
+                        value={step.step_config.ai_instructions || ''}
+                        onChange={(e) => updateStep(index, { 
+                          step_config: { ...step.step_config, ai_instructions: e.target.value }
+                        })}
+                        placeholder="Custom instructions for AI responses. Leave blank to use agent defaults. Example: 'Keep responses short and friendly. Focus on booking appointments.'"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Stop on Human Reply</Label>
+                        <p className="text-xs text-muted-foreground">Disable auto-reply when a real person responds</p>
+                      </div>
+                      <Switch
+                        checked={step.step_config.stop_on_human_reply !== false}
+                        onCheckedChange={(v) => updateStep(index, { 
+                          step_config: { ...step.step_config, stop_on_human_reply: v }
+                        })}
+                      />
+                    </div>
                   </div>
                 )}
 
                 {step.step_type === 'condition' && (
                   <div className="space-y-4 bg-muted/50 rounded-lg p-4">
                     <div className="grid grid-cols-3 gap-3">
-                      {/* Condition Type */}
+                    {/* Condition Type */}
                       <div className="space-y-2">
                         <Label className="text-xs font-medium">If...</Label>
                         <Select
@@ -386,6 +591,14 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                             <SelectItem value="day_of_week">Day of Week</SelectItem>
                             <SelectItem value="tag_exists">Tag Exists</SelectItem>
                             <SelectItem value="custom_field">Custom Field</SelectItem>
+                            <SelectItem value="call_duration">Call Duration (seconds)</SelectItem>
+                            <SelectItem value="sms_reply_received">SMS Reply Received</SelectItem>
+                            <SelectItem value="voicemail_left">Voicemail Was Left</SelectItem>
+                            <SelectItem value="appointment_scheduled">Appointment Scheduled</SelectItem>
+                            <SelectItem value="lead_score">Lead Score</SelectItem>
+                            <SelectItem value="last_contact_days">Days Since Last Contact</SelectItem>
+                            <SelectItem value="total_calls">Total Calls Made</SelectItem>
+                            <SelectItem value="total_sms">Total SMS Sent</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -414,7 +627,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                         </Select>
                       </div>
 
-                      {/* Value */}
+                      {/* Value - different inputs based on condition type */}
                       <div className="space-y-2">
                         <Label className="text-xs font-medium">Value</Label>
                         {step.step_config.condition_type === 'disposition' ? (
@@ -499,6 +712,37 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                               <SelectItem value="failed">Failed</SelectItem>
                             </SelectContent>
                           </Select>
+                        ) : ['call_duration', 'lead_score', 'last_contact_days', 'total_calls', 'total_sms', 'attempts'].includes(step.step_config.condition_type || '') ? (
+                          <Input
+                            type="number"
+                            value={step.step_config.condition_value || ''}
+                            onChange={(e) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: e.target.value }
+                            })}
+                            placeholder={
+                              step.step_config.condition_type === 'call_duration' ? "e.g., 60 (seconds)" :
+                              step.step_config.condition_type === 'lead_score' ? "e.g., 70" :
+                              step.step_config.condition_type === 'last_contact_days' ? "e.g., 7" :
+                              step.step_config.condition_type === 'total_calls' ? "e.g., 3" :
+                              step.step_config.condition_type === 'total_sms' ? "e.g., 5" :
+                              "Enter number..."
+                            }
+                          />
+                        ) : ['sms_reply_received', 'voicemail_left', 'appointment_scheduled'].includes(step.step_config.condition_type || '') ? (
+                          <Select
+                            value={step.step_config.condition_value || 'true'}
+                            onValueChange={(v) => updateStep(index, { 
+                              step_config: { ...step.step_config, condition_value: v }
+                            })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Yes / True</SelectItem>
+                              <SelectItem value="false">No / False</SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Input
                             value={step.step_config.condition_value || ''}
@@ -506,7 +750,6 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                               step_config: { ...step.step_config, condition_value: e.target.value }
                             })}
                             placeholder={
-                              step.step_config.condition_type === 'attempts' ? "e.g., 3" :
                               step.step_config.condition_type === 'time_of_day' ? "e.g., 09:00" :
                               step.step_config.condition_type === 'tag_exists' ? "Tag name" :
                               "Enter value..."
