@@ -231,8 +231,9 @@ grep -rn "\.single()" src/ supabase/
 | Auth failures | Verify user exists before querying |
 | Insert failures | Use `.maybeSingle()` and check result |
 | Env var crashes | Validate env vars before use |
+| Invalid dates | Validate with `isNaN(date.getTime())` before `.toISOString()` |
 
-**Total bugs prevented with these rules: 190+**
+**Total bugs prevented with these rules: 191+**
 
 ---
 
