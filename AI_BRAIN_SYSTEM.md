@@ -50,6 +50,7 @@ The AI can execute the following actions:
 | **SMS** | send_sms, get_sms_history |
 | **Phone Numbers** | add_phone_number, list_phone_numbers |
 | **Workflows** | create_workflow, list_workflows |
+| **Calendar** | check_availability, book_appointment, list_appointments |
 | **System** | get_analytics, diagnose_issues, undo_action |
 | **Learning** | record_feedback |
 

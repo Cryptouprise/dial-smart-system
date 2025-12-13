@@ -276,9 +276,47 @@ A comprehensive, AI-powered predictive dialing system with advanced automation, 
 
 ---
 
+## 📅 Calendar & Appointment Features
+
+### 17. Calendar Integration
+**Supported Providers:**
+- Google Calendar (OAuth integration)
+- Cal.com (API integration)
+
+**Features:**
+- Real-time availability checking
+- Appointment booking via AI agents
+- Automatic Google Calendar sync
+- Configurable availability windows
+- Buffer time between appointments
+- Timezone-aware scheduling
+- Meeting link generation
+
+### 18. Callback Automation
+**When leads request callbacks:**
+- Auto-create Google Calendar events
+- Send SMS reminders before scheduled time
+- Optionally auto-call at scheduled time
+- Configurable reminder timing
+- Custom SMS reminder templates
+
+### 19. End-to-End Appointment Testing
+**Comprehensive workflow verification:**
+- Pre-flight checks (calendar, pipeline, dispositions configured)
+- Creates test lead for tracking
+- Initiates real call with AI agent
+- Monitors call completion
+- Verifies appointment creation
+- Confirms Google Calendar sync
+- Checks pipeline stage movement
+- Validates disposition applied
+- Results summary with pass/fail indicators
+
+---
+
 ## 📱 Communications
 
-### 16. Multi-Carrier Provider Integration
+### 20. Multi-Carrier Provider Integration
 **Supported Providers:**
 - Retell AI
 - Telnyx
@@ -293,7 +331,7 @@ A comprehensive, AI-powered predictive dialing system with advanced automation, 
 - Provider management UI
 - Easy setup and number import
 
-### 17. SMS Messaging System
+### 21. SMS Messaging System
 **Features:**
 - Send/receive SMS
 - Message templates
@@ -303,7 +341,7 @@ A comprehensive, AI-powered predictive dialing system with advanced automation, 
 - Two-way conversations
 - SMS analytics
 
-### 18. Ringless Voicemail (RVM)
+### 22. Ringless Voicemail (RVM)
 **Features:**
 - Queue and deliver voicemails without ringing
 - Template management
