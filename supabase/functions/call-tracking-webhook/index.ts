@@ -687,7 +687,7 @@ async function findOrCreatePipelineStage(
       position: 0
     })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Error creating pipeline stage:', error);
@@ -735,7 +735,7 @@ async function findOrCreateDisposition(
       color: colors[dispositionName] || '#3B82F6'
     })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Error creating disposition:', error);

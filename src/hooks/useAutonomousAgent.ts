@@ -268,7 +268,7 @@ export const useAutonomousAgent = () => {
       .from('leads')
       .select('phone_number')
       .eq('id', leadId)
-      .single();
+      .maybeSingle();
 
     if (!lead) return null;
 

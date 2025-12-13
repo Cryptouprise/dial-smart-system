@@ -407,11 +407,11 @@ export const usePredictiveDialing = () => {
         .from('campaigns')
         .select('agent_id')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
       if (campaignError) throw campaignError;
 
-      if (!campaign.agent_id) {
+      if (!campaign?.agent_id) {
         throw new Error('Campaign must have an agent assigned');
       }
 

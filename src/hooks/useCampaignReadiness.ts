@@ -29,7 +29,7 @@ export const useCampaignReadiness = () => {
         .from('campaigns')
         .select('*')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
       if (campaignError || !campaign) {
         return {
@@ -171,7 +171,7 @@ export const useCampaignReadiness = () => {
           .from('ai_sms_settings')
           .select('enabled, auto_response_enabled')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         checks.push({
           id: 'sms_settings',

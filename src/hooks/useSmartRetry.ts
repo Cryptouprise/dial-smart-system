@@ -172,7 +172,7 @@ export const useSmartRetry = () => {
         .from('leads')
         .select('first_name, last_name, phone_number, timezone')
         .eq('id', leadId)
-        .single();
+        .maybeSingle();
 
       const { data: queue } = await supabase
         .from('dialing_queues')

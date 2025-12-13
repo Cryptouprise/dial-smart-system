@@ -185,7 +185,7 @@ export const useDispositionAutomation = () => {
               settings: {}
             })
             .select()
-            .single();
+            .maybeSingle();
 
           pipelineBoard = newBoard;
         }
@@ -402,7 +402,7 @@ export const useDispositionAutomation = () => {
         .from('scheduled_follow_ups')
         .select('*, sequence_steps(*)')
         .eq('id', followUpId)
-        .single();
+        .maybeSingle();
 
       if (!followUp) return false;
 

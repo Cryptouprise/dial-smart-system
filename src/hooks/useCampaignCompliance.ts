@@ -36,7 +36,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         .from('campaigns')
         .select('calling_hours_start, calling_hours_end, timezone')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
       if (error || !campaign) return false;
 

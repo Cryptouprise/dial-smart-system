@@ -209,12 +209,12 @@ serve(async (req) => {
 
     // 7. Update phone number usage stats
     if (call.from_number) {
-      // First get current daily_calls count
-      const { data: phoneData } = await supabase
-        .from('phone_numbers')
-        .select('daily_calls')
-        .eq('number', call.from_number)
-        .single();
+    // First get current daily_calls count
+    const { data: phoneData } = await supabase
+      .from('phone_numbers')
+      .select('daily_calls')
+      .eq('number', call.from_number)
+      .maybeSingle();
 
       await supabase
         .from('phone_numbers')
@@ -386,7 +386,7 @@ async function updateNudgeTracking(
       .from('lead_nudge_tracking')
       .select('id')
       .eq('lead_id', leadId)
-      .single();
+      .maybeSingle();
 
     const isEngaged = ['interested', 'appointment_set', 'callback_requested'].includes(outcome);
     const shouldPause = ['appointment_set', 'dnc', 'not_interested'].includes(outcome);

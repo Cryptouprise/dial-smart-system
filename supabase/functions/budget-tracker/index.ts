@@ -458,7 +458,7 @@ async function updateBudgetSettings(supabase: any, userId: string, params: any) 
       onConflict: 'user_id,campaign_id'
     })
     .select()
-    .single();
+    .maybeSingle();
   
   if (error) throw error;
   
