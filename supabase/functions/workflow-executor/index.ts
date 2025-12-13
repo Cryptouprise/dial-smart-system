@@ -106,7 +106,7 @@ serve(async (req) => {
             .from('lead_nudge_tracking')
             .select('is_engaged, sequence_paused')
             .eq('lead_id', progress.lead_id)
-            .single();
+            .maybeSingle();
 
           if (nudgeStatus?.sequence_paused) {
             console.log(`[Workflow] Skipping lead ${progress.lead_id} - sequence paused`);
@@ -282,7 +282,7 @@ async function executeStep(supabase: any, progress: any) {
     .from('lead_nudge_tracking')
     .select('nudge_count')
     .eq('lead_id', lead.id)
-    .single();
+    .maybeSingle();
 
   await supabase
     .from('lead_nudge_tracking')
@@ -318,7 +318,7 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
       .from('campaigns')
       .select('agent_id')
       .eq('id', progress.campaign_id)
-      .single();
+      .maybeSingle();
 
     const agentId = config.agent_id || campaignData?.agent_id;
 
