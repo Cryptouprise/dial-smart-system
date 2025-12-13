@@ -147,12 +147,22 @@ serve(async (req) => {
             sync_enabled: true
           }, { onConflict: 'user_id,provider,calendar_id' });
 
-        // Return HTML that closes the popup
+        // Return HTML that closes the popup (or shows a success message if opened in a full tab)
         return new Response(
-          `<html><body><script>
-            window.opener.postMessage({ type: 'google-calendar-connected' }, '*');
-            window.close();
-          </script></body></html>`,
+          `<!DOCTYPE html><html><head><title>Google Calendar Connected</title></head><body style="font-family: system-ui; text-align: center; padding: 40px;">
+            <h2>Google Calendar Connected</h2>
+            <p>You can close this window and return to the app.</p>
+            <script>
+              try {
+                if (window.opener && !window.opener.closed) {
+                  window.opener.postMessage({ type: 'google-calendar-connected' }, '*');
+                  window.close();
+                }
+              } catch (e) {
+                console.error('PostMessage error', e);
+              }
+            </script>
+          </body></html>`,
           { headers: { ...corsHeaders, 'Content-Type': 'text/html' } }
         );
       }
