@@ -139,7 +139,7 @@ export const useVoiceBroadcast = () => {
           calls_per_minute: broadcast.calls_per_minute || 50,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -194,7 +194,7 @@ export const useVoiceBroadcast = () => {
         .update(updateData)
         .eq('id', id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

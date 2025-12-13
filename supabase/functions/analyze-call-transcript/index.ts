@@ -122,7 +122,7 @@ Respond with a JSON object containing:
       .select('lead_id')
       .eq('id', callId)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (callData?.lead_id) {
       // Get the appropriate pipeline board for this disposition

@@ -80,7 +80,7 @@ serve(async (req) => {
             updated_at: new Date().toISOString()
           })
           .select()
-          .single()
+          .maybeSingle()
         break
 
       case 'create_pipeline_board':
@@ -94,7 +94,7 @@ serve(async (req) => {
             updated_at: new Date().toISOString()
           })
           .select()
-          .single()
+          .maybeSingle()
         break
 
       case 'move_lead_to_pipeline':

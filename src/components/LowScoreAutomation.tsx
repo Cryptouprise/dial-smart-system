@@ -202,7 +202,7 @@ export const LowScoreAutomation = () => {
             .from('leads')
             .select('tags')
             .eq('id', leadId)
-            .single();
+            .maybeSingle();
 
           const currentTags = lead?.tags || [];
           if (!currentTags.includes(rule.tagName || 'low-reachability')) {

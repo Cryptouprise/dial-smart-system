@@ -57,7 +57,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
         .from('campaigns')
         .select('*, campaign_workflows(*)')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
       setCampaign(campaignData);
 
@@ -67,7 +67,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
         .from('calendar_availability')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (calendarAvail) {
         updateCheck('calendar', { status: 'pass', message: 'Calendar configured' });
@@ -124,7 +124,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
         .from('budget_settings')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (budget?.is_paused) {
         updateCheck('budget', { status: 'fail', message: 'Budget paused' });

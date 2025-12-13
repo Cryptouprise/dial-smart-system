@@ -451,7 +451,7 @@ const AiSmsConversations: React.FC = () => {
           contact_name: newContactName.trim() || null,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

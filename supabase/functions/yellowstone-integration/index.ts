@@ -174,7 +174,7 @@ serve(async (req) => {
           .from('yellowstone_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (settingsError || !settings) {
           return new Response(JSON.stringify({ error: 'Yellowstone not configured' }), {

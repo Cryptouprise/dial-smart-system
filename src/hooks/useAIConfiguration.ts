@@ -80,7 +80,7 @@ export const useAIConfiguration = () => {
           ...(item.details || {})
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -131,7 +131,7 @@ export const useAIConfiguration = () => {
           ...(item.details || {})
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

@@ -142,7 +142,7 @@ serve(async (req) => {
             metadata: {},
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (insertError) {
           console.error('[SMS Messaging] Database insert error:', insertError);
