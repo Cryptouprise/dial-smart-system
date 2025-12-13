@@ -769,23 +769,29 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 {/* AI Helper Dialog */}
                 <Dialog open={showAIHelper} onOpenChange={setShowAIHelper}>
                   <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-purple-500" />
-                        AI Workflow Builder
-                      </DialogTitle>
-                      <DialogDescription>
-                        Describe what you want your workflow to do and AI will build the steps for you.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <Textarea
-                        value={aiPrompt}
-                        onChange={(e) => setAIPrompt(e.target.value)}
-                        placeholder="Example: Create a 3-day follow-up sequence that calls leads, sends an SMS if no answer, waits 1 day, then calls again..."
-                        rows={5}
-                        className="resize-none"
-                      />
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-purple-500" />
+                    AI Workflow Builder
+                  </DialogTitle>
+                  <DialogDescription>
+                    {editingWorkflow
+                      ? 'You are editing an existing workflow. Describe how you want to change it and AI will rewrite the steps for you.'
+                      : 'Describe what you want your workflow to do and AI will build the steps for you.'}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAIPrompt(e.target.value)}
+                    placeholder={
+                      editingWorkflow
+                        ? 'Example: Simplify this workflow so it only contacts leads twice per day and add an SMS after the last call.'
+                        : 'Example: Create a 3-day follow-up sequence that calls leads, sends an SMS if no answer, waits 1 day, then calls again...'
+                    }
+                    rows={5}
+                    className="resize-none"
+                  />
                       <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
                         <button 
                           type="button"
