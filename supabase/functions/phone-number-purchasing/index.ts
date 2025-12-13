@@ -11,7 +11,7 @@ const corsHeaders = {
 const PurchaseRequestSchema = z.object({
   areaCode: z.string().regex(/^\d{3}$/, 'Area code must be exactly 3 digits'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Maximum 100 numbers per order'),
-  provider: z.enum(['telnyx', 'twilio']).default('telnyx')
+  provider: z.enum(['retell', 'telnyx', 'twilio']).default('retell')
 });
 
 serve(async (req) => {
