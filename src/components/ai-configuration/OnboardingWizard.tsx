@@ -145,6 +145,8 @@ interface OnboardingWizardProps {
   onSkip?: () => void;
 }
 
+const STORAGE_KEY = 'onboarding_state_v1';
+
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, onSkip }) => {
   const [areas, setAreas] = useState<ConfigurationArea[]>(
     CONFIGURATION_AREAS.map(area => ({
@@ -168,13 +170,96 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const [cameFromCompletion, setCameFromCompletion] = useState(false);
   const [externalFixSource, setExternalFixSource] = useState<string | null>(null);
   const [hasHandledExternalFix, setHasHandledExternalFix] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
   
   const { toast } = useToast();
   const { executeConfiguration, isExecuting } = useAIConfiguration();
 
+  // Restore onboarding state from localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        if (!aiMessage) {
+          setAiMessage("I've selected the recommended setup areas for you. Check or uncheck any areas based on what you need!");
+        }
+        setHasHydrated(true);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+
+      if (parsed.useCase) setUseCase(parsed.useCase);
+      if (Array.isArray(parsed.selectedAreaIds)) {
+        setSelectedAreas(new Set(parsed.selectedAreaIds));
+      }
+      if (Array.isArray(parsed.areaStates)) {
+        setAreas(prev =>
+          prev.map(area => {
+            const match = parsed.areaStates.find((a: any) => a.id === area.id);
+            return match
+              ? { ...area, completed: !!match.completed, skipped: !!match.skipped, inProgress: !!match.inProgress }
+              : area;
+          })
+        );
+      }
+      if (typeof parsed.showUseCaseSelection === 'boolean') setShowUseCaseSelection(parsed.showUseCaseSelection);
+      if (typeof parsed.showConfiguration === 'boolean') setShowConfiguration(parsed.showConfiguration);
+      if (typeof parsed.showCompletion === 'boolean') setShowCompletion(parsed.showCompletion);
+      if (typeof parsed.showQuickStart === 'boolean') setShowQuickStart(parsed.showQuickStart);
+      if (parsed.currentAreaId) setCurrentAreaId(parsed.currentAreaId);
+      if (parsed.aiMessage) setAiMessage(parsed.aiMessage);
+    } catch (error) {
+      console.error('Failed to load onboarding state', error);
+    } finally {
+      setHasHydrated(true);
+    }
+  }, []);
+
+  // Persist onboarding state to localStorage
+  useEffect(() => {
+    if (!hasHydrated || typeof window === 'undefined') return;
+
+    try {
+      const payload = {
+        useCase,
+        selectedAreaIds: Array.from(selectedAreas),
+        areaStates: areas.map(area => ({
+          id: area.id,
+          completed: area.completed,
+          skipped: area.skipped,
+          inProgress: area.inProgress,
+        })),
+        showUseCaseSelection,
+        showConfiguration,
+        showCompletion,
+        showQuickStart,
+        currentAreaId,
+        aiMessage,
+      };
+
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.error('Failed to save onboarding state', error);
+    }
+  }, [
+    useCase,
+    selectedAreas,
+    areas,
+    showUseCaseSelection,
+    showConfiguration,
+    showCompletion,
+    showQuickStart,
+    currentAreaId,
+    aiMessage,
+    hasHydrated,
+  ]);
+
   // Handle direct "fix" links coming from other parts of the app (e.g. Campaign Readiness)
   useEffect(() => {
-    if (hasHandledExternalFix) return;
+    if (hasHandledExternalFix || !hasHydrated) return;
     if (typeof window === 'undefined') return;
 
     const params = new URLSearchParams(window.location.search);
@@ -193,7 +278,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     setShowUseCaseSelection(false);
     setShowCompletion(false);
     setShowConfiguration(true);
-  }, [areas, hasHandledExternalFix]);
+  }, [areas, hasHandledExternalFix, hasHydrated]);
 
   // Calculate progress
   const totalSelected = selectedAreas.size;

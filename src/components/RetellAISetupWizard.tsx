@@ -171,8 +171,12 @@ export const RetellAISetupWizard = () => {
                   <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Not sure what to pick? Use <span className="font-semibold">GPT-4o</span> for best quality, or
+                <span className="font-semibold"> GPT-4o Mini</span> if you care more about speed and cost.
+              </p>
             </div>
-
+ 
             <Button 
               onClick={handleCreateLLM} 
               disabled={llmLoading || !llmPrompt || !llmBeginMessage}
@@ -221,6 +225,10 @@ export const RetellAISetupWizard = () => {
                   <SelectItem value="11labs-Roger">Roger (Male)</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                You can change this later. Adrian/Roger are male voices, Aria/Sarah are female — pick what feels right
+                for your brand.
+              </p>
             </div>
 
             {/* Webhook Auto-Config Notice */}
