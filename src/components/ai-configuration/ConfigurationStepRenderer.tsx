@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles } from 'lucide-react';
@@ -241,15 +242,78 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
 
       case 'sip_trunk':
         return (
-          <div onClick={handleInteraction} className="space-y-4">
+          <div className="space-y-4">
             {renderStepIntro('sip_trunk')}
-            <SipTrunkManager />
+            
+            {/* Decision Cards - Make it clear what to do */}
+            <div className="grid gap-4 md:grid-cols-2 mb-6">
+              <Card 
+                className="border-2 border-primary/50 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
+                onClick={() => {
+                  setHasInteracted(true);
+                  onSkip();
+                }}
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-full bg-primary/20">
+                      <CheckCircle2 className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-lg">I'm using Retell AI numbers</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        You purchased numbers through Retell AI in the previous step. 
+                        SIP is already configured for you automatically.
+                      </p>
+                      <Button variant="default" size="sm" className="mt-3 gap-2">
+                        <ArrowRight className="h-4 w-4" />
+                        Skip to Next Step
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card 
+                className="border-2 border-dashed cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                onClick={handleInteraction}
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-full bg-muted">
+                      <AlertCircle className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-lg">I have my own Twilio/Telnyx numbers</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        You're bringing phone numbers from another provider and need to configure SIP trunk routing.
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Configure below ↓
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <Separator />
+            
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">
+                Only configure if you're using your own Twilio/Telnyx numbers:
+              </p>
+              <div onClick={handleInteraction}>
+                <SipTrunkManager />
+              </div>
+            </div>
+            
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
               onSkip={onSkip}
               hasInteracted={hasInteracted}
-              tip="If you bought numbers through Retell AI, you can skip this step."
+              tip="Most users skip this step - Retell AI handles SIP automatically."
             />
           </div>
         );
