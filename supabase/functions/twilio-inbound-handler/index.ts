@@ -18,8 +18,14 @@ serve(async (req) => {
     });
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><Response><Say>System configuration error</Say></Response>', {
+      headers: { 'Content-Type': 'text/xml' }
+    });
+  }
 
   // Parse Twilio form data
   const body = await req.text();

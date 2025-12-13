@@ -20,8 +20,16 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({ error: 'Supabase configuration missing' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
     const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
     const authHeader = req.headers.get('Authorization');

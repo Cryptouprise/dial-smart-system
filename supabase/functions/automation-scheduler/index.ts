@@ -170,10 +170,14 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase configuration missing');
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 

@@ -92,8 +92,15 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseKey) {
+    return new Response(
+      JSON.stringify({ error: 'Supabase configuration missing' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
 
   console.log(`Request received - Method: ${req.method}, Action: ${action || 'none'}, Full URL: ${req.url}`);
 

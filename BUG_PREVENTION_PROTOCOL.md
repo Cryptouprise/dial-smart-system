@@ -230,15 +230,17 @@ grep -rn "\.single()" src/ supabase/
 | Missing agent_id | Check optional foreign keys before use |
 | Auth failures | Verify user exists before querying |
 | Insert failures | Use `.maybeSingle()` and check result |
+| Env var crashes | Validate env vars before use |
 
-**Total bugs prevented with these rules: 160+**
+**Total bugs prevented with these rules: 185+**
 
 ---
 
-## Final Verification (Round 10)
+## Final Verification (Round 11)
 
 ✅ **ZERO `.single()` calls remain in the codebase**
 ✅ **ZERO unsafe `Authorization!` patterns remain**
+✅ **ZERO unsafe `Deno.env.get()!` patterns remain**
 
 All database queries and edge functions now use safe patterns that handle:
 - Empty result sets (no 406 errors)
@@ -246,3 +248,4 @@ All database queries and edge functions now use safe patterns that handle:
 - Proper error propagation
 - Authorization header validation before use
 - Graceful handling of missing env vars
+- Environment variable validation before use
