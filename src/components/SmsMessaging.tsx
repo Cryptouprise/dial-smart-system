@@ -55,17 +55,21 @@ const SmsMessaging: React.FC = () => {
   }, []);
 
   const loadData = async () => {
-    const [numbers] = await Promise.all([
-      getAvailableNumbers(),
-      getMessages(),
-    ]);
-    // Handle both old format (string[]) and new format (TwilioNumber[])
-    const normalizedNumbers: TwilioNumber[] = numbers.map((num: string | TwilioNumber) => 
-      typeof num === 'string' ? { number: num } : num
-    );
-    setAvailableNumbers(normalizedNumbers);
-    if (normalizedNumbers.length > 0 && !fromNumber) {
-      setFromNumber(normalizedNumbers[0].number);
+    try {
+      const [numbers] = await Promise.all([
+        getAvailableNumbers(),
+        getMessages(),
+      ]);
+      // Handle both old format (string[]) and new format (TwilioNumber[])
+      const normalizedNumbers: TwilioNumber[] = (numbers || []).map((num: string | TwilioNumber) => 
+        typeof num === 'string' ? { number: num } : num
+      );
+      setAvailableNumbers(normalizedNumbers);
+      if (normalizedNumbers.length > 0 && !fromNumber) {
+        setFromNumber(normalizedNumbers[0].number);
+      }
+    } catch (error) {
+      console.error('Error loading SMS data:', error);
     }
   };
 

@@ -88,7 +88,9 @@ export const useCampaignOptimization = (campaignId: string | null) => {
       const leadQualityScore = Math.max(0, 100 - (avgAttemptsToConvert - 1) * 25);
 
       // Calculate agent performance score (based on call duration and outcomes)
-      const avgDuration = calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) / calls.length;
+      const avgDuration = calls.length > 0 
+        ? calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) / calls.length
+        : 0;
       const agentPerformanceScore = Math.min(100, (avgDuration / 180) * 100); // 3 min average is good
 
       // Calculate compliance score
