@@ -78,6 +78,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
   const [showAIHelper, setShowAIHelper] = useState(false);
   const [aiPrompt, setAIPrompt] = useState('');
   const [aiLoading, setAILoading] = useState(false);
+  const [includeAiAutoReply, setIncludeAiAutoReply] = useState(false);
 
   // New workflow form state
   const [newWorkflow, setNewWorkflow] = useState<CampaignWorkflow>({
@@ -231,7 +232,8 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
         body: {
           prompt: aiPrompt,
           currentSteps: newWorkflow.steps,
-          workflowType: newWorkflow.workflow_type
+          workflowType: newWorkflow.workflow_type,
+          includeAiAutoReply
         }
       });
 
@@ -1015,49 +1017,82 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-purple-500" />
-                    AI Workflow Builder
+                    {editingWorkflow || newWorkflow.steps.length > 0 ? 'AI: Edit This Workflow' : 'AI Workflow Builder'}
                   </DialogTitle>
                   <DialogDescription>
-                    {editingWorkflow
-                      ? 'You are editing an existing workflow. Describe how you want to change it and AI will rewrite the steps for you.'
+                    {editingWorkflow || newWorkflow.steps.length > 0
+                      ? 'Describe how you want to modify this workflow and AI will update the steps for you.'
                       : 'Describe what you want your workflow to do and AI will build the steps for you.'}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  {/* Show current workflow summary if editing */}
+                  {(editingWorkflow || newWorkflow.steps.length > 0) && (
+                    <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Current Workflow:</p>
+                      <p className="text-sm font-medium">{newWorkflow.name || 'Untitled'}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {newWorkflow.steps.length} step{newWorkflow.steps.length !== 1 ? 's' : ''}: {newWorkflow.steps.map(s => s.step_type).join(' → ')}
+                      </p>
+                    </div>
+                  )}
+                  
                   <Textarea
                     value={aiPrompt}
                     onChange={(e) => setAIPrompt(e.target.value)}
                     placeholder={
-                      editingWorkflow
-                        ? 'Example: Simplify this workflow so it only contacts leads twice per day and add an SMS after the last call.'
+                      editingWorkflow || newWorkflow.steps.length > 0
+                        ? 'Example: Add an AI auto-reply step, remove the second call, make it more aggressive...'
                         : 'Example: Create a 3-day follow-up sequence that calls leads, sends an SMS if no answer, waits 1 day, then calls again...'
                     }
-                    rows={5}
+                    rows={4}
                     className="resize-none"
                   />
-                      <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
-                        <button 
-                          type="button"
-                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
-                          onClick={() => setAIPrompt('Create a 3-day calling campaign with SMS follow-ups after missed calls')}
-                        >
-                          3-day calling campaign
-                        </button>
-                        <button 
-                          type="button"
-                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
-                          onClick={() => setAIPrompt('Build a nurture sequence with 2 calls per day and AI SMS responses')}
-                        >
-                          Nurture sequence
-                        </button>
-                        <button 
-                          type="button"
-                          className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
-                          onClick={() => setAIPrompt('Add conditional logic: if no answer, send SMS; if interested, schedule callback')}
-                        >
-                          Conditional logic
-                        </button>
+                  
+                  {/* AI Auto-Reply Toggle */}
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-indigo-500" />
+                      <div>
+                        <p className="text-sm font-medium">Enable AI Auto-Reply?</p>
+                        <p className="text-xs text-muted-foreground">AI will automatically respond to inbound SMS messages</p>
                       </div>
+                    </div>
+                    <Switch
+                      checked={includeAiAutoReply}
+                      onCheckedChange={setIncludeAiAutoReply}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
+                    <button 
+                      type="button"
+                      className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                      onClick={() => setAIPrompt(editingWorkflow || newWorkflow.steps.length > 0 
+                        ? 'Make this workflow more aggressive with shorter wait times'
+                        : 'Create a 3-day calling campaign with SMS follow-ups after missed calls')}
+                    >
+                      {editingWorkflow || newWorkflow.steps.length > 0 ? 'More aggressive' : '3-day calling campaign'}
+                    </button>
+                    <button 
+                      type="button"
+                      className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                      onClick={() => setAIPrompt(editingWorkflow || newWorkflow.steps.length > 0
+                        ? 'Add AI auto-reply so leads get instant responses'
+                        : 'Build a nurture sequence with 2 calls per day and AI SMS responses')}
+                    >
+                      {editingWorkflow || newWorkflow.steps.length > 0 ? 'Add AI auto-reply' : 'Nurture sequence'}
+                    </button>
+                    <button 
+                      type="button"
+                      className="px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
+                      onClick={() => setAIPrompt(editingWorkflow || newWorkflow.steps.length > 0
+                        ? 'Add conditional logic: if they reply interested, stop calling'
+                        : 'Add conditional logic: if no answer, send SMS; if interested, schedule callback')}
+                    >
+                      {editingWorkflow || newWorkflow.steps.length > 0 ? 'Add conditions' : 'Conditional logic'}
+                    </button>
+                  </div>
                       <div className="flex justify-end gap-2">
                         <Button variant="outline" onClick={() => setShowAIHelper(false)}>
                           Cancel

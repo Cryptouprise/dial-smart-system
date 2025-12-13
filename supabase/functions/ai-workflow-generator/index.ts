@@ -11,31 +11,35 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, workflowType } = await req.json();
+    const { prompt, workflowType, currentSteps, includeAiAutoReply } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
+    const isEditing = currentSteps && currentSteps.length > 0;
+
     const systemPrompt = `You are an expert workflow automation builder for a sales dialer system. 
-Your job is to create detailed workflow steps based on user descriptions.
+Your job is to create or EDIT detailed workflow steps based on user descriptions.
 
 Available step types:
-- call: Make a phone call to the lead
+- call: Make a phone call to the lead (can be immediate, scheduled, or inherit timing)
 - sms: Send an SMS message
 - wait: Wait for a specified duration
 - ai_sms: Send an AI-generated personalized SMS
+- ai_auto_reply: Enable AI auto-response for inbound messages (responds automatically to SMS/calls)
 - condition: Check a condition before proceeding
 
 For each step, provide:
 - step_type: One of the above types
 - step_config: Configuration object with:
-  - For "call": { "time_of_day": "HH:MM" (optional) }
+  - For "call": { "timing_mode": "immediate|scheduled|inherit", "time_of_day": "HH:MM" (only if scheduled), "max_ring_seconds": 30, "leave_voicemail": boolean }
   - For "sms": { "sms_content": "message text" }
   - For "wait": { "delay_minutes": number, "delay_hours": number, "delay_days": number, "time_of_day": "HH:MM" (optional, for scheduling at specific time) }
   - For "ai_sms": { "sms_content": "instructions for AI or fallback message", "ai_prompt": "detailed AI instructions" }
-  - For "condition": { "condition_type": "disposition|lead_status|call_outcome|attempts", "condition_operator": "equals|not_equals", "condition_value": string, "then_action": "continue|skip|end_workflow", "else_action": "continue|skip|end_workflow" }
+  - For "ai_auto_reply": { "enabled": true, "response_delay_seconds": 5, "channels": ["sms"], "ai_instructions": "How AI should respond", "stop_on_human_reply": true }
+  - For "condition": { "condition_type": "disposition|lead_status|call_outcome|attempts|call_duration|sms_reply_received|voicemail_left|appointment_scheduled|lead_score|days_since_last_contact|total_calls|total_sms", "condition_operator": "equals|not_equals|greater_than|less_than|contains", "condition_value": string, "then_action": "continue|skip|end_workflow|jump_to_step|start_workflow", "else_action": "continue|skip|end_workflow|jump_to_step|start_workflow" }
 
 IMPORTANT RULES:
 1. Always start with a call step for calling campaigns
@@ -47,6 +51,19 @@ IMPORTANT RULES:
 7. For Saturday blasts, use time_of_day in wait steps
 8. ALWAYS use "sms_content" field for SMS message text (not "content" or "message")
 9. For ai_sms steps, include both "sms_content" (fallback) and "ai_prompt" (AI instructions)
+10. For call steps, use "timing_mode": "immediate" to call right away, "inherit" to use previous wait step timing, or "scheduled" for specific time
+11. If user wants AI auto-response, include an ai_auto_reply step - this makes the AI respond automatically to inbound SMS
+
+${isEditing ? `
+EDITING MODE: The user has an EXISTING workflow with these steps:
+${JSON.stringify(currentSteps, null, 2)}
+
+You must MODIFY this existing workflow based on the user's request. Keep what works, change what they asked for.
+` : ''}
+
+${includeAiAutoReply ? `
+INCLUDE AI AUTO-REPLY: The user wants AI auto-response enabled. Add an ai_auto_reply step that enables automatic AI responses to inbound messages.
+` : ''}
 
 Respond with a JSON object containing:
 {
