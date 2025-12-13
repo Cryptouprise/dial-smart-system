@@ -28,6 +28,7 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
+  const [fixIssueId, setFixIssueId] = useState<string | null>(null);
 
   // Form data
   const [name, setName] = useState('');
@@ -43,6 +44,37 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const [agents, setAgents] = useState<any[]>([]);
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [leadCount, setLeadCount] = useState(0);
+
+  // Helper functions for fix guidance
+  const getFixLabel = (checkId: string): string => {
+    const labels: Record<string, string> = {
+      'agent_phone': 'Agent needs a phone number',
+      'leads_assigned': 'No leads in campaign',
+      'phone_numbers': 'No active phone numbers',
+      'ai_agent': 'No AI agent configured',
+      'webhook': 'Webhook not configured',
+      'campaign_name': 'Campaign name missing',
+      'calling_hours': 'Calling hours not set',
+      'workflow': 'No workflow attached',
+      'sms_settings': 'SMS not configured',
+    };
+    return labels[checkId] || 'Issue needs fixing';
+  };
+
+  const getFixInstructions = (checkId: string): string => {
+    const instructions: Record<string, string> = {
+      'agent_phone': 'Your AI agent needs a phone number assigned. Go to the Setup Wizard and configure Phone Numbers, then link one to your agent.',
+      'leads_assigned': 'Add leads to this campaign. Go to the Setup Wizard → Import Leads, then add them to your campaign.',
+      'phone_numbers': 'You need active phone numbers. Go to the Setup Wizard → Phone Numbers to purchase numbers.',
+      'ai_agent': 'Create an AI agent first. Go to the Setup Wizard → AI Agent to set one up.',
+      'webhook': 'The webhook URL needs to be configured on your agent. This should be automatic, but you may need to re-create the agent.',
+      'campaign_name': 'Your campaign needs a name.',
+      'calling_hours': 'Set your calling hours to comply with regulations.',
+      'workflow': 'Attach a workflow for automated follow-ups (optional).',
+      'sms_settings': 'Configure AI SMS for text follow-ups (optional).',
+    };
+    return instructions[checkId] || 'Use the Setup Wizard to configure this.';
+  };
 
   useEffect(() => {
     if (open) {
@@ -364,10 +396,54 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
                   onOpenChange(false);
                 }}
                 onFixIssue={(checkId) => {
-                  // Close wizard to let user fix issue
-                  onOpenChange(false);
+                  setFixIssueId(checkId);
                 }}
               />
+              
+              {/* Fix Issue Guidance Dialog */}
+              {fixIssueId && (
+                <Card className="border-2 border-amber-500 bg-amber-50 dark:bg-amber-900/20">
+                  <CardContent className="pt-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-semibold text-amber-800 dark:text-amber-200">
+                          Fix Required: {getFixLabel(fixIssueId)}
+                        </h4>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                          {getFixInstructions(fixIssueId)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFixIssueId(null)}
+                      >
+                        Dismiss
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          // Navigate to the fix location
+                          const routes: Record<string, string> = {
+                            'agent_phone': '/?tab=onboarding',
+                            'leads_assigned': '/?tab=onboarding',
+                            'phone_numbers': '/?tab=onboarding',
+                            'ai_agent': '/?tab=onboarding',
+                          };
+                          const route = routes[fixIssueId] || '/?tab=onboarding';
+                          onOpenChange(false);
+                          window.location.href = route;
+                        }}
+                      >
+                        Go to Setup Wizard
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>
