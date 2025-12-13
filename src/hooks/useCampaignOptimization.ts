@@ -40,7 +40,7 @@ export const useCampaignOptimization = (campaignId: string | null) => {
         .from('campaigns')
         .select('*')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
       if (!campaign) return null;
 
@@ -222,7 +222,7 @@ export const useCampaignOptimization = (campaignId: string | null) => {
           .from('campaigns')
           .select('calls_per_minute')
           .eq('id', campaignId)
-          .single();
+          .maybeSingle();
 
         if (campaign) {
           optimizations.calls_per_minute = Math.max(3, Math.floor(campaign.calls_per_minute * 0.8));
@@ -236,7 +236,7 @@ export const useCampaignOptimization = (campaignId: string | null) => {
           .from('campaigns')
           .select('calls_per_minute')
           .eq('id', campaignId)
-          .single();
+          .maybeSingle();
 
         if (campaign && campaign.calls_per_minute < 20) {
           optimizations.calls_per_minute = Math.min(20, Math.ceil(campaign.calls_per_minute * 1.2));

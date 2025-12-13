@@ -74,7 +74,7 @@ export const useReachabilityScoring = () => {
         .select('*')
         .eq('lead_id', leadId)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data as ReachabilityScore | null;
