@@ -206,9 +206,10 @@ export const useSmartRetry = () => {
           scheduled_at: nextRetryAt.toISOString()
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!newEntry) throw new Error('Failed to schedule retry');
 
       console.log(`[Smart Retry] Scheduled retry for ${lead?.first_name} ${lead?.last_name} at ${nextRetryAt.toISOString()} (score: ${score})`);
 

@@ -70,9 +70,9 @@ serve(async (req) => {
           }
         })
         .select()
-        .single();
+        .maybeSingle();
 
-      if (orderError) {
+      if (orderError || !order) {
         console.error('Order creation error:', orderError);
         return new Response(JSON.stringify({ error: 'Failed to create order' }), {
           status: 500,

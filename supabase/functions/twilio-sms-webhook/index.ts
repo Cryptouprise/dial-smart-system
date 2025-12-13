@@ -667,7 +667,7 @@ ${processedKnowledge}`;
                   is_ai_generated: true,
                 })
                 .select()
-                .single();
+                .maybeSingle();
 
               if (aiMsgError) {
                 console.error('[Twilio SMS Webhook] Failed to store AI message:', aiMsgError);

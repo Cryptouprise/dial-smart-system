@@ -447,9 +447,10 @@ export const TOOL_IMPLEMENTATIONS = {
         active: true,
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (workflowError) throw workflowError;
+    if (!workflow) throw new Error('Failed to create workflow');
 
     // Create steps
     if (steps && steps.length > 0) {

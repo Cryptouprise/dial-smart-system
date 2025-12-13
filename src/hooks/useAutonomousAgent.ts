@@ -144,9 +144,10 @@ export const useAutonomousAgent = () => {
           approved_by: decision.approved_by
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error('Failed to record decision');
 
       const newDecision: AgentDecision = {
         id: data.id,

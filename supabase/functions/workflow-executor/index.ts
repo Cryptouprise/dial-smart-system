@@ -36,7 +36,7 @@ serve(async (req) => {
         .from('campaign_workflows')
         .select('*, workflow_steps(*)')
         .eq('id', workflowId)
-        .single();
+        .maybeSingle();
 
       if (workflowError || !workflow) {
         throw new Error('Workflow not found');
@@ -66,9 +66,10 @@ serve(async (req) => {
           started_at: new Date().toISOString(),
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (progressError) throw progressError;
+      if (!progress) throw new Error('Failed to create workflow progress');
 
       console.log(`[Workflow] Started workflow ${workflowId} for lead ${leadId}`);
 

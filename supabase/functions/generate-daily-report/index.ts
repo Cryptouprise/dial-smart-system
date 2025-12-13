@@ -282,7 +282,7 @@ serve(async (req) => {
             }
           }, { onConflict: 'user_id,report_date,report_type' })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.error(`[Daily Report] Error saving report for ${uid}:`, error);

@@ -148,7 +148,7 @@ serve(async (req) => {
             status: 'queued'
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (callLogError) {
           console.error('[Outbound Calling] Call log error:', callLogError);

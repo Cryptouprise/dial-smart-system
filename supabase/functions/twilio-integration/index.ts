@@ -218,7 +218,7 @@ serve(async (req) => {
           retell_phone_id: retellNumber?.phone_number_id || null
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (dbError) {
         console.error('❌ Database insert error:', dbError);

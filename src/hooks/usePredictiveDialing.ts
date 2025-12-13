@@ -65,7 +65,7 @@ export const usePredictiveDialing = () => {
         .from('leads')
         .insert([{ ...leadData, user_id: user.id, phone_number: leadData.phone_number }])
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -95,7 +95,7 @@ export const usePredictiveDialing = () => {
         .update(updates)
         .eq('id', leadId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -282,7 +282,7 @@ export const usePredictiveDialing = () => {
           timezone: campaignData.timezone || 'America/New_York'
         }])
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -312,7 +312,7 @@ export const usePredictiveDialing = () => {
         .update(updates)
         .eq('id', campaignId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -500,7 +500,7 @@ export const usePredictiveDialing = () => {
         })
         .eq('id', callLogId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

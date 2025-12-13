@@ -269,9 +269,10 @@ export const useDispositionAutomation = () => {
           active: true
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (seqError) throw seqError;
+      if (!sequence) throw new Error('Failed to create follow-up sequence');
 
       // Create the steps
       if (params.steps.length > 0) {

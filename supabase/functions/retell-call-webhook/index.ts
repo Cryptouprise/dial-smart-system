@@ -120,7 +120,7 @@ serve(async (req) => {
         onConflict: 'retell_call_id',
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (callLogError) {
       console.error('[Retell Webhook] Call log error:', callLogError);
