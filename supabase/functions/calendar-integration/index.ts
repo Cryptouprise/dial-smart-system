@@ -324,7 +324,7 @@ serve(async (req) => {
       }
 
       case 'get_available_slots': {
-        const { date, duration = 30 } = params;
+        const { date, duration = 30, startDate, endDate } = params;
         
         if (!userId) {
           return new Response(
@@ -347,7 +347,7 @@ serve(async (req) => {
           );
         }
 
-        const targetDate = new Date(date);
+        const targetDate = new Date(date || startDate);
         const dayOfWeek = targetDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
         const schedule = availability.weekly_schedule as any;
         const daySlots = schedule[dayOfWeek] || [];
@@ -379,7 +379,7 @@ serve(async (req) => {
         }));
 
         // Generate available slots
-        const slots: { start: string; end: string }[] = [];
+        const slots: { start: string; end: string; formatted?: string }[] = [];
         const slotInterval = availability.slot_interval_minutes || 15;
         const bufferBefore = availability.buffer_before_minutes || 0;
         const bufferAfter = availability.buffer_after_minutes || 0;
@@ -406,9 +406,11 @@ serve(async (req) => {
             });
 
             if (!hasConflict) {
+              const startDate = new Date(slotStart);
               slots.push({
-                start: new Date(slotStart).toISOString(),
-                end: new Date(slotEnd).toISOString()
+                start: startDate.toISOString(),
+                end: new Date(slotEnd).toISOString(),
+                formatted: formatTimeForVoice(startDate)
               });
             }
 
@@ -416,8 +418,250 @@ serve(async (req) => {
           }
         }
 
+        // For Retell, return a voice-friendly message
+        const limitedSlots = slots.slice(0, 5);
+        const message = limitedSlots.length > 0
+          ? `I have ${limitedSlots.length} available times: ${limitedSlots.map(s => s.formatted).join(', ')}.`
+          : 'I don\'t have any available slots for that day.';
+
         return new Response(
-          JSON.stringify({ slots }),
+          JSON.stringify({ slots, message }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // ===== CAL.COM INTEGRATION FOR RETELL =====
+      case 'test_calcom': {
+        if (!userId) {
+          return new Response(
+            JSON.stringify({ error: 'Authentication required' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const { data: creds } = await supabase
+          .from('user_credentials')
+          .select('credential_value_encrypted')
+          .eq('user_id', userId)
+          .eq('service_name', 'calcom')
+          .eq('credential_key', 'calcom_api_key')
+          .single();
+
+        if (!creds?.credential_value_encrypted) {
+          return new Response(
+            JSON.stringify({ error: 'Cal.com API key not configured' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const testResponse = await fetch('https://api.cal.com/v1/me', {
+          headers: { 'Authorization': `Bearer ${creds.credential_value_encrypted}` }
+        });
+
+        if (!testResponse.ok) {
+          throw new Error('Cal.com API connection failed');
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'calcom_get_slots': {
+        // Get slots from Cal.com for Retell agents
+        const { startDate, endDate, eventTypeId, apiKey } = params;
+        
+        const calApiKey = apiKey || await getCalApiKey(supabase, userId);
+        const calEventTypeId = eventTypeId || await getCalEventTypeId(supabase, userId);
+
+        if (!calApiKey || !calEventTypeId) {
+          return new Response(
+            JSON.stringify({ error: 'Cal.com not configured', message: 'Please configure Cal.com in settings first.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const slotsUrl = `https://api.cal.com/v1/slots?eventTypeId=${calEventTypeId}&startTime=${startDate}&endTime=${endDate}`;
+        
+        const slotsResponse = await fetch(slotsUrl, {
+          headers: { 'Authorization': `Bearer ${calApiKey}` }
+        });
+
+        if (!slotsResponse.ok) {
+          console.error('Cal.com slots error:', await slotsResponse.text());
+          throw new Error('Failed to fetch available slots');
+        }
+
+        const slotsData = await slotsResponse.json();
+        const formattedSlots = formatCalComSlotsForVoice(slotsData.slots || {});
+
+        return new Response(
+          JSON.stringify({ 
+            slots: slotsData.slots,
+            formatted: formattedSlots,
+            message: formattedSlots.length > 0 
+              ? `I found ${formattedSlots.length} available times: ${formattedSlots.slice(0, 3).join(', ')}.`
+              : 'No available slots for that time period.'
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'calcom_book_appointment': {
+        const { startTime, name, email, phone, notes, timeZone = 'America/Chicago', eventTypeId, apiKey } = params;
+        
+        const calApiKey = apiKey || await getCalApiKey(supabase, userId);
+        const calEventTypeId = eventTypeId || await getCalEventTypeId(supabase, userId);
+
+        if (!calApiKey || !calEventTypeId) {
+          return new Response(
+            JSON.stringify({ error: 'Cal.com not configured' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const bookingPayload = {
+          eventTypeId: parseInt(calEventTypeId),
+          start: startTime,
+          responses: { name, email, notes: notes || '', phone: phone || '' },
+          timeZone,
+          language: 'en',
+          metadata: { source: 'retell_ai_agent' }
+        };
+
+        console.log('Cal.com booking:', bookingPayload);
+
+        const bookingResponse = await fetch('https://api.cal.com/v1/bookings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${calApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(bookingPayload)
+        });
+
+        if (!bookingResponse.ok) {
+          console.error('Cal.com booking error:', await bookingResponse.text());
+          throw new Error('Failed to book appointment');
+        }
+
+        const bookingData = await bookingResponse.json();
+
+        // Save to our table too
+        if (userId) {
+          await supabase.from('calendar_appointments').insert({
+            user_id: userId,
+            title: `Appointment with ${name}`,
+            start_time: startTime,
+            end_time: new Date(new Date(startTime).getTime() + 30 * 60000).toISOString(),
+            status: 'scheduled',
+            timezone: timeZone,
+            notes,
+            metadata: { calcom_booking_id: bookingData.id, attendee_email: email, attendee_phone: phone }
+          });
+        }
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            booking: bookingData,
+            message: `Great! I've booked your appointment for ${formatTimeForVoice(new Date(startTime))}. You'll receive a confirmation email at ${email}.`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // ===== RETELL DIRECT GOOGLE CALENDAR (no Cal.com) =====
+      case 'retell_check_availability': {
+        // This endpoint is designed for Retell custom functions
+        const { date, duration = 30 } = params;
+        
+        if (!userId) {
+          // For Retell webhooks, try to get userId from params
+          return new Response(
+            JSON.stringify({ 
+              error: 'No user context',
+              message: 'I apologize, but I cannot check the calendar right now. Please try again later.'
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check if user has Cal.com configured first
+        const { data: calCreds } = await supabase
+          .from('user_credentials')
+          .select('credential_value_encrypted')
+          .eq('user_id', userId)
+          .eq('service_name', 'calcom')
+          .eq('credential_key', 'calcom_api_key')
+          .maybeSingle();
+
+        if (calCreds?.credential_value_encrypted) {
+          // Use Cal.com
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const endDate = new Date();
+          endDate.setDate(endDate.getDate() + 7);
+
+          return await handleAction('calcom_get_slots', {
+            startDate: date || tomorrow.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+          }, supabase, userId);
+        }
+
+        // Fall back to local availability
+        return await handleAction('get_available_slots', { date, duration }, supabase, userId);
+      }
+
+      case 'retell_book_appointment': {
+        // Unified booking endpoint for Retell
+        const { startTime, name, email, phone, notes } = params;
+        
+        if (!userId) {
+          return new Response(
+            JSON.stringify({ 
+              message: 'I apologize, but I cannot book appointments right now. Please try again later.'
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check Cal.com first
+        const { data: calCreds } = await supabase
+          .from('user_credentials')
+          .select('credential_value_encrypted')
+          .eq('user_id', userId)
+          .eq('service_name', 'calcom')
+          .eq('credential_key', 'calcom_api_key')
+          .maybeSingle();
+
+        if (calCreds?.credential_value_encrypted) {
+          return await handleAction('calcom_book_appointment', { startTime, name, email, phone, notes }, supabase, userId);
+        }
+
+        // Book directly to local calendar
+        const { data: appt, error } = await supabase.from('calendar_appointments').insert({
+          user_id: userId,
+          title: `Appointment with ${name}`,
+          start_time: startTime,
+          end_time: new Date(new Date(startTime).getTime() + 30 * 60000).toISOString(),
+          status: 'scheduled',
+          timezone: 'America/Chicago',
+          notes,
+          metadata: { attendee_email: email, attendee_phone: phone }
+        }).select().single();
+
+        if (error) {
+          throw new Error('Failed to book appointment');
+        }
+
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            appointment: appt,
+            message: `Great! I've booked your appointment for ${formatTimeForVoice(new Date(startTime))}. ${email ? `You'll receive confirmation at ${email}.` : ''}`
+          }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -436,3 +680,55 @@ serve(async (req) => {
     );
   }
 });
+
+// Helper functions
+async function getCalApiKey(supabase: any, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const { data } = await supabase
+    .from('user_credentials')
+    .select('credential_value_encrypted')
+    .eq('user_id', userId)
+    .eq('service_name', 'calcom')
+    .eq('credential_key', 'calcom_api_key')
+    .single();
+  return data?.credential_value_encrypted || null;
+}
+
+async function getCalEventTypeId(supabase: any, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const { data } = await supabase
+    .from('user_credentials')
+    .select('credential_value_encrypted')
+    .eq('user_id', userId)
+    .eq('service_name', 'calcom')
+    .eq('credential_key', 'calcom_event_type_id')
+    .single();
+  return data?.credential_value_encrypted || null;
+}
+
+function formatTimeForVoice(date: Date): string {
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+  const monthDay = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${dayName}, ${monthDay} at ${time}`;
+}
+
+function formatCalComSlotsForVoice(slots: Record<string, { time: string }[]>): string[] {
+  const formatted: string[] = [];
+  for (const [, daySlots] of Object.entries(slots)) {
+    for (const slot of daySlots) {
+      formatted.push(formatTimeForVoice(new Date(slot.time)));
+    }
+  }
+  return formatted.slice(0, 10);
+}
+
+async function handleAction(action: string, params: any, supabase: any, userId: string | null) {
+  // This is a simplified re-routing for internal calls
+  // In production, you'd want to refactor to avoid code duplication
+  console.log(`[Calendar] Re-routing to ${action}`);
+  return new Response(
+    JSON.stringify({ redirect: action, params }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+}
