@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { CheckCircle2, Circle, Copy, ExternalLink, Calendar, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Circle, Copy, Calendar, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Webhook URL for call tracking
@@ -233,89 +233,50 @@ export const RetellAISetupWizard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-              <h4 className="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2 mb-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Quick Setup
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                ℹ️ This is Optional
               </h4>
-              <ol className="text-sm text-green-700 dark:text-green-300 space-y-2 list-decimal list-inside">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Calendar integration allows your AI to schedule appointments. You can set this up later from the Settings page if you're not ready now.
+              </p>
+            </div>
+
+            <div className="p-4 bg-muted rounded-lg space-y-3">
+              <h4 className="font-semibold text-sm">What Calendar Integration Does:</h4>
+              <ul className="text-sm text-muted-foreground space-y-2">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span>AI checks your availability before suggesting times</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span>Automatically creates calendar events for appointments</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span>Sends reminders before scheduled callbacks</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 text-sm mb-2">
+                📋 How to Set Up (Later)
+              </h4>
+              <ol className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1 list-decimal list-inside">
                 <li>Go to <strong>Settings → Calendar</strong> tab</li>
                 <li>Click "Connect Google Calendar" and authorize</li>
-                <li>Copy the custom function configuration</li>
                 <li>In Retell Dashboard, add a Custom Function to your agent</li>
               </ol>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Custom Function URL:</p>
-              <div className="flex gap-2">
-                <code className="flex-1 p-2 bg-muted rounded text-xs break-all">
-                  https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyToClipboard('https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration', 'URL')}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => window.open('/settings', '_blank')}
-              >
-                <Calendar className="h-4 w-4 mr-2" />
-                Setup Calendar
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => window.open('https://dashboard.retellai.com', '_blank')}
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Retell Dashboard
-              </Button>
-            </div>
-
-            {/* Callback Automation Options */}
-            <div className="mt-6 p-4 border rounded-lg space-y-4">
-              <h4 className="font-semibold text-sm">Callback Automation</h4>
-              <p className="text-xs text-muted-foreground">
-                When leads request callbacks, these actions will trigger automatically:
-              </p>
-              <div className="grid gap-3">
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Create Google Calendar event for the callback</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Send SMS reminder before the scheduled time</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Optionally auto-call at the scheduled time</span>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground italic">
-                Configure these options in Voice Broadcasts or Agent Settings.
-              </p>
-            </div>
-
             <div className="flex gap-2 pt-4">
-              <Button 
-                variant="outline"
-                onClick={() => setCurrentStep(4)}
-              >
-                Skip for Now
-              </Button>
               <Button 
                 onClick={() => setCurrentStep(4)}
                 className="flex-1"
               >
-                Continue <ArrowRight className="h-4 w-4 ml-2" />
+                Skip & Complete Setup <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </CardContent>
