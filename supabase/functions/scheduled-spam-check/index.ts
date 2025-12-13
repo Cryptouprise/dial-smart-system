@@ -15,10 +15,14 @@ serve(async (req) => {
   try {
     console.log('Starting scheduled spam check...');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Call the spam detection function for all numbers
     const { data, error } = await supabase.functions.invoke('spam-detection', {
