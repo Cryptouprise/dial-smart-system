@@ -21,42 +21,47 @@ const RotationHistory = () => {
 
   useEffect(() => {
     // Load rotation history from localStorage or API
-    const savedHistory = localStorage.getItem('rotation-history');
-    if (savedHistory) {
-      setRotationEvents(JSON.parse(savedHistory));
-    } else {
-      // Generate sample data
-      const sampleEvents: RotationEvent[] = [
-        {
-          id: '1',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          type: 'automatic',
-          numbersAdded: ['+1 (720) 555-0123', '+1 (720) 555-0124'],
-          numbersRemoved: ['+1 (720) 555-0001', '+1 (720) 555-0002'],
-          reason: 'Scheduled rotation (24h interval)',
-          agentId: 'agent_123'
-        },
-        {
-          id: '2',
-          timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-          type: 'spam_triggered',
-          numbersAdded: ['+1 (720) 555-0125'],
-          numbersRemoved: ['+1 (720) 555-0003'],
-          reason: 'Number quarantined due to spam (50+ calls)',
-          agentId: 'agent_123'
-        },
-        {
-          id: '3',
-          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          type: 'manual',
-          numbersAdded: ['+1 (720) 555-0126', '+1 (720) 555-0127'],
-          numbersRemoved: [],
-          reason: 'Manual bulk import',
-          agentId: 'agent_123'
-        }
-      ];
-      setRotationEvents(sampleEvents);
+    try {
+      const savedHistory = localStorage.getItem('rotation-history');
+      if (savedHistory) {
+        setRotationEvents(JSON.parse(savedHistory));
+        return;
+      }
+    } catch (error) {
+      console.error('Error loading rotation history:', error);
     }
+    
+    // Generate sample data if no saved history
+    const sampleEvents: RotationEvent[] = [
+      {
+        id: '1',
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        type: 'automatic',
+        numbersAdded: ['+1 (720) 555-0123', '+1 (720) 555-0124'],
+        numbersRemoved: ['+1 (720) 555-0001', '+1 (720) 555-0002'],
+        reason: 'Scheduled rotation (24h interval)',
+        agentId: 'agent_123'
+      },
+      {
+        id: '2',
+        timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        type: 'spam_triggered',
+        numbersAdded: ['+1 (720) 555-0125'],
+        numbersRemoved: ['+1 (720) 555-0003'],
+        reason: 'Number quarantined due to spam (50+ calls)',
+        agentId: 'agent_123'
+      },
+      {
+        id: '3',
+        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        type: 'manual',
+        numbersAdded: ['+1 (720) 555-0126', '+1 (720) 555-0127'],
+        numbersRemoved: [],
+        reason: 'Manual bulk import',
+        agentId: 'agent_123'
+      }
+    ];
+    setRotationEvents(sampleEvents);
   }, []);
 
   const addRotationEvent = (event: Omit<RotationEvent, 'id' | 'timestamp'>) => {

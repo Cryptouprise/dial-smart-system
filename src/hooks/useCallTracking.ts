@@ -110,11 +110,11 @@ export const useCallTracking = () => {
         leadId,
         totalCalls: history.length,
         callTimes,
-        lastCallTime: callTimes[0],
+        lastCallTime: callTimes[0] || null,
         totalDuration,
         outcomes,
         dispositions,
-        averageCallDuration: Math.round(totalDuration / history.length)
+        averageCallDuration: history.length > 0 ? Math.round(totalDuration / history.length) : 0
       };
     } catch (error) {
       console.error('Error calculating call stats:', error);
@@ -239,11 +239,11 @@ export const useCallTracking = () => {
           leadId,
           totalCalls: logs.length,
           callTimes,
-          lastCallTime: callTimes[0],
+          lastCallTime: callTimes[0] || null,
           totalDuration,
           outcomes,
           dispositions,
-          averageCallDuration: Math.round(totalDuration / logs.length)
+          averageCallDuration: logs.length > 0 ? Math.round(totalDuration / logs.length) : 0
         });
       });
 

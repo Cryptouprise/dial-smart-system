@@ -60,17 +60,21 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
   };
 
   const loadSettings = () => {
-    const savedSettings = localStorage.getItem('automation-settings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setAutoImportOnPurchase(settings.autoImportOnPurchase || false);
-      setAutoRemoveQuarantined(settings.autoRemoveQuarantined || false);
-      setAutoAssignAgent(settings.autoAssignAgent || false);
-      setDefaultAgentId(settings.defaultAgentId || '');
-      setTerminationUri(settings.terminationUri || '');
-      setRotationEnabled(settings.rotationEnabled || false);
-      setRotationInterval(settings.rotationInterval || '24');
-      setActivePoolSize(settings.activePoolSize || '5');
+    try {
+      const savedSettings = localStorage.getItem('automation-settings');
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings);
+        setAutoImportOnPurchase(settings.autoImportOnPurchase || false);
+        setAutoRemoveQuarantined(settings.autoRemoveQuarantined || false);
+        setAutoAssignAgent(settings.autoAssignAgent || false);
+        setDefaultAgentId(settings.defaultAgentId || '');
+        setTerminationUri(settings.terminationUri || '');
+        setRotationEnabled(settings.rotationEnabled || false);
+        setRotationInterval(settings.rotationInterval || '24');
+        setActivePoolSize(settings.activePoolSize || '5');
+      }
+    } catch (error) {
+      console.error('Error loading automation settings:', error);
     }
   };
 

@@ -38,24 +38,32 @@ const YellowstoneManager = ({ numbers = [], onRefreshNumbers = () => {} }: Yello
   }, []);
 
   const loadSettings = () => {
-    const settings = localStorage.getItem('yellowstone-settings');
-    if (settings) {
-      const parsed = JSON.parse(settings);
-      setIsEnabled(parsed.isEnabled || false);
-      setUseAI(parsed.useAI || false);
-      setAutoSnapshotInterval(parsed.autoSnapshotInterval || '24');
-      setMaxSnapshots(parsed.maxSnapshots || 10);
+    try {
+      const settings = localStorage.getItem('yellowstone-settings');
+      if (settings) {
+        const parsed = JSON.parse(settings);
+        setIsEnabled(parsed.isEnabled || false);
+        setUseAI(parsed.useAI || false);
+        setAutoSnapshotInterval(parsed.autoSnapshotInterval || '24');
+        setMaxSnapshots(parsed.maxSnapshots || 10);
+      }
+    } catch (error) {
+      console.error('Error loading Yellowstone settings:', error);
     }
   };
 
   const loadSnapshots = () => {
-    const saved = localStorage.getItem('yellowstone-snapshots');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSnapshots(parsed.map((s: any) => ({
-        ...s,
-        timestamp: new Date(s.timestamp)
-      })));
+    try {
+      const saved = localStorage.getItem('yellowstone-snapshots');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSnapshots(parsed.map((s: any) => ({
+          ...s,
+          timestamp: new Date(s.timestamp)
+        })));
+      }
+    } catch (error) {
+      console.error('Error loading Yellowstone snapshots:', error);
     }
   };
 
