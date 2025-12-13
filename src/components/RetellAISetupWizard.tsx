@@ -279,6 +279,31 @@ export const RetellAISetupWizard = () => {
               </Button>
             </div>
 
+            {/* Callback Automation Options */}
+            <div className="mt-6 p-4 border rounded-lg space-y-4">
+              <h4 className="font-semibold text-sm">Callback Automation</h4>
+              <p className="text-xs text-muted-foreground">
+                When leads request callbacks, these actions will trigger automatically:
+              </p>
+              <div className="grid gap-3">
+                <div className="flex items-center gap-3 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span>Create Google Calendar event for the callback</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span>Send SMS reminder before the scheduled time</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span>Optionally auto-call at the scheduled time</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground italic">
+                Configure these options in Voice Broadcasts or Agent Settings.
+              </p>
+            </div>
+
             <div className="flex gap-2 pt-4">
               <Button 
                 variant="outline"
