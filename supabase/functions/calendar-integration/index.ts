@@ -692,13 +692,6 @@ serve(async (req) => {
         );
       }
 
-      default:
-        return new Response(
-          JSON.stringify({ error: `Unknown action: ${action}` }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-    }
-
       case 'test_google_calendar': {
         if (!userId) {
           return new Response(
@@ -725,25 +718,25 @@ serve(async (req) => {
         const accessToken = atob(integration.access_token_encrypted);
 
         // Create a test event 1 hour from now
-        const startTime = new Date(Date.now() + 60 * 60 * 1000);
-        const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+        const testStartTime = new Date(Date.now() + 60 * 60 * 1000);
+        const testEndTime = new Date(testStartTime.getTime() + 30 * 60 * 1000);
 
         const testEvent = {
           summary: '🧪 Test Event - AI Dialer',
           description: 'This is a test event created by your AI Dialer to verify Google Calendar integration is working correctly. You can delete this event.',
           start: {
-            dateTime: startTime.toISOString(),
+            dateTime: testStartTime.toISOString(),
             timeZone: 'America/New_York'
           },
           end: {
-            dateTime: endTime.toISOString(),
+            dateTime: testEndTime.toISOString(),
             timeZone: 'America/New_York'
           }
         };
 
-        const calendarId = integration.calendar_id || 'primary';
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+        const testCalendarId = integration.calendar_id || 'primary';
+        const testResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${testCalendarId}/events`,
           {
             method: 'POST',
             headers: {
@@ -754,8 +747,8 @@ serve(async (req) => {
           }
         );
 
-        if (!response.ok) {
-          const errorText = await response.text();
+        if (!testResponse.ok) {
+          const errorText = await testResponse.text();
           console.error('Google Calendar API error:', errorText);
           return new Response(
             JSON.stringify({ error: 'Failed to create test event. Token may be expired.' }),
@@ -763,7 +756,7 @@ serve(async (req) => {
           );
         }
 
-        const createdEvent = await response.json();
+        const createdEvent = await testResponse.json();
         
         // Update last_sync_at
         await supabase
@@ -777,7 +770,7 @@ serve(async (req) => {
             message: 'Test event created successfully!',
             eventId: createdEvent.id,
             eventLink: createdEvent.htmlLink,
-            startTime: startTime.toISOString()
+            startTime: testStartTime.toISOString()
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
