@@ -175,7 +175,9 @@ You can create, read, update, and delete:
 - Phone Numbers (manage caller IDs)
 - Agents (AI voice agents)
 - Appointments (calendar scheduling)
+- Calendar Integrations (Google Calendar, Cal.com)
 - Dispositions (call outcomes)
+- Pipeline Stages (lead progression)
 
 ## CRITICAL RULES
 
@@ -486,6 +488,70 @@ const TOOLS = [
           scheduled_at: { type: "string" }
         },
         required: ["name", "message_type", "message_content"]
+      }
+    }
+  },
+  // Calendar tools
+  {
+    type: "function",
+    function: {
+      name: "check_calendar_availability",
+      description: "Check available appointment slots for a given date",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "Date in YYYY-MM-DD format" },
+          duration: { type: "number", description: "Meeting duration in minutes (default 30)" }
+        },
+        required: ["date"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "book_appointment",
+      description: "Book an appointment on the calendar",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          start_time: { type: "string", description: "ISO datetime" },
+          duration_minutes: { type: "number" },
+          lead_id: { type: "string" },
+          description: { type: "string" }
+        },
+        required: ["title", "start_time"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_appointments",
+      description: "List upcoming appointments",
+      parameters: {
+        type: "object",
+        properties: {
+          start_date: { type: "string" },
+          end_date: { type: "string" },
+          status: { type: "string", enum: ["scheduled", "completed", "cancelled"] }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_e2e_test",
+      description: "Run an end-to-end test of the appointment booking workflow",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string", description: "Retell agent ID to test" },
+          phone_number: { type: "string", description: "Phone number to call for the test" }
+        },
+        required: ["agent_id", "phone_number"]
       }
     }
   },

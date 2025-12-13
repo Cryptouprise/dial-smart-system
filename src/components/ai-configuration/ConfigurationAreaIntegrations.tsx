@@ -8,6 +8,7 @@ import WorkflowBuilder from '../WorkflowBuilder';
 import NumberPoolManager from '../NumberPoolManager';
 import VoiceBroadcastManager from '../VoiceBroadcastManager';
 import { LeadScoringSettings } from '../LeadScoringSettings';
+import { RetellCalendarSetup } from '../RetellCalendarSetup';
 
 /**
  * This file maps each configuration area ID to its corresponding existing component.
@@ -122,6 +123,12 @@ export const CONFIGURATION_INTEGRATIONS: Record<string, ConfigurationAreaIntegra
     id: 'lead_scoring',
     component: LeadScoringSettings,
     instructions: 'Configure AI-powered lead scoring to prioritize your hottest prospects.',
+  },
+  
+  calendar: {
+    id: 'calendar',
+    component: RetellCalendarSetup,
+    instructions: 'Connect Google Calendar or Cal.com to let AI agents book appointments automatically.',
   },
   
   integrations: {
