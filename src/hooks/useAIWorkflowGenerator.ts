@@ -85,9 +85,10 @@ export const useAIWorkflowGenerator = () => {
           active: true,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (workflowError) throw workflowError;
+      if (!createdWorkflow) throw new Error('Failed to create workflow');
 
       // Create the steps
       const stepsToInsert = workflow.steps.map((step, index) => ({

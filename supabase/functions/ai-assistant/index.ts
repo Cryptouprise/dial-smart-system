@@ -733,7 +733,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           enabled: true
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
       return { success: true, message: `Automation rule "${args.name}" created!`, data };
@@ -787,7 +787,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           daily_calls: 0
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
       return { success: true, message: `Phone number ${args.phone_number} imported!`, data };
@@ -830,7 +830,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           status: 'draft'
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
       return { success: true, message: `Campaign "${args.name}" created!`, data };
@@ -977,7 +977,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           provider_type: 'twilio'
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (insertError) {
         console.error('[AI Assistant] SMS insert error:', insertError);
@@ -1975,9 +1975,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           max_attempts: 1
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
+      if (!broadcast) throw new Error('Failed to create broadcast');
       
       // Add leads to broadcast queue
       const queueEntries = leads.map((lead: any) => ({
@@ -2088,9 +2089,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           calling_hours_end: calling_hours_end || '17:00'
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
+      if (!campaign) throw new Error('Failed to create campaign');
       
       // Link leads to campaign
       const campaignLeads = leads.map((lead: any) => ({
@@ -2259,9 +2261,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           active: true,
         })
         .select()
-        .single();
+        .maybeSingle();
       
       if (workflowError) throw workflowError;
+      if (!workflow) throw new Error('Failed to create workflow');
       
       // Create workflow steps
       const stepsToInsert = steps.map((step: any, index: number) => ({

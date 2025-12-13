@@ -947,7 +947,7 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
         .select('id')
         .eq('number', phoneNumber)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (!existing) {
         // Insert new number

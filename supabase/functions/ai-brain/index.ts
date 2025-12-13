@@ -753,7 +753,7 @@ async function executeToolCall(
             .eq('user_id', userId)
             .eq('status', 'active')
             .limit(1)
-            .single();
+            .maybeSingle();
           fromNumber = numbers?.number;
         }
 
