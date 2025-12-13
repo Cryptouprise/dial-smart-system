@@ -31,7 +31,23 @@ serve(async (req) => {
       if (!error && user) userId = user.id;
     }
 
-    const { action, ...params } = await req.json();
+    // Handle GET requests (OAuth callbacks)
+    const url = new URL(req.url);
+    let action: string;
+    let params: Record<string, any> = {};
+
+    if (req.method === 'GET') {
+      action = url.searchParams.get('action') || '';
+      url.searchParams.forEach((value, key) => {
+        if (key !== 'action') params[key] = value;
+      });
+    } else {
+      const body = await req.json();
+      action = body.action;
+      params = body;
+      delete params.action;
+    }
+
     console.log(`Calendar integration action: ${action}`);
 
     switch (action) {
