@@ -5,9 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { CheckCircle2, Circle, Copy, Calendar, ArrowRight } from 'lucide-react';
+import { useCalendarIntegration } from '@/hooks/useCalendarIntegration';
+import { CheckCircle2, Circle, Copy, Calendar, ArrowRight, Loader2, Link, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Webhook URL for call tracking
@@ -40,9 +42,13 @@ export const RetellAISetupWizard = () => {
   const [agentName, setAgentName] = useState('');
   const [agentVoice, setAgentVoice] = useState('11labs-Adrian');
   const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
+  const [isConnectingCalendar, setIsConnectingCalendar] = useState(false);
 
   const { createLLM, isLoading: llmLoading } = useRetellLLM();
   const { createAgent, isLoading: agentLoading } = useRetellAI();
+  const { integrations, connectGoogleCalendar, isLoading: calendarLoading } = useCalendarIntegration();
+  
+  const googleIntegration = integrations.find(i => i.provider === 'google');
 
   const handleCreateLLM = async () => {
     const llm = await createLLM(llmPrompt, llmBeginMessage, llmModel);
@@ -63,6 +69,25 @@ export const RetellAISetupWizard = () => {
     }
   };
 
+  const handleConnectGoogle = async () => {
+    setIsConnectingCalendar(true);
+    try {
+      await connectGoogleCalendar();
+      toast({
+        title: 'Google Calendar Connected',
+        description: 'Your calendar is now linked for scheduling.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Connection Failed',
+        description: error.message || 'Failed to connect Google Calendar',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsConnectingCalendar(false);
+    }
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast({
@@ -74,8 +99,8 @@ export const RetellAISetupWizard = () => {
   const steps = [
     { number: 1, title: 'Create LLM', completed: !!createdLLM },
     { number: 2, title: 'Create Agent', completed: !!createdAgent },
-    { number: 3, title: 'Calendar', completed: false },
-    { number: 4, title: 'Complete', completed: !!createdAgent },
+    { number: 3, title: 'Calendar', completed: !!googleIntegration },
+    { number: 4, title: 'Complete', completed: !!createdAgent && currentStep === 4 },
   ];
 
   return (
@@ -233,52 +258,101 @@ export const RetellAISetupWizard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                ℹ️ This is Optional
-              </h4>
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                Calendar integration allows your AI to schedule appointments. You can set this up later from the Settings page if you're not ready now.
-              </p>
-            </div>
+            {/* Connection Status */}
+            {googleIntegration ? (
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 border-2 border-green-500 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-8 w-8 text-green-500" />
+                  <div>
+                    <h4 className="font-semibold text-green-800 dark:text-green-200">
+                      Google Calendar Connected!
+                    </h4>
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      {googleIntegration.provider_account_email || 'Your calendar is linked'}
+                    </p>
+                  </div>
+                </div>
+                <Button 
+                  onClick={() => setCurrentStep(4)}
+                  className="w-full mt-4 gap-2"
+                >
+                  Continue to Complete Setup <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                {/* Connect Button - Main Action */}
+                <Card className="border-2 border-primary/50 bg-primary/5">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-full bg-primary/20">
+                        <Calendar className="h-8 w-8 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg">Connect Google Calendar</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Allow AI to check your availability and book appointments
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={handleConnectGoogle}
+                      disabled={isConnectingCalendar || calendarLoading}
+                      className="w-full mt-4 gap-2"
+                      size="lg"
+                    >
+                      {isConnectingCalendar ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <Link className="h-4 w-4" />
+                          Connect Google Calendar
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
 
-            <div className="p-4 bg-muted rounded-lg space-y-3">
-              <h4 className="font-semibold text-sm">What Calendar Integration Does:</h4>
-              <ul className="text-sm text-muted-foreground space-y-2">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  <span>AI checks your availability before suggesting times</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  <span>Automatically creates calendar events for appointments</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  <span>Sends reminders before scheduled callbacks</span>
-                </li>
-              </ul>
-            </div>
+                <div className="text-center text-sm text-muted-foreground">or</div>
 
-            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 text-sm mb-2">
-                📋 How to Set Up (Later)
-              </h4>
-              <ol className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1 list-decimal list-inside">
-                <li>Go to <strong>Settings → Calendar</strong> tab</li>
-                <li>Click "Connect Google Calendar" and authorize</li>
-                <li>In Retell Dashboard, add a Custom Function to your agent</li>
-              </ol>
-            </div>
+                {/* Skip Option */}
+                <Button 
+                  variant="outline"
+                  onClick={() => setCurrentStep(4)}
+                  className="w-full gap-2"
+                >
+                  Skip for Now <ArrowRight className="h-4 w-4" />
+                </Button>
 
-            <div className="flex gap-2 pt-4">
-              <Button 
-                onClick={() => setCurrentStep(4)}
-                className="flex-1"
-              >
-                Skip & Complete Setup <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </div>
+                <p className="text-xs text-center text-muted-foreground">
+                  You can always connect your calendar later from Settings → Calendar
+                </p>
+              </>
+            )}
+
+            {/* What it does - collapsed for connected users */}
+            {!googleIntegration && (
+              <div className="p-4 bg-muted rounded-lg space-y-3">
+                <h4 className="font-semibold text-sm">What Calendar Integration Does:</h4>
+                <ul className="text-sm text-muted-foreground space-y-2">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                    <span>AI checks your availability before suggesting times</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                    <span>Automatically creates calendar events for appointments</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                    <span>Sends reminders before scheduled callbacks</span>
+                  </li>
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
