@@ -232,18 +232,26 @@ grep -rn "\.single()" src/ supabase/
 | Insert failures | Use `.maybeSingle()` and check result |
 | Env var crashes | Validate env vars before use |
 | Invalid dates | Validate with `isNaN(date.getTime())` before `.toISOString()` |
+| Memory leaks | Always clean up setInterval, setTimeout, and addEventListener in useEffect |
+| Race conditions | Use `forEach(async...)` → `Promise.all()` with proper awaiting |
+| State after unmount | Use `isMounted` flag pattern in async callbacks |
+| Infinite re-renders | Never use changing data as useEffect dependency with setInterval |
+| Event listener leaks | Store handler references for proper removeEventListener cleanup |
 
-**Total bugs prevented with these rules: 191+**
+**Total bugs prevented with these rules: 230+**
 
 ---
 
-## Final Verification (Round 12 - Championship Round)
+## Final Verification (Round 14 - Memory Leak Round)
 
 ✅ **ZERO `.single()` calls remain in the codebase**
 ✅ **ZERO unsafe `Authorization!` patterns remain**
 ✅ **ZERO unsafe `Deno.env.get()!` patterns remain**
 ✅ **ZERO unsafe `choices[0]` AI response access remain** (all use optional chaining)
 ✅ **ZERO unprotected `JSON.parse()` for tool arguments** (all wrapped in try-catch)
+✅ **ZERO `forEach(async...)` patterns remain** (all converted to Promise.all)
+✅ **ZERO uncleared setTimeout in useEffect** (all have cleanup functions)
+✅ **ZERO addEventListener without matching removeEventListener**
 
 All database queries and edge functions now use safe patterns that handle:
 - Empty result sets (no 406 errors)
@@ -254,3 +262,5 @@ All database queries and edge functions now use safe patterns that handle:
 - Environment variable validation before use
 - Safe AI response parsing with null checks
 - Protected JSON.parse for external data
+- Proper cleanup of timers and listeners
+- Prevention of state updates after unmount

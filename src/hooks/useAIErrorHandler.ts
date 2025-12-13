@@ -254,17 +254,16 @@ export const useAIErrorHandler = () => {
 
 // Global error capture for unhandled errors
 export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIErrorHandler>['captureError']) => {
-  // Unhandled promise rejections
-  window.addEventListener('unhandledrejection', (event) => {
+  // Handler functions - need references for cleanup
+  const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     captureError(
       event.reason?.message || 'Unhandled Promise Rejection',
       'runtime',
       { reason: event.reason }
     );
-  });
+  };
 
-  // Global errors
-  window.addEventListener('error', (event) => {
+  const handleError = (event: ErrorEvent) => {
     captureError(
       event.error || event.message,
       'runtime',
@@ -274,7 +273,11 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
         colno: event.colno,
       }
     );
-  });
+  };
+
+  // Add listeners
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+  window.addEventListener('error', handleError);
 
   // Console error interception
   const originalConsoleError = console.error;
@@ -290,7 +293,10 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
     }
   };
 
+  // Return cleanup function that removes ALL listeners
   return () => {
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    window.removeEventListener('error', handleError);
     console.error = originalConsoleError;
   };
 };

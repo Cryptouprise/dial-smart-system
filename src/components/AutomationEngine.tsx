@@ -244,10 +244,13 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
     const intervalHours = automationSettings.rotation_interval_hours;
     const interval = setInterval(executeRotation, intervalHours * 60 * 60 * 1000);
     
-    // Also run once on startup if enabled
-    setTimeout(executeRotation, 5000);
+    // Also run once on startup if enabled - track the timeout for cleanup
+    const startupTimeout = setTimeout(executeRotation, 5000);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(startupTimeout);
+    };
   }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers, toast, onRefreshNumbers]);
 
   return null;
