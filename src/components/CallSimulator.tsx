@@ -133,10 +133,13 @@ export const CallSimulator: React.FC = () => {
 
       if (error) throw error;
 
-      if (data?.agents && data.agents.length > 0) {
+      // Response is an array directly, not wrapped in {agents: [...]}
+      const agents = Array.isArray(data) ? data : data?.agents;
+      
+      if (agents && agents.length > 0) {
         retellTest.status = 'success';
-        retellTest.message = `${data.agents.length} AI agents configured`;
-        retellTest.details = data.agents.map((a: any) => a.agent_name).join(', ');
+        retellTest.message = `${agents.length} AI agents configured`;
+        retellTest.details = agents.slice(0, 5).map((a: any) => a.agent_name).join(', ') + (agents.length > 5 ? '...' : '');
         retellTest.duration = Date.now() - startTime;
       } else {
         retellTest.status = 'warning';
