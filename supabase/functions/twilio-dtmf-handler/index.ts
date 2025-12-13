@@ -14,10 +14,22 @@ serve(async (req) => {
   console.log(`Params - transfer: ${transferNumber}, queue_item_id: ${queueItemId}, broadcast_id: ${broadcastId}`);
   
   // Initialize Supabase client
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing required environment variables');
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Configuration error. Goodbye.</Say>
+  <Hangup/>
+</Response>`, {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+    });
+  }
+  
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
   
   try {
     let digits = '';

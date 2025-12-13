@@ -21,10 +21,14 @@ async function checkServiceHealth(service: { name: string; url: string }) {
     if (service.url === 'internal') {
       // Internal service checks
       if (service.name === 'supabase-db') {
-        const supabaseClient = createClient(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        if (!supabaseUrl || !supabaseServiceKey) {
+          throw new Error('Missing Supabase environment variables');
+        }
+        
+        const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
         
         await supabaseClient.from('system_health_logs').select('id').limit(1);
         return {
@@ -68,10 +72,14 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+    
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     if (req.method === 'POST') {
       // Run health checks
