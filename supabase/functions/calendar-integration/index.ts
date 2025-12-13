@@ -77,7 +77,7 @@ serve(async (req) => {
 
         const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
         const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-        const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI');
+        const redirectUri = `${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration?action=google_callback`;
 
         // Exchange code for tokens
         const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
