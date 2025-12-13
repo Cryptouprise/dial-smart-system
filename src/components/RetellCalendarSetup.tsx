@@ -346,15 +346,15 @@ export const RetellCalendarSetup: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <Tabs defaultValue="calcom" className="w-full">
+        <Tabs defaultValue="google" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="calcom" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Cal.com (Recommended)
-            </TabsTrigger>
             <TabsTrigger value="google" className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              Direct Google Calendar
+              Google Calendar (Direct)
+            </TabsTrigger>
+            <TabsTrigger value="calcom" className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Cal.com (Alternative)
             </TabsTrigger>
           </TabsList>
 
@@ -511,6 +511,46 @@ export const RetellCalendarSetup: React.FC = () => {
           <TabsContent value="google" className="space-y-6 mt-6">
             <GoogleCalendarConnect />
 
+            {/* Setup Guide for Google Calendar */}
+            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 space-y-4">
+              <h4 className="font-semibold flex items-center gap-2">
+                <Zap className="h-4 w-4 text-green-600" />
+                How to Add to Your Retell Agent
+              </h4>
+              
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <Badge variant="outline" className="mt-0.5 shrink-0">1</Badge>
+                  <div>
+                    <p className="font-medium">Connect Google Calendar Above</p>
+                    <p className="text-sm text-muted-foreground">
+                      Click "Connect Google Calendar" and authorize access
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Badge variant="outline" className="mt-0.5 shrink-0">2</Badge>
+                  <div>
+                    <p className="font-medium">Open Retell Dashboard</p>
+                    <p className="text-sm text-muted-foreground">
+                      Go to your agent → Functions → Add Custom Function
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Badge variant="outline" className="mt-0.5 shrink-0">3</Badge>
+                  <div>
+                    <p className="font-medium">Configure the Function</p>
+                    <p className="text-sm text-muted-foreground">
+                      Copy the configuration below and paste into Retell
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Webhook URL for Retell */}
             <div className="space-y-3">
               <Label>Retell Custom Function URL</Label>
@@ -524,48 +564,117 @@ export const RetellCalendarSetup: React.FC = () => {
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Use this URL as the webhook endpoint for Retell custom functions
-              </p>
             </div>
 
             {/* Function Configuration */}
             <div className="space-y-3">
-              <Label>Retell Function Configuration</Label>
+              <Label>Retell Function Configuration (Copy this)</Label>
               <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
-                <pre className="text-sm font-mono whitespace-pre-wrap">{retellFunctionConfig}</pre>
+                <pre className="text-sm font-mono whitespace-pre-wrap">{`{
+  "name": "manage_calendar",
+  "description": "Check availability and book/cancel appointments on Google Calendar",
+  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
+        "description": "The calendar action to perform"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date in YYYY-MM-DD format"
+      },
+      "time": {
+        "type": "string", 
+        "description": "Time in HH:MM format (24-hour)"
+      },
+      "duration_minutes": {
+        "type": "number",
+        "description": "Meeting duration in minutes (default 30)"
+      },
+      "attendee_name": {
+        "type": "string",
+        "description": "Name of the person booking"
+      },
+      "attendee_email": {
+        "type": "string",
+        "description": "Email of the person booking"
+      },
+      "title": {
+        "type": "string",
+        "description": "Meeting title/subject"
+      }
+    },
+    "required": ["action"]
+  },
+  "speak_during_execution": true,
+  "speak_after_execution": true
+}`}</pre>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  navigator.clipboard.writeText(retellFunctionConfig);
+                  navigator.clipboard.writeText(`{
+  "name": "manage_calendar",
+  "description": "Check availability and book/cancel appointments on Google Calendar",
+  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
+        "description": "The calendar action to perform"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date in YYYY-MM-DD format"
+      },
+      "time": {
+        "type": "string", 
+        "description": "Time in HH:MM format (24-hour)"
+      },
+      "duration_minutes": {
+        "type": "number",
+        "description": "Meeting duration in minutes (default 30)"
+      },
+      "attendee_name": {
+        "type": "string",
+        "description": "Name of the person booking"
+      },
+      "attendee_email": {
+        "type": "string",
+        "description": "Email of the person booking"
+      },
+      "title": {
+        "type": "string",
+        "description": "Meeting title/subject"
+      }
+    },
+    "required": ["action"]
+  },
+  "speak_during_execution": true,
+  "speak_after_execution": true
+}`);
                   toast.success('Configuration copied!');
                 }}
               >
                 <Copy className="h-4 w-4 mr-2" />
-                Copy Configuration
+                Copy Full Configuration
               </Button>
             </div>
 
-            {/* Available Actions */}
-            <div className="space-y-3">
-              <h4 className="font-semibold">Available Actions</h4>
-              <div className="grid gap-2">
-                <div className="flex items-center gap-2 p-2 border rounded">
-                  <Badge>get_available_slots</Badge>
-                  <span className="text-sm text-muted-foreground">Get available time slots for a date range</span>
-                </div>
-                <div className="flex items-center gap-2 p-2 border rounded">
-                  <Badge>book_appointment</Badge>
-                  <span className="text-sm text-muted-foreground">Book an appointment at a specific time</span>
-                </div>
-                <div className="flex items-center gap-2 p-2 border rounded">
-                  <Badge>cancel_appointment</Badge>
-                  <span className="text-sm text-muted-foreground">Cancel an existing appointment</span>
-                </div>
-              </div>
-            </div>
+            {/* Open Retell Button */}
+            <Button
+              className="w-full"
+              onClick={() => window.open('https://dashboard.retellai.com', '_blank')}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open Retell Dashboard to Add Function
+            </Button>
           </TabsContent>
         </Tabs>
       </CardContent>

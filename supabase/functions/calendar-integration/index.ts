@@ -792,6 +792,308 @@ serve(async (req) => {
         );
       }
 
+      // Retell Custom Function Actions - these are called by the AI agent
+      case 'get_available_slots': {
+        // Get user's Google Calendar integration
+        const { data: integrations } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('provider', 'google')
+          .limit(1);
+
+        if (!integrations || integrations.length === 0) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "Calendar is not connected. Please ask the user to try again later." 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const integration = integrations[0];
+        const accessToken = atob(integration.access_token_encrypted);
+        const { date } = body;
+        
+        // Default to today if no date provided
+        const searchDate = date ? new Date(date) : new Date();
+        const startOfDay = new Date(searchDate);
+        startOfDay.setHours(9, 0, 0, 0);
+        const endOfDay = new Date(searchDate);
+        endOfDay.setHours(18, 0, 0, 0);
+
+        // Get user's availability settings
+        const { data: availability } = await supabase
+          .from('calendar_availability')
+          .select('*')
+          .eq('user_id', integration.user_id)
+          .maybeSingle();
+
+        const slotInterval = availability?.slot_interval_minutes || 30;
+        const bufferBefore = availability?.buffer_before_minutes || 0;
+        const bufferAfter = availability?.buffer_after_minutes || 0;
+
+        // Fetch existing events from Google Calendar
+        const calendarId = integration.calendar_id || 'primary';
+        const eventsResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
+          `timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true&orderBy=startTime`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          }
+        );
+
+        if (!eventsResponse.ok) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "Unable to check calendar. Please try again." 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const eventsData = await eventsResponse.json();
+        const busyTimes = (eventsData.items || []).map((event: any) => ({
+          start: new Date(event.start.dateTime || event.start.date),
+          end: new Date(event.end.dateTime || event.end.date)
+        }));
+
+        // Generate available slots
+        const availableSlots: string[] = [];
+        const currentSlot = new Date(startOfDay);
+        
+        while (currentSlot < endOfDay) {
+          const slotEnd = new Date(currentSlot.getTime() + slotInterval * 60000);
+          
+          // Check if slot conflicts with any busy time
+          const isConflict = busyTimes.some((busy: { start: Date; end: Date }) => {
+            const slotStartWithBuffer = new Date(currentSlot.getTime() - bufferBefore * 60000);
+            const slotEndWithBuffer = new Date(slotEnd.getTime() + bufferAfter * 60000);
+            return slotStartWithBuffer < busy.end && slotEndWithBuffer > busy.start;
+          });
+
+          // Only add future slots
+          if (!isConflict && currentSlot > new Date()) {
+            availableSlots.push(formatTimeForVoice(currentSlot));
+          }
+
+          currentSlot.setMinutes(currentSlot.getMinutes() + slotInterval);
+        }
+
+        const slotsToShow = availableSlots.slice(0, 5);
+        
+        return new Response(
+          JSON.stringify({
+            success: true,
+            available_slots: slotsToShow,
+            message: slotsToShow.length > 0 
+              ? `I have ${slotsToShow.length} available time slots. They are: ${slotsToShow.join(', ')}.`
+              : "I don't have any available slots for that date. Would you like to try a different day?"
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'book_appointment': {
+        const { date, time, duration_minutes, attendee_name, attendee_email, title } = body;
+
+        if (!date || !time) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "I need the date and time to book the appointment. What date and time works for you?" 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get user's Google Calendar integration
+        const { data: integrations } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('provider', 'google')
+          .limit(1);
+
+        if (!integrations || integrations.length === 0) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "Calendar is not connected. Please try again later." 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const integration = integrations[0];
+        const accessToken = atob(integration.access_token_encrypted);
+
+        // Parse date and time
+        const [hours, minutes] = time.split(':').map(Number);
+        const startTime = new Date(date);
+        startTime.setHours(hours, minutes, 0, 0);
+        
+        const duration = duration_minutes || 30;
+        const endTime = new Date(startTime.getTime() + duration * 60000);
+
+        // Create event
+        const event = {
+          summary: title || `Appointment with ${attendee_name || 'Lead'}`,
+          description: `Booked via AI Dialer\nAttendee: ${attendee_name || 'Unknown'}\nEmail: ${attendee_email || 'Not provided'}`,
+          start: {
+            dateTime: startTime.toISOString(),
+            timeZone: 'America/New_York'
+          },
+          end: {
+            dateTime: endTime.toISOString(),
+            timeZone: 'America/New_York'
+          },
+          attendees: attendee_email ? [{ email: attendee_email }] : []
+        };
+
+        const calendarId = integration.calendar_id || 'primary';
+        const createResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(event)
+          }
+        );
+
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text();
+          console.error('Failed to create event:', errorText);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "I wasn't able to book that time slot. It might be taken. Would you like to try a different time?" 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const createdEvent = await createResponse.json();
+        
+        // Also save to our appointments table
+        await supabase.from('calendar_appointments').insert({
+          user_id: integration.user_id,
+          title: event.summary,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          google_event_id: createdEvent.id,
+          status: 'confirmed',
+          timezone: 'America/New_York'
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            event_id: createdEvent.id,
+            message: `Perfect! I've booked your appointment for ${formatTimeForVoice(startTime)}. You should receive a calendar invite shortly.`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'cancel_appointment': {
+        const { event_id, date, time } = body;
+
+        // Get user's Google Calendar integration
+        const { data: integrations } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('provider', 'google')
+          .limit(1);
+
+        if (!integrations || integrations.length === 0) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "Calendar is not connected." 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const integration = integrations[0];
+        const accessToken = atob(integration.access_token_encrypted);
+        const calendarId = integration.calendar_id || 'primary';
+
+        let eventIdToCancel = event_id;
+
+        // If no event_id, try to find by date/time
+        if (!eventIdToCancel && date && time) {
+          const [hours, minutes] = time.split(':').map(Number);
+          const searchTime = new Date(date);
+          searchTime.setHours(hours, minutes, 0, 0);
+          
+          const timeMin = new Date(searchTime.getTime() - 5 * 60000);
+          const timeMax = new Date(searchTime.getTime() + 5 * 60000);
+
+          const eventsResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
+            `timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}&singleEvents=true`,
+            {
+              headers: { 'Authorization': `Bearer ${accessToken}` }
+            }
+          );
+
+          if (eventsResponse.ok) {
+            const eventsData = await eventsResponse.json();
+            if (eventsData.items && eventsData.items.length > 0) {
+              eventIdToCancel = eventsData.items[0].id;
+            }
+          }
+        }
+
+        if (!eventIdToCancel) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "I couldn't find that appointment. Can you confirm the date and time?" 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Delete the event
+        const deleteResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventIdToCancel}`,
+          {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          }
+        );
+
+        if (!deleteResponse.ok && deleteResponse.status !== 204) {
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "I wasn't able to cancel that appointment. Please try again." 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Update our appointments table
+        await supabase
+          .from('calendar_appointments')
+          .update({ status: 'cancelled' })
+          .eq('google_event_id', eventIdToCancel);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Done! I've cancelled that appointment for you."
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: `Unknown action: ${action}` }),
