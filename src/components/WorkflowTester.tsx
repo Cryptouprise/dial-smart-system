@@ -182,8 +182,8 @@ export const WorkflowTester: React.FC<WorkflowTesterProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0 pb-2">
           <DialogTitle className="flex items-center gap-2">
             <Play className="h-5 w-5" />
             Test Workflow: {workflow?.name || 'Untitled'}
@@ -202,7 +202,7 @@ export const WorkflowTester: React.FC<WorkflowTesterProps> = ({
             <TabsTrigger value="results" disabled={!testResults}>Results</TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden mt-2">
             {/* Configuration Tab */}
             <TabsContent value="config" className="h-full overflow-y-auto mt-4">
               <div className="space-y-6 pb-4">
