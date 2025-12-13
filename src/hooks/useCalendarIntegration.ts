@@ -217,7 +217,7 @@ export const useCalendarIntegration = () => {
           user_id: user.id
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 

@@ -129,7 +129,7 @@ export const useLeadScoringSettings = () => {
         .from('lead_scoring_settings')
         .upsert(settingsToSave, { onConflict: 'user_id' })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
