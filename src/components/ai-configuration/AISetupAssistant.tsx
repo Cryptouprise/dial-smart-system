@@ -20,6 +20,22 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
+    id: 'full-system-setup',
+    title: 'Full System Setup',
+    description: 'Walk me through setting up everything from scratch',
+    icon: <Sparkles className="h-5 w-5" />,
+    prompt: `I'm new and need to set up the entire dialer system from scratch. Please walk me through everything step by step:
+1. First, help me get phone numbers
+2. Then set up an AI voice agent
+3. Import my leads
+4. Create my first campaign
+5. Set up follow-up workflows
+
+Guide me through each step one at a time, explaining what each thing does and helping me configure it. Start with phone numbers.`,
+    category: 'general',
+    estimatedTime: '10-15 min'
+  },
+  {
     id: 'create-campaign',
     title: 'Create New Campaign',
     description: 'Set up a complete calling campaign with AI guidance',

@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { 
   Phone, Settings, Zap, MessageSquare, Users, Workflow, 
   Radio, Database, Link, Shield, DollarSign, BarChart, Bot,
-  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, X, AlertCircle
+  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, ChevronLeft, X, AlertCircle
 } from 'lucide-react';
 import { ConfigurationProgress } from './ConfigurationProgress';
 import { useAIConfiguration } from '@/hooks/useAIConfiguration';
@@ -265,6 +265,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
       a.id === areaId ? { ...a, skipped: true, inProgress: false } : a
     ));
     handleAreaComplete(areaId); // Move to next
+  };
+
+  // Go back to previous step
+  const handleGoBack = () => {
+    if (!currentAreaId) return;
+    
+    const selectedAreaIds = areas.filter(a => selectedAreas.has(a.id)).map(a => a.id);
+    const currentIndex = selectedAreaIds.indexOf(currentAreaId);
+    
+    if (currentIndex > 0) {
+      // Go to previous area
+      setCurrentAreaId(selectedAreaIds[currentIndex - 1]);
+    } else {
+      // First step - go back to checklist
+      setCurrentAreaId(null);
+      setShowConfiguration(false);
+    }
   };
 
   // Allow direct configuration of any area by clicking Configure button
@@ -546,12 +563,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
       <Card className="w-full max-w-6xl mx-auto">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {currentArea?.icon}
-              <CardTitle>{currentArea?.title}</CardTitle>
-              {getCategoryBadge(currentArea?.category || 'optional')}
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={handleGoBack} className="gap-1">
+                <ChevronLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <div className="flex items-center gap-2">
+                {currentArea?.icon}
+                <CardTitle>{currentArea?.title}</CardTitle>
+                {getCategoryBadge(currentArea?.category || 'optional')}
+              </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowConfiguration(false)}>
+            <Button variant="ghost" size="sm" onClick={() => {
+              setShowConfiguration(false);
+              setCurrentAreaId(null);
+            }}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -567,7 +593,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           
           <Progress value={progress} className="mt-3" />
           <div className="text-sm text-muted-foreground">
-            Step {completedCount + 1} of {totalSelected}
+            Step {areas.filter(a => selectedAreas.has(a.id)).findIndex(a => a.id === currentAreaId) + 1} of {totalSelected}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
