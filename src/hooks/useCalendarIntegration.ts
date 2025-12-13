@@ -279,61 +279,61 @@ export const useCalendarIntegration = () => {
   const connectGoogleCalendar = async () => {
     setIsLoading(true);
     try {
-      // Check if user signed in with Google and has calendar tokens
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
-        toast({ 
-          title: 'Sign In Required', 
+        toast({
+          title: 'Sign In Required',
           description: 'Please sign in first.',
-          variant: 'destructive' 
-        });
-        return;
-      }
-
-      // Check if signed in with Google (has provider token)
-      const providerToken = session.provider_token;
-      const providerRefreshToken = session.provider_refresh_token;
-      
-      if (!providerToken) {
-        // User is signed in but not with Google OAuth
-        toast({ 
-          title: 'Google Sign-In Required', 
-          description: 'To connect Google Calendar, you need to sign out and sign back in using the "Continue with Google" button on the login page. This grants calendar access permissions.',
           variant: 'destructive',
-          duration: 10000, // Show for 10 seconds so user can read it
         });
         return;
       }
 
-      // Save the Google tokens to calendar_integrations
-      const { error: saveError } = await supabase.from('calendar_integrations').upsert({
-        user_id: session.user.id,
-        provider: 'google',
-        provider_account_email: session.user.email,
-        access_token_encrypted: providerToken,
-        refresh_token_encrypted: providerRefreshToken || null,
-        sync_enabled: true,
-        is_primary: true,
-        calendar_name: 'Google Calendar',
-      }, {
-        onConflict: 'user_id,provider'
+      const { data, error } = await supabase.functions.invoke('calendar-integration', {
+        body: { action: 'get_google_auth_url' },
       });
 
-      if (saveError) throw saveError;
+      if (error) throw error;
 
-      toast({ 
-        title: 'Google Calendar Connected', 
-        description: 'Your Google Calendar has been connected successfully!',
-      });
-      
-      await loadIntegrations();
+      if (data?.error) {
+        toast({
+          title: 'Connection Failed',
+          description: data.error,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'google-calendar-connected') {
+          toast({
+            title: 'Google Calendar Connected',
+            description: 'Your Google Calendar has been connected successfully!',
+          });
+          loadIntegrations();
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
+
+      window.open(
+        data.authUrl,
+        'google-oauth',
+        `width=${width},height=${height},left=${left},top=${top}`,
+      );
     } catch (error: any) {
       console.error('Google Calendar connect error:', error);
-      toast({ 
-        title: 'Connection Failed', 
+      toast({
+        title: 'Connection Failed',
         description: error.message || 'Failed to connect to Google Calendar',
-        variant: 'destructive' 
+        variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
