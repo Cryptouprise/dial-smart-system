@@ -273,80 +273,91 @@ const AvailabilityStatus: React.FC = () => {
   );
 };
 
-// Retell Function Config with User ID
+// Retell Function Config with Auto-Configure
 const RetellFunctionConfig: React.FC = () => {
   const [userId, setUserId] = useState<string | null>(null);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  const [isLoadingAgents, setIsLoadingAgents] = useState(true);
+  const [configuredAgents, setConfiguredAgents] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const getUser = async () => {
+    const loadData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setUserId(user.id);
+      if (user) {
+        setUserId(user.id);
+        await loadAgents();
+      }
     };
-    getUser();
+    loadData();
   }, []);
 
-  const functionConfig = `{
-  "name": "manage_calendar",
-  "description": "Check availability and book/cancel appointments. Always call get_available_slots first before booking.",
-  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": {
-        "type": "string",
-        "enum": ["get_available_slots", "book_appointment", "cancel_appointment"],
-        "description": "The calendar action to perform"
-      },
-      "user_id": {
-        "type": "string",
-        "description": "The user ID - always use: ${userId || 'YOUR_USER_ID'}",
-        "default": "${userId || 'YOUR_USER_ID'}"
-      },
-      "date": {
-        "type": "string",
-        "description": "Date in YYYY-MM-DD format"
-      },
-      "time": {
-        "type": "string", 
-        "description": "Time in HH:MM format (24-hour)"
-      },
-      "duration_minutes": {
-        "type": "number",
-        "description": "Meeting duration in minutes (default 30)"
-      },
-      "attendee_name": {
-        "type": "string",
-        "description": "Name of the person booking"
-      },
-      "attendee_email": {
-        "type": "string",
-        "description": "Email of the person booking"
-      },
-      "attendee_phone": {
-        "type": "string",
-        "description": "Phone number of the person booking"
-      },
-      "title": {
-        "type": "string",
-        "description": "Meeting title/subject"
+  const loadAgents = async () => {
+    setIsLoadingAgents(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: { action: 'list' }
+      });
+      
+      if (error) throw error;
+      
+      const agentList = data || [];
+      setAgents(agentList);
+      
+      // Check which agents already have calendar configured
+      const configured = new Set<string>();
+      for (const agent of agentList) {
+        if (agent.functions?.some((f: any) => f.name === 'manage_calendar')) {
+          configured.add(agent.agent_id);
+        }
       }
-    },
-    "required": ["action", "user_id"]
-  },
-  "speak_during_execution": true,
-  "speak_after_execution": true
-}`;
-
-  const copyConfig = () => {
-    navigator.clipboard.writeText(functionConfig);
-    toast.success('Configuration copied! Paste this in your Retell agent.');
+      setConfiguredAgents(configured);
+      
+      if (agentList.length > 0 && !selectedAgentId) {
+        setSelectedAgentId(agentList[0].agent_id);
+      }
+    } catch (error) {
+      console.error('Failed to load agents:', error);
+    } finally {
+      setIsLoadingAgents(false);
+    }
   };
 
+  const configureCalendar = async () => {
+    if (!selectedAgentId || !userId) return;
+    
+    setIsConfiguring(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: { 
+          action: 'configure_calendar',
+          agentId: selectedAgentId,
+          userId: userId
+        }
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Calendar function configured on agent!');
+      setConfiguredAgents(prev => new Set([...prev, selectedAgentId]));
+      await loadAgents(); // Refresh to show updated status
+    } catch (error: any) {
+      console.error('Failed to configure calendar:', error);
+      toast.error(error.message || 'Failed to configure calendar function');
+    } finally {
+      setIsConfiguring(false);
+    }
+  };
+
+  const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
+  const isConfigured = configuredAgents.has(selectedAgentId);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Label className="flex items-center gap-2">
-        Retell Function Configuration
-        <Badge variant="secondary" className="text-xs">Includes your User ID</Badge>
+        Auto-Configure Calendar Function
+        <Badge variant="default" className="text-xs bg-green-600">One-Click Setup</Badge>
       </Label>
       
       {!userId && (
@@ -358,23 +369,101 @@ const RetellFunctionConfig: React.FC = () => {
         </Alert>
       )}
 
-      <div className="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
-        <pre className="text-sm font-mono whitespace-pre-wrap">{functionConfig}</pre>
+      {/* Agent Selection */}
+      <div className="space-y-2">
+        <Label>Select Retell Agent</Label>
+        {isLoadingAgents ? (
+          <div className="flex items-center gap-2 p-3 border rounded-lg">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm text-muted-foreground">Loading agents...</span>
+          </div>
+        ) : agents.length === 0 ? (
+          <Alert className="border-amber-200 bg-amber-50">
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              No Retell agents found. Create an agent in the Retell dashboard first.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div className="space-y-3">
+            <select
+              value={selectedAgentId}
+              onChange={(e) => setSelectedAgentId(e.target.value)}
+              className="w-full p-3 border rounded-lg bg-background"
+            >
+              {agents.map((agent) => (
+                <option key={agent.agent_id} value={agent.agent_id}>
+                  {agent.agent_name} {configuredAgents.has(agent.agent_id) ? '✓ Calendar Configured' : ''}
+                </option>
+              ))}
+            </select>
+            
+            {selectedAgent && (
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                <p><strong>Agent ID:</strong> {selectedAgent.agent_id}</p>
+                <p><strong>Voice:</strong> {selectedAgent.voice_id}</p>
+                <p>
+                  <strong>Calendar Status:</strong>{' '}
+                  {isConfigured ? (
+                    <Badge variant="default" className="bg-green-600">Configured</Badge>
+                  ) : (
+                    <Badge variant="outline">Not Configured</Badge>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      
-      <div className="flex gap-2">
-        <Button onClick={copyConfig} className="flex-1">
-          <Copy className="h-4 w-4 mr-2" />
-          Copy Full Configuration
-        </Button>
-      </div>
-      
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription className="text-sm">
-          <strong>Important:</strong> The <code className="bg-muted px-1 rounded">user_id</code> field is required for the calendar function to find your availability settings. Make sure it's included when you paste this into Retell.
-        </AlertDescription>
-      </Alert>
+
+      {/* Auto-Configure Button */}
+      <Button
+        onClick={configureCalendar}
+        disabled={!selectedAgentId || !userId || isConfiguring || agents.length === 0}
+        className="w-full"
+        size="lg"
+      >
+        {isConfiguring ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Configuring...
+          </>
+        ) : isConfigured ? (
+          <>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Re-Configure Calendar Function
+          </>
+        ) : (
+          <>
+            <Zap className="h-4 w-4 mr-2" />
+            Auto-Configure Calendar Function
+          </>
+        )}
+      </Button>
+
+      {isConfigured && (
+        <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription>
+            <strong className="text-green-700 dark:text-green-400">Calendar function is configured!</strong>
+            <p className="text-sm mt-1">
+              Your agent will now check your availability (Mon-Fri 9am-5pm) and can book appointments automatically.
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* User ID Info */}
+      {userId && (
+        <div className="p-3 bg-muted rounded-lg">
+          <p className="text-xs text-muted-foreground">
+            <strong>Your User ID:</strong> <code className="bg-background px-1 rounded">{userId}</code>
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This is automatically included in the calendar function configuration.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
