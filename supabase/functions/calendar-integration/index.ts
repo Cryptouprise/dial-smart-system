@@ -750,8 +750,24 @@ serve(async (req) => {
         if (!testResponse.ok) {
           const errorText = await testResponse.text();
           console.error('Google Calendar API error:', errorText);
+          
+          // Parse error for better messaging
+          let errorMessage = 'Failed to create test event.';
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.error?.message?.includes('API has not been used')) {
+              errorMessage = 'Google Calendar API is not enabled. Please enable it in Google Cloud Console.';
+            } else if (errorJson.error?.code === 401) {
+              errorMessage = 'Token expired. Please reconnect Google Calendar.';
+            } else {
+              errorMessage = errorJson.error?.message || errorMessage;
+            }
+          } catch {
+            // Keep default message
+          }
+          
           return new Response(
-            JSON.stringify({ error: 'Failed to create test event. Token may be expired.' }),
+            JSON.stringify({ error: errorMessage }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
