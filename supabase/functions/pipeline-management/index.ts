@@ -13,33 +13,18 @@ serve(async (req) => {
   }
 
   try {
-    // Get the authorization header first
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       console.error('No authorization header provided')
       throw new Error('Authorization header is required')
     }
 
-    // Create Supabase client with the user's JWT token
-    // This allows RLS policies to work correctly with auth.uid()
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: authHeader }
-        },
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-
-    const token = authHeader.replace('Bearer ', '')
-    console.log('Processing request with token:', token.substring(0, 20) + '...')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
       console.error('Authentication failed:', authError)
@@ -171,10 +156,8 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    // Log detailed error server-side for debugging
     console.error('Error in pipeline management function:', error)
     
-    // Return generic error to client (don't expose internal details)
     return new Response(
       JSON.stringify({ 
         error: 'An error occurred processing your request',

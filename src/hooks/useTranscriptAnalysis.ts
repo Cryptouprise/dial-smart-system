@@ -17,7 +17,6 @@ interface TranscriptAnalysis {
 interface AnalyzeTranscriptParams {
   callId: string;
   transcript: string;
-  openaiApiKey: string;
 }
 
 export const useTranscriptAnalysis = () => {
@@ -25,11 +24,11 @@ export const useTranscriptAnalysis = () => {
   const [analysis, setAnalysis] = useState<TranscriptAnalysis | null>(null);
   const { toast } = useToast();
 
-  const analyzeTranscript = async ({ callId, transcript, openaiApiKey }: AnalyzeTranscriptParams) => {
-    if (!callId || !transcript || !openaiApiKey) {
+  const analyzeTranscript = async ({ callId, transcript }: AnalyzeTranscriptParams) => {
+    if (!callId || !transcript) {
       toast({
         title: "Missing Information",
-        description: "Call ID, transcript, and OpenAI API key are required",
+        description: "Call ID and transcript are required",
         variant: "destructive",
       });
       return null;
@@ -38,39 +37,22 @@ export const useTranscriptAnalysis = () => {
     setIsAnalyzing(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('Not authenticated');
-      }
-
-      const response = await fetch('/functions/v1/analyze-call-transcript', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          callId,
-          transcript,
-          openaiApiKey
-        }),
+      const { data, error } = await supabase.functions.invoke('analyze-call-transcript', {
+        body: { callId, transcript }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze transcript');
+      if (error) {
+        throw new Error(error.message || 'Failed to analyze transcript');
       }
 
-      const result = await response.json();
-      setAnalysis(result.analysis);
+      setAnalysis(data.analysis);
 
       toast({
         title: "Analysis Complete",
-        description: `Call automatically categorized as: ${result.analysis.disposition}`,
+        description: `Call automatically categorized as: ${data.analysis.disposition}`,
       });
 
-      return result.analysis;
+      return data.analysis;
     } catch (error) {
       console.error('Error analyzing transcript:', error);
       toast({
