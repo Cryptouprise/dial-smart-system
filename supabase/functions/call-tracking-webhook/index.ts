@@ -456,6 +456,11 @@ async function updateLeadFromAnalysis(
   // Log agent decision for autonomous tracking
   await logAgentDecision(supabase, userId, leadId, callLog, disposition, transcript);
 
+  // If appointment was set, book it in calendar
+  if (disposition === 'Appointment Set') {
+    await bookAppointmentFromCall(supabase, userId, leadId, callLog, transcript);
+  }
+
   // Schedule follow-up based on disposition
   await scheduleFollowUp(supabase, userId, leadId, disposition);
 
@@ -547,6 +552,169 @@ async function logAgentDecision(
   if (error) {
     console.error('Error logging agent decision:', error);
   }
+}
+
+async function bookAppointmentFromCall(
+  supabase: any,
+  userId: string,
+  leadId: string,
+  callLog: any,
+  transcript: string | null
+) {
+  console.log('[Calendar] Booking appointment from call disposition');
+  
+  // Try to extract appointment time from transcript
+  let appointmentTime = extractAppointmentTime(transcript);
+  
+  if (!appointmentTime) {
+    // Default to next business day at 10 AM
+    appointmentTime = new Date();
+    appointmentTime.setDate(appointmentTime.getDate() + 1);
+    appointmentTime.setHours(10, 0, 0, 0);
+    
+    // Skip weekends
+    while (appointmentTime.getDay() === 0 || appointmentTime.getDay() === 6) {
+      appointmentTime.setDate(appointmentTime.getDate() + 1);
+    }
+  }
+
+  const endTime = new Date(appointmentTime.getTime() + 30 * 60000); // 30 min default
+
+  try {
+    // Get lead details
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('first_name, last_name, email, phone_number')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    const attendeeName = lead 
+      ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead'
+      : 'Lead';
+
+    // Create appointment in our system
+    const { data: appointment, error: apptError } = await supabase
+      .from('calendar_appointments')
+      .insert({
+        user_id: userId,
+        lead_id: leadId,
+        title: `Appointment with ${attendeeName}`,
+        description: `Booked via AI call.\nPhone: ${lead?.phone_number || callLog.phone_number}`,
+        start_time: appointmentTime.toISOString(),
+        end_time: endTime.toISOString(),
+        timezone: 'America/New_York',
+        status: 'scheduled',
+      })
+      .select()
+      .maybeSingle();
+
+    if (apptError) {
+      console.error('[Calendar] Error creating appointment:', apptError);
+      return;
+    }
+
+    console.log('[Calendar] Appointment created:', appointment?.id);
+
+    // Try to sync to Google Calendar
+    try {
+      await supabase.functions.invoke('calendar-integration', {
+        body: {
+          action: 'book_appointment',
+          date: appointmentTime.toISOString().split('T')[0],
+          time: appointmentTime.toISOString().split('T')[1].substring(0, 5),
+          duration_minutes: 30,
+          attendee_name: attendeeName,
+          attendee_email: lead?.email,
+          title: `Appointment with ${attendeeName}`,
+        },
+      });
+      console.log('[Calendar] Synced to Google Calendar');
+    } catch (syncError) {
+      console.log('[Calendar] Google Calendar sync skipped (may not be connected):', syncError);
+    }
+  } catch (error) {
+    console.error('[Calendar] Error in bookAppointmentFromCall:', error);
+  }
+}
+
+function extractAppointmentTime(transcript: string | null): Date | null {
+  if (!transcript) return null;
+  
+  const lowerTranscript = transcript.toLowerCase();
+  const now = new Date();
+  
+  // Extract time patterns like "2pm", "2:30pm", "14:00"
+  const timeMatch = lowerTranscript.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  
+  // Check for date patterns
+  if (lowerTranscript.includes('tomorrow')) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1]);
+      const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+      const period = timeMatch[3]?.toLowerCase();
+      
+      if (period === 'pm' && hours < 12) hours += 12;
+      if (period === 'am' && hours === 12) hours = 0;
+      
+      tomorrow.setHours(hours, minutes, 0, 0);
+    } else {
+      tomorrow.setHours(10, 0, 0, 0);
+    }
+    return tomorrow;
+  }
+  
+  // Check for day names
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < days.length; i++) {
+    if (lowerTranscript.includes(days[i])) {
+      const targetDay = i;
+      const currentDay = now.getDay();
+      let daysUntil = targetDay - currentDay;
+      if (daysUntil <= 0) daysUntil += 7;
+      
+      const targetDate = new Date(now);
+      targetDate.setDate(targetDate.getDate() + daysUntil);
+      
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+        const period = timeMatch[3]?.toLowerCase();
+        
+        if (period === 'pm' && hours < 12) hours += 12;
+        if (period === 'am' && hours === 12) hours = 0;
+        
+        targetDate.setHours(hours, minutes, 0, 0);
+      } else {
+        targetDate.setHours(10, 0, 0, 0);
+      }
+      return targetDate;
+    }
+  }
+  
+  // If only time mentioned with no date, assume today or tomorrow
+  if (timeMatch && !lowerTranscript.includes('yesterday')) {
+    let hours = parseInt(timeMatch[1]);
+    const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    const period = timeMatch[3]?.toLowerCase();
+    
+    if (period === 'pm' && hours < 12) hours += 12;
+    if (period === 'am' && hours === 12) hours = 0;
+    
+    const appointmentDate = new Date(now);
+    appointmentDate.setHours(hours, minutes, 0, 0);
+    
+    // If the time has already passed today, schedule for tomorrow
+    if (appointmentDate <= now) {
+      appointmentDate.setDate(appointmentDate.getDate() + 1);
+    }
+    
+    return appointmentDate;
+  }
+  
+  return null;
 }
 
 async function scheduleFollowUp(

@@ -352,7 +352,44 @@ async function generateAIResponse(
   
 Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational. 
 If the user sends an image, acknowledge it and respond appropriately based on the image analysis.
-DO NOT include any special characters or formatting that may not work well in SMS.`;
+DO NOT include any special characters or formatting that may not work well in SMS.
+
+IMPORTANT CALENDAR/APPOINTMENT CAPABILITIES:
+- If the user asks about availability, scheduling, or booking an appointment, let them know you can help with that
+- When they want to book, ask for their preferred date and time
+- You can check availability and book appointments on their behalf
+- If they mention times like "tomorrow at 2pm" or "next Monday", acknowledge and confirm`;
+
+  // Check if message is about appointments/scheduling
+  const appointmentKeywords = ['appointment', 'schedule', 'book', 'available', 'meet', 'calendar', 'time slot', 'when can'];
+  const isAppointmentRelated = appointmentKeywords.some(kw => 
+    currentContent.toLowerCase().includes(kw)
+  );
+
+  // If appointment-related, try to invoke calendar function
+  if (isAppointmentRelated && settings?.enabled) {
+    try {
+      // Try to parse date/time from message
+      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b)/i);
+      const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+
+      if (dateMatch || timeMatch) {
+        // Add calendar context to system prompt
+        const calendarContext = `
+The user is asking about appointments. Based on their message, they may want to:
+- Check available times
+- Book a specific slot
+If they provide a date/time, confirm you'll book it for them.`;
+        
+        conversationHistory.unshift({
+          role: 'system',
+          content: calendarContext
+        });
+      }
+    } catch (e) {
+      console.log('[AI SMS] Calendar parsing skipped:', e);
+    }
+  }
 
   try {
     const aiProvider = settings?.ai_provider || 'lovable';
