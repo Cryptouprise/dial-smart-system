@@ -187,13 +187,12 @@ serve(async (req) => {
       try {
         const dispositionResponse = await supabase.functions.invoke('disposition-router', {
           body: {
+            action: 'process_disposition',
             leadId,
             userId,
-            disposition: outcome,
-            callId: callLog?.id,
-            campaignId,
+            dispositionName: outcome,
+            callOutcome: outcome,
             transcript: formattedTranscript,
-            analysis: dispositionResult,
           },
         });
         console.log('[Retell Webhook] Disposition router response:', dispositionResponse.data);
@@ -453,19 +452,37 @@ async function updatePipelinePosition(
     );
 
     if (matchedStage) {
-      // Update or create pipeline position
-      await supabase
+      // Update or create pipeline position - first check if exists
+      const { data: existingPosition } = await supabase
         .from('lead_pipeline_positions')
-        .upsert({
-          lead_id: leadId,
-          user_id: userId,
-          pipeline_board_id: matchedStage.id,
-          moved_at: new Date().toISOString(),
-          moved_by_user: false,
-          notes: `Auto-moved from call disposition: ${outcome}`,
-        }, {
-          onConflict: 'lead_id',
-        });
+        .select('id')
+        .eq('lead_id', leadId)
+        .eq('user_id', userId)
+        .eq('pipeline_board_id', matchedStage.id)
+        .maybeSingle();
+
+      if (existingPosition) {
+        await supabase
+          .from('lead_pipeline_positions')
+          .update({
+            moved_at: new Date().toISOString(),
+            moved_by_user: false,
+            notes: `Auto-moved from call disposition: ${outcome}`,
+          })
+          .eq('id', existingPosition.id);
+      } else {
+        await supabase
+          .from('lead_pipeline_positions')
+          .insert({
+            lead_id: leadId,
+            user_id: userId,
+            pipeline_board_id: matchedStage.id,
+            position: 0,
+            moved_at: new Date().toISOString(),
+            moved_by_user: false,
+            notes: `Auto-moved from call disposition: ${outcome}`,
+          });
+      }
     }
   } catch (error) {
     console.error('[Retell Webhook] Pipeline update error:', error);
