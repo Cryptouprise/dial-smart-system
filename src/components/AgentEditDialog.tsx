@@ -11,7 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink } from 'lucide-react';
+import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -98,6 +98,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [newKbName, setNewKbName] = useState('');
   const [newKbContent, setNewKbContent] = useState('');
   const [isUploadingKb, setIsUploadingKb] = useState(false);
+
+  // Calendar test state
+  const [calendarTestStatus, setCalendarTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [calendarTestMessage, setCalendarTestMessage] = useState('');
 
   useEffect(() => {
     if (agent) {
@@ -400,12 +404,41 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     updateConfig('mcp_servers', newServers);
   };
 
+  // Calendar connection test
+  const testCalendarConnection = async () => {
+    setCalendarTestStatus('testing');
+    setCalendarTestMessage('Testing calendar connection...');
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('calendar-integration', {
+        body: { action: 'test_google_calendar' }
+      });
+      
+      if (error) throw error;
+      
+      if (data?.success) {
+        setCalendarTestStatus('success');
+        setCalendarTestMessage(data.message || 'Calendar connected successfully!');
+        toast({ title: 'Calendar Connected', description: data.message || 'Your Google Calendar is working correctly' });
+      } else {
+        setCalendarTestStatus('error');
+        setCalendarTestMessage(data?.message || 'Calendar connection failed');
+        toast({ title: 'Connection Failed', description: data?.message || 'Please check your calendar setup', variant: 'destructive' });
+      }
+    } catch (error: any) {
+      console.error('Calendar test error:', error);
+      setCalendarTestStatus('error');
+      setCalendarTestMessage(error.message || 'Failed to test calendar connection');
+      toast({ title: 'Test Failed', description: error.message || 'Could not test calendar connection', variant: 'destructive' });
+    }
+  };
+
   const costs = calculateCostPerMinute();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             Edit Agent: {agent?.agent_name}
             <Badge variant="outline" className="ml-2">
@@ -418,7 +451,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-[600px] pr-4">
+        <ScrollArea className="flex-1 min-h-0 pr-4">
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-10 mb-4">
               <TabsTrigger value="basic">Basic</TabsTrigger>
@@ -1301,6 +1334,60 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       <Copy className="h-4 w-4 mr-2" />
                       Copy Configuration
                     </Button>
+                  </div>
+
+                  {/* Calendar Test Button */}
+                  <div className="p-4 border rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="font-medium">Test Calendar Connection</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Verify your Google Calendar is properly connected and working
+                        </p>
+                      </div>
+                      <Button
+                        variant={calendarTestStatus === 'success' ? 'default' : 'outline'}
+                        onClick={testCalendarConnection}
+                        disabled={calendarTestStatus === 'testing'}
+                        className={calendarTestStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : ''}
+                      >
+                        {calendarTestStatus === 'testing' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Testing...
+                          </>
+                        ) : calendarTestStatus === 'success' ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Connected
+                          </>
+                        ) : calendarTestStatus === 'error' ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Retry Test
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-2" />
+                            Test Connection
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    
+                    {calendarTestMessage && (
+                      <div className={`text-sm p-2 rounded ${
+                        calendarTestStatus === 'success' 
+                          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' 
+                          : calendarTestStatus === 'error'
+                          ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {calendarTestStatus === 'error' && <AlertCircle className="h-4 w-4 inline mr-1" />}
+                        {calendarTestStatus === 'success' && <CheckCircle2 className="h-4 w-4 inline mr-1" />}
+                        {calendarTestMessage}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
