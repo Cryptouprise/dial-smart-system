@@ -1504,6 +1504,11 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         callbackTime = new Date(args.callback_time);
       }
       
+      // Validate the parsed date
+      if (isNaN(callbackTime.getTime())) {
+        return { success: false, message: 'Invalid callback time format. Please use a valid date/time.' };
+      }
+      
       // Find lead
       let leadQuery = supabase.from('leads').select('id').eq('user_id', userId);
       if (args.lead_id) leadQuery = leadQuery.eq('id', args.lead_id);
