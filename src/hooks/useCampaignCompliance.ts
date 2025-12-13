@@ -239,14 +239,54 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     setIsMonitoring(false);
   }, []);
 
+  // Only run once when campaignId changes - don't depend on startMonitoring to avoid infinite loop
   useEffect(() => {
-    if (campaignId) {
-      startMonitoring();
-    }
-    return () => {
-      stopMonitoring();
+    if (!campaignId) return;
+    
+    let isChecking = false;
+    let isActive = true;
+
+    const runComplianceCheck = async () => {
+      if (isChecking || !isActive) return;
+      isChecking = true;
+
+      try {
+        const check = await performComplianceCheck(campaignId);
+        if (!isActive) return;
+
+        if (!check.passed) {
+          console.warn('Compliance violations detected:', check.violations);
+        }
+
+        const abandonmentRate = await calculateAbandonmentRate(campaignId);
+        const isWithinHours = await checkCallingHours(campaignId);
+        const dncViolations = await checkDNCCompliance(campaignId);
+        
+        if (!isActive) return;
+
+        setMetrics(prev => ({
+          ...prev,
+          abandonmentRate,
+          isWithinCallingHours: isWithinHours,
+          dncViolations,
+          complianceViolations: check.violations.length
+        }));
+      } finally {
+        isChecking = false;
+      }
     };
-  }, [campaignId, startMonitoring, stopMonitoring]);
+
+    // Initial check
+    runComplianceCheck();
+
+    // Check every minute
+    const interval = setInterval(runComplianceCheck, 60000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [campaignId]); // Only depend on campaignId
 
   return {
     metrics,
