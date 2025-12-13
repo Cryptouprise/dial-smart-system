@@ -250,13 +250,23 @@ serve(async (req) => {
     const data = await response.json();
     console.log('[ai-assistant-config] Response received:', JSON.stringify(data).slice(0, 200));
     
-    const assistantMessage = data.choices[0].message;
+    // Safe access to AI response with null check
+    const assistantMessage = data.choices?.[0]?.message;
+    if (!assistantMessage) {
+      throw new Error('Invalid AI response: no message returned');
+    }
 
     // Check if AI wants to use a tool
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       const toolCall = assistantMessage.tool_calls[0];
       const toolName = toolCall.function.name;
-      const toolArgs = JSON.parse(toolCall.function.arguments);
+      let toolArgs;
+      try {
+        toolArgs = JSON.parse(toolCall.function.arguments);
+      } catch (parseError) {
+        console.error('[ai-assistant-config] Failed to parse tool arguments:', parseError);
+        throw new Error('Invalid tool call arguments');
+      }
 
       if (toolName === 'generate_configuration_plan') {
         return new Response(

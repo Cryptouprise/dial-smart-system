@@ -1243,14 +1243,25 @@ serve(async (req) => {
     }
 
     const aiResponse = await response.json();
-    const assistantMessage = aiResponse.choices[0].message;
+    
+    // Safe access to AI response with null check
+    const assistantMessage = aiResponse.choices?.[0]?.message;
+    if (!assistantMessage) {
+      throw new Error('Invalid AI response: no message returned');
+    }
 
     // Handle tool calls
     if (assistantMessage.tool_calls) {
       const toolResults = [];
       
       for (const toolCall of assistantMessage.tool_calls) {
-        const args = JSON.parse(toolCall.function.arguments);
+        let args;
+        try {
+          args = JSON.parse(toolCall.function.arguments);
+        } catch (parseError) {
+          console.error('[AI Brain] Failed to parse tool arguments:', parseError);
+          continue; // Skip this tool call
+        }
         const result = await executeToolCall(
           supabase, 
           user.id, 
@@ -1285,7 +1296,7 @@ serve(async (req) => {
       });
 
       const finalAiResponse = await finalResponse.json();
-      const finalContent = finalAiResponse.choices[0].message.content;
+      const finalContent = finalAiResponse.choices?.[0]?.message?.content || 'I apologize, but I was unable to generate a response.';
 
       // Update daily insights
       const today = new Date().toISOString().split('T')[0];
