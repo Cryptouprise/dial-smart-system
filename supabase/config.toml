@@ -113,7 +113,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.calendar-integration]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ai-workflow-generator]
 verify_jwt = true
