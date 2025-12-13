@@ -437,8 +437,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
+      <DialogContent className="max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0 pb-2">
           <DialogTitle className="flex items-center gap-2">
             Edit Agent: {agent?.agent_name}
             <Badge variant="outline" className="ml-2">
@@ -451,7 +451,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 pr-4">
+        <div className="flex-1 overflow-auto pr-2">
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-10 mb-4">
               <TabsTrigger value="basic">Basic</TabsTrigger>
@@ -1779,7 +1779,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
               </Card>
             </TabsContent>
           </Tabs>
-        </ScrollArea>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
