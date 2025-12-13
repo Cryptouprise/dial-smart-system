@@ -18,13 +18,15 @@ import GoHighLevelManager from '@/components/GoHighLevelManager';
 import YellowstoneManager from '@/components/YellowstoneManager';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link, Server } from 'lucide-react';
+import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link, Server, FlaskConical } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
 import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
 import { SipTrunkManager } from '@/components/SipTrunkManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { CallSimulator } from '@/components/CallSimulator';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -545,6 +547,29 @@ const Settings = () => {
             </Tabs>
           </CardContent>
         </Card>
+
+        {/* Call Simulator - Developer Tools */}
+        <Collapsible>
+          <Card>
+            <CardHeader className="pb-3">
+              <CollapsibleTrigger className="flex items-center justify-between w-full text-left">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <FlaskConical className="h-5 w-5" />
+                    Call Simulator (Dev Tools)
+                  </CardTitle>
+                  <CardDescription>Test call flows without making real calls</CardDescription>
+                </div>
+                <Badge variant="secondary">Click to expand</Badge>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent>
+                <CallSimulator />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </div>
     </div>
   );
