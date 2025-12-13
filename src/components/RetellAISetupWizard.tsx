@@ -59,7 +59,7 @@ export const RetellAISetupWizard = () => {
     const agent = await createAgent(agentName, createdLLM.llm_id, agentVoice, WEBHOOK_URL);
     if (agent) {
       setCreatedAgent(agent);
-      setCurrentStep(3);
+      setCurrentStep(3); // Go to calendar step
     }
   };
 
@@ -74,7 +74,8 @@ export const RetellAISetupWizard = () => {
   const steps = [
     { number: 1, title: 'Create LLM', completed: !!createdLLM },
     { number: 2, title: 'Create Agent', completed: !!createdAgent },
-    { number: 3, title: 'Complete', completed: !!createdAgent },
+    { number: 3, title: 'Calendar', completed: false },
+    { number: 4, title: 'Complete', completed: !!createdAgent },
   ];
 
   return (
@@ -219,8 +220,85 @@ export const RetellAISetupWizard = () => {
         </Card>
       )}
 
-      {/* Step 3: Complete */}
+      {/* Step 3: Calendar Integration */}
       {currentStep === 3 && createdAgent && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Step 3: Calendar Integration (Optional)
+            </CardTitle>
+            <CardDescription>
+              Enable your AI agent to check availability and book appointments
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <h4 className="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2 mb-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Quick Setup
+              </h4>
+              <ol className="text-sm text-green-700 dark:text-green-300 space-y-2 list-decimal list-inside">
+                <li>Go to <strong>Settings → Calendar</strong> tab</li>
+                <li>Click "Connect Google Calendar" and authorize</li>
+                <li>Copy the custom function configuration</li>
+                <li>In Retell Dashboard, add a Custom Function to your agent</li>
+              </ol>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Custom Function URL:</p>
+              <div className="flex gap-2">
+                <code className="flex-1 p-2 bg-muted rounded text-xs break-all">
+                  https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard('https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration', 'URL')}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => window.open('/settings', '_blank')}
+              >
+                <Calendar className="h-4 w-4 mr-2" />
+                Setup Calendar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open('https://dashboard.retellai.com', '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Retell Dashboard
+              </Button>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button 
+                variant="outline"
+                onClick={() => setCurrentStep(4)}
+              >
+                Skip for Now
+              </Button>
+              <Button 
+                onClick={() => setCurrentStep(4)}
+                className="flex-1"
+              >
+                Continue <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 4: Complete */}
+      {currentStep === 4 && createdAgent && (
         <Card>
           <CardHeader>
             <CardTitle>Setup Complete! 🎉</CardTitle>
@@ -277,56 +355,14 @@ export const RetellAISetupWizard = () => {
               </p>
             </div>
 
-            {/* Cal.com Calendar Integration Guide */}
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <div className="flex items-center gap-2 mb-3">
-                <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
-                  Enable Appointment Booking (Cal.com)
-                </p>
-              </div>
-              <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                Retell natively integrates with Cal.com for appointment booking. Cal.com syncs with Google Calendar automatically.
-              </p>
-              <ol className="text-xs text-blue-700 dark:text-blue-300 space-y-2 list-decimal list-inside">
-                <li>Create a free account at <a href="https://cal.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">cal.com</a></li>
-                <li>Connect your Google Calendar in Cal.com Settings → Calendars</li>
-                <li>Create an Event Type (e.g., "15 min consultation")</li>
-                <li>Get your <strong>Event Type ID</strong> from the event URL</li>
-                <li>Get your <strong>API Key</strong> from Cal.com Settings → Developer → API Keys</li>
-                <li>In <a href="https://dashboard.retellai.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">Retell Dashboard</a> → Agent → Add Tool → "Book Calendar"</li>
-                <li>Enter your Cal.com credentials and save</li>
-              </ol>
-              <div className="flex gap-2 mt-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-blue-700 border-blue-300 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/40"
-                  onClick={() => window.open('https://cal.com', '_blank')}
-                >
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Cal.com
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-blue-700 border-blue-300 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/40"
-                  onClick={() => window.open('https://docs.retellai.com/build/book-calendar', '_blank')}
-                >
-                  <ExternalLink className="h-3 w-3 mr-1" />
-                  Retell Docs
-                </Button>
-              </div>
-            </div>
-
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
                 Next steps:
               </p>
               <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                <li>Set up Cal.com for appointment booking (above)</li>
                 <li>Go to the "Phone Numbers" tab to import phone numbers</li>
                 <li>Link your phone numbers to this agent</li>
+                <li>Set up Calendar integration if you haven't already</li>
                 <li>Start making calls!</li>
               </ul>
             </div>

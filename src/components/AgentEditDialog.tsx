@@ -11,7 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -420,13 +420,14 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
         <ScrollArea className="h-[600px] pr-4">
           <Tabs defaultValue="basic" className="w-full">
-            <TabsList className="grid w-full grid-cols-9 mb-4">
+            <TabsList className="grid w-full grid-cols-10 mb-4">
               <TabsTrigger value="basic">Basic</TabsTrigger>
               <TabsTrigger value="llm">LLM</TabsTrigger>
               <TabsTrigger value="voice">Voice</TabsTrigger>
               <TabsTrigger value="speech">Speech</TabsTrigger>
               <TabsTrigger value="transcription">STT</TabsTrigger>
               <TabsTrigger value="call">Call</TabsTrigger>
+              <TabsTrigger value="calendar">Calendar</TabsTrigger>
               <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
               <TabsTrigger value="mcp">MCP</TabsTrigger>
               <TabsTrigger value="test">Test</TabsTrigger>
@@ -1199,6 +1200,124 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       onChange={(e) => updateConfig('max_call_duration_ms', parseInt(e.target.value))}
                     />
                     <p className="text-xs text-muted-foreground">Default: 1 hour (3600000ms)</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Calendar Tab */}
+            <TabsContent value="calendar" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Google Calendar Integration
+                  </CardTitle>
+                  <CardDescription>
+                    Enable your AI agent to check availability and book appointments
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                    <h4 className="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Setup Instructions
+                    </h4>
+                    <ol className="mt-2 text-sm text-green-700 dark:text-green-300 space-y-2 list-decimal list-inside">
+                      <li>Go to <strong>Settings → Calendar</strong> and connect your Google Calendar</li>
+                      <li>Copy the custom function configuration below</li>
+                      <li>In Retell Dashboard, go to your agent → Functions → Add Custom Function</li>
+                      <li>Paste the configuration and save</li>
+                    </ol>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Custom Function URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        readOnly
+                        value="https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration"
+                        className="font-mono text-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          navigator.clipboard.writeText('https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration');
+                          toast({ title: 'Copied!', description: 'URL copied to clipboard' });
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Function Configuration for Retell</Label>
+                    <div className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto max-h-48">
+                      <pre className="text-xs font-mono whitespace-pre">{`{
+  "name": "manage_calendar",
+  "description": "Check availability and book appointments",
+  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["get_available_slots", "book_appointment"]
+      },
+      "date": { "type": "string" },
+      "time": { "type": "string" },
+      "attendee_name": { "type": "string" },
+      "attendee_email": { "type": "string" }
+    },
+    "required": ["action"]
+  }
+}`}</pre>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`{
+  "name": "manage_calendar",
+  "description": "Check availability and book appointments",
+  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": { "type": "string", "enum": ["get_available_slots", "book_appointment"] },
+      "date": { "type": "string" },
+      "time": { "type": "string" },
+      "attendee_name": { "type": "string" },
+      "attendee_email": { "type": "string" }
+    },
+    "required": ["action"]
+  }
+}`);
+                        toast({ title: 'Copied!', description: 'Configuration copied to clipboard' });
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Configuration
+                    </Button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open('/settings', '_blank')}
+                    >
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Setup Google Calendar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open('https://dashboard.retellai.com', '_blank')}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Retell Dashboard
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
