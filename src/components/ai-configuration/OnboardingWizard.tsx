@@ -16,6 +16,7 @@ import { useAIConfiguration } from '@/hooks/useAIConfiguration';
 import { useToast } from '@/hooks/use-toast';
 import { CONFIGURATION_INTEGRATIONS } from './ConfigurationAreaIntegrations';
 import { ConfigurationStepRenderer } from './ConfigurationStepRenderer';
+import { QuickStartWizard } from './QuickStartWizard';
 
 export interface ConfigurationArea {
   id: string;
@@ -159,6 +160,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const [showUseCaseSelection, setShowUseCaseSelection] = useState(true);
   const [showConfiguration, setShowConfiguration] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [showQuickStart, setShowQuickStart] = useState(false);
   const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState('');
   const [userInput, setUserInput] = useState('');
@@ -589,85 +591,77 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
 
   if (showUseCaseSelection) {
     return (
-      <Card className="w-full max-w-4xl mx-auto">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <CardTitle>Welcome to Dial Smart!</CardTitle>
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader className="text-center pb-2">
+          <div className="flex justify-center mb-3">
+            <div className="p-3 rounded-full bg-primary/10">
+              <Sparkles className="h-8 w-8 text-primary" />
+            </div>
           </div>
-          <CardDescription>
-            Let's get your dialer system set up. Choose how you'd like to proceed.
+          <CardTitle className="text-2xl">Welcome to Dial Smart!</CardTitle>
+          <CardDescription className="text-base">
+            Let's get you making calls in minutes
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* AI Setup Option */}
-          <Card className="border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-4">
-                <div className="p-3 rounded-lg bg-primary/10">
-                  <Sparkles className="h-8 w-8 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg">AI-Guided Setup (Recommended)</h3>
-                  <p className="text-sm text-muted-foreground mt-1 mb-3">
-                    Tell me what you need and I'll configure everything for you. Just describe your use case in plain English.
-                  </p>
-                  <Button 
-                    onClick={() => {
-                      window.location.href = '/?tab=ai-setup';
-                    }}
-                    className="gap-2"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Start AI Setup Assistant
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <CardContent className="space-y-4 pt-4">
+          {/* Quick Start - Primary CTA */}
+          <Button 
+            size="lg"
+            className="w-full h-auto py-4 gap-3"
+            onClick={() => {
+              setShowUseCaseSelection(false);
+              setShowQuickStart(true);
+            }}
+          >
+            <Zap className="h-5 w-5" />
+            <div className="text-left">
+              <div className="font-semibold">Quick Start (4 steps)</div>
+              <div className="text-xs opacity-80">Phone Numbers → AI Agent → Leads → Launch</div>
+            </div>
+          </Button>
 
-          <div className="relative">
+          <div className="relative py-2">
             <Separator />
-            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-sm text-muted-foreground">
-              or choose a template
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-xs text-muted-foreground">
+              or
             </span>
           </div>
 
-          {/* Template Options */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { id: 'cold_calling', title: 'Cold Calling / Sales', icon: <Phone />, desc: 'Outbound sales calls' },
-              { id: 'solar', title: 'Solar / Home Improvement', icon: <Zap />, desc: 'Solar or home services' },
-              { id: 'real_estate', title: 'Real Estate', icon: <Users />, desc: 'Property follow-ups' },
-              { id: 'broadcast', title: 'Voice Broadcasts', icon: <MessageSquare />, desc: 'Mass announcements' },
-              { id: 'sms_only', title: 'SMS Campaigns', icon: <MessageSquare />, desc: 'Text messaging only' },
-              { id: 'custom', title: 'Custom Setup', icon: <Settings />, desc: 'I know what I need' },
-            ].map(option => (
-              <Button
-                key={option.id}
-                variant="outline"
-                className="h-auto p-4 flex flex-col items-start gap-2 hover:border-primary"
-                onClick={() => handleUseCaseSelect(option.id)}
-              >
-                <div className="flex items-center gap-2">
-                  {option.icon}
-                  <span className="font-semibold">{option.title}</span>
-                </div>
-                <span className="text-sm text-muted-foreground">{option.desc}</span>
-              </Button>
-            ))}
-          </div>
-          
-          <Separator />
-          
-          <div className="flex justify-between">
-            <Button variant="ghost" onClick={onSkip}>
-              Skip Setup - I'll Configure Manually
+          {/* Secondary options */}
+          <div className="grid grid-cols-2 gap-3">
+            <Button 
+              variant="outline"
+              className="h-auto py-3"
+              onClick={() => {
+                handleUseCaseSelect('custom');
+              }}
+            >
+              <div className="text-center">
+                <Settings className="h-5 w-5 mx-auto mb-1" />
+                <div className="text-sm font-medium">Custom Setup</div>
+                <div className="text-xs text-muted-foreground">Pick what you need</div>
+              </div>
+            </Button>
+            <Button 
+              variant="ghost"
+              className="h-auto py-3"
+              onClick={onSkip}
+            >
+              <div className="text-center">
+                <ChevronRight className="h-5 w-5 mx-auto mb-1" />
+                <div className="text-sm font-medium">Skip for Now</div>
+                <div className="text-xs text-muted-foreground">I'll explore myself</div>
+              </div>
             </Button>
           </div>
         </CardContent>
       </Card>
     );
+  }
+
+  // Quick Start linear wizard (simpler flow)
+  if (showQuickStart) {
+    return <QuickStartWizard onComplete={onComplete} onSkip={onSkip} />;
   }
 
   if (showConfiguration && currentAreaId) {
