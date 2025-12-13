@@ -1,13 +1,14 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Phone, CheckCircle, XCircle, AlertCircle, Loader2, Play, Zap, Server, Gauge, Users, Activity } from 'lucide-react';
+import { Phone, CheckCircle, XCircle, AlertCircle, Loader2, Play, Zap, Server, Gauge, Users, Activity, Calendar, Bell, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface TestResult {
   id: string;
@@ -40,6 +41,16 @@ interface DialingSystemTest {
   duration?: number;
 }
 
+interface AppointmentTestStep {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'success' | 'failed' | 'waiting' | 'warning';
+  message: string;
+  details?: string;
+  startedAt?: number;
+  completedAt?: number;
+}
+
 // Test phone numbers - mix of fake and real
 const TEST_CONTACTS: CallTest[] = [
   { id: '1', phone: '+15551234567', name: 'Fake Number 1 (should fail)', status: 'pending' },
@@ -60,6 +71,291 @@ export const CallSimulator: React.FC = () => {
   const [isRunningDialingTest, setIsRunningDialingTest] = useState(false);
   const [simulatedLeadCount, setSimulatedLeadCount] = useState(10000);
   const [stressTestProgress, setStressTestProgress] = useState(0);
+
+  // Appointment E2E test state
+  const [appointmentTestSteps, setAppointmentTestSteps] = useState<AppointmentTestStep[]>([]);
+  const [isRunningAppointmentTest, setIsRunningAppointmentTest] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [testPhoneNumber, setTestPhoneNumber] = useState<string>('');
+  const [availableAgents, setAvailableAgents] = useState<any[]>([]);
+  const [appointmentTestResult, setAppointmentTestResult] = useState<{
+    callInitiated: boolean;
+    appointmentCreated: boolean;
+    googleCalendarSynced: boolean;
+    appointmentId?: string;
+    googleEventId?: string;
+  } | null>(null);
+  const appointmentPollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load available agents on mount
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'list' }
+        });
+        if (!error && data) {
+          const agents = Array.isArray(data) ? data : data?.agents || [];
+          setAvailableAgents(agents);
+          if (agents.length > 0 && !selectedAgentId) {
+            setSelectedAgentId(agents[0].agent_id);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load agents:', e);
+      }
+    };
+    loadAgents();
+  }, []);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (appointmentPollingRef.current) {
+        clearInterval(appointmentPollingRef.current);
+      }
+    };
+  }, []);
+
+  // End-to-End Appointment Test
+  const runAppointmentTest = useCallback(async () => {
+    if (!selectedAgentId || !testPhoneNumber) {
+      toast.error('Please select an agent and enter your phone number');
+      return;
+    }
+
+    setIsRunningAppointmentTest(true);
+    setAppointmentTestResult(null);
+    
+    const steps: AppointmentTestStep[] = [
+      { id: 'init', name: 'Initialize Test', status: 'pending', message: 'Preparing test environment...' },
+      { id: 'call', name: 'Initiate Call', status: 'pending', message: 'Calling your phone with AI agent...' },
+      { id: 'monitor', name: 'Monitoring Call', status: 'pending', message: 'Waiting for call to complete...' },
+      { id: 'appointment', name: 'Check Appointment', status: 'pending', message: 'Checking if appointment was created...' },
+      { id: 'calendar', name: 'Google Calendar Sync', status: 'pending', message: 'Verifying Google Calendar sync...' },
+      { id: 'complete', name: 'Test Complete', status: 'pending', message: 'Summarizing results...' },
+    ];
+    setAppointmentTestSteps(steps);
+
+    const updateStep = (id: string, updates: Partial<AppointmentTestStep>) => {
+      setAppointmentTestSteps(prev => prev.map(s => 
+        s.id === id ? { ...s, ...updates } : s
+      ));
+    };
+
+    try {
+      // Step 1: Initialize
+      updateStep('init', { status: 'running', startedAt: Date.now() });
+      
+      // Get caller ID
+      const { data: phones } = await supabase
+        .from('phone_numbers')
+        .select('number, retell_phone_id')
+        .eq('status', 'active')
+        .eq('is_spam', false)
+        .not('retell_phone_id', 'is', null)
+        .limit(1);
+
+      if (!phones || phones.length === 0) {
+        throw new Error('No Retell-registered phone numbers available');
+      }
+
+      const callerIdNumber = phones[0].number;
+      updateStep('init', { 
+        status: 'success', 
+        message: `Using ${callerIdNumber} as caller ID`,
+        completedAt: Date.now() 
+      });
+
+      // Step 2: Initiate Call
+      updateStep('call', { status: 'running', startedAt: Date.now() });
+      
+      const { data: callData, error: callError } = await supabase.functions.invoke('outbound-calling', {
+        body: {
+          action: 'create_call',
+          phoneNumber: testPhoneNumber,
+          callerId: callerIdNumber,
+          agentId: selectedAgentId,
+        }
+      });
+
+      if (callError || !callData?.call_id) {
+        throw new Error(callError?.message || 'Failed to initiate call');
+      }
+
+      const retellCallId = callData.call_id;
+      const callLogId = callData.call_log_id;
+      
+      updateStep('call', { 
+        status: 'success', 
+        message: `Call initiated! Call ID: ${retellCallId}`,
+        details: 'Answer your phone and ask to book an appointment',
+        completedAt: Date.now() 
+      });
+
+      // Step 3: Monitor Call
+      updateStep('monitor', { status: 'running', startedAt: Date.now() });
+      
+      // Record the start time for appointment detection
+      const testStartTime = new Date().toISOString();
+      
+      // Poll for call completion (max 5 minutes)
+      let callCompleted = false;
+      let pollAttempts = 0;
+      const maxPollAttempts = 60; // 5 minutes with 5-second intervals
+      
+      while (!callCompleted && pollAttempts < maxPollAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        pollAttempts++;
+        
+        try {
+          const { data: statusData } = await supabase.functions.invoke('outbound-calling', {
+            body: {
+              action: 'get_call_status',
+              retellCallId: retellCallId
+            }
+          });
+          
+          const status = statusData?.status || statusData?.call_status;
+          updateStep('monitor', { 
+            message: `Call status: ${status} (${pollAttempts * 5}s elapsed)` 
+          });
+          
+          if (['ended', 'completed', 'failed', 'busy', 'no-answer'].includes(status?.toLowerCase())) {
+            callCompleted = true;
+          }
+        } catch (e) {
+          // Call might have ended, continue checking
+          callCompleted = true;
+        }
+      }
+
+      if (!callCompleted) {
+        updateStep('monitor', { 
+          status: 'warning', 
+          message: 'Call monitoring timed out - continuing with appointment check',
+          completedAt: Date.now() 
+        });
+      } else {
+        updateStep('monitor', { 
+          status: 'success', 
+          message: 'Call completed',
+          completedAt: Date.now() 
+        });
+      }
+
+      // Step 4: Check for Appointment
+      updateStep('appointment', { status: 'running', startedAt: Date.now() });
+      
+      // Wait a moment for any appointment to be created
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Check for appointments created after test started
+      const { data: appointments } = await supabase
+        .from('calendar_appointments')
+        .select('*')
+        .gte('created_at', testStartTime)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const appointmentCreated = appointments && appointments.length > 0;
+      const appointment = appointments?.[0];
+
+      if (appointmentCreated && appointment) {
+        updateStep('appointment', { 
+          status: 'success', 
+          message: `Appointment created: "${appointment.title}"`,
+          details: `Scheduled for ${new Date(appointment.start_time).toLocaleString()}`,
+          completedAt: Date.now() 
+        });
+
+        // Step 5: Check Google Calendar Sync
+        updateStep('calendar', { status: 'running', startedAt: Date.now() });
+        
+        const hasGoogleSync = !!appointment.google_event_id;
+        
+        if (hasGoogleSync) {
+          updateStep('calendar', { 
+            status: 'success', 
+            message: 'Synced to Google Calendar',
+            details: `Event ID: ${appointment.google_event_id}`,
+            completedAt: Date.now() 
+          });
+        } else {
+          // Check if Google Calendar is connected
+          const { data: integrations } = await supabase
+            .from('calendar_integrations')
+            .select('id, provider')
+            .eq('provider', 'google')
+            .limit(1);
+          
+          if (integrations && integrations.length > 0) {
+            updateStep('calendar', { 
+              status: 'warning', 
+              message: 'Google Calendar connected but event not synced yet',
+              details: 'Sync may be delayed or failed',
+              completedAt: Date.now() 
+            });
+          } else {
+            updateStep('calendar', { 
+              status: 'warning', 
+              message: 'Google Calendar not connected',
+              details: 'Connect Google Calendar in Settings to enable sync',
+              completedAt: Date.now() 
+            });
+          }
+        }
+
+        setAppointmentTestResult({
+          callInitiated: true,
+          appointmentCreated: true,
+          googleCalendarSynced: hasGoogleSync,
+          appointmentId: appointment.id,
+          googleEventId: appointment.google_event_id,
+        });
+
+      } else {
+        updateStep('appointment', { 
+          status: 'warning', 
+          message: 'No appointment detected',
+          details: 'Did you ask the AI to book an appointment during the call?',
+          completedAt: Date.now() 
+        });
+        
+        updateStep('calendar', { 
+          status: 'pending', 
+          message: 'Skipped - no appointment to sync' 
+        });
+
+        setAppointmentTestResult({
+          callInitiated: true,
+          appointmentCreated: false,
+          googleCalendarSynced: false,
+        });
+      }
+
+      // Step 6: Complete
+      updateStep('complete', { 
+        status: 'success', 
+        message: 'Test completed',
+        completedAt: Date.now() 
+      });
+
+      toast.success('Appointment test completed!');
+
+    } catch (error: any) {
+      console.error('Appointment test error:', error);
+      
+      // Mark current running step as failed
+      setAppointmentTestSteps(prev => prev.map(s => 
+        s.status === 'running' ? { ...s, status: 'failed', message: error.message } : s
+      ));
+      
+      toast.error(`Test failed: ${error.message}`);
+    } finally {
+      setIsRunningAppointmentTest(false);
+    }
+  }, [selectedAgentId, testPhoneNumber]);
 
   // Test infrastructure connectivity
   const runInfrastructureTests = useCallback(async () => {
@@ -608,6 +904,7 @@ export const CallSimulator: React.FC = () => {
         return <AlertCircle className="h-4 w-4 text-yellow-500" />;
       case 'running':
       case 'calling':
+      case 'waiting':
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       default:
         return <div className="h-4 w-4 rounded-full bg-muted" />;
@@ -623,6 +920,7 @@ export const CallSimulator: React.FC = () => {
       warning: 'secondary',
       running: 'outline',
       calling: 'outline',
+      waiting: 'outline',
       pending: 'secondary',
     };
     return <Badge variant={variants[status] || 'secondary'}>{status}</Badge>;
@@ -800,6 +1098,193 @@ export const CallSimulator: React.FC = () => {
                   <div className="text-sm text-muted-foreground">Pending</div>
                 </div>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* End-to-End Appointment Test */}
+      <Card className="border-primary/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-primary" />
+            End-to-End Appointment Test
+          </CardTitle>
+          <CardDescription>
+            Test the complete appointment booking flow: AI agent call → Book appointment → 
+            Google Calendar sync → System alerts. Call yourself, ask to book an appointment, 
+            and watch the results.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Select AI Agent</Label>
+              <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose an agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableAgents.map((agent) => (
+                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                      {agent.agent_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Your Phone Number</Label>
+              <Input
+                placeholder="+1234567890"
+                value={testPhoneNumber}
+                onChange={(e) => setTestPhoneNumber(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter your number to receive the test call
+              </p>
+            </div>
+            <div className="flex items-end">
+              <Button 
+                onClick={runAppointmentTest} 
+                disabled={isRunningAppointmentTest || !selectedAgentId || !testPhoneNumber}
+                className="gap-2 w-full"
+              >
+                {isRunningAppointmentTest ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Start Appointment Test
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {availableAgents.length === 0 && (
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                No AI agents found. Create an agent in Retell AI Manager first.
+              </p>
+            </div>
+          )}
+
+          {isRunningAppointmentTest && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-2 mb-2">
+                <Bell className="h-4 w-4 text-blue-600 animate-pulse" />
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  Your phone should ring shortly!
+                </p>
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                When you answer, ask the AI to book an appointment. For example: "I'd like to schedule 
+                a meeting for tomorrow at 2pm"
+              </p>
+            </div>
+          )}
+
+          {appointmentTestSteps.length > 0 && (
+            <div className="space-y-2">
+              {appointmentTestSteps.map((step) => (
+                <div 
+                  key={step.id} 
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(step.status)}
+                    <div>
+                      <div className="font-medium">{step.name}</div>
+                      <div className="text-sm text-muted-foreground">{step.message}</div>
+                      {step.details && (
+                        <div className="text-xs text-muted-foreground mt-1">{step.details}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {step.startedAt && step.completedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round((step.completedAt - step.startedAt) / 1000)}s
+                      </span>
+                    )}
+                    {getStatusBadge(step.status)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {appointmentTestResult && !isRunningAppointmentTest && (
+            <div className="p-4 bg-muted rounded-lg">
+              <h4 className="font-medium mb-3">Test Results</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex items-center gap-2">
+                  {appointmentTestResult.callInitiated ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-500" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium">Call Initiated</div>
+                    <div className="text-xs text-muted-foreground">
+                      {appointmentTestResult.callInitiated ? 'Success' : 'Failed'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {appointmentTestResult.appointmentCreated ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-yellow-500" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium">Appointment Created</div>
+                    <div className="text-xs text-muted-foreground">
+                      {appointmentTestResult.appointmentCreated 
+                        ? `ID: ${appointmentTestResult.appointmentId?.slice(0, 8)}...` 
+                        : 'Not booked'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {appointmentTestResult.googleCalendarSynced ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-yellow-500" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium">Google Calendar</div>
+                    <div className="text-xs text-muted-foreground">
+                      {appointmentTestResult.googleCalendarSynced 
+                        ? 'Synced' 
+                        : 'Not synced'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {appointmentTestResult.appointmentCreated && appointmentTestResult.googleCalendarSynced && (
+                <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/30 rounded-lg text-center">
+                  <CheckCircle className="h-5 w-5 text-green-600 inline mr-2" />
+                  <span className="font-medium text-green-700 dark:text-green-400">
+                    Full appointment flow working! AI → Booking → Calendar ✓
+                  </span>
+                </div>
+              )}
+
+              {appointmentTestResult.appointmentCreated && !appointmentTestResult.googleCalendarSynced && (
+                <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 inline mr-2" />
+                  <span className="text-sm text-yellow-700 dark:text-yellow-400">
+                    Appointment was created but not synced to Google Calendar. 
+                    Connect Google Calendar in Settings → Calendar.
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
