@@ -48,7 +48,19 @@ const ELEVENLABS_VOICES = [
 
 const DEFAULT_DTMF_ACTIONS: DTMFAction[] = [
   { digit: '1', action: 'transfer', label: 'Connect to Agent' },
-  { digit: '2', action: 'callback', delay_hours: 24, label: 'Schedule Callback' },
+  { 
+    digit: '2', 
+    action: 'callback', 
+    delay_hours: 24, 
+    label: 'Schedule Callback',
+    callback_options: {
+      create_calendar_event: true,
+      send_sms_reminder: true,
+      auto_callback_call: false,
+      sms_reminder_hours_before: 1,
+      sms_reminder_template: 'Hi {{first_name}}, just a reminder about our scheduled callback in 1 hour. Talk soon!'
+    }
+  },
   { digit: '3', action: 'dnc', label: 'Do Not Call' },
 ];
 
@@ -484,6 +496,64 @@ export const VoiceBroadcastManager: React.FC = () => {
                                     placeholder="e.g., +14695551234 (your Retell AI agent number)"
                                     className="w-full"
                                   />
+                                </div>
+                              )}
+                              {action.action === 'callback' && (
+                                <div className="pl-16 space-y-3 mt-2">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <Label className="text-xs text-muted-foreground mb-1 block">Callback Delay (hours)</Label>
+                                      <Input
+                                        type="number"
+                                        value={action.delay_hours || 24}
+                                        onChange={(e) => updateDTMFAction(index, 'delay_hours', parseInt(e.target.value) || 24)}
+                                        min={1}
+                                        max={168}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                                    <Label className="text-xs font-medium">Callback Automation</Label>
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <Label className="text-xs">Add to Google Calendar</Label>
+                                        <p className="text-[10px] text-muted-foreground">Create calendar event for callback</p>
+                                      </div>
+                                      <Switch
+                                        checked={action.callback_options?.create_calendar_event ?? true}
+                                        onCheckedChange={(checked) => {
+                                          const newOptions = { ...(action.callback_options || {}), create_calendar_event: checked };
+                                          updateDTMFAction(index, 'callback_options', newOptions);
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <Label className="text-xs">Send SMS Reminder</Label>
+                                        <p className="text-[10px] text-muted-foreground">Text reminder before callback</p>
+                                      </div>
+                                      <Switch
+                                        checked={action.callback_options?.send_sms_reminder ?? true}
+                                        onCheckedChange={(checked) => {
+                                          const newOptions = { ...(action.callback_options || {}), send_sms_reminder: checked };
+                                          updateDTMFAction(index, 'callback_options', newOptions);
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <Label className="text-xs">Auto-Call at Scheduled Time</Label>
+                                        <p className="text-[10px] text-muted-foreground">AI calls back automatically</p>
+                                      </div>
+                                      <Switch
+                                        checked={action.callback_options?.auto_callback_call ?? false}
+                                        onCheckedChange={(checked) => {
+                                          const newOptions = { ...(action.callback_options || {}), auto_callback_call: checked };
+                                          updateDTMFAction(index, 'callback_options', newOptions);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>

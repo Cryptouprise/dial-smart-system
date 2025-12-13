@@ -848,12 +848,150 @@ serve(async (req) => {
               .update({ callbacks_scheduled: (broadcast.callbacks_scheduled || 0) + 1 })
               .eq('id', broadcastId);
             
-            // Also schedule a follow-up if lead exists
+            // Get callback options from the DTMF action
+            const callbackOptions = dtmfAction.callback_options || {
+              create_calendar_event: true,
+              send_sms_reminder: true,
+              auto_callback_call: false,
+              sms_reminder_hours_before: 1
+            };
+            
+            // Get lead info for calendar/SMS
+            let leadInfo: any = null;
             if (queueItem?.lead_id) {
+              const { data: lead } = await supabase
+                .from('leads')
+                .select('first_name, last_name, phone_number, email')
+                .eq('id', queueItem.lead_id)
+                .maybeSingle();
+              leadInfo = lead;
+              
+              // Update lead with callback time
               await supabase
                 .from('leads')
                 .update({ next_callback_at: callbackAt })
                 .eq('id', queueItem.lead_id);
+            }
+            
+            // 1. Create Google Calendar event if enabled
+            if (callbackOptions.create_calendar_event) {
+              try {
+                console.log('Creating Google Calendar event for callback...');
+                const calendarEndTime = new Date(new Date(callbackAt).getTime() + 30 * 60 * 1000).toISOString();
+                const leadName = leadInfo ? `${leadInfo.first_name || ''} ${leadInfo.last_name || ''}`.trim() : queueItem.phone_number;
+                
+                // Check if user has Google Calendar connected
+                const { data: calendarIntegration } = await supabase
+                  .from('calendar_integrations')
+                  .select('*')
+                  .eq('user_id', user.id)
+                  .eq('provider', 'google')
+                  .maybeSingle();
+                
+                if (calendarIntegration?.access_token_encrypted) {
+                  // Call calendar-integration function to create event
+                  const calendarResponse = await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      action: 'book_appointment',
+                      title: `Callback: ${leadName}`,
+                      description: `Scheduled callback from voice broadcast.\nPhone: ${queueItem.phone_number}\nBroadcast: ${broadcast.name}`,
+                      start_time: callbackAt,
+                      end_time: calendarEndTime,
+                      lead_id: queueItem.lead_id,
+                    }),
+                  });
+                  
+                  if (calendarResponse.ok) {
+                    console.log('Google Calendar event created successfully');
+                  } else {
+                    console.error('Failed to create calendar event:', await calendarResponse.text());
+                  }
+                } else {
+                  // Save to local calendar_appointments table
+                  await supabase
+                    .from('calendar_appointments')
+                    .insert({
+                      user_id: user.id,
+                      lead_id: queueItem.lead_id,
+                      title: `Callback: ${leadName}`,
+                      description: `Scheduled callback from voice broadcast: ${broadcast.name}`,
+                      start_time: callbackAt,
+                      end_time: calendarEndTime,
+                      status: 'scheduled',
+                      timezone: broadcast.timezone || 'America/New_York',
+                    });
+                  console.log('Saved callback to local calendar_appointments');
+                }
+              } catch (calError) {
+                console.error('Error creating calendar event:', calError);
+              }
+            }
+            
+            // 2. Schedule SMS reminder if enabled
+            if (callbackOptions.send_sms_reminder && queueItem.phone_number) {
+              try {
+                console.log('Scheduling SMS reminder for callback...');
+                const reminderHours = callbackOptions.sms_reminder_hours_before || 1;
+                const reminderTime = new Date(new Date(callbackAt).getTime() - reminderHours * 60 * 60 * 1000).toISOString();
+                
+                // Get default or custom SMS template
+                let smsTemplate = callbackOptions.sms_reminder_template || 
+                  'Hi {{first_name}}, just a reminder about your scheduled callback in {{hours}} hour(s). Talk soon!';
+                
+                // Replace placeholders
+                const firstName = leadInfo?.first_name || 'there';
+                smsTemplate = smsTemplate
+                  .replace(/\{\{first_name\}\}/g, firstName)
+                  .replace(/\{\{hours\}\}/g, String(reminderHours));
+                
+                // Save to scheduled_follow_ups for processing later
+                await supabase
+                  .from('scheduled_follow_ups')
+                  .insert({
+                    user_id: user.id,
+                    lead_id: queueItem.lead_id,
+                    scheduled_at: reminderTime,
+                    action_type: 'sms',
+                    action_config: {
+                      phone_number: queueItem.phone_number,
+                      message: smsTemplate,
+                      callback_reminder: true,
+                      callback_time: callbackAt,
+                    },
+                    status: 'pending',
+                  });
+                console.log('SMS reminder scheduled for:', reminderTime);
+              } catch (smsError) {
+                console.error('Error scheduling SMS reminder:', smsError);
+              }
+            }
+            
+            // 3. Schedule auto-callback call if enabled
+            if (callbackOptions.auto_callback_call && queueItem.phone_number) {
+              try {
+                console.log('Scheduling auto-callback call...');
+                // Create a new queue item for the callback
+                await supabase
+                  .from('broadcast_queue')
+                  .insert({
+                    broadcast_id: broadcastId,
+                    lead_id: queueItem.lead_id,
+                    phone_number: queueItem.phone_number,
+                    lead_name: leadInfo ? `${leadInfo.first_name || ''} ${leadInfo.last_name || ''}`.trim() : null,
+                    status: 'pending',
+                    scheduled_at: callbackAt,
+                    attempts: 0,
+                    max_attempts: 1,
+                  });
+                console.log('Auto-callback scheduled for:', callbackAt);
+              } catch (autoCallError) {
+                console.error('Error scheduling auto-callback:', autoCallError);
+              }
             }
             break;
 

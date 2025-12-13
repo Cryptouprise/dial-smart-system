@@ -1321,6 +1321,76 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Callback Automation Options */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    Callback Automation
+                  </CardTitle>
+                  <CardDescription>
+                    Configure what happens when leads request callbacks via voice broadcasts or AI calls
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4">
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <Label className="font-medium">Create Calendar Event</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Automatically add callbacks to your Google Calendar
+                        </p>
+                      </div>
+                      <Switch
+                        checked={config.callback_create_calendar ?? true}
+                        onCheckedChange={(checked) => setConfig({...config, callback_create_calendar: checked})}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <Label className="font-medium">Send SMS Reminder</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Text the lead before the scheduled callback
+                        </p>
+                      </div>
+                      <Switch
+                        checked={config.callback_send_sms ?? true}
+                        onCheckedChange={(checked) => setConfig({...config, callback_send_sms: checked})}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <Label className="font-medium">Auto-Call at Scheduled Time</Label>
+                        <p className="text-xs text-muted-foreground">
+                          AI automatically calls back at the scheduled time
+                        </p>
+                      </div>
+                      <Switch
+                        checked={config.callback_auto_call ?? false}
+                        onCheckedChange={(checked) => setConfig({...config, callback_auto_call: checked})}
+                      />
+                    </div>
+                  </div>
+                  
+                  {config.callback_send_sms && (
+                    <div className="space-y-2">
+                      <Label>SMS Reminder Template</Label>
+                      <Textarea
+                        value={config.callback_sms_template || 'Hi {{first_name}}, just a reminder about our scheduled callback in {{hours}} hour(s). Talk soon!'}
+                        onChange={(e) => setConfig({...config, callback_sms_template: e.target.value})}
+                        placeholder="Use {{first_name}}, {{hours}} as placeholders"
+                        rows={2}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Available variables: {'{{first_name}}'}, {'{{hours}}'}, {'{{date}}'}, {'{{time}}'}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* MCP Tools Tab */}

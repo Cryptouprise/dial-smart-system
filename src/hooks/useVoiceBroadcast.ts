@@ -42,6 +42,14 @@ export interface DTMFAction {
   delay_hours?: number;
   label: string;
   custom_message?: string;
+  // Enhanced callback options
+  callback_options?: {
+    create_calendar_event?: boolean;
+    send_sms_reminder?: boolean;
+    auto_callback_call?: boolean;
+    sms_reminder_hours_before?: number;
+    sms_reminder_template?: string;
+  };
 }
 
 export interface BroadcastQueueItem {
