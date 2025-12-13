@@ -447,7 +447,7 @@ const RetellFunctionConfig: React.FC = () => {
           <AlertDescription>
             <strong className="text-green-700 dark:text-green-400">Calendar function is configured!</strong>
             <p className="text-sm mt-1">
-              Your agent will now check your availability (Mon-Fri 9am-5pm) and can book appointments automatically.
+              Your agent will use your <strong>Calendar Availability</strong> settings (configured above) to check open slots and book appointments.
             </p>
           </AlertDescription>
         </Alert>
