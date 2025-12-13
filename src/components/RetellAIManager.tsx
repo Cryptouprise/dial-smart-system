@@ -13,7 +13,8 @@ import { useRetellAI } from '@/hooks/useRetellAI';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle } from 'lucide-react';
+import { RetellCalendarSetup } from './RetellCalendarSetup';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar } from 'lucide-react';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -278,7 +279,7 @@ const RetellAIManager = () => {
       </div>
 
       <Tabs defaultValue="wizard" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="wizard">
             <Sparkles className="h-4 w-4 mr-2" />
             Setup Wizard
@@ -286,6 +287,10 @@ const RetellAIManager = () => {
           <TabsTrigger value="llms">LLMs ({llms.length})</TabsTrigger>
           <TabsTrigger value="agents">Agents ({agents.length})</TabsTrigger>
           <TabsTrigger value="numbers">Phone Numbers ({retellNumbers.length})</TabsTrigger>
+          <TabsTrigger value="calendar">
+            <Calendar className="h-4 w-4 mr-2" />
+            Calendar
+          </TabsTrigger>
         </TabsList>
 
         {/* Setup Wizard Tab */}
@@ -560,6 +565,11 @@ const RetellAIManager = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Calendar Integration Tab */}
+        <TabsContent value="calendar">
+          <RetellCalendarSetup />
         </TabsContent>
       </Tabs>
 
