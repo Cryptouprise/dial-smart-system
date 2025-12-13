@@ -104,12 +104,23 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
   // Listen for external open requests (from Quick Start cards)
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isMounted = true;
+    
     const handleOpenWithPrompt = (event: CustomEvent<{ prompt: string }>) => {
       setIsOpen(true);
       setIsMinimized(false);
       const promptToSend = event.detail.prompt;
-      // Use a ref to avoid stale closure issues
-      setTimeout(() => {
+      
+      // Clear any existing timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      // Use a timeout to avoid stale closure issues
+      timeoutId = setTimeout(() => {
+        if (!isMounted) return;
+        
         // Create user message directly to avoid closure issues
         const userMessage: Message = {
           id: crypto.randomUUID(),
@@ -132,6 +143,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
               },
             });
 
+            if (!isMounted) return;
             if (error) throw error;
 
             const responseText = data.response || 'Sorry, I could not generate a response.';
@@ -146,6 +158,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
             setMessages(prev => [...prev, assistantMessage]);
           } catch (error) {
             console.error('AI Assistant error:', error);
+            if (!isMounted) return;
             const errorMessage: Message = {
               id: crypto.randomUUID(),
               role: 'assistant',
@@ -154,7 +167,9 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
             };
             setMessages(prev => [...prev, errorMessage]);
           } finally {
-            setIsLoading(false);
+            if (isMounted) {
+              setIsLoading(false);
+            }
           }
         })();
       }, 150);
@@ -162,6 +177,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
     window.addEventListener('open-ai-chat', handleOpenWithPrompt as EventListener);
     return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       window.removeEventListener('open-ai-chat', handleOpenWithPrompt as EventListener);
     };
   }, []);

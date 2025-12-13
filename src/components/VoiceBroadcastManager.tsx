@@ -104,13 +104,35 @@ export const VoiceBroadcastManager: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Load stats for each broadcast
-    broadcasts.forEach(async (b) => {
-      const s = await getBroadcastStats(b.id);
-      if (s) {
-        setStats(prev => ({ ...prev, [b.id]: s }));
+    // Load stats for each broadcast - properly handle async operations
+    let isMounted = true;
+    
+    const loadAllStats = async () => {
+      const statsPromises = broadcasts.map(async (b) => {
+        const s = await getBroadcastStats(b.id);
+        return { id: b.id, stats: s };
+      });
+      
+      const results = await Promise.all(statsPromises);
+      
+      if (isMounted) {
+        const newStats: Record<string, any> = {};
+        results.forEach(({ id, stats }) => {
+          if (stats) {
+            newStats[id] = stats;
+          }
+        });
+        setStats(prev => ({ ...prev, ...newStats }));
       }
-    });
+    };
+    
+    if (broadcasts.length > 0) {
+      loadAllStats();
+    }
+    
+    return () => {
+      isMounted = false;
+    };
   }, [broadcasts]);
 
   // Auto-refresh stats for active broadcasts every 5 seconds

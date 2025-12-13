@@ -34,15 +34,23 @@ const DialingPerformanceDashboard = () => {
   const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
-    loadMetrics();
+    let isMounted = true;
     
-    // Update metrics every 5 seconds
-    const interval = setInterval(() => {
-      loadMetrics();
-    }, 5000);
+    const loadMetricsWrapper = async () => {
+      if (!isMounted) return;
+      await loadMetrics();
+    };
     
-    return () => clearInterval(interval);
-  }, [activeCalls, historicalData]);
+    loadMetricsWrapper();
+    
+    // Update metrics every 5 seconds - no dependencies to avoid infinite loops
+    const interval = setInterval(loadMetricsWrapper, 5000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []); // Empty dependency array - interval handles refresh
 
   const loadMetrics = async () => {
     const dialingRate = await calculateDialingRate();
