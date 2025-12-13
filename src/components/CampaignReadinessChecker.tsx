@@ -51,7 +51,14 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
     
     setFixingIssue(check.id);
     
-    // Navigate based on issue type
+    // If onFixIssue callback is provided, use it instead of navigating
+    if (onFixIssue) {
+      onFixIssue(check.id);
+      setFixingIssue(null);
+      return;
+    }
+    
+    // Navigate based on issue type (fallback for standalone use)
     const fixRoutes: Record<string, string> = {
       'agent_phone': '/?tab=retell',
       'leads_assigned': '/?tab=leads', 
@@ -65,8 +72,6 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
     const route = fixRoutes[check.id];
     if (route) {
       window.location.href = route;
-    } else if (onFixIssue) {
-      onFixIssue(check.id);
     }
     
     setFixingIssue(null);
