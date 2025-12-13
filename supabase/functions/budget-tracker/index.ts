@@ -313,7 +313,7 @@ async function checkBudgetAndAlert(supabase: any, userId: string, params: any) {
     .select('*')
     .eq('user_id', userId)
     .is('campaign_id', campaignId || null)
-    .single();
+    .maybeSingle();
   
   if (!budgetSettings) {
     return new Response(
@@ -334,7 +334,7 @@ async function checkBudgetAndAlert(supabase: any, userId: string, params: any) {
     .eq('user_id', userId)
     .is('campaign_id', campaignId || null)
     .eq('summary_date', today)
-    .single();
+    .maybeSingle();
   
   // Monthly spending
   const { data: monthlySummaries } = await supabase

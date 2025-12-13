@@ -45,8 +45,12 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
 
-    if (!supabaseUrl || !serviceRoleKey || !lovableApiKey) {
-      throw new Error('Required environment variables missing');
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured');
+    }
+    
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured - required for AI SMS responses');
     }
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
