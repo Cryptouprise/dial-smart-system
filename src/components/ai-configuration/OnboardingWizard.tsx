@@ -5,10 +5,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
   Phone, Settings, Zap, MessageSquare, Users, Workflow, 
   Radio, Database, Link, Shield, DollarSign, BarChart, Bot,
-  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, ChevronLeft, X, AlertCircle
+  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, ChevronLeft, X, AlertCircle, ArrowLeft, Wrench
 } from 'lucide-react';
 import { ConfigurationProgress } from './ConfigurationProgress';
 import { useAIConfiguration } from '@/hooks/useAIConfiguration';
@@ -161,6 +162,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const [currentAreaId, setCurrentAreaId] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState('');
   const [userInput, setUserInput] = useState('');
+  const [fixDialogArea, setFixDialogArea] = useState<ConfigurationArea | null>(null);
+  const [cameFromCompletion, setCameFromCompletion] = useState(false);
   
   const { toast } = useToast();
   const { executeConfiguration, isExecuting } = useAIConfiguration();
@@ -294,6 +297,93 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     setShowConfiguration(true);
   };
 
+  // Get fix guidance for an area
+  const getFixGuidance = (areaId: string): { title: string; steps: string[]; tip: string } => {
+    const guidance: Record<string, { title: string; steps: string[]; tip: string }> = {
+      phone_numbers: {
+        title: "You need phone numbers to make calls",
+        steps: [
+          "Enter an area code (e.g., 212 for New York)",
+          "Choose how many numbers you want (3-5 recommended)",
+          "Click 'Purchase' - numbers are ready instantly"
+        ],
+        tip: "Start with 3-5 numbers for rotation to avoid spam flags"
+      },
+      sip_trunk: {
+        title: "SIP trunk connects your calls to the network",
+        steps: [
+          "If using Retell AI numbers, you can skip this",
+          "If using Twilio, enter your Account SID and Auth Token",
+          "Click 'Connect' to link your account"
+        ],
+        tip: "Most users can skip this - Retell handles it automatically"
+      },
+      ai_agent: {
+        title: "Create an AI agent to handle calls",
+        steps: [
+          "Write a system prompt (what the AI should say/do)",
+          "Set the greeting message",
+          "Choose a voice and create the agent"
+        ],
+        tip: "Keep prompts clear and focused on your main goal"
+      },
+      leads: {
+        title: "Import leads to call",
+        steps: [
+          "Prepare a CSV with phone numbers",
+          "Upload using the importer",
+          "Map columns (auto-detected)"
+        ],
+        tip: "Start with a small test batch first"
+      },
+      campaign: {
+        title: "Create a campaign to organize your calls",
+        steps: [
+          "Give your campaign a name",
+          "Select an AI agent",
+          "Set calling hours and add leads"
+        ],
+        tip: "You can create multiple campaigns for different purposes"
+      },
+      workflows: {
+        title: "Set up automated follow-ups",
+        steps: [
+          "Use AI Builder: describe what you want",
+          "Or manually add steps",
+          "Assign to a campaign"
+        ],
+        tip: "Try the AI builder - just describe your workflow in plain English"
+      },
+      budget: {
+        title: "Control your spending",
+        steps: [
+          "Set a daily limit (e.g., $50/day)",
+          "Set a monthly limit",
+          "Choose pause behavior when hit"
+        ],
+        tip: "Start conservative and increase as you learn"
+      }
+    };
+    return guidance[areaId] || { title: "Configure this setting", steps: ["Complete the configuration form"], tip: "" };
+  };
+
+  // Handle fix button click - show dialog first
+  const handleFixClick = (area: ConfigurationArea) => {
+    setFixDialogArea(area);
+  };
+
+  // Proceed to fix after dialog
+  const proceedToFix = () => {
+    if (!fixDialogArea) return;
+    
+    setSelectedAreas(prev => new Set([...prev, fixDialogArea.id]));
+    setCurrentAreaId(fixDialogArea.id);
+    setShowCompletion(false);
+    setShowConfiguration(true);
+    setCameFromCompletion(true);
+    setFixDialogArea(null);
+  };
+
   const getCategoryBadge = (category: ConfigurationArea['category']) => {
     const styles = {
       essential: 'bg-red-100 text-red-800 border-red-200',
@@ -362,16 +452,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                       type="button"
                       variant="secondary" 
                       size="sm" 
-                      className="flex-shrink-0 h-7 text-xs"
+                      className="flex-shrink-0 h-7 text-xs gap-1"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setCurrentAreaId(area.id);
-                        setShowCompletion(false);
-                        setShowConfiguration(true);
+                        handleFixClick(area);
                       }}
                     >
-                      Configure
+                      <Wrench className="h-3 w-3" />
+                      Fix
                     </Button>
                   </div>
                 ))}
@@ -390,26 +479,27 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
               </p>
               <div className="space-y-3">
                 {essentialMissing.map(area => (
-                  <div key={area.id} className="flex items-center justify-between gap-2 flex-wrap">
+                  <div key={area.id} className="flex items-center justify-between gap-2 flex-wrap bg-red-100 dark:bg-red-900/30 p-3 rounded-lg">
                     <div className="flex items-center gap-2">
                       <span className="flex-shrink-0">{area.icon}</span>
-                      <span className="text-sm">{area.title}</span>
+                      <div>
+                        <span className="text-sm font-medium">{area.title}</span>
+                        <p className="text-xs text-red-600 dark:text-red-400">Required to make calls</p>
+                      </div>
                     </div>
                     <Button 
                       type="button"
                       size="sm" 
                       variant="destructive"
-                      className="flex-shrink-0"
+                      className="flex-shrink-0 gap-1"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setSelectedAreas(prev => new Set([...prev, area.id]));
-                        setCurrentAreaId(area.id);
-                        setShowCompletion(false);
-                        setShowConfiguration(true);
+                        handleFixClick(area);
                       }}
                     >
-                      Configure Now
+                      <Wrench className="h-4 w-4" />
+                      Fix This
                     </Button>
                   </div>
                 ))}
@@ -574,14 +664,42 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 {getCategoryBadge(currentArea?.category || 'optional')}
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => {
-              setShowConfiguration(false);
-              setCurrentAreaId(null);
-            }}>
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {cameFromCompletion && (
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={() => {
+                    setShowConfiguration(false);
+                    setCurrentAreaId(null);
+                    setShowCompletion(true);
+                    setCameFromCompletion(false);
+                  }}
+                  className="gap-1"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Return to Summary
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => {
+                setShowConfiguration(false);
+                setCurrentAreaId(null);
+                setCameFromCompletion(false);
+              }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <CardDescription>{currentArea?.description}</CardDescription>
+          
+          {/* Reminder banner when fixing from completion */}
+          {cameFromCompletion && (
+            <div className="mt-2 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+              <p className="text-sm text-primary">
+                <strong>Fixing:</strong> {currentArea?.title} - Complete this step to resolve the issue, then return to the summary.
+              </p>
+            </div>
+          )}
           
           {integration?.instructions && (
             <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -600,7 +718,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           {/* Render the actual configuration component */}
           <ConfigurationStepRenderer 
             areaId={currentAreaId}
-            onComplete={() => handleAreaComplete(currentAreaId)}
+            onComplete={() => {
+              handleAreaComplete(currentAreaId);
+              // If we came from completion screen, go back there
+              if (cameFromCompletion) {
+                setCameFromCompletion(false);
+                // After a brief delay to let state update, show completion
+                setTimeout(() => setShowCompletion(true), 100);
+              }
+            }}
             onSkip={() => handleSkipArea(currentAreaId)}
           />
         </CardContent>
@@ -609,6 +735,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   }
 
   return (
+    <>
     <Card className="w-full max-w-6xl mx-auto">
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -734,6 +861,58 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
         </div>
       </CardContent>
     </Card>
+
+    {/* Fix Dialog */}
+    <Dialog open={!!fixDialogArea} onOpenChange={() => setFixDialogArea(null)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wrench className="h-5 w-5 text-primary" />
+            {fixDialogArea?.title}
+          </DialogTitle>
+          <DialogDescription>
+            {fixDialogArea && getFixGuidance(fixDialogArea.id).title}
+          </DialogDescription>
+        </DialogHeader>
+        
+        {fixDialogArea && (
+          <div className="space-y-4">
+            <div className="bg-muted rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-2">What you'll do:</h4>
+              <ol className="text-sm space-y-2">
+                {getFixGuidance(fixDialogArea.id).steps.map((step, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center font-medium">
+                      {i + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            
+            {getFixGuidance(fixDialogArea.id).tip && (
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  <strong>Tip:</strong> {getFixGuidance(fixDialogArea.id).tip}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => setFixDialogArea(null)}>
+            Cancel
+          </Button>
+          <Button onClick={proceedToFix} className="gap-2">
+            <ChevronRight className="h-4 w-4" />
+            Go Fix This
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 
