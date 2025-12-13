@@ -51,6 +51,19 @@ interface AppointmentTestStep {
   completedAt?: number;
 }
 
+interface E2ETestResult {
+  callInitiated: boolean;
+  appointmentCreated: boolean;
+  googleCalendarSynced: boolean;
+  pipelineMoved: boolean;
+  dispositionApplied: boolean;
+  appointmentId?: string;
+  googleEventId?: string;
+  leadId?: string;
+  pipelineStage?: string;
+  disposition?: string;
+}
+
 // Test phone numbers - mix of fake and real
 const TEST_CONTACTS: CallTest[] = [
   { id: '1', phone: '+15551234567', name: 'Fake Number 1 (should fail)', status: 'pending' },
@@ -78,14 +91,17 @@ export const CallSimulator: React.FC = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [testPhoneNumber, setTestPhoneNumber] = useState<string>('');
   const [availableAgents, setAvailableAgents] = useState<any[]>([]);
-  const [appointmentTestResult, setAppointmentTestResult] = useState<{
-    callInitiated: boolean;
-    appointmentCreated: boolean;
-    googleCalendarSynced: boolean;
-    appointmentId?: string;
-    googleEventId?: string;
-  } | null>(null);
+  const [appointmentTestResult, setAppointmentTestResult] = useState<E2ETestResult | null>(null);
   const appointmentPollingRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Pre-flight check state
+  const [preFlightChecks, setPreFlightChecks] = useState<{
+    calendarConnected: boolean;
+    calcomConfigured: boolean;
+    pipelineExists: boolean;
+    dispositionsExist: boolean;
+    retellPhoneReady: boolean;
+  } | null>(null);
 
   // Load available agents on mount
   useEffect(() => {
@@ -117,7 +133,37 @@ export const CallSimulator: React.FC = () => {
     };
   }, []);
 
-  // End-to-End Appointment Test
+  // Pre-flight checks before running E2E test
+  const runPreFlightChecks = useCallback(async () => {
+    try {
+      const [calendarRes, calcomRes, pipelineRes, dispositionRes, phoneRes] = await Promise.all([
+        supabase.from('calendar_integrations').select('id, provider').eq('provider', 'google').limit(1),
+        supabase.from('user_credentials').select('id').eq('service_name', 'calcom').limit(1),
+        supabase.from('pipeline_boards').select('id').limit(1),
+        supabase.from('dispositions').select('id').limit(1),
+        supabase.from('phone_numbers').select('id').eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
+      ]);
+
+      setPreFlightChecks({
+        calendarConnected: (calendarRes.data?.length || 0) > 0,
+        calcomConfigured: (calcomRes.data?.length || 0) > 0,
+        pipelineExists: (pipelineRes.data?.length || 0) > 0,
+        dispositionsExist: (dispositionRes.data?.length || 0) > 0,
+        retellPhoneReady: (phoneRes.data?.length || 0) > 0,
+      });
+    } catch (e) {
+      console.error('Pre-flight check failed:', e);
+    }
+  }, []);
+
+  // Run pre-flight checks when agent is selected
+  useEffect(() => {
+    if (selectedAgentId) {
+      runPreFlightChecks();
+    }
+  }, [selectedAgentId, runPreFlightChecks]);
+
+  // End-to-End Appointment Test (Full Workflow)
   const runAppointmentTest = useCallback(async () => {
     if (!selectedAgentId || !testPhoneNumber) {
       toast.error('Please select an agent and enter your phone number');
@@ -128,11 +174,14 @@ export const CallSimulator: React.FC = () => {
     setAppointmentTestResult(null);
     
     const steps: AppointmentTestStep[] = [
-      { id: 'init', name: 'Initialize Test', status: 'pending', message: 'Preparing test environment...' },
+      { id: 'preflight', name: 'Pre-Flight Checks', status: 'pending', message: 'Verifying system configuration...' },
+      { id: 'lead', name: 'Create Test Lead', status: 'pending', message: 'Creating test lead for tracking...' },
       { id: 'call', name: 'Initiate Call', status: 'pending', message: 'Calling your phone with AI agent...' },
       { id: 'monitor', name: 'Monitoring Call', status: 'pending', message: 'Waiting for call to complete...' },
       { id: 'appointment', name: 'Check Appointment', status: 'pending', message: 'Checking if appointment was created...' },
       { id: 'calendar', name: 'Google Calendar Sync', status: 'pending', message: 'Verifying Google Calendar sync...' },
+      { id: 'pipeline', name: 'Pipeline Movement', status: 'pending', message: 'Checking pipeline stage changes...' },
+      { id: 'disposition', name: 'Disposition Check', status: 'pending', message: 'Verifying call disposition...' },
       { id: 'complete', name: 'Test Complete', status: 'pending', message: 'Summarizing results...' },
     ];
     setAppointmentTestSteps(steps);
@@ -143,31 +192,81 @@ export const CallSimulator: React.FC = () => {
       ));
     };
 
-    try {
-      // Step 1: Initialize
-      updateStep('init', { status: 'running', startedAt: Date.now() });
-      
-      // Get caller ID
-      const { data: phones } = await supabase
-        .from('phone_numbers')
-        .select('number, retell_phone_id')
-        .eq('status', 'active')
-        .eq('is_spam', false)
-        .not('retell_phone_id', 'is', null)
-        .limit(1);
+    let testLeadId: string | null = null;
+    let testStartTime: string = '';
 
-      if (!phones || phones.length === 0) {
-        throw new Error('No Retell-registered phone numbers available');
+    try {
+      // Step 1: Pre-Flight Checks
+      updateStep('preflight', { status: 'running', startedAt: Date.now() });
+      
+      const [phoneRes, calendarRes, calcomRes, pipelineRes, dispositionRes] = await Promise.all([
+        supabase.from('phone_numbers').select('number, retell_phone_id').eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
+        supabase.from('calendar_integrations').select('id, provider, access_token_encrypted').eq('provider', 'google').limit(1),
+        supabase.from('user_credentials').select('id').eq('service_name', 'calcom').limit(1),
+        supabase.from('pipeline_boards').select('id, name').order('position').limit(5),
+        supabase.from('dispositions').select('id, name').limit(10),
+      ]);
+
+      if (!phoneRes.data || phoneRes.data.length === 0) {
+        throw new Error('No Retell-registered phone numbers available. Please import a number in Retell AI Manager.');
       }
 
-      const callerIdNumber = phones[0].number;
-      updateStep('init', { 
+      const callerIdNumber = phoneRes.data[0].number;
+      const hasGoogleCal = calendarRes.data && calendarRes.data.length > 0 && calendarRes.data[0].access_token_encrypted;
+      const hasCalcom = calcomRes.data && calcomRes.data.length > 0;
+      const hasPipeline = pipelineRes.data && pipelineRes.data.length > 0;
+      const hasDispositions = dispositionRes.data && dispositionRes.data.length > 0;
+
+      const checkDetails = [
+        `✓ Caller ID: ${callerIdNumber}`,
+        hasGoogleCal ? '✓ Google Calendar connected' : '⚠ Google Calendar not connected',
+        hasCalcom ? '✓ Cal.com configured' : '○ Cal.com not configured (optional)',
+        hasPipeline ? `✓ Pipeline: ${pipelineRes.data?.length} stages` : '⚠ No pipeline stages',
+        hasDispositions ? `✓ Dispositions: ${dispositionRes.data?.length} configured` : '⚠ No dispositions',
+      ].join('\n');
+
+      updateStep('preflight', { 
         status: 'success', 
-        message: `Using ${callerIdNumber} as caller ID`,
+        message: 'System ready for testing',
+        details: checkDetails,
         completedAt: Date.now() 
       });
 
-      // Step 2: Initiate Call
+      // Step 2: Create Test Lead
+      updateStep('lead', { status: 'running', startedAt: Date.now() });
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const { data: leadData, error: leadError } = await supabase
+        .from('leads')
+        .insert([{
+          user_id: user.id,
+          phone_number: testPhoneNumber,
+          first_name: 'E2E Test',
+          last_name: `${new Date().toISOString().slice(0, 16)}`,
+          status: 'new',
+          notes: 'Created by E2E Appointment Test',
+          tags: ['e2e-test'],
+        }])
+        .select()
+        .single();
+
+      if (leadError) {
+        throw new Error(`Failed to create test lead: ${leadError.message}`);
+      }
+
+      testLeadId = leadData.id;
+      testStartTime = new Date().toISOString();
+
+      updateStep('lead', { 
+        status: 'success', 
+        message: `Test lead created`,
+        details: `Lead ID: ${testLeadId}`,
+        completedAt: Date.now() 
+      });
+
+      // Step 3: Initiate Call
       updateStep('call', { status: 'running', startedAt: Date.now() });
       
       const { data: callData, error: callError } = await supabase.functions.invoke('outbound-calling', {
@@ -176,6 +275,7 @@ export const CallSimulator: React.FC = () => {
           phoneNumber: testPhoneNumber,
           callerId: callerIdNumber,
           agentId: selectedAgentId,
+          leadId: testLeadId,
         }
       });
 
@@ -184,25 +284,20 @@ export const CallSimulator: React.FC = () => {
       }
 
       const retellCallId = callData.call_id;
-      const callLogId = callData.call_log_id;
       
       updateStep('call', { 
         status: 'success', 
         message: `Call initiated! Call ID: ${retellCallId}`,
-        details: 'Answer your phone and ask to book an appointment',
+        details: '📞 Answer your phone and try booking an appointment!',
         completedAt: Date.now() 
       });
 
-      // Step 3: Monitor Call
+      // Step 4: Monitor Call
       updateStep('monitor', { status: 'running', startedAt: Date.now() });
       
-      // Record the start time for appointment detection
-      const testStartTime = new Date().toISOString();
-      
-      // Poll for call completion (max 5 minutes)
       let callCompleted = false;
       let pollAttempts = 0;
-      const maxPollAttempts = 60; // 5 minutes with 5-second intervals
+      const maxPollAttempts = 60;
       
       while (!callCompleted && pollAttempts < maxPollAttempts) {
         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -210,51 +305,36 @@ export const CallSimulator: React.FC = () => {
         
         try {
           const { data: statusData } = await supabase.functions.invoke('outbound-calling', {
-            body: {
-              action: 'get_call_status',
-              retellCallId: retellCallId
-            }
+            body: { action: 'get_call_status', retellCallId }
           });
           
           const status = statusData?.status || statusData?.call_status;
-          updateStep('monitor', { 
-            message: `Call status: ${status} (${pollAttempts * 5}s elapsed)` 
-          });
+          updateStep('monitor', { message: `Call status: ${status} (${pollAttempts * 5}s elapsed)` });
           
           if (['ended', 'completed', 'failed', 'busy', 'no-answer'].includes(status?.toLowerCase())) {
             callCompleted = true;
           }
         } catch (e) {
-          // Call might have ended, continue checking
           callCompleted = true;
         }
       }
 
-      if (!callCompleted) {
-        updateStep('monitor', { 
-          status: 'warning', 
-          message: 'Call monitoring timed out - continuing with appointment check',
-          completedAt: Date.now() 
-        });
-      } else {
-        updateStep('monitor', { 
-          status: 'success', 
-          message: 'Call completed',
-          completedAt: Date.now() 
-        });
-      }
+      updateStep('monitor', { 
+        status: callCompleted ? 'success' : 'warning', 
+        message: callCompleted ? 'Call completed' : 'Call monitoring timed out',
+        completedAt: Date.now() 
+      });
 
-      // Step 4: Check for Appointment
+      // Wait for webhooks to process
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Step 5: Check for Appointment
       updateStep('appointment', { status: 'running', startedAt: Date.now() });
       
-      // Wait a moment for any appointment to be created
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Check for appointments created after test started
       const { data: appointments } = await supabase
         .from('calendar_appointments')
         .select('*')
-        .gte('created_at', testStartTime)
+        .or(`lead_id.eq.${testLeadId},created_at.gte.${testStartTime}`)
         .order('created_at', { ascending: false })
         .limit(1);
 
@@ -265,88 +345,141 @@ export const CallSimulator: React.FC = () => {
         updateStep('appointment', { 
           status: 'success', 
           message: `Appointment created: "${appointment.title}"`,
-          details: `Scheduled for ${new Date(appointment.start_time).toLocaleString()}`,
+          details: `📅 ${new Date(appointment.start_time).toLocaleString()}`,
           completedAt: Date.now() 
         });
-
-        // Step 5: Check Google Calendar Sync
-        updateStep('calendar', { status: 'running', startedAt: Date.now() });
-        
-        const hasGoogleSync = !!appointment.google_event_id;
-        
-        if (hasGoogleSync) {
-          updateStep('calendar', { 
-            status: 'success', 
-            message: 'Synced to Google Calendar',
-            details: `Event ID: ${appointment.google_event_id}`,
-            completedAt: Date.now() 
-          });
-        } else {
-          // Check if Google Calendar is connected
-          const { data: integrations } = await supabase
-            .from('calendar_integrations')
-            .select('id, provider')
-            .eq('provider', 'google')
-            .limit(1);
-          
-          if (integrations && integrations.length > 0) {
-            updateStep('calendar', { 
-              status: 'warning', 
-              message: 'Google Calendar connected but event not synced yet',
-              details: 'Sync may be delayed or failed',
-              completedAt: Date.now() 
-            });
-          } else {
-            updateStep('calendar', { 
-              status: 'warning', 
-              message: 'Google Calendar not connected',
-              details: 'Connect Google Calendar in Settings to enable sync',
-              completedAt: Date.now() 
-            });
-          }
-        }
-
-        setAppointmentTestResult({
-          callInitiated: true,
-          appointmentCreated: true,
-          googleCalendarSynced: hasGoogleSync,
-          appointmentId: appointment.id,
-          googleEventId: appointment.google_event_id,
-        });
-
       } else {
         updateStep('appointment', { 
           status: 'warning', 
           message: 'No appointment detected',
-          details: 'Did you ask the AI to book an appointment during the call?',
+          details: 'Did you ask the AI to book an appointment?',
           completedAt: Date.now() 
-        });
-        
-        updateStep('calendar', { 
-          status: 'pending', 
-          message: 'Skipped - no appointment to sync' 
-        });
-
-        setAppointmentTestResult({
-          callInitiated: true,
-          appointmentCreated: false,
-          googleCalendarSynced: false,
         });
       }
 
-      // Step 6: Complete
+      // Step 6: Check Google Calendar Sync
+      updateStep('calendar', { status: 'running', startedAt: Date.now() });
+      
+      const hasGoogleSync = appointment?.google_event_id;
+      
+      if (hasGoogleSync) {
+        updateStep('calendar', { 
+          status: 'success', 
+          message: 'Synced to Google Calendar',
+          details: `Event ID: ${appointment.google_event_id}`,
+          completedAt: Date.now() 
+        });
+      } else if (!appointmentCreated) {
+        updateStep('calendar', { status: 'pending', message: 'Skipped - no appointment' });
+      } else if (!hasGoogleCal) {
+        updateStep('calendar', { 
+          status: 'warning', 
+          message: 'Google Calendar not connected',
+          details: 'Connect in Retell AI → Calendar tab',
+          completedAt: Date.now() 
+        });
+      } else {
+        updateStep('calendar', { 
+          status: 'warning', 
+          message: 'Event not synced yet',
+          details: 'Sync may be delayed',
+          completedAt: Date.now() 
+        });
+      }
+
+      // Step 7: Check Pipeline Movement
+      updateStep('pipeline', { status: 'running', startedAt: Date.now() });
+      
+      const { data: pipelinePositions } = await supabase
+        .from('lead_pipeline_positions')
+        .select('*, pipeline_boards(name)')
+        .eq('lead_id', testLeadId)
+        .order('moved_at', { ascending: false })
+        .limit(1);
+
+      const pipelineMoved = pipelinePositions && pipelinePositions.length > 0;
+      const currentStage = pipelinePositions?.[0];
+
+      if (pipelineMoved && currentStage) {
+        updateStep('pipeline', { 
+          status: 'success', 
+          message: `Lead moved to pipeline`,
+          details: `Stage: ${(currentStage as any).pipeline_boards?.name || 'Unknown'}`,
+          completedAt: Date.now() 
+        });
+      } else {
+        updateStep('pipeline', { 
+          status: hasPipeline ? 'warning' : 'pending', 
+          message: hasPipeline ? 'No pipeline movement detected' : 'No pipeline configured',
+          details: hasPipeline ? 'Call disposition may not have triggered pipeline automation' : 'Set up pipeline in Pipeline tab',
+          completedAt: Date.now() 
+        });
+      }
+
+      // Step 8: Check Disposition
+      updateStep('disposition', { status: 'running', startedAt: Date.now() });
+      
+      // Check lead status and call logs for disposition
+      const [leadRes, callLogRes] = await Promise.all([
+        supabase.from('leads').select('status, notes').eq('id', testLeadId).single(),
+        supabase.from('call_logs').select('outcome, notes').eq('lead_id', testLeadId).order('created_at', { ascending: false }).limit(1),
+      ]);
+
+      const leadStatus = leadRes.data?.status;
+      const callOutcome = callLogRes.data?.[0]?.outcome;
+      const hasDisposition = leadStatus !== 'new' || callOutcome;
+
+      if (hasDisposition) {
+        updateStep('disposition', { 
+          status: 'success', 
+          message: 'Disposition applied',
+          details: `Lead status: ${leadStatus}${callOutcome ? ` | Outcome: ${callOutcome}` : ''}`,
+          completedAt: Date.now() 
+        });
+      } else {
+        updateStep('disposition', { 
+          status: 'warning', 
+          message: 'No disposition detected',
+          details: 'Call may not have triggered disposition automation',
+          completedAt: Date.now() 
+        });
+      }
+
+      // Step 9: Complete
+      const results: E2ETestResult = {
+        callInitiated: true,
+        appointmentCreated,
+        googleCalendarSynced: !!hasGoogleSync,
+        pipelineMoved,
+        dispositionApplied: !!hasDisposition,
+        appointmentId: appointment?.id,
+        googleEventId: appointment?.google_event_id,
+        leadId: testLeadId,
+        pipelineStage: (currentStage as any)?.pipeline_boards?.name,
+        disposition: callOutcome || leadStatus,
+      };
+
+      setAppointmentTestResult(results);
+
+      const passedChecks = [
+        results.appointmentCreated,
+        results.googleCalendarSynced,
+        results.pipelineMoved,
+        results.dispositionApplied,
+      ].filter(Boolean).length;
+
       updateStep('complete', { 
-        status: 'success', 
-        message: 'Test completed',
+        status: passedChecks >= 3 ? 'success' : passedChecks >= 1 ? 'warning' : 'failed', 
+        message: `Test completed: ${passedChecks}/4 checks passed`,
+        details: passedChecks === 4 ? '🎉 Full workflow verified!' : 'Review warnings above',
         completedAt: Date.now() 
       });
 
-      toast.success('Appointment test completed!');
+      toast.success('E2E test completed!');
 
     } catch (error: any) {
-      console.error('Appointment test error:', error);
+      console.error('E2E test error:', error);
       
-      // Mark current running step as failed
       setAppointmentTestSteps(prev => prev.map(s => 
         s.status === 'running' ? { ...s, status: 'failed', message: error.message } : s
       ));
@@ -1117,6 +1250,52 @@ export const CallSimulator: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Pre-flight status checks */}
+          {preFlightChecks && selectedAgentId && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-2 text-sm">
+                {preFlightChecks.retellPhoneReady ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500" />
+                )}
+                <span className={preFlightChecks.retellPhoneReady ? '' : 'text-red-600'}>Retell Phone</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {preFlightChecks.calendarConnected ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-yellow-500" />
+                )}
+                <span>Google Cal</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {preFlightChecks.calcomConfigured ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-muted-foreground">Cal.com</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {preFlightChecks.pipelineExists ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-yellow-500" />
+                )}
+                <span>Pipeline</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {preFlightChecks.dispositionsExist ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 text-yellow-500" />
+                )}
+                <span>Dispositions</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Select AI Agent</Label>
@@ -1158,7 +1337,7 @@ export const CallSimulator: React.FC = () => {
                 ) : (
                   <>
                     <Play className="h-4 w-4" />
-                    Start Appointment Test
+                    Start Full E2E Test
                   </>
                 )}
               </Button>
@@ -1201,7 +1380,7 @@ export const CallSimulator: React.FC = () => {
                       <div className="font-medium">{step.name}</div>
                       <div className="text-sm text-muted-foreground">{step.message}</div>
                       {step.details && (
-                        <div className="text-xs text-muted-foreground mt-1">{step.details}</div>
+                        <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{step.details}</pre>
                       )}
                     </div>
                   </div>
@@ -1220,8 +1399,8 @@ export const CallSimulator: React.FC = () => {
 
           {appointmentTestResult && !isRunningAppointmentTest && (
             <div className="p-4 bg-muted rounded-lg">
-              <h4 className="font-medium mb-3">Test Results</h4>
-              <div className="grid grid-cols-3 gap-4">
+              <h4 className="font-medium mb-3">Test Results Summary</h4>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="flex items-center gap-2">
                   {appointmentTestResult.callInitiated ? (
                     <CheckCircle className="h-5 w-5 text-green-500" />
@@ -1229,9 +1408,9 @@ export const CallSimulator: React.FC = () => {
                     <XCircle className="h-5 w-5 text-red-500" />
                   )}
                   <div>
-                    <div className="text-sm font-medium">Call Initiated</div>
+                    <div className="text-sm font-medium">Call</div>
                     <div className="text-xs text-muted-foreground">
-                      {appointmentTestResult.callInitiated ? 'Success' : 'Failed'}
+                      {appointmentTestResult.callInitiated ? '✓' : '✗'}
                     </div>
                   </div>
                 </div>
@@ -1242,11 +1421,9 @@ export const CallSimulator: React.FC = () => {
                     <AlertCircle className="h-5 w-5 text-yellow-500" />
                   )}
                   <div>
-                    <div className="text-sm font-medium">Appointment Created</div>
+                    <div className="text-sm font-medium">Appointment</div>
                     <div className="text-xs text-muted-foreground">
-                      {appointmentTestResult.appointmentCreated 
-                        ? `ID: ${appointmentTestResult.appointmentId?.slice(0, 8)}...` 
-                        : 'Not booked'}
+                      {appointmentTestResult.appointmentCreated ? '✓ Created' : '○ Not booked'}
                     </div>
                   </div>
                 </div>
@@ -1257,32 +1434,73 @@ export const CallSimulator: React.FC = () => {
                     <AlertCircle className="h-5 w-5 text-yellow-500" />
                   )}
                   <div>
-                    <div className="text-sm font-medium">Google Calendar</div>
+                    <div className="text-sm font-medium">Calendar</div>
                     <div className="text-xs text-muted-foreground">
-                      {appointmentTestResult.googleCalendarSynced 
-                        ? 'Synced' 
-                        : 'Not synced'}
+                      {appointmentTestResult.googleCalendarSynced ? '✓ Synced' : '○ Not synced'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {appointmentTestResult.pipelineMoved ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-yellow-500" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium">Pipeline</div>
+                    <div className="text-xs text-muted-foreground">
+                      {appointmentTestResult.pipelineMoved 
+                        ? `✓ ${appointmentTestResult.pipelineStage}` 
+                        : '○ No move'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {appointmentTestResult.dispositionApplied ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-yellow-500" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium">Disposition</div>
+                    <div className="text-xs text-muted-foreground">
+                      {appointmentTestResult.dispositionApplied 
+                        ? `✓ ${appointmentTestResult.disposition}` 
+                        : '○ None'}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {appointmentTestResult.appointmentCreated && appointmentTestResult.googleCalendarSynced && (
+              {/* Success banner */}
+              {appointmentTestResult.appointmentCreated && 
+               appointmentTestResult.googleCalendarSynced && 
+               appointmentTestResult.pipelineMoved && 
+               appointmentTestResult.dispositionApplied && (
                 <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/30 rounded-lg text-center">
                   <CheckCircle className="h-5 w-5 text-green-600 inline mr-2" />
                   <span className="font-medium text-green-700 dark:text-green-400">
-                    Full appointment flow working! AI → Booking → Calendar ✓
+                    🎉 Full workflow verified! AI → Booking → Calendar → Pipeline → Disposition ✓
                   </span>
                 </div>
               )}
 
-              {appointmentTestResult.appointmentCreated && !appointmentTestResult.googleCalendarSynced && (
+              {/* Partial success banner */}
+              {appointmentTestResult.appointmentCreated && 
+               !appointmentTestResult.googleCalendarSynced && (
                 <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
                   <AlertCircle className="h-5 w-5 text-yellow-600 inline mr-2" />
                   <span className="text-sm text-yellow-700 dark:text-yellow-400">
                     Appointment was created but not synced to Google Calendar. 
-                    Connect Google Calendar in Settings → Calendar.
+                    Connect Google Calendar in Retell AI → Calendar tab.
                   </span>
+                </div>
+              )}
+
+              {/* Lead info */}
+              {appointmentTestResult.leadId && (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  Test Lead ID: {appointmentTestResult.leadId}
                 </div>
               )}
             </div>
