@@ -71,7 +71,7 @@ serve(async (req) => {
         .select('*')
         .eq('lead_id', leadId)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       const { data: events } = await supabase
         .from('reachability_events')

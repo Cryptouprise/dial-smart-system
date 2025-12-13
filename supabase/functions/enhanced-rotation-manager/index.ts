@@ -60,7 +60,7 @@ serve(async (req) => {
           .from('rotation_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (existingSettings) {
           await supabaseClient
@@ -92,7 +92,7 @@ serve(async (req) => {
           .from('rotation_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         // If no settings exist, use defaults
         const effectiveSettings = settings || {
@@ -180,7 +180,7 @@ serve(async (req) => {
           .from('rotation_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         // If no settings exist yet, return defaults instead of error
         if (error && error.code === 'PGRST116') {

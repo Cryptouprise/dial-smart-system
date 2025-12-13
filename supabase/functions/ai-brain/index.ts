@@ -578,7 +578,7 @@ async function executeToolCall(
             .select('id')
             .eq('user_id', userId)
             .ilike('name', `%${args.workflow_name}%`)
-            .single();
+            .maybeSingle();
           workflowId = data?.id;
         }
 
@@ -650,7 +650,7 @@ async function executeToolCall(
             .select('id')
             .eq('user_id', userId)
             .ilike('name', `%${args.campaign_name}%`)
-            .single();
+            .maybeSingle();
           campaignId = data?.id;
         }
 

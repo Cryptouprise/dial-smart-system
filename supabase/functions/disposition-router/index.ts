@@ -56,9 +56,9 @@ serve(async (req) => {
           .from('leads')
           .select('phone_number')
           .eq('id', leadId)
-          .single();
+          .maybeSingle();
 
-        if (lead) {
+        if (lead?.phone_number) {
           await supabase.from('dnc_list').upsert({
             user_id: userId,
             phone_number: lead.phone_number,
@@ -118,9 +118,9 @@ serve(async (req) => {
             .from('leads')
             .select('phone_number')
             .eq('id', leadId)
-            .single();
+            .maybeSingle();
 
-          if (lead) {
+          if (lead?.phone_number) {
             await supabase.from('dnc_list').upsert({
               user_id: userId,
               phone_number: lead.phone_number,
@@ -143,7 +143,7 @@ serve(async (req) => {
         .from('dispositions')
         .select('pipeline_stage')
         .eq('id', dispositionId)
-        .single();
+        .maybeSingle();
 
       if (disposition?.pipeline_stage) {
         // Find the pipeline board for this stage
@@ -152,7 +152,7 @@ serve(async (req) => {
           .select('id')
           .eq('user_id', userId)
           .eq('name', disposition.pipeline_stage)
-          .single();
+          .maybeSingle();
 
         if (pipelineBoard) {
           await supabase.from('lead_pipeline_positions').upsert({
@@ -233,7 +233,7 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
         .from('leads')
         .select('phone_number')
         .eq('id', leadId)
-        .single();
+        .maybeSingle();
 
       if (lead) {
         await supabase.from('dnc_list').upsert({
@@ -268,14 +268,29 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
 
     case 'send_sms':
       if (config.message) {
-        await supabase.functions.invoke('sms-messaging', {
-          body: {
-            action: 'send_sms',
-            to: (await supabase.from('leads').select('phone_number').eq('id', leadId).single()).data?.phone_number,
-            body: config.message,
-            lead_id: leadId,
-          },
-        });
+        // Get lead phone and user's available numbers
+        const { data: leadForSms } = await supabase.from('leads').select('phone_number').eq('id', leadId).maybeSingle();
+        const { data: availableNumber } = await supabase
+          .from('phone_numbers')
+          .select('number')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        
+        if (leadForSms?.phone_number && availableNumber?.number) {
+          await supabase.functions.invoke('sms-messaging', {
+            body: {
+              action: 'send_sms',
+              to: leadForSms.phone_number,
+              from: availableNumber.number,
+              body: config.message,
+              lead_id: leadId,
+            },
+          });
+        } else {
+          console.error('Cannot send SMS: missing lead phone or no available sending number');
+        }
       }
       break;
 
