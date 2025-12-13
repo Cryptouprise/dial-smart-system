@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -23,6 +23,7 @@ interface Campaign {
   status: string;
   agent_id?: string;
   workflow_id?: string;
+  sms_from_number?: string;
   calls_per_minute: number;
   max_attempts: number;
   calling_hours_start: string;
@@ -76,18 +77,21 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     description: '',
     agent_id: '',
     workflow_id: '',
+    sms_from_number: '',
     calls_per_minute: 5,
     max_attempts: 3,
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
     timezone: 'America/New_York'
   });
+  const [twilioNumbers, setTwilioNumbers] = useState<{number: string; provider: string}[]>([]);
 
   useEffect(() => {
     loadCampaigns();
     loadAgentsWithPhoneStatus();
     loadPhoneNumberStatus();
     loadWorkflows();
+    loadTwilioNumbers();
   }, []);
 
   const loadWorkflows = async () => {
@@ -215,12 +219,32 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     onRefresh?.();
   };
 
+  const loadTwilioNumbers = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('number, provider')
+        .eq('user_id', user.id)
+        .eq('provider', 'twilio')
+        .eq('status', 'active');
+
+      if (error) throw error;
+      setTwilioNumbers(data || []);
+    } catch (error) {
+      console.error('Error loading Twilio numbers:', error);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
       description: '',
       agent_id: '',
       workflow_id: '',
+      sms_from_number: '',
       calls_per_minute: 5,
       max_attempts: 3,
       calling_hours_start: '09:00',
@@ -236,6 +260,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       description: campaign.description || '',
       agent_id: campaign.agent_id || '',
       workflow_id: campaign.workflow_id || '',
+      sms_from_number: campaign.sms_from_number || '',
       calls_per_minute: campaign.calls_per_minute,
       max_attempts: campaign.max_attempts,
       calling_hours_start: campaign.calling_hours_start,
@@ -412,6 +437,41 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 {formData.workflow_id && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Leads will be enrolled in this workflow when the campaign starts.
+                  </p>
+                )}
+              </div>
+
+              {/* SMS From Number Selector */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  SMS From Number (for workflow texts)
+                </label>
+                <Select
+                  value={formData.sms_from_number || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, sms_from_number: value === "none" ? "" : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a Twilio number for SMS" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="none">No SMS Number</SelectItem>
+                    {twilioNumbers.map((phone) => (
+                      <SelectItem key={phone.number} value={phone.number}>
+                        <span className="font-mono">{phone.number}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.sms_from_number ? (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" />
+                    Workflow SMS will be sent from this A2P number
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Select a number if your workflow includes SMS steps
                   </p>
                 )}
               </div>
