@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles, Upload, UserPlus } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles } from 'lucide-react';
 
 // Import the actual configuration components
 import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
@@ -80,11 +80,154 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
     );
   };
 
+  // Step intro content for each area
+  const getStepIntro = (areaId: string) => {
+    const intros: Record<string, { title: string; description: string; whatIsIt: string; doINeedIt: string; howTo: string[] }> = {
+      phone_numbers: {
+        title: "📞 Get Phone Numbers",
+        description: "You need phone numbers to make calls. These are the caller IDs your leads will see.",
+        whatIsIt: "Phone numbers are purchased through providers like Retell AI, Twilio, or Telnyx. Each number costs ~$1-3/month.",
+        doINeedIt: "Yes - you need at least 1 number to make calls. We recommend 3-5 for rotation to avoid spam flags.",
+        howTo: [
+          "Enter an area code (e.g., 212 for New York)",
+          "Choose how many numbers you want",
+          "Click 'Purchase' - numbers are ready instantly"
+        ]
+      },
+      sip_trunk: {
+        title: "🔌 SIP Trunk Connection",
+        description: "A SIP trunk connects your phone numbers to the calling system.",
+        whatIsIt: "SIP (Session Initiation Protocol) is how calls are routed over the internet. If you're using Retell AI to purchase numbers, this is already handled for you.",
+        doINeedIt: "Only if you're bringing your own Twilio/Telnyx numbers. If you purchased through Retell AI in the previous step, you can skip this.",
+        howTo: [
+          "If using Retell AI numbers → Skip this step",
+          "If using Twilio → Enter your Account SID and Auth Token",
+          "Click 'Connect' to link your account"
+        ]
+      },
+      dialer_settings: {
+        title: "⚙️ Dialer Settings",
+        description: "Configure how the dialer behaves when making calls.",
+        whatIsIt: "These settings control answering machine detection (AMD), local presence dialing, timezone compliance, and more.",
+        doINeedIt: "Optional but recommended. Good defaults are already set, but tuning these can improve your answer rates.",
+        howTo: [
+          "Enable AMD to detect voicemails",
+          "Turn on Local Presence to show local caller ID",
+          "Set timezone compliance to respect calling hours"
+        ]
+      },
+      campaign: {
+        title: "🚀 Create Your First Campaign",
+        description: "A campaign groups leads together and controls when/how they're called.",
+        whatIsIt: "Campaigns let you organize calling efforts. Each campaign has its own leads, schedule, and AI agent.",
+        doINeedIt: "Yes - you need at least one campaign to start calling.",
+        howTo: [
+          "Give your campaign a name",
+          "Select an AI agent to handle calls",
+          "Set calling hours and preferences",
+          "Add leads to the campaign"
+        ]
+      },
+      ai_agent: {
+        title: "🤖 Create AI Voice Agent",
+        description: "Your AI agent is the 'brain' that talks to leads on the phone.",
+        whatIsIt: "An AI agent uses a language model (LLM) to have natural conversations. You define its personality, script, and objectives.",
+        doINeedIt: "Yes - the AI agent handles your calls automatically. This is the core of the system.",
+        howTo: [
+          "Step 1: Create an LLM with your script/prompt",
+          "Step 2: Create an agent and assign a voice",
+          "Step 3: Test the agent with a sample call"
+        ]
+      },
+      leads: {
+        title: "👥 Import Your Leads",
+        description: "Leads are the people you want to call.",
+        whatIsIt: "A lead is a contact with at least a phone number. You can also include name, email, company, and custom fields.",
+        doINeedIt: "Yes - you need leads to run campaigns. Start with even just a few to test.",
+        howTo: [
+          "Prepare a CSV file with phone numbers",
+          "Upload the file using the importer",
+          "Map columns (the system auto-detects most)",
+          "Or add leads manually one at a time"
+        ]
+      },
+      workflows: {
+        title: "🔄 Follow-Up Workflows",
+        description: "Workflows automate what happens after calls - retries, SMS, emails.",
+        whatIsIt: "A workflow is a sequence of actions triggered by call outcomes. Example: 'If no answer, wait 2 hours, try again. After 3 attempts, send SMS.'",
+        doINeedIt: "Highly recommended. Without workflows, you'll manually manage follow-ups. With them, the system handles it automatically.",
+        howTo: [
+          "Use AI Builder: Describe what you want in plain English",
+          "Or use Manual Builder: Drag and drop steps",
+          "Set triggers based on call outcomes",
+          "Assign the workflow to a campaign"
+        ]
+      },
+      budget: {
+        title: "💰 Budget & Spending Limits",
+        description: "Control how much you spend on calls.",
+        whatIsIt: "Set daily and monthly spending caps. The system will pause campaigns when limits are reached.",
+        doINeedIt: "Recommended to avoid unexpected charges, especially when starting out.",
+        howTo: [
+          "Set a daily limit (e.g., $50/day)",
+          "Set a monthly limit (e.g., $1000/month)",
+          "Choose what happens when limit is hit (pause or alert)"
+        ]
+      }
+    };
+    return intros[areaId] || null;
+  };
+
+  const renderStepIntro = (areaId: string) => {
+    const intro = getStepIntro(areaId);
+    if (!intro) return null;
+
+    return (
+      <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xl">{intro.title}</CardTitle>
+          <CardDescription className="text-base">{intro.description}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="bg-background/50 rounded-lg p-3 border">
+              <p className="text-sm font-medium text-primary mb-1">What is this?</p>
+              <p className="text-sm text-muted-foreground">{intro.whatIsIt}</p>
+            </div>
+            <div className="bg-background/50 rounded-lg p-3 border">
+              <p className="text-sm font-medium text-primary mb-1">Do I need it?</p>
+              <p className="text-sm text-muted-foreground">{intro.doINeedIt}</p>
+            </div>
+          </div>
+          <div className="bg-background/50 rounded-lg p-3 border">
+            <p className="text-sm font-medium text-primary mb-2">How to complete:</p>
+            <ol className="text-sm text-muted-foreground space-y-1">
+              {intro.howTo.map((step, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="font-medium text-primary">{i + 1}.</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="flex items-center justify-between pt-2 border-t">
+            <p className="text-sm text-muted-foreground">Don't need this right now?</p>
+            <Button variant="outline" onClick={onSkip} className="gap-2">
+              <SkipForward className="h-4 w-4" />
+              Skip This Step
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderConfigurationComponent = () => {
     switch (areaId) {
       case 'phone_numbers':
         return (
           <div onClick={handleInteraction} className="space-y-4">
+            {renderStepIntro('phone_numbers')}
             <PhoneNumberPurchasing />
             <Separator className="my-4" />
             <CompletionFooter 
@@ -99,13 +242,14 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'sip_trunk':
         return (
           <div onClick={handleInteraction} className="space-y-4">
+            {renderStepIntro('sip_trunk')}
             <SipTrunkManager />
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
               onSkip={onSkip}
               hasInteracted={hasInteracted}
-              tip="Connect your Twilio account to enable call connectivity."
+              tip="If you bought numbers through Retell AI, you can skip this step."
             />
           </div>
         );
@@ -113,6 +257,7 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'dialer_settings':
         return (
           <div onClick={handleInteraction} className="space-y-4">
+            {renderStepIntro('dialer_settings')}
             <AdvancedDialerSettings />
             <Separator className="my-4" />
             <CompletionFooter 
@@ -127,6 +272,7 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'campaign':
         return (
           <div className="space-y-4">
+            {renderStepIntro('campaign')}
             <CampaignSetupWizard 
               open={true} 
               onOpenChange={() => {}} 
@@ -141,20 +287,8 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'ai_agent':
         return (
           <div className="space-y-4" onClick={handleInteraction}>
-            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  Create Your AI Voice Agent
-                </CardTitle>
-                <CardDescription>
-                  Follow the wizard below to create an AI brain (LLM) and voice agent that will handle your calls automatically.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-            
+            {renderStepIntro('ai_agent')}
             <RetellAISetupWizard />
-            
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
@@ -168,20 +302,8 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'leads':
         return (
           <div className="space-y-4" onClick={handleInteraction}>
-            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-primary" />
-                  Import Your Leads
-                </CardTitle>
-                <CardDescription>
-                  Upload a CSV file with your leads or add them manually. You'll need leads to run campaigns.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-            
+            {renderStepIntro('leads')}
             <LeadUpload />
-            
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
@@ -195,18 +317,7 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'workflows':
         return (
           <div className="space-y-4" onClick={handleInteraction}>
-            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  Build Workflows with AI
-                </CardTitle>
-                <CardDescription>
-                  Describe your follow-up strategy in plain English and AI will create the workflow for you, or build one manually.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-            
+            {renderStepIntro('workflows')}
             <Tabs defaultValue="ai" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="ai" className="gap-2">
@@ -224,7 +335,6 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
                 <WorkflowBuilder />
               </TabsContent>
             </Tabs>
-            
             <Separator className="my-4" />
             <CompletionFooter 
               onComplete={handleCompleteClick} 
@@ -292,6 +402,7 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
       case 'budget':
         return (
           <div onClick={handleInteraction} className="space-y-4">
+            {renderStepIntro('budget')}
             <BudgetManager />
             <Separator className="my-4" />
             <CompletionFooter 
