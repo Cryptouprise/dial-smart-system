@@ -44,7 +44,7 @@ async function syncWithYellowstone(apiKey: string, supabaseClient: any, userId: 
         .from('phone_numbers')
         .select('*')
         .eq('number', yellowstoneNumber.number)
-        .single();
+        .maybeSingle();
 
       if (existingNumber) {
         // Update existing number
@@ -136,7 +136,7 @@ serve(async (req) => {
           .from('yellowstone_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (existingSettings) {
           await supabaseClient
@@ -200,7 +200,7 @@ serve(async (req) => {
         .from('yellowstone_settings')
         .select('webhook_url, auto_sync_enabled, sync_interval_minutes, last_sync_at')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') { // Not found error is OK
         console.error('Settings fetch error:', error);

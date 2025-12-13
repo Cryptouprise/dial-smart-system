@@ -53,9 +53,15 @@ serve(async (req) => {
         .from('phone_numbers')
         .select('*')
         .eq('id', phoneNumberId)
-        .single();
+        .maybeSingle();
 
       if (fetchError) throw fetchError;
+      if (!number) {
+        return new Response(JSON.stringify({ error: 'Phone number not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
 
       const result = await checkSpamIndicators(number, supabase);
       

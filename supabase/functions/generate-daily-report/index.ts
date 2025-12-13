@@ -239,7 +239,7 @@ serve(async (req) => {
             .eq('user_id', uid)
             .eq('report_date', reportDate)
             .eq('report_type', 'daily')
-            .single();
+            .maybeSingle();
           
           if (existing) {
             console.log(`[Daily Report] Report already exists for user ${uid}`);

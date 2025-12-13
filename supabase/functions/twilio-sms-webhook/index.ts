@@ -428,7 +428,7 @@ serve(async (req) => {
         .eq('direction', 'inbound')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       
       if (latestInbound && message && latestInbound.id !== message.id) {
         console.log('[Twilio SMS Webhook] Newer inbound message exists, skipping auto-response for this one');
