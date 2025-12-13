@@ -38,7 +38,7 @@ serve(async (req) => {
       .select('*')
       .eq('id', broadcastId)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (broadcastError || !broadcast) {
       throw new Error('Broadcast not found or access denied');

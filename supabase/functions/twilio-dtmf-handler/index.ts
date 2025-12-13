@@ -125,7 +125,7 @@ serve(async (req) => {
           .from('voice_broadcasts')
           .select('calls_answered, transfers_completed, callbacks_scheduled, dnc_requests')
           .eq('id', broadcastId)
-          .single();
+          .maybeSingle();
         
         if (!broadcastError && broadcast) {
           const updates: Record<string, number> = {};
@@ -167,7 +167,7 @@ serve(async (req) => {
           .from('broadcast_queue')
           .select('lead_id, broadcast:voice_broadcasts(user_id)')
           .eq('id', queueItemId)
-          .single();
+          .maybeSingle();
         
         const broadcast = queueItem?.broadcast as { user_id: string } | null;
         if (broadcast?.user_id) {
@@ -197,7 +197,7 @@ serve(async (req) => {
           .from('broadcast_queue')
           .select('lead_id, broadcast:voice_broadcasts(user_id)')
           .eq('id', queueItemId)
-          .single();
+          .maybeSingle();
         
         if (queueItem?.lead_id) {
           // Schedule callback for next business day at 10 AM

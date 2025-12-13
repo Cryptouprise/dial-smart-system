@@ -800,7 +800,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id, first_name, last_name, status')
         .eq('phone_number', args.phone_number)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       
       if (findError || !lead) {
         return { success: false, message: `No lead found with phone number ${args.phone_number}` };
@@ -1608,7 +1608,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id')
         .eq('lead_id', lead.id)
         .eq('pipeline_board_id', boards[0].id)
-        .single();
+        .maybeSingle();
       
       if (existing) {
         // Update existing
@@ -1880,7 +1880,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id')
         .eq('number', cleanNumber)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       
       const phoneData: any = {
         user_id: userId,
@@ -2117,7 +2117,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .select('*')
           .eq('id', broadcast_id)
           .eq('user_id', userId)
-          .single();
+          .maybeSingle();
         
         if (fetchError || !broadcast) {
           return { success: false, message: '❌ Broadcast not found.' };
@@ -2172,7 +2172,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .select('*')
           .eq('id', campaign_id)
           .eq('user_id', userId)
-          .single();
+          .maybeSingle();
         
         if (fetchError || !campaign) {
           return { success: false, message: '❌ Campaign not found.' };
@@ -2337,7 +2337,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
       else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
       
-      const { data: workflow, error: findError } = await findQuery.single();
+      const { data: workflow, error: findError } = await findQuery.maybeSingle();
       
       if (findError || !workflow) {
         return { success: false, message: '❌ Workflow not found.' };
@@ -2373,7 +2373,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
       else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
       
-      const { data: workflow, error: findError } = await findQuery.single();
+      const { data: workflow, error: findError } = await findQuery.maybeSingle();
       
       if (findError || !workflow) {
         return { success: false, message: '❌ Workflow not found.' };
@@ -2404,7 +2404,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       if (workflow_id) findQuery = findQuery.eq('id', workflow_id);
       else if (workflow_name) findQuery = findQuery.ilike('name', `%${workflow_name}%`);
       
-      const { data: workflow, error: findError } = await findQuery.single();
+      const { data: workflow, error: findError } = await findQuery.maybeSingle();
       
       if (findError || !workflow) {
         return { success: false, message: '❌ Workflow not found.' };
@@ -2450,7 +2450,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id')
         .eq('workflow_id', workflow.id)
         .eq('step_number', 1)
-        .single();
+        .maybeSingle();
       
       // Add leads to workflow progress
       const progressRecords = leads.map((lead: any) => ({
