@@ -467,24 +467,35 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
       return { success: false, error: 'No SMS number available' };
     }
 
-    // Call the ai-sms-processor function - check all possible field names for prompt
-    const response = await supabase.functions.invoke('ai-sms-processor', {
-      body: {
+    // Call the ai-sms-processor function with service role key for internal auth
+    // Using direct fetch to pass the service role key properly
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/ai-sms-processor`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         action: 'generate_and_send',
         leadId: lead.id,
         userId: progress.user_id,
         fromNumber: fromNumber,
         context: config.context || 'follow_up',
         prompt: config.ai_prompt || config.sms_content || config.prompt || null,
-      },
+      }),
     });
 
-    if (response.error) {
-      console.error('[Workflow] AI SMS failed:', response.error);
-      return { success: false, error: response.error.message };
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Workflow] AI SMS failed:', response.status, errorText);
+      return { success: false, error: `AI SMS failed: ${response.status}` };
     }
 
-    console.log('[Workflow] AI SMS sent:', response.data);
+    const data = await response.json();
+    console.log('[Workflow] AI SMS sent:', data);
     return { success: true, action: 'ai_sms_sent' };
 
   } catch (error: any) {
