@@ -473,6 +473,63 @@ Return ONLY the SMS agent prompt, no explanations or meta-commentary.`;
   }
 });
 
+// Helper function to clean repeated text patterns from AI output
+function cleanRepeatedText(text: string): string {
+  if (!text || text.length < 50) return text;
+  
+  // Split by common separators (newlines, periods followed by space)
+  const lines = text.split(/\n+/);
+  
+  // If we have very few lines, try splitting by sentences
+  if (lines.length <= 2) {
+    // Check for sentence-level repetition
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    if (sentences.length > 3) {
+      const uniqueSentences: string[] = [];
+      const seenNormalized = new Set<string>();
+      
+      for (const sentence of sentences) {
+        const normalized = sentence.toLowerCase().trim();
+        if (normalized.length > 10 && !seenNormalized.has(normalized)) {
+          seenNormalized.add(normalized);
+          uniqueSentences.push(sentence);
+        } else if (normalized.length <= 10) {
+          uniqueSentences.push(sentence);
+        }
+      }
+      
+      if (uniqueSentences.length < sentences.length) {
+        console.log('[AI SMS] Cleaned repeated sentences:', sentences.length, '->', uniqueSentences.length);
+        return uniqueSentences.join(' ').trim();
+      }
+    }
+    return text;
+  }
+  
+  // Check for line-level repetition
+  const uniqueLines: string[] = [];
+  const seenNormalized = new Set<string>();
+  
+  for (const line of lines) {
+    const normalized = line.toLowerCase().trim();
+    if (normalized.length > 20 && seenNormalized.has(normalized)) {
+      // Skip duplicate line
+      continue;
+    }
+    if (normalized.length > 20) {
+      seenNormalized.add(normalized);
+    }
+    uniqueLines.push(line);
+  }
+  
+  if (uniqueLines.length < lines.length) {
+    console.log('[AI SMS] Cleaned repeated lines:', lines.length, '->', uniqueLines.length);
+    return uniqueLines.join('\n').trim();
+  }
+  
+  return text;
+}
+
 async function detectReaction(body: string): Promise<{ isReaction: boolean; reactionType: string | null }> {
   const reactions = [
     { pattern: /^👍$/, type: 'thumbs_up' },
@@ -703,7 +760,12 @@ If they provide a date/time, confirm you'll book it for them.`;
       }
 
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || 'I apologize, but I was unable to generate a response.';
+      let generatedContent = data.choices?.[0]?.message?.content || 'I apologize, but I was unable to generate a response.';
+      
+      // Clean up any repeated text patterns (AI sometimes repeats itself)
+      generatedContent = cleanRepeatedText(generatedContent);
+      
+      return generatedContent;
     }
   } catch (error) {
     console.error('[AI SMS] Response generation failed:', error);
