@@ -1541,6 +1541,138 @@ serve(async (req) => {
         );
       }
 
+      case 'delete_event': {
+        // Delete a Google Calendar event by event ID
+        const eventUserIdParam = params.user_id;
+        const eventId = params.event_id;
+        
+        if (!eventId) {
+          return new Response(
+            JSON.stringify({ error: 'event_id is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get integration
+        const { data: integration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', eventUserIdParam || userId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (!integration?.access_token_encrypted) {
+          return new Response(
+            JSON.stringify({ error: 'Google Calendar not connected' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const accessToken = atob(integration.access_token_encrypted);
+        const calendarId = integration.calendar_id || 'primary';
+
+        const deleteResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+          {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          }
+        );
+
+        if (!deleteResponse.ok && deleteResponse.status !== 204) {
+          console.error('[Calendar] Delete event failed:', deleteResponse.status);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Failed to delete event' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('[Calendar] Event deleted:', eventId);
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'update_event': {
+        // Update a Google Calendar event by event ID
+        const updateUserIdParam = params.user_id;
+        const updateEventId = params.event_id;
+        const updates = params.updates || {};
+        
+        if (!updateEventId) {
+          return new Response(
+            JSON.stringify({ error: 'event_id is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get integration
+        const { data: updateIntegration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', updateUserIdParam || userId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (!updateIntegration?.access_token_encrypted) {
+          return new Response(
+            JSON.stringify({ error: 'Google Calendar not connected' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const updateAccessToken = atob(updateIntegration.access_token_encrypted);
+        const updateCalendarId = updateIntegration.calendar_id || 'primary';
+
+        // Build event update payload
+        const eventUpdate: any = {};
+        if (updates.start_time) {
+          eventUpdate.start = { 
+            dateTime: updates.start_time, 
+            timeZone: updates.timezone || 'America/Chicago' 
+          };
+        }
+        if (updates.end_time) {
+          eventUpdate.end = { 
+            dateTime: updates.end_time, 
+            timeZone: updates.timezone || 'America/Chicago' 
+          };
+        }
+        if (updates.title) {
+          eventUpdate.summary = updates.title;
+        }
+        if (updates.description) {
+          eventUpdate.description = updates.description;
+        }
+
+        const patchResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${updateCalendarId}/events/${updateEventId}`,
+          {
+            method: 'PATCH',
+            headers: { 
+              'Authorization': `Bearer ${updateAccessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventUpdate)
+          }
+        );
+
+        if (!patchResponse.ok) {
+          console.error('[Calendar] Update event failed:', patchResponse.status);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Failed to update event' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('[Calendar] Event updated:', updateEventId);
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: `Unknown action: ${action}` }),

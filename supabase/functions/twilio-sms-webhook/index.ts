@@ -808,6 +808,18 @@ ${processedKnowledge}`;
             {
               type: 'function',
               function: {
+                name: 'check_appointments',
+                description: 'Check what appointments are scheduled for this lead. Use this when they ask about their upcoming appointments or want to know what is booked.',
+                parameters: {
+                  type: 'object',
+                  properties: {},
+                  required: []
+                }
+              }
+            },
+            {
+              type: 'function',
+              function: {
                 name: 'book_appointment',
                 description: 'Book an appointment/meeting with the lead. Use this when the lead confirms they want to schedule.',
                 parameters: {
@@ -841,8 +853,33 @@ ${processedKnowledge}`;
             {
               type: 'function',
               function: {
+                name: 'reschedule_appointment',
+                description: 'Reschedule an existing appointment to a new date/time. Use this when the lead wants to change their appointment time.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    new_date: {
+                      type: 'string',
+                      description: 'New date in YYYY-MM-DD format'
+                    },
+                    new_time: {
+                      type: 'string',
+                      description: 'New time in HH:MM format (24-hour)'
+                    },
+                    timezone: {
+                      type: 'string',
+                      description: 'Timezone (e.g., "America/Denver", "America/Chicago")'
+                    }
+                  },
+                  required: ['new_date', 'new_time']
+                }
+              }
+            },
+            {
+              type: 'function',
+              function: {
                 name: 'cancel_appointment',
-                description: 'Cancel an existing appointment for the lead',
+                description: 'Cancel an existing appointment for the lead. Use when they want to cancel completely.',
                 parameters: {
                   type: 'object',
                   properties: {
@@ -888,12 +925,48 @@ ${processedKnowledge}`;
             
             if (toolCalls && toolCalls.length > 0) {
               console.log('[Twilio SMS Webhook] AI requested tool calls:', toolCalls.length);
+              const toolResults: { function: string; result: string }[] = [];
               
               for (const toolCall of toolCalls) {
                 const functionName = toolCall.function?.name;
                 const functionArgs = JSON.parse(toolCall.function?.arguments || '{}');
                 
                 console.log('[Twilio SMS Webhook] Processing tool call:', functionName, functionArgs);
+                
+                if (functionName === 'check_appointments') {
+                  try {
+                    // Find all upcoming appointments for this lead
+                    let appointmentsInfo = 'No upcoming appointments found.';
+                    
+                    if (lead?.id) {
+                      const now = new Date().toISOString();
+                      const { data: appointments } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('*')
+                        .eq('lead_id', lead.id)
+                        .eq('status', 'scheduled')
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(5);
+                      
+                      if (appointments && appointments.length > 0) {
+                        appointmentsInfo = `Found ${appointments.length} upcoming appointment(s):\n`;
+                        appointments.forEach((apt: any, index: number) => {
+                          const startDate = new Date(apt.start_time);
+                          const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+                          const timeStr = startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                          appointmentsInfo += `${index + 1}. ${apt.title} - ${dateStr} at ${timeStr}\n`;
+                        });
+                      }
+                    }
+                    
+                    // Add this info to the tool response
+                    toolResults.push({ function: 'check_appointments', result: appointmentsInfo });
+                    console.log('[Twilio SMS Webhook] Checked appointments:', appointmentsInfo);
+                  } catch (checkError) {
+                    console.error('[Twilio SMS Webhook] Check appointments error:', checkError);
+                  }
+                }
                 
                 if (functionName === 'book_appointment') {
                   try {
@@ -908,8 +981,6 @@ ${processedKnowledge}`;
                     const now = new Date();
 
                     // If the parsed date is in the past, roll it forward by years
-                    // until it lands in the future. This prevents the model from
-                    // accidentally booking in a past year (e.g. 2023 instead of 2025).
                     let safetyCounter = 0;
                     while (startDateTime.getTime() <= now.getTime() && safetyCounter < 5) {
                       startDateTime = new Date(
@@ -1001,6 +1072,164 @@ ${processedKnowledge}`;
                     }
                   } catch (bookingError) {
                     console.error('[Twilio SMS Webhook] Booking error:', bookingError);
+                  }
+                }
+                
+                if (functionName === 'reschedule_appointment') {
+                  try {
+                    if (lead?.id) {
+                      // Find the most recent scheduled appointment
+                      const now = new Date().toISOString();
+                      const { data: existingAppt } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('*')
+                        .eq('lead_id', lead.id)
+                        .eq('status', 'scheduled')
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      
+                      if (existingAppt) {
+                        const newDateStr = functionArgs.new_date;
+                        const newTime = functionArgs.new_time || '09:00';
+                        const timezone = functionArgs.timezone || existingAppt.timezone || 'America/Chicago';
+                        
+                        // Calculate new start time
+                        let newStartDateTime = new Date(`${newDateStr}T${newTime}:00`);
+                        const currentNow = new Date();
+                        
+                        // Roll forward if in past
+                        let safetyCounter = 0;
+                        while (newStartDateTime.getTime() <= currentNow.getTime() && safetyCounter < 5) {
+                          newStartDateTime = new Date(
+                            newStartDateTime.getFullYear() + 1,
+                            newStartDateTime.getMonth(),
+                            newStartDateTime.getDate(),
+                            newStartDateTime.getHours(),
+                            newStartDateTime.getMinutes(),
+                            newStartDateTime.getSeconds(),
+                          );
+                          safetyCounter++;
+                        }
+                        
+                        // Calculate duration from original appointment
+                        const originalStart = new Date(existingAppt.start_time);
+                        const originalEnd = new Date(existingAppt.end_time);
+                        const duration = (originalEnd.getTime() - originalStart.getTime()) / (60 * 1000);
+                        const newEndDateTime = new Date(newStartDateTime.getTime() + duration * 60 * 1000);
+                        
+                        // Update the appointment
+                        const { error: updateError } = await supabaseAdmin
+                          .from('calendar_appointments')
+                          .update({
+                            start_time: newStartDateTime.toISOString(),
+                            end_time: newEndDateTime.toISOString(),
+                            timezone: timezone,
+                            notes: `${existingAppt.notes || ''}\nRescheduled via SMS on ${new Date().toLocaleDateString()}`
+                          })
+                          .eq('id', existingAppt.id);
+                        
+                        if (!updateError) {
+                          console.log('[Twilio SMS Webhook] Appointment rescheduled:', existingAppt.id);
+                          
+                          // Update lead's next callback
+                          await supabaseAdmin
+                            .from('leads')
+                            .update({ next_callback_at: newStartDateTime.toISOString() })
+                            .eq('id', lead.id);
+                          
+                          // Sync update to Google Calendar
+                          if (existingAppt.google_event_id) {
+                            try {
+                              await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${serviceRoleKey}`,
+                                },
+                                body: JSON.stringify({
+                                  action: 'update_event',
+                                  user_id: userId,
+                                  event_id: existingAppt.google_event_id,
+                                  updates: {
+                                    start_time: newStartDateTime.toISOString(),
+                                    end_time: newEndDateTime.toISOString(),
+                                    timezone: timezone
+                                  }
+                                }),
+                              });
+                              console.log('[Twilio SMS Webhook] Google Calendar event updated');
+                            } catch (syncError) {
+                              console.error('[Twilio SMS Webhook] Calendar update error:', syncError);
+                            }
+                          }
+                        }
+                      } else {
+                        console.log('[Twilio SMS Webhook] No appointment to reschedule');
+                      }
+                    }
+                  } catch (rescheduleError) {
+                    console.error('[Twilio SMS Webhook] Reschedule error:', rescheduleError);
+                  }
+                }
+                
+                if (functionName === 'cancel_appointment') {
+                  try {
+                    // Find the most recent appointment for this lead
+                    if (lead?.id) {
+                      const now = new Date().toISOString();
+                      const { data: existingAppt } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('id, google_event_id, title, start_time')
+                        .eq('lead_id', lead.id)
+                        .eq('status', 'scheduled')
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      
+                      if (existingAppt) {
+                        await supabaseAdmin
+                          .from('calendar_appointments')
+                          .update({ 
+                            status: 'cancelled',
+                            notes: `Cancelled via SMS: ${functionArgs.reason || 'No reason provided'}`
+                          })
+                          .eq('id', existingAppt.id);
+                        
+                        console.log('[Twilio SMS Webhook] Appointment cancelled:', existingAppt.id);
+                        
+                        // Update lead status
+                        await supabaseAdmin
+                          .from('leads')
+                          .update({ status: 'callback_requested', next_callback_at: null })
+                          .eq('id', lead.id);
+                        
+                        // Delete from Google Calendar if synced
+                        if (existingAppt.google_event_id) {
+                          try {
+                            await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${serviceRoleKey}`,
+                              },
+                              body: JSON.stringify({
+                                action: 'delete_event',
+                                user_id: userId,
+                                event_id: existingAppt.google_event_id
+                              }),
+                            });
+                            console.log('[Twilio SMS Webhook] Google Calendar event deleted');
+                          } catch (syncError) {
+                            console.error('[Twilio SMS Webhook] Calendar delete error:', syncError);
+                          }
+                        }
+                      }
+                    }
+                  } catch (cancelError) {
+                    console.error('[Twilio SMS Webhook] Cancel error:', cancelError);
                   }
                 }
                 
