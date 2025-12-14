@@ -143,9 +143,41 @@ serve(async (req) => {
       .from('lead_workflow_progress')
       .select('lead_id')
       .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
-      .in('status', ['in_progress', 'pending']);
+      .in('status', ['active', 'in_progress', 'pending']);
 
     const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
+
+    // **CRITICAL FIX**: Check for RECENT call_logs to prevent re-calling leads
+    // Look for any calls made in the last 30 minutes for these campaigns
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: recentCallLogs } = await supabase
+      .from('call_logs')
+      .select('lead_id, status, outcome')
+      .in('campaign_id', campaignIds)
+      .gte('created_at', thirtyMinutesAgo);
+
+    // Build set of leads that were called recently (any status except failed)
+    const recentlyCalledLeadIds = new Set(
+      (recentCallLogs || [])
+        .filter((cl: any) => cl.status !== 'failed')
+        .map((cl: any) => cl.lead_id)
+    );
+    
+    // Build set of leads that had successful/connected calls (should NOT be called again)
+    const successfullyContactedLeadIds = new Set(
+      (recentCallLogs || [])
+        .filter((cl: any) => 
+          cl.outcome === 'connected' || 
+          cl.outcome === 'answered' || 
+          cl.outcome === 'appointment_set' ||
+          cl.outcome === 'callback_scheduled' ||
+          cl.outcome === 'interested' ||
+          cl.status === 'completed'
+        )
+        .map((cl: any) => cl.lead_id)
+    );
+
+    console.log(`[Dispatcher] Recently called leads: ${recentlyCalledLeadIds.size}, Successfully contacted: ${successfullyContactedLeadIds.size}`);
 
     // Get leads from campaign_leads that need to be queued
     const { data: campaignLeads, error: leadsError } = await supabase
@@ -171,6 +203,10 @@ serve(async (req) => {
       if (lead.do_not_call) return false;
       if (existingLeadIds.has(cl.lead_id)) return false;
       if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
+      // **NEW**: Skip leads that were called recently
+      if (recentlyCalledLeadIds.has(cl.lead_id)) return false;
+      // **NEW**: Skip leads that were successfully contacted
+      if (successfullyContactedLeadIds.has(cl.lead_id)) return false;
       // Only queue leads with status 'new', 'contacted', or 'callback'
       if (!['new', 'contacted', 'callback'].includes(lead.status)) return false;
       return true;
@@ -178,18 +214,7 @@ serve(async (req) => {
 
     console.log(`Found ${leadsToQueue.length} leads to add to queue (raw campaign leads: ${(campaignLeads || []).length})`);
 
-    // Fallback: if filters excluded everything but we have at least one valid lead, use the first one
-    if (leadsToQueue.length === 0 && (campaignLeads || []).length > 0) {
-      console.warn('[Dispatcher] No eligible leads after filters; falling back to first available lead for debugging');
-      const fallbackLead = (campaignLeads || []).find(cl => {
-        const lead = cl.leads as any;
-        return lead && lead.phone_number && !lead.do_not_call;
-      });
-      if (fallbackLead) {
-        leadsToQueue = [fallbackLead];
-        console.log('[Dispatcher] Using fallback lead', fallbackLead.lead_id);
-      }
-    }
+    // REMOVED: The fallback that was adding leads even when they should be skipped
 
     // Separate leads by workflow type - SMS-first vs Call-first
     const smsFirstLeads: any[] = [];
@@ -251,31 +276,74 @@ serve(async (req) => {
       }
     }
 
-    // Add call-first leads to dialing queue (original behavior)
+    // Add call-first leads to dialing queue AND enroll in workflow for subsequent steps
     if (callFirstLeads.length > 0) {
-      const campaign = activeCampaigns[0];
-      const queueEntries = callFirstLeads.map(cl => {
+      const queueEntries: any[] = [];
+      
+      for (const cl of callFirstLeads) {
         const lead = cl.leads as any;
-        return {
+        const campaign = activeCampaigns.find(c => c.id === cl.campaign_id);
+        
+        queueEntries.push({
           campaign_id: cl.campaign_id,
           lead_id: cl.lead_id,
           phone_number: lead.phone_number,
           status: 'pending',
           priority: 1,
-          max_attempts: campaign.max_attempts || 3,
+          max_attempts: campaign?.max_attempts || 3,
           attempts: 0,
           scheduled_at: new Date().toISOString()
-        };
-      });
+        });
 
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .insert(queueEntries);
+        // **FIX**: Also enroll in workflow if campaign has one, so SMS step fires after call
+        if (campaign?.workflow_id) {
+          const firstStep = workflowFirstSteps[campaign.workflow_id];
+          if (firstStep) {
+            // Get the second step (SMS) which should fire after call
+            const { data: allSteps } = await supabase
+              .from('workflow_steps')
+              .select('id, step_number, step_type')
+              .eq('workflow_id', campaign.workflow_id)
+              .order('step_number', { ascending: true });
 
-      if (queueError) {
-        console.error('Error adding to queue:', queueError);
-      } else {
-        console.log(`Added ${queueEntries.length} leads to dialing queue`);
+            const secondStep = allSteps?.find((s: any) => s.step_number === 2);
+            
+            // Create workflow progress starting at step 1 (call), but set next_action_at 
+            // to a future time so the SMS fires after the call completes
+            const { error: progressError } = await supabase
+              .from('lead_workflow_progress')
+              .insert({
+                lead_id: cl.lead_id,
+                workflow_id: campaign.workflow_id,
+                campaign_id: campaign.id,
+                user_id: user.id,
+                current_step_id: secondStep?.id || firstStep.id, // Point to SMS step
+                status: 'active',
+                started_at: new Date().toISOString(),
+                last_action_at: new Date().toISOString(),
+                // Schedule SMS step to fire 2 minutes after call starts
+                next_action_at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+              });
+
+            if (progressError) {
+              console.error(`[Dispatcher] Failed to create workflow progress for lead ${cl.lead_id}:`, progressError);
+            } else {
+              console.log(`[Dispatcher] Enrolled lead ${cl.lead_id} in workflow ${campaign.workflow_id}, SMS scheduled in 2 min`);
+            }
+          }
+        }
+      }
+
+      if (queueEntries.length > 0) {
+        const { error: queueError } = await supabase
+          .from('dialing_queues')
+          .insert(queueEntries);
+
+        if (queueError) {
+          console.error('Error adding to queue:', queueError);
+        } else {
+          console.log(`Added ${queueEntries.length} leads to dialing queue`);
+        }
       }
     }
 
