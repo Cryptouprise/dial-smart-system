@@ -480,6 +480,28 @@ async function executeSmsStep(supabase: any, lead: any, progress: any, config: a
   console.log(`[Workflow] Sending SMS to ${lead?.phone_number} with template:`, rawTemplate);
 
   try {
+    // SMS DEDUPLICATION: Check if an SMS was sent to this phone in the last 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const normalizedPhone = lead.phone_number?.replace(/\D/g, '').slice(-10) || '';
+    
+    const { data: recentSms } = await supabase
+      .from('sms_messages')
+      .select('id, created_at, to_number')
+      .eq('user_id', progress.user_id)
+      .gte('created_at', fiveMinutesAgo)
+      .eq('direction', 'outbound');
+    
+    // Check if any recent SMS was sent to a matching phone number
+    const duplicateSms = recentSms?.find((sms: any) => {
+      const smsPhone = sms.to_number?.replace(/\D/g, '').slice(-10) || '';
+      return smsPhone === normalizedPhone;
+    });
+    
+    if (duplicateSms) {
+      console.log(`[Workflow] Skipping SMS - message already sent to ${normalizedPhone} at ${duplicateSms.created_at}`);
+      return { success: true, action: 'sms_skipped_duplicate', reason: 'SMS sent to this number in last 5 minutes' };
+    }
+
     // Get sender number from campaign phone pool (prefer stationary)
     const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
 
@@ -518,6 +540,28 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
   console.log(`[Workflow] Sending AI SMS to ${lead?.phone_number}`);
 
   try {
+    // AI SMS DEDUPLICATION: Check if an SMS was sent to this phone in the last 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const normalizedPhone = lead.phone_number?.replace(/\D/g, '').slice(-10) || '';
+    
+    const { data: recentSms } = await supabase
+      .from('sms_messages')
+      .select('id, created_at, to_number')
+      .eq('user_id', progress.user_id)
+      .gte('created_at', fiveMinutesAgo)
+      .eq('direction', 'outbound');
+    
+    // Check if any recent SMS was sent to a matching phone number
+    const duplicateSms = recentSms?.find((sms: any) => {
+      const smsPhone = sms.to_number?.replace(/\D/g, '').slice(-10) || '';
+      return smsPhone === normalizedPhone;
+    });
+    
+    if (duplicateSms) {
+      console.log(`[Workflow] Skipping AI SMS - message already sent to ${normalizedPhone} at ${duplicateSms.created_at}`);
+      return { success: true, action: 'ai_sms_skipped_duplicate', reason: 'SMS sent to this number in last 5 minutes' };
+    }
+
     // Get sender number from campaign phone pool
     const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
 
