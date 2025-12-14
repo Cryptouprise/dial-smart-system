@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 interface ParsedRow {
   [key: string]: string;
@@ -147,19 +148,8 @@ export const LeadUpload: React.FC = () => {
   };
 
   const formatPhoneNumber = (phone: string): string | null => {
-    // Remove all non-digit characters
-    const digits = phone.replace(/\D/g, '');
-    
-    // Handle different formats
-    if (digits.length === 10) {
-      return `+1${digits}`;
-    } else if (digits.length === 11 && digits.startsWith('1')) {
-      return `+${digits}`;
-    } else if (digits.length > 10) {
-      return `+${digits}`;
-    }
-    
-    return null; // Invalid phone number
+    const normalized = normalizePhoneNumber(phone);
+    return normalized;
   };
 
   const handleUpload = async () => {
@@ -205,7 +195,7 @@ export const LeadUpload: React.FC = () => {
           continue;
         }
 
-        if (skipDuplicates && existingPhones.has(formattedPhone)) {
+        if (existingPhones.has(formattedPhone)) {
           duplicates++;
           continue;
         }

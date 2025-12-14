@@ -31,7 +31,8 @@ import {
   X,
   FileText,
   Tag,
-  Star
+  Star,
+  RotateCcw
 } from 'lucide-react';
 
 interface Lead {
@@ -84,6 +85,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   const [smsMessages, setSmsMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResettingHistory, setIsResettingHistory] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -257,6 +259,43 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     }
   };
 
+  const handleResetDialingHistory = async () => {
+    if (!lead) return;
+    setIsResettingHistory(true);
+
+    try {
+      const { error: progressError } = await supabase
+        .from('lead_workflow_progress')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      if (progressError) throw progressError;
+
+      const { error: queueError } = await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      if (queueError) throw queueError;
+
+      toast({
+        title: "Dialing History Cleared",
+        description: "This phone number can now be enrolled in campaigns again.",
+      });
+
+      onLeadUpdated?.();
+    } catch (error) {
+      console.error('Error clearing dialing history:', error);
+      toast({
+        title: "Error",
+        description: "Failed to clear dialing history",
+        variant: "destructive"
+      });
+    } finally {
+      setIsResettingHistory(false);
+    }
+  };
+
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'call': return <Phone className="h-4 w-4" />;
@@ -325,10 +364,21 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   </Button>
                 </>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  <Edit3 className="h-4 w-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Edit</span>
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetDialingHistory}
+                    disabled={isResettingHistory}
+                  >
+                    <RotateCcw className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{isResettingHistory ? 'Resetting...' : 'Reset Dialing'}</span>
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                    <Edit3 className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Edit</span>
+                  </Button>
+                </>
               )}
             </div>
           </div>
