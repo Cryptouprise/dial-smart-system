@@ -306,10 +306,9 @@ serve(async (req) => {
               .eq('workflow_id', campaign.workflow_id)
               .order('step_number', { ascending: true });
 
-            const secondStep = allSteps?.find((s: any) => s.step_number === 2);
-            
-            // Create workflow progress starting at step 1 (call), but set next_action_at 
-            // to a future time so the SMS fires after the call completes
+            const targetStep = secondStep || firstStep;
+            const nextActionAt = calculateNextActionTime(targetStep);
+
             const { error: progressError } = await supabase
               .from('lead_workflow_progress')
               .insert({
@@ -317,12 +316,11 @@ serve(async (req) => {
                 workflow_id: campaign.workflow_id,
                 campaign_id: campaign.id,
                 user_id: user.id,
-                current_step_id: secondStep?.id || firstStep.id, // Point to SMS step
+                current_step_id: targetStep.id,
                 status: 'active',
                 started_at: new Date().toISOString(),
                 last_action_at: new Date().toISOString(),
-                // Schedule SMS step to fire 2 minutes after call starts
-                next_action_at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+                next_action_at: nextActionAt,
               });
 
             if (progressError) {
@@ -565,6 +563,34 @@ serve(async (req) => {
     );
   }
 });
+
+function calculateNextActionTime(step: any): string {
+  const config = step?.step_config || {};
+  const now = new Date();
+
+  if (step.step_type === 'wait') {
+    const delayMs =
+      (config.delay_minutes || 0) * 60 * 1000 +
+      (config.delay_hours || 0) * 60 * 60 * 1000 +
+      (config.delay_days || 0) * 24 * 60 * 60 * 1000;
+
+    let nextTime = new Date(now.getTime() + delayMs);
+
+    if (config.time_of_day) {
+      const [hours, minutes] = String(config.time_of_day).split(':').map(Number);
+      if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+        nextTime.setHours(hours, minutes, 0, 0);
+        if (nextTime <= now) {
+          nextTime.setDate(nextTime.getDate() + 1);
+        }
+      }
+    }
+
+    return nextTime.toISOString();
+  }
+
+  return now.toISOString();
+}
 
 function selectBestNumber(availableNumbers: any[], targetPhone: string): any | null {
   if (availableNumbers.length === 0) return null;
