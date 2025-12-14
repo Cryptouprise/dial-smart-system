@@ -400,9 +400,22 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                     )}
 
                     {/* Advanced call options */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label>Max Ring Time (seconds)</Label>
+                        <Label>Max Attempts</Label>
+                        <Input
+                          type="number"
+                          value={step.step_config.max_attempts || 1}
+                          onChange={(e) => updateStep(index, { 
+                            step_config: { ...step.step_config, max_attempts: parseInt(e.target.value) || 1 }
+                          })}
+                          min={1}
+                          max={10}
+                        />
+                        <p className="text-xs text-muted-foreground">Retry calls if no answer</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Max Ring Time (sec)</Label>
                         <Input
                           type="number"
                           value={step.step_config.max_ring_seconds || 30}
@@ -421,7 +434,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                               step_config: { ...step.step_config, leave_voicemail: v }
                             })}
                           />
-                          <Label className="cursor-pointer">Leave voicemail if no answer</Label>
+                          <Label className="cursor-pointer">Leave voicemail</Label>
                         </div>
                       </div>
                     </div>
