@@ -770,16 +770,32 @@ ${processedKnowledge}`;
                 
                 if (workingDays.length > 0) {
                   systemPrompt += `\n- Available hours: ${workingDays.join(', ')}`;
-                  systemPrompt += `\n- Timezone: ${availability.timezone || 'America/Chicago'}`;
+                  systemPrompt += `\n- Timezone: ${availability.timezone || userTimezone}`;
                   systemPrompt += `\n- Meeting duration: ${availability.default_meeting_duration || 30} minutes`;
                 }
               }
 
               if (appointments?.length) {
                 systemPrompt += `\n- Upcoming booked slots:`;
+                const apptDateFormatter = new Intl.DateTimeFormat('en-US', {
+                  timeZone: userTimezone,
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                  weekday: 'long',
+                });
+                const apptTimeFormatter = new Intl.DateTimeFormat('en-US', {
+                  timeZone: userTimezone,
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+
                 appointments.slice(0, 5).forEach((apt: any) => {
                   const startDate = new Date(apt.start_time);
-                  systemPrompt += `\n  * ${startDate.toLocaleDateString()} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${apt.title}`;
+                  const dateStr = apptDateFormatter.format(startDate);
+                  const timeStr = apptTimeFormatter.format(startDate);
+                  systemPrompt += `\n  * ${dateStr} at ${timeStr} - ${apt.title}`;
                 });
               }
 
