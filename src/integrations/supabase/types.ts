@@ -304,11 +304,13 @@ export type Database = {
           ai_provider: string | null
           auto_response_enabled: boolean | null
           business_hours_only: boolean | null
+          calendar_booking_link: string | null
           context_window_size: number | null
           created_at: string
           custom_instructions: string | null
           double_text_delay_seconds: number | null
           dynamic_variables_enabled: boolean | null
+          enable_calendar_integration: boolean | null
           enable_image_analysis: boolean | null
           enable_reaction_detection: boolean | null
           enabled: boolean | null
@@ -332,11 +334,13 @@ export type Database = {
           ai_provider?: string | null
           auto_response_enabled?: boolean | null
           business_hours_only?: boolean | null
+          calendar_booking_link?: string | null
           context_window_size?: number | null
           created_at?: string
           custom_instructions?: string | null
           double_text_delay_seconds?: number | null
           dynamic_variables_enabled?: boolean | null
+          enable_calendar_integration?: boolean | null
           enable_image_analysis?: boolean | null
           enable_reaction_detection?: boolean | null
           enabled?: boolean | null
@@ -360,11 +364,13 @@ export type Database = {
           ai_provider?: string | null
           auto_response_enabled?: boolean | null
           business_hours_only?: boolean | null
+          calendar_booking_link?: string | null
           context_window_size?: number | null
           created_at?: string
           custom_instructions?: string | null
           double_text_delay_seconds?: number | null
           dynamic_variables_enabled?: boolean | null
+          enable_calendar_integration?: boolean | null
           enable_image_analysis?: boolean | null
           enable_reaction_detection?: boolean | null
           enabled?: boolean | null

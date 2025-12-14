@@ -586,6 +586,62 @@ ${processedKnowledge}`;
             systemPrompt += callHistoryContext;
           }
 
+          // Add calendar availability context if enabled
+          if (settings.enable_calendar_integration) {
+            // Fetch calendar availability
+            const { data: availability } = await supabaseAdmin
+              .from('calendar_availability')
+              .select('*')
+              .eq('user_id', userId)
+              .maybeSingle();
+
+            // Fetch upcoming appointments
+            const now = new Date().toISOString();
+            const { data: appointments } = await supabaseAdmin
+              .from('calendar_appointments')
+              .select('*')
+              .eq('user_id', userId)
+              .gte('start_time', now)
+              .order('start_time', { ascending: true })
+              .limit(10);
+
+            if (availability || appointments?.length) {
+              systemPrompt += `\n\nCALENDAR INTEGRATION:`;
+              
+              if (availability) {
+                const schedule = availability.weekly_schedule || {};
+                const workingDays = Object.entries(schedule)
+                  .filter(([_, slots]: [string, any]) => slots && slots.length > 0)
+                  .map(([day, slots]: [string, any]) => {
+                    const slot = slots[0];
+                    return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${slot.start}-${slot.end}`;
+                  });
+                
+                if (workingDays.length > 0) {
+                  systemPrompt += `\n- Available hours: ${workingDays.join(', ')}`;
+                  systemPrompt += `\n- Timezone: ${availability.timezone || 'America/Chicago'}`;
+                  systemPrompt += `\n- Meeting duration: ${availability.default_meeting_duration || 30} minutes`;
+                }
+              }
+
+              if (appointments?.length) {
+                systemPrompt += `\n- Upcoming booked slots:`;
+                appointments.slice(0, 5).forEach((apt: any) => {
+                  const startDate = new Date(apt.start_time);
+                  systemPrompt += `\n  * ${startDate.toLocaleDateString()} at ${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${apt.title}`;
+                });
+              }
+
+              if (settings.calendar_booking_link) {
+                systemPrompt += `\n- Booking link to share: ${settings.calendar_booking_link}`;
+              }
+
+              systemPrompt += `\n- You CAN check availability and suggest specific open times`;
+              systemPrompt += `\n- When scheduling, confirm the date, time, and timezone with the lead`;
+              console.log('[Twilio SMS Webhook] Added calendar context');
+            }
+          }
+
           // Add general SMS guidelines
           systemPrompt += `\n\nSMS GUIDELINES:
 - Keep responses concise and appropriate for SMS (under 300 characters when possible)
