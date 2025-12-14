@@ -193,22 +193,124 @@ serve(async (req) => {
             sync_enabled: true
           }, { onConflict: 'user_id,provider,calendar_id' });
 
-        // Return HTML that closes the popup (or shows a success message if opened in a full tab)
+        // Return a nice success page that auto-closes or redirects
+        const appUrl = Deno.env.get('APP_URL') || 'https://lovable.dev';
+        
         return new Response(
-          `<!DOCTYPE html><html><head><title>Google Calendar Connected</title></head><body style="font-family: system-ui; text-align: center; padding: 40px;">
-            <h2>Google Calendar Connected</h2>
-            <p>You can close this window and return to the app.</p>
-            <script>
-              try {
-                if (window.opener && !window.opener.closed) {
-                  window.opener.postMessage({ type: 'google-calendar-connected' }, '*');
-                  window.close();
-                }
-              } catch (e) {
-                console.error('PostMessage error', e);
-              }
-            </script>
-          </body></html>`,
+          `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Calendar Connected</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 48px;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      max-width: 400px;
+      width: 100%;
+    }
+    .icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+    }
+    .icon svg { width: 40px; height: 40px; color: white; }
+    h1 { color: #1f2937; font-size: 24px; margin-bottom: 12px; }
+    p { color: #6b7280; font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
+    .email { 
+      background: #f3f4f6; 
+      padding: 8px 16px; 
+      border-radius: 8px; 
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 24px;
+      display: inline-block;
+    }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    .countdown { color: #9ca3af; font-size: 12px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+      </svg>
+    </div>
+    <h1>Calendar Connected!</h1>
+    <p>Your Google Calendar has been successfully linked. Appointments booked via SMS will now sync automatically.</p>
+    ${userInfo.email ? `<div class="email">${userInfo.email}</div>` : ''}
+    <a href="javascript:void(0)" class="btn" id="closeBtn">Close This Window</a>
+    <p class="countdown" id="countdown">This window will close automatically...</p>
+  </div>
+  <script>
+    // Try to close popup and notify parent
+    function closeAndNotify() {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'google-calendar-connected' }, '*');
+          window.close();
+        }
+      } catch (e) {
+        console.log('Could not close popup');
+      }
+    }
+    
+    // Close button handler
+    document.getElementById('closeBtn').onclick = function() {
+      closeAndNotify();
+      // If window didn't close (opened in same tab), go back
+      setTimeout(() => {
+        window.history.back();
+      }, 100);
+    };
+    
+    // Auto-close after 3 seconds
+    let seconds = 3;
+    const interval = setInterval(() => {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(interval);
+        closeAndNotify();
+      } else {
+        document.getElementById('countdown').textContent = 'Closing in ' + seconds + ' seconds...';
+      }
+    }, 1000);
+  </script>
+</body>
+</html>`,
           { headers: { ...corsHeaders, 'Content-Type': 'text/html' } }
         );
       }
