@@ -208,6 +208,171 @@ serve(async (req) => {
       });
     }
 
+    if (action === 'generate_and_send') {
+      // Generate AI SMS and send it (called from workflow executor)
+      const { leadId, userId: targetUserId, fromNumber, context, prompt } = request;
+
+      console.log('[AI SMS] Generate and send for lead:', leadId, 'from:', fromNumber);
+
+      // Get lead data
+      const { data: lead, error: leadError } = await supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .maybeSingle();
+
+      if (leadError || !lead) {
+        throw new Error('Lead not found: ' + (leadError?.message || 'Unknown'));
+      }
+
+      // Get or create conversation
+      const { data: conversation } = await supabaseAdmin
+        .from('sms_conversations')
+        .select('*')
+        .eq('user_id', targetUserId)
+        .eq('contact_phone', lead.phone_number)
+        .maybeSingle();
+
+      let conversationId = conversation?.id;
+
+      if (!conversation) {
+        const { data: newConv, error: createError } = await supabaseAdmin
+          .from('sms_conversations')
+          .insert({
+            user_id: targetUserId,
+            contact_phone: lead.phone_number,
+            contact_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || null,
+            last_message_at: new Date().toISOString(),
+          })
+          .select()
+          .maybeSingle();
+
+        if (createError) throw createError;
+        conversationId = newConv?.id;
+      }
+
+      // Get user's AI SMS settings
+      const { data: settings } = await supabaseAdmin
+        .from('ai_sms_settings')
+        .select('*')
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+      // Build context for AI
+      let aiPrompt = prompt || settings?.custom_instructions || 'You are a helpful AI assistant reaching out to follow up.';
+
+      // Add lead context
+      const leadContext = `Lead info: ${lead.first_name || 'Unknown'} ${lead.last_name || ''}, Status: ${lead.status}, Phone: ${lead.phone_number}`;
+      
+      // Generate AI message
+      const systemPrompt = `${aiPrompt}
+
+LEAD CONTEXT:
+${leadContext}
+
+CONTEXT: ${context || 'follow_up'}
+
+Generate a natural, conversational SMS message to this lead. Keep it brief (under 160 characters if possible), friendly, and include a clear call-to-action. Do not use placeholder brackets like [Name] - use the actual lead name.`;
+
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Generate a follow-up SMS for ${lead.first_name || 'this lead'}.` }
+          ],
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error('[AI SMS] AI generation failed:', errorText);
+        throw new Error(`AI generation failed: ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json();
+      const generatedMessage = aiData.choices?.[0]?.message?.content?.trim();
+
+      if (!generatedMessage) {
+        throw new Error('AI did not generate a message');
+      }
+
+      console.log('[AI SMS] Generated message:', generatedMessage);
+
+      // Get Twilio credentials
+      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+      if (!twilioAccountSid || !twilioAuthToken) {
+        throw new Error('Twilio credentials not configured');
+      }
+
+      // Send SMS via Twilio
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+      const twilioResponse = await fetch(twilioUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          From: fromNumber,
+          To: lead.phone_number,
+          Body: generatedMessage,
+        }).toString(),
+      });
+
+      const twilioData = await twilioResponse.json();
+
+      if (!twilioResponse.ok) {
+        console.error('[AI SMS] Twilio send failed:', twilioData);
+        throw new Error(`SMS send failed: ${twilioData.message || twilioResponse.status}`);
+      }
+
+      console.log('[AI SMS] Message sent via Twilio:', twilioData.sid);
+
+      // Save outbound message to database
+      await supabaseAdmin
+        .from('sms_messages')
+        .insert({
+          user_id: targetUserId,
+          conversation_id: conversationId,
+          lead_id: leadId,
+          to_number: lead.phone_number,
+          from_number: fromNumber,
+          body: generatedMessage,
+          direction: 'outbound',
+          status: 'sent',
+          is_ai_generated: true,
+          provider_message_id: twilioData.sid,
+          sent_at: new Date().toISOString(),
+        });
+
+      // Update conversation
+      if (conversationId) {
+        await supabaseAdmin
+          .from('sms_conversations')
+          .update({
+            last_message_at: new Date().toISOString(),
+            last_from_number: fromNumber,
+          })
+          .eq('id', conversationId);
+      }
+
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message_sid: twilioData.sid,
+        generated_message: generatedMessage,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (action === 'convert_voice_to_sms') {
       // Convert voice agent prompt to SMS-optimized prompt
       const { voicePrompt, aggressionLevel, aggressionTone, campaignName, settings: conversionSettings } = request;

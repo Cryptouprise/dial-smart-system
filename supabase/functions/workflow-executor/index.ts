@@ -545,7 +545,21 @@ async function selectCallerIdForCampaign(
   type: 'voice' | 'sms' = 'voice'
 ): Promise<string | null> {
   try {
-    // First try to get from campaign phone pool
+    // For SMS, first check if campaign has a specific sms_from_number configured
+    if (campaignId && type === 'sms') {
+      const { data: campaign } = await supabase
+        .from('campaigns')
+        .select('sms_from_number')
+        .eq('id', campaignId)
+        .maybeSingle();
+
+      if (campaign?.sms_from_number) {
+        console.log('[Workflow] Using campaign sms_from_number:', campaign.sms_from_number);
+        return campaign.sms_from_number;
+      }
+    }
+
+    // Then try to get from campaign phone pool
     if (campaignId) {
       const roleFilter = type === 'sms' ? ['sms_only', 'outbound'] : ['outbound', 'caller_id_only'];
       
