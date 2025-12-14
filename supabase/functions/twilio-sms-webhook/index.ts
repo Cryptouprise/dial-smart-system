@@ -377,22 +377,89 @@ serve(async (req) => {
     }
 
     // Check AI SMS settings for auto-response
-    const { data: settings } = await supabaseAdmin
+    const { data: globalSettings } = await supabaseAdmin
       .from('ai_sms_settings')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
-    console.log('[Twilio SMS Webhook] AI SMS settings:', JSON.stringify({
-      enabled: settings?.enabled,
-      auto_response_enabled: settings?.auto_response_enabled,
-      prevent_double_texting: settings?.prevent_double_texting,
-      delay: settings?.double_text_delay_seconds
+    // Check for workflow-specific auto-reply settings
+    // 1. Find lead by phone number
+    // 2. Check if lead is in an active workflow with auto_reply_settings enabled
+    let workflowAutoReply: {
+      enabled: boolean;
+      ai_instructions?: string;
+      knowledge_base?: string;
+      response_delay_seconds?: number;
+      stop_on_human_reply?: boolean;
+      calendar_enabled?: boolean;
+      booking_link?: string;
+    } | null = null;
+    let workflowName: string | null = null;
+
+    const { data: lead } = await supabaseAdmin
+      .from('leads')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('phone_number', From)
+      .maybeSingle();
+
+    if (lead?.id) {
+      // Check if this lead is in an active workflow with auto-reply enabled
+      const { data: workflowProgress } = await supabaseAdmin
+        .from('lead_workflow_progress')
+        .select(`
+          id,
+          workflow_id,
+          status,
+          campaign_workflows:workflow_id (
+            id,
+            name,
+            auto_reply_settings
+          )
+        `)
+        .eq('lead_id', lead.id)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+
+      if (workflowProgress?.campaign_workflows) {
+        const workflow = workflowProgress.campaign_workflows as any;
+        const autoReplySettings = workflow.auto_reply_settings;
+        
+        if (autoReplySettings?.enabled) {
+          workflowAutoReply = autoReplySettings;
+          workflowName = workflow.name;
+          console.log('[Twilio SMS Webhook] Found workflow auto-reply settings for workflow:', workflowName);
+        }
+      }
+    }
+
+    // Determine which settings to use (workflow overrides global)
+    const useWorkflowSettings = !!workflowAutoReply?.enabled;
+    const shouldAutoRespond = useWorkflowSettings 
+      ? true 
+      : (globalSettings?.enabled && globalSettings?.auto_response_enabled);
+
+    console.log('[Twilio SMS Webhook] Auto-response config:', JSON.stringify({
+      useWorkflowSettings,
+      workflowName,
+      globalEnabled: globalSettings?.enabled,
+      globalAutoResponse: globalSettings?.auto_response_enabled,
+      shouldAutoRespond
     }));
 
     // Double-texting prevention: Check if we've recently sent an AI message
-    if (settings?.enabled && settings?.auto_response_enabled && settings?.prevent_double_texting && conversationId) {
-      const preventionWindowMs = (settings.double_text_delay_seconds || 60) * 1000;
+    const preventDoubleTxt = useWorkflowSettings 
+      ? true // Workflow auto-reply always prevents double texting
+      : globalSettings?.prevent_double_texting;
+    const delaySeconds = useWorkflowSettings 
+      ? (workflowAutoReply?.response_delay_seconds || 60)
+      : (globalSettings?.double_text_delay_seconds || 60);
+
+    if (shouldAutoRespond && preventDoubleTxt && conversationId) {
+      const preventionWindowMs = delaySeconds * 1000;
       const cutoffTime = new Date(Date.now() - preventionWindowMs).toISOString();
       
       const { data: recentAiMessage } = await supabaseAdmin
@@ -416,7 +483,7 @@ serve(async (req) => {
     }
 
     // Rapid message batching: Wait briefly then check if more messages arrived
-    if (settings?.enabled && settings?.auto_response_enabled && conversationId) {
+    if (shouldAutoRespond && conversationId) {
       // Wait a moment to allow rapid messages to be stored
       await new Promise(resolve => setTimeout(resolve, 1500));
       
@@ -440,8 +507,9 @@ serve(async (req) => {
     }
 
     // Check if auto-response should be generated
-    if (settings?.enabled && settings?.auto_response_enabled && conversationId) {
-      console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...');
+    if (shouldAutoRespond && conversationId) {
+      console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...' + 
+        (useWorkflowSettings ? ` (using workflow: ${workflowName})` : ' (using global settings)'));
       
       // Check for reactions - skip auto-response for simple acknowledgments
       const reactionPatterns = [
@@ -450,7 +518,7 @@ serve(async (req) => {
       
       const isReaction = reactionPatterns.some(pattern => pattern.test(messageBody.trim()));
       
-      if (isReaction && settings.enable_reaction_detection) {
+      if (isReaction && globalSettings?.enable_reaction_detection) {
         console.log('[Twilio SMS Webhook] Message is a reaction/acknowledgment, skipping auto-response');
         
         // Mark the message as a reaction
@@ -465,37 +533,72 @@ serve(async (req) => {
         );
       }
       
+      // Merge settings: workflow settings override global settings where available
+      const effectiveSettings = {
+        // Use workflow AI instructions if available, otherwise global
+        ai_personality: useWorkflowSettings && workflowAutoReply?.ai_instructions 
+          ? workflowAutoReply.ai_instructions 
+          : globalSettings?.ai_personality,
+        custom_instructions: useWorkflowSettings && workflowAutoReply?.ai_instructions 
+          ? workflowAutoReply.ai_instructions 
+          : globalSettings?.custom_instructions,
+        knowledge_base: useWorkflowSettings && workflowAutoReply?.knowledge_base 
+          ? workflowAutoReply.knowledge_base 
+          : globalSettings?.knowledge_base,
+        // Calendar settings - workflow can override
+        enable_calendar_integration: useWorkflowSettings 
+          ? workflowAutoReply?.calendar_enabled 
+          : globalSettings?.enable_calendar_integration,
+        calendar_booking_link: useWorkflowSettings && workflowAutoReply?.booking_link 
+          ? workflowAutoReply.booking_link 
+          : globalSettings?.calendar_booking_link,
+        // Other settings from global (workflow doesn't override these)
+        include_lead_context: globalSettings?.include_lead_context ?? true,
+        include_call_history: globalSettings?.include_call_history ?? true,
+        include_sms_history: globalSettings?.include_sms_history ?? true,
+        max_history_items: globalSettings?.max_history_items || 5,
+        context_window_size: globalSettings?.context_window_size || 20,
+        dynamic_variables_enabled: globalSettings?.dynamic_variables_enabled ?? true,
+      };
+      
+      console.log('[Twilio SMS Webhook] Using effective settings:', JSON.stringify({
+        source: useWorkflowSettings ? `workflow:${workflowName}` : 'global',
+        hasInstructions: !!effectiveSettings.ai_personality,
+        hasKnowledgeBase: !!effectiveSettings.knowledge_base,
+        calendarEnabled: effectiveSettings.enable_calendar_integration
+      }));
+      
       try {
         // Fetch lead info for context if enabled
         let leadContext = '';
         let leadData: any = null;
         
-        if (settings.include_lead_context) {
-          const { data: lead } = await supabaseAdmin
+        if (effectiveSettings.include_lead_context) {
+          const { data: leadInfo } = await supabaseAdmin
             .from('leads')
             .select('*')
             .eq('user_id', userId)
             .eq('phone_number', From)
             .maybeSingle();
           
-          if (lead) {
-            leadData = lead;
+          if (leadInfo) {
+            leadData = leadInfo;
             leadContext = `\n\nLEAD INFORMATION:
-- Name: ${lead.first_name || ''} ${lead.last_name || ''}
-- Email: ${lead.email || 'Not provided'}
-- Company: ${lead.company || 'Not provided'}
-- Status: ${lead.status || 'Unknown'}
-- Lead Source: ${lead.lead_source || 'Unknown'}
-- Notes: ${lead.notes || 'None'}
-- Tags: ${lead.tags?.join(', ') || 'None'}`;
+- Name: ${leadInfo.first_name || ''} ${leadInfo.last_name || ''}
+- Email: ${leadInfo.email || 'Not provided'}
+- Company: ${leadInfo.company || 'Not provided'}
+- Status: ${leadInfo.status || 'Unknown'}
+- Lead Source: ${leadInfo.lead_source || 'Unknown'}
+- Notes: ${leadInfo.notes || 'None'}
+- Tags: ${leadInfo.tags?.join(', ') || 'None'}`;
             console.log('[Twilio SMS Webhook] Found lead context');
           }
         }
         
         // Fetch call history if enabled
         let callHistoryContext = '';
-        if (settings.include_call_history) {
-          const maxHistoryItems = settings.max_history_items || 5;
+        if (effectiveSettings.include_call_history) {
+          const maxHistoryItems = effectiveSettings.max_history_items || 5;
           const { data: calls } = await supabaseAdmin
             .from('call_logs')
             .select('*')
@@ -515,15 +618,15 @@ serve(async (req) => {
         }
 
         // Get conversation history for context
-        const { data: messages } = await supabaseAdmin
+        const { data: historyMessages } = await supabaseAdmin
           .from('sms_messages')
           .select('*')
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: false })
-          .limit(settings.context_window_size || 20);
+          .limit(effectiveSettings.context_window_size || 20);
 
         // Build conversation history (text only for history)
-        const conversationHistory = (messages || [])
+        const conversationHistory = (historyMessages || [])
           .reverse()
           .slice(0, -1) // Exclude the current message, we'll add it with image
           .map((msg: any) => ({
@@ -538,7 +641,7 @@ serve(async (req) => {
         } else {
           // Helper function to replace dynamic variables
           const replaceDynamicVariables = (text: string): string => {
-            if (!text || !settings.dynamic_variables_enabled) return text || '';
+            if (!text || !effectiveSettings.dynamic_variables_enabled) return text || '';
             
             const variables: Record<string, string> = {
               '{{first_name}}': leadData?.first_name || 'there',
@@ -560,18 +663,18 @@ serve(async (req) => {
           let systemPrompt = `You are an AI SMS assistant.
 
 PERSONALITY:
-${settings.ai_personality || 'professional and helpful'}`;
+${effectiveSettings.ai_personality || 'professional and helpful'}`;
 
           // Add custom instructions if provided
-          if (settings.custom_instructions) {
-            const processedInstructions = replaceDynamicVariables(settings.custom_instructions);
+          if (effectiveSettings.custom_instructions) {
+            const processedInstructions = replaceDynamicVariables(effectiveSettings.custom_instructions);
             systemPrompt += `\n\nRULES & GUIDELINES:
 ${processedInstructions}`;
           }
 
           // Add knowledge base if provided
-          if (settings.knowledge_base) {
-            const processedKnowledge = replaceDynamicVariables(settings.knowledge_base);
+          if (effectiveSettings.knowledge_base) {
+            const processedKnowledge = replaceDynamicVariables(effectiveSettings.knowledge_base);
             systemPrompt += `\n\nKNOWLEDGE BASE:
 ${processedKnowledge}`;
           }
@@ -587,7 +690,7 @@ ${processedKnowledge}`;
           }
 
           // Add calendar availability context if enabled
-          if (settings.enable_calendar_integration) {
+          if (effectiveSettings.enable_calendar_integration) {
             // Fetch calendar availability
             const { data: availability } = await supabaseAdmin
               .from('calendar_availability')
@@ -632,8 +735,8 @@ ${processedKnowledge}`;
                 });
               }
 
-              if (settings.calendar_booking_link) {
-                systemPrompt += `\n- Booking link to share: ${settings.calendar_booking_link}`;
+              if (effectiveSettings.calendar_booking_link) {
+                systemPrompt += `\n- Booking link to share: ${effectiveSettings.calendar_booking_link}`;
               }
 
               systemPrompt += `\n- You CAN check availability and suggest specific open times`;
