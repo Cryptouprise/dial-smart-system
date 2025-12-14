@@ -91,10 +91,10 @@ serve(async (req) => {
 
     console.log('Call Dispatcher running for user:', user.id);
 
-    // Get user's active campaigns
+    // Get user's active campaigns with their workflows
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, name, agent_id, max_attempts')
+      .select('id, name, agent_id, max_attempts, workflow_id')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
@@ -110,6 +110,25 @@ serve(async (req) => {
     const campaignIds = activeCampaigns.map(c => c.id);
     console.log('Active campaigns:', campaignIds);
 
+    // Get workflow first steps for campaigns with workflows
+    const workflowIds = activeCampaigns.filter(c => c.workflow_id).map(c => c.workflow_id);
+    let workflowFirstSteps: Record<string, any> = {};
+    
+    if (workflowIds.length > 0) {
+      const { data: workflowSteps } = await supabase
+        .from('workflow_steps')
+        .select('workflow_id, step_type, step_number, step_config')
+        .in('workflow_id', workflowIds)
+        .eq('step_number', 1);
+      
+      if (workflowSteps) {
+        for (const step of workflowSteps) {
+          workflowFirstSteps[step.workflow_id] = step;
+        }
+      }
+      console.log('Workflow first steps:', Object.keys(workflowFirstSteps).length, 'workflows checked');
+    }
+
     // Check existing queue entries
     const { data: existingQueue } = await supabase
       .from('dialing_queues')
@@ -118,6 +137,15 @@ serve(async (req) => {
       .in('status', ['pending', 'calling']);
 
     const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
+
+    // Check existing workflow progress entries
+    const { data: existingWorkflowProgress } = await supabase
+      .from('lead_workflow_progress')
+      .select('lead_id')
+      .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
+      .in('status', ['in_progress', 'pending']);
+
+    const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
 
     // Get leads from campaign_leads that need to be queued
     const { data: campaignLeads, error: leadsError } = await supabase
@@ -142,6 +170,7 @@ serve(async (req) => {
       if (!lead || !lead.phone_number) return false;
       if (lead.do_not_call) return false;
       if (existingLeadIds.has(cl.lead_id)) return false;
+      if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
       // Only queue leads with status 'new' or 'contacted'
       if (!['new', 'contacted', 'callback'].includes(lead.status)) return false;
       return true;
@@ -149,10 +178,70 @@ serve(async (req) => {
 
     console.log(`Found ${leadsToQueue.length} leads to add to queue`);
 
-    // Add leads to dialing queue
-    if (leadsToQueue.length > 0) {
+    // Separate leads by workflow type - SMS-first vs Call-first
+    const smsFirstLeads: any[] = [];
+    const callFirstLeads: any[] = [];
+
+    for (const cl of leadsToQueue) {
+      const campaign = activeCampaigns.find(c => c.id === cl.campaign_id);
+      const firstStep = campaign?.workflow_id ? workflowFirstSteps[campaign.workflow_id] : null;
+      
+      if (firstStep && (firstStep.step_type === 'sms' || firstStep.step_type === 'ai_sms')) {
+        smsFirstLeads.push({ ...cl, campaign, firstStep });
+      } else {
+        callFirstLeads.push({ ...cl, campaign });
+      }
+    }
+
+    console.log(`SMS-first leads: ${smsFirstLeads.length}, Call-first leads: ${callFirstLeads.length}`);
+
+    // Process SMS-first leads via workflow-executor
+    for (const leadData of smsFirstLeads) {
+      const campaign = leadData.campaign;
+      const firstStep = leadData.firstStep;
+      
+      console.log(`[Workflow] Starting SMS workflow for lead ${leadData.lead_id} in campaign ${campaign.id}`);
+      
+      // Create workflow progress entry
+      const { data: progressEntry, error: progressError } = await supabase
+        .from('lead_workflow_progress')
+        .insert({
+          lead_id: leadData.lead_id,
+          workflow_id: campaign.workflow_id,
+          campaign_id: campaign.id,
+          user_id: user.id,
+          current_step_id: firstStep.id,
+          status: 'in_progress',
+          started_at: new Date().toISOString(),
+          next_action_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (progressError) {
+        console.error('[Workflow] Failed to create progress entry:', progressError);
+        continue;
+      }
+
+      // Invoke workflow-executor to execute the first step
+      const { error: execError } = await supabase.functions.invoke('workflow-executor', {
+        body: {
+          action: 'execute_pending',
+          userId: user.id,
+        },
+      });
+
+      if (execError) {
+        console.error('[Workflow] Failed to invoke workflow-executor:', execError);
+      } else {
+        console.log(`[Workflow] Started workflow for lead ${leadData.lead_id}`);
+      }
+    }
+
+    // Add call-first leads to dialing queue (original behavior)
+    if (callFirstLeads.length > 0) {
       const campaign = activeCampaigns[0];
-      const queueEntries = leadsToQueue.map(cl => {
+      const queueEntries = callFirstLeads.map(cl => {
         const lead = cl.leads as any;
         return {
           campaign_id: cl.campaign_id,
