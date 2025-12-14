@@ -78,7 +78,24 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
   const [aiPrompt, setAIPrompt] = useState('');
   const [aiLoading, setAILoading] = useState(false);
   const [includeAiAutoReply, setIncludeAiAutoReply] = useState(false);
+  const [retellAgents, setRetellAgents] = useState<{ agent_id: string; agent_name: string }[]>([]);
 
+  // Fetch Retell agents for call step selection
+  React.useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'list' }
+        });
+        if (!error && data?.agents) {
+          setRetellAgents(data.agents);
+        }
+      } catch (err) {
+        console.error('Failed to fetch Retell agents:', err);
+      }
+    };
+    fetchAgents();
+  }, []);
   // New workflow form state
   const [newWorkflow, setNewWorkflow] = useState<CampaignWorkflow>({
     name: '',
@@ -305,6 +322,34 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
 
                 {step.step_type === 'call' && (
                   <div className="space-y-4">
+                    {/* Agent Selection */}
+                    <div className="space-y-2">
+                      <Label>AI Agent for this Call</Label>
+                      <Select
+                        value={step.step_config.agent_id || 'campaign_default'}
+                        onValueChange={(v) => updateStep(index, { 
+                          step_config: { ...step.step_config, agent_id: v === 'campaign_default' ? undefined : v }
+                        })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Use campaign's agent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="campaign_default">
+                            <span className="text-muted-foreground">Use Campaign's Default Agent</span>
+                          </SelectItem>
+                          {retellAgents.map((agent) => (
+                            <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                              {agent.agent_name || agent.agent_id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Override the campaign's agent for this specific call step
+                      </p>
+                    </div>
+
                     {/* Timing Mode */}
                     <div className="space-y-2">
                       <Label>When should this call happen?</Label>
