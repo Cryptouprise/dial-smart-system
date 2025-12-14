@@ -156,7 +156,24 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   }, [agent]);
 
   const handleSave = async () => {
-    await onSave(config);
+    const sanitizedConfig = { ...config };
+
+    // Sanitize PII config to match Retell API expectations
+    if (sanitizedConfig.pii_config) {
+      const mode = sanitizedConfig.pii_config.mode;
+      if (!mode || mode === 'off') {
+        // Retell only accepts specific modes; omit config when "off"
+        delete sanitizedConfig.pii_config;
+      } else if (mode !== 'post_call') {
+        // Fallback to supported mode if an unsupported one is selected
+        sanitizedConfig.pii_config = {
+          ...sanitizedConfig.pii_config,
+          mode: 'post_call',
+        };
+      }
+    }
+
+    await onSave(sanitizedConfig);
   };
 
   const updateConfig = (field: string, value: any) => {
@@ -183,7 +200,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     
     let addonsCost = 0;
     if (config.denoising_mode === 'krisp') addonsCost += PRICING.addons.advanced_denoising;
-    if (config.pii_config?.mode !== 'off') addonsCost += PRICING.addons.pii_removal;
+    if (config.pii_config?.mode && config.pii_config.mode !== 'off') addonsCost += PRICING.addons.pii_removal;
 
     return {
       voice: voiceCost,
