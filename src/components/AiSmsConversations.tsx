@@ -66,6 +66,7 @@ import {
   ChevronRight,
   Globe,
   Search,
+  Calendar,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAiSmsMessaging, type SmsConversation, type SmsMessage } from '@/hooks/useAiSmsMessaging';
@@ -875,6 +876,48 @@ COMMON OBJECTIONS:
                       checked={settings?.prevent_double_texting || false}
                       onCheckedChange={(checked) => updateSettings({ prevent_double_texting: checked })}
                     />
+                  </div>
+
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Calendar Integration
+                    </h4>
+                    
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <Label htmlFor="calendar-integration">Enable Calendar Access</Label>
+                        <p className="text-sm text-muted-foreground">AI can check availability & book appointments</p>
+                      </div>
+                      <Switch
+                        id="calendar-integration"
+                        checked={settings?.enable_calendar_integration || false}
+                        onCheckedChange={(checked) => updateSettings({ enable_calendar_integration: checked })}
+                      />
+                    </div>
+
+                    {settings?.enable_calendar_integration && (
+                      <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+                        <div className="space-y-2">
+                          <Label htmlFor="booking-link">Calendly/Booking Link (Optional)</Label>
+                          <Input
+                            id="booking-link"
+                            value={settings?.calendar_booking_link || ''}
+                            onChange={(e) => updateSettings({ calendar_booking_link: e.target.value })}
+                            placeholder="https://calendly.com/yourname/15min"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            AI will share this link when leads want to schedule
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50 text-sm">
+                          <p className="font-medium mb-1">Calendar Status:</p>
+                          <p className="text-muted-foreground">
+                            Uses your availability from Settings → Calendar
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>

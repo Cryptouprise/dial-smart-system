@@ -79,6 +79,9 @@ export interface AiSmsSettings {
   include_call_history: boolean;
   include_sms_history: boolean;
   max_history_items: number;
+  // Calendar integration
+  enable_calendar_integration: boolean;
+  calendar_booking_link: string | null;
   created_at: string;
   updated_at: string;
 }
