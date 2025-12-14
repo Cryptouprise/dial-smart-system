@@ -27,6 +27,7 @@ import { SipTrunkManager } from '@/components/SipTrunkManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { CallSimulator } from '@/components/CallSimulator';
+import { RateLimitingSettings } from '@/components/RateLimitingSettings';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -368,6 +369,9 @@ const Settings = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Rate Limiting */}
+        <RateLimitingSettings />
 
         {/* SIP Trunk Configuration */}
         <SipTrunkManager />

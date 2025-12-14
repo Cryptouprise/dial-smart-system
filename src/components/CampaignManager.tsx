@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -15,6 +15,8 @@ import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
 import { CampaignLeadManager } from './CampaignLeadManager';
 import { CampaignCallActivity } from './CampaignCallActivity';
+import { CampaignWizard } from './CampaignWizard';
+import { WorkflowPreview } from './WorkflowPreview';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -89,6 +91,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
   const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
   const [smsAgentCampaign, setSmsAgentCampaign] = useState<Campaign | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
     loadCampaigns();
@@ -428,13 +431,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
           </p>
         </div>
         
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button onClick={() => { resetForm(); setEditingCampaign(null); }}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Campaign
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowWizard(true)} variant="default">
+            <Zap className="h-4 w-4 mr-2" />
+            Quick Wizard
+          </Button>
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogTrigger asChild>
+              <Button onClick={() => { resetForm(); setEditingCampaign(null); }} variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                Advanced
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -712,6 +720,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4">
@@ -963,6 +972,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
           }}
         />
       )}
+
+      {/* Campaign Wizard */}
+      <CampaignWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onComplete={(campaignId) => {
+          loadCampaigns();
+          setShowWizard(false);
+        }}
+      />
     </div>
   );
 };
