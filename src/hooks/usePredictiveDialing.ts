@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 interface Lead {
   id: string;
@@ -61,9 +62,26 @@ export const usePredictiveDialing = () => {
         throw new Error('Phone number is required');
       }
 
+      const normalizedPhone = normalizePhoneNumber(leadData.phone_number);
+      if (!normalizedPhone) {
+        throw new Error('Invalid phone number format. Please use format: +1234567890');
+      }
+
+      // Prevent duplicate leads with the same phone number
+      const { data: existing, error: existingError } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone_number', normalizedPhone)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (existing) {
+        throw new Error('A lead with this phone number already exists.');
+      }
+
       const { data, error } = await supabase
         .from('leads')
-        .insert([{ ...leadData, user_id: user.id, phone_number: leadData.phone_number }])
+        .insert([{ ...leadData, user_id: user.id, phone_number: normalizedPhone }])
         .select()
         .maybeSingle();
 
@@ -90,6 +108,28 @@ export const usePredictiveDialing = () => {
   const updateLead = async (leadId: string, updates: Partial<Lead>) => {
     setIsLoading(true);
     try {
+      // If phone number is being updated, normalize and prevent duplicates
+      if (updates.phone_number) {
+        const normalizedPhone = normalizePhoneNumber(updates.phone_number);
+        if (!normalizedPhone) {
+          throw new Error('Invalid phone number format. Please use format: +1234567890');
+        }
+
+        const { data: existing, error: existingError } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('phone_number', normalizedPhone)
+          .neq('id', leadId)
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+        if (existing) {
+          throw new Error('Another lead with this phone number already exists.');
+        }
+
+        updates = { ...updates, phone_number: normalizedPhone };
+      }
+
       const { data, error } = await supabase
         .from('leads')
         .update(updates)
@@ -123,37 +163,80 @@ export const usePredictiveDialing = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Validate and filter leads to ensure phone_number is present
-      const validLeads = leads.filter(lead => lead.phone_number && lead.phone_number.trim() !== '');
-      
-      if (validLeads.length === 0) {
-        throw new Error('No valid leads found. All leads must have a phone number.');
+      // Normalize and validate incoming leads
+      const normalizedLeads: { phone_number: string; first_name?: string; last_name?: string; email?: string; company?: string; status?: string; priority?: number; notes?: string; next_callback_at?: string }[] = [];
+      const batchPhones = new Set<string>();
+
+      for (const lead of leads) {
+        if (!lead.phone_number || lead.phone_number.trim() === '') continue;
+
+        const normalizedPhone = normalizePhoneNumber(lead.phone_number);
+        if (!normalizedPhone) continue;
+
+        // Skip duplicates within the same import batch
+        if (batchPhones.has(normalizedPhone)) continue;
+
+        batchPhones.add(normalizedPhone);
+        normalizedLeads.push({
+          phone_number: normalizedPhone,
+          first_name: lead.first_name,
+          last_name: lead.last_name,
+          email: lead.email,
+          company: lead.company,
+          status: lead.status,
+          priority: lead.priority,
+          notes: lead.notes,
+          next_callback_at: lead.next_callback_at,
+        });
       }
 
-      const leadsWithUserId = validLeads.map(lead => ({
-        user_id: user.id,
-        phone_number: lead.phone_number!,
-        first_name: lead.first_name || null,
-        last_name: lead.last_name || null,
-        email: lead.email || null,
-        company: lead.company || null,
-        status: lead.status || 'new',
-        priority: lead.priority || 1,
-        notes: lead.notes || null,
-        next_callback_at: lead.next_callback_at || null
-      }));
+      if (normalizedLeads.length === 0) {
+        throw new Error('No valid leads found. All leads must have a valid phone number.');
+      }
+
+      // Fetch existing phone numbers to prevent duplicates against the database
+      const { data: existingLeads, error: existingError } = await supabase
+        .from('leads')
+        .select('phone_number');
+
+      if (existingError) throw existingError;
+
+      const existingPhones = new Set(existingLeads?.map(l => l.phone_number) || []);
+
+      const leadsToInsert = normalizedLeads
+        .filter(l => !existingPhones.has(l.phone_number))
+        .map(lead => ({
+          user_id: user.id,
+          phone_number: lead.phone_number,
+          first_name: lead.first_name || null,
+          last_name: lead.last_name || null,
+          email: lead.email || null,
+          company: lead.company || null,
+          status: lead.status || 'new',
+          priority: lead.priority || 1,
+          notes: lead.notes || null,
+          next_callback_at: lead.next_callback_at || null,
+        }));
+
+      if (leadsToInsert.length === 0) {
+        throw new Error('All leads were skipped because their phone numbers already exist.');
+      }
 
       const { data, error } = await supabase
         .from('leads')
-        .insert(leadsWithUserId)
+        .insert(leadsToInsert)
         .select();
 
       if (error) throw error;
 
-      const skippedCount = leads.length - validLeads.length;
+      const skippedMissing = leads.length - normalizedLeads.length;
+      const skippedDuplicates = normalizedLeads.length - leadsToInsert.length;
       let message = `Successfully imported ${data.length} leads`;
-      if (skippedCount > 0) {
-        message += ` (${skippedCount} leads skipped due to missing phone numbers)`;
+      if (skippedMissing > 0) {
+        message += ` (${skippedMissing} skipped due to invalid/missing phone numbers)`;
+      }
+      if (skippedDuplicates > 0) {
+        message += ` (${skippedDuplicates} skipped because they already exist)`;
       }
 
       toast({
