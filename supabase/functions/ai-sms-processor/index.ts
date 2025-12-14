@@ -55,20 +55,33 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
     
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Authentication failed' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
+    // Parse request early so we can support internal calls with explicit user_id
     const request = await req.json();
     const action = request.action;
 
-    console.log('[AI SMS] Action:', action);
+    const token = authHeader.replace('Bearer ', '');
+    let userId: string | null = null;
+
+    // Check if this is a service-to-service call (from workflow-executor)
+    if (token === serviceRoleKey && request.userId) {
+      // Internal service-to-service call
+      userId = request.userId;
+      console.log('[AI SMS] Internal call for user:', userId);
+    } else {
+      // Standard JWT-based auth (frontend calls)
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Authentication failed' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      userId = user.id;
+    }
+
+    console.log('[AI SMS] Action:', action, 'User:', userId);
 
     if (action === 'process_webhook') {
       // Handle incoming SMS from Twilio webhook
@@ -78,7 +91,7 @@ serve(async (req) => {
       const { data: conversation, error: convError } = await supabaseAdmin
         .from('sms_conversations')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('contact_phone', message.From)
         .maybeSingle();
 
@@ -88,7 +101,7 @@ serve(async (req) => {
         const { data: newConv, error: createError } = await supabaseAdmin
           .from('sms_conversations')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             contact_phone: message.From,
             last_message_at: new Date().toISOString(),
           })
@@ -114,7 +127,7 @@ serve(async (req) => {
       const { data: savedMessage, error: saveError } = await supabaseAdmin
         .from('sms_messages')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           conversation_id: conversationId,
           to_number: message.To,
           from_number: message.From,
@@ -136,7 +149,7 @@ serve(async (req) => {
       const { data: settings } = await supabaseAdmin
         .from('ai_sms_settings')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle();
 
       const shouldAutoRespond = settings?.enabled && settings?.auto_response_enabled;
@@ -146,7 +159,7 @@ serve(async (req) => {
         const canSend = await checkDoubleTextingPrevention(
           supabaseAdmin,
           conversationId,
-          user.id,
+          userId,
           settings?.prevent_double_texting,
           settings?.double_text_delay_seconds
         );
@@ -158,13 +171,13 @@ serve(async (req) => {
             lovableApiKey,
             retellApiKey,
             conversationId,
-            user.id,
+            userId,
             message,
             imageAnalysis,
             settings
           );
 
-          return new Response(JSON.stringify({ 
+          return new Response(JSON.stringify({
             success: true, 
             message: 'Processed and responded',
             response 
@@ -189,7 +202,7 @@ serve(async (req) => {
       const { data: settings } = await supabaseAdmin
         .from('ai_sms_settings')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle();
 
       const response = await generateAIResponse(
@@ -197,7 +210,7 @@ serve(async (req) => {
         lovableApiKey,
         retellApiKey,
         conversationId,
-        user.id,
+        userId!,
         { Body: prompt } as WebhookMessage,
         null,
         settings
