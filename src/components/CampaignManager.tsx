@@ -236,7 +236,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       const numbers = (data?.numbers || []).map((n: any) => ({
         number: n.number,
         friendly_name: n.friendly_name,
-        webhook_configured: n.webhook_configured
+        webhook_configured: n.webhook_configured,
+        a2p_registered: n.a2p_registered,
+        is_ready: n.is_ready,
+        status_details: n.status_details
       }));
       
       setTwilioNumbers(numbers);
