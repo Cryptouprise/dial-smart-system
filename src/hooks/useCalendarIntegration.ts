@@ -260,6 +260,26 @@ export const useCalendarIntegration = () => {
     return updateAppointment(id, { status: 'cancelled' });
   };
 
+  const deleteAppointment = async (id: string) => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('calendar_appointments')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      await loadAppointments();
+      toast({ title: 'Appointment Deleted', description: 'The appointment has been removed.' });
+      return true;
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const syncAppointmentToCalendars = async (appointment: CalendarAppointment) => {
     try {
       const { data, error } = await supabase.functions.invoke('calendar-integration', {
@@ -409,6 +429,7 @@ export const useCalendarIntegration = () => {
     createAppointment,
     updateAppointment,
     cancelAppointment,
+    deleteAppointment,
     connectGoogleCalendar,
     syncGHLCalendar,
     getAvailableSlots,

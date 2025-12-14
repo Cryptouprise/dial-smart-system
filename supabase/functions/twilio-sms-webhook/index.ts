@@ -709,6 +709,8 @@ CURRENT DATE & TIME (${userTimezone}):
 - IMPORTANT: All times should be in ${userTimezone} timezone.
 - When someone says "tomorrow", that means ${tomorrowDate}.
 - When someone says "next week", calculate from today (${currentDate}).
+- If the user asks for the current date or time, answer directly using the CURRENT DATE & TIME above (do not guess).
+
 
 PERSONALITY:
 ${effectiveSettings.ai_personality || 'professional and helpful'}`;

@@ -41,7 +41,8 @@ export const CalendarIntegrationManager: React.FC = () => {
     connectGoogleCalendar,
     syncGHLCalendar,
     loadAppointments,
-    disconnectIntegration
+    disconnectIntegration,
+    deleteAppointment,
   } = useCalendarIntegration();
 
   const { testConnection: testGHLConnection, getGHLCredentials } = useGoHighLevel();
@@ -478,8 +479,17 @@ export const CalendarIntegrationManager: React.FC = () => {
                     <Plus className="h-4 w-4 mr-2" />
                     New Appointment
                   </Button>
-                  <Button variant="outline" onClick={() => loadAppointments()}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      await loadAppointments();
+                      toast({
+                        title: 'Appointments Refreshed',
+                        description: 'Latest appointments have been loaded.',
+                      });
+                    }}
+                  >
+                    <RefreshCw className={"h-4 w-4 mr-2"} />
                     Refresh
                   </Button>
                 </div>
@@ -681,6 +691,14 @@ export const CalendarIntegrationManager: React.FC = () => {
                                 </Button>
                               </>
                             )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => deleteAppointment(apt.id)}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            </Button>
                           </div>
                         </div>
                       </div>
