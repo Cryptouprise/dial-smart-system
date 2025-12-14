@@ -97,5 +97,31 @@
 
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+  }
+
+  /* Prevent horizontal overflow on cards and containers */
+  .overflow-safe {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* Global overflow prevention for cards */
+@layer components {
+  .card-safe {
+    @apply overflow-hidden;
+    max-width: 100%;
+  }
+
+  /* Ensure badges wrap properly */
+  .badge-wrap {
+    @apply flex flex-wrap gap-1;
+  }
+
+  /* Scrollable content areas */
+  .scroll-area-safe {
+    @apply overflow-y-auto overflow-x-hidden;
+    max-height: calc(100vh - 200px);
   }
 }

@@ -384,8 +384,10 @@ const Dashboard = () => {
               <h1 className="text-lg font-semibold">📞 Smart Dialer Dashboard</h1>
             </div>
           </header>
-          <main className="flex-1 p-4 lg:p-6">
-            {renderContent()}
+          <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
+            <div className="max-w-full overflow-hidden">
+              {renderContent()}
+            </div>
           </main>
         </SidebarInset>
       </div>
