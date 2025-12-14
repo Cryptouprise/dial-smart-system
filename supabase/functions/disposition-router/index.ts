@@ -6,13 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Dispositions that should trigger DNC
+// Dispositions that should trigger full DNC (block all future calls)
 const DNC_DISPOSITIONS = [
-  'dnc', 'do_not_call', 'not_interested', 'stop', 'remove', 
+  'dnc', 'do_not_call', 'stop', 'remove',
   'threatening', 'rude', 'hostile', 'abusive'
 ];
 
-// Dispositions that should remove from all campaigns
+// Dispositions that should remove from all active campaigns/workflows
 const REMOVE_ALL_DISPOSITIONS = [
   'not_interested', 'wrong_number', 'already_has_solar', 'already_has_service',
   'deceased', 'business_closed', 'invalid_number', 'disconnected'
