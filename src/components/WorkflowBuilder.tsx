@@ -23,7 +23,6 @@ const STEP_TYPES = [
   { value: 'call', label: 'Phone Call', icon: Phone, color: 'bg-blue-500' },
   { value: 'sms', label: 'SMS Message', icon: MessageSquare, color: 'bg-green-500' },
   { value: 'ai_sms', label: 'AI SMS', icon: Sparkles, color: 'bg-purple-500' },
-  { value: 'ai_auto_reply', label: 'AI Auto-Reply', icon: Zap, color: 'bg-indigo-500' },
   { value: 'wait', label: 'Wait/Delay', icon: Clock, color: 'bg-orange-500' },
   { value: 'condition', label: 'Condition', icon: GitBranch, color: 'bg-yellow-500' },
 ];
@@ -93,9 +92,12 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
       resume_day: 'saturday',
       resume_time: '09:00'
     },
+    auto_reply_settings: null,
     active: true,
     steps: []
   });
+  
+  const [workflowDialogTab, setWorkflowDialogTab] = useState<'steps' | 'ai_reply'>('steps');
 
   // Disposition action form state
   const [newDispositionAction, setNewDispositionAction] = useState<DispositionAutoAction>({
@@ -120,12 +122,6 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
       defaultConfig.max_ring_seconds = 30;
       defaultConfig.leave_voicemail = false;
       defaultConfig.voicemail_message = '';
-    } else if (type === 'ai_auto_reply') {
-      defaultConfig.enabled = true;
-      defaultConfig.response_delay_seconds = 5;
-      defaultConfig.channels = ['sms'];
-      defaultConfig.ai_instructions = '';
-      defaultConfig.stop_on_human_reply = true;
     } else if (type === 'condition') {
       defaultConfig.condition_type = 'disposition';
       defaultConfig.condition_operator = 'equals';
@@ -466,106 +462,6 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                         <Label className="cursor-pointer">Include call transcript in AI context</Label>
                       </div>
                     )}
-                  </div>
-                )}
-
-                {/* AI Auto-Reply Step */}
-                {step.step_type === 'ai_auto_reply' && (
-                  <div className="space-y-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4 border border-indigo-200 dark:border-indigo-800">
-                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-                      <Zap className="h-4 w-4" />
-                      <span className="font-medium">AI Auto-Reply Settings</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Enable Auto-Reply</Label>
-                        <p className="text-xs text-muted-foreground">AI will automatically respond to incoming messages</p>
-                      </div>
-                      <Switch
-                        checked={step.step_config.enabled !== false}
-                        onCheckedChange={(v) => updateStep(index, { 
-                          step_config: { ...step.step_config, enabled: v }
-                        })}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Response Channels</Label>
-                      <div className="flex gap-4">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={step.step_config.channels?.includes('sms') !== false}
-                            onCheckedChange={(v) => {
-                              const channels = step.step_config.channels || ['sms'];
-                              const newChannels = v 
-                                ? [...new Set([...channels, 'sms'])]
-                                : channels.filter((c: string) => c !== 'sms');
-                              updateStep(index, { 
-                                step_config: { ...step.step_config, channels: newChannels }
-                              });
-                            }}
-                          />
-                          <Label className="cursor-pointer">SMS</Label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={step.step_config.channels?.includes('call') || false}
-                            onCheckedChange={(v) => {
-                              const channels = step.step_config.channels || ['sms'];
-                              const newChannels = v 
-                                ? [...new Set([...channels, 'call'])]
-                                : channels.filter((c: string) => c !== 'call');
-                              updateStep(index, { 
-                                step_config: { ...step.step_config, channels: newChannels }
-                              });
-                            }}
-                          />
-                          <Label className="cursor-pointer">Inbound Calls</Label>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Response Delay (seconds)</Label>
-                      <Input
-                        type="number"
-                        value={step.step_config.response_delay_seconds || 5}
-                        onChange={(e) => updateStep(index, { 
-                          step_config: { ...step.step_config, response_delay_seconds: parseInt(e.target.value) || 5 }
-                        })}
-                        min={0}
-                        max={300}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Wait this many seconds before responding (makes it feel more human)
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>AI Instructions (Optional)</Label>
-                      <Textarea
-                        value={step.step_config.ai_instructions || ''}
-                        onChange={(e) => updateStep(index, { 
-                          step_config: { ...step.step_config, ai_instructions: e.target.value }
-                        })}
-                        placeholder="Custom instructions for AI responses. Leave blank to use agent defaults. Example: 'Keep responses short and friendly. Focus on booking appointments.'"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Stop on Human Reply</Label>
-                        <p className="text-xs text-muted-foreground">Disable auto-reply when a real person responds</p>
-                      </div>
-                      <Switch
-                        checked={step.step_config.stop_on_human_reply !== false}
-                        onCheckedChange={(v) => updateStep(index, { 
-                          step_config: { ...step.step_config, stop_on_human_reply: v }
-                        })}
-                      />
-                    </div>
                   </div>
                 )}
 
@@ -982,10 +878,27 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                 </CardContent>
               </Card>
 
-              {/* Steps */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <Label className="text-base">Workflow Steps</Label>
+              {/* Workflow Content Tabs */}
+              <Tabs value={workflowDialogTab} onValueChange={(v) => setWorkflowDialogTab(v as 'steps' | 'ai_reply')}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="steps" className="gap-2">
+                    <Play className="h-4 w-4" />
+                    Workflow Steps
+                  </TabsTrigger>
+                  <TabsTrigger value="ai_reply" className="gap-2">
+                    <Zap className="h-4 w-4" />
+                    AI Auto-Reply
+                    {newWorkflow.auto_reply_settings?.enabled && (
+                      <Badge variant="secondary" className="ml-1 text-xs">On</Badge>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="steps" className="mt-4">
+                  {/* Steps */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <Label className="text-base">Workflow Steps</Label>
                   <div className="flex gap-2 flex-wrap">
                     <Button
                       variant="default"
@@ -1132,7 +1045,61 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                     newWorkflow.steps?.map((step, index) => renderStepEditor(step, index))
                   )}
                 </div>
-              </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="ai_reply" className="mt-4 space-y-4">
+                  <Card className="bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-indigo-600" />
+                        Workflow AI Auto-Reply
+                      </CardTitle>
+                      <CardDescription>
+                        When enabled, leads in this workflow get AI responses that override the global SMS agent.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Enable AI Auto-Reply</Label>
+                          <p className="text-xs text-muted-foreground">Override global SMS agent for leads in this workflow</p>
+                        </div>
+                        <Switch
+                          checked={newWorkflow.auto_reply_settings?.enabled || false}
+                          onCheckedChange={(v) => setNewWorkflow({
+                            ...newWorkflow,
+                            auto_reply_settings: {
+                              enabled: v,
+                              ai_instructions: newWorkflow.auto_reply_settings?.ai_instructions || '',
+                              response_delay_seconds: newWorkflow.auto_reply_settings?.response_delay_seconds || 5,
+                              stop_on_human_reply: newWorkflow.auto_reply_settings?.stop_on_human_reply ?? true,
+                              calendar_enabled: newWorkflow.auto_reply_settings?.calendar_enabled || false,
+                              booking_link: newWorkflow.auto_reply_settings?.booking_link || '',
+                            }
+                          })}
+                        />
+                      </div>
+                      {newWorkflow.auto_reply_settings?.enabled && (
+                        <div className="space-y-4 pt-4 border-t">
+                          <div className="space-y-2">
+                            <Label>AI Instructions</Label>
+                            <Textarea
+                              value={newWorkflow.auto_reply_settings?.ai_instructions || ''}
+                              onChange={(e) => setNewWorkflow({
+                                ...newWorkflow,
+                                auto_reply_settings: { ...newWorkflow.auto_reply_settings!, ai_instructions: e.target.value }
+                              })}
+                              placeholder="Custom AI personality for this workflow..."
+                              rows={4}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
