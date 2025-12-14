@@ -50,6 +50,14 @@ export const CalendarIntegrationManager: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [ghlConnected, setGhlConnected] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [showNewAppointmentForm, setShowNewAppointmentForm] = useState(false);
+  const [newAppointment, setNewAppointment] = useState({
+    title: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    time: '10:00',
+    duration: 30,
+    description: ''
+  });
 
   // Check if integration needs reconnection (no refresh token or expired)
   useEffect(() => {
@@ -101,6 +109,43 @@ export const CalendarIntegrationManager: React.FC = () => {
   const handleSaveAvailability = () => {
     if (localAvailability) {
       saveAvailability(localAvailability);
+    }
+  };
+
+  const handleCreateAppointment = async () => {
+    try {
+      const startTime = new Date(`${newAppointment.date}T${newAppointment.time}:00`);
+      const endTime = new Date(startTime.getTime() + newAppointment.duration * 60 * 1000);
+      
+      await createAppointment({
+        title: newAppointment.title || 'New Appointment',
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        timezone: localAvailability?.timezone || 'America/Chicago',
+        description: newAppointment.description,
+        status: 'scheduled'
+      });
+      
+      toast({
+        title: 'Appointment Created',
+        description: `Scheduled for ${format(startTime, 'MMM d')} at ${format(startTime, 'h:mm a')}`,
+      });
+      
+      setShowNewAppointmentForm(false);
+      setNewAppointment({
+        title: '',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        time: '10:00',
+        duration: 30,
+        description: ''
+      });
+      loadAppointments();
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to create appointment',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -428,13 +473,87 @@ export const CalendarIntegrationManager: React.FC = () => {
                     View and manage your scheduled appointments
                   </CardDescription>
                 </div>
-                <Button onClick={() => loadAppointments()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={() => setShowNewAppointmentForm(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Appointment
+                  </Button>
+                  <Button variant="outline" onClick={() => loadAppointments()}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
+              {/* New Appointment Form */}
+              {showNewAppointmentForm && (
+                <div className="mb-6 p-4 border rounded-lg bg-muted/30">
+                  <h4 className="font-medium mb-4">Create New Appointment</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input
+                        placeholder="e.g., Demo Call, Consultation"
+                        value={newAppointment.title}
+                        onChange={(e) => setNewAppointment({ ...newAppointment, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Input
+                        type="date"
+                        value={newAppointment.date}
+                        onChange={(e) => setNewAppointment({ ...newAppointment, date: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Time</Label>
+                      <Input
+                        type="time"
+                        value={newAppointment.time}
+                        onChange={(e) => setNewAppointment({ ...newAppointment, time: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Duration (minutes)</Label>
+                      <Select
+                        value={String(newAppointment.duration)}
+                        onValueChange={(v) => setNewAppointment({ ...newAppointment, duration: parseInt(v) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="15">15 minutes</SelectItem>
+                          <SelectItem value="30">30 minutes</SelectItem>
+                          <SelectItem value="45">45 minutes</SelectItem>
+                          <SelectItem value="60">1 hour</SelectItem>
+                          <SelectItem value="90">1.5 hours</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-2 space-y-2">
+                      <Label>Description (optional)</Label>
+                      <Input
+                        placeholder="Notes about the appointment"
+                        value={newAppointment.description}
+                        onChange={(e) => setNewAppointment({ ...newAppointment, description: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <Button onClick={handleCreateAppointment}>
+                      <Check className="h-4 w-4 mr-2" />
+                      Create Appointment
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowNewAppointmentForm(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Mini Calendar */}
               <div className="mb-6 flex gap-1 overflow-x-auto pb-2">
                 {weekDays.map((day) => {
