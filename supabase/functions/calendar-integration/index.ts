@@ -194,10 +194,7 @@ serve(async (req) => {
           }, { onConflict: 'user_id,provider,calendar_id' });
 
         // Return a nice success page that auto-closes or redirects
-        const appUrl = Deno.env.get('APP_URL') || 'https://lovable.dev';
-        
-        return new Response(
-          `<!DOCTYPE html>
+        const successHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -206,7 +203,7 @@ serve(async (req) => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -233,7 +230,7 @@ serve(async (req) => {
       justify-content: center;
       margin: 0 auto 24px;
     }
-    .icon svg { width: 40px; height: 40px; color: white; }
+    .icon svg { width: 40px; height: 40px; stroke: white; }
     h1 { color: #1f2937; font-size: 24px; margin-bottom: 12px; }
     p { color: #6b7280; font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
     .email { 
@@ -253,11 +250,9 @@ serve(async (req) => {
       border-radius: 8px;
       text-decoration: none;
       font-weight: 600;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      cursor: pointer;
+      border: none;
+      font-size: 16px;
     }
     .countdown { color: #9ca3af; font-size: 12px; margin-top: 16px; }
   </style>
@@ -271,48 +266,40 @@ serve(async (req) => {
     </div>
     <h1>Calendar Connected!</h1>
     <p>Your Google Calendar has been successfully linked. Appointments booked via SMS will now sync automatically.</p>
-    ${userInfo.email ? `<div class="email">${userInfo.email}</div>` : ''}
-    <a href="javascript:void(0)" class="btn" id="closeBtn">Close This Window</a>
-    <p class="countdown" id="countdown">This window will close automatically...</p>
+    ${userInfo.email ? '<div class="email">' + userInfo.email + '</div>' : ''}
+    <button class="btn" onclick="closeWindow()">Close This Window</button>
+    <p class="countdown" id="countdown">Closing in 3 seconds...</p>
   </div>
   <script>
-    // Try to close popup and notify parent
-    function closeAndNotify() {
+    function closeWindow() {
       try {
-        if (window.opener && !window.opener.closed) {
+        if (window.opener) {
           window.opener.postMessage({ type: 'google-calendar-connected' }, '*');
-          window.close();
         }
-      } catch (e) {
-        console.log('Could not close popup');
-      }
+        window.close();
+      } catch (e) {}
+      setTimeout(function() { window.history.back(); }, 200);
     }
     
-    // Close button handler
-    document.getElementById('closeBtn').onclick = function() {
-      closeAndNotify();
-      // If window didn't close (opened in same tab), go back
-      setTimeout(() => {
-        window.history.back();
-      }, 100);
-    };
-    
-    // Auto-close after 3 seconds
-    let seconds = 3;
-    const interval = setInterval(() => {
+    var seconds = 3;
+    var interval = setInterval(function() {
       seconds--;
+      document.getElementById('countdown').textContent = 'Closing in ' + seconds + ' seconds...';
       if (seconds <= 0) {
         clearInterval(interval);
-        closeAndNotify();
-      } else {
-        document.getElementById('countdown').textContent = 'Closing in ' + seconds + ' seconds...';
+        closeWindow();
       }
     }, 1000);
   </script>
 </body>
-</html>`,
-          { headers: { ...corsHeaders, 'Content-Type': 'text/html' } }
-        );
+</html>`;
+
+        return new Response(successHtml, { 
+          status: 200,
+          headers: { 
+            'Content-Type': 'text/html; charset=utf-8'
+          } 
+        });
       }
 
       case 'sync_ghl_calendar': {
