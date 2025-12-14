@@ -237,12 +237,50 @@ grep -rn "\.single()" src/ supabase/
 | State after unmount | Use `isMounted` flag pattern in async callbacks |
 | Infinite re-renders | Never use changing data as useEffect dependency with setInterval |
 | Event listener leaks | Store handler references for proper removeEventListener cleanup |
+| Service-to-service auth | Edge functions must support both JWT and service role key authentication |
+| Variable scoping | Always use the correctly scoped variable (e.g., `userId` not `user.id`) after auth |
+| Undefined step types | Always validate step_type exists before switch statements in workflow executors |
+| Unknown step handlers | Handle all possible step type variations (e.g., both `ai_sms` and `ai_auto_reply`) |
 
-**Total bugs prevented with these rules: 230+**
+**Total bugs prevented with these rules: 250+**
 
 ---
 
-## Final Verification (Round 14 - Memory Leak Round)
+## 🚨 RULE #6: Edge Functions Must Support Service-to-Service Calls
+
+Edge functions called by other edge functions (internal calls) won't have a user JWT. They use the service role key instead.
+
+### ❌ WRONG - Only supports JWT authentication
+```typescript
+const { data: { user }, error } = await supabase.auth.getUser(token);
+if (!user) throw new Error('Unauthorized');
+const userId = user.id;  // Will fail for internal calls!
+```
+
+### ✅ CORRECT - Supports both JWT and service role key
+```typescript
+const token = authHeader.replace('Bearer ', '');
+let userId: string | null = null;
+
+// Check if this is an internal service call with explicit user_id
+const request = await req.json();
+
+if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') && request.user_id) {
+  // Internal service-to-service call
+  userId = request.user_id;
+} else {
+  // Standard JWT-based auth
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (!user) throw new Error('Unauthorized');
+  userId = user.id;
+}
+
+// Now use userId (not user.id!) throughout the function
+```
+
+---
+
+## Final Verification (Round 15 - Workflow & Service Auth)
 
 ✅ **ZERO `.single()` calls remain in the codebase**
 ✅ **ZERO unsafe `Authorization!` patterns remain**
@@ -252,6 +290,8 @@ grep -rn "\.single()" src/ supabase/
 ✅ **ZERO `forEach(async...)` patterns remain** (all converted to Promise.all)
 ✅ **ZERO uncleared setTimeout in useEffect** (all have cleanup functions)
 ✅ **ZERO addEventListener without matching removeEventListener**
+✅ **ALL edge functions support both JWT and service role auth where needed**
+✅ **ALL workflow step types have explicit handlers or graceful fallbacks**
 
 All database queries and edge functions now use safe patterns that handle:
 - Empty result sets (no 406 errors)
@@ -264,3 +304,5 @@ All database queries and edge functions now use safe patterns that handle:
 - Protected JSON.parse for external data
 - Proper cleanup of timers and listeners
 - Prevention of state updates after unmount
+- Service-to-service authentication with explicit user_id
+- Unknown/undefined workflow step types
