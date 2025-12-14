@@ -120,7 +120,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         backchannel_frequency: agent.backchannel_frequency || 0.9,
         backchannel_words: agent.backchannel_words || ['yeah', 'uh-huh'],
         language: agent.language || 'en-US',
-        ambient_sound: agent.ambient_sound || 'off',
+        ambient_sound: agent.ambient_sound || null,
         ambient_sound_volume: agent.ambient_sound_volume || 1,
         webhook_url: agent.webhook_url || '',
         webhook_timeout_ms: agent.webhook_timeout_ms || 10000,
@@ -811,7 +811,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label>Ambient Sound</Label>
-                    <Select value={config.ambient_sound} onValueChange={(v) => updateConfig('ambient_sound', v)}>
+                    <Select value={config.ambient_sound || 'off'} onValueChange={(v) => updateConfig('ambient_sound', v === 'off' ? null : v)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -827,7 +827,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                     </Select>
                   </div>
 
-                  {config.ambient_sound !== 'off' && (
+                  {config.ambient_sound && (
                     <div className="space-y-2">
                       <Label>Ambient Sound Volume: {config.ambient_sound_volume}</Label>
                       <Slider
