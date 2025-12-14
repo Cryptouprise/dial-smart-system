@@ -666,26 +666,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
       <div className="grid gap-4">
         {campaigns.map((campaign) => (
-          <Card key={campaign.id} className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+          <Card key={campaign.id} className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm overflow-hidden">
             <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="flex items-center gap-2 flex-wrap">
-                    {campaign.name}
+              <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="flex items-center gap-2 flex-wrap text-lg">
+                    <span className="truncate max-w-[200px]">{campaign.name}</span>
                     {/* Campaign Type Badge */}
                     {(() => {
                       const type = getCampaignType(campaign);
                       return (
-                        <Badge variant="outline" className={type.color}>
+                        <Badge variant="outline" className={`${type.color} shrink-0`}>
                           <type.icon className="h-3 w-3 mr-1" />
                           {type.label}
                         </Badge>
                       );
                     })()}
-                    <Badge variant={campaign.status === 'active' ? 'default' : 
-                                  campaign.status === 'paused' ? 'secondary' : 'outline'}>
+                    <Badge 
+                      variant={campaign.status === 'active' ? 'default' : 
+                                campaign.status === 'paused' ? 'secondary' : 'outline'}
+                      className="shrink-0"
+                    >
                       {campaign.status}
                     </Badge>
+                  </CardTitle>
+                  
+                  {/* Agent and workflow badges on separate line for better layout */}
+                  <div className="flex items-center gap-2 flex-wrap mt-2">
                     {campaign.agent_id && (() => {
                       const agent = agents.find(a => a.agent_id === campaign.agent_id);
                       if (agent) {
@@ -727,9 +734,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                         No Calendar
                       </Badge>
                     )}
-                  </CardTitle>
+                  </div>
+                  
                   {campaign.description && (
-                    <CardDescription>{campaign.description}</CardDescription>
+                    <CardDescription className="mt-2 line-clamp-2">{campaign.description}</CardDescription>
                   )}
                 </div>
                 
