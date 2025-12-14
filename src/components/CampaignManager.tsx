@@ -86,7 +86,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     calling_hours_end: '17:00',
     timezone: 'America/New_York'
   });
-  const [twilioNumbers, setTwilioNumbers] = useState<{number: string; provider: string}[]>([]);
+  const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean}[]>([]);
+  const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
   const [smsAgentCampaign, setSmsAgentCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
@@ -223,21 +224,42 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const loadTwilioNumbers = async () => {
+    setLoadingTwilioNumbers(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('phone_numbers')
-        .select('number, provider')
-        .eq('user_id', user.id)
-        .eq('provider', 'twilio')
-        .eq('status', 'active');
+      // Fetch SMS-capable numbers directly from Twilio API via edge function
+      const { data, error } = await supabase.functions.invoke('sms-messaging', {
+        body: { action: 'get_available_numbers' }
+      });
 
       if (error) throw error;
-      setTwilioNumbers(data || []);
+      
+      const numbers = (data?.numbers || []).map((n: any) => ({
+        number: n.number,
+        friendly_name: n.friendly_name,
+        webhook_configured: n.webhook_configured
+      }));
+      
+      setTwilioNumbers(numbers);
+      console.log('Loaded SMS-capable numbers from Twilio:', numbers.length);
     } catch (error) {
       console.error('Error loading Twilio numbers:', error);
+      // Fallback to database if API fails
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data } = await supabase
+            .from('phone_numbers')
+            .select('number, friendly_name')
+            .eq('user_id', user.id)
+            .eq('provider', 'twilio')
+            .eq('status', 'active');
+          setTwilioNumbers((data || []).map(n => ({ number: n.number, friendly_name: n.friendly_name || undefined })));
+        }
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
+    } finally {
+      setLoadingTwilioNumbers(false);
     }
   };
 
@@ -526,15 +548,21 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 <Select
                   value={formData.sms_from_number || "none"}
                   onValueChange={(value) => setFormData({ ...formData, sms_from_number: value === "none" ? "" : value })}
+                  disabled={loadingTwilioNumbers}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a Twilio number for SMS" />
+                    <SelectValue placeholder={loadingTwilioNumbers ? "Loading numbers..." : "Select a Twilio number for SMS"} />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
                     <SelectItem value="none">No SMS Number</SelectItem>
                     {twilioNumbers.map((phone) => (
                       <SelectItem key={phone.number} value={phone.number}>
-                        <span className="font-mono">{phone.number}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">{phone.number}</span>
+                          {phone.webhook_configured && (
+                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">Ready</Badge>
+                          )}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
