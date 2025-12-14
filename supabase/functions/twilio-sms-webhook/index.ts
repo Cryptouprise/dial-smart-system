@@ -885,15 +885,37 @@ ${processedKnowledge}`;
                 if (functionName === 'book_appointment') {
                   try {
                     // Parse the date and time
-                    const appointmentDate = functionArgs.date;
+                    const appointmentDateStr = functionArgs.date;
                     const appointmentTime = functionArgs.time || '09:00';
                     const duration = functionArgs.duration_minutes || 30;
                     const timezone = functionArgs.timezone || 'America/Chicago';
-                    
-                    const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
+
+                    // Build initial Date from the AI-provided string
+                    let startDateTime = new Date(`${appointmentDateStr}T${appointmentTime}:00`);
+                    const now = new Date();
+
+                    // If the parsed date is in the past, roll it forward by years
+                    // until it lands in the future. This prevents the model from
+                    // accidentally booking in a past year (e.g. 2023 instead of 2025).
+                    let safetyCounter = 0;
+                    while (startDateTime.getTime() <= now.getTime() && safetyCounter < 5) {
+                      startDateTime = new Date(
+                        startDateTime.getFullYear() + 1,
+                        startDateTime.getMonth(),
+                        startDateTime.getDate(),
+                        startDateTime.getHours(),
+                        startDateTime.getMinutes(),
+                        startDateTime.getSeconds(),
+                      );
+                      safetyCounter++;
+                    }
+
                     const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
-                    
-                    // Find or create lead
+                    console.log('[Twilio SMS Webhook] Normalized appointment time:', {
+                      requestedDate: appointmentDateStr,
+                      finalStart: startDateTime.toISOString(),
+                      timezone,
+                    });
                     let appointmentLeadId = lead?.id || null;
                     if (!appointmentLeadId) {
                       // Create a new lead for this phone number
