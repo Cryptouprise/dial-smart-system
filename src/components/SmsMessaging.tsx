@@ -28,20 +28,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import { useSmsMessaging, type SmsMessage } from '@/hooks/useSmsMessaging';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2, AlertTriangle, Settings, Webhook } from 'lucide-react';
+import { useSmsMessaging, type SmsMessage, type TwilioNumber } from '@/hooks/useSmsMessaging';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
 
-interface TwilioNumber {
-  number: string;
-  friendly_name?: string;
-  capabilities?: { voice?: boolean; sms?: boolean; mms?: boolean };
-}
-
 const SmsMessaging: React.FC = () => {
-  const { isLoading, messages, sendSms, getMessages, getAvailableNumbers } = useSmsMessaging();
+  const { isLoading, messages, sendSms, getMessages, getAvailableNumbers, configureWebhook } = useSmsMessaging();
   const { toast } = useToast();
   
   const [toNumber, setToNumber] = useState('');
@@ -49,6 +44,7 @@ const SmsMessaging: React.FC = () => {
   const [messageBody, setMessageBody] = useState('');
   const [availableNumbers, setAvailableNumbers] = useState<TwilioNumber[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -60,16 +56,28 @@ const SmsMessaging: React.FC = () => {
         getAvailableNumbers(),
         getMessages(),
       ]);
-      // Handle both old format (string[]) and new format (TwilioNumber[])
-      const normalizedNumbers: TwilioNumber[] = (numbers || []).map((num: string | TwilioNumber) => 
-        typeof num === 'string' ? { number: num } : num
-      );
-      setAvailableNumbers(normalizedNumbers);
-      if (normalizedNumbers.length > 0 && !fromNumber) {
-        setFromNumber(normalizedNumbers[0].number);
+      setAvailableNumbers(numbers);
+      if (numbers.length > 0 && !fromNumber) {
+        setFromNumber(numbers[0].number);
       }
     } catch (error) {
       console.error('Error loading SMS data:', error);
+    }
+  };
+
+  const selectedNumber = availableNumbers.find(n => n.number === fromNumber);
+  const webhookNotConfigured = selectedNumber && !selectedNumber.webhook_configured;
+
+  const handleConfigureWebhook = async () => {
+    if (!fromNumber) return;
+    setIsConfiguringWebhook(true);
+    try {
+      const success = await configureWebhook(fromNumber);
+      if (success) {
+        await loadData(); // Refresh to update webhook status
+      }
+    } finally {
+      setIsConfiguringWebhook(false);
     }
   };
 
@@ -194,6 +202,38 @@ const SmsMessaging: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Webhook Warning Alert */}
+              {webhookNotConfigured && (
+                <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Inbound SMS Not Configured</AlertTitle>
+                  <AlertDescription className="space-y-2">
+                    <p>
+                      This number's webhook isn't configured. Replies won't trigger AI auto-responses.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleConfigureWebhook}
+                      disabled={isConfiguringWebhook}
+                      className="mt-2"
+                    >
+                      {isConfiguringWebhook ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Configuring...
+                        </>
+                      ) : (
+                        <>
+                          <Webhook className="h-4 w-4 mr-2" />
+                          Configure Webhook Now
+                        </>
+                      )}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="from">From Number</Label>
@@ -210,6 +250,17 @@ const SmsMessaging: React.FC = () => {
                               {formatPhoneNumber(num.number)}
                               {num.friendly_name && (
                                 <span className="text-muted-foreground">({num.friendly_name})</span>
+                              )}
+                              {num.webhook_configured ? (
+                                <Badge variant="outline" className="text-green-600 border-green-500 text-xs">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Ready
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-amber-600 border-amber-500 text-xs">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Setup needed
+                                </Badge>
                               )}
                             </div>
                           </SelectItem>
@@ -298,7 +349,7 @@ const SmsMessaging: React.FC = () => {
                   <p className="text-sm">Send your first message to see it here</p>
                 </div>
               ) : (
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>

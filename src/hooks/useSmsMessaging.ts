@@ -27,11 +27,26 @@ export interface SmsMessage {
   error_message: string | null;
 }
 
+export interface TwilioNumber {
+  number: string;
+  friendly_name?: string;
+  capabilities?: { voice?: boolean; sms?: boolean; mms?: boolean };
+  sms_url?: string;
+  webhook_configured?: boolean;
+}
+
 export interface SendSmsParams {
   to: string;
   from: string;
   body: string;
   leadId?: string;
+}
+
+export interface WebhookStatus {
+  phone_number: string;
+  current_sms_url: string | null;
+  expected_webhook: string;
+  webhook_configured: boolean;
 }
 
 export const useSmsMessaging = () => {
@@ -111,9 +126,9 @@ export const useSmsMessaging = () => {
   }, [toast]);
 
   /**
-   * Get available phone numbers for SMS
+   * Get available phone numbers for SMS with webhook status
    */
-  const getAvailableNumbers = useCallback(async (): Promise<string[]> => {
+  const getAvailableNumbers = useCallback(async (): Promise<TwilioNumber[]> => {
     try {
       const { data, error } = await supabase.functions.invoke('sms-messaging', {
         body: {
@@ -129,12 +144,71 @@ export const useSmsMessaging = () => {
     }
   }, []);
 
+  /**
+   * Check webhook status for a phone number
+   */
+  const checkWebhookStatus = useCallback(async (phoneNumber: string): Promise<WebhookStatus | null> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('sms-messaging', {
+        body: {
+          action: 'check_webhook_status',
+          phoneNumber,
+        }
+      });
+
+      if (error) throw error;
+      return data as WebhookStatus;
+    } catch (error) {
+      console.error('[useSmsMessaging] Failed to check webhook status:', error);
+      return null;
+    }
+  }, []);
+
+  /**
+   * Configure webhook for a phone number to enable auto-replies
+   */
+  const configureWebhook = useCallback(async (phoneNumber: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sms-messaging', {
+        body: {
+          action: 'configure_webhook',
+          phoneNumber,
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast({
+          title: 'Webhook Configured',
+          description: data.message || 'Inbound SMS will now trigger auto-replies',
+        });
+        return true;
+      } else {
+        throw new Error(data?.error || 'Failed to configure webhook');
+      }
+    } catch (error) {
+      console.error('[useSmsMessaging] Failed to configure webhook:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to configure webhook',
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
   return {
     isLoading,
     messages,
     sendSms,
     getMessages,
     getAvailableNumbers,
+    checkWebhookStatus,
+    configureWebhook,
   };
 };
 
