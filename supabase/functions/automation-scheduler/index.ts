@@ -181,7 +181,30 @@ serve(async (req) => {
 
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 
-    // Fetch all enabled automation rules
+    // FIRST: Execute any pending workflow steps
+    console.log('[Scheduler] Executing pending workflow steps...');
+    let workflowResults = { processed: 0, results: [] as any[] };
+    try {
+      const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/workflow-executor`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'execute_pending' }),
+      });
+      
+      if (workflowResponse.ok) {
+        workflowResults = await workflowResponse.json();
+        console.log(`[Scheduler] Workflow executor processed ${workflowResults.processed || 0} steps`);
+      } else {
+        console.error('[Scheduler] Workflow executor error:', workflowResponse.status, await workflowResponse.text());
+      }
+    } catch (workflowError: any) {
+      console.error('[Scheduler] Failed to call workflow-executor:', workflowError.message);
+    }
+
+    // THEN: Fetch all enabled automation rules
     const { data: rules, error: rulesError } = await supabase
       .from('campaign_automation_rules')
       .select('*')
@@ -193,6 +216,7 @@ serve(async (req) => {
     if (!rules || rules.length === 0) {
       return new Response(JSON.stringify({ 
         message: 'No active automation rules',
+        workflow_steps_processed: workflowResults.processed || 0,
         processed: 0 
       }), { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -219,6 +243,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
+      workflow_steps_processed: workflowResults.processed || 0,
       rules_processed: rules.length,
       leads_queued: totalProcessed,
       results
