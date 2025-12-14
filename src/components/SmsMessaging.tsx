@@ -67,6 +67,8 @@ const SmsMessaging: React.FC = () => {
 
   const selectedNumber = availableNumbers.find(n => n.number === fromNumber);
   const webhookNotConfigured = selectedNumber && !selectedNumber.webhook_configured;
+  const a2pNotRegistered = selectedNumber && !selectedNumber.a2p_registered;
+  const notFullyReady = selectedNumber && !selectedNumber.is_ready;
 
   const handleConfigureWebhook = async () => {
     if (!fromNumber) return;
@@ -202,34 +204,58 @@ const SmsMessaging: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Webhook Warning Alert */}
-              {webhookNotConfigured && (
+              {/* Status Warning Alerts */}
+              {notFullyReady && (
                 <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                   <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Inbound SMS Not Configured</AlertTitle>
+                  <AlertTitle>Number Not Fully Configured</AlertTitle>
                   <AlertDescription className="space-y-2">
-                    <p>
-                      This number's webhook isn't configured. Replies won't trigger AI auto-responses.
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleConfigureWebhook}
-                      disabled={isConfiguringWebhook}
-                      className="mt-2"
-                    >
-                      {isConfiguringWebhook ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Configuring...
-                        </>
-                      ) : (
-                        <>
-                          <Webhook className="h-4 w-4 mr-2" />
-                          Configure Webhook Now
-                        </>
+                    <div className="flex flex-col gap-1">
+                      {webhookNotConfigured && (
+                        <p className="flex items-center gap-2">
+                          <XCircle className="h-4 w-4" />
+                          Webhook not configured - replies won't trigger AI auto-responses
+                        </p>
                       )}
-                    </Button>
+                      {a2pNotRegistered && (
+                        <p className="flex items-center gap-2">
+                          <XCircle className="h-4 w-4" />
+                          Not A2P registered - SMS may be blocked or filtered
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      {webhookNotConfigured && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleConfigureWebhook}
+                          disabled={isConfiguringWebhook}
+                        >
+                          {isConfiguringWebhook ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Configuring...
+                            </>
+                          ) : (
+                            <>
+                              <Webhook className="h-4 w-4 mr-2" />
+                              Configure Webhook
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {a2pNotRegistered && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open('https://console.twilio.com/us1/develop/sms/services', '_blank')}
+                        >
+                          <Settings className="h-4 w-4 mr-2" />
+                          Setup A2P in Twilio
+                        </Button>
+                      )}
+                    </div>
                   </AlertDescription>
                 </Alert>
               )}
@@ -251,7 +277,7 @@ const SmsMessaging: React.FC = () => {
                               {num.friendly_name && (
                                 <span className="text-muted-foreground">({num.friendly_name})</span>
                               )}
-                              {num.webhook_configured ? (
+                              {num.is_ready ? (
                                 <Badge variant="outline" className="text-green-600 border-green-500 text-xs">
                                   <CheckCircle className="h-3 w-3 mr-1" />
                                   Ready
@@ -259,7 +285,7 @@ const SmsMessaging: React.FC = () => {
                               ) : (
                                 <Badge variant="outline" className="text-amber-600 border-amber-500 text-xs">
                                   <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Setup needed
+                                  {num.status_details || 'Setup needed'}
                                 </Badge>
                               )}
                             </div>

@@ -33,6 +33,9 @@ export interface TwilioNumber {
   capabilities?: { voice?: boolean; sms?: boolean; mms?: boolean };
   sms_url?: string;
   webhook_configured?: boolean;
+  a2p_registered?: boolean;
+  is_ready?: boolean;
+  status_details?: string;
 }
 
 export interface SendSmsParams {

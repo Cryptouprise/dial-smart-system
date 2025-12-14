@@ -86,7 +86,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     calling_hours_end: '17:00',
     timezone: 'America/New_York'
   });
-  const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean}[]>([]);
+  const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
   const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
   const [smsAgentCampaign, setSmsAgentCampaign] = useState<Campaign | null>(null);
 
@@ -559,21 +559,40 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       <SelectItem key={phone.number} value={phone.number}>
                         <div className="flex items-center gap-2">
                           <span className="font-mono">{phone.number}</span>
-                          {phone.webhook_configured && (
+                          {phone.is_ready ? (
                             <Badge variant="outline" className="text-green-600 border-green-600 text-xs">Ready</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-amber-600 border-amber-600 text-xs">
+                              {phone.status_details || 'Setup needed'}
+                            </Badge>
                           )}
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {formData.sms_from_number ? (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
-                    <MessageSquare className="h-3 w-3" />
-                    Workflow SMS will be sent from this A2P number
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                {formData.sms_from_number && (
+                  (() => {
+                    const selectedNum = twilioNumbers.find(n => n.number === formData.sms_from_number);
+                    if (selectedNum?.is_ready) {
+                      return (
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          Workflow SMS will be sent from this A2P registered number
+                        </p>
+                      );
+                    } else {
+                      return (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          {selectedNum?.status_details || 'This number needs setup'} - SMS may be blocked
+                        </p>
+                      );
+                    }
+                  })()
+                )}
+                {!formData.sms_from_number && (
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
                     Select a number if your workflow includes SMS steps
                   </p>
