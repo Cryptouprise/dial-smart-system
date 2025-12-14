@@ -104,6 +104,15 @@ serve(async (req) => {
           .eq('lead_id', leadId)
           .in('status', ['pending', 'scheduled']);
 
+        // Update lead status so they won't be re-queued by automations
+        await supabase
+          .from('leads')
+          .update({
+            status: normalizedDisposition || 'not_interested',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', leadId);
+
         actions.push('Removed from all active campaigns and workflows');
       }
 
