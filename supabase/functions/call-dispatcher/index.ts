@@ -224,7 +224,7 @@ serve(async (req) => {
           campaign_id: campaign.id,
           user_id: user.id,
           current_step_id: firstStep.id,
-          status: 'in_progress',
+          status: 'active',
           started_at: new Date().toISOString(),
           next_action_at: new Date().toISOString(),
         })
