@@ -404,6 +404,28 @@ serve(async (req) => {
       .eq('phone_number', From)
       .maybeSingle();
 
+    // UPDATE NUDGE TRACKING: Mark that lead has responded (THIS IS KEY FOR FOLLOW-UP LOGIC)
+    if (lead?.id) {
+      console.log('[Twilio SMS Webhook] Updating nudge tracking - lead responded:', lead.id);
+      
+      // Calculate next nudge time (only if lead goes silent again)
+      // Default: 24 hours after lead response
+      const nextNudgeAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      
+      await supabaseAdmin
+        .from('lead_nudge_tracking')
+        .upsert({
+          lead_id: lead.id,
+          user_id: userId,
+          last_lead_response_at: new Date().toISOString(),
+          is_engaged: true, // Lead is now engaged since they responded
+          next_nudge_at: nextNudgeAt, // Schedule follow-up if they go silent
+          sequence_paused: false, // Unpause if paused
+        }, {
+          onConflict: 'lead_id',
+        });
+    }
+
     if (lead?.id) {
       // Check if this lead is in an active workflow with auto-reply enabled
       const { data: workflowProgress } = await supabaseAdmin
