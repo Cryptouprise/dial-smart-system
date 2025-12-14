@@ -49,6 +49,30 @@ export const CalendarIntegrationManager: React.FC = () => {
   const [localAvailability, setLocalAvailability] = useState(availability);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [ghlConnected, setGhlConnected] = useState(false);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
+
+  // Check if integration needs reconnection (no refresh token or expired)
+  useEffect(() => {
+    const checkGoogleIntegration = async () => {
+      const googleInt = integrations.find(i => i.provider === 'google');
+      if (googleInt) {
+        // Check via edge function if token is valid
+        try {
+          const { data, error } = await supabase.functions.invoke('calendar-integration', {
+            body: { action: 'check_token_status' }
+          });
+          if (data?.needsReconnect) {
+            setNeedsReconnect(true);
+          } else {
+            setNeedsReconnect(false);
+          }
+        } catch {
+          // If check fails, don't show warning
+        }
+      }
+    };
+    checkGoogleIntegration();
+  }, [integrations]);
 
   useEffect(() => {
     if (availability) {
@@ -121,7 +145,7 @@ export const CalendarIntegrationManager: React.FC = () => {
       {/* Integration Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Google Calendar */}
-        <Card className={`border-2 ${googleIntegration ? 'border-green-500 bg-green-50 dark:bg-green-950/20' : 'border-muted'}`}>
+        <Card className={`border-2 ${googleIntegration ? (needsReconnect ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/20' : 'border-green-500 bg-green-50 dark:bg-green-950/20') : 'border-muted'}`}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -131,13 +155,25 @@ export const CalendarIntegrationManager: React.FC = () => {
                 Google Calendar
               </CardTitle>
               {googleIntegration && (
-                <Badge variant="default" className="bg-green-600">Connected</Badge>
+                needsReconnect ? (
+                  <Badge variant="outline" className="border-amber-500 text-amber-600">Needs Reconnect</Badge>
+                ) : (
+                  <Badge variant="default" className="bg-green-600">Connected</Badge>
+                )
               )}
             </div>
           </CardHeader>
           <CardContent>
             {googleIntegration ? (
               <div className="space-y-3">
+                {needsReconnect && (
+                  <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg border border-amber-300 text-sm">
+                    <p className="font-medium text-amber-800 dark:text-amber-200">⚠️ Reconnection Required</p>
+                    <p className="text-amber-700 dark:text-amber-300 text-xs mt-1">
+                      Please reconnect to enable automatic appointment syncing.
+                    </p>
+                  </div>
+                )}
                 <p className="text-sm text-muted-foreground">
                   {googleIntegration.provider_account_email || googleIntegration.calendar_name || 'Connected'}
                 </p>

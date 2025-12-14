@@ -51,6 +51,52 @@ serve(async (req) => {
     console.log(`Calendar integration action: ${action}`);
 
     switch (action) {
+      case 'check_token_status': {
+        if (!userId) {
+          return new Response(
+            JSON.stringify({ error: 'Authentication required' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const { data: integration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (!integration) {
+          return new Response(
+            JSON.stringify({ connected: false, needsReconnect: false }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check if we have a refresh token
+        const hasRefreshToken = !!integration.refresh_token_encrypted;
+        
+        // Check if token is expired
+        const isExpired = integration.token_expires_at 
+          ? new Date(integration.token_expires_at) < new Date() 
+          : true;
+
+        // Needs reconnect if: no refresh token, or token is expired and no way to refresh
+        const needsReconnect = !hasRefreshToken && isExpired;
+
+        console.log(`[Calendar] Token status check - hasRefreshToken: ${hasRefreshToken}, isExpired: ${isExpired}, needsReconnect: ${needsReconnect}`);
+
+        return new Response(
+          JSON.stringify({ 
+            connected: true, 
+            needsReconnect,
+            hasRefreshToken,
+            isExpired 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'get_google_auth_url': {
         const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
         const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI') || 
@@ -290,53 +336,73 @@ serve(async (req) => {
           .eq('user_id', appointment.user_id)
           .eq('sync_enabled', true);
 
+        console.log('[Calendar] Found integrations:', integrations?.length || 0);
+
         for (const integration of integrations || []) {
           if (integration.provider === 'google' && integration.access_token_encrypted) {
             try {
               let accessToken = atob(integration.access_token_encrypted);
               
-              // Check if token is expired and refresh if needed
-              if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
-                console.log('[Calendar] Token expired, attempting refresh...');
+              // Helper function to refresh token
+              const refreshGoogleToken = async (): Promise<string | null> => {
+                if (!integration.refresh_token_encrypted) {
+                  console.error('[Calendar] No refresh token available - user must reconnect');
+                  return null;
+                }
                 
-                if (integration.refresh_token_encrypted) {
-                  const refreshToken = atob(integration.refresh_token_encrypted);
-                  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-                  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-                  
-                  const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                      client_id: clientId!,
-                      client_secret: clientSecret!,
-                      refresh_token: refreshToken,
-                      grant_type: 'refresh_token'
-                    })
-                  });
-                  
-                  if (refreshResponse.ok) {
-                    const tokens = await refreshResponse.json();
-                    accessToken = tokens.access_token;
-                    
-                    // Update stored token
-                    await supabase
-                      .from('calendar_integrations')
-                      .update({
-                        access_token_encrypted: btoa(tokens.access_token),
-                        token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-                      })
-                      .eq('id', integration.id);
-                      
-                    console.log('[Calendar] Token refreshed successfully');
-                  } else {
-                    console.error('[Calendar] Token refresh failed');
-                    results.google = { success: false, error: 'Token refresh failed' };
-                    continue;
-                  }
+                const refreshToken = atob(integration.refresh_token_encrypted);
+                const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+                const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+                
+                console.log('[Calendar] Refreshing Google token...');
+                
+                const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: new URLSearchParams({
+                    client_id: clientId!,
+                    client_secret: clientSecret!,
+                    refresh_token: refreshToken,
+                    grant_type: 'refresh_token'
+                  })
+                });
+                
+                if (!refreshResponse.ok) {
+                  const errText = await refreshResponse.text();
+                  console.error('[Calendar] Token refresh failed:', errText);
+                  return null;
+                }
+                
+                const tokens = await refreshResponse.json();
+                
+                // Update stored token
+                await supabase
+                  .from('calendar_integrations')
+                  .update({
+                    access_token_encrypted: btoa(tokens.access_token),
+                    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+                  })
+                  .eq('id', integration.id);
+                
+                console.log('[Calendar] Token refreshed successfully');
+                return tokens.access_token;
+              };
+              
+              // Proactively refresh if token expires within 5 minutes
+              const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
+              const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
+              
+              if (expiresAt && expiresAt < fiveMinutesFromNow) {
+                console.log('[Calendar] Token expiring soon or expired, refreshing...');
+                const newToken = await refreshGoogleToken();
+                if (newToken) {
+                  accessToken = newToken;
                 } else {
-                  console.error('[Calendar] No refresh token available');
-                  results.google = { success: false, error: 'Token expired and no refresh token' };
+                  results.google = { 
+                    success: false, 
+                    error: 'Token expired and refresh failed. Please reconnect Google Calendar.',
+                    needsReconnect: true
+                  };
                   continue;
                 }
               }
@@ -357,7 +423,7 @@ serve(async (req) => {
 
               console.log('[Calendar] Creating Google Calendar event:', JSON.stringify(event));
 
-              const response = await fetch(
+              let response = await fetch(
                 `https://www.googleapis.com/calendar/v3/calendars/${integration.calendar_id || 'primary'}/events`,
                 {
                   method: 'POST',
@@ -368,6 +434,25 @@ serve(async (req) => {
                   body: JSON.stringify(event)
                 }
               );
+
+              // If we get 401, try refreshing the token and retry once
+              if (response.status === 401) {
+                console.log('[Calendar] Got 401, attempting token refresh and retry...');
+                const newToken = await refreshGoogleToken();
+                if (newToken) {
+                  response = await fetch(
+                    `https://www.googleapis.com/calendar/v3/calendars/${integration.calendar_id || 'primary'}/events`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${newToken}`,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(event)
+                    }
+                  );
+                }
+              }
 
               if (response.ok) {
                 const googleEvent = await response.json();
@@ -382,7 +467,17 @@ serve(async (req) => {
               } else {
                 const errorText = await response.text();
                 console.error('[Calendar] Google API error:', response.status, errorText);
-                results.google = { success: false, error: `API error: ${response.status}` };
+                
+                // Check if it's an auth error that requires reconnection
+                if (response.status === 401 || response.status === 403) {
+                  results.google = { 
+                    success: false, 
+                    error: 'Authentication failed. Please reconnect Google Calendar.',
+                    needsReconnect: true
+                  };
+                } else {
+                  results.google = { success: false, error: `API error: ${response.status}` };
+                }
               }
             } catch (error) {
               console.error('Google sync error:', error);
@@ -391,9 +486,17 @@ serve(async (req) => {
           }
 
           if (integration.provider === 'ghl') {
-            // GHL calendar sync would go here
             results.ghl = { success: true, message: 'GHL sync pending' };
           }
+        }
+
+        // If no Google integration found
+        if (!results.google && integrations?.length === 0) {
+          results.google = { 
+            success: false, 
+            error: 'No calendar integration found. Please connect Google Calendar.',
+            needsReconnect: true
+          };
         }
 
         return new Response(
