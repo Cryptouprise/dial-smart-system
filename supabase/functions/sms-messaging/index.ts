@@ -24,6 +24,8 @@ interface SmsRequest {
   conversation_id?: string;
   limit?: number;
   phoneNumber?: string; // For single number webhook config
+  skip_db_insert?: boolean; // Skip DB insert if message already stored (e.g., from twilio-sms-webhook)
+  existing_message_id?: string; // ID of already-stored message to update
 }
 
 serve(async (req) => {
@@ -138,27 +140,38 @@ serve(async (req) => {
 
         console.log('[SMS Messaging] Phone number verified:', twilioNumber.sid);
 
-        // Create SMS record first
-        const { data: smsRecord, error: insertError } = await supabaseAdmin
-          .from('sms_messages')
-          .insert({
-            user_id: userId,
-            to_number: cleanTo,
-            from_number: cleanFrom,
-            body: request.body,
-            direction: 'outbound',
-            status: 'pending',
-            lead_id: request.lead_id || null,
-            conversation_id: request.conversation_id || null,
-            provider_type: 'twilio',
-            metadata: {},
-          })
-          .select()
-          .maybeSingle();
+        // Check if we should skip DB insert (message already stored by caller like twilio-sms-webhook)
+        let smsRecordId: string | null = null;
+        
+        if (request.skip_db_insert && request.existing_message_id) {
+          // Message already exists, just use the provided ID
+          smsRecordId = request.existing_message_id;
+          console.log('[SMS Messaging] Skipping DB insert, using existing message:', smsRecordId);
+        } else {
+          // Create SMS record first
+          const { data: smsRecord, error: insertError } = await supabaseAdmin
+            .from('sms_messages')
+            .insert({
+              user_id: userId,
+              to_number: cleanTo,
+              from_number: cleanFrom,
+              body: request.body,
+              direction: 'outbound',
+              status: 'pending',
+              lead_id: request.lead_id || null,
+              conversation_id: request.conversation_id || null,
+              provider_type: 'twilio',
+              metadata: {},
+            })
+            .select()
+            .maybeSingle();
 
-        if (insertError) {
-          console.error('[SMS Messaging] Database insert error:', insertError);
-          throw new Error('Failed to create SMS record');
+          if (insertError) {
+            console.error('[SMS Messaging] Database insert error:', insertError);
+            throw new Error('Failed to create SMS record');
+          }
+          
+          smsRecordId = smsRecord?.id;
         }
 
         // Send via Twilio
@@ -185,13 +198,15 @@ serve(async (req) => {
             console.error('[SMS Messaging] Twilio error:', twilioData);
             
             // Update SMS record with error
-            await supabaseAdmin
-              .from('sms_messages')
-              .update({ 
-                status: 'failed',
-                error_message: twilioData.message || 'Twilio API error',
-              })
-              .eq('id', smsRecord.id);
+            if (smsRecordId) {
+              await supabaseAdmin
+                .from('sms_messages')
+                .update({ 
+                  status: 'failed',
+                  error_message: twilioData.message || 'Twilio API error',
+                })
+                .eq('id', smsRecordId);
+            }
 
             throw new Error(twilioData.message || 'Failed to send SMS via Twilio');
           }
@@ -199,14 +214,16 @@ serve(async (req) => {
           console.log('[SMS Messaging] Twilio response:', twilioData.sid);
 
           // Update SMS record with success
-          await supabaseAdmin
-            .from('sms_messages')
-            .update({ 
-              status: 'sent',
-              provider_message_id: twilioData.sid,
-              sent_at: new Date().toISOString(),
-            })
-            .eq('id', smsRecord.id);
+          if (smsRecordId) {
+            await supabaseAdmin
+              .from('sms_messages')
+              .update({ 
+                status: 'sent',
+                provider_message_id: twilioData.sid,
+                sent_at: new Date().toISOString(),
+              })
+              .eq('id', smsRecordId);
+          }
 
           // Update conversation last_message_at if conversation_id provided
           if (request.conversation_id) {
@@ -218,7 +235,7 @@ serve(async (req) => {
 
           result = { 
             success: true, 
-            message_id: smsRecord.id,
+            message_id: smsRecordId,
             provider_message_id: twilioData.sid,
           };
         } catch (twilioError) {
