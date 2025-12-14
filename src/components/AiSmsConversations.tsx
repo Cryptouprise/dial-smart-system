@@ -274,7 +274,7 @@ const AiSmsConversations: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
 
-  // Real-time subscription for new messages with auto-response
+  // Real-time subscription for new messages and updates
   useEffect(() => {
     const channel = supabase
       .channel('sms-messages-realtime')
@@ -301,13 +301,31 @@ const AiSmsConversations: React.FC = () => {
             if (selectedConversation && newMessage?.conversation_id === selectedConversation.id) {
               await loadMessages(selectedConversation.id);
             }
-            
-            // NOTE: Auto-response is handled by the twilio-sms-webhook edge function
-            // The webhook has better double-texting prevention and context awareness
-            // Frontend real-time subscription only handles UI updates, not auto-responses
-            // This prevents duplicate messages from being sent when both webhook and frontend trigger
           } catch (error) {
             console.error('[AiSmsConversations] Error handling new message:', error);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sms_messages',
+        },
+        async (payload) => {
+          try {
+            console.log('[AiSmsConversations] Message updated:', payload);
+            const updatedMessage = payload.new as {
+              conversation_id?: string;
+            };
+            
+            // If this message is for the selected conversation, reload messages
+            if (selectedConversation && updatedMessage?.conversation_id === selectedConversation.id) {
+              await loadMessages(selectedConversation.id);
+            }
+          } catch (error) {
+            console.error('[AiSmsConversations] Error handling message update:', error);
           }
         }
       )
