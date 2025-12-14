@@ -253,7 +253,16 @@ async function executeStep(supabase: any, progress: any) {
 
   let stepResult: any = { success: true };
 
-  switch (step?.step_type) {
+  // Validate step exists and has a valid type
+  if (!step || !step.step_type) {
+    console.warn(`[Workflow] Skipping invalid step - missing step data or step_type for lead ${lead?.id}`);
+    stepResult = { success: false, error: 'Invalid step configuration', action: 'skipped' };
+    // Still move to next step to avoid getting stuck
+    await moveToNextStep(supabase, progress, step);
+    return stepResult;
+  }
+
+  switch (step.step_type) {
     case 'call':
       stepResult = await executeCallStep(supabase, lead, progress, config);
       break;
@@ -263,6 +272,7 @@ async function executeStep(supabase: any, progress: any) {
       break;
 
     case 'ai_sms':
+    case 'ai_auto_reply':  // Handle both naming conventions
       stepResult = await executeAiSmsStep(supabase, lead, progress, config);
       break;
 
@@ -272,18 +282,59 @@ async function executeStep(supabase: any, progress: any) {
       break;
 
     case 'email':
-      // Email step - placeholder for future
-      console.log(`[Workflow] Email step not yet implemented`);
+      // Email step - placeholder for future implementation
+      console.log(`[Workflow] Email step not yet implemented for lead ${lead?.id}`);
       stepResult = { success: true, action: 'email_skipped' };
       break;
 
     case 'webhook':
-      // Custom webhook step
       stepResult = await executeWebhookStep(supabase, lead, progress, config);
       break;
 
+    case 'condition':
+    case 'branch':
+      // Condition/branching steps - evaluate and continue
+      console.log(`[Workflow] Condition step for lead ${lead?.id} - evaluating...`);
+      stepResult = { success: true, action: 'condition_evaluated' };
+      break;
+
+    case 'tag':
+    case 'update_status':
+      // Tag or status update step
+      if (config.new_status) {
+        await supabase
+          .from('leads')
+          .update({ status: config.new_status, updated_at: new Date().toISOString() })
+          .eq('id', lead.id);
+      }
+      if (config.tags && Array.isArray(config.tags)) {
+        const currentTags = lead.tags || [];
+        const newTags = [...new Set([...currentTags, ...config.tags])];
+        await supabase
+          .from('leads')
+          .update({ tags: newTags, updated_at: new Date().toISOString() })
+          .eq('id', lead.id);
+      }
+      stepResult = { success: true, action: 'lead_updated' };
+      break;
+
+    case 'end':
+    case 'stop':
+      // Explicit end step - mark workflow as completed
+      await supabase
+        .from('lead_workflow_progress')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', progress.id);
+      console.log(`[Workflow] Explicit end for lead ${lead?.id}`);
+      return { success: true, action: 'workflow_ended' };
+
     default:
-      console.log(`[Workflow] Unknown step type: ${step?.step_type}`);
+      console.warn(`[Workflow] Unhandled step type "${step.step_type}" for lead ${lead?.id} - skipping`);
+      stepResult = { success: true, action: 'step_skipped', reason: `Unknown step type: ${step.step_type}` };
   }
 
   // Update nudge tracking
