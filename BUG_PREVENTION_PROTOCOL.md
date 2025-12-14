@@ -280,7 +280,45 @@ if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') && request.user_id) {
 
 ---
 
-## Final Verification (Round 15 - Workflow & Service Auth)
+## 🚨 RULE #7: Call Status Monitoring Must Handle Timeouts & No-Answers
+
+Retell API may return 404 for calls that have ended and been cleaned up. Always fall back to database.
+
+### ❌ WRONG - Throws error and hangs on 404
+```typescript
+const response = await fetch(`${baseUrl}/call/${callId}`);
+if (!response.ok) throw new Error('API error');
+```
+
+### ✅ CORRECT - Falls back to database and detects no-answer
+```typescript
+const response = await fetch(`${baseUrl}/get-call/${callId}`);  // Note: correct endpoint!
+if (!response.ok) {
+  // Fall back to database
+  const { data: dbCall } = await supabase
+    .from('call_logs')
+    .select('status, outcome, ended_at')
+    .eq('retell_call_id', callId)
+    .maybeSingle();
+  
+  if (dbCall?.ended_at || dbCall?.outcome) {
+    return { status: 'ended', outcome: dbCall.outcome };
+  }
+  return { status: 'ended', expired: true };
+}
+
+// Also detect no-answer from prolonged ringing
+if (status === 'ringing') {
+  ringCount++;
+  if (ringCount >= 6) { // 30 seconds
+    return { status: 'no-answer' };
+  }
+}
+```
+
+---
+
+## Final Verification (Round 16 - Call Monitoring & Timeouts)
 
 ✅ **ZERO `.single()` calls remain in the codebase**
 ✅ **ZERO unsafe `Authorization!` patterns remain**
@@ -292,6 +330,9 @@ if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') && request.user_id) {
 ✅ **ZERO addEventListener without matching removeEventListener**
 ✅ **ALL edge functions support both JWT and service role auth where needed**
 ✅ **ALL workflow step types have explicit handlers or graceful fallbacks**
+✅ **ALL call status monitoring falls back to database on API failure**
+✅ **ALL call monitoring detects no-answer after ringing timeout**
+✅ **Correct Retell API endpoint used: `/v2/get-call/{id}` not `/v2/call/{id}`**
 
 All database queries and edge functions now use safe patterns that handle:
 - Empty result sets (no 406 errors)
@@ -306,3 +347,5 @@ All database queries and edge functions now use safe patterns that handle:
 - Prevention of state updates after unmount
 - Service-to-service authentication with explicit user_id
 - Unknown/undefined workflow step types
+- Call status API failures with database fallback
+- No-answer detection from prolonged ringing

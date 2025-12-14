@@ -234,17 +234,48 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
+        // Try Retell API first - use correct endpoint
+        response = await fetch(`${baseUrl}/get-call/${retellCallId}`, {
           method: 'GET',
           headers: retellHeaders,
         });
 
         if (!response.ok) {
-          const errorData = await response.text();
-          throw new Error(`Retell AI API error: ${response.status} - ${errorData}`);
+          // If Retell API fails (404 = call expired), check our database for status
+          console.log('[Outbound Calling] Retell API returned error, checking database...');
+          
+          const { data: dbCallLog } = await supabaseAdmin
+            .from('call_logs')
+            .select('status, outcome, duration_seconds, ended_at')
+            .eq('retell_call_id', retellCallId)
+            .maybeSingle();
+          
+          if (dbCallLog) {
+            // Return status from database
+            const isEnded = dbCallLog.status === 'completed' || dbCallLog.status === 'failed' || 
+                           dbCallLog.ended_at || dbCallLog.outcome;
+            result = {
+              call_status: dbCallLog.status || (isEnded ? 'ended' : 'unknown'),
+              status: dbCallLog.status || (isEnded ? 'ended' : 'unknown'),
+              outcome: dbCallLog.outcome,
+              duration_seconds: dbCallLog.duration_seconds,
+              from_database: true,
+            };
+            console.log('[Outbound Calling] Returning status from database:', result);
+          } else {
+            // No database record found, assume call ended/expired
+            result = {
+              call_status: 'ended',
+              status: 'ended',
+              outcome: 'unknown',
+              from_database: true,
+              expired: true,
+            };
+            console.log('[Outbound Calling] Call not found in database, assuming ended');
+          }
+        } else {
+          result = await response.json();
         }
-
-        result = await response.json();
         break;
 
       case 'end_call':

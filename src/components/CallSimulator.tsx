@@ -296,32 +296,110 @@ export const CallSimulator: React.FC = () => {
       updateStep('monitor', { status: 'running', startedAt: Date.now() });
       
       let callCompleted = false;
+      let finalStatus = 'unknown';
       let pollAttempts = 0;
-      const maxPollAttempts = 60;
+      const maxPollAttempts = 24; // 2 minutes max (24 * 5 seconds)
+      const noAnswerTimeout = 6; // After 30 seconds of ringing, assume no answer
+      let ringCount = 0;
       
       while (!callCompleted && pollAttempts < maxPollAttempts) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         pollAttempts++;
         
         try {
-          const { data: statusData } = await supabase.functions.invoke('outbound-calling', {
+          const { data: statusData, error: statusError } = await supabase.functions.invoke('outbound-calling', {
             body: { action: 'get_call_status', retellCallId }
           });
           
-          const status = statusData?.status || statusData?.call_status;
-          updateStep('monitor', { message: `Call status: ${status} (${pollAttempts * 5}s elapsed)` });
-          
-          if (['ended', 'completed', 'failed', 'busy', 'no-answer'].includes(status?.toLowerCase())) {
-            callCompleted = true;
+          if (statusError) {
+            // API error - check if we got database fallback
+            console.log('Status check error, may use database fallback');
           }
+          
+          const status = statusData?.status || statusData?.call_status || 'unknown';
+          const outcome = statusData?.outcome;
+          const fromDatabase = statusData?.from_database;
+          
+          updateStep('monitor', { 
+            message: `Call status: ${status}${outcome ? ` (${outcome})` : ''} (${pollAttempts * 5}s elapsed)${fromDatabase ? ' [from db]' : ''}` 
+          });
+          
+          // Track ringing time
+          if (status === 'ringing' || status === 'queued') {
+            ringCount++;
+            if (ringCount >= noAnswerTimeout) {
+              // Ringing for too long - likely no answer
+              finalStatus = 'no-answer';
+              callCompleted = true;
+            }
+          } else {
+            ringCount = 0; // Reset if status changes
+          }
+          
+          // Check for terminal statuses
+          const terminalStatuses = ['ended', 'completed', 'failed', 'busy', 'no-answer', 'no_answer', 'error', 'voicemail'];
+          if (terminalStatuses.includes(status?.toLowerCase())) {
+            callCompleted = true;
+            finalStatus = status;
+          }
+          
+          // If we have an outcome, call is definitely done
+          if (outcome && outcome !== 'unknown') {
+            callCompleted = true;
+            finalStatus = outcome;
+          }
+          
+          // If database says it's expired, call is done
+          if (statusData?.expired) {
+            callCompleted = true;
+            finalStatus = 'expired';
+          }
+          
         } catch (e) {
-          callCompleted = true;
+          console.error('Status check exception:', e);
+          // On exception, check database directly as fallback
+          try {
+            const { data: callLog } = await supabase
+              .from('call_logs')
+              .select('status, outcome, ended_at')
+              .eq('retell_call_id', retellCallId)
+              .maybeSingle();
+            
+            if (callLog?.ended_at || callLog?.outcome) {
+              callCompleted = true;
+              finalStatus = callLog.outcome || callLog.status || 'ended';
+            }
+          } catch (dbError) {
+            // If even database check fails, mark as completed to avoid infinite loop
+            callCompleted = true;
+            finalStatus = 'error';
+          }
         }
       }
 
+      // Final status determination
+      if (!callCompleted) {
+        finalStatus = 'timeout';
+      }
+
+      const statusMessage = {
+        'ended': 'Call completed',
+        'completed': 'Call completed',
+        'no-answer': 'No answer - call went unanswered',
+        'no_answer': 'No answer - call went unanswered',
+        'busy': 'Line busy',
+        'failed': 'Call failed to connect',
+        'error': 'Error during call',
+        'voicemail': 'Reached voicemail',
+        'expired': 'Call ended (expired from tracking)',
+        'timeout': 'Call monitoring timed out',
+      }[finalStatus] || `Call ended: ${finalStatus}`;
+
       updateStep('monitor', { 
-        status: callCompleted ? 'success' : 'warning', 
-        message: callCompleted ? 'Call completed' : 'Call monitoring timed out',
+        status: ['ended', 'completed', 'voicemail'].includes(finalStatus) ? 'success' : 
+                ['no-answer', 'no_answer', 'busy', 'timeout', 'expired'].includes(finalStatus) ? 'warning' : 'failed', 
+        message: statusMessage,
+        details: `Final status: ${finalStatus}`,
         completedAt: Date.now() 
       });
 
