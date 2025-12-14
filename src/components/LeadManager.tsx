@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
 import LeadActivityTimeline from './LeadActivityTimeline';
+import { LeadDetailDialog } from './LeadDetailDialog';
 interface LeadManagerProps {
   onStatsUpdate: (count: number) => void;
 }
@@ -30,6 +31,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const [importText, setImportText] = useState('');
   const [filters, setFilters] = useState({ status: 'all', search: '' });
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  const [detailLead, setDetailLead] = useState<any | null>(null);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -627,7 +629,16 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                         <Button 
                           size="sm" 
                           variant="outline"
+                          onClick={() => setDetailLead(lead)}
+                          aria-label="View lead details"
+                        >
+                          <User className="h-3 w-3" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
                           onClick={() => startEdit(lead)}
+                          aria-label="Edit lead"
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
@@ -646,6 +657,17 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
           )}
         </CardContent>
       </Card>
+
+      <LeadDetailDialog
+        lead={detailLead}
+        open={!!detailLead}
+        onOpenChange={(open) => {
+          if (!open) setDetailLead(null);
+        }}
+        onLeadUpdated={() => {
+          loadLeads();
+        }}
+      />
     </div>
   );
 };
