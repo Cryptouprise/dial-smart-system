@@ -139,6 +139,7 @@ export const useCalendarIntegration = () => {
     startDate?: string; 
     endDate?: string;
     status?: string;
+    includeAll?: boolean;
   }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -152,6 +153,12 @@ export const useCalendarIntegration = () => {
         `)
         .eq('user_id', user.id)
         .order('start_time', { ascending: true });
+
+      // By default, only show future appointments unless includeAll is true
+      if (!filters?.includeAll) {
+        const now = new Date().toISOString();
+        query = query.gte('start_time', now);
+      }
 
       if (filters?.startDate) {
         query = query.gte('start_time', filters.startDate);

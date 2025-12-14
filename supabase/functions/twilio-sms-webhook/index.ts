@@ -748,13 +748,14 @@ ${processedKnowledge}`;
               .eq('user_id', userId)
               .maybeSingle();
 
-            // Fetch upcoming appointments
+            // Fetch upcoming appointments (exclude cancelled)
             const now = new Date().toISOString();
             const { data: appointments } = await supabaseAdmin
               .from('calendar_appointments')
               .select('*')
               .eq('user_id', userId)
               .gte('start_time', now)
+              .neq('status', 'cancelled')
               .order('start_time', { ascending: true })
               .limit(10);
 
