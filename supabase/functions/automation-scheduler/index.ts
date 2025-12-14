@@ -204,6 +204,29 @@ serve(async (req) => {
       console.error('[Scheduler] Failed to call workflow-executor:', workflowError.message);
     }
 
+    // SECOND: Run nudge scheduler for follow-ups with unresponsive leads
+    console.log('[Scheduler] Running nudge scheduler for unresponsive leads...');
+    let nudgeResults = { nudges_sent: 0 };
+    try {
+      const nudgeResponse = await fetch(`${supabaseUrl}/functions/v1/nudge-scheduler`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      
+      if (nudgeResponse.ok) {
+        nudgeResults = await nudgeResponse.json();
+        console.log(`[Scheduler] Nudge scheduler sent ${nudgeResults.nudges_sent || 0} follow-ups`);
+      } else {
+        console.error('[Scheduler] Nudge scheduler error:', nudgeResponse.status, await nudgeResponse.text());
+      }
+    } catch (nudgeError: any) {
+      console.error('[Scheduler] Failed to call nudge-scheduler:', nudgeError.message);
+    }
+
     // THEN: Fetch all enabled automation rules
     const { data: rules, error: rulesError } = await supabase
       .from('campaign_automation_rules')
@@ -244,6 +267,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
       workflow_steps_processed: workflowResults.processed || 0,
+      nudges_sent: nudgeResults.nudges_sent || 0,
       rules_processed: rules.length,
       leads_queued: totalProcessed,
       results
