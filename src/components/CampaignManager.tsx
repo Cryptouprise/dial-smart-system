@@ -1129,44 +1129,77 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                               )}
                             </div>
                           </div>
-
-                          {/* Call Outcome Section */}
-                          {currentCall && (
-                            <div className="mt-3 pt-3 border-t space-y-2">
-                              <Select value={callOutcome} onValueChange={setCallOutcome}>
-                                <SelectTrigger className="h-8">
-                                  <SelectValue placeholder="Select outcome" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="interested">Interested</SelectItem>
-                                  <SelectItem value="not_interested">Not Interested</SelectItem>
-                                  <SelectItem value="callback">Callback</SelectItem>
-                                  <SelectItem value="converted">Converted</SelectItem>
-                                  <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <Textarea
-                                value={callNotes}
-                                onChange={(e) => setCallNotes(e.target.value)}
-                                placeholder="Add notes..."
-                                rows={2}
-                                className="text-sm"
-                              />
-                              <Button 
-                                onClick={handleCallOutcome}
-                                disabled={!callOutcome || isLoading}
-                                size="sm"
-                                className="w-full"
-                              >
-                                Save & Next Lead
-                              </Button>
-                            </div>
-                          )}
                         </div>
                       ) : (
-                        <p className="text-center text-muted-foreground py-4">
-                          No leads available for this campaign
-                        </p>
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="space-y-2">
+                              <h4 className="font-medium text-amber-800 dark:text-amber-200">
+                                No Leads Ready for Dialing
+                              </h4>
+                              <p className="text-sm text-amber-700 dark:text-amber-300">
+                                Possible reasons:
+                              </p>
+                              <ul className="text-sm text-amber-600 dark:text-amber-400 list-disc list-inside space-y-1">
+                                <li>All leads have been contacted (status is not "new")</li>
+                                <li>Leads are on the Do Not Call list</li>
+                                <li>Current time is outside campaign calling hours ({campaign.calling_hours_start} - {campaign.calling_hours_end} {campaign.timezone})</li>
+                                <li>No leads are assigned to this campaign</li>
+                              </ul>
+                              <div className="pt-2 flex gap-2">
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => setExpandedCampaignId(campaign.id)}
+                                >
+                                  <Users className="h-4 w-4 mr-1" />
+                                  Manage Leads
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => loadCampaignLeadsForDialing(campaign.id)}
+                                >
+                                  Refresh Leads
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Call Outcome Section - only show when there's a call */}
+                      {currentLead && currentCall && (
+                        <div className="mt-3 pt-3 border-t space-y-2">
+                          <Select value={callOutcome} onValueChange={setCallOutcome}>
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder="Select outcome" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="interested">Interested</SelectItem>
+                              <SelectItem value="not_interested">Not Interested</SelectItem>
+                              <SelectItem value="callback">Callback</SelectItem>
+                              <SelectItem value="converted">Converted</SelectItem>
+                              <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Textarea
+                            value={callNotes}
+                            onChange={(e) => setCallNotes(e.target.value)}
+                            placeholder="Add notes..."
+                            rows={2}
+                            className="text-sm"
+                          />
+                          <Button 
+                            onClick={handleCallOutcome}
+                            disabled={!callOutcome || isLoading}
+                            size="sm"
+                            className="w-full"
+                          >
+                            Save & Next Lead
+                          </Button>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
