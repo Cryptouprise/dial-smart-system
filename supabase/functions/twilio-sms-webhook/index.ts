@@ -626,19 +626,17 @@ ${processedKnowledge}`;
             });
           }
 
-          console.log('[Twilio SMS Webhook] Sending request to Lovable AI');
+          console.log('[Twilio SMS Webhook] Sending request to Lovable AI Gateway');
           
-          const aiResponse = await fetch('https://api.lovable.dev/v1/chat/completions', {
+          const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${lovableApiKey}`,
             },
             body: JSON.stringify({
-              model: 'gpt-4o',
+              model: 'google/gemini-2.5-flash',
               messages: aiMessages,
-              max_tokens: 500,
-              temperature: 0.7,
             }),
           });
 
