@@ -46,6 +46,7 @@ export interface WorkflowAutoReplySettings {
   stop_on_human_reply: boolean;
   calendar_enabled: boolean;
   booking_link: string;
+  knowledge_base?: string;
 }
 
 export interface CampaignWorkflow {

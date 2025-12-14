@@ -1076,6 +1076,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                               stop_on_human_reply: newWorkflow.auto_reply_settings?.stop_on_human_reply ?? true,
                               calendar_enabled: newWorkflow.auto_reply_settings?.calendar_enabled || false,
                               booking_link: newWorkflow.auto_reply_settings?.booking_link || '',
+                              knowledge_base: newWorkflow.auto_reply_settings?.knowledge_base || '',
                             }
                           })}
                         />
@@ -1083,16 +1084,91 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ onWorkflowCrea
                       {newWorkflow.auto_reply_settings?.enabled && (
                         <div className="space-y-4 pt-4 border-t">
                           <div className="space-y-2">
-                            <Label>AI Instructions</Label>
+                            <Label>AI Instructions / Personality</Label>
                             <Textarea
                               value={newWorkflow.auto_reply_settings?.ai_instructions || ''}
                               onChange={(e) => setNewWorkflow({
                                 ...newWorkflow,
                                 auto_reply_settings: { ...newWorkflow.auto_reply_settings!, ai_instructions: e.target.value }
                               })}
-                              placeholder="Custom AI personality for this workflow..."
+                              placeholder="E.g., You are a friendly sales rep for ABC Solar. Be helpful but concise. Always try to book appointments..."
                               rows={4}
                             />
+                            <p className="text-xs text-muted-foreground">Define how the AI should respond to leads in this workflow</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Knowledge Base / FAQ</Label>
+                            <Textarea
+                              value={newWorkflow.auto_reply_settings?.knowledge_base || ''}
+                              onChange={(e) => setNewWorkflow({
+                                ...newWorkflow,
+                                auto_reply_settings: { ...newWorkflow.auto_reply_settings!, knowledge_base: e.target.value }
+                              })}
+                              placeholder="E.g., Our pricing starts at $X. We offer free consultations. Service areas include..."
+                              rows={3}
+                            />
+                            <p className="text-xs text-muted-foreground">Add specific info the AI should know (pricing, services, FAQs)</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Response Delay (seconds)</Label>
+                              <Input
+                                type="number"
+                                value={newWorkflow.auto_reply_settings?.response_delay_seconds || 5}
+                                onChange={(e) => setNewWorkflow({
+                                  ...newWorkflow,
+                                  auto_reply_settings: { ...newWorkflow.auto_reply_settings!, response_delay_seconds: parseInt(e.target.value) || 5 }
+                                })}
+                                min={0}
+                                max={60}
+                              />
+                              <p className="text-xs text-muted-foreground">Wait before sending AI reply (more human-like)</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Stop on Human Reply</Label>
+                              <div className="flex items-center gap-2 pt-2">
+                                <Switch
+                                  checked={newWorkflow.auto_reply_settings?.stop_on_human_reply ?? true}
+                                  onCheckedChange={(v) => setNewWorkflow({
+                                    ...newWorkflow,
+                                    auto_reply_settings: { ...newWorkflow.auto_reply_settings!, stop_on_human_reply: v }
+                                  })}
+                                />
+                                <span className="text-sm text-muted-foreground">Pause AI when you reply manually</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="pt-4 border-t space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <Label>Enable Calendar Booking</Label>
+                                <p className="text-xs text-muted-foreground">AI can check availability and offer appointments</p>
+                              </div>
+                              <Switch
+                                checked={newWorkflow.auto_reply_settings?.calendar_enabled || false}
+                                onCheckedChange={(v) => setNewWorkflow({
+                                  ...newWorkflow,
+                                  auto_reply_settings: { ...newWorkflow.auto_reply_settings!, calendar_enabled: v }
+                                })}
+                              />
+                            </div>
+                            {newWorkflow.auto_reply_settings?.calendar_enabled && (
+                              <div className="space-y-2">
+                                <Label>Booking Link (optional)</Label>
+                                <Input
+                                  value={newWorkflow.auto_reply_settings?.booking_link || ''}
+                                  onChange={(e) => setNewWorkflow({
+                                    ...newWorkflow,
+                                    auto_reply_settings: { ...newWorkflow.auto_reply_settings!, booking_link: e.target.value }
+                                  })}
+                                  placeholder="https://calendly.com/yourname or your booking page"
+                                />
+                                <p className="text-xs text-muted-foreground">Share this link when lead wants to schedule</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
