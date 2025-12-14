@@ -681,13 +681,12 @@ ${processedKnowledge}`;
                       'Authorization': `Bearer ${serviceRoleKey}`,
                     },
                     body: JSON.stringify({
-                      action: 'send',
+                      action: 'send_sms',
                       to: From,
                       from: To,
                       body: aiReply,
-                      userId: userId,
-                      conversationId: conversationId,
-                      isAiGenerated: true,
+                      user_id: userId,
+                      conversation_id: conversationId,
                     }),
                   });
 
