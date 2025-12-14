@@ -124,9 +124,9 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
       const { data } = await supabase.functions.invoke('retell-agent-management', {
         body: { action: 'list' }
       });
-      if (data?.agents) {
-        setAgents(data.agents);
-      }
+      // Handle both array format and {agents: [...]} format
+      const agentArray = Array.isArray(data) ? data : (data?.agents || []);
+      setAgents(agentArray);
     } catch (error) {
       console.error('Failed to fetch agents:', error);
     }
