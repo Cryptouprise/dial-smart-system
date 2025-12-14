@@ -16,6 +16,7 @@ export interface WorkflowStep {
     ai_prompt?: string;
     // Call step config
     agent_id?: string;
+    max_attempts?: number;
     timing_mode?: 'immediate' | 'scheduled' | 'inherit';
     max_ring_seconds?: number;
     leave_voicemail?: boolean;

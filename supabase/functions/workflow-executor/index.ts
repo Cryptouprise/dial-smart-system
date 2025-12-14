@@ -365,6 +365,65 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
   console.log(`[Workflow] Initiating call to ${lead?.phone_number}`);
 
   try {
+    const maxAttempts = config.max_attempts || 1;
+    
+    // Check recent call history for this lead to avoid duplicate calls
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recentCalls } = await supabase
+      .from('call_logs')
+      .select('id, status, outcome, duration_seconds, created_at')
+      .eq('lead_id', lead.id)
+      .gte('created_at', fiveMinutesAgo)
+      .order('created_at', { ascending: false });
+
+    // Check if there's an active/recent call that hasn't completed
+    const pendingCall = recentCalls?.find((c: any) => 
+      c.status === 'ringing' || c.status === 'in-progress' || c.status === 'initiated'
+    );
+    
+    if (pendingCall) {
+      console.log(`[Workflow] Skipping - call already in progress for lead ${lead.id}`);
+      return { success: true, action: 'call_already_in_progress', callId: pendingCall.id };
+    }
+
+    // Check if lead was already successfully connected
+    const successfulCall = recentCalls?.find((c: any) => 
+      c.outcome === 'connected' || 
+      c.outcome === 'answered' || 
+      c.outcome === 'appointment_set' ||
+      c.outcome === 'callback_scheduled' ||
+      (c.status === 'completed' && c.duration_seconds > 30)
+    );
+
+    if (successfulCall) {
+      console.log(`[Workflow] Skipping - lead ${lead.id} already had successful call`);
+      return { success: true, action: 'already_connected', skipRemaining: true };
+    }
+
+    // Count failed attempts in this workflow run
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    
+    const { data: todaysCalls } = await supabase
+      .from('call_logs')
+      .select('id, outcome, status')
+      .eq('lead_id', lead.id)
+      .eq('campaign_id', progress.campaign_id)
+      .gte('created_at', todayStart.toISOString());
+
+    const failedAttempts = todaysCalls?.filter((c: any) => 
+      c.outcome === 'no_answer' || 
+      c.outcome === 'voicemail' || 
+      c.outcome === 'busy' ||
+      c.status === 'failed' ||
+      c.status === 'no-answer'
+    ).length || 0;
+
+    if (failedAttempts >= maxAttempts) {
+      console.log(`[Workflow] Max attempts (${maxAttempts}) reached for lead ${lead.id}, skipping call`);
+      return { success: true, action: 'max_attempts_reached', attempts: failedAttempts };
+    }
+
     // Get a caller ID from campaign phone pool (prefer stationary for follow-ups)
     const callerId = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true);
 
@@ -406,7 +465,7 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
     }
 
     console.log('[Workflow] Call initiated:', response.data);
-    return { success: true, callId: response.data?.retell_call_id, action: 'call_initiated' };
+    return { success: true, callId: response.data?.retell_call_id, action: 'call_initiated', attempt: failedAttempts + 1 };
 
   } catch (error: any) {
     console.error('[Workflow] Call step error:', error);
