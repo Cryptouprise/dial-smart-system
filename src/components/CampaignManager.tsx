@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -89,6 +89,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
   const [callOutcome, setCallOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
+  const [clearingHistory, setClearingHistory] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -507,6 +508,47 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     const currentIndex = campaignLeads.findIndex(l => l.id === currentLead?.id);
     const nextLead = campaignLeads[currentIndex + 1] || null;
     setCurrentLead(nextLead);
+  };
+
+  const clearWorkflowHistory = async (campaignId: string) => {
+    setClearingHistory(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Delete workflow progress for leads in this campaign
+      const { error: progressError } = await supabase
+        .from('lead_workflow_progress')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      if (progressError) throw progressError;
+
+      // Delete dialing queue entries for this campaign
+      const { error: queueError } = await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      if (queueError) throw queueError;
+
+      toast({
+        title: "History Cleared",
+        description: "Workflow history cleared. Leads can now be re-enrolled.",
+      });
+
+      // Refresh leads
+      await loadCampaignLeadsForDialing(campaignId);
+    } catch (error: any) {
+      console.error('Error clearing workflow history:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to clear history",
+        variant: "destructive"
+      });
+    } finally {
+      setClearingHistory(false);
+    }
   };
 
   const toggleAutoDispatch = () => {
@@ -1162,6 +1204,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                   onClick={() => loadCampaignLeadsForDialing(campaign.id)}
                                 >
                                   Refresh Leads
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => clearWorkflowHistory(campaign.id)}
+                                  disabled={clearingHistory}
+                                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                                >
+                                  <RotateCcw className="h-4 w-4 mr-1" />
+                                  {clearingHistory ? 'Clearing...' : 'Clear History'}
                                 </Button>
                               </div>
                             </div>
