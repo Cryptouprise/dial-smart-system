@@ -18,6 +18,7 @@ import { CampaignLeadManager } from './CampaignLeadManager';
 import { CampaignCallActivity } from './CampaignCallActivity';
 import { CampaignWizard } from './CampaignWizard';
 import { WorkflowPreview } from './WorkflowPreview';
+import { CampaignWorkflowEditor } from './CampaignWorkflowEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -105,6 +106,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
   const [smsAgentCampaign, setSmsAgentCampaign] = useState<Campaign | null>(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
     loadCampaigns();
@@ -1170,7 +1172,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </Card>
                 )}
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1192,6 +1194,19 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     <Activity className="h-4 w-4 mr-2" />
                     {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Activity
                   </Button>
+
+                  {/* Edit Workflow Button */}
+                  {campaign.workflow_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingWorkflowCampaign(campaign)}
+                      className="text-indigo-600 border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+                    >
+                      <Workflow className="h-4 w-4 mr-2" />
+                      Edit Workflow
+                    </Button>
+                  )}
 
                   <Button
                     variant="outline"
@@ -1273,6 +1288,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
           setShowWizard(false);
         }}
       />
+
+      {/* Workflow Editor */}
+      {editingWorkflowCampaign?.workflow_id && (
+        <CampaignWorkflowEditor
+          open={!!editingWorkflowCampaign}
+          onClose={() => setEditingWorkflowCampaign(null)}
+          workflowId={editingWorkflowCampaign.workflow_id}
+          campaignName={editingWorkflowCampaign.name}
+        />
+      )}
     </div>
   );
 };
