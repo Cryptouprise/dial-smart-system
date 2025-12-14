@@ -56,7 +56,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.sms-messaging]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ai-sms-processor]
 verify_jwt = true
