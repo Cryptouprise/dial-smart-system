@@ -302,11 +302,18 @@ serve(async (req) => {
             // Get the second step (SMS) which should fire after call
             const { data: allSteps } = await supabase
               .from('workflow_steps')
-              .select('id, step_number, step_type')
+              .select('id, step_number, step_type, step_config')
               .eq('workflow_id', campaign.workflow_id)
               .order('step_number', { ascending: true });
 
-            const targetStep = secondStep || firstStep;
+            if (!allSteps || allSteps.length === 0) {
+              console.warn(`[Dispatcher] No workflow steps found for workflow ${campaign.workflow_id}`);
+              continue;
+            }
+
+            const firstStepInWorkflow = allSteps.find((s: any) => s.id === firstStep.id) || allSteps[0];
+            const nextStep = allSteps.find((s: any) => s.step_number > firstStepInWorkflow.step_number) || firstStepInWorkflow;
+            const targetStep = nextStep;
             const nextActionAt = calculateNextActionTime(targetStep);
 
             const { error: progressError } = await supabase

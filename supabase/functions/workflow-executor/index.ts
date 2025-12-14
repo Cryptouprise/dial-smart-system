@@ -474,7 +474,10 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
 }
 
 async function executeSmsStep(supabase: any, lead: any, progress: any, config: any) {
-  console.log(`[Workflow] Sending SMS to ${lead?.phone_number}`);
+  const rawTemplate = config.sms_content || config.content || config.message || '';
+  const messageBody = replaceTemplateVariables(rawTemplate, lead);
+
+  console.log(`[Workflow] Sending SMS to ${lead?.phone_number} with template:`, rawTemplate);
 
   try {
     // Get sender number from campaign phone pool (prefer stationary)
@@ -484,9 +487,6 @@ async function executeSmsStep(supabase: any, lead: any, progress: any, config: a
       console.error('[Workflow] No SMS number available');
       return { success: false, error: 'No SMS number available' };
     }
-
-    // Replace template variables in message - check all possible field names
-    const messageBody = replaceTemplateVariables(config.sms_content || config.content || config.message || '', lead);
 
     // Call the sms-messaging function
     const response = await supabase.functions.invoke('sms-messaging', {
