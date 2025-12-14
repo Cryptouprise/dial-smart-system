@@ -1112,10 +1112,12 @@ ${processedKnowledge}`;
                 
                 if (functionName === 'reschedule_appointment') {
                   try {
+                    const now = new Date().toISOString();
+                    let existingAppt = null;
+                    
+                    // First try to find by lead_id
                     if (lead?.id) {
-                      // Find the most recent scheduled appointment
-                      const now = new Date().toISOString();
-                      const { data: existingAppt } = await supabaseAdmin
+                      const { data: apptByLead } = await supabaseAdmin
                         .from('calendar_appointments')
                         .select('*')
                         .eq('lead_id', lead.id)
@@ -1124,6 +1126,24 @@ ${processedKnowledge}`;
                         .order('start_time', { ascending: true })
                         .limit(1)
                         .maybeSingle();
+                      existingAppt = apptByLead;
+                    }
+                    
+                    // If not found by lead_id, try to find by phone number in notes
+                    if (!existingAppt) {
+                      const { data: apptByPhone } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('*')
+                        .eq('user_id', userId)
+                        .eq('status', 'scheduled')
+                        .gte('start_time', now)
+                        .ilike('notes', `%${From}%`)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      existingAppt = apptByPhone;
+                      console.log('[Twilio SMS Webhook] Searched reschedule by phone in notes, found:', existingAppt?.id);
+                    }
                       
                       if (existingAppt) {
                         const newDateStr = functionArgs.new_date;
@@ -1168,11 +1188,13 @@ ${processedKnowledge}`;
                         if (!updateError) {
                           console.log('[Twilio SMS Webhook] Appointment rescheduled:', existingAppt.id);
                           
-                          // Update lead's next callback
-                          await supabaseAdmin
-                            .from('leads')
-                            .update({ next_callback_at: newStartDateTime.toISOString() })
-                            .eq('id', lead.id);
+                          // Update lead's next callback if we have a lead
+                          if (lead?.id) {
+                            await supabaseAdmin
+                              .from('leads')
+                              .update({ next_callback_at: newStartDateTime.toISOString() })
+                              .eq('id', lead.id);
+                          }
                           
                           // Sync update to Google Calendar
                           if (existingAppt.google_event_id) {
@@ -1201,9 +1223,8 @@ ${processedKnowledge}`;
                           }
                         }
                       } else {
-                        console.log('[Twilio SMS Webhook] No appointment to reschedule');
+                        console.log('[Twilio SMS Webhook] No appointment to reschedule for:', From);
                       }
-                    }
                   } catch (rescheduleError) {
                     console.error('[Twilio SMS Webhook] Reschedule error:', rescheduleError);
                   }
@@ -1211,10 +1232,12 @@ ${processedKnowledge}`;
                 
                 if (functionName === 'cancel_appointment') {
                   try {
-                    // Find the most recent appointment for this lead
+                    const now = new Date().toISOString();
+                    let existingAppt = null;
+                    
+                    // First try to find by lead_id
                     if (lead?.id) {
-                      const now = new Date().toISOString();
-                      const { data: existingAppt } = await supabaseAdmin
+                      const { data: apptByLead } = await supabaseAdmin
                         .from('calendar_appointments')
                         .select('id, google_event_id, title, start_time')
                         .eq('lead_id', lead.id)
@@ -1223,81 +1246,66 @@ ${processedKnowledge}`;
                         .order('start_time', { ascending: true })
                         .limit(1)
                         .maybeSingle();
+                      existingAppt = apptByLead;
+                    }
+                    
+                    // If not found by lead_id, try to find by phone number in notes
+                    if (!existingAppt) {
+                      const { data: apptByPhone } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('id, google_event_id, title, start_time')
+                        .eq('user_id', userId)
+                        .eq('status', 'scheduled')
+                        .gte('start_time', now)
+                        .ilike('notes', `%${From}%`)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      existingAppt = apptByPhone;
+                      console.log('[Twilio SMS Webhook] Searched by phone in notes, found:', existingAppt?.id);
+                    }
+                    
+                    if (existingAppt) {
+                      await supabaseAdmin
+                        .from('calendar_appointments')
+                        .update({ 
+                          status: 'cancelled',
+                          notes: `Cancelled via SMS: ${functionArgs.reason || 'No reason provided'}`
+                        })
+                        .eq('id', existingAppt.id);
                       
-                      if (existingAppt) {
-                        await supabaseAdmin
-                          .from('calendar_appointments')
-                          .update({ 
-                            status: 'cancelled',
-                            notes: `Cancelled via SMS: ${functionArgs.reason || 'No reason provided'}`
-                          })
-                          .eq('id', existingAppt.id);
-                        
-                        console.log('[Twilio SMS Webhook] Appointment cancelled:', existingAppt.id);
-                        
-                        // Update lead status
+                      console.log('[Twilio SMS Webhook] Appointment cancelled:', existingAppt.id);
+                      
+                      // Update lead status if we have a lead
+                      if (lead?.id) {
                         await supabaseAdmin
                           .from('leads')
                           .update({ status: 'callback_requested', next_callback_at: null })
                           .eq('id', lead.id);
-                        
-                        // Delete from Google Calendar if synced
-                        if (existingAppt.google_event_id) {
-                          try {
-                            await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${serviceRoleKey}`,
-                              },
-                              body: JSON.stringify({
-                                action: 'delete_event',
-                                user_id: userId,
-                                event_id: existingAppt.google_event_id
-                              }),
-                            });
-                            console.log('[Twilio SMS Webhook] Google Calendar event deleted');
-                          } catch (syncError) {
-                            console.error('[Twilio SMS Webhook] Calendar delete error:', syncError);
-                          }
+                      }
+                      
+                      // Delete from Google Calendar if synced
+                      if (existingAppt.google_event_id) {
+                        try {
+                          await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${serviceRoleKey}`,
+                            },
+                            body: JSON.stringify({
+                              action: 'delete_event',
+                              user_id: userId,
+                              event_id: existingAppt.google_event_id
+                            }),
+                          });
+                          console.log('[Twilio SMS Webhook] Google Calendar event deleted');
+                        } catch (syncError) {
+                          console.error('[Twilio SMS Webhook] Calendar delete error:', syncError);
                         }
                       }
-                    }
-                  } catch (cancelError) {
-                    console.error('[Twilio SMS Webhook] Cancel error:', cancelError);
-                  }
-                }
-                
-                if (functionName === 'cancel_appointment') {
-                  try {
-                    // Find the most recent appointment for this lead
-                    if (lead?.id) {
-                      const { data: existingAppt } = await supabaseAdmin
-                        .from('calendar_appointments')
-                        .select('id, google_event_id')
-                        .eq('lead_id', lead.id)
-                        .eq('status', 'scheduled')
-                        .order('start_time', { ascending: true })
-                        .limit(1)
-                        .maybeSingle();
-                      
-                      if (existingAppt) {
-                        await supabaseAdmin
-                          .from('calendar_appointments')
-                          .update({ 
-                            status: 'cancelled',
-                            notes: `Cancelled via SMS: ${functionArgs.reason || 'No reason provided'}`
-                          })
-                          .eq('id', existingAppt.id);
-                        
-                        console.log('[Twilio SMS Webhook] Appointment cancelled:', existingAppt.id);
-                        
-                        // Update lead status
-                        await supabaseAdmin
-                          .from('leads')
-                          .update({ status: 'callback_requested' })
-                          .eq('id', lead.id);
-                      }
+                    } else {
+                      console.log('[Twilio SMS Webhook] No appointment found to cancel for:', From);
                     }
                   } catch (cancelError) {
                     console.error('[Twilio SMS Webhook] Cancel error:', cancelError);
