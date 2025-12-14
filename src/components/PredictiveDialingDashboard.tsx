@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, PlayCircle, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
+import { Phone, Users, Target, BarChart3, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
 import LeadManager from '@/components/LeadManager';
 import CampaignManager from '@/components/CampaignManager';
-import CallCenter from '@/components/CallCenter';
 import DialingAnalytics from '@/components/DialingAnalytics';
 import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
 import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
@@ -166,24 +165,28 @@ const PredictiveDialingDashboard = () => {
       </div>
 
       {/* Main Tabs */}
-      <Tabs defaultValue="call-center" className="space-y-6">
+      <Tabs defaultValue="campaigns" className="space-y-6">
         <div className="w-full overflow-x-auto pb-2">
           <TabsList className="inline-flex h-auto bg-slate-100 dark:bg-slate-800 min-w-max w-full sm:w-auto">
-            <TabsTrigger value="call-center" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <PlayCircle className="h-4 w-4 mr-2" />
-              Call Center
+            <TabsTrigger value="campaigns" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Target className="h-4 w-4 mr-2" />
+              Campaigns
+            </TabsTrigger>
+            <TabsTrigger value="leads" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Users className="h-4 w-4 mr-2" />
+              Leads
             </TabsTrigger>
             <TabsTrigger value="performance" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Activity className="h-4 w-4 mr-2" />
               Performance
             </TabsTrigger>
+            <TabsTrigger value="live-monitor" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Radio className="h-4 w-4 mr-2" />
+              Live Monitor
+            </TabsTrigger>
             <TabsTrigger value="ai-engine" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Brain className="h-4 w-4 mr-2" />
               AI Engine
-            </TabsTrigger>
-            <TabsTrigger value="advanced-settings" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Settings className="h-4 w-4 mr-2" />
-              Advanced
             </TabsTrigger>
             <TabsTrigger value="pacing" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Gauge className="h-4 w-4 mr-2" />
@@ -193,17 +196,9 @@ const PredictiveDialingDashboard = () => {
               <RotateCcw className="h-4 w-4 mr-2" />
               Smart Retry
             </TabsTrigger>
-            <TabsTrigger value="live-monitor" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Radio className="h-4 w-4 mr-2" />
-              Live Monitor
-            </TabsTrigger>
-            <TabsTrigger value="campaigns" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Target className="h-4 w-4 mr-2" />
-              Campaigns
-            </TabsTrigger>
-            <TabsTrigger value="leads" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
-              <Users className="h-4 w-4 mr-2" />
-              Leads
+            <TabsTrigger value="advanced-settings" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
+              <Settings className="h-4 w-4 mr-2" />
+              Advanced
             </TabsTrigger>
             <TabsTrigger value="analytics" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <BarChart3 className="h-4 w-4 mr-2" />
@@ -212,8 +207,12 @@ const PredictiveDialingDashboard = () => {
           </TabsList>
         </div>
 
-        <TabsContent value="call-center">
-          <CallCenter onStatsUpdate={setStats} />
+        <TabsContent value="campaigns">
+          <CampaignManager onRefresh={loadDashboardData} />
+        </TabsContent>
+
+        <TabsContent value="leads">
+          <LeadManager onStatsUpdate={(count) => setStats(prev => ({ ...prev, totalLeads: count }))} />
         </TabsContent>
 
         <TabsContent value="performance">
@@ -238,14 +237,6 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="live-monitor">
           <LiveCallMonitor />
-        </TabsContent>
-
-        <TabsContent value="campaigns">
-          <CampaignManager onRefresh={loadDashboardData} />
-        </TabsContent>
-
-        <TabsContent value="leads">
-          <LeadManager onStatsUpdate={(count) => setStats(prev => ({ ...prev, totalLeads: count }))} />
         </TabsContent>
 
         <TabsContent value="analytics">

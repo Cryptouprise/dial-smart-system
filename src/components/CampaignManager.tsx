@@ -7,12 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
+import { useCallDispatcher } from '@/hooks/useCallDispatcher';
 import { CampaignLeadManager } from './CampaignLeadManager';
 import { CampaignCallActivity } from './CampaignCallActivity';
 import { CampaignWizard } from './CampaignWizard';
@@ -63,8 +64,9 @@ interface PhoneNumberStatus {
 }
 
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
-  const { getCampaigns, createCampaign, updateCampaign, isLoading } = usePredictiveDialing();
+  const { getCampaigns, createCampaign, updateCampaign, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
+  const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -76,6 +78,17 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [prioritizingCampaignId, setPrioritizingCampaignId] = useState<string | null>(null);
+  
+  // Call Center state
+  const [dialingCampaignId, setDialingCampaignId] = useState<string | null>(null);
+  const [campaignLeads, setCampaignLeads] = useState<any[]>([]);
+  const [currentLead, setCurrentLead] = useState<any>(null);
+  const [currentCall, setCurrentCall] = useState<any>(null);
+  const [isDialing, setIsDialing] = useState(false);
+  const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
+  const [callOutcome, setCallOutcome] = useState('');
+  const [callNotes, setCallNotes] = useState('');
+  
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -397,6 +410,125 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     } finally {
       setPrioritizingCampaignId(null);
     }
+  };
+
+  // Call Center Functions
+  const loadCampaignLeadsForDialing = async (campaignId: string) => {
+    const data = await getLeads({ 
+      campaign_id: campaignId,
+      status: 'new'
+    });
+    if (data) {
+      setCampaignLeads(data);
+      setCurrentLead(data[0] || null);
+    }
+  };
+
+  const handleStartDialingSession = async (campaignId: string) => {
+    setDialingCampaignId(campaignId);
+    await loadCampaignLeadsForDialing(campaignId);
+  };
+
+  const handleStopDialingSession = () => {
+    setDialingCampaignId(null);
+    setCampaignLeads([]);
+    setCurrentLead(null);
+    setCurrentCall(null);
+    setAutoDispatchEnabled(false);
+    setCallOutcome('');
+    setCallNotes('');
+  };
+
+  const handleStartCall = async () => {
+    if (!currentLead || !dialingCampaignId) return;
+
+    setIsDialing(true);
+    
+    try {
+      const { data: phoneNumbers, error: phoneError } = await supabase
+        .from('phone_numbers')
+        .select('number')
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+
+      if (phoneError || !phoneNumbers) {
+        toast({
+          title: "No Phone Numbers",
+          description: "Please add an active phone number to make calls",
+          variant: "destructive"
+        });
+        setIsDialing(false);
+        return;
+      }
+
+      const result = await makeCall(
+        dialingCampaignId,
+        currentLead.id,
+        currentLead.phone_number,
+        phoneNumbers.number
+      );
+
+      if (result) {
+        setCurrentCall(result);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Call Failed",
+        description: error.message || "Failed to initiate call",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDialing(false);
+    }
+  };
+
+  const handleEndCall = () => {
+    setCurrentCall(null);
+    setCallOutcome('');
+    setCallNotes('');
+  };
+
+  const handleCallOutcome = async () => {
+    if (!currentCall || !callOutcome) return;
+
+    await updateCallOutcome(currentCall.call_log_id, callOutcome, callNotes);
+    
+    const currentIndex = campaignLeads.findIndex(l => l.id === currentLead?.id);
+    const nextLead = campaignLeads[currentIndex + 1] || null;
+    setCurrentLead(nextLead);
+    
+    handleEndCall();
+  };
+
+  const handleSkipLead = () => {
+    const currentIndex = campaignLeads.findIndex(l => l.id === currentLead?.id);
+    const nextLead = campaignLeads[currentIndex + 1] || null;
+    setCurrentLead(nextLead);
+  };
+
+  const toggleAutoDispatch = () => {
+    if (!dialingCampaignId) {
+      toast({
+        title: "Campaign Required",
+        description: "Please start a dialing session first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAutoDispatchEnabled(!autoDispatchEnabled);
+    
+    if (!autoDispatchEnabled) {
+      startAutoDispatch(30);
+    }
+    
+    toast({
+      title: autoDispatchEnabled ? "Auto-Dispatch Stopped" : "Auto-Dispatch Started",
+      description: autoDispatchEnabled 
+        ? "AI-powered call distribution disabled" 
+        : "AI will automatically distribute calls every 30 seconds",
+    });
   };
 
   // Render compliance status badge
@@ -882,9 +1014,166 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                {/* Start/Stop Dialing Button - Primary Action */}
+                {campaign.status === 'active' && (
+                  <div className="mb-4">
+                    {dialingCampaignId === campaign.id ? (
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        onClick={handleStopDialingSession}
+                      >
+                        <Pause className="h-4 w-4 mr-2" />
+                        Stop Dialing Session
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700"
+                        onClick={() => handleStartDialingSession(campaign.id)}
+                      >
+                        <Play className="h-4 w-4 mr-2" />
+                        Start Dialing Session
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Inline Call Center UI */}
+                {dialingCampaignId === campaign.id && (
+                  <Card className="border-primary/50 bg-primary/5 mb-4">
+                    <CardContent className="pt-4 space-y-4">
+                      {/* Auto-dispatch controls */}
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium">
+                          Leads remaining: {campaignLeads.length}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => dispatchCalls()}
+                            disabled={isDispatching}
+                          >
+                            <Zap className="h-4 w-4 mr-1" />
+                            {isDispatching ? 'Dispatching...' : 'Dispatch Now'}
+                          </Button>
+                          <Button
+                            variant={autoDispatchEnabled ? "destructive" : "default"}
+                            size="sm"
+                            onClick={toggleAutoDispatch}
+                          >
+                            {autoDispatchEnabled ? (
+                              <>
+                                <Pause className="h-4 w-4 mr-1" />
+                                Stop Auto
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-4 w-4 mr-1" />
+                                Auto-Dispatch
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {autoDispatchEnabled && (
+                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 p-2 rounded">
+                          <Zap className="h-4 w-4" />
+                          <span className="text-sm">AI Auto-Dispatch Active - calls every 30s</span>
+                        </div>
+                      )}
+
+                      {/* Current Lead Card */}
+                      {currentLead ? (
+                        <div className="p-3 bg-background rounded-lg border">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-medium">
+                                {currentLead.first_name} {currentLead.last_name}
+                              </h4>
+                              <p className="text-sm text-muted-foreground">{currentLead.company}</p>
+                              <p className="font-mono text-sm mt-1">{currentLead.phone_number}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              {!currentCall ? (
+                                <>
+                                  <Button 
+                                    onClick={handleStartCall} 
+                                    disabled={isDialing || isLoading}
+                                    size="sm"
+                                  >
+                                    <Phone className="h-4 w-4 mr-1" />
+                                    {isDialing ? 'Dialing...' : 'Call'}
+                                  </Button>
+                                  <Button 
+                                    variant="outline" 
+                                    onClick={handleSkipLead}
+                                    disabled={isLoading}
+                                    size="sm"
+                                  >
+                                    <SkipForward className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button 
+                                  variant="destructive" 
+                                  onClick={handleEndCall}
+                                  size="sm"
+                                >
+                                  <PhoneOff className="h-4 w-4 mr-1" />
+                                  End
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Call Outcome Section */}
+                          {currentCall && (
+                            <div className="mt-3 pt-3 border-t space-y-2">
+                              <Select value={callOutcome} onValueChange={setCallOutcome}>
+                                <SelectTrigger className="h-8">
+                                  <SelectValue placeholder="Select outcome" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="interested">Interested</SelectItem>
+                                  <SelectItem value="not_interested">Not Interested</SelectItem>
+                                  <SelectItem value="callback">Callback</SelectItem>
+                                  <SelectItem value="converted">Converted</SelectItem>
+                                  <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Textarea
+                                value={callNotes}
+                                onChange={(e) => setCallNotes(e.target.value)}
+                                placeholder="Add notes..."
+                                rows={2}
+                                className="text-sm"
+                              />
+                              <Button 
+                                onClick={handleCallOutcome}
+                                disabled={!callOutcome || isLoading}
+                                size="sm"
+                                className="w-full"
+                              >
+                                Save & Next Lead
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-center text-muted-foreground py-4">
+                          No leads available for this campaign
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => setExpandedCampaignId(
                       expandedCampaignId === campaign.id ? null : campaign.id
                     )}
@@ -895,31 +1184,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => setViewingCallsFor(
                       viewingCallsFor === campaign.id ? null : campaign.id
                     )}
                   >
                     <Activity className="h-4 w-4 mr-2" />
-                    {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Call Activity
+                    {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Activity
                   </Button>
 
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handlePrioritizeLeads(campaign.id, campaign.timezone)}
                     disabled={prioritizingCampaignId === campaign.id || isCalculating}
                   >
                     <TrendingUp className="h-4 w-4 mr-2" />
-                    {prioritizingCampaignId === campaign.id ? 'Prioritizing...' : 'Prioritize Leads'}
+                    {prioritizingCampaignId === campaign.id ? 'Prioritizing...' : 'Prioritize'}
                   </Button>
 
-                  {/* AI SMS Agent Generator Button */}
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => setSmsAgentCampaign(campaign)}
                     className="text-blue-600 border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
                   >
                     <Bot className="h-4 w-4 mr-2" />
-                    AI SMS Agent
+                    AI SMS
                   </Button>
                 </div>
 
