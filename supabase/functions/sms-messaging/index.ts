@@ -16,13 +16,14 @@ const corsHeaders = {
 };
 
 interface SmsRequest {
-  action: 'send_sms' | 'get_messages' | 'get_available_numbers';
+  action: 'send_sms' | 'get_messages' | 'get_available_numbers' | 'check_webhook_status' | 'configure_webhook';
   to?: string;
   from?: string;
   body?: string;
   lead_id?: string;
   conversation_id?: string;
   limit?: number;
+  phoneNumber?: string; // For single number webhook config
 }
 
 serve(async (req) => {
@@ -268,19 +269,123 @@ serve(async (req) => {
 
         const twilioData = await twilioResponse.json();
         const twilioNumbers = twilioData.incoming_phone_numbers || [];
+        
+        const expectedWebhook = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
 
-        // Filter for SMS-capable numbers
+        // Filter for SMS-capable numbers and include webhook status
         const smsCapableNumbers = twilioNumbers
           .filter((num: any) => num.capabilities?.sms === true)
           .map((num: any) => ({
             number: num.phone_number,
             friendly_name: num.friendly_name,
             capabilities: num.capabilities,
+            sms_url: num.sms_url,
+            webhook_configured: num.sms_url === expectedWebhook,
           }));
 
         console.log('[SMS Messaging] Found', smsCapableNumbers.length, 'SMS-capable numbers in Twilio');
 
         result = { numbers: smsCapableNumbers };
+        break;
+      }
+
+      case 'check_webhook_status': {
+        if (!twilioAccountSid || !twilioAuthToken) {
+          throw new Error('Twilio credentials not configured');
+        }
+        
+        const phoneNumber = request.phoneNumber || request.from;
+        if (!phoneNumber) {
+          throw new Error('Phone number is required');
+        }
+        
+        console.log('[SMS Messaging] Checking webhook status for:', phoneNumber);
+        
+        const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+        const verifyUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanNumber)}`;
+        
+        const verifyResponse = await fetch(verifyUrl, {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+          },
+        });
+
+        const verifyData = await verifyResponse.json();
+        
+        if (!verifyResponse.ok || !verifyData.incoming_phone_numbers?.length) {
+          throw new Error('Phone number not found in Twilio account');
+        }
+        
+        const twilioNumber = verifyData.incoming_phone_numbers[0];
+        const expectedWebhook = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
+        
+        result = {
+          phone_number: twilioNumber.phone_number,
+          current_sms_url: twilioNumber.sms_url,
+          expected_webhook: expectedWebhook,
+          webhook_configured: twilioNumber.sms_url === expectedWebhook,
+        };
+        break;
+      }
+
+      case 'configure_webhook': {
+        if (!twilioAccountSid || !twilioAuthToken) {
+          throw new Error('Twilio credentials not configured');
+        }
+        
+        const phoneNumber = request.phoneNumber || request.from;
+        if (!phoneNumber) {
+          throw new Error('Phone number is required');
+        }
+        
+        console.log('[SMS Messaging] Configuring webhook for:', phoneNumber);
+        
+        const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+        
+        // Get the phone number SID
+        const findUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanNumber)}`;
+        
+        const findResponse = await fetch(findUrl, {
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+          },
+        });
+
+        const findData = await findResponse.json();
+        
+        if (!findResponse.ok || !findData.incoming_phone_numbers?.length) {
+          throw new Error('Phone number not found in Twilio account');
+        }
+        
+        const twilioNumber = findData.incoming_phone_numbers[0];
+        const webhookUrl = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
+        
+        // Update the webhook
+        const updateUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${twilioNumber.sid}.json`;
+        
+        const updateResponse = await fetch(updateUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: `SmsUrl=${encodeURIComponent(webhookUrl)}&SmsMethod=POST`,
+        });
+        
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error('[SMS Messaging] Failed to configure webhook:', errorText);
+          throw new Error('Failed to configure SMS webhook in Twilio');
+        }
+        
+        console.log('[SMS Messaging] Webhook configured successfully for:', phoneNumber);
+        
+        result = {
+          success: true,
+          phone_number: phoneNumber,
+          webhook_url: webhookUrl,
+          message: 'SMS webhook configured. Inbound messages will now trigger auto-replies.',
+        };
         break;
       }
 
