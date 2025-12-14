@@ -660,19 +660,54 @@ serve(async (req) => {
           };
           
           // Build comprehensive system prompt with current date/time awareness
+          // First, fetch user's timezone from calendar availability
+          const { data: userAvailability } = await supabaseAdmin
+            .from('calendar_availability')
+            .select('timezone')
+            .eq('user_id', userId)
+            .maybeSingle();
+          
+          const userTimezone = userAvailability?.timezone || 'America/Denver'; // Default to Mountain Time
+          
+          // Get current time in user's timezone
           const now = new Date();
-          const currentDate = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-          const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-          const currentYear = now.getFullYear();
+          const timeFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: userTimezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+          const dateFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: userTimezone,
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          const yearFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: userTimezone,
+            year: 'numeric'
+          });
+          
+          const currentTime = timeFormatter.format(now);
+          const currentDate = dateFormatter.format(now);
+          const currentYear = parseInt(yearFormatter.format(now));
+          
+          // Calculate tomorrow in user's timezone
+          const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          const tomorrowDate = dateFormatter.format(tomorrow);
+          
+          console.log('[Twilio SMS Webhook] Using timezone:', userTimezone, 'Current time:', currentTime);
           
           let systemPrompt = `You are an AI SMS assistant.
 
-CURRENT DATE & TIME:
+CURRENT DATE & TIME (${userTimezone}):
 - Today is: ${currentDate}
 - Current time: ${currentTime}
 - Current year: ${currentYear}
 - IMPORTANT: When booking appointments, ALWAYS use the year ${currentYear} or later. Never book appointments in past years.
-- When someone says "tomorrow", that means ${new Date(now.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+- IMPORTANT: All times should be in ${userTimezone} timezone.
+- When someone says "tomorrow", that means ${tomorrowDate}.
 - When someone says "next week", calculate from today (${currentDate}).
 
 PERSONALITY:
