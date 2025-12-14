@@ -39,6 +39,15 @@ export interface WorkflowStep {
   };
 }
 
+export interface WorkflowAutoReplySettings {
+  enabled: boolean;
+  ai_instructions: string;
+  response_delay_seconds: number;
+  stop_on_human_reply: boolean;
+  calendar_enabled: boolean;
+  booking_link: string;
+}
+
 export interface CampaignWorkflow {
   id?: string;
   user_id?: string;
@@ -54,6 +63,7 @@ export interface CampaignWorkflow {
     resume_day?: string;
     resume_time?: string;
   };
+  auto_reply_settings?: WorkflowAutoReplySettings | null;
   active?: boolean;
   steps?: WorkflowStep[];
   created_at?: string;
@@ -108,6 +118,7 @@ export function useCampaignWorkflows() {
           ...workflow,
           workflow_type: workflow.workflow_type as CampaignWorkflow['workflow_type'],
           settings: workflow.settings as CampaignWorkflow['settings'],
+          auto_reply_settings: workflow.auto_reply_settings as unknown as WorkflowAutoReplySettings | null,
           steps: (steps || []).map(s => ({
             ...s,
             step_type: s.step_type as WorkflowStep['step_type'],
@@ -140,6 +151,7 @@ export function useCampaignWorkflows() {
           workflow_type: workflow.workflow_type,
           is_template: workflow.is_template || false,
           settings: workflow.settings || {},
+          auto_reply_settings: workflow.auto_reply_settings ? JSON.parse(JSON.stringify(workflow.auto_reply_settings)) : null,
           active: workflow.active ?? true
         })
         .select()
@@ -182,6 +194,7 @@ export function useCampaignWorkflows() {
           description: updates.description,
           workflow_type: updates.workflow_type,
           settings: updates.settings,
+          auto_reply_settings: updates.auto_reply_settings ? JSON.parse(JSON.stringify(updates.auto_reply_settings)) : null,
           active: updates.active,
           updated_at: new Date().toISOString()
         })

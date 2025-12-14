@@ -1061,6 +1061,7 @@ export type Database = {
       campaign_workflows: {
         Row: {
           active: boolean | null
+          auto_reply_settings: Json | null
           created_at: string | null
           description: string | null
           id: string
@@ -1073,6 +1074,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          auto_reply_settings?: Json | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -1085,6 +1087,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          auto_reply_settings?: Json | null
           created_at?: string | null
           description?: string | null
           id?: string
