@@ -165,18 +165,31 @@ serve(async (req) => {
     if (leadsError) throw leadsError;
 
     // Filter leads that need to be added to queue
-    const leadsToQueue = (campaignLeads || []).filter(cl => {
+    let leadsToQueue = (campaignLeads || []).filter(cl => {
       const lead = cl.leads as any;
       if (!lead || !lead.phone_number) return false;
       if (lead.do_not_call) return false;
       if (existingLeadIds.has(cl.lead_id)) return false;
       if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
-      // Only queue leads with status 'new' or 'contacted'
+      // Only queue leads with status 'new', 'contacted', or 'callback'
       if (!['new', 'contacted', 'callback'].includes(lead.status)) return false;
       return true;
     });
 
-    console.log(`Found ${leadsToQueue.length} leads to add to queue`);
+    console.log(`Found ${leadsToQueue.length} leads to add to queue (raw campaign leads: ${(campaignLeads || []).length})`);
+
+    // Fallback: if filters excluded everything but we have at least one valid lead, use the first one
+    if (leadsToQueue.length === 0 && (campaignLeads || []).length > 0) {
+      console.warn('[Dispatcher] No eligible leads after filters; falling back to first available lead for debugging');
+      const fallbackLead = (campaignLeads || []).find(cl => {
+        const lead = cl.leads as any;
+        return lead && lead.phone_number && !lead.do_not_call;
+      });
+      if (fallbackLead) {
+        leadsToQueue = [fallbackLead];
+        console.log('[Dispatcher] Using fallback lead', fallbackLead.lead_id);
+      }
+    }
 
     // Separate leads by workflow type - SMS-first vs Call-first
     const smsFirstLeads: any[] = [];
