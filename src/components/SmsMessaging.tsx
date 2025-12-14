@@ -179,7 +179,7 @@ const SmsMessaging: React.FC = () => {
                 onClick={() => navigate('/sms-conversations')}
               >
                 <Sparkles className="h-4 w-4 mr-2" />
-                AI SMS Agent
+                AI Conversations
               </Button>
               <Button 
                 variant="outline" 
