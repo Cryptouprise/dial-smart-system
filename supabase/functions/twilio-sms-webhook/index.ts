@@ -1407,7 +1407,7 @@ ${processedKnowledge}`;
               } else {
                 console.log('[Twilio SMS Webhook] AI message stored:', storedMessage.id);
                 
-                // Send via SMS messaging function
+                // Send via SMS messaging function (skip DB insert since we already stored the message)
                 try {
                   const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
                     method: 'POST',
@@ -1422,6 +1422,8 @@ ${processedKnowledge}`;
                       body: aiReply,
                       user_id: userId,
                       conversation_id: conversationId,
+                      skip_db_insert: true,
+                      existing_message_id: storedMessage.id,
                     }),
                   });
 
