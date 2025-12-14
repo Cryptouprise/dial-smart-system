@@ -659,8 +659,21 @@ serve(async (req) => {
             return result;
           };
           
-          // Build comprehensive system prompt
+          // Build comprehensive system prompt with current date/time awareness
+          const now = new Date();
+          const currentDate = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const currentYear = now.getFullYear();
+          
           let systemPrompt = `You are an AI SMS assistant.
+
+CURRENT DATE & TIME:
+- Today is: ${currentDate}
+- Current time: ${currentTime}
+- Current year: ${currentYear}
+- IMPORTANT: When booking appointments, ALWAYS use the year ${currentYear} or later. Never book appointments in past years.
+- When someone says "tomorrow", that means ${new Date(now.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+- When someone says "next week", calculate from today (${currentDate}).
 
 PERSONALITY:
 ${effectiveSettings.ai_personality || 'professional and helpful'}`;
