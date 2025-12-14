@@ -32,7 +32,7 @@ serve(async (req) => {
   }
 
   try {
-    // Verify authentication
+    // Verify authentication (supports both frontend JWT calls and internal service calls)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -41,7 +41,7 @@ serve(async (req) => {
       );
     }
 
-    // Initialize Supabase clients
+    // Initialize Supabase admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -50,21 +50,32 @@ serve(async (req) => {
     }
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-    
-    // Verify the JWT token
+
+    // Parse request early so we can support internal calls with explicit user_id
+    const request: SmsRequest & { user_id?: string } = await req.json();
+
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Authentication failed' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    let userId: string | null = null;
+
+    if (token === serviceRoleKey && request.user_id) {
+      // Internal service-to-service call (e.g. from workflow-executor)
+      userId = request.user_id;
+      console.log('[SMS Messaging] Internal call for user:', userId);
+    } else {
+      // Standard JWT-based auth (frontend calls)
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Authentication failed' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      userId = user.id;
+      console.log('[SMS Messaging] User authenticated:', userId);
     }
 
-    console.log('[SMS Messaging] User authenticated:', user.id);
-
-    const request: SmsRequest = await req.json();
     console.log('[SMS Messaging] Action:', request.action);
 
     // Get Twilio credentials

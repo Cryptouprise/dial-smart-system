@@ -386,6 +386,7 @@ async function executeSmsStep(supabase: any, lead: any, progress: any, config: a
         from: fromNumber,
         body: messageBody,
         lead_id: lead.id,
+        user_id: progress.user_id,
       },
     });
 
