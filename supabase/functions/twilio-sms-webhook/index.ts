@@ -740,7 +740,9 @@ ${processedKnowledge}`;
               }
 
               systemPrompt += `\n- You CAN check availability and suggest specific open times`;
-              systemPrompt += `\n- When scheduling, confirm the date, time, and timezone with the lead`;
+              systemPrompt += `\n- When the lead confirms they want to book, USE THE book_appointment TOOL to actually create the appointment`;
+              systemPrompt += `\n- When scheduling, confirm the date, time, and timezone with the lead BEFORE booking`;
+              systemPrompt += `\n- If they want to cancel, USE THE cancel_appointment TOOL`;
               console.log('[Twilio SMS Webhook] Added calendar context');
             }
           }
@@ -752,7 +754,8 @@ ${processedKnowledge}`;
 - Don't use markdown formatting
 - If asked about scheduling, be helpful and suggest specific times
 - Never pretend to be human - you can acknowledge you're an AI assistant if asked
-- Be direct and get to the point`;
+- Be direct and get to the point
+- IMPORTANT: When you have tools available, USE THEM to take actions. Don't just say you did something - actually do it by calling the appropriate tool.`;
 
           console.log('[Twilio SMS Webhook] System prompt length:', systemPrompt.length);
 
@@ -785,18 +788,78 @@ ${processedKnowledge}`;
             });
           }
 
-          console.log('[Twilio SMS Webhook] Sending request to Lovable AI Gateway');
+          console.log('[Twilio SMS Webhook] Sending request to Lovable AI Gateway with tool support');
           
+          // Define available tools for the AI
+          const tools = effectiveSettings.enable_calendar_integration ? [
+            {
+              type: 'function',
+              function: {
+                name: 'book_appointment',
+                description: 'Book an appointment/meeting with the lead. Use this when the lead confirms they want to schedule.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    title: {
+                      type: 'string',
+                      description: 'Title of the appointment (e.g., "Demo Call", "Consultation")'
+                    },
+                    date: {
+                      type: 'string',
+                      description: 'Date in YYYY-MM-DD format'
+                    },
+                    time: {
+                      type: 'string',
+                      description: 'Time in HH:MM format (24-hour)'
+                    },
+                    duration_minutes: {
+                      type: 'number',
+                      description: 'Duration in minutes (default 30)'
+                    },
+                    timezone: {
+                      type: 'string',
+                      description: 'Timezone (e.g., "America/Denver", "America/Chicago")'
+                    }
+                  },
+                  required: ['title', 'date', 'time']
+                }
+              }
+            },
+            {
+              type: 'function',
+              function: {
+                name: 'cancel_appointment',
+                description: 'Cancel an existing appointment for the lead',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    reason: {
+                      type: 'string',
+                      description: 'Reason for cancellation'
+                    }
+                  }
+                }
+              }
+            }
+          ] : [];
+          
+          const aiRequestBody: any = {
+            model: 'google/gemini-2.5-flash',
+            messages: aiMessages,
+          };
+          
+          if (tools.length > 0) {
+            aiRequestBody.tools = tools;
+            aiRequestBody.tool_choice = 'auto';
+          }
+
           const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${lovableApiKey}`,
             },
-            body: JSON.stringify({
-              model: 'google/gemini-2.5-flash',
-              messages: aiMessages,
-            }),
+            body: JSON.stringify(aiRequestBody),
           });
 
           if (!aiResponse.ok) {
@@ -804,13 +867,178 @@ ${processedKnowledge}`;
             console.error('[Twilio SMS Webhook] Lovable AI error:', aiResponse.status, errorText);
           } else {
             const aiData = await aiResponse.json();
-            const aiReply = aiData.choices?.[0]?.message?.content;
+            const aiMessage = aiData.choices?.[0]?.message;
+            
+            // Check if AI wants to call a tool
+            let aiReply = aiMessage?.content || '';
+            const toolCalls = aiMessage?.tool_calls;
+            
+            if (toolCalls && toolCalls.length > 0) {
+              console.log('[Twilio SMS Webhook] AI requested tool calls:', toolCalls.length);
+              
+              for (const toolCall of toolCalls) {
+                const functionName = toolCall.function?.name;
+                const functionArgs = JSON.parse(toolCall.function?.arguments || '{}');
+                
+                console.log('[Twilio SMS Webhook] Processing tool call:', functionName, functionArgs);
+                
+                if (functionName === 'book_appointment') {
+                  try {
+                    // Parse the date and time
+                    const appointmentDate = functionArgs.date;
+                    const appointmentTime = functionArgs.time || '09:00';
+                    const duration = functionArgs.duration_minutes || 30;
+                    const timezone = functionArgs.timezone || 'America/Chicago';
+                    
+                    const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
+                    const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
+                    
+                    // Find or create lead
+                    let appointmentLeadId = lead?.id || null;
+                    if (!appointmentLeadId) {
+                      // Create a new lead for this phone number
+                      const { data: newLead } = await supabaseAdmin
+                        .from('leads')
+                        .insert({
+                          user_id: userId,
+                          phone_number: From,
+                          status: 'appointment_scheduled'
+                        })
+                        .select('id')
+                        .maybeSingle();
+                      appointmentLeadId = newLead?.id;
+                    }
+                    
+                    // Create the appointment
+                    const { data: appointment, error: apptError } = await supabaseAdmin
+                      .from('calendar_appointments')
+                      .insert({
+                        user_id: userId,
+                        lead_id: appointmentLeadId,
+                        title: functionArgs.title || 'Appointment',
+                        start_time: startDateTime.toISOString(),
+                        end_time: endDateTime.toISOString(),
+                        timezone: timezone,
+                        status: 'scheduled',
+                        notes: `Booked via AI SMS conversation with ${From}`
+                      })
+                      .select()
+                      .maybeSingle();
+                    
+                    if (apptError) {
+                      console.error('[Twilio SMS Webhook] Failed to create appointment:', apptError);
+                    } else {
+                      console.log('[Twilio SMS Webhook] Appointment created:', appointment.id);
+                      
+                      // Update lead status
+                      if (appointmentLeadId) {
+                        await supabaseAdmin
+                          .from('leads')
+                          .update({ 
+                            status: 'appointment_scheduled',
+                            next_callback_at: startDateTime.toISOString()
+                          })
+                          .eq('id', appointmentLeadId);
+                      }
+                      
+                      // Sync to Google Calendar
+                      try {
+                        const syncResponse = await fetch(`${supabaseUrl}/functions/v1/calendar-integration`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${serviceRoleKey}`,
+                          },
+                          body: JSON.stringify({
+                            action: 'sync_appointment',
+                            appointment: appointment
+                          }),
+                        });
+                        
+                        if (syncResponse.ok) {
+                          console.log('[Twilio SMS Webhook] Appointment synced to calendar');
+                        } else {
+                          console.error('[Twilio SMS Webhook] Calendar sync failed');
+                        }
+                      } catch (syncError) {
+                        console.error('[Twilio SMS Webhook] Calendar sync error:', syncError);
+                      }
+                    }
+                  } catch (bookingError) {
+                    console.error('[Twilio SMS Webhook] Booking error:', bookingError);
+                  }
+                }
+                
+                if (functionName === 'cancel_appointment') {
+                  try {
+                    // Find the most recent appointment for this lead
+                    if (lead?.id) {
+                      const { data: existingAppt } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('id, google_event_id')
+                        .eq('lead_id', lead.id)
+                        .eq('status', 'scheduled')
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      
+                      if (existingAppt) {
+                        await supabaseAdmin
+                          .from('calendar_appointments')
+                          .update({ 
+                            status: 'cancelled',
+                            notes: `Cancelled via SMS: ${functionArgs.reason || 'No reason provided'}`
+                          })
+                          .eq('id', existingAppt.id);
+                        
+                        console.log('[Twilio SMS Webhook] Appointment cancelled:', existingAppt.id);
+                        
+                        // Update lead status
+                        await supabaseAdmin
+                          .from('leads')
+                          .update({ status: 'callback_requested' })
+                          .eq('id', lead.id);
+                      }
+                    }
+                  } catch (cancelError) {
+                    console.error('[Twilio SMS Webhook] Cancel error:', cancelError);
+                  }
+                }
+              }
+              
+              // If AI provided content alongside tool calls, use that as the reply
+              // Otherwise, make another call to get a confirmation message
+              if (!aiReply) {
+                const confirmMessages = [
+                  ...aiMessages,
+                  { role: 'assistant', content: null, tool_calls: toolCalls },
+                  { role: 'tool', tool_call_id: toolCalls[0].id, content: 'Action completed successfully' }
+                ];
+                
+                const confirmResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${lovableApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: 'google/gemini-2.5-flash',
+                    messages: confirmMessages,
+                  }),
+                });
+                
+                if (confirmResponse.ok) {
+                  const confirmData = await confirmResponse.json();
+                  aiReply = confirmData.choices?.[0]?.message?.content || 'Done!';
+                }
+              }
+            }
             
             if (aiReply) {
               console.log('[Twilio SMS Webhook] AI response generated:', aiReply.substring(0, 100));
               
               // Store AI response
-              const { data: aiMessage, error: aiMsgError } = await supabaseAdmin
+              const { data: storedMessage, error: aiMsgError } = await supabaseAdmin
                 .from('sms_messages')
                 .insert({
                   user_id: userId,
@@ -829,7 +1057,7 @@ ${processedKnowledge}`;
               if (aiMsgError) {
                 console.error('[Twilio SMS Webhook] Failed to store AI message:', aiMsgError);
               } else {
-                console.log('[Twilio SMS Webhook] AI message stored:', aiMessage.id);
+                console.log('[Twilio SMS Webhook] AI message stored:', storedMessage.id);
                 
                 // Send via SMS messaging function
                 try {
@@ -857,7 +1085,7 @@ ${processedKnowledge}`;
                     await supabaseAdmin
                       .from('sms_messages')
                       .update({ status: 'failed', error_message: smsError })
-                      .eq('id', aiMessage.id);
+                      .eq('id', storedMessage.id);
                   } else {
                     console.log('[Twilio SMS Webhook] SMS sent successfully');
                     
@@ -865,7 +1093,7 @@ ${processedKnowledge}`;
                     await supabaseAdmin
                       .from('sms_messages')
                       .update({ status: 'sent', sent_at: new Date().toISOString() })
-                      .eq('id', aiMessage.id);
+                      .eq('id', storedMessage.id);
                   }
                 } catch (sendError) {
                   console.error('[Twilio SMS Webhook] Error sending SMS:', sendError);

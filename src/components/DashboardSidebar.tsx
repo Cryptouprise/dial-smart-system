@@ -96,6 +96,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { title: 'Pipeline', value: 'pipeline', icon: Workflow },
       { title: 'Lead Upload', value: 'lead-upload', icon: Upload },
+      { title: 'Appointments', value: 'calendar', icon: Calendar, simpleMode: true },
       { title: 'Dispositions', value: 'dispositions', icon: Zap },
       { title: 'Follow-ups', value: 'follow-ups', icon: Clock },
     ],

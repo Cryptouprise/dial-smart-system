@@ -293,21 +293,69 @@ serve(async (req) => {
         for (const integration of integrations || []) {
           if (integration.provider === 'google' && integration.access_token_encrypted) {
             try {
-              const accessToken = atob(integration.access_token_encrypted);
+              let accessToken = atob(integration.access_token_encrypted);
+              
+              // Check if token is expired and refresh if needed
+              if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
+                console.log('[Calendar] Token expired, attempting refresh...');
+                
+                if (integration.refresh_token_encrypted) {
+                  const refreshToken = atob(integration.refresh_token_encrypted);
+                  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+                  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+                  
+                  const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                      client_id: clientId!,
+                      client_secret: clientSecret!,
+                      refresh_token: refreshToken,
+                      grant_type: 'refresh_token'
+                    })
+                  });
+                  
+                  if (refreshResponse.ok) {
+                    const tokens = await refreshResponse.json();
+                    accessToken = tokens.access_token;
+                    
+                    // Update stored token
+                    await supabase
+                      .from('calendar_integrations')
+                      .update({
+                        access_token_encrypted: btoa(tokens.access_token),
+                        token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+                      })
+                      .eq('id', integration.id);
+                      
+                    console.log('[Calendar] Token refreshed successfully');
+                  } else {
+                    console.error('[Calendar] Token refresh failed');
+                    results.google = { success: false, error: 'Token refresh failed' };
+                    continue;
+                  }
+                } else {
+                  console.error('[Calendar] No refresh token available');
+                  results.google = { success: false, error: 'Token expired and no refresh token' };
+                  continue;
+                }
+              }
               
               const event = {
                 summary: appointment.title,
-                description: appointment.description,
+                description: appointment.description || `Booked via SMS with lead`,
                 location: appointment.location,
                 start: {
                   dateTime: appointment.start_time,
-                  timeZone: appointment.timezone
+                  timeZone: appointment.timezone || 'America/Chicago'
                 },
                 end: {
                   dateTime: appointment.end_time,
-                  timeZone: appointment.timezone
+                  timeZone: appointment.timezone || 'America/Chicago'
                 }
               };
+
+              console.log('[Calendar] Creating Google Calendar event:', JSON.stringify(event));
 
               const response = await fetch(
                 `https://www.googleapis.com/calendar/v3/calendars/${integration.calendar_id || 'primary'}/events`,
@@ -324,12 +372,17 @@ serve(async (req) => {
               if (response.ok) {
                 const googleEvent = await response.json();
                 results.google = { success: true, eventId: googleEvent.id };
+                console.log('[Calendar] Google event created:', googleEvent.id);
                 
                 // Update appointment with Google event ID
                 await supabase
                   .from('calendar_appointments')
                   .update({ google_event_id: googleEvent.id })
                   .eq('id', appointment.id);
+              } else {
+                const errorText = await response.text();
+                console.error('[Calendar] Google API error:', response.status, errorText);
+                results.google = { success: false, error: `API error: ${response.status}` };
               }
             } catch (error) {
               console.error('Google sync error:', error);
