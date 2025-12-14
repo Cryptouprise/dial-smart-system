@@ -74,7 +74,7 @@ serve(async (req) => {
           `response_type=code&` +
           `scope=${encodeURIComponent(scopes)}&` +
           `access_type=offline&` +
-          `prompt=select_account&` +
+          `prompt=consent&` +
           `state=${userId}`;
 
         return new Response(
