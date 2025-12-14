@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2, AlertTriangle, Settings, Webhook } from 'lucide-react';
+import { MessageSquare, Send, RefreshCw, Phone, Clock, CheckCircle, XCircle, Loader2, AlertTriangle, Settings, Webhook, Sparkles } from 'lucide-react';
 import { useSmsMessaging, type SmsMessage, type TwilioNumber } from '@/hooks/useSmsMessaging';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -38,6 +39,7 @@ import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from
 const SmsMessaging: React.FC = () => {
   const { isLoading, messages, sendSms, getMessages, getAvailableNumbers, configureWebhook } = useSmsMessaging();
   const { toast } = useToast();
+  const navigate = useNavigate();
   
   const [toNumber, setToNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -170,15 +172,25 @@ const SmsMessaging: React.FC = () => {
                 Send and receive text messages through your phone numbers
               </CardDescription>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={loadData}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => navigate('/sms-conversations')}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                AI SMS Agent
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={loadData}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
