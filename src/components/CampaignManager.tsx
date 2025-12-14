@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -274,6 +275,79 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     await updateCampaign(campaign.id, { status: newStatus });
     loadCampaigns();
     onRefresh?.();
+  };
+
+  const handleDeleteCampaign = async (campaignId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Delete campaign leads first
+      await supabase
+        .from('campaign_leads')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      // Delete dialing queue entries
+      await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      // Delete the campaign
+      const { error } = await supabase
+        .from('campaigns')
+        .delete()
+        .eq('id', campaignId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Campaign deleted",
+        description: "The campaign has been permanently deleted.",
+      });
+      loadCampaigns();
+      onRefresh?.();
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete campaign. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Check if calendar is connected for the user
+  const [hasCalendarIntegration, setHasCalendarIntegration] = useState(false);
+  
+  useEffect(() => {
+    const checkCalendarIntegration = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data } = await supabase
+        .from('calendar_integrations')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('sync_enabled', true)
+        .limit(1);
+      
+      setHasCalendarIntegration((data?.length || 0) > 0);
+    };
+    checkCalendarIntegration();
+  }, []);
+
+  // Determine campaign type based on workflow and SMS settings
+  const getCampaignType = (campaign: Campaign) => {
+    if (campaign.workflow_id && campaign.sms_from_number) {
+      return { label: 'Call + SMS', icon: MessageSquare, color: 'text-blue-600 border-blue-600' };
+    } else if (campaign.sms_from_number) {
+      return { label: 'SMS Only', icon: MessageSquare, color: 'text-green-600 border-green-600' };
+    } else {
+      return { label: 'Voice Call', icon: Phone, color: 'text-purple-600 border-purple-600' };
+    }
   };
 
   const handlePrioritizeLeads = async (campaignId: string, timezone: string) => {
@@ -594,8 +668,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
             <CardHeader>
               <div className="flex justify-between items-start">
                 <div>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 flex-wrap">
                     {campaign.name}
+                    {/* Campaign Type Badge */}
+                    {(() => {
+                      const type = getCampaignType(campaign);
+                      return (
+                        <Badge variant="outline" className={type.color}>
+                          <type.icon className="h-3 w-3 mr-1" />
+                          {type.label}
+                        </Badge>
+                      );
+                    })()}
                     <Badge variant={campaign.status === 'active' ? 'default' : 
                                   campaign.status === 'paused' ? 'secondary' : 'outline'}>
                       {campaign.status}
@@ -621,7 +705,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       const workflow = workflows.find(w => w.id === campaign.workflow_id);
                       if (workflow) {
                         return (
-                          <Badge variant="outline" className="text-purple-600 border-purple-600">
+                          <Badge variant="outline" className="text-indigo-600 border-indigo-600">
                             <Workflow className="h-3 w-3 mr-1" />
                             {workflow.name}
                           </Badge>
@@ -629,6 +713,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       }
                       return null;
                     })()}
+                    {/* Calendar Connection Status */}
+                    {hasCalendarIntegration ? (
+                      <Badge variant="outline" className="text-teal-600 border-teal-600">
+                        <Calendar className="h-3 w-3 mr-1" />
+                        Calendar
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground border-muted-foreground">
+                        <CalendarOff className="h-3 w-3 mr-1" />
+                        No Calendar
+                      </Badge>
+                    )}
                   </CardTitle>
                   {campaign.description && (
                     <CardDescription>{campaign.description}</CardDescription>
@@ -660,6 +756,29 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       <Play className="h-4 w-4" />
                     </Button>
                   )}
+
+                  {/* Delete Button */}
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to delete "{campaign.name}"? This will also remove all associated leads and queue entries. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteCampaign(campaign.id)}>
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             </CardHeader>
