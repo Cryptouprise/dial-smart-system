@@ -141,7 +141,7 @@ serve(async (req) => {
         const { data: smsRecord, error: insertError } = await supabaseAdmin
           .from('sms_messages')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             to_number: cleanTo,
             from_number: cleanFrom,
             body: request.body,
@@ -233,7 +233,7 @@ serve(async (req) => {
         const { data: messages, error: fetchError } = await supabaseAdmin
           .from('sms_messages')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(limit);
 
