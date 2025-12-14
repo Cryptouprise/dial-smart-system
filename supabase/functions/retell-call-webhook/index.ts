@@ -86,14 +86,27 @@ serve(async (req) => {
     const metadata = call.metadata || {};
     const leadId = metadata.lead_id;
     const campaignId = metadata.campaign_id;
-    const userId = metadata.user_id;
+    let userId = metadata.user_id;
 
+    // If user_id is missing from metadata, try to look it up from call_logs
     if (!userId) {
-      console.error('[Retell Webhook] Missing user_id in metadata');
-      return new Response(JSON.stringify({ error: 'Missing user_id in call metadata' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.log('[Retell Webhook] user_id missing from metadata, looking up from call_logs...');
+      const { data: callLogLookup } = await supabase
+        .from('call_logs')
+        .select('user_id')
+        .eq('retell_call_id', call.call_id)
+        .maybeSingle();
+      
+      if (callLogLookup?.user_id) {
+        userId = callLogLookup.user_id;
+        console.log('[Retell Webhook] Found user_id from call_logs:', userId);
+      } else {
+        console.error('[Retell Webhook] Could not find user_id for call:', call.call_id);
+        return new Response(JSON.stringify({ error: 'Could not determine user_id for call' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Calculate call duration
@@ -213,6 +226,9 @@ serve(async (req) => {
 
       // 6. Update pipeline position
       await updatePipelinePosition(supabase, leadId, userId, outcome);
+
+      // 7. CRITICAL: Advance workflow to next step after call ends
+      await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
     }
 
     // 7. Update phone number usage stats
@@ -495,4 +511,118 @@ async function updatePipelinePosition(
   } catch (error) {
     console.error('[Retell Webhook] Pipeline update error:', error);
   }
+}
+
+// NEW: Advance workflow to next step after a call completes
+async function advanceWorkflowAfterCall(
+  supabase: any,
+  leadId: string,
+  userId: string,
+  outcome: string
+) {
+  try {
+    console.log(`[Retell Webhook] Advancing workflow for lead ${leadId} after call with outcome: ${outcome}`);
+
+    // Find active workflow progress for this lead
+    const { data: activeProgress } = await supabase
+      .from('lead_workflow_progress')
+      .select(`
+        id,
+        workflow_id,
+        current_step_id,
+        status,
+        workflow_steps!lead_workflow_progress_current_step_id_fkey(id, step_type, step_number)
+      `)
+      .eq('lead_id', leadId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!activeProgress) {
+      console.log('[Retell Webhook] No active workflow found for lead');
+      return;
+    }
+
+    const currentStep = activeProgress.workflow_steps;
+    
+    // Only advance if current step is a call step
+    if (currentStep?.step_type !== 'call') {
+      console.log(`[Retell Webhook] Current step is not a call step (${currentStep?.step_type}), not advancing`);
+      return;
+    }
+
+    // Get all steps in order
+    const { data: allSteps } = await supabase
+      .from('workflow_steps')
+      .select('*')
+      .eq('workflow_id', activeProgress.workflow_id)
+      .order('step_number', { ascending: true });
+
+    if (!allSteps || allSteps.length === 0) {
+      console.log('[Retell Webhook] No workflow steps found');
+      return;
+    }
+
+    const currentIndex = allSteps.findIndex((s: any) => s.id === currentStep?.id);
+    const nextStep = allSteps[currentIndex + 1];
+
+    if (nextStep) {
+      // Calculate when the next action should occur
+      const nextActionAt = calculateNextActionTimeForWebhook(nextStep);
+      
+      await supabase
+        .from('lead_workflow_progress')
+        .update({
+          current_step_id: nextStep.id,
+          next_action_at: nextActionAt,
+          last_action_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', activeProgress.id);
+
+      console.log(`[Retell Webhook] Advanced to step ${nextStep.step_number} (${nextStep.step_type}), next action at: ${nextActionAt}`);
+    } else {
+      // No more steps, mark workflow as completed
+      await supabase
+        .from('lead_workflow_progress')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', activeProgress.id);
+
+      console.log('[Retell Webhook] Workflow completed - no more steps');
+    }
+  } catch (error) {
+    console.error('[Retell Webhook] Error advancing workflow:', error);
+  }
+}
+
+function calculateNextActionTimeForWebhook(step: any): string {
+  const config = step.step_config || {};
+  const now = new Date();
+
+  if (step.step_type === 'wait') {
+    const delayMs =
+      (config.delay_minutes || 0) * 60 * 1000 +
+      (config.delay_hours || 0) * 60 * 60 * 1000 +
+      (config.delay_days || 0) * 24 * 60 * 60 * 1000;
+
+    let nextTime = new Date(now.getTime() + delayMs);
+
+    if (config.time_of_day) {
+      const [hours, minutes] = String(config.time_of_day).split(':').map(Number);
+      if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+        nextTime.setHours(hours, minutes, 0, 0);
+        if (nextTime <= now) {
+          nextTime.setDate(nextTime.getDate() + 1);
+        }
+      }
+    }
+
+    return nextTime.toISOString();
+  }
+
+  // For SMS/call/other steps, add a small delay (1 minute) to allow webhook processing to complete
+  return new Date(now.getTime() + 60 * 1000).toISOString();
 }

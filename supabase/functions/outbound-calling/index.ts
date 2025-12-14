@@ -192,7 +192,8 @@ serve(async (req) => {
             metadata: {
               campaign_id: campaignId,
               lead_id: leadId,
-              call_log_id: callLog.id
+              call_log_id: callLog.id,
+              user_id: userId // CRITICAL: Include user_id for webhook processing
             }
           }),
         });

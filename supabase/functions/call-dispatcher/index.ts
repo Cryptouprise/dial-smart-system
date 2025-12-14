@@ -140,15 +140,27 @@ serve(async (req) => {
 
     // Check existing workflow progress entries - include ALL statuses including completed
     // to prevent re-enrollment of leads that already went through a workflow
+    // CRITICAL FIX: Also check by PHONE NUMBER to prevent duplicate leads with same phone
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: existingWorkflowProgress } = await supabase
       .from('lead_workflow_progress')
-      .select('lead_id, status, workflow_id')
+      .select('lead_id, status, workflow_id, leads!lead_workflow_progress_lead_id_fkey(phone_number)')
       .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
       .gte('created_at', oneDayAgo); // Check last 24 hours regardless of status
 
     const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
-    console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}`);
+    
+    // Build a set of phone numbers that have been enrolled in workflows (normalized)
+    const existingWorkflowPhones = new Set<string>();
+    for (const p of existingWorkflowProgress || []) {
+      const phone = (p as any).leads?.phone_number;
+      if (phone) {
+        // Normalize phone: remove +1 prefix and any non-digits
+        const normalized = phone.replace(/\D/g, '').slice(-10);
+        existingWorkflowPhones.add(normalized);
+      }
+    }
+    console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
 
     // **CRITICAL FIX**: Check for RECENT call_logs to prevent re-calling leads
     // Look for any calls made in the last 30 minutes for these campaigns
@@ -206,6 +218,14 @@ serve(async (req) => {
       if (lead.do_not_call) return false;
       if (existingLeadIds.has(cl.lead_id)) return false;
       if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
+      
+      // CRITICAL FIX: Also check by normalized phone number to catch duplicate lead records
+      const normalizedPhone = lead.phone_number.replace(/\D/g, '').slice(-10);
+      if (existingWorkflowPhones.has(normalizedPhone)) {
+        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - phone ${normalizedPhone} already enrolled in workflow`);
+        return false;
+      }
+      
       // **NEW**: Skip leads that were called recently
       if (recentlyCalledLeadIds.has(cl.lead_id)) return false;
       // **NEW**: Skip leads that were successfully contacted
