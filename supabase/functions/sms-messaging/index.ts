@@ -272,18 +272,77 @@ serve(async (req) => {
         
         const expectedWebhook = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
 
-        // Filter for SMS-capable numbers and include webhook status
+        // Fetch messaging services to check A2P registration
+        console.log('[SMS Messaging] Checking A2P messaging services...');
+        let messagingServiceNumbers: Set<string> = new Set();
+        
+        try {
+          const messagingServicesUrl = `https://messaging.twilio.com/v1/Services`;
+          const msResponse = await fetch(messagingServicesUrl, {
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+            },
+          });
+
+          if (msResponse.ok) {
+            const msData = await msResponse.json();
+            const services = msData.services || [];
+            
+            // For each messaging service, get the phone numbers assigned to it
+            for (const service of services) {
+              try {
+                const phoneNumbersUrl = `https://messaging.twilio.com/v1/Services/${service.sid}/PhoneNumbers`;
+                const pnResponse = await fetch(phoneNumbersUrl, {
+                  headers: {
+                    'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+                  },
+                });
+                
+                if (pnResponse.ok) {
+                  const pnData = await pnResponse.json();
+                  const phoneNumbers = pnData.phone_numbers || [];
+                  phoneNumbers.forEach((pn: any) => {
+                    messagingServiceNumbers.add(pn.phone_number);
+                  });
+                }
+              } catch (pnError) {
+                console.error('[SMS Messaging] Error fetching service numbers:', pnError);
+              }
+            }
+          }
+          console.log('[SMS Messaging] Found', messagingServiceNumbers.size, 'numbers in messaging services (A2P registered)');
+        } catch (msError) {
+          console.error('[SMS Messaging] Error checking messaging services:', msError);
+        }
+
+        // Filter for SMS-capable numbers and include webhook + A2P status
         const smsCapableNumbers = twilioNumbers
           .filter((num: any) => num.capabilities?.sms === true)
-          .map((num: any) => ({
-            number: num.phone_number,
-            friendly_name: num.friendly_name,
-            capabilities: num.capabilities,
-            sms_url: num.sms_url,
-            webhook_configured: num.sms_url === expectedWebhook,
-          }));
+          .map((num: any) => {
+            const webhookConfigured = num.sms_url === expectedWebhook;
+            const a2pRegistered = messagingServiceNumbers.has(num.phone_number);
+            const isReady = webhookConfigured && a2pRegistered;
+            
+            return {
+              number: num.phone_number,
+              friendly_name: num.friendly_name,
+              capabilities: num.capabilities,
+              sms_url: num.sms_url,
+              webhook_configured: webhookConfigured,
+              a2p_registered: a2pRegistered,
+              is_ready: isReady,
+              status_details: !webhookConfigured && !a2pRegistered 
+                ? 'Needs webhook & A2P' 
+                : !webhookConfigured 
+                  ? 'Needs webhook' 
+                  : !a2pRegistered 
+                    ? 'Needs A2P registration' 
+                    : 'Ready',
+            };
+          });
 
         console.log('[SMS Messaging] Found', smsCapableNumbers.length, 'SMS-capable numbers in Twilio');
+        console.log('[SMS Messaging] Ready numbers:', smsCapableNumbers.filter((n: any) => n.is_ready).length);
 
         result = { numbers: smsCapableNumbers };
         break;
