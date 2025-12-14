@@ -138,14 +138,17 @@ serve(async (req) => {
 
     const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
 
-    // Check existing workflow progress entries
+    // Check existing workflow progress entries - include ALL statuses including completed
+    // to prevent re-enrollment of leads that already went through a workflow
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: existingWorkflowProgress } = await supabase
       .from('lead_workflow_progress')
-      .select('lead_id')
+      .select('lead_id, status, workflow_id')
       .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
-      .in('status', ['active', 'in_progress', 'pending']);
+      .gte('created_at', oneDayAgo); // Check last 24 hours regardless of status
 
     const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
+    console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}`);
 
     // **CRITICAL FIX**: Check for RECENT call_logs to prevent re-calling leads
     // Look for any calls made in the last 30 minutes for these campaigns
