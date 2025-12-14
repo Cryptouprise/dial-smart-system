@@ -38,6 +38,7 @@ import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import { BudgetManager } from '@/components/BudgetManager';
 import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
 import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
+import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
@@ -69,7 +70,7 @@ const Dashboard = () => {
   useEffect(() => {
     const unsubscribe = onModeChange((isSimple) => {
       if (isSimple) {
-        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results'];
+        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar'];
         if (!simpleTabs.includes(activeTab)) {
           setActiveTab('overview');
           setSearchParams({ tab: 'overview' });
@@ -368,6 +369,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Setup Wizard"><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></TabErrorBoundary>;
       case 'ai-setup':
         return <TabErrorBoundary tabName="AI Setup"><AISetupAssistant /></TabErrorBoundary>;
+      case 'calendar':
+        return <TabErrorBoundary tabName="Calendar"><CalendarIntegrationManager /></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
