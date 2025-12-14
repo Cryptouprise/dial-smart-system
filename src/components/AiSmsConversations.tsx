@@ -77,6 +77,191 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
+import type { AiSmsSettings } from '@/hooks/useAiSmsMessaging';
+
+// Calendar Integration Section Component
+const CalendarIntegrationSection: React.FC<{
+  settings: AiSmsSettings | null;
+  updateSettings: (updates: Partial<AiSmsSettings>) => Promise<boolean>;
+}> = ({ settings, updateSettings }) => {
+  const { toast } = useToast();
+  const [calendarStatus, setCalendarStatus] = useState<{
+    connected: boolean;
+    provider?: string;
+    email?: string;
+    calendarName?: string;
+    loading: boolean;
+  }>({ connected: false, loading: true });
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    const fetchCalendarStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: integrations } = await supabase
+          .from('calendar_integrations')
+          .select('provider, provider_account_email, calendar_name, sync_enabled')
+          .eq('user_id', user.id)
+          .eq('sync_enabled', true)
+          .limit(1);
+
+        if (integrations && integrations.length > 0) {
+          const cal = integrations[0];
+          setCalendarStatus({
+            connected: true,
+            provider: cal.provider,
+            email: cal.provider_account_email || cal.calendar_name,
+            calendarName: cal.calendar_name,
+            loading: false,
+          });
+        } else {
+          setCalendarStatus({ connected: false, loading: false });
+        }
+      } catch (error) {
+        console.error('Error fetching calendar status:', error);
+        setCalendarStatus({ connected: false, loading: false });
+      }
+    };
+
+    fetchCalendarStatus();
+  }, []);
+
+  const testCalendarConnection = async () => {
+    setTesting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Check for availability data
+      const { data: availability } = await supabase
+        .from('calendar_availability')
+        .select('weekly_schedule, timezone')
+        .eq('user_id', user.id)
+        .single();
+
+      // Check for upcoming appointments
+      const { data: appointments, count } = await supabase
+        .from('calendar_appointments')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id)
+        .gte('start_time', new Date().toISOString())
+        .limit(3);
+
+      if (availability) {
+        toast({
+          title: "Calendar Working!",
+          description: `Found availability settings (${availability.timezone}) and ${count || 0} upcoming appointments. AI can check your schedule.`,
+        });
+      } else {
+        toast({
+          title: "No Availability Set",
+          description: "Go to Settings → Calendar to set your available times.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Calendar test error:', error);
+      toast({
+        title: "Calendar Test Failed",
+        description: "Could not verify calendar access.",
+        variant: "destructive",
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="border-t pt-4 mt-4">
+      <h4 className="font-medium mb-3 flex items-center gap-2">
+        <Calendar className="h-4 w-4" />
+        Calendar Integration
+      </h4>
+      
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <Label htmlFor="calendar-integration">Enable Calendar Access</Label>
+          <p className="text-sm text-muted-foreground">AI can check availability & book appointments</p>
+        </div>
+        <Switch
+          id="calendar-integration"
+          checked={settings?.enable_calendar_integration || false}
+          onCheckedChange={(checked) => updateSettings({ enable_calendar_integration: checked })}
+        />
+      </div>
+
+      {settings?.enable_calendar_integration && (
+        <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+          {/* Connection Status */}
+          <div className="p-3 rounded-lg bg-muted/50">
+            <p className="font-medium text-sm mb-2">Connection Status:</p>
+            {calendarStatus.loading ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking...
+              </div>
+            ) : calendarStatus.connected ? (
+              <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                <CheckCheck className="h-4 w-4" />
+                <span className="capitalize">{calendarStatus.provider}</span> connected
+                {calendarStatus.email && (
+                  <span className="text-muted-foreground text-xs">({calendarStatus.email})</span>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="h-4 w-4" />
+                  No calendar connected
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  AI will use your availability settings. Connect Google/Outlook in Settings → Calendar for real-time sync.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Test Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={testCalendarConnection}
+            disabled={testing}
+            className="w-full"
+          >
+            {testing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4 mr-2" />
+                Test Calendar Access
+              </>
+            )}
+          </Button>
+
+          {/* Booking Link */}
+          <div className="space-y-2">
+            <Label htmlFor="booking-link">Calendly/Booking Link (Optional)</Label>
+            <Input
+              id="booking-link"
+              value={settings?.calendar_booking_link || ''}
+              onChange={(e) => updateSettings({ calendar_booking_link: e.target.value })}
+              placeholder="https://calendly.com/yourname/15min"
+            />
+            <p className="text-xs text-muted-foreground">
+              AI will share this link when leads want to schedule
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Pre-defined SMS templates
 const SMS_TEMPLATES = [
@@ -878,47 +1063,10 @@ COMMON OBJECTIONS:
                     />
                   </div>
 
-                  <div className="border-t pt-4 mt-4">
-                    <h4 className="font-medium mb-3 flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      Calendar Integration
-                    </h4>
-                    
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <Label htmlFor="calendar-integration">Enable Calendar Access</Label>
-                        <p className="text-sm text-muted-foreground">AI can check availability & book appointments</p>
-                      </div>
-                      <Switch
-                        id="calendar-integration"
-                        checked={settings?.enable_calendar_integration || false}
-                        onCheckedChange={(checked) => updateSettings({ enable_calendar_integration: checked })}
-                      />
-                    </div>
-
-                    {settings?.enable_calendar_integration && (
-                      <div className="space-y-3 pl-4 border-l-2 border-primary/20">
-                        <div className="space-y-2">
-                          <Label htmlFor="booking-link">Calendly/Booking Link (Optional)</Label>
-                          <Input
-                            id="booking-link"
-                            value={settings?.calendar_booking_link || ''}
-                            onChange={(e) => updateSettings({ calendar_booking_link: e.target.value })}
-                            placeholder="https://calendly.com/yourname/15min"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            AI will share this link when leads want to schedule
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-lg bg-muted/50 text-sm">
-                          <p className="font-medium mb-1">Calendar Status:</p>
-                          <p className="text-muted-foreground">
-                            Uses your availability from Settings → Calendar
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <CalendarIntegrationSection 
+                    settings={settings}
+                    updateSettings={updateSettings}
+                  />
                 </TabsContent>
               </Tabs>
             </div>
