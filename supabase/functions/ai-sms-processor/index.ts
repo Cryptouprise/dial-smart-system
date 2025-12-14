@@ -208,6 +208,82 @@ serve(async (req) => {
       });
     }
 
+    if (action === 'convert_voice_to_sms') {
+      // Convert voice agent prompt to SMS-optimized prompt
+      const { voicePrompt, aggressionLevel, aggressionTone, campaignName, settings: conversionSettings } = request;
+
+      console.log('[AI SMS] Converting voice prompt to SMS for campaign:', campaignName);
+
+      const conversionPrompt = `You are an expert at converting AI voice agent scripts into SMS-optimized text agent scripts.
+
+Given a voice agent script/prompt, convert it to work well for SMS text messaging while preserving the core personality and goals.
+
+VOICE AGENT PROMPT TO CONVERT:
+${voicePrompt}
+
+CONVERSION GUIDELINES:
+1. Remove all voice-specific instructions (tone of voice, pacing, interruption handling)
+2. Replace call-specific phrases ("transfer to", "hold on", "let me check") with text-appropriate alternatives
+3. Keep messages concise - SMS should be under 160 characters when possible
+4. Convert verbal acknowledgments to brief text responses
+5. Add clear call-to-action in each message
+6. Include instructions for handling:
+   - Appointment scheduling via text
+   - Question handling with single-question-at-a-time approach
+   - Follow-up timing based on lead responses
+   - Emoji usage (sparingly)
+
+FOLLOW-UP STYLE: ${aggressionLevel || 'balanced'}
+${aggressionTone || ''}
+
+TIMING CONFIGURATION:
+- Initial follow-up after ${conversionSettings?.initialDelayHours || 12} hours of no response
+- Subsequent follow-ups every ${conversionSettings?.followUpIntervalHours || 24} hours
+- Maximum ${conversionSettings?.maxFollowUps || 5} follow-up attempts
+
+Generate a complete SMS agent system prompt that:
+1. Captures the original personality and objectives
+2. Is optimized for text-based conversation
+3. Includes the follow-up timing rules
+4. Includes calendar/appointment handling instructions
+5. Includes pipeline/status update awareness
+
+Return ONLY the SMS agent prompt, no explanations or meta-commentary.`;
+
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'user', content: conversionPrompt }
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[AI SMS] Conversion failed:', errorText);
+        throw new Error(`AI conversion failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const smsPrompt = data.choices?.[0]?.message?.content;
+
+      if (!smsPrompt) {
+        throw new Error('Failed to generate SMS prompt');
+      }
+
+      console.log('[AI SMS] Successfully converted voice prompt to SMS');
+
+      return new Response(JSON.stringify({ success: true, smsPrompt }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     throw new Error(`Unknown action: ${action}`);
 
   } catch (error) {

@@ -7,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -86,6 +87,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     timezone: 'America/New_York'
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; provider: string}[]>([]);
+  const [smsAgentCampaign, setSmsAgentCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
     loadCampaigns();
@@ -842,6 +844,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     <TrendingUp className="h-4 w-4 mr-2" />
                     {prioritizingCampaignId === campaign.id ? 'Prioritizing...' : 'Prioritize Leads'}
                   </Button>
+
+                  {/* AI SMS Agent Generator Button */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setSmsAgentCampaign(campaign)}
+                    className="text-blue-600 border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
+                  >
+                    <Bot className="h-4 w-4 mr-2" />
+                    AI SMS Agent
+                  </Button>
                 </div>
 
                 {expandedCampaignId === campaign.id && (
@@ -873,6 +885,26 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
           </Card>
         )}
       </div>
+
+      {/* AI SMS Agent Generator Dialog */}
+      {smsAgentCampaign && (
+        <AiSmsAgentGenerator
+          open={!!smsAgentCampaign}
+          onOpenChange={(open) => !open && setSmsAgentCampaign(null)}
+          campaignId={smsAgentCampaign.id}
+          campaignName={smsAgentCampaign.name}
+          agentId={smsAgentCampaign.agent_id}
+          agentName={agents.find(a => a.agent_id === smsAgentCampaign.agent_id)?.agent_name}
+          workflowId={smsAgentCampaign.workflow_id}
+          onGenerated={() => {
+            toast({
+              title: 'SMS Agent Ready',
+              description: 'AI SMS agent is now active for this campaign',
+            });
+            setSmsAgentCampaign(null);
+          }}
+        />
+      )}
     </div>
   );
 };
