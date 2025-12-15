@@ -377,17 +377,17 @@ const Dashboard = () => {
   };
 
   return (
-    <SidebarProvider defaultOpen={true}>
+    <SidebarProvider defaultOpen={false}>
       <div className="min-h-screen flex w-full bg-gradient-to-br from-background to-muted/30">
         <DashboardSidebar activeTab={activeTab} onTabChange={handleTabChange} />
-        <SidebarInset className="flex-1">
-          <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur px-4 lg:px-6">
-            <SidebarTrigger className="lg:hidden" />
-            <div className="flex-1">
-              <h1 className="text-lg font-semibold">📞 Smart Dialer Dashboard</h1>
+        <SidebarInset className="flex-1 min-w-0">
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 backdrop-blur px-3 sm:px-4 lg:px-6">
+            <SidebarTrigger className="shrink-0" />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold truncate">📞 Smart Dialer</h1>
             </div>
           </header>
-          <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
+          <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden">
             <div className="max-w-full overflow-hidden">
               {renderContent()}
             </div>
