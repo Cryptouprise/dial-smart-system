@@ -530,25 +530,46 @@ function cleanRepeatedText(text: string): string {
   return text;
 }
 
+// SMART REACTION DETECTION
+// Only TRUE reactions (emoji-only, iMessage reactions) should skip AI responses
+// Text responses like "ok", "thanks", "yes" should ALWAYS get responses
 async function detectReaction(body: string): Promise<{ isReaction: boolean; reactionType: string | null }> {
+  const trimmedBody = body.trim();
+  
+  // TRUE reactions are ONLY emoji-only or iMessage reaction patterns
   const reactions = [
+    // Single emoji reactions
     { pattern: /^👍$/, type: 'thumbs_up' },
     { pattern: /^👎$/, type: 'thumbs_down' },
     { pattern: /^❤️$/, type: 'heart' },
     { pattern: /^😂$/, type: 'laugh' },
     { pattern: /^😮$/, type: 'wow' },
     { pattern: /^😢$/, type: 'sad' },
-    { pattern: /^Liked ".*"$/i, type: 'like' },
-    { pattern: /^Loved ".*"$/i, type: 'love' },
-    { pattern: /^Emphasized ".*"$/i, type: 'emphasis' },
+    { pattern: /^🙏$/, type: 'pray' },
+    { pattern: /^👌$/, type: 'ok_hand' },
+    { pattern: /^✅$/, type: 'check' },
+    { pattern: /^🔥$/, type: 'fire' },
+    { pattern: /^💯$/, type: 'hundred' },
+    { pattern: /^👏$/, type: 'clap' },
+    { pattern: /^🎉$/, type: 'celebration' },
+    // iMessage reaction patterns
+    { pattern: /^Liked ".*"$/i, type: 'imessage_like' },
+    { pattern: /^Loved ".*"$/i, type: 'imessage_love' },
+    { pattern: /^Emphasized ".*"$/i, type: 'imessage_emphasis' },
+    { pattern: /^Laughed at ".*"$/i, type: 'imessage_laugh' },
+    { pattern: /^Questioned ".*"$/i, type: 'imessage_question' },
+    { pattern: /^Disliked ".*"$/i, type: 'imessage_dislike' },
   ];
 
   for (const reaction of reactions) {
-    if (reaction.pattern.test(body.trim())) {
+    if (reaction.pattern.test(trimmedBody)) {
+      console.log('[AI SMS] Detected true reaction:', reaction.type);
       return { isReaction: true, reactionType: reaction.type };
     }
   }
 
+  // IMPORTANT: Text like "ok", "thanks", "yes", "no" are NOT reactions
+  // They are meaningful responses that should get AI replies
   return { isReaction: false, reactionType: null };
 }
 
