@@ -533,61 +533,45 @@ serve(async (req) => {
       console.log('[Twilio SMS Webhook] Auto-response enabled, generating AI response...' + 
         (useWorkflowSettings ? ` (using workflow: ${workflowName})` : ' (using global settings)'));
       
-      // Check for reactions - skip auto-response for simple acknowledgments
-      // But be context-aware: if the last AI message was a question, don't treat yes/no as reactions
-      const reactionPatterns = [
-        /^(👍|👎|❤️|😀|😊|🙏|👌|✅|ok|okay|k|thanks|thank you|thx|ty|cool|got it|sounds good|perfect|great)$/i
+      // SMART REACTION DETECTION
+      // Only skip responses for TRUE reactions (emoji-only, iMessage reactions)
+      // NEVER skip text responses - they almost always need a reply
+      
+      // TRUE reactions are ONLY emoji-only messages or iMessage reaction patterns
+      const trueReactionPatterns = [
+        /^(👍|👎|❤️|😀|😊|🙏|👌|✅|😂|😮|😢|🔥|💯|👏|🎉)$/,  // Single emoji only
+        /^Liked ".*"$/i,   // iMessage "Liked" reaction
+        /^Loved ".*"$/i,   // iMessage "Loved" reaction  
+        /^Emphasized ".*"$/i,  // iMessage "Emphasized" reaction
+        /^Laughed at ".*"$/i,  // iMessage laugh reaction
+        /^Questioned ".*"$/i,  // iMessage question reaction
+        /^Disliked ".*"$/i,    // iMessage dislike reaction
       ];
       
-      // Separate pattern for yes/no responses that need context checking
-      const confirmationPatterns = [
-        /^(yes|no|yep|nope|yeah|yea|nah|sure|absolutely|definitely|correct|right)$/i
-      ];
+      const isTrueReaction = trueReactionPatterns.some(pattern => pattern.test(messageBody.trim()));
       
-      const isSimpleReaction = reactionPatterns.some(pattern => pattern.test(messageBody.trim()));
-      const isConfirmation = confirmationPatterns.some(pattern => pattern.test(messageBody.trim()));
+      // Log what we detected
+      console.log('[Twilio SMS Webhook] Reaction check:', {
+        message: messageBody.substring(0, 30),
+        isTrueReaction,
+        reactionDetectionEnabled: globalSettings?.enable_reaction_detection
+      });
       
-      // Check if last AI message was a question - if so, confirmations should get responses
-      let lastAiMessageWasQuestion = false;
-      if (isConfirmation && conversationId) {
-        const { data: lastAiMessage } = await supabaseAdmin
-          .from('sms_messages')
-          .select('body')
-          .eq('conversation_id', conversationId)
-          .eq('direction', 'outbound')
-          .eq('is_ai_generated', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (lastAiMessage?.body) {
-          lastAiMessageWasQuestion = lastAiMessage.body.trim().endsWith('?');
-          console.log('[Twilio SMS Webhook] Last AI message was question:', lastAiMessageWasQuestion, 
-            '- Message excerpt:', lastAiMessage.body.substring(0, 50));
-        }
-      }
-      
-      // Only skip if it's a simple reaction OR a confirmation that's NOT answering a question
-      const shouldSkipAsReaction = isSimpleReaction || (isConfirmation && !lastAiMessageWasQuestion);
-      
-      if (shouldSkipAsReaction && globalSettings?.enable_reaction_detection) {
-        console.log('[Twilio SMS Webhook] Message is a reaction/acknowledgment, skipping auto-response');
+      // ONLY skip for TRUE reactions (emojis and iMessage reactions)
+      // Text like "ok", "thanks", "yes", "no" should ALWAYS get responses
+      if (isTrueReaction && globalSettings?.enable_reaction_detection) {
+        console.log('[Twilio SMS Webhook] True reaction detected (emoji/iMessage), skipping auto-response');
         
         // Mark the message as a reaction
         await supabaseAdmin
           .from('sms_messages')
-          .update({ is_reaction: true, reaction_type: 'acknowledgment' })
+          .update({ is_reaction: true, reaction_type: 'emoji_reaction' })
           .eq('id', message?.id);
         
         return new Response(
           '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
           { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
         );
-      }
-      
-      // If it's a confirmation answering a question, log that we're processing it
-      if (isConfirmation && lastAiMessageWasQuestion) {
-        console.log('[Twilio SMS Webhook] Confirmation answering AI question - will generate response');
       }
       
       // Merge settings: workflow settings override global settings where available
