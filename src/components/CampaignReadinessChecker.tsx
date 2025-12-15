@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket, ChevronRight, Wrench } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket, ChevronRight, Wrench, ShieldAlert } from 'lucide-react';
 import { useCampaignReadiness, CampaignReadinessResult, ReadinessCheck } from '@/hooks/useCampaignReadiness';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface CampaignReadinessCheckerProps {
   campaignId: string;
@@ -58,13 +59,23 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
       return;
     }
     
-    // Navigate based on issue type (fallback for standalone use)
+    // Use the check's fixRoute if available, otherwise use fallback mapping
+    if (check.fixRoute) {
+      window.location.href = check.fixRoute;
+      setFixingIssue(null);
+      return;
+    }
+    
+    // Fallback routes for backward compatibility
     const fixRoutes: Record<string, string> = {
       'agent_phone': '/?tab=retell',
       'leads_assigned': '/?tab=leads', 
       'phone_numbers': '/?tab=phone-numbers',
       'sms_phone_number': '/?tab=phone-numbers',
       'campaign_sms_number': '/?tab=predictive',
+      'caller_id_retell': '/?tab=retell',
+      'wait_steps_config': '/?tab=workflows',
+      'a2p_registration': '/?tab=phone-numbers',
       'sip_trunk': '/?tab=phone-numbers',
       'ai_agent': '/?tab=retell',
       'workflow': '/?tab=workflows',
@@ -141,6 +152,21 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
           </div>
         ) : result ? (
           <div className="space-y-4">
+            {/* Blocking reasons alert */}
+            {result.blockingReasons && result.blockingReasons.length > 0 && (
+              <Alert variant="destructive">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Campaign Cannot Launch</AlertTitle>
+                <AlertDescription>
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    {result.blockingReasons.map((reason, i) => (
+                      <li key={i} className="text-sm">{reason}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="grid gap-2">
               {result.checks.map((check) => {
                 const isClickable = check.status === 'fail' || check.status === 'warning';
@@ -157,17 +183,17 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                       'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 cursor-pointer'
                     } ${isClickable ? 'hover:ring-2 hover:ring-primary/50' : ''}`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {getStatusIcon(check.status)}
                       <span className="text-sm font-medium">{check.label}</span>
                       {check.critical && check.status === 'fail' && (
-                        <Badge variant="destructive" className="text-xs">Required</Badge>
+                        <Badge variant="destructive" className="text-xs">Blocks Launch</Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">{check.message}</span>
+                      <span className="text-sm text-muted-foreground max-w-[250px] truncate">{check.message}</span>
                       {isClickable && (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                       )}
                     </div>
                   </button>
@@ -177,7 +203,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
 
             {result.warnings > 0 && (
               <p className="text-sm text-amber-600 dark:text-amber-400">
-                {result.warnings} optional recommendations
+                {result.warnings} optional recommendation(s)
               </p>
             )}
 
