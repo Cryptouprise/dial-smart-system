@@ -23,13 +23,12 @@ import {
   LayoutDashboard,
   ChevronDown,
   PanelLeftClose,
-  PanelLeft,
-  Radio,
-  AlertCircle,
-  DollarSign,
   ToggleLeft,
   ToggleRight,
+  Radio,
   Rocket,
+  AlertCircle,
+  DollarSign,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -150,57 +149,48 @@ interface DashboardSidebarProps {
 }
 
 const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => {
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === 'collapsed';
+  const { toggleSidebar } = useSidebar();
   const { isSimpleMode, toggleMode } = useSimpleMode();
   
   const filteredNavigation = getFilteredNavigation(isSimpleMode);
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+    <Sidebar collapsible="offcanvas" className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border p-3">
-        <div className="flex items-center justify-between">
-          {!isCollapsed && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-5 w-5 text-primary" />
-              <span className="font-semibold text-sm">Smart Dialer</span>
-            </div>
-          )}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Phone className="h-5 w-5 text-primary shrink-0" />
+            <span className="font-semibold text-sm truncate">Smart Dialer</span>
+          </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleSidebar}
-            className="h-8 w-8"
+            className="h-8 w-8 shrink-0"
           >
-            {isCollapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
+            <PanelLeftClose className="h-4 w-4" />
           </Button>
         </div>
         
         {/* Mode Toggle */}
-        {!isCollapsed && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleMode}
-            className="w-full mt-2 justify-between h-8 text-xs"
-          >
-            <span className="flex items-center gap-2">
-              {isSimpleMode ? (
-                <ToggleLeft className="h-4 w-4 text-primary" />
-              ) : (
-                <ToggleRight className="h-4 w-4 text-primary" />
-              )}
-              {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
-            </span>
-            <Badge variant="outline" className="text-[10px] h-5">
-              {isSimpleMode ? '5 tabs' : '20+ tabs'}
-            </Badge>
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleMode}
+          className="w-full mt-2 justify-between h-8 text-xs"
+        >
+          <span className="flex items-center gap-2">
+            {isSimpleMode ? (
+              <ToggleLeft className="h-4 w-4 text-primary" />
+            ) : (
+              <ToggleRight className="h-4 w-4 text-primary" />
+            )}
+            {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
+          </span>
+          <Badge variant="outline" className="text-[10px] h-5">
+            {isSimpleMode ? '5 tabs' : '20+ tabs'}
+          </Badge>
+        </Button>
       </SidebarHeader>
 
       <SidebarContent className="px-2">
@@ -209,25 +199,29 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             key={group.label}
             group={group}
             activeTab={activeTab}
-            onTabChange={onTabChange}
-            isCollapsed={isCollapsed}
+            onTabChange={(tab) => {
+              onTabChange(tab);
+              // Auto-close sidebar on mobile after selection
+              if (window.innerWidth < 768) {
+                toggleSidebar();
+              }
+            }}
+            
           />
         ))}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        {!isCollapsed && (
-          <div className="space-y-2">
-            {isSimpleMode && (
-              <p className="text-xs text-muted-foreground text-center">
-                Need more features? Switch to <button onClick={toggleMode} className="text-primary hover:underline">Full Mode</button>
-              </p>
-            )}
+        <div className="space-y-2">
+          {isSimpleMode && (
             <p className="text-xs text-muted-foreground text-center">
-              Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘B</kbd> to toggle
+              Need more features? Switch to <button onClick={toggleMode} className="text-primary hover:underline">Full Mode</button>
             </p>
-          </div>
-        )}
+          )}
+          <p className="text-xs text-muted-foreground text-center hidden sm:block">
+            Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘B</kbd> to toggle
+          </p>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
@@ -237,14 +231,12 @@ interface NavGroupCollapsibleProps {
   group: NavGroup;
   activeTab: string;
   onTabChange: (tab: string) => void;
-  isCollapsed: boolean;
 }
 
 const NavGroupCollapsible = ({
   group,
   activeTab,
   onTabChange,
-  isCollapsed,
 }: NavGroupCollapsibleProps) => {
   const hasActiveItem = group.items.some((item) => item.value === activeTab);
   const [isOpen, setIsOpen] = React.useState(group.defaultOpen || hasActiveItem);
@@ -252,30 +244,6 @@ const NavGroupCollapsible = ({
   React.useEffect(() => {
     if (hasActiveItem) setIsOpen(true);
   }, [hasActiveItem]);
-
-  if (isCollapsed) {
-    return (
-      <SidebarGroup className="py-1">
-        <SidebarMenu>
-          {group.items.map((item) => (
-            <SidebarMenuItem key={item.value}>
-              <SidebarMenuButton
-                onClick={() => onTabChange(item.value)}
-                isActive={activeTab === item.value}
-                tooltip={item.title}
-                className={cn(
-                  'justify-center',
-                  activeTab === item.value && 'bg-primary/10 text-primary'
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
-      </SidebarGroup>
-    );
-  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="group/collapsible">
@@ -300,6 +268,7 @@ const NavGroupCollapsible = ({
                     onClick={() => onTabChange(item.value)}
                     isActive={activeTab === item.value}
                     className={cn(
+                      'touch-manipulation',
                       activeTab === item.value && 'bg-primary/10 text-primary font-medium'
                     )}
                   >
