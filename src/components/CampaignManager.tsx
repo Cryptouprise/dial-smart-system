@@ -1184,10 +1184,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                 Possible reasons:
                               </p>
                               <ul className="text-sm text-amber-600 dark:text-amber-400 list-disc list-inside space-y-1">
-                                <li>All leads have been contacted (status is not "new")</li>
-                                <li>Leads are on the Do Not Call list</li>
-                                <li>Current time is outside campaign calling hours ({campaign.calling_hours_start} - {campaign.calling_hours_end} {campaign.timezone})</li>
-                                <li>No leads are assigned to this campaign</li>
+                                <li>Leads are attached, but none have status "new" yet (check status in the Leads tab or Manage Leads).</li>
+                                <li>Leads are on the Do Not Call list.</li>
+                                <li>Current time is outside campaign calling hours ({campaign.calling_hours_start} - {campaign.calling_hours_end} {campaign.timezone}).</li>
+                                <li>No leads have been attached to this campaign yet (use the "Manage Leads" button to add them).</li>
                               </ul>
                               <div className="pt-2 flex gap-2">
                                 <Button 
