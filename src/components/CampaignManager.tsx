@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -21,6 +21,7 @@ import { WorkflowPreview } from './WorkflowPreview';
 import { CampaignWorkflowEditor } from './CampaignWorkflowEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
 
 interface Campaign {
   id: string;
@@ -78,6 +79,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
+  const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
   const [prioritizingCampaignId, setPrioritizingCampaignId] = useState<string | null>(null);
   
   // Call Center state
@@ -1280,6 +1282,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     {viewingCallsFor === campaign.id ? 'Hide' : 'View'} Activity
                   </Button>
 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewingLiveStatus(
+                      viewingLiveStatus === campaign.id ? null : campaign.id
+                    )}
+                    className="text-green-600 border-green-600 hover:bg-green-50 dark:hover:bg-green-950"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    {viewingLiveStatus === campaign.id ? 'Hide' : 'Live'} Status
+                  </Button>
+
                   {/* Edit Workflow Button */}
                   {campaign.workflow_id && (
                     <Button
@@ -1326,6 +1340,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 {viewingCallsFor === campaign.id && (
                   <div className="pt-4">
                     <CampaignCallActivity campaignId={campaign.id} />
+                  </div>
+                )}
+
+                {viewingLiveStatus === campaign.id && (
+                  <div className="pt-4">
+                    <LiveCampaignStatusMonitor campaignId={campaign.id} />
                   </div>
                 )}
               </div>
