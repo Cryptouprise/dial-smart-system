@@ -26,12 +26,13 @@ interface QueueStats {
 export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) => {
   const { toast } = useToast();
   const [calls, setCalls] = useState<any[]>([]);
+  const [recentSms, setRecentSms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState({
     overview: true,
     queue: false,
     recentCalls: false,
-    smsActivity: false,
+    smsActivity: true, // SMS expanded by default so users can see activity
   });
   const [stats, setStats] = useState({
     total: 0,
@@ -59,7 +60,7 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
   useEffect(() => {
     loadAllData();
     
-    // Set up real-time subscription for call updates
+    // Set up real-time subscription for call and SMS updates
     const channel = supabase
       .channel(`campaign-activity-${campaignId}`)
       .on(
@@ -81,6 +82,15 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
           filter: `campaign_id=eq.${campaignId}`
         },
         () => loadQueueStats()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sms_messages'
+        },
+        () => loadSmsStats() // Reload SMS when any message changes
       )
       .subscribe();
 
@@ -137,22 +147,30 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
 
       if (!campaignLeads?.length) {
         setSmsStats({ sent: 0, received: 0, pending: 0 });
+        setRecentSms([]);
         return;
       }
 
-      const leadIds = campaignLeads.map(cl => cl.lead_id);
+      const leadIds = campaignLeads.map(cl => cl.lead_id).filter(Boolean);
 
-      // Get SMS messages for these leads
+      // Get SMS messages for these leads with lead info
       const { data: messages } = await supabase
         .from('sms_messages')
-        .select('direction, status')
-        .in('lead_id', leadIds);
+        .select(`
+          id, direction, status, body, from_number, to_number, created_at, is_ai_generated,
+          leads(first_name, last_name, phone_number)
+        `)
+        .in('lead_id', leadIds)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-      const sent = messages?.filter(m => m.direction === 'outbound' && m.status === 'delivered').length || 0;
-      const received = messages?.filter(m => m.direction === 'inbound').length || 0;
-      const pending = messages?.filter(m => m.direction === 'outbound' && m.status === 'pending').length || 0;
+      const allMessages = messages || [];
+      const sent = allMessages.filter(m => m.direction === 'outbound' && m.status === 'delivered').length;
+      const received = allMessages.filter(m => m.direction === 'inbound').length;
+      const pending = allMessages.filter(m => m.direction === 'outbound' && (m.status === 'pending' || m.status === 'sent')).length;
 
       setSmsStats({ sent, received, pending });
+      setRecentSms(allMessages.slice(0, 15)); // Keep recent 15 for display
     } catch (error) {
       console.error('Error loading SMS stats:', error);
     }
@@ -357,37 +375,100 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
         </Card>
       </Collapsible>
 
-      {/* SMS Activity Section */}
+      {/* SMS Activity Section - Expanded by default */}
       <Collapsible open={expandedSections.smsActivity} onOpenChange={() => toggleSection('smsActivity')}>
-        <Card>
+        <Card className={smsStats.pending > 0 ? 'ring-2 ring-yellow-500/50' : ''}>
           <CollapsibleTrigger asChild>
             <CardHeader className="cursor-pointer hover:bg-accent/50 transition-colors py-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" />
                   SMS Activity
+                  {smsStats.pending > 0 && (
+                    <Badge className="bg-yellow-500 text-white animate-pulse">{smsStats.pending} sending...</Badge>
+                  )}
                   <Badge variant="outline" className="ml-2">{smsStats.sent + smsStats.received} total</Badge>
                 </CardTitle>
-                {expandedSections.smsActivity ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={(e) => { e.stopPropagation(); loadSmsStats(); }}
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </Button>
+                  {expandedSections.smsActivity ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </div>
               </div>
             </CardHeader>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <CardContent className="pt-0">
+            <CardContent className="pt-0 space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 border rounded-lg">
                   <div className="text-xl font-bold text-blue-600">{smsStats.sent}</div>
-                  <p className="text-xs text-muted-foreground">Sent</p>
+                  <p className="text-xs text-muted-foreground">Delivered</p>
                 </div>
                 <div className="text-center p-3 border rounded-lg">
                   <div className="text-xl font-bold text-green-600">{smsStats.received}</div>
                   <p className="text-xs text-muted-foreground">Received</p>
                 </div>
                 <div className="text-center p-3 border rounded-lg">
-                  <div className="text-xl font-bold text-yellow-600">{smsStats.pending}</div>
+                  <div className={`text-xl font-bold ${smsStats.pending > 0 ? 'text-yellow-600' : 'text-muted-foreground'}`}>
+                    {smsStats.pending}
+                  </div>
                   <p className="text-xs text-muted-foreground">Pending</p>
                 </div>
               </div>
+
+              {/* Recent SMS Messages */}
+              {recentSms.length > 0 ? (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                  <p className="text-xs font-medium text-muted-foreground">Recent Messages</p>
+                  {recentSms.map((sms) => (
+                    <div
+                      key={sms.id}
+                      className={`flex items-start gap-2 p-2 border rounded-lg text-sm ${
+                        sms.direction === 'inbound' ? 'bg-green-50 dark:bg-green-900/20 border-green-200' : 
+                        sms.status === 'pending' ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200' :
+                        'bg-blue-50 dark:bg-blue-900/20 border-blue-200'
+                      }`}
+                    >
+                      <div className={`mt-0.5 ${sms.direction === 'inbound' ? 'text-green-600' : 'text-blue-600'}`}>
+                        {sms.direction === 'inbound' ? (
+                          <MessageSquare className="h-4 w-4" />
+                        ) : (
+                          <MessageSquare className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium truncate">
+                            {sms.leads?.first_name || sms.to_number || 'Unknown'}
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {sms.direction === 'inbound' ? 'Received' : sms.status}
+                          </Badge>
+                          {sms.is_ai_generated && (
+                            <Badge variant="secondary" className="text-xs">AI</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                          {sms.body?.substring(0, 100)}{sms.body?.length > 100 ? '...' : ''}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(sms.created_at).toLocaleTimeString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                  <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">No SMS messages yet</p>
+                </div>
+              )}
             </CardContent>
           </CollapsibleContent>
         </Card>
