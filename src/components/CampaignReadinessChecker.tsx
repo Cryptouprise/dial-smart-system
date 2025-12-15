@@ -63,10 +63,13 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
       'agent_phone': '/?tab=retell',
       'leads_assigned': '/?tab=leads', 
       'phone_numbers': '/?tab=phone-numbers',
+      'sms_phone_number': '/?tab=phone-numbers',
+      'campaign_sms_number': '/?tab=predictive',
       'sip_trunk': '/?tab=phone-numbers',
       'ai_agent': '/?tab=retell',
       'workflow': '/?tab=workflows',
       'ai_sms': '/?tab=ai-sms',
+      'ai_sms_settings': '/?tab=ai-sms',
     };
     
     const route = fixRoutes[check.id];
