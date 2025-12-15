@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -32,7 +34,8 @@ import {
   FileText,
   Tag,
   Star,
-  RotateCcw
+  RotateCcw,
+  Ban
 } from 'lucide-react';
 
 interface Lead {
@@ -234,6 +237,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           timezone: editedLead.timezone,
           lead_source: editedLead.lead_source,
           priority: editedLead.priority,
+          do_not_call: editedLead.do_not_call,
           updated_at: new Date().toISOString()
         })
         .eq('id', lead.id);
@@ -331,7 +335,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden flex flex-col p-4 md:p-6">
+      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
+        <DialogDescription id="lead-detail-description" className="sr-only">
+          View and edit lead details including contact information, status, and activity history.
+        </DialogDescription>
         <DialogHeader className="pb-2">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <DialogTitle className="flex items-center gap-3">
@@ -505,10 +512,23 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                       <div>
                         <Label className="text-xs text-muted-foreground">Status</Label>
                         {isEditing ? (
-                          <Input
-                            value={editedLead.status || ''}
-                            onChange={(e) => setEditedLead(prev => ({ ...prev, status: e.target.value }))}
-                          />
+                          <Select
+                            value={editedLead.status || 'new'}
+                            onValueChange={(value) => setEditedLead(prev => ({ ...prev, status: value }))}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">New</SelectItem>
+                              <SelectItem value="contacted">Contacted</SelectItem>
+                              <SelectItem value="interested">Interested</SelectItem>
+                              <SelectItem value="not_interested">Not Interested</SelectItem>
+                              <SelectItem value="callback">Callback</SelectItem>
+                              <SelectItem value="converted">Converted</SelectItem>
+                              <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Badge variant="outline" className="mt-1">{lead.status}</Badge>
                         )}
@@ -518,14 +538,41 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         {isEditing ? (
                           <Input
                             type="number"
+                            min="1"
+                            max="10"
                             value={editedLead.priority || 1}
                             onChange={(e) => setEditedLead(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
+                            className="mt-1"
                           />
                         ) : (
                           <p className="font-medium">{lead.priority || 1}</p>
                         )}
                       </div>
                     </div>
+
+                    {/* Do Not Call Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <Ban className="h-4 w-4 text-destructive" />
+                        <div>
+                          <Label className="text-sm font-medium">Do Not Call (DNC)</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Prevent this lead from being called
+                          </p>
+                        </div>
+                      </div>
+                      {isEditing ? (
+                        <Switch
+                          checked={editedLead.do_not_call || false}
+                          onCheckedChange={(checked) => setEditedLead(prev => ({ ...prev, do_not_call: checked }))}
+                        />
+                      ) : (
+                        <Badge variant={lead.do_not_call ? 'destructive' : 'outline'}>
+                          {lead.do_not_call ? 'Yes' : 'No'}
+                        </Badge>
+                      )}
+                    </div>
+                    
                     <div>
                       <Label className="text-xs text-muted-foreground">Lead Source</Label>
                       {isEditing ? (
