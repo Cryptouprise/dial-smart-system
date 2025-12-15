@@ -176,18 +176,38 @@ export const useCampaignReadiness = () => {
         }
       }
 
-      // 5. Check: Leads assigned
+      // 5. Check: Leads assigned specifically to this campaign
       const { data: campaignLeads } = await supabase
         .from('campaign_leads')
         .select('id')
         .eq('campaign_id', campaignId);
 
+      // Also see how many total leads the user has, so we can give a clearer message
+      let totalLeadCount: number | null = null;
+      if (user) {
+        const { count } = await supabase
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        totalLeadCount = count ?? 0;
+      }
+
       const leadCount = campaignLeads?.length || 0;
+      let leadMessage = '';
+
+      if (leadCount > 0) {
+        leadMessage = `${leadCount} lead${leadCount === 1 ? '' : 's'} attached to this campaign`;
+      } else if ((totalLeadCount ?? 0) > 0) {
+        leadMessage = 'You have leads, but none are attached to this campaign yet. Use the "Campaign Leads" section to add them here.';
+      } else {
+        leadMessage = 'No leads created yet. Open the Leads tab to create at least one lead, then attach it to this campaign.';
+      }
+
       checks.push({
         id: 'leads_assigned',
-        label: 'Leads assigned',
+        label: 'Leads attached to this campaign',
         status: leadCount > 0 ? 'pass' : 'fail',
-        message: leadCount > 0 ? `${leadCount} leads ready` : 'No leads in campaign',
+        message: leadMessage,
         critical: true
       });
 
