@@ -57,6 +57,72 @@ serve(async (req) => {
         throw new Error('Workflow has no steps');
       }
 
+      // ============= PRE-START VALIDATION =============
+      const validationErrors: string[] = [];
+      
+      // Get campaign info if provided
+      let campaign: any = null;
+      if (campaignId) {
+        const { data: campaignData } = await supabase
+          .from('campaigns')
+          .select('agent_id, sms_from_number')
+          .eq('id', campaignId)
+          .maybeSingle();
+        campaign = campaignData;
+      }
+
+      // Validate each step type
+      for (const step of steps) {
+        const config = step.step_config || {};
+        
+        // Validate WAIT steps have timing
+        if (step.step_type === 'wait') {
+          const hasDelay = (config.delay_minutes && config.delay_minutes > 0) ||
+                          (config.delay_hours && config.delay_hours > 0) ||
+                          (config.delay_days && config.delay_days > 0) ||
+                          config.time_of_day;
+          if (!hasDelay) {
+            validationErrors.push(`Step ${step.step_number} (wait): No delay configured`);
+          }
+        }
+
+        // Validate CALL steps have agent
+        if (step.step_type === 'call') {
+          if (!campaign?.agent_id && !config.agent_id) {
+            validationErrors.push(`Step ${step.step_number} (call): No AI agent configured`);
+          }
+        }
+
+        // Validate SMS steps have content
+        if (step.step_type === 'sms') {
+          if (!config.sms_content && !config.content && !config.message) {
+            validationErrors.push(`Step ${step.step_number} (sms): No message content`);
+          }
+        }
+
+        // Validate AI SMS steps
+        if (step.step_type === 'ai_sms') {
+          if (!config.ai_prompt) {
+            console.log(`[Workflow] Warning: Step ${step.step_number} (ai_sms) has no prompt - will use defaults`);
+          }
+        }
+      }
+
+      // If there are validation errors, return them and don't start
+      if (validationErrors.length > 0) {
+        console.error('[Workflow] Validation failed:', validationErrors);
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Workflow validation failed',
+          validationErrors,
+          message: `Cannot start workflow: ${validationErrors.join('; ')}`
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // ============= END VALIDATION =============
+
       // Calculate when the first action should occur
       const nextActionAt = calculateNextActionTime(firstStep);
 

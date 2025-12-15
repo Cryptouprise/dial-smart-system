@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -15,6 +15,8 @@ import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
 import { useCallDispatcher } from '@/hooks/useCallDispatcher';
 import { CampaignLeadManager } from './CampaignLeadManager';
+import { CampaignReadinessChecker } from './CampaignReadinessChecker';
+import { useCampaignReadiness } from '@/hooks/useCampaignReadiness';
 import { CampaignCallActivity } from './CampaignCallActivity';
 import { CampaignWizard } from './CampaignWizard';
 import { WorkflowPreview } from './WorkflowPreview';
@@ -80,6 +82,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
+  const [viewingReadiness, setViewingReadiness] = useState<string | null>(null);
   const [prioritizingCampaignId, setPrioritizingCampaignId] = useState<string | null>(null);
   
   // Call Center state
@@ -319,7 +322,25 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     setShowCreateDialog(true);
   };
 
+  const { checkCampaignReadiness } = useCampaignReadiness();
+
   const handleStatusChange = async (campaign: Campaign, newStatus: string) => {
+    // If trying to activate, run readiness check first
+    if (newStatus === 'active') {
+      const readiness = await checkCampaignReadiness(campaign.id);
+      
+      if (!readiness.isReady) {
+        toast({
+          title: "Campaign Not Ready",
+          description: readiness.blockingReasons?.join('. ') || `${readiness.criticalFailures} issue(s) must be fixed before launching`,
+          variant: "destructive"
+        });
+        // Show readiness checker for this campaign
+        setViewingReadiness(campaign.id);
+        return;
+      }
+    }
+    
     await updateCampaign(campaign.id, { status: newStatus });
     loadCampaigns();
     onRefresh?.();
@@ -1294,7 +1315,17 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     {viewingLiveStatus === campaign.id ? 'Hide' : 'Live'} Status
                   </Button>
 
-                  {/* Edit Workflow Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewingReadiness(
+                      viewingReadiness === campaign.id ? null : campaign.id
+                    )}
+                    className="text-amber-600 border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                  >
+                    <ShieldCheck className="h-4 w-4 mr-2" />
+                    {viewingReadiness === campaign.id ? 'Hide' : 'Check'} Readiness
+                  </Button>
                   {campaign.workflow_id && (
                     <Button
                       variant="outline"
@@ -1346,6 +1377,19 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 {viewingLiveStatus === campaign.id && (
                   <div className="pt-4">
                     <LiveCampaignStatusMonitor campaignId={campaign.id} />
+                  </div>
+                )}
+
+                {viewingReadiness === campaign.id && (
+                  <div className="pt-4">
+                    <CampaignReadinessChecker 
+                      campaignId={campaign.id}
+                      onLaunch={() => {
+                        setViewingReadiness(null);
+                        handleStatusChange(campaign, 'active');
+                      }}
+                      onDone={() => setViewingReadiness(null)}
+                    />
                   </div>
                 )}
               </div>

@@ -7,6 +7,7 @@ export interface ReadinessCheck {
   status: 'pass' | 'fail' | 'warning' | 'loading';
   message: string;
   critical: boolean;
+  fixRoute?: string;
 }
 
 export interface CampaignReadinessResult {
@@ -14,6 +15,7 @@ export interface CampaignReadinessResult {
   isReady: boolean;
   criticalFailures: number;
   warnings: number;
+  blockingReasons: string[];
 }
 
 export const useCampaignReadiness = () => {
@@ -22,6 +24,7 @@ export const useCampaignReadiness = () => {
   const checkCampaignReadiness = useCallback(async (campaignId: string): Promise<CampaignReadinessResult> => {
     setIsChecking(true);
     const checks: ReadinessCheck[] = [];
+    const blockingReasons: string[] = [];
 
     try {
       // 1. Get campaign details
@@ -36,7 +39,8 @@ export const useCampaignReadiness = () => {
           checks: [{ id: 'campaign', label: 'Campaign exists', status: 'fail', message: 'Campaign not found', critical: true }],
           isReady: false,
           criticalFailures: 1,
-          warnings: 0
+          warnings: 0,
+          blockingReasons: ['Campaign not found']
         };
       }
 
@@ -46,94 +50,271 @@ export const useCampaignReadiness = () => {
         label: 'Campaign name',
         status: campaign.name ? 'pass' : 'fail',
         message: campaign.name || 'No name set',
-        critical: true
+        critical: true,
+        fixRoute: '/?tab=predictive'
       });
+
+      // Get user for phone number checks
+      const { data: { user } } = await supabase.auth.getUser();
 
       // 2. Get workflow steps to determine what's needed
       let workflowSteps: any[] = [];
       if (campaign.workflow_id) {
         const { data: steps } = await supabase
           .from('workflow_steps')
-          .select('step_type, step_config')
-          .eq('workflow_id', campaign.workflow_id);
+          .select('step_type, step_number, step_config')
+          .eq('workflow_id', campaign.workflow_id)
+          .order('step_number');
         workflowSteps = steps || [];
       }
 
       const hasSmsSteps = workflowSteps.some(s => s.step_type === 'sms' || s.step_type === 'ai_sms');
       const hasCallSteps = workflowSteps.some(s => s.step_type === 'call');
+      const hasWaitSteps = workflowSteps.some(s => s.step_type === 'wait');
 
-      // Get user for phone number checks
-      const { data: { user } } = await supabase.auth.getUser();
+      // =====================================================
+      // 3. VALIDATE WAIT STEPS
+      // =====================================================
+      if (hasWaitSteps) {
+        const waitSteps = workflowSteps.filter(s => s.step_type === 'wait');
+        const invalidWaitSteps: number[] = [];
+        
+        waitSteps.forEach((step) => {
+          const config = step.step_config || {};
+          const hasDelay = (config.delay_minutes && config.delay_minutes > 0) ||
+                          (config.delay_hours && config.delay_hours > 0) ||
+                          (config.delay_days && config.delay_days > 0) ||
+                          config.time_of_day;
+          
+          if (!hasDelay) {
+            invalidWaitSteps.push(step.step_number);
+          }
+        });
 
-      // 3. Check SMS requirements if workflow has SMS steps
+        if (invalidWaitSteps.length > 0) {
+          checks.push({
+            id: 'wait_steps_config',
+            label: 'Wait steps configured',
+            status: 'fail',
+            message: `Wait step(s) ${invalidWaitSteps.join(', ')} have no delay set`,
+            critical: true,
+            fixRoute: '/?tab=workflows'
+          });
+          blockingReasons.push(`Wait step(s) ${invalidWaitSteps.join(', ')} need delay configuration`);
+        } else {
+          checks.push({
+            id: 'wait_steps_config',
+            label: 'Wait steps configured',
+            status: 'pass',
+            message: `${waitSteps.length} wait step(s) properly configured`,
+            critical: true
+          });
+        }
+      }
+
+      // =====================================================
+      // 4. VALIDATE SMS STEPS - A2P & Phone Numbers
+      // =====================================================
       if (hasSmsSteps) {
         if (user) {
           // Check for active phone numbers that can send SMS (not quarantined)
           const { data: smsNumbers } = await supabase
             .from('phone_numbers')
-            .select('id, quarantine_until, purpose')
+            .select('id, number, quarantine_until, purpose, provider')
             .eq('user_id', user.id)
             .eq('status', 'active');
 
           const smsCapableNumbers = (smsNumbers || []).filter(p => !p.quarantine_until);
-          checks.push({
-            id: 'sms_phone_number',
-            label: 'SMS-capable phone number',
-            status: smsCapableNumbers.length > 0 ? 'pass' : 'fail',
-            message: smsCapableNumbers.length > 0 
-              ? `${smsCapableNumbers.length} active number(s) available` 
-              : 'No active phone numbers - workflow has SMS steps',
-            critical: true
-          });
+          
+          if (smsCapableNumbers.length === 0) {
+            checks.push({
+              id: 'sms_phone_number',
+              label: 'SMS-capable phone number',
+              status: 'fail',
+              message: 'No active phone numbers - workflow has SMS steps',
+              critical: true,
+              fixRoute: '/?tab=phone-numbers'
+            });
+            blockingReasons.push('No active phone numbers for SMS');
+          } else {
+            checks.push({
+              id: 'sms_phone_number',
+              label: 'SMS-capable phone number',
+              status: 'pass',
+              message: `${smsCapableNumbers.length} active number(s) available`,
+              critical: true
+            });
+          }
+
+          // Check A2P registration (look for Twilio numbers - they need A2P for US)
+          const twilioNumbers = smsCapableNumbers.filter(n => n.provider === 'twilio');
+          if (twilioNumbers.length > 0) {
+            // For now, we'll show a warning about A2P - in production you'd check Twilio API
+            checks.push({
+              id: 'a2p_registration',
+              label: 'A2P Registration (SMS compliance)',
+              status: 'warning',
+              message: 'Ensure your Twilio numbers are A2P registered for SMS delivery',
+              critical: false,
+              fixRoute: '/?tab=phone-numbers'
+            });
+          }
         }
 
         // Check campaign SMS from number
-        checks.push({
-          id: 'campaign_sms_number',
-          label: 'Campaign SMS from number',
-          status: campaign.sms_from_number ? 'pass' : 'warning',
-          message: campaign.sms_from_number || 'No SMS from number set (will use default)',
-          critical: false
-        });
+        if (!campaign.sms_from_number) {
+          checks.push({
+            id: 'campaign_sms_number',
+            label: 'Campaign SMS from number',
+            status: 'warning',
+            message: 'No SMS from number set (will use rotation)',
+            critical: false,
+            fixRoute: '/?tab=predictive'
+          });
+        } else {
+          checks.push({
+            id: 'campaign_sms_number',
+            label: 'Campaign SMS from number',
+            status: 'pass',
+            message: campaign.sms_from_number,
+            critical: false
+          });
+        }
+
+        // Check AI SMS settings for ai_sms steps
+        const hasAiSmsSteps = workflowSteps.some(s => s.step_type === 'ai_sms');
+        if (hasAiSmsSteps && user) {
+          const { data: smsSettings } = await supabase
+            .from('ai_sms_settings')
+            .select('enabled, auto_response_enabled, custom_instructions')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (!smsSettings?.enabled) {
+            checks.push({
+              id: 'ai_sms_settings',
+              label: 'AI SMS enabled',
+              status: 'fail',
+              message: 'AI SMS is not enabled - workflow has AI SMS steps',
+              critical: true,
+              fixRoute: '/?tab=ai-sms'
+            });
+            blockingReasons.push('AI SMS not enabled but workflow has AI SMS steps');
+          } else {
+            checks.push({
+              id: 'ai_sms_settings',
+              label: 'AI SMS enabled',
+              status: 'pass',
+              message: 'AI SMS ready',
+              critical: true
+            });
+          }
+        }
       }
 
-      // 4. Check Call requirements if workflow has call steps
+      // =====================================================
+      // 5. VALIDATE CALL STEPS - Agent & Retell Phone
+      // =====================================================
       if (hasCallSteps) {
         // Check: Agent selected
-        checks.push({
-          id: 'ai_agent',
-          label: 'Retell AI Agent',
-          status: campaign.agent_id ? 'pass' : 'fail',
-          message: campaign.agent_id ? 'Agent configured' : 'No agent selected - workflow has call steps',
-          critical: true
-        });
+        if (!campaign.agent_id) {
+          checks.push({
+            id: 'ai_agent',
+            label: 'Retell AI Agent',
+            status: 'fail',
+            message: 'No agent selected - workflow has call steps',
+            critical: true,
+            fixRoute: '/?tab=retell'
+          });
+          blockingReasons.push('No AI agent selected but workflow has call steps');
+        } else {
+          checks.push({
+            id: 'ai_agent',
+            label: 'Retell AI Agent',
+            status: 'pass',
+            message: 'Agent configured',
+            critical: true
+          });
 
-        // Check: Agent has phone number (if agent exists)
-        if (campaign.agent_id) {
+          // Check: Agent has phone number in Retell
           try {
             const { data: phoneData } = await supabase.functions.invoke('retell-phone-management', {
               body: { action: 'list' }
             });
             const phones = Array.isArray(phoneData) ? phoneData : (phoneData?.phone_numbers || []);
-            const agentHasPhone = phones.some((p: any) => 
+            const agentPhone = phones.find((p: any) => 
               p.inbound_agent_id === campaign.agent_id || p.outbound_agent_id === campaign.agent_id
             );
 
-            checks.push({
-              id: 'agent_phone',
-              label: 'Agent has Retell phone number',
-              status: agentHasPhone ? 'pass' : 'fail',
-              message: agentHasPhone ? 'Phone number assigned to agent' : 'Agent needs a phone number in Retell',
-              critical: true
-            });
+            if (!agentPhone) {
+              checks.push({
+                id: 'agent_phone',
+                label: 'Agent has Retell phone',
+                status: 'fail',
+                message: 'Agent needs a phone number assigned in Retell',
+                critical: true,
+                fixRoute: '/?tab=retell'
+              });
+              blockingReasons.push('AI agent has no phone number in Retell');
+            } else {
+              checks.push({
+                id: 'agent_phone',
+                label: 'Agent has Retell phone',
+                status: 'pass',
+                message: `Phone: ${agentPhone.phone_number}`,
+                critical: true
+              });
+            }
           } catch (e) {
             checks.push({
               id: 'agent_phone',
-              label: 'Agent has Retell phone number',
+              label: 'Agent has Retell phone',
               status: 'warning',
-              message: 'Could not verify phone status',
+              message: 'Could not verify Retell phone status',
               critical: false
             });
+          }
+
+          // Check: Local phone numbers are imported to Retell
+          if (user) {
+            const { data: localPhones } = await supabase
+              .from('phone_numbers')
+              .select('number, retell_phone_id, status')
+              .eq('user_id', user.id)
+              .eq('status', 'active');
+
+            const phonesForCalling = localPhones?.filter(p => !p.retell_phone_id) || [];
+            const retellImportedPhones = localPhones?.filter(p => p.retell_phone_id) || [];
+
+            if (retellImportedPhones.length === 0 && phonesForCalling.length > 0) {
+              checks.push({
+                id: 'caller_id_retell',
+                label: 'Caller ID in Retell',
+                status: 'fail',
+                message: `${phonesForCalling.length} phone(s) not imported to Retell - calls will fail`,
+                critical: true,
+                fixRoute: '/?tab=retell'
+              });
+              blockingReasons.push('No phone numbers imported to Retell for outbound calls');
+            } else if (retellImportedPhones.length > 0) {
+              checks.push({
+                id: 'caller_id_retell',
+                label: 'Caller ID in Retell',
+                status: 'pass',
+                message: `${retellImportedPhones.length} phone(s) ready for calls`,
+                critical: true
+              });
+            } else {
+              checks.push({
+                id: 'caller_id_retell',
+                label: 'Caller ID in Retell',
+                status: 'fail',
+                message: 'No phone numbers available for calls',
+                critical: true,
+                fixRoute: '/?tab=phone-numbers'
+              });
+              blockingReasons.push('No phone numbers available');
+            }
           }
 
           // Check webhook
@@ -147,8 +328,9 @@ export const useCampaignReadiness = () => {
               id: 'webhook',
               label: 'Agent webhook configured',
               status: hasWebhook ? 'pass' : 'warning',
-              message: hasWebhook ? 'Webhook set for call tracking' : 'No webhook - calls won\'t be tracked',
-              critical: false
+              message: hasWebhook ? 'Webhook set for call tracking' : 'No webhook - call results won\'t sync',
+              critical: false,
+              fixRoute: '/?tab=retell'
             });
           } catch (e) {
             checks.push({
@@ -162,90 +344,92 @@ export const useCampaignReadiness = () => {
         }
       }
 
-      // If no workflow attached but campaign could have either SMS or calls
-      if (!campaign.workflow_id) {
-        // Still check for agent if one is selected
-        if (campaign.agent_id) {
-          checks.push({
-            id: 'ai_agent',
-            label: 'Retell AI Agent',
-            status: 'pass',
-            message: 'Agent configured',
-            critical: false
-          });
-        }
-      }
-
-      // 5. Check: Leads assigned specifically to this campaign
+      // =====================================================
+      // 6. CHECK LEADS
+      // =====================================================
       const { data: campaignLeads } = await supabase
         .from('campaign_leads')
         .select('id')
         .eq('campaign_id', campaignId);
 
-      // Also see how many total leads the user has, so we can give a clearer message
-      let totalLeadCount: number | null = null;
-      if (user) {
-        const { count } = await supabase
-          .from('leads')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-        totalLeadCount = count ?? 0;
-      }
-
       const leadCount = campaignLeads?.length || 0;
-      let leadMessage = '';
 
-      if (leadCount > 0) {
-        leadMessage = `${leadCount} lead${leadCount === 1 ? '' : 's'} attached to this campaign`;
-      } else if ((totalLeadCount ?? 0) > 0) {
-        leadMessage = 'You have leads, but none are attached to this campaign yet. Use the "Campaign Leads" section to add them here.';
-      } else {
-        leadMessage = 'No leads created yet. Open the Leads tab to create at least one lead, then attach it to this campaign.';
-      }
+      if (leadCount === 0) {
+        // Check total leads
+        let totalLeadCount = 0;
+        if (user) {
+          const { count } = await supabase
+            .from('leads')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', user.id);
+          totalLeadCount = count ?? 0;
+        }
 
-      checks.push({
-        id: 'leads_assigned',
-        label: 'Leads attached to this campaign',
-        status: leadCount > 0 ? 'pass' : 'fail',
-        message: leadMessage,
-        critical: true
-      });
-
-      // 6. Check: Calling hours configured
-      checks.push({
-        id: 'calling_hours',
-        label: 'Calling hours',
-        status: campaign.calling_hours_start && campaign.calling_hours_end ? 'pass' : 'warning',
-        message: campaign.calling_hours_start && campaign.calling_hours_end 
-          ? `${campaign.calling_hours_start} - ${campaign.calling_hours_end}`
-          : 'Using defaults (9 AM - 5 PM)',
-        critical: false
-      });
-
-      // 7. Check: Workflow linked
-      checks.push({
-        id: 'workflow',
-        label: 'Workflow attached',
-        status: campaign.workflow_id ? 'pass' : 'warning',
-        message: campaign.workflow_id 
-          ? `Workflow with ${workflowSteps.length} step(s)` 
-          : 'No workflow (optional)',
-        critical: false
-      });
-
-      // 8. Check: AI SMS settings (if SMS steps exist)
-      if (hasSmsSteps && user) {
-        const { data: smsSettings } = await supabase
-          .from('ai_sms_settings')
-          .select('enabled, auto_response_enabled')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const message = totalLeadCount > 0
+          ? `You have ${totalLeadCount} leads but none attached to this campaign`
+          : 'No leads created yet';
 
         checks.push({
-          id: 'ai_sms_settings',
-          label: 'AI SMS configured',
-          status: smsSettings?.enabled ? 'pass' : 'warning',
-          message: smsSettings?.enabled ? 'SMS AI ready' : 'SMS AI not configured (optional for auto-replies)',
+          id: 'leads_assigned',
+          label: 'Leads attached',
+          status: 'fail',
+          message,
+          critical: true,
+          fixRoute: '/?tab=leads'
+        });
+        blockingReasons.push('No leads attached to campaign');
+      } else {
+        checks.push({
+          id: 'leads_assigned',
+          label: 'Leads attached',
+          status: 'pass',
+          message: `${leadCount} lead(s) ready`,
+          critical: true
+        });
+      }
+
+      // =====================================================
+      // 7. CHECK CALLING HOURS
+      // =====================================================
+      if (hasCallSteps) {
+        if (!campaign.calling_hours_start || !campaign.calling_hours_end) {
+          checks.push({
+            id: 'calling_hours',
+            label: 'Calling hours',
+            status: 'warning',
+            message: 'Using defaults (9 AM - 5 PM)',
+            critical: false,
+            fixRoute: '/?tab=predictive'
+          });
+        } else {
+          checks.push({
+            id: 'calling_hours',
+            label: 'Calling hours',
+            status: 'pass',
+            message: `${campaign.calling_hours_start} - ${campaign.calling_hours_end} ${campaign.timezone || 'UTC'}`,
+            critical: false
+          });
+        }
+      }
+
+      // =====================================================
+      // 8. CHECK WORKFLOW EXISTS
+      // =====================================================
+      if (!campaign.workflow_id) {
+        checks.push({
+          id: 'workflow',
+          label: 'Workflow attached',
+          status: 'warning',
+          message: 'No workflow - campaign will use manual dialing only',
+          critical: false,
+          fixRoute: '/?tab=workflows'
+        });
+      } else {
+        checks.push({
+          id: 'workflow',
+          label: 'Workflow attached',
+          status: 'pass',
+          message: `${workflowSteps.length} step(s) configured`,
           critical: false
         });
       }
@@ -258,7 +442,8 @@ export const useCampaignReadiness = () => {
         checks,
         isReady: criticalFailures === 0,
         criticalFailures,
-        warnings
+        warnings,
+        blockingReasons
       };
     } catch (error) {
       console.error('Readiness check error:', error);
@@ -266,7 +451,8 @@ export const useCampaignReadiness = () => {
         checks: [{ id: 'error', label: 'System check', status: 'fail', message: 'Error checking readiness', critical: true }],
         isReady: false,
         criticalFailures: 1,
-        warnings: 0
+        warnings: 0,
+        blockingReasons: ['System error during validation']
       };
     } finally {
       setIsChecking(false);
