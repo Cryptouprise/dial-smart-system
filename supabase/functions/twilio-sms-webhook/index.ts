@@ -534,13 +534,43 @@ serve(async (req) => {
         (useWorkflowSettings ? ` (using workflow: ${workflowName})` : ' (using global settings)'));
       
       // Check for reactions - skip auto-response for simple acknowledgments
+      // But be context-aware: if the last AI message was a question, don't treat yes/no as reactions
       const reactionPatterns = [
-        /^(👍|👎|❤️|😀|😊|🙏|👌|✅|ok|okay|k|thanks|thank you|thx|ty|cool|got it|sounds good|perfect|great|yes|no|yep|nope)$/i
+        /^(👍|👎|❤️|😀|😊|🙏|👌|✅|ok|okay|k|thanks|thank you|thx|ty|cool|got it|sounds good|perfect|great)$/i
       ];
       
-      const isReaction = reactionPatterns.some(pattern => pattern.test(messageBody.trim()));
+      // Separate pattern for yes/no responses that need context checking
+      const confirmationPatterns = [
+        /^(yes|no|yep|nope|yeah|yea|nah|sure|absolutely|definitely|correct|right)$/i
+      ];
       
-      if (isReaction && globalSettings?.enable_reaction_detection) {
+      const isSimpleReaction = reactionPatterns.some(pattern => pattern.test(messageBody.trim()));
+      const isConfirmation = confirmationPatterns.some(pattern => pattern.test(messageBody.trim()));
+      
+      // Check if last AI message was a question - if so, confirmations should get responses
+      let lastAiMessageWasQuestion = false;
+      if (isConfirmation && conversationId) {
+        const { data: lastAiMessage } = await supabaseAdmin
+          .from('sms_messages')
+          .select('body')
+          .eq('conversation_id', conversationId)
+          .eq('direction', 'outbound')
+          .eq('is_ai_generated', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (lastAiMessage?.body) {
+          lastAiMessageWasQuestion = lastAiMessage.body.trim().endsWith('?');
+          console.log('[Twilio SMS Webhook] Last AI message was question:', lastAiMessageWasQuestion, 
+            '- Message excerpt:', lastAiMessage.body.substring(0, 50));
+        }
+      }
+      
+      // Only skip if it's a simple reaction OR a confirmation that's NOT answering a question
+      const shouldSkipAsReaction = isSimpleReaction || (isConfirmation && !lastAiMessageWasQuestion);
+      
+      if (shouldSkipAsReaction && globalSettings?.enable_reaction_detection) {
         console.log('[Twilio SMS Webhook] Message is a reaction/acknowledgment, skipping auto-response');
         
         // Mark the message as a reaction
@@ -553,6 +583,11 @@ serve(async (req) => {
           '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
           { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
         );
+      }
+      
+      // If it's a confirmation answering a question, log that we're processing it
+      if (isConfirmation && lastAiMessageWasQuestion) {
+        console.log('[Twilio SMS Webhook] Confirmation answering AI question - will generate response');
       }
       
       // Merge settings: workflow settings override global settings where available
