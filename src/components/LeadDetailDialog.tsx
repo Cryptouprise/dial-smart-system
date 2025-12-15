@@ -508,31 +508,73 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Quick Actions - Always Editable */}
+                    <div className="p-3 rounded-lg border-2 border-primary/20 bg-primary/5 space-y-3">
+                      <p className="text-xs font-semibold text-primary uppercase tracking-wide">Quick Actions</p>
+                      
                       <div>
                         <Label className="text-xs text-muted-foreground">Status</Label>
-                        {isEditing ? (
-                          <Select
-                            value={editedLead.status || 'new'}
-                            onValueChange={(value) => setEditedLead(prev => ({ ...prev, status: value }))}
-                          >
-                            <SelectTrigger className="mt-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="new">New</SelectItem>
-                              <SelectItem value="contacted">Contacted</SelectItem>
-                              <SelectItem value="interested">Interested</SelectItem>
-                              <SelectItem value="not_interested">Not Interested</SelectItem>
-                              <SelectItem value="callback">Callback</SelectItem>
-                              <SelectItem value="converted">Converted</SelectItem>
-                              <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge variant="outline" className="mt-1">{lead.status}</Badge>
-                        )}
+                        <Select
+                          value={editedLead.status || lead.status || 'new'}
+                          onValueChange={async (value) => {
+                            setEditedLead(prev => ({ ...prev, status: value }));
+                            // Auto-save status change
+                            const { error } = await supabase
+                              .from('leads')
+                              .update({ status: value, updated_at: new Date().toISOString() })
+                              .eq('id', lead.id);
+                            if (!error) {
+                              toast({ title: "Status Updated", description: `Lead status changed to ${value}` });
+                              onLeadUpdated?.();
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="new">New</SelectItem>
+                            <SelectItem value="contacted">Contacted</SelectItem>
+                            <SelectItem value="interested">Interested</SelectItem>
+                            <SelectItem value="not_interested">Not Interested</SelectItem>
+                            <SelectItem value="callback">Callback</SelectItem>
+                            <SelectItem value="converted">Converted</SelectItem>
+                            <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
+
+                      {/* Do Not Call Toggle - Always Visible */}
+                      <div className="flex items-center justify-between p-2 rounded-md border bg-background">
+                        <div className="flex items-center gap-2">
+                          <Ban className="h-4 w-4 text-destructive" />
+                          <div>
+                            <Label className="text-sm font-medium">Do Not Call</Label>
+                            <p className="text-xs text-muted-foreground">Block from dialing</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={editedLead.do_not_call ?? lead.do_not_call ?? false}
+                          onCheckedChange={async (checked) => {
+                            setEditedLead(prev => ({ ...prev, do_not_call: checked }));
+                            // Auto-save DNC change
+                            const { error } = await supabase
+                              .from('leads')
+                              .update({ do_not_call: checked, updated_at: new Date().toISOString() })
+                              .eq('id', lead.id);
+                            if (!error) {
+                              toast({ 
+                                title: checked ? "Added to DNC" : "Removed from DNC", 
+                                description: checked ? "Lead will not be called" : "Lead can now be called" 
+                              });
+                              onLeadUpdated?.();
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-xs text-muted-foreground">Priority</Label>
                         {isEditing ? (
@@ -548,29 +590,6 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                           <p className="font-medium">{lead.priority || 1}</p>
                         )}
                       </div>
-                    </div>
-
-                    {/* Do Not Call Toggle */}
-                    <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <Ban className="h-4 w-4 text-destructive" />
-                        <div>
-                          <Label className="text-sm font-medium">Do Not Call (DNC)</Label>
-                          <p className="text-xs text-muted-foreground">
-                            Prevent this lead from being called
-                          </p>
-                        </div>
-                      </div>
-                      {isEditing ? (
-                        <Switch
-                          checked={editedLead.do_not_call || false}
-                          onCheckedChange={(checked) => setEditedLead(prev => ({ ...prev, do_not_call: checked }))}
-                        />
-                      ) : (
-                        <Badge variant={lead.do_not_call ? 'destructive' : 'outline'}>
-                          {lead.do_not_call ? 'Yes' : 'No'}
-                        </Badge>
-                      )}
                     </div>
                     
                     <div>
