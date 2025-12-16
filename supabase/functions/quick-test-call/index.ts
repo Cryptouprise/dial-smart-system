@@ -307,9 +307,13 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Call initiation error:', error.message);
+
+    // IMPORTANT: return 200 so supabase-js doesn't surface a generic
+    // "Edge Function returned a non-2xx status code" message.
+    // The frontend expects `data.error` and will show a friendly toast.
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: error.message || 'Unknown error' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
