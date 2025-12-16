@@ -909,12 +909,33 @@ export const VoiceBroadcastManager: React.FC = () => {
                           )}
                           <Button
                             size="sm"
-                            onClick={() => startBroadcast(broadcast.id)}
-                            disabled={isLoading || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
+                            onClick={async () => {
+                              // Run readiness check before starting
+                              setStartingBroadcastId(broadcast.id);
+                              const result = await checkBroadcastReadiness(broadcast.id);
+                              setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
+                              if (result.isReady) {
+                                // Cleanup stuck calls first
+                                await cleanupStuckCalls(broadcast.id);
+                                await startBroadcast(broadcast.id);
+                              } else {
+                                toast({
+                                  title: "Broadcast Not Ready",
+                                  description: result.blockingReasons.join(', '),
+                                  variant: "destructive",
+                                });
+                              }
+                              setStartingBroadcastId(null);
+                            }}
+                            disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
                             title={!broadcast.audio_url ? 'Generate audio first' : (broadcastStats.pending || 0) === 0 ? 'No pending leads - click Reset to run again' : 'Start broadcast'}
                           >
-                            <Play className="h-4 w-4 mr-1" />
-                            Start
+                            {startingBroadcastId === broadcast.id ? (
+                              <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <Play className="h-4 w-4 mr-1" />
+                            )}
+                            {startingBroadcastId === broadcast.id ? 'Checking...' : 'Start'}
                           </Button>
                         </div>
                       )}
@@ -1338,6 +1359,23 @@ export const VoiceBroadcastManager: React.FC = () => {
                       Calls will only be attempted inside this window (in the selected timezone).
                     </p>
                   </div>
+                </div>
+
+                {/* Bypass Calling Hours Toggle */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                  <div>
+                    <Label className="text-sm font-medium">Bypass Calling Hours</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Allow calls to run outside the configured calling hours window
+                    </p>
+                  </div>
+                  <Switch
+                    checked={(selectedBroadcast as any).bypass_calling_hours || false}
+                    onCheckedChange={async (checked) => {
+                      await updateBroadcast(selectedBroadcast.id, { bypass_calling_hours: checked } as any);
+                      setSelectedBroadcast({ ...selectedBroadcast, bypass_calling_hours: checked } as any);
+                    }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
