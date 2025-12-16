@@ -69,9 +69,9 @@ const QuickTestBroadcast: React.FC = () => {
       if (error) throw error;
 
       setPhoneNumbers(data || []);
-      if (data && data.length > 0) {
-        setFormData(prev => ({ ...prev, fromNumber: data[0].number }));
-      }
+      // Don't auto-pick a "from" number; force the user to choose a valid Twilio caller ID.
+      // This prevents accidental selection of an unverified/non-Twilio number.
+      setFormData((prev) => ({ ...prev, fromNumber: '' }));
     } catch (error) {
       console.error('Error loading phone numbers:', error);
       toast({
