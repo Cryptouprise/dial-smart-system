@@ -13,14 +13,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useVoiceBroadcast, VoiceBroadcast, DTMFAction, parseDTMFActions } from '@/hooks/useVoiceBroadcast';
+import { useBroadcastReadiness, BroadcastReadinessResult } from '@/hooks/useBroadcastReadiness';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
   Phone, PhoneOff, Clock, Settings, BarChart3, 
-  MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw
+  MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw,
+  AlertTriangle, CheckCircle2, XCircle
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
+import BroadcastReadinessChecker from '@/components/BroadcastReadinessChecker';
+import BroadcastQueueManager from '@/components/BroadcastQueueManager';
 
 const ELEVENLABS_VOICES = [
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
@@ -79,7 +83,11 @@ export const VoiceBroadcastManager: React.FC = () => {
     startBroadcast,
     stopBroadcast,
     getBroadcastStats,
+    cleanupStuckCalls,
+    retryFailedCalls,
   } = useVoiceBroadcast();
+  
+  const { checkBroadcastReadiness, isChecking: isCheckingReadiness } = useBroadcastReadiness();
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<VoiceBroadcast | null>(null);
@@ -92,6 +100,11 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [loadingResults, setLoadingResults] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'settings' | 'results'>('settings');
   const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
+  
+  // New state for queue manager and readiness
+  const [queueManagerBroadcastId, setQueueManagerBroadcastId] = useState<string | null>(null);
+  const [readinessResults, setReadinessResults] = useState<Record<string, BroadcastReadinessResult>>({});
+  const [startingBroadcastId, setStartingBroadcastId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -1012,18 +1025,40 @@ export const VoiceBroadcastManager: React.FC = () => {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
+                      onClick={() => setQueueManagerBroadcastId(broadcast.id)}
                     >
                       <Users className="h-4 w-4 mr-1" />
-                      Add Leads
+                      Leads ({broadcast.total_leads || 0})
                     </Button>
                   </div>
+
+                  {/* Error Banner */}
+                  {(broadcast as any).last_error && (
+                    <div className="mt-3 p-2 bg-destructive/10 border border-destructive/20 rounded-md flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                      <div className="text-xs">
+                        <span className="font-medium text-destructive">Last Error: </span>
+                        <span className="text-destructive/80">{(broadcast as any).last_error}</span>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
           })
         )}
       </div>
+
+      {/* Queue Manager Sheet */}
+      {queueManagerBroadcastId && (
+        <BroadcastQueueManager
+          broadcastId={queueManagerBroadcastId}
+          broadcastName={broadcasts.find(b => b.id === queueManagerBroadcastId)?.name || ''}
+          isOpen={!!queueManagerBroadcastId}
+          onClose={() => setQueueManagerBroadcastId(null)}
+          onQueueUpdated={loadBroadcasts}
+        />
+      )}
 
       {/* Add Leads Dialog - Controlled */}
       <Dialog 

@@ -279,6 +279,129 @@ serve(async (req) => {
         );
       }
 
+      case 'remove_items': {
+        const { itemIds } = await req.json().catch(() => ({}));
+        
+        if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+          throw new Error('No item IDs provided');
+        }
+
+        // Only allow removing items that belong to this broadcast
+        const { data: removed, error: removeError } = await supabase
+          .from('broadcast_queue')
+          .delete()
+          .eq('broadcast_id', broadcastId)
+          .in('id', itemIds)
+          .select('id');
+
+        if (removeError) throw removeError;
+
+        // Update total_leads count
+        const removedCount = removed?.length || 0;
+        if (removedCount > 0) {
+          await supabase
+            .from('voice_broadcasts')
+            .update({ total_leads: Math.max(0, (broadcast.total_leads || 0) - removedCount) })
+            .eq('id', broadcastId);
+        }
+
+        console.log(`Removed ${removedCount} items from broadcast ${broadcastId}`);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            removed: removedCount,
+            message: `${removedCount} item(s) removed from queue`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'cleanup_stuck_calls': {
+        // Find items stuck in 'calling' status for more than 5 minutes
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        
+        const { data: stuckItems, error: stuckError } = await supabase
+          .from('broadcast_queue')
+          .select('id, attempts, max_attempts')
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'calling')
+          .lt('updated_at', fiveMinutesAgo);
+
+        if (stuckError) throw stuckError;
+
+        if (!stuckItems || stuckItems.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, cleaned: 0, message: 'No stuck calls found' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Reset stuck items - if max attempts reached, mark as failed, otherwise pending
+        let resetToPending = 0;
+        let markedFailed = 0;
+
+        for (const item of stuckItems) {
+          const newAttempts = (item.attempts || 0);
+          const maxAttempts = item.max_attempts || 1;
+          const newStatus = newAttempts >= maxAttempts ? 'failed' : 'pending';
+          
+          await supabase
+            .from('broadcast_queue')
+            .update({ 
+              status: newStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', item.id);
+
+          if (newStatus === 'failed') {
+            markedFailed++;
+          } else {
+            resetToPending++;
+          }
+        }
+
+        console.log(`Cleaned up ${stuckItems.length} stuck calls: ${resetToPending} reset, ${markedFailed} failed`);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            cleaned: stuckItems.length,
+            reset_to_pending: resetToPending,
+            marked_failed: markedFailed,
+            message: `Cleaned ${stuckItems.length} stuck call(s)`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'retry_failed': {
+        // Reset all failed items back to pending
+        const { data: failedItems, error: failedError } = await supabase
+          .from('broadcast_queue')
+          .update({ 
+            status: 'pending',
+            attempts: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'failed')
+          .select();
+
+        if (failedError) throw failedError;
+
+        console.log(`Reset ${failedItems?.length || 0} failed items to pending`);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            retried: failedItems?.length || 0,
+            message: `${failedItems?.length || 0} failed item(s) reset for retry`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
