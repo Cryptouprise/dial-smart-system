@@ -102,6 +102,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // Calendar test state
   const [calendarTestStatus, setCalendarTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [calendarTestMessage, setCalendarTestMessage] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [calendarTimezone, setCalendarTimezone] = useState<string>('');
   
   // Calendar auto-configure state
   const [isConfiguringCalendar, setIsConfiguringCalendar] = useState(false);
@@ -150,6 +152,31 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     fetchLlmData();
   }, [agent?.response_engine?.llm_id, open]);
 
+  // Fetch available slots to prove calendar is working
+  const fetchAvailableSlots = async (targetUserId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('calendar-integration', {
+        body: { 
+          action: 'get_available_slots',
+          user_id: targetUserId,
+          duration_minutes: 30
+        }
+      });
+      
+      if (error) throw error;
+      
+      if (data?.available_slots?.length > 0) {
+        setAvailableSlots(data.available_slots);
+        setCalendarTimezone(data.timezone || '');
+        return data.available_slots;
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch available slots:', error);
+      return [];
+    }
+  };
+
   const configureCalendarOnAgent = async () => {
     if (!agent?.agent_id || !userId) {
       toast({ title: 'Error', description: 'Missing agent ID or user ID', variant: 'destructive' });
@@ -157,6 +184,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     }
     
     setIsConfiguringCalendar(true);
+    setAvailableSlots([]);
     try {
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
         body: { 
@@ -169,7 +197,21 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       if (error) throw error;
       
       setHasCalendarFunction(true);
-      toast({ title: 'Success!', description: 'Calendar function configured on this agent' });
+      
+      // Now fetch available slots to show proof it's working
+      const slots = await fetchAvailableSlots(userId);
+      
+      if (slots.length > 0) {
+        toast({ 
+          title: 'Calendar Configured!', 
+          description: `Found ${slots.length} available slots. Your agent can now book appointments.`
+        });
+      } else {
+        toast({ 
+          title: 'Calendar Configured', 
+          description: 'Calendar function added. Check availability settings if no slots appear.'
+        });
+      }
     } catch (error: any) {
       console.error('Failed to configure calendar:', error);
       toast({ title: 'Error', description: error.message || 'Failed to configure calendar', variant: 'destructive' });
@@ -500,6 +542,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const testCalendarConnection = async () => {
     setCalendarTestStatus('testing');
     setCalendarTestMessage('Testing calendar connection...');
+    setAvailableSlots([]);
     
     try {
       const { data, error } = await supabase.functions.invoke('calendar-integration', {
@@ -510,8 +553,20 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       
       if (data?.success) {
         setCalendarTestStatus('success');
-        setCalendarTestMessage(data.message || 'Calendar connected successfully!');
-        toast({ title: 'Calendar Connected', description: data.message || 'Your Google Calendar is working correctly' });
+        
+        // Now fetch actual available slots to show proof
+        if (userId) {
+          const slots = await fetchAvailableSlots(userId);
+          if (slots.length > 0) {
+            setCalendarTestMessage(`✓ Calendar connected! Found ${slots.length} available slots.`);
+          } else {
+            setCalendarTestMessage('✓ Calendar connected! No slots available in the next 7 days - check your availability settings.');
+          }
+        } else {
+          setCalendarTestMessage(data.message || 'Calendar connected successfully!');
+        }
+        
+        toast({ title: 'Calendar Connected', description: 'Your Google Calendar is working correctly' });
       } else {
         setCalendarTestStatus('error');
         setCalendarTestMessage(data?.message || 'Calendar connection failed');
@@ -1471,8 +1526,30 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                         )}
                       </div>
                     )}
+                    
+                    {/* Show available slots after successful test */}
+                    {calendarTestStatus === 'success' && availableSlots.length > 0 && (
+                      <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <h5 className="font-medium text-blue-800 dark:text-blue-200 flex items-center gap-2 mb-2">
+                          <CheckCircle2 className="h-4 w-4" />
+                          Live Availability ({calendarTimezone || 'Your timezone'})
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {availableSlots.slice(0, 6).map((slot, idx) => (
+                            <div 
+                              key={idx}
+                              className="text-sm bg-white dark:bg-slate-800 px-3 py-2 rounded border border-blue-100 dark:border-blue-900 text-blue-700 dark:text-blue-300"
+                            >
+                              {slot}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                          Your AI agent will offer these exact slots when callers ask about availability
+                        </p>
+                      </div>
+                    )}
                   </div>
-
                   <div className="space-y-2">
                     <Label>Custom Function URL</Label>
                     <div className="flex gap-2">
@@ -1585,6 +1662,29 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 p-2 rounded">
                         <CheckCircle2 className="h-4 w-4 inline mr-1" />
                         This agent can check availability and book appointments!
+                      </div>
+                    )}
+                    
+                    {/* Show Available Slots as proof */}
+                    {availableSlots.length > 0 && (
+                      <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <h5 className="font-medium text-blue-800 dark:text-blue-200 flex items-center gap-2 mb-2">
+                          <CheckCircle2 className="h-4 w-4" />
+                          Live Availability ({calendarTimezone || 'Your timezone'})
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {availableSlots.slice(0, 6).map((slot, idx) => (
+                            <div 
+                              key={idx}
+                              className="text-sm bg-white dark:bg-slate-800 px-3 py-2 rounded border border-blue-100 dark:border-blue-900 text-blue-700 dark:text-blue-300"
+                            >
+                              {slot}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                          These are the actual slots your AI agent will offer to callers
+                        </p>
                       </div>
                     )}
                   </div>
