@@ -260,15 +260,80 @@ serve(async (req) => {
         
         const updatedAgent = await response.json();
         console.log(`[Retell Agent] Successfully configured calendar function`);
-        
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: 'Calendar function configured successfully',
-          agent: updatedAgent,
-          userId: userId
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+
+        // Also update the underlying Retell LLM prompt so it actually USES the calendar tool
+        // (otherwise the model may guess and say "fully booked" without calling manage_calendar).
+        let llmPromptUpdated = false;
+        let llmPromptUpdateError: string | null = null;
+
+        try {
+          const agentLlmId =
+            currentAgent?.response_engine?.llm_id ||
+            currentAgent?.response_engine?.llmId ||
+            currentAgent?.llm_id;
+
+          if (agentLlmId) {
+            const llmGetResp = await fetch(`${baseUrl}/get-retell-llm/${agentLlmId}`, {
+              method: 'GET',
+              headers,
+            });
+
+            if (llmGetResp.ok) {
+              const llm = await llmGetResp.json();
+              const currentPrompt = String(llm?.general_prompt || '');
+              const markerStart = '[CALENDAR_TOOLING_v1]';
+
+              if (!currentPrompt.includes(markerStart)) {
+                const calendarToolingBlock = [
+                  markerStart,
+                  'AVAILABILITY RULES:',
+                  '1) If the caller asks about availability / openings / schedule, you MUST call the tool manage_calendar with action="get_available_slots" BEFORE answering.',
+                  '2) Never say "fully booked" or "no openings" unless manage_calendar returns available_slots as an empty list.',
+                  '3) If available_slots is non-empty, read out 3–5 options from available_slots and ask which one they prefer.',
+                  '4) Use the timezone returned by manage_calendar; do not guess dates/times.',
+                  '[/CALENDAR_TOOLING_v1]',
+                ].join('\n');
+
+                const nextPrompt = `${currentPrompt}\n\n${calendarToolingBlock}`.trim();
+
+                const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
+                  method: 'PATCH',
+                  headers,
+                  body: JSON.stringify({ general_prompt: nextPrompt }),
+                });
+
+                if (llmUpdateResp.ok) {
+                  llmPromptUpdated = true;
+                } else {
+                  llmPromptUpdateError = await llmUpdateResp.text();
+                }
+              } else {
+                // Already updated previously
+                llmPromptUpdated = true;
+              }
+            } else {
+              llmPromptUpdateError = await llmGetResp.text();
+            }
+          } else {
+            llmPromptUpdateError = 'Could not determine llm_id from agent config.';
+          }
+        } catch (e) {
+          llmPromptUpdateError = e instanceof Error ? e.message : String(e);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'Calendar function configured successfully',
+            agent: updatedAgent,
+            userId: userId,
+            llmPromptUpdated,
+            llmPromptUpdateError,
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
 
       case 'test_chat':
         if (!agentId) {
