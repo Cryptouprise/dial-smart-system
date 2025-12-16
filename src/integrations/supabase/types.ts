@@ -3013,6 +3013,7 @@ export type Database = {
           ai_system_prompt: string | null
           ai_transfer_keywords: string[] | null
           audio_url: string | null
+          bypass_calling_hours: boolean | null
           callbacks_scheduled: number | null
           caller_id: string | null
           calling_hours_end: string | null
@@ -3028,6 +3029,8 @@ export type Database = {
           ivr_enabled: boolean | null
           ivr_mode: string | null
           ivr_prompt: string | null
+          last_error: string | null
+          last_error_at: string | null
           max_attempts: number | null
           message_text: string
           name: string
@@ -3046,6 +3049,7 @@ export type Database = {
           ai_system_prompt?: string | null
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
+          bypass_calling_hours?: boolean | null
           callbacks_scheduled?: number | null
           caller_id?: string | null
           calling_hours_end?: string | null
@@ -3061,6 +3065,8 @@ export type Database = {
           ivr_enabled?: boolean | null
           ivr_mode?: string | null
           ivr_prompt?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
           max_attempts?: number | null
           message_text: string
           name: string
@@ -3079,6 +3085,7 @@ export type Database = {
           ai_system_prompt?: string | null
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
+          bypass_calling_hours?: boolean | null
           callbacks_scheduled?: number | null
           caller_id?: string | null
           calling_hours_end?: string | null
@@ -3094,6 +3101,8 @@ export type Database = {
           ivr_enabled?: boolean | null
           ivr_mode?: string | null
           ivr_prompt?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
           max_attempts?: number | null
           message_text?: string
           name?: string

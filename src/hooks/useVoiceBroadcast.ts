@@ -523,6 +523,95 @@ export const useVoiceBroadcast = () => {
     }
   };
 
+  const removeQueueItems = async (broadcastId: string, itemIds: string[]) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'remove_items', broadcastId, itemIds }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Items Removed",
+        description: `${data.removed} item(s) removed from queue`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error removing queue items:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove items",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const cleanupStuckCalls = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'cleanup_stuck_calls', broadcastId }
+      });
+
+      if (error) throw error;
+
+      if (data.cleaned > 0) {
+        toast({
+          title: "Stuck Calls Cleaned",
+          description: `${data.cleaned} stuck call(s) recovered`,
+        });
+      }
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error cleaning stuck calls:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to cleanup stuck calls",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const retryFailedCalls = async (broadcastId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-queue', {
+        body: { action: 'retry_failed', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Failed Calls Queued for Retry",
+        description: `${data.retried} call(s) will be retried`,
+      });
+
+      await loadBroadcasts();
+      return data;
+    } catch (error: any) {
+      console.error('Error retrying failed calls:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to retry calls",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     broadcasts,
     isLoading,
@@ -539,6 +628,9 @@ export const useVoiceBroadcast = () => {
     stopBroadcast,
     getBroadcastStats,
     getQueueItems,
+    removeQueueItems,
+    cleanupStuckCalls,
+    retryFailedCalls,
     parseDTMFActions,
   };
 };
