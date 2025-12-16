@@ -596,19 +596,29 @@ serve(async (req) => {
 
       // This is the PRIMARY get_available_slots handler - works for both JWT auth AND Retell custom function calls
       case 'get_available_slots': {
-        // Accept user_id from params (for Retell webhook calls) OR from auth header
+        // Accept user_id from params (for Retell custom function calls) OR from auth header
         const targetUserId = params.user_id || userId;
-        const { date, duration = 30, startDate, endDate } = params;
-        
-        console.log('[Calendar] get_available_slots called - user_id from params:', params.user_id, 'userId from auth:', userId, 'using:', targetUserId);
-        
+
+        const durationMinutes = Number(
+          params.duration_minutes ?? params.duration ?? 30
+        );
+
+        console.log(
+          '[Calendar] get_available_slots called - user_id from params:',
+          params.user_id,
+          'userId from auth:',
+          userId,
+          'using:',
+          targetUserId
+        );
+
         if (!targetUserId) {
           // Return a helpful message for Retell instead of an error
           return new Response(
-            JSON.stringify({ 
+            JSON.stringify({
               success: false,
               available_slots: [],
-              message: "I'm having trouble accessing the calendar. Please try again or contact support."
+              message: "I'm having trouble accessing the calendar. Please try again or contact support.",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -626,38 +636,46 @@ serve(async (req) => {
         if (!availability) {
           // Return default business hours if no availability configured
           return new Response(
-            JSON.stringify({ 
-              success: true, 
+            JSON.stringify({
+              success: true,
               available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
-              message: "I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?"
+              message: 'I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?',
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        // Default to today if no date provided
-        const searchDate = date ? new Date(date) : (startDate ? new Date(startDate) : new Date());
-        const dayOfWeek = searchDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-        const schedule = availability.weekly_schedule as any;
-        const daySlots = schedule[dayOfWeek] || [];
-        
-        console.log('[Calendar] Day:', dayOfWeek, 'Slots config:', daySlots.length);
+        const timeZone = (availability.timezone as string) || 'America/Chicago';
+        const weeklySchedule =
+          typeof availability.weekly_schedule === 'string'
+            ? safeJsonParse(availability.weekly_schedule, {})
+            : (availability.weekly_schedule as any);
 
-        if (daySlots.length === 0) {
-          return new Response(
-            JSON.stringify({ 
-              success: true, 
-              available_slots: [],
-              slots: [],
-              message: `I don't have availability on ${searchDate.toLocaleDateString('en-US', { weekday: 'long' })}. Would you like to try a different day?`
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+        // Determine date range (in the user's timezone)
+        const todayYmd = formatYmdInTimeZone(new Date(), timeZone);
+        const requestedStartYmd =
+          (typeof params.date === 'string' && isYmd(params.date) ? params.date : null) ||
+          (typeof params.startDate === 'string' && isYmd(params.startDate) ? params.startDate : null) ||
+          todayYmd;
+
+        // If Retell/LLM passes a past date (e.g., 2023), clamp to today to avoid “fully booked” hallucinations.
+        const rangeStartYmd = requestedStartYmd < todayYmd ? todayYmd : requestedStartYmd;
+
+        const requestedEndYmd =
+          (typeof params.endDate === 'string' && isYmd(params.endDate) ? params.endDate : null) ||
+          addDaysInTimeZone(rangeStartYmd, 6, timeZone); // default: next 7 days
+
+        const rangeEndYmd = requestedEndYmd < rangeStartYmd ? rangeStartYmd : requestedEndYmd;
+
+        console.log('[Calendar] Using timeZone:', timeZone, 'range:', rangeStartYmd, '→', rangeEndYmd);
+
+        // Compute UTC window for querying busy times (Google + local appointments)
+        const rangeStartUtc = zonedLocalToUtc(rangeStartYmd, '00:00', timeZone);
+        const rangeEndUtc = zonedLocalToUtc(rangeEndYmd, '23:59', timeZone);
 
         // Try to get Google Calendar busy times if connected
         let busyTimes: { start: number; end: number }[] = [];
-        
+
         const { data: integration } = await supabase
           .from('calendar_integrations')
           .select('*')
@@ -668,24 +686,22 @@ serve(async (req) => {
         if (integration?.access_token_encrypted) {
           try {
             const accessToken = atob(integration.access_token_encrypted);
-            const startOfDay = new Date(searchDate);
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date(searchDate);
-            endOfDay.setHours(23, 59, 59, 999);
-
             const calendarId = integration.calendar_id || 'primary';
+
             const eventsResponse = await fetch(
               `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-              `timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true`,
-              { headers: { 'Authorization': `Bearer ${accessToken}` } }
+                `timeMin=${rangeStartUtc.toISOString()}&timeMax=${rangeEndUtc.toISOString()}&singleEvents=true`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
             );
 
             if (eventsResponse.ok) {
               const eventsData = await eventsResponse.json();
-              busyTimes = (eventsData.items || []).map((event: any) => ({
-                start: new Date(event.start.dateTime || event.start.date).getTime(),
-                end: new Date(event.end.dateTime || event.end.date).getTime()
-              }));
+              busyTimes = (eventsData.items || [])
+                .filter((event: any) => event?.start && event?.end)
+                .map((event: any) => ({
+                  start: new Date(event.start.dateTime || event.start.date).getTime(),
+                  end: new Date(event.end.dateTime || event.end.date).getTime(),
+                }));
               console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
             } else {
               console.error('[Calendar] Google Calendar API error:', eventsResponse.status);
@@ -695,84 +711,100 @@ serve(async (req) => {
           }
         }
 
-        // Also check local appointments
-        const dayStart = new Date(searchDate);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(searchDate);
-        dayEnd.setHours(23, 59, 59, 999);
-
+        // Also check local appointments in the same range
         const { data: existingAppts } = await supabase
           .from('calendar_appointments')
           .select('start_time, end_time')
           .eq('user_id', targetUserId)
           .neq('status', 'cancelled')
-          .gte('start_time', dayStart.toISOString())
-          .lte('start_time', dayEnd.toISOString());
+          .gte('start_time', rangeStartUtc.toISOString())
+          .lte('start_time', rangeEndUtc.toISOString());
 
-        if (existingAppts) {
-          busyTimes = busyTimes.concat(existingAppts.map(a => ({
-            start: new Date(a.start_time).getTime(),
-            end: new Date(a.end_time).getTime()
-          })));
+        if (existingAppts?.length) {
+          busyTimes = busyTimes.concat(
+            existingAppts.map((a) => ({
+              start: new Date(a.start_time).getTime(),
+              end: new Date(a.end_time).getTime(),
+            }))
+          );
         }
 
         // Generate available slots based on configured availability
-        const slotInterval = availability.slot_interval_minutes || 30;
-        const bufferBefore = availability.buffer_before_minutes || 0;
-        const bufferAfter = availability.buffer_after_minutes || 0;
-        const meetingDuration = duration || availability.default_meeting_duration || 30;
+        const slotInterval = Number(availability.slot_interval_minutes || 30);
+        const bufferBefore = Number(availability.buffer_before_minutes || 0);
+        const bufferAfter = Number(availability.buffer_after_minutes || 0);
+        const meetingDuration = durationMinutes || Number(availability.default_meeting_duration || 30);
+        const minNoticeHours = Number(availability.min_notice_hours || 0);
 
         const availableSlots: string[] = [];
         const detailedSlots: { start: string; end: string; formatted: string }[] = [];
-        const now = new Date();
 
-        for (const window of daySlots) {
-          const [startHour, startMin] = window.start.split(':').map(Number);
-          const [endHour, endMin] = window.end.split(':').map(Number);
+        const nowUtcMs = Date.now();
+        const minStartUtcMs = nowUtcMs + minNoticeHours * 60 * 60 * 1000;
 
-          const current = new Date(searchDate);
-          current.setHours(startHour, startMin, 0, 0);
+        for (const dayYmd of iterateYmdRange(rangeStartYmd, rangeEndYmd, timeZone)) {
+          const weekday = getWeekdayInTimeZone(dayYmd, timeZone);
+          const daySlots = weeklySchedule?.[weekday] || [];
 
-          const windowEnd = new Date(searchDate);
-          windowEnd.setHours(endHour, endMin, 0, 0);
+          if (!Array.isArray(daySlots) || daySlots.length === 0) {
+            continue;
+          }
 
-          while (current.getTime() + meetingDuration * 60000 <= windowEnd.getTime()) {
-            const slotStart = current.getTime();
-            const slotEnd = slotStart + meetingDuration * 60000;
+          for (const window of daySlots) {
+            const windowStartUtc = zonedLocalToUtc(dayYmd, window.start, timeZone);
+            const windowEndUtc = zonedLocalToUtc(dayYmd, window.end, timeZone);
 
-            // Check for conflicts with buffer
-            const hasConflict = busyTimes.some(busy => {
-              const bufferedStart = slotStart - bufferBefore * 60000;
-              const bufferedEnd = slotEnd + bufferAfter * 60000;
-              return bufferedStart < busy.end && bufferedEnd > busy.start;
-            });
+            let slotStartUtcMs = windowStartUtc.getTime();
+            const windowEndUtcMs = windowEndUtc.getTime();
 
-            // Only add future slots
-            if (!hasConflict && current > now) {
-              const formatted = formatTimeForVoice(current);
-              availableSlots.push(formatted);
-              detailedSlots.push({
-                start: new Date(slotStart).toISOString(),
-                end: new Date(slotEnd).toISOString(),
-                formatted
-              });
+            while (slotStartUtcMs + meetingDuration * 60_000 <= windowEndUtcMs) {
+              const slotEndUtcMs = slotStartUtcMs + meetingDuration * 60_000;
+
+              // Only add future slots (respecting min_notice_hours)
+              if (slotStartUtcMs >= minStartUtcMs) {
+                const hasConflict = busyTimes.some((busy) => {
+                  const bufferedStart = slotStartUtcMs - bufferBefore * 60_000;
+                  const bufferedEnd = slotEndUtcMs + bufferAfter * 60_000;
+                  return bufferedStart < busy.end && bufferedEnd > busy.start;
+                });
+
+                if (!hasConflict) {
+                  const slotStartDate = new Date(slotStartUtcMs);
+                  const formatted = formatTimeForVoice(slotStartDate, timeZone);
+                  availableSlots.push(formatted);
+                  detailedSlots.push({
+                    start: new Date(slotStartUtcMs).toISOString(),
+                    end: new Date(slotEndUtcMs).toISOString(),
+                    formatted,
+                  });
+
+                  if (availableSlots.length >= 5) break;
+                }
+              }
+
+              slotStartUtcMs += slotInterval * 60_000;
             }
 
-            current.setMinutes(current.getMinutes() + slotInterval);
+            if (availableSlots.length >= 5) break;
           }
+
+          if (availableSlots.length >= 5) break;
         }
 
-        const slotsToShow = availableSlots.slice(0, 5);
-        console.log('[Calendar] Available slots:', slotsToShow.length);
-        
+        console.log('[Calendar] Available slots:', availableSlots.length);
+
         return new Response(
           JSON.stringify({
             success: true,
-            available_slots: slotsToShow,
+            timezone: timeZone,
+            range_start: rangeStartYmd,
+            range_end: rangeEndYmd,
+            available_slots: availableSlots,
             slots: detailedSlots.slice(0, 10),
-            message: slotsToShow.length > 0 
-              ? `I have ${slotsToShow.length} available time slots: ${slotsToShow.join(', ')}. Which time works best for you?`
-              : "I don't have any available slots for that date. Would you like to try a different day?"
+            message:
+              availableSlots.length > 0
+                ? `I have ${availableSlots.length} available time slots: ${availableSlots.join(', ')}. Which time works best for you?`
+                : "I don't have any available slots in the next few days. Would you like to try a different week?",
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1628,10 +1660,99 @@ async function getCalEventTypeId(supabase: any, userId: string | null): Promise<
   return data?.credential_value_encrypted || null;
 }
 
-function formatTimeForVoice(date: Date): string {
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const monthDay = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function safeJsonParse<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function isYmd(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function formatYmdInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
+  const y = get('year');
+  const m = get('month');
+  const d = get('day');
+  return `${y}-${m}-${d}`;
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+  // Convert `date` to what the wall-clock time would be in `timeZone`, then compare to UTC.
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+
+  const asUtc = Date.UTC(
+    get('year'),
+    (get('month') || 1) - 1,
+    get('day') || 1,
+    get('hour') || 0,
+    get('minute') || 0,
+    get('second') || 0
+  );
+
+  return asUtc - date.getTime();
+}
+
+function zonedLocalToUtc(ymd: string, hm: string, timeZone: string): Date {
+  // Interprets `ymd hm` as a wall-clock time in `timeZone` and returns the corresponding UTC Date.
+  const [y, m, d] = ymd.split('-').map(Number);
+  const [hour, minute] = hm.split(':').map(Number);
+
+  // Start with a naive UTC date and correct by the zone offset at that instant.
+  const naiveUtcMs = Date.UTC(y, m - 1, d, hour, minute, 0, 0);
+  const naiveUtc = new Date(naiveUtcMs);
+  const offsetMs = getTimeZoneOffsetMs(naiveUtc, timeZone);
+  return new Date(naiveUtcMs - offsetMs);
+}
+
+function addDaysInTimeZone(ymd: string, days: number, timeZone: string): string {
+  // Use noon to avoid DST edge cases.
+  const base = zonedLocalToUtc(ymd, '12:00', timeZone);
+  const next = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+  return formatYmdInTimeZone(next, timeZone);
+}
+
+function* iterateYmdRange(startYmd: string, endYmd: string, timeZone: string): Generator<string> {
+  let current = startYmd;
+  let guard = 0;
+  while (current <= endYmd && guard < 60) {
+    yield current;
+    current = addDaysInTimeZone(current, 1, timeZone);
+    guard++;
+  }
+}
+
+function getWeekdayInTimeZone(ymd: string, timeZone: string): string {
+  const date = zonedLocalToUtc(ymd, '12:00', timeZone);
+  return date.toLocaleDateString('en-US', { weekday: 'long', timeZone }).toLowerCase();
+}
+
+function formatTimeForVoice(date: Date, timeZone?: string): string {
+  const opts = timeZone ? { timeZone } : {};
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'long', ...opts });
+  const monthDay = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...opts });
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', ...opts });
   return `${dayName}, ${monthDay} at ${time}`;
 }
 
@@ -1654,3 +1775,4 @@ async function handleAction(action: string, params: any, supabase: any, userId: 
     { headers: { 'Content-Type': 'application/json' } }
   );
 }
+
