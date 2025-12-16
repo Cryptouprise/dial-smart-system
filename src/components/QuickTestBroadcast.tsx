@@ -124,6 +124,24 @@ const QuickTestBroadcast: React.FC = () => {
       
       // Parse specific errors for better UX
       let errorMessage = error.message || "Failed to initiate test call";
+      let errorTitle = "Call Failed";
+      
+      // Check for Twilio phone number errors
+      const isTwilioVerificationError = errorMessage.includes('21210') || 
+                                        errorMessage.includes('not yet verified') ||
+                                        errorMessage.includes('not verified');
+      const isTwilioInvalidNumber = errorMessage.includes('21214') || 
+                                    errorMessage.includes('not valid');
+      
+      if (isTwilioVerificationError) {
+        errorTitle = "Twilio Phone Number Not Verified";
+        errorMessage = "This phone number is not verified or purchased in Twilio. Verify at: https://console.twilio.com/us1/develop/phone-numbers/manage/verified";
+      } else if (isTwilioInvalidNumber) {
+        errorTitle = "Invalid Twilio Caller ID";
+        errorMessage = "Invalid caller ID. Purchase a number at: https://console.twilio.com/us1/develop/phone-numbers/manage/incoming";
+      }
+      
+      // Check for ElevenLabs billing issues
       const isBillingIssue = errorMessage.toLowerCase().includes('payment') || 
                             errorMessage.toLowerCase().includes('subscription') ||
                             errorMessage.toLowerCase().includes('billing');
@@ -131,13 +149,15 @@ const QuickTestBroadcast: React.FC = () => {
                           errorMessage.toLowerCase().includes('limit');
       
       if (isBillingIssue) {
+        errorTitle = "ElevenLabs Billing Issue";
         errorMessage = "ElevenLabs billing issue detected. Please update your payment at: https://elevenlabs.io/subscription";
       } else if (isQuotaIssue) {
+        errorTitle = "ElevenLabs Quota Exceeded";
         errorMessage = "ElevenLabs quota exceeded. Upgrade at: https://elevenlabs.io/subscription";
       }
       
       toast({
-        title: isBillingIssue ? "ElevenLabs Billing Issue" : "Call Failed",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });
