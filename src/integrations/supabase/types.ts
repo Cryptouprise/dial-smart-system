@@ -3014,6 +3014,7 @@ export type Database = {
           ai_transfer_keywords: string[] | null
           audio_url: string | null
           callbacks_scheduled: number | null
+          caller_id: string | null
           calling_hours_end: string | null
           calling_hours_start: string | null
           calls_answered: number | null
@@ -3046,6 +3047,7 @@ export type Database = {
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
           callbacks_scheduled?: number | null
+          caller_id?: string | null
           calling_hours_end?: string | null
           calling_hours_start?: string | null
           calls_answered?: number | null
@@ -3078,6 +3080,7 @@ export type Database = {
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
           callbacks_scheduled?: number | null
+          caller_id?: string | null
           calling_hours_end?: string | null
           calling_hours_start?: string | null
           calls_answered?: number | null
