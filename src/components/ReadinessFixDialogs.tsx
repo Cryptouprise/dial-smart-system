@@ -94,6 +94,24 @@ export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, cam
     }
   };
 
+  const handleAddNumberToCampaign = async () => {
+    if (!selectedNumber || !selectedService) {
+      toast.error('Select both a phone number and messaging service');
+      return;
+    }
+    setAddingNumber(true);
+    try {
+      await addNumberToCampaign(selectedNumber, selectedService);
+      await loadA2PStatus();
+      setSelectedNumber('');
+      setSelectedService('');
+      onFixed?.();
+    } catch (e) {
+      // Error handled by hook
+    }
+    setAddingNumber(false);
+  };
+
   const unregisteredNumbers = a2pStatus?.phone_numbers?.filter((n: any) => !n.a2p_registered) || [];
   const registeredNumbers = a2pStatus?.phone_numbers?.filter((n: any) => n.a2p_registered) || [];
 
