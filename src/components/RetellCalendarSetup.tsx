@@ -592,6 +592,49 @@ export const RetellCalendarSetup: React.FC = () => {
   
   // Google Calendar fields
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  
+  // Google Calendar connection status for banner
+  const [googleConnection, setGoogleConnection] = useState<{
+    connected: boolean;
+    email?: string;
+    calendarName?: string;
+    loading: boolean;
+  }>({ connected: false, loading: true });
+
+  // Check Google Calendar connection status
+  useEffect(() => {
+    const checkGoogleConnection = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setGoogleConnection({ connected: false, loading: false });
+          return;
+        }
+
+        const { data } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (data) {
+          setGoogleConnection({
+            connected: true,
+            email: data.provider_account_email || data.calendar_id || undefined,
+            calendarName: data.calendar_name || undefined,
+            loading: false
+          });
+        } else {
+          setGoogleConnection({ connected: false, loading: false });
+        }
+      } catch (error) {
+        console.error('Error checking Google connection:', error);
+        setGoogleConnection({ connected: false, loading: false });
+      }
+    };
+    checkGoogleConnection();
+  }, []);
 
   // Load existing config
   useEffect(() => {
@@ -732,6 +775,46 @@ export const RetellCalendarSetup: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Prominent Calendar Status Banner */}
+        {!googleConnection.loading && (
+          <div className={`p-4 rounded-lg border-2 ${
+            googleConnection.connected 
+              ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700' 
+              : 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {googleConnection.connected ? (
+                  <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Info className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                )}
+                <div>
+                  <h3 className={`font-semibold ${
+                    googleConnection.connected 
+                      ? 'text-green-800 dark:text-green-200' 
+                      : 'text-amber-800 dark:text-amber-200'
+                  }`}>
+                    {googleConnection.connected ? 'Google Calendar Connected' : 'Google Calendar Not Connected'}
+                  </h3>
+                  <p className={`text-sm ${
+                    googleConnection.connected 
+                      ? 'text-green-700 dark:text-green-300' 
+                      : 'text-amber-700 dark:text-amber-300'
+                  }`}>
+                    {googleConnection.connected 
+                      ? `Connected to ${googleConnection.email || googleConnection.calendarName || 'your calendar'}`
+                      : 'Connect your Google Calendar below to enable AI booking'}
+                  </p>
+                </div>
+              </div>
+              {googleConnection.connected && (
+                <Badge className="bg-green-600 text-white">Ready</Badge>
+              )}
+            </div>
+          </div>
+        )}
+        
         <Tabs defaultValue="google" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="google" className="flex items-center gap-2">
