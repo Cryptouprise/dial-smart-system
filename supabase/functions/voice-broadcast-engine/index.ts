@@ -526,14 +526,26 @@ serve(async (req) => {
 
         for (const item of queueItems || []) {
           try {
-            // Select best phone number using smart selection with dialer features
-            const callerNumber = selectBestNumber(
-              phoneNumbers,
-              item.phone_number,
-              numberUsageCount,
-              enableLocalPresence,
-              enableNumberRotation
-            );
+            let callerNumber: any;
+            
+            // If a specific caller_id is set on the broadcast, use that
+            if (broadcast.caller_id) {
+              callerNumber = phoneNumbers.find(n => n.number === broadcast.caller_id);
+              if (!callerNumber) {
+                console.log(`Specified caller_id ${broadcast.caller_id} not found, falling back to auto-selection`);
+              }
+            }
+            
+            // If no specific caller_id or it wasn't found, use smart selection
+            if (!callerNumber) {
+              callerNumber = selectBestNumber(
+                phoneNumbers,
+                item.phone_number,
+                numberUsageCount,
+                enableLocalPresence,
+                enableNumberRotation
+              );
+            }
             
             if (!callerNumber) {
               errors.push(`No suitable number for ${item.phone_number}`);

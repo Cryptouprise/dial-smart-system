@@ -33,6 +33,7 @@ export interface VoiceBroadcast {
   dnc_requests: number | null;
   created_at: string | null;
   updated_at: string | null;
+  caller_id: string | null;
 }
 
 export interface DTMFAction {
@@ -119,6 +120,7 @@ export const useVoiceBroadcast = () => {
     calling_hours_end?: string;
     timezone?: string;
     calls_per_minute?: number;
+    caller_id?: string | null;
   }) => {
     setIsLoading(true);
     try {
@@ -145,6 +147,7 @@ export const useVoiceBroadcast = () => {
           calling_hours_end: broadcast.calling_hours_end || '17:00',
           timezone: broadcast.timezone || 'America/New_York',
           calls_per_minute: broadcast.calls_per_minute || 50,
+          caller_id: broadcast.caller_id || null,
         })
         .select()
         .maybeSingle();

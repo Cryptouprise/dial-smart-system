@@ -91,6 +91,7 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [queueResults, setQueueResults] = useState<any[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'settings' | 'results'>('settings');
+  const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -108,12 +109,34 @@ export const VoiceBroadcastManager: React.FC = () => {
     use_dialer_features: true, // Enable number rotation & local presence for better deliverability
     enable_local_presence: true,
     enable_number_rotation: true,
+    caller_id: '', // Specific phone number to use as caller ID
   });
 
   useEffect(() => {
     loadBroadcasts();
     loadLeads();
+    loadPhoneNumbers();
   }, []);
+
+  const loadPhoneNumbers = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('id, number, friendly_name, status, purpose, retell_phone_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .eq('is_spam', false)
+        .order('number');
+
+      if (error) throw error;
+      setPhoneNumbers(data || []);
+    } catch (error) {
+      console.error('Error loading phone numbers:', error);
+    }
+  };
 
   useEffect(() => {
     // Load stats for each broadcast - properly handle async operations
@@ -219,6 +242,7 @@ export const VoiceBroadcastManager: React.FC = () => {
         ai_system_prompt: formData.ai_system_prompt,
         calls_per_minute: formData.calls_per_minute,
         max_attempts: formData.max_attempts,
+        caller_id: formData.caller_id || null,
       });
       setShowCreateDialog(false);
       resetForm();
@@ -243,6 +267,7 @@ export const VoiceBroadcastManager: React.FC = () => {
       use_dialer_features: true,
       enable_local_presence: true,
       enable_number_rotation: true,
+      caller_id: '',
     });
   };
 
@@ -666,6 +691,48 @@ export const VoiceBroadcastManager: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {/* Caller ID Selection */}
+                <Card className="border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-blue-600" />
+                      Caller ID (From Number)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Select Phone Number</Label>
+                      <Select
+                        value={formData.caller_id}
+                        onValueChange={(value) => setFormData({ ...formData, caller_id: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Auto-select (rotation enabled)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Auto-select (rotation enabled)</SelectItem>
+                          {phoneNumbers.filter(p => !p.retell_phone_id).map((phone) => (
+                            <SelectItem key={phone.id} value={phone.number}>
+                              {phone.friendly_name || phone.number}
+                              {phone.purpose && ` (${phone.purpose})`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {formData.caller_id 
+                          ? "All calls will use this specific number" 
+                          : "System will auto-rotate through your available numbers"}
+                      </p>
+                      {phoneNumbers.some(p => p.retell_phone_id) && (
+                        <p className="text-xs text-amber-600">
+                          ⚠️ Retell-registered numbers are hidden here (use them for AI calling, not broadcasts)
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
             </Tabs>
 
