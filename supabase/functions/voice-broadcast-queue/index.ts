@@ -33,7 +33,13 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { action, broadcastId, leadIds, phoneNumbers } = await req.json();
+    const { action, broadcastId, leadIds, phoneNumbers, itemIds } = await req.json();
+
+    // E.164 phone number normalization helper
+    const normalizePhone = (phone: string): string => {
+      const cleaned = phone.replace(/\D/g, '');
+      return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+    };
 
     console.log(`Voice broadcast queue action: ${action} for broadcast ${broadcastId}`);
 
@@ -99,11 +105,11 @@ serve(async (req) => {
           );
         }
 
-        // Add to queue
+        // Add to queue with normalized phone numbers
         const queueItems = newLeads.map(lead => ({
           broadcast_id: broadcastId,
           lead_id: lead.id,
-          phone_number: lead.phone_number,
+          phone_number: normalizePhone(lead.phone_number),
           lead_name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || null,
           status: 'pending',
           max_attempts: broadcast.max_attempts || 1,
@@ -169,9 +175,10 @@ serve(async (req) => {
           );
         }
 
+        // Normalize phone numbers to E.164 format
         const queueItems = newNumbers.map(number => ({
           broadcast_id: broadcastId,
-          phone_number: number,
+          phone_number: normalizePhone(number),
           status: 'pending',
           max_attempts: broadcast.max_attempts || 1,
         }));
@@ -280,8 +287,7 @@ serve(async (req) => {
       }
 
       case 'remove_items': {
-        const { itemIds } = await req.json().catch(() => ({}));
-        
+        // itemIds is already parsed from the initial request body at the top
         if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
           throw new Error('No item IDs provided');
         }
