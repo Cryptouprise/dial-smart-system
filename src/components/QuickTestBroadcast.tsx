@@ -121,9 +121,18 @@ const QuickTestBroadcast: React.FC = () => {
 
     } catch (error: any) {
       console.error('Test call error:', error);
+      
+      // Parse specific errors for better UX
+      let errorMessage = error.message || "Failed to initiate test call";
+      if (errorMessage.includes('payment') || errorMessage.includes('subscription')) {
+        errorMessage = "ElevenLabs billing issue: Please check your ElevenLabs account payment status.";
+      } else if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
+        errorMessage = "ElevenLabs quota exceeded. Please upgrade your plan or wait for quota reset.";
+      }
+      
       toast({
         title: "Call Failed",
-        description: error.message || "Failed to initiate test call",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
