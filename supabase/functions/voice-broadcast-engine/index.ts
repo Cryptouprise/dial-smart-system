@@ -429,6 +429,34 @@ serve(async (req) => {
           throw new Error('No audio generated for this broadcast. Please generate audio first.');
         }
 
+        // Check calling hours BEFORE starting
+        const broadcastTimezone = broadcast.timezone || 'America/New_York';
+        const callingHoursStart = broadcast.calling_hours_start || '09:00:00';
+        const callingHoursEnd = broadcast.calling_hours_end || '21:00:00';
+        
+        // Get current time in the broadcast's timezone
+        const now = new Date();
+        const options: Intl.DateTimeFormatOptions = {
+          timeZone: broadcastTimezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        };
+        const currentTimeStr = now.toLocaleTimeString('en-US', options);
+        const [currentHour, currentMinute] = currentTimeStr.split(':').map(Number);
+        const currentMinutes = currentHour * 60 + currentMinute;
+        
+        const [startHour, startMin] = callingHoursStart.split(':').map(Number);
+        const [endHour, endMin] = callingHoursEnd.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+        
+        console.log(`Calling hours check - Current: ${currentTimeStr} (${currentMinutes} min), Start: ${callingHoursStart} (${startMinutes} min), End: ${callingHoursEnd} (${endMinutes} min), TZ: ${broadcastTimezone}`);
+        
+        if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
+          throw new Error(`Outside calling hours. Current time in ${broadcastTimezone} is ${currentTimeStr}. Calling hours are ${callingHoursStart.slice(0,5)} - ${callingHoursEnd.slice(0,5)}.`);
+        }
+
         // Check if there are pending calls
         const { count: pendingCount, error: countError } = await supabase
           .from('broadcast_queue')
