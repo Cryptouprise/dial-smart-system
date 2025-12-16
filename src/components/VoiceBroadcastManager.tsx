@@ -1226,6 +1226,57 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </div>
               </div>
 
+              {/* Caller ID (From Number) */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-blue-500" />
+                  Caller ID
+                </h3>
+
+                <div className="space-y-2">
+                  <Label>From Number</Label>
+                  <Select
+                    value={selectedBroadcast.caller_id || 'auto'}
+                    onValueChange={async (value) => {
+                      const callerId = value === 'auto' ? null : value;
+                      await updateBroadcast(selectedBroadcast.id, { caller_id: callerId });
+                      setSelectedBroadcast({ ...selectedBroadcast, caller_id: callerId });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Auto-select (rotation enabled)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto-select (rotation enabled)</SelectItem>
+                      {phoneNumbers
+                        .filter(
+                          (p) =>
+                            !p.retell_phone_id &&
+                            typeof p.number === 'string' &&
+                            p.number.trim().length > 0
+                        )
+                        .map((phone) => (
+                          <SelectItem key={phone.id} value={phone.number}>
+                            {phone.friendly_name || phone.number}
+                            {phone.purpose && ` (${phone.purpose})`}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {selectedBroadcast.caller_id
+                        ? 'All calls will use this specific number'
+                        : 'System will auto-rotate through your available numbers'}
+                    </p>
+                    <Button asChild variant="outline" size="sm">
+                      <a href="/?tab=overview#phone-numbers">Manage numbers</a>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* Message Preview */}
               <div className="space-y-4">
                 <h3 className="font-semibold flex items-center gap-2">

@@ -192,6 +192,7 @@ export const useVoiceBroadcast = () => {
     timezone: string;
     calls_per_minute: number;
     status: string;
+    caller_id: string | null;
   }>) => {
     setIsLoading(true);
     try {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -195,12 +196,17 @@ const QuickTestBroadcast: React.FC = () => {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-          ) : phoneNumbers.length === 0 ? (
-           <div className="text-center py-4 text-muted-foreground">
-             <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
-             <p>No active Twilio phone numbers available</p>
-             <p className="text-sm">Add/verify a Twilio number in Number Management</p>
-           </div>
+           ) : phoneNumbers.length === 0 ? (
+            <div className="text-center py-4 text-muted-foreground">
+              <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No active Twilio phone numbers available</p>
+              <p className="text-sm">Add/verify a Twilio number in Number Management</p>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/?tab=overview#phone-numbers">Manage phone numbers</Link>
+                </Button>
+              </div>
+            </div>
         ) : (
           <>
             {/* Caller ID Selection */}
