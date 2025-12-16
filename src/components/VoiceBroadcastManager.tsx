@@ -704,20 +704,32 @@ export const VoiceBroadcastManager: React.FC = () => {
                     <div className="space-y-2">
                       <Label>Select Phone Number</Label>
                       <Select
-                        value={formData.caller_id}
-                        onValueChange={(value) => setFormData({ ...formData, caller_id: value })}
+                        value={formData.caller_id || 'auto'}
+                        onValueChange={(value) =>
+                          setFormData({
+                            ...formData,
+                            caller_id: value === 'auto' ? '' : value,
+                          })
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Auto-select (rotation enabled)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Auto-select (rotation enabled)</SelectItem>
-                          {phoneNumbers.filter(p => !p.retell_phone_id).map((phone) => (
-                            <SelectItem key={phone.id} value={phone.number}>
-                              {phone.friendly_name || phone.number}
-                              {phone.purpose && ` (${phone.purpose})`}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="auto">Auto-select (rotation enabled)</SelectItem>
+                          {phoneNumbers
+                            .filter(
+                              (p) =>
+                                !p.retell_phone_id &&
+                                typeof p.number === 'string' &&
+                                p.number.trim().length > 0
+                            )
+                            .map((phone) => (
+                              <SelectItem key={phone.id} value={phone.number}>
+                                {phone.friendly_name || phone.number}
+                                {phone.purpose && ` (${phone.purpose})`}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
