@@ -107,6 +107,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [isConfiguringCalendar, setIsConfiguringCalendar] = useState(false);
   const [hasCalendarFunction, setHasCalendarFunction] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // LLM/Script state
+  const [llmData, setLlmData] = useState<any>(null);
+  const [isLoadingLlm, setIsLoadingLlm] = useState(false);
 
   // Load user ID and check calendar function status
   useEffect(() => {
@@ -120,6 +124,31 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     };
     loadUserAndCheckCalendar();
   }, [agent]);
+
+  // Fetch LLM data to show script/prompt
+  useEffect(() => {
+    const fetchLlmData = async () => {
+      const llmId = agent?.response_engine?.llm_id;
+      if (!llmId || !open) return;
+      
+      setIsLoadingLlm(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'get_llm', llmId }
+        });
+        
+        if (error) throw error;
+        setLlmData(data);
+        console.log('LLM data loaded:', data);
+      } catch (error: any) {
+        console.error('Failed to fetch LLM data:', error);
+      } finally {
+        setIsLoadingLlm(false);
+      }
+    };
+    
+    fetchLlmData();
+  }, [agent?.response_engine?.llm_id, open]);
 
   const configureCalendarOnAgent = async () => {
     if (!agent?.agent_id || !userId) {
@@ -691,11 +720,62 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                     })}
                     placeholder="llm_xxxxxxxxxxxxx"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    The LLM configuration contains your agent's script and prompts.
-                  </p>
                 </div>
               )}
+
+              {/* Script/Prompt Display */}
+              <Card className="border-primary/20">
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Agent Script / System Prompt
+                  </CardTitle>
+                  <CardDescription>
+                    The instructions and personality that define how this agent responds
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isLoadingLlm ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading script...
+                    </div>
+                  ) : llmData ? (
+                    <>
+                      {llmData.begin_message && (
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Opening Message</Label>
+                          <div className="p-3 bg-muted rounded-lg text-sm">
+                            {llmData.begin_message}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">System Prompt / Script</Label>
+                        <ScrollArea className="h-64 w-full border rounded-lg">
+                          <div className="p-4 text-sm whitespace-pre-wrap font-mono">
+                            {llmData.general_prompt || llmData.system_prompt || 'No prompt configured'}
+                          </div>
+                        </ScrollArea>
+                      </div>
+
+                      {llmData.model && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Model:</span>
+                          <Badge variant="outline">{llmData.model}</Badge>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      {config.response_engine?.llm_id 
+                        ? 'Could not load script. Check if the LLM ID is correct.' 
+                        : 'No LLM configured for this agent. The script is stored in the LLM configuration.'}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader>

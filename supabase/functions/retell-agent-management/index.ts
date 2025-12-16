@@ -13,13 +13,14 @@ const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/
 const CALENDAR_FUNCTION_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration';
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice' | 'configure_calendar';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
   llmId?: string;
   agentConfig?: any;
   text?: string; // For voice preview
+  message?: string; // For test chat
   webhookUrl?: string; // Optional custom webhook URL
   userId?: string; // User ID for calendar configuration
 }
@@ -31,7 +32,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, webhookUrl, userId }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, message, webhookUrl, userId }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -266,6 +267,73 @@ serve(async (req) => {
           agent: updatedAgent,
           userId: userId
         }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      case 'test_chat':
+        if (!agentId) {
+          throw new Error('Agent ID is required for test chat');
+        }
+        if (!message) {
+          throw new Error('Message is required for test chat');
+        }
+        
+        console.log(`[Retell Agent] Testing chat with agent ${agentId}: ${message}`);
+        
+        // Use Retell's test conversation endpoint
+        const testResponse = await fetch(`${baseUrl}/v2/create-web-call`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            agent_id: agentId,
+            metadata: { test_mode: true }
+          }),
+        });
+        
+        if (!testResponse.ok) {
+          const errorText = await testResponse.text();
+          console.error(`[Retell Agent] Test chat failed: ${errorText}`);
+          // Return a helpful message instead of failing
+          return new Response(JSON.stringify({ 
+            success: false,
+            response: `To test this agent, use the Test Call feature with a real phone number, or test directly in the Retell AI dashboard. Message: "${message}"`,
+            error: errorText
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        const testData = await testResponse.json();
+        return new Response(JSON.stringify({ 
+          success: true,
+          response: `Web call created for testing. Call ID: ${testData.call_id || 'N/A'}. Use the Retell dashboard or make a real test call to interact with the agent.`,
+          callData: testData
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      case 'get_llm':
+        if (!llmId) {
+          throw new Error('LLM ID is required');
+        }
+        
+        console.log(`[Retell Agent] Fetching LLM: ${llmId}`);
+        
+        response = await fetch(`${baseUrl}/get-retell-llm/${llmId}`, {
+          method: 'GET',
+          headers,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[Retell Agent] Get LLM failed: ${errorText}`);
+          throw new Error(`Failed to get LLM: ${errorText}`);
+        }
+        
+        const llmData = await response.json();
+        console.log(`[Retell Agent] LLM fetched successfully`);
+        
+        return new Response(JSON.stringify(llmData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
 
