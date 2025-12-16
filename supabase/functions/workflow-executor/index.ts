@@ -490,12 +490,16 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
       return { success: true, action: 'max_attempts_reached', attempts: failedAttempts };
     }
 
-    // Get a caller ID from campaign phone pool (prefer stationary for follow-ups)
-    const callerId = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true);
+    // Get a caller ID from campaign phone pool - MUST BE RETELL IMPORTED
+    const callerId = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'voice');
 
     if (!callerId) {
-      console.error('[Workflow] No caller ID available for campaign');
-      return { success: false, error: 'No caller ID available' };
+      console.error('[Workflow] No Retell-imported caller ID available for campaign - CANNOT MAKE CALL');
+      return { 
+        success: false, 
+        error: 'No Retell-imported phone number available. Import a phone number to Retell first.',
+        action: 'call_blocked_no_retell_phone'
+      };
     }
 
     // Get the campaign's agent ID
@@ -749,7 +753,7 @@ async function selectCallerIdForCampaign(
           phone_number_id,
           is_primary,
           priority,
-          phone_numbers(number, is_stationary, purpose, status)
+          phone_numbers(number, is_stationary, purpose, status, retell_phone_id)
         `)
         .eq('campaign_id', campaignId)
         .in('role', roleFilter)
@@ -760,9 +764,17 @@ async function selectCallerIdForCampaign(
 
       if (poolNumbers && poolNumbers.length > 0) {
         // Filter for active numbers
-        const activeNumbers = poolNumbers.filter(
+        let activeNumbers = poolNumbers.filter(
           (p: any) => p.phone_numbers?.status === 'active'
         );
+
+        // FOR VOICE CALLS: Must have retell_phone_id (imported to Retell)
+        if (type === 'voice') {
+          activeNumbers = activeNumbers.filter(
+            (p: any) => p.phone_numbers?.retell_phone_id
+          );
+          console.log(`[Workflow] Found ${activeNumbers.length} Retell-imported numbers in campaign pool`);
+        }
 
         if (activeNumbers.length > 0) {
           // If preferring stationary, try to find one
@@ -784,20 +796,47 @@ async function selectCallerIdForCampaign(
       ? ['sms_only', 'general_rotation'] 
       : ['retell_agent', 'follow_up_dedicated', 'general_rotation'];
 
-    const { data: userNumbers } = await supabase
+    // Build query - for voice, require retell_phone_id
+    let fallbackQuery = supabase
       .from('phone_numbers')
-      .select('number')
+      .select('number, retell_phone_id')
       .eq('user_id', userId)
       .eq('status', 'active')
       .eq('is_spam', false)
-      .in('purpose', purposeFilter)
-      .limit(1);
+      .in('purpose', purposeFilter);
+
+    // For voice calls, must be imported to Retell
+    if (type === 'voice') {
+      fallbackQuery = fallbackQuery.not('retell_phone_id', 'is', null);
+    }
+
+    const { data: userNumbers } = await fallbackQuery.limit(1);
 
     if (userNumbers && userNumbers.length > 0) {
+      console.log(`[Workflow] Using fallback number: ${userNumbers[0].number} (retell: ${!!userNumbers[0].retell_phone_id})`);
       return userNumbers[0].number;
     }
 
-    // Last resort: any active number
+    // Last resort for voice: any number with retell_phone_id
+    if (type === 'voice') {
+      const { data: anyRetellNumber } = await supabase
+        .from('phone_numbers')
+        .select('number')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .not('retell_phone_id', 'is', null)
+        .limit(1);
+
+      if (anyRetellNumber?.[0]?.number) {
+        console.log(`[Workflow] Using last resort Retell number: ${anyRetellNumber[0].number}`);
+        return anyRetellNumber[0].number;
+      }
+      
+      console.error('[Workflow] NO RETELL-IMPORTED PHONE NUMBERS AVAILABLE FOR CALLS');
+      return null;
+    }
+
+    // Last resort for SMS: any active number
     const { data: anyNumber } = await supabase
       .from('phone_numbers')
       .select('number')
