@@ -141,6 +141,23 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Check content type to determine how to parse the payload
+    const contentType = req.headers.get('content-type') || '';
+    
+    // Handle Twilio webhooks (form-urlencoded)
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      console.log('Received Twilio webhook (form-urlencoded)');
+      const formData = await req.formData();
+      const twilioPayload: Record<string, string> = {};
+      formData.forEach((value, key) => {
+        twilioPayload[key] = value.toString();
+      });
+      
+      console.log('Twilio webhook payload:', JSON.stringify(twilioPayload));
+      return await handleTwilioWebhook(supabase, twilioPayload);
+    }
+
+    // Handle JSON payloads (Retell and others)
     let rawPayload: unknown;
     try {
       rawPayload = await req.json();
@@ -194,6 +211,128 @@ serve(async (req) => {
     });
   }
 });
+
+// Handle Twilio status callback webhooks
+async function handleTwilioWebhook(supabase: any, payload: Record<string, string>) {
+  const callSid = payload.CallSid;
+  const callStatus = payload.CallStatus;
+  const from = payload.From;
+  const to = payload.To;
+  const duration = payload.CallDuration ? parseInt(payload.CallDuration) : 0;
+  
+  console.log(`Twilio webhook: CallSid=${callSid}, Status=${callStatus}, From=${from}, To=${to}, Duration=${duration}`);
+
+  // Map Twilio status to our status
+  const statusMapping: Record<string, string> = {
+    'queued': 'queued',
+    'ringing': 'ringing',
+    'in-progress': 'in-progress',
+    'completed': 'completed',
+    'busy': 'busy',
+    'failed': 'failed',
+    'no-answer': 'no-answer',
+    'canceled': 'canceled',
+  };
+
+  const mappedStatus = statusMapping[callStatus] || callStatus;
+
+  // Try to find the broadcast queue item by phone number
+  const cleanTo = to?.replace(/[^\d+]/g, '') || '';
+  
+  // Find queue item that's currently "calling" for this phone number
+  const { data: queueItem, error: queueError } = await supabase
+    .from('broadcast_queue')
+    .select('*, voice_broadcasts(*)')
+    .eq('status', 'calling')
+    .or(`phone_number.eq.${cleanTo},phone_number.eq.${cleanTo.replace('+', '')}`)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (queueError) {
+    console.error('Error finding queue item:', queueError);
+  }
+
+  if (queueItem) {
+    console.log(`Found queue item: ${queueItem.id} for broadcast ${queueItem.broadcast_id}`);
+    
+    // Determine final status
+    let finalStatus = 'pending';
+    let updateBroadcastStats = false;
+    
+    if (callStatus === 'completed') {
+      finalStatus = duration > 0 ? 'answered' : 'completed';
+      updateBroadcastStats = true;
+    } else if (callStatus === 'no-answer') {
+      finalStatus = 'no_answer';
+      updateBroadcastStats = true;
+    } else if (callStatus === 'busy') {
+      finalStatus = 'busy';
+      updateBroadcastStats = true;
+    } else if (callStatus === 'failed' || callStatus === 'canceled') {
+      finalStatus = 'failed';
+      updateBroadcastStats = true;
+    } else if (callStatus === 'in-progress') {
+      finalStatus = 'answered';
+    } else if (callStatus === 'ringing') {
+      finalStatus = 'calling';
+    }
+
+    // Update queue item
+    const { error: updateError } = await supabase
+      .from('broadcast_queue')
+      .update({
+        status: finalStatus,
+        call_duration_seconds: duration || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', queueItem.id);
+
+    if (updateError) {
+      console.error('Error updating queue item:', updateError);
+    } else {
+      console.log(`Updated queue item ${queueItem.id} to status: ${finalStatus}`);
+    }
+
+    // Update broadcast stats if call ended
+    if (updateBroadcastStats && queueItem.voice_broadcasts) {
+      const broadcast = queueItem.voice_broadcasts;
+      const statsUpdate: Record<string, number> = {};
+      
+      if (finalStatus === 'answered') {
+        statsUpdate.calls_answered = (broadcast.calls_answered || 0) + 1;
+      }
+      
+      if (Object.keys(statsUpdate).length > 0) {
+        await supabase
+          .from('voice_broadcasts')
+          .update(statsUpdate)
+          .eq('id', queueItem.broadcast_id);
+      }
+    }
+
+    // Update lead if linked
+    if (queueItem.lead_id && (callStatus === 'completed' || callStatus === 'no-answer' || callStatus === 'busy' || callStatus === 'failed')) {
+      const leadStatus = callStatus === 'completed' && duration > 0 ? 'contacted' : 
+                        callStatus === 'no-answer' ? 'no-answer' : 'contacted';
+      
+      await supabase
+        .from('leads')
+        .update({
+          last_contacted_at: new Date().toISOString(),
+          status: leadStatus,
+        })
+        .eq('id', queueItem.lead_id);
+    }
+  } else {
+    console.log('No matching queue item found for this Twilio webhook');
+  }
+
+  // Return TwiML empty response for Twilio
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+    headers: { ...corsHeaders, 'Content-Type': 'text/xml' }
+  });
+}
 
 async function handleRetellWebhook(supabase: any, payload: RetellCallEvent) {
   const { event, call } = payload;
