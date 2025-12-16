@@ -262,6 +262,11 @@ export const useVoiceBroadcast = () => {
       });
 
       if (error) throw error;
+      
+      // Check for error in response body
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       toast({
         title: "Audio Generated",
@@ -272,9 +277,18 @@ export const useVoiceBroadcast = () => {
       return data;
     } catch (error: any) {
       console.error('Error generating audio:', error);
+      
+      // Parse ElevenLabs-specific errors for better UX
+      let errorMessage = error.message || "Failed to generate audio";
+      if (errorMessage.includes('payment') || errorMessage.includes('subscription')) {
+        errorMessage = "ElevenLabs billing issue: Please check your ElevenLabs account payment status.";
+      } else if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
+        errorMessage = "ElevenLabs quota exceeded. Please upgrade your plan or wait for quota reset.";
+      }
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to generate audio",
+        title: "Audio Generation Failed",
+        description: errorMessage,
         variant: "destructive",
       });
       throw error;
