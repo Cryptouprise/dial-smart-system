@@ -243,7 +243,7 @@ const Dashboard = () => {
               <PhoneNumberPurchasing />
 
               {/* Numbers Table */}
-              <Card className="bg-card/90 backdrop-blur-sm">
+              <Card id="phone-numbers" className="bg-card/90 backdrop-blur-sm">
                 <CardHeader className="px-4 py-4">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">Phone Numbers ({numbers.length})</CardTitle>

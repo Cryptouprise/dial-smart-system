@@ -11,6 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw, Bot } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -22,6 +33,7 @@ interface LeadManagerProps {
 }
 
 const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
+  const { toast } = useToast();
   const { createLead, updateLead, getLeads, importLeads, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const [leads, setLeads] = useState<any[]>([]);
   const [leadsWithActivity, setLeadsWithActivity] = useState<Set<string>>(new Set());
@@ -32,6 +44,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const [filters, setFilters] = useState({ status: 'all', search: '' });
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<any | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<any | null>(null);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -70,9 +83,15 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
     const leadsData = await getLeads(filters.status && filters.status !== 'all' ? { status: filters.status } : undefined);
     if (leadsData) {
       let filteredLeads = leadsData;
+
+      // Hide archived/DNC leads by default unless explicitly filtering for them
+      if (filters.status === 'all') {
+        filteredLeads = filteredLeads.filter((lead: any) => !lead.do_not_call && lead.status !== 'do_not_call');
+      }
+
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
-        filteredLeads = leadsData.filter(lead => 
+        filteredLeads = filteredLeads.filter(lead => 
           (lead.first_name?.toLowerCase().includes(searchLower)) ||
           (lead.last_name?.toLowerCase().includes(searchLower)) ||
           (lead.phone_number?.includes(searchLower)) ||
@@ -175,6 +194,43 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
     const result = await resetLeadsForCalling(selectedLeads);
     if (result) {
       setSelectedLeads([]);
+      loadLeads();
+    }
+  };
+
+  const archiveLead = async (leadId: string) => {
+    const { error } = await supabase
+      .from('leads')
+      .update({
+        status: 'do_not_call',
+        do_not_call: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', leadId);
+
+    if (error) throw error;
+  };
+
+  const deleteOrArchiveLead = async (lead: any) => {
+    try {
+      // Try to hard-delete first
+      const { error } = await supabase.from('leads').delete().eq('id', lead.id);
+      if (error) throw error;
+
+      toast({
+        title: 'Lead deleted',
+        description: 'The lead was permanently removed.',
+      });
+    } catch (err: any) {
+      // If the lead has call/SMS/AI history, DB constraints/policies may prevent deletes.
+      // Fall back to archiving (DNC) so the app stays workable.
+      await archiveLead(lead.id);
+      toast({
+        title: 'Lead removed (archived)',
+        description: 'This lead has existing history, so it was archived (Do Not Call) instead of deleted.',
+      });
+    } finally {
+      setLeadToDelete(null);
       loadLeads();
     }
   };
@@ -642,6 +698,14 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setLeadToDelete(lead)}
+                          aria-label="Delete lead"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -668,6 +732,25 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
           loadLeads();
         }}
       />
+
+      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => {
+        if (!open) setLeadToDelete(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the lead. If the lead has call/SMS history, we’ll archive it (Do Not Call) instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => leadToDelete && deleteOrArchiveLead(leadToDelete)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
