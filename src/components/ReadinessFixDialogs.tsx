@@ -7,12 +7,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Phone, MessageSquare, Users, Bot, Clock, ExternalLink, 
-  CheckCircle, AlertTriangle, Plus, Loader2, RefreshCw, Upload
+  CheckCircle, AlertTriangle, Plus, Loader2, RefreshCw, Upload, Shield
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
 
 interface FixDialogProps {
   open: boolean;
@@ -23,55 +26,220 @@ interface FixDialogProps {
 
 // ===== A2P Registration Dialog =====
 export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, onFixed }) => {
+  const { checkA2PStatus, addNumberToCampaign, isLoading } = useTwilioIntegration();
+  const [a2pStatus, setA2pStatus] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedNumber, setSelectedNumber] = useState('');
+  const [selectedService, setSelectedService] = useState('');
+  const [addingNumber, setAddingNumber] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      loadA2PStatus();
+    }
+  }, [open]);
+
+  const loadA2PStatus = async () => {
+    setLoading(true);
+    const status = await checkA2PStatus();
+    setA2pStatus(status);
+    setLoading(false);
+  };
+
+  const handleAddNumberToCampaign = async () => {
+    if (!selectedNumber || !selectedService) {
+      toast.error('Select both a phone number and messaging service');
+      return;
+    }
+    setAddingNumber(true);
+    try {
+      await addNumberToCampaign(selectedNumber, selectedService);
+      await loadA2PStatus();
+      setSelectedNumber('');
+      setSelectedService('');
+      onFixed?.();
+    } catch (e) {
+      // Error handled by hook
+    }
+    setAddingNumber(false);
+  };
+
+  const unregisteredNumbers = a2pStatus?.phone_numbers?.filter((n: any) => !n.a2p_registered) || [];
+  const registeredNumbers = a2pStatus?.phone_numbers?.filter((n: any) => n.a2p_registered) || [];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            A2P Registration (SMS Compliance)
+            <Shield className="h-5 w-5" />
+            A2P Registration Status
           </DialogTitle>
           <DialogDescription>
-            Register your phone numbers for Application-to-Person messaging
+            Manage A2P 10DLC compliance for SMS messaging
           </DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4">
-          <Alert>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        ) : !a2pStatus ? (
+          <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              A2P registration is required by carriers to send SMS from business applications. 
-              Without it, your messages may be blocked or filtered.
+              Could not load A2P status. Make sure your Twilio credentials are configured.
             </AlertDescription>
           </Alert>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="p-3 bg-muted rounded-lg text-center">
+                <p className="text-2xl font-bold">{a2pStatus.summary?.total_numbers || 0}</p>
+                <p className="text-xs text-muted-foreground">Total Numbers</p>
+              </div>
+              <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-green-600">{a2pStatus.summary?.registered_numbers || 0}</p>
+                <p className="text-xs text-muted-foreground">Registered</p>
+              </div>
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-amber-600">{a2pStatus.summary?.pending_numbers || 0}</p>
+                <p className="text-xs text-muted-foreground">Pending</p>
+              </div>
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-red-600">{a2pStatus.summary?.unregistered_numbers || 0}</p>
+                <p className="text-xs text-muted-foreground">Unregistered</p>
+              </div>
+            </div>
 
-          <div className="space-y-3">
-            <h4 className="font-medium">Steps to register:</h4>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-              <li>Log into your Twilio console</li>
-              <li>Go to Messaging → Trust Hub → A2P 10DLC</li>
-              <li>Complete your Brand registration</li>
-              <li>Register a Campaign (use case)</li>
-              <li>Link your phone numbers to the campaign</li>
-            </ol>
-          </div>
+            <Tabs defaultValue="numbers" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="numbers">Phone Numbers</TabsTrigger>
+                <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+                <TabsTrigger value="register">Register Number</TabsTrigger>
+              </TabsList>
 
-          <div className="flex gap-2 pt-2">
-            <Button 
-              className="flex-1"
-              onClick={() => window.open('https://console.twilio.com/us1/develop/sms/settings/a2p-registration', '_blank')}
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open Twilio A2P Console
-            </Button>
-            <Button variant="outline" onClick={() => {
-              onOpenChange(false);
-              onFixed?.();
-            }}>
-              Done
-            </Button>
+              <TabsContent value="numbers" className="space-y-3">
+                <ScrollArea className="h-[200px]">
+                  <div className="space-y-2">
+                    {a2pStatus.phone_numbers?.map((phone: any) => (
+                      <div key={phone.sid} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-mono text-sm">{phone.phone_number}</p>
+                          {phone.messaging_service_name && (
+                            <p className="text-xs text-muted-foreground">{phone.messaging_service_name}</p>
+                          )}
+                        </div>
+                        <Badge variant={phone.a2p_registered ? 'default' : 'destructive'}>
+                          {phone.a2p_registered ? 'A2P Ready' : 'Not Registered'}
+                        </Badge>
+                      </div>
+                    ))}
+                    {(!a2pStatus.phone_numbers || a2pStatus.phone_numbers.length === 0) && (
+                      <p className="text-sm text-muted-foreground text-center py-4">No phone numbers found</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="campaigns" className="space-y-3">
+                <ScrollArea className="h-[200px]">
+                  <div className="space-y-2">
+                    {a2pStatus.campaigns?.map((campaign: any) => (
+                      <div key={campaign.sid} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">{campaign.use_case}</p>
+                          <p className="text-xs text-muted-foreground">{campaign.messaging_service_name}</p>
+                        </div>
+                        <Badge variant={campaign.status === 'VERIFIED' ? 'default' : 'secondary'}>
+                          {campaign.status}
+                        </Badge>
+                      </div>
+                    ))}
+                    {(!a2pStatus.campaigns || a2pStatus.campaigns.length === 0) && (
+                      <p className="text-sm text-muted-foreground text-center py-4">No A2P campaigns found</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="register" className="space-y-4">
+                {unregisteredNumbers.length === 0 ? (
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      All your phone numbers are registered for A2P messaging!
+                    </AlertDescription>
+                  </Alert>
+                ) : a2pStatus.messaging_services?.length === 0 ? (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      No messaging services found. Create a messaging service and A2P campaign in Twilio first.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Select Unregistered Number</Label>
+                      <Select value={selectedNumber} onValueChange={setSelectedNumber}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a phone number" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unregisteredNumbers.map((n: any) => (
+                            <SelectItem key={n.sid} value={n.phone_number}>
+                              {n.phone_number}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Select Messaging Service</Label>
+                      <Select value={selectedService} onValueChange={setSelectedService}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a messaging service" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {a2pStatus.messaging_services?.map((s: any) => (
+                            <SelectItem key={s.sid} value={s.sid}>
+                              {s.friendly_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button 
+                      onClick={handleAddNumberToCampaign} 
+                      disabled={!selectedNumber || !selectedService || addingNumber}
+                      className="w-full"
+                    >
+                      {addingNumber ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                      Add Number to A2P Campaign
+                    </Button>
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
+
+            <div className="flex gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={loadA2PStatus} disabled={loading}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Status
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => {
+                onOpenChange(false);
+                onFixed?.();
+              }}>
+                Done
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
