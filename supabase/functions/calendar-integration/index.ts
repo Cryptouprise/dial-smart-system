@@ -594,13 +594,23 @@ serve(async (req) => {
         );
       }
 
+      // This is the PRIMARY get_available_slots handler - works for both JWT auth AND Retell custom function calls
       case 'get_available_slots': {
+        // Accept user_id from params (for Retell webhook calls) OR from auth header
+        const targetUserId = params.user_id || userId;
         const { date, duration = 30, startDate, endDate } = params;
         
-        if (!userId) {
+        console.log('[Calendar] get_available_slots called - user_id from params:', params.user_id, 'userId from auth:', userId, 'using:', targetUserId);
+        
+        if (!targetUserId) {
+          // Return a helpful message for Retell instead of an error
           return new Response(
-            JSON.stringify({ error: 'Authentication required' }),
-            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({ 
+              success: false,
+              available_slots: [],
+              message: "I'm having trouble accessing the calendar. Please try again or contact support."
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
@@ -608,95 +618,162 @@ serve(async (req) => {
         const { data: availability } = await supabase
           .from('calendar_availability')
           .select('*')
-          .eq('user_id', userId)
+          .eq('user_id', targetUserId)
           .maybeSingle();
 
+        console.log('[Calendar] Availability found:', !!availability, availability?.timezone);
+
         if (!availability) {
+          // Return default business hours if no availability configured
           return new Response(
-            JSON.stringify({ slots: [] }),
+            JSON.stringify({ 
+              success: true, 
+              available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
+              message: "I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?"
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const targetDate = new Date(date || startDate);
-        const dayOfWeek = targetDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        // Default to today if no date provided
+        const searchDate = date ? new Date(date) : (startDate ? new Date(startDate) : new Date());
+        const dayOfWeek = searchDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
         const schedule = availability.weekly_schedule as any;
         const daySlots = schedule[dayOfWeek] || [];
+        
+        console.log('[Calendar] Day:', dayOfWeek, 'Slots config:', daySlots.length);
 
         if (daySlots.length === 0) {
           return new Response(
-            JSON.stringify({ slots: [] }),
+            JSON.stringify({ 
+              success: true, 
+              available_slots: [],
+              slots: [],
+              message: `I don't have availability on ${searchDate.toLocaleDateString('en-US', { weekday: 'long' })}. Would you like to try a different day?`
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        // Get existing appointments for the day
-        const dayStart = new Date(targetDate);
+        // Try to get Google Calendar busy times if connected
+        let busyTimes: { start: number; end: number }[] = [];
+        
+        const { data: integration } = await supabase
+          .from('calendar_integrations')
+          .select('*')
+          .eq('user_id', targetUserId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        if (integration?.access_token_encrypted) {
+          try {
+            const accessToken = atob(integration.access_token_encrypted);
+            const startOfDay = new Date(searchDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(searchDate);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const calendarId = integration.calendar_id || 'primary';
+            const eventsResponse = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
+              `timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true`,
+              { headers: { 'Authorization': `Bearer ${accessToken}` } }
+            );
+
+            if (eventsResponse.ok) {
+              const eventsData = await eventsResponse.json();
+              busyTimes = (eventsData.items || []).map((event: any) => ({
+                start: new Date(event.start.dateTime || event.start.date).getTime(),
+                end: new Date(event.end.dateTime || event.end.date).getTime()
+              }));
+              console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
+            } else {
+              console.error('[Calendar] Google Calendar API error:', eventsResponse.status);
+            }
+          } catch (error) {
+            console.error('[Calendar] Google Calendar error:', error);
+          }
+        }
+
+        // Also check local appointments
+        const dayStart = new Date(searchDate);
         dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(targetDate);
+        const dayEnd = new Date(searchDate);
         dayEnd.setHours(23, 59, 59, 999);
 
         const { data: existingAppts } = await supabase
           .from('calendar_appointments')
           .select('start_time, end_time')
-          .eq('user_id', userId)
+          .eq('user_id', targetUserId)
           .neq('status', 'cancelled')
           .gte('start_time', dayStart.toISOString())
           .lte('start_time', dayEnd.toISOString());
 
-        const busyTimes = (existingAppts || []).map(a => ({
-          start: new Date(a.start_time).getTime(),
-          end: new Date(a.end_time).getTime()
-        }));
+        if (existingAppts) {
+          busyTimes = busyTimes.concat(existingAppts.map(a => ({
+            start: new Date(a.start_time).getTime(),
+            end: new Date(a.end_time).getTime()
+          })));
+        }
 
-        // Generate available slots
-        const slots: { start: string; end: string; formatted?: string }[] = [];
-        const slotInterval = availability.slot_interval_minutes || 15;
+        // Generate available slots based on configured availability
+        const slotInterval = availability.slot_interval_minutes || 30;
         const bufferBefore = availability.buffer_before_minutes || 0;
         const bufferAfter = availability.buffer_after_minutes || 0;
+        const meetingDuration = duration || availability.default_meeting_duration || 30;
+
+        const availableSlots: string[] = [];
+        const detailedSlots: { start: string; end: string; formatted: string }[] = [];
+        const now = new Date();
 
         for (const window of daySlots) {
           const [startHour, startMin] = window.start.split(':').map(Number);
           const [endHour, endMin] = window.end.split(':').map(Number);
 
-          let current = new Date(targetDate);
+          const current = new Date(searchDate);
           current.setHours(startHour, startMin, 0, 0);
 
-          const windowEnd = new Date(targetDate);
+          const windowEnd = new Date(searchDate);
           windowEnd.setHours(endHour, endMin, 0, 0);
 
-          while (current.getTime() + duration * 60000 <= windowEnd.getTime()) {
+          while (current.getTime() + meetingDuration * 60000 <= windowEnd.getTime()) {
             const slotStart = current.getTime();
-            const slotEnd = slotStart + duration * 60000;
+            const slotEnd = slotStart + meetingDuration * 60000;
 
-            // Check for conflicts
+            // Check for conflicts with buffer
             const hasConflict = busyTimes.some(busy => {
               const bufferedStart = slotStart - bufferBefore * 60000;
               const bufferedEnd = slotEnd + bufferAfter * 60000;
               return bufferedStart < busy.end && bufferedEnd > busy.start;
             });
 
-            if (!hasConflict) {
-              const startDate = new Date(slotStart);
-              slots.push({
-                start: startDate.toISOString(),
+            // Only add future slots
+            if (!hasConflict && current > now) {
+              const formatted = formatTimeForVoice(current);
+              availableSlots.push(formatted);
+              detailedSlots.push({
+                start: new Date(slotStart).toISOString(),
                 end: new Date(slotEnd).toISOString(),
-                formatted: formatTimeForVoice(startDate)
+                formatted
               });
             }
 
-            current = new Date(current.getTime() + slotInterval * 60000);
+            current.setMinutes(current.getMinutes() + slotInterval);
           }
         }
 
-        // For Retell, return a voice-friendly message
-        const limitedSlots = slots.slice(0, 5);
-        const message = limitedSlots.length > 0
-          ? `I have ${limitedSlots.length} available times: ${limitedSlots.map(s => s.formatted).join(', ')}.`
-          : 'I don\'t have any available slots for that day.';
-
+        const slotsToShow = availableSlots.slice(0, 5);
+        console.log('[Calendar] Available slots:', slotsToShow.length);
+        
         return new Response(
-          JSON.stringify({ slots, message }),
+          JSON.stringify({
+            success: true,
+            available_slots: slotsToShow,
+            slots: detailedSlots.slice(0, 10),
+            message: slotsToShow.length > 0 
+              ? `I have ${slotsToShow.length} available time slots: ${slotsToShow.join(', ')}. Which time works best for you?`
+              : "I don't have any available slots for that date. Would you like to try a different day?"
+          }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -1160,169 +1237,7 @@ serve(async (req) => {
         );
       }
 
-      // Retell Custom Function Actions - these are called by the AI agent
-      case 'get_available_slots': {
-        // Accept user_id from params (for Retell webhook calls) or from auth
-        const targetUserId = params.user_id || userId;
-        const { date } = params;
-        
-        console.log('[Calendar] get_available_slots called, user_id:', targetUserId, 'date:', date);
-        
-        // Default to today if no date provided
-        const searchDate = date ? new Date(date) : new Date();
-        const dayOfWeek = searchDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-        
-        // Get user's availability settings first
-        const { data: availability } = await supabase
-          .from('calendar_availability')
-          .select('*')
-          .eq('user_id', targetUserId || '5969774f-5340-4e4f-8517-bcc89fa6b1eb') // Fallback to default user
-          .maybeSingle();
-
-        console.log('[Calendar] Availability found:', !!availability);
-
-        if (!availability) {
-          // Return default business hours if no availability configured
-          return new Response(
-            JSON.stringify({ 
-              success: true, 
-              available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
-              message: "I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?"
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const schedule = availability.weekly_schedule as any;
-        const daySlots = schedule[dayOfWeek] || [];
-        
-        console.log('[Calendar] Day:', dayOfWeek, 'Slots config:', daySlots);
-
-        if (daySlots.length === 0) {
-          return new Response(
-            JSON.stringify({ 
-              success: true, 
-              available_slots: [],
-              message: `I don't have availability on ${searchDate.toLocaleDateString('en-US', { weekday: 'long' })}. Would you like to try a different day?`
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Try to get Google Calendar busy times if connected
-        let busyTimes: { start: number; end: number }[] = [];
-        
-        if (targetUserId) {
-          const { data: integration } = await supabase
-            .from('calendar_integrations')
-            .select('*')
-            .eq('user_id', targetUserId)
-            .eq('provider', 'google')
-            .maybeSingle();
-
-          if (integration?.access_token_encrypted) {
-            try {
-              const accessToken = atob(integration.access_token_encrypted);
-              const startOfDay = new Date(searchDate);
-              startOfDay.setHours(0, 0, 0, 0);
-              const endOfDay = new Date(searchDate);
-              endOfDay.setHours(23, 59, 59, 999);
-
-              const calendarId = integration.calendar_id || 'primary';
-              const eventsResponse = await fetch(
-                `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
-                `timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true`,
-                { headers: { 'Authorization': `Bearer ${accessToken}` } }
-              );
-
-              if (eventsResponse.ok) {
-                const eventsData = await eventsResponse.json();
-                busyTimes = (eventsData.items || []).map((event: any) => ({
-                  start: new Date(event.start.dateTime || event.start.date).getTime(),
-                  end: new Date(event.end.dateTime || event.end.date).getTime()
-                }));
-                console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
-              }
-            } catch (error) {
-              console.error('[Calendar] Google Calendar error:', error);
-            }
-          }
-        }
-
-        // Also check local appointments
-        const dayStart = new Date(searchDate);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(searchDate);
-        dayEnd.setHours(23, 59, 59, 999);
-
-        const { data: existingAppts } = await supabase
-          .from('calendar_appointments')
-          .select('start_time, end_time')
-          .eq('user_id', targetUserId || '5969774f-5340-4e4f-8517-bcc89fa6b1eb')
-          .neq('status', 'cancelled')
-          .gte('start_time', dayStart.toISOString())
-          .lte('start_time', dayEnd.toISOString());
-
-        if (existingAppts) {
-          busyTimes = busyTimes.concat(existingAppts.map(a => ({
-            start: new Date(a.start_time).getTime(),
-            end: new Date(a.end_time).getTime()
-          })));
-        }
-
-        // Generate available slots based on configured availability
-        const slotInterval = availability.slot_interval_minutes || 30;
-        const bufferBefore = availability.buffer_before_minutes || 0;
-        const bufferAfter = availability.buffer_after_minutes || 0;
-        const duration = availability.default_meeting_duration || 30;
-
-        const availableSlots: string[] = [];
-        const now = new Date();
-
-        for (const window of daySlots) {
-          const [startHour, startMin] = window.start.split(':').map(Number);
-          const [endHour, endMin] = window.end.split(':').map(Number);
-
-          const current = new Date(searchDate);
-          current.setHours(startHour, startMin, 0, 0);
-
-          const windowEnd = new Date(searchDate);
-          windowEnd.setHours(endHour, endMin, 0, 0);
-
-          while (current.getTime() + duration * 60000 <= windowEnd.getTime()) {
-            const slotStart = current.getTime();
-            const slotEnd = slotStart + duration * 60000;
-
-            // Check for conflicts with buffer
-            const hasConflict = busyTimes.some(busy => {
-              const bufferedStart = slotStart - bufferBefore * 60000;
-              const bufferedEnd = slotEnd + bufferAfter * 60000;
-              return bufferedStart < busy.end && bufferedEnd > busy.start;
-            });
-
-            // Only add future slots
-            if (!hasConflict && current > now) {
-              availableSlots.push(formatTimeForVoice(current));
-            }
-
-            current.setMinutes(current.getMinutes() + slotInterval);
-          }
-        }
-
-        const slotsToShow = availableSlots.slice(0, 5);
-        console.log('[Calendar] Available slots:', slotsToShow);
-        
-        return new Response(
-          JSON.stringify({
-            success: true,
-            available_slots: slotsToShow,
-            message: slotsToShow.length > 0 
-              ? `I have ${slotsToShow.length} available time slots. They are: ${slotsToShow.join(', ')}.`
-              : "I don't have any available slots for that date. Would you like to try a different day?"
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      // NOTE: get_available_slots is handled above (primary handler that works for both JWT auth and Retell calls)
 
       case 'book_appointment': {
         const { date, time, duration_minutes, attendee_name, attendee_email, title, user_id: paramUserId } = params;
