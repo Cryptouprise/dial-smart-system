@@ -118,9 +118,10 @@ export const useCampaignReadiness = () => {
       if (hasSmsSteps) {
         if (user) {
           // Check for active phone numbers that can send SMS (not quarantined)
+          // Include stir_shaken_attestation for A2P status check
           const { data: smsNumbers } = await supabase
             .from('phone_numbers')
-            .select('id, number, quarantine_until, purpose, provider')
+            .select('id, number, quarantine_until, purpose, provider, stir_shaken_attestation')
             .eq('user_id', user.id)
             .eq('status', 'active');
 
@@ -146,18 +147,56 @@ export const useCampaignReadiness = () => {
             });
           }
 
-          // Check A2P registration (look for Twilio numbers - they need A2P for US)
+          // Check A2P registration - look at actual phone number data
           const twilioNumbers = smsCapableNumbers.filter(n => n.provider === 'twilio');
           if (twilioNumbers.length > 0) {
-            // For now, we'll show a warning about A2P - in production you'd check Twilio API
-            checks.push({
-              id: 'a2p_registration',
-              label: 'A2P Registration (SMS compliance)',
-              status: 'warning',
-              message: 'Ensure your Twilio numbers are A2P registered for SMS delivery',
-              critical: false,
-              fixRoute: '/?tab=phone-numbers'
-            });
+            // Check actual A2P/STIR-SHAKEN status from phone data
+            const a2pReadyNumbers = twilioNumbers.filter(n => 
+              n.stir_shaken_attestation === 'A' || 
+              n.stir_shaken_attestation === 'B' ||
+              n.stir_shaken_attestation === 'verified' ||
+              n.stir_shaken_attestation === 'a2p_ready'
+            );
+            const unverifiedNumbers = twilioNumbers.filter(n => 
+              !n.stir_shaken_attestation || 
+              n.stir_shaken_attestation === 'not_verified' ||
+              n.stir_shaken_attestation === 'pending'
+            );
+
+            if (a2pReadyNumbers.length > 0) {
+              checks.push({
+                id: 'a2p_registration',
+                label: 'A2P Registration (SMS compliance)',
+                status: 'pass',
+                message: `${a2pReadyNumbers.length} number(s) A2P verified`,
+                critical: false
+              });
+            } else if (unverifiedNumbers.length > 0) {
+              // Only show warning if ALL numbers are unverified
+              checks.push({
+                id: 'a2p_registration',
+                label: 'A2P Registration (SMS compliance)',
+                status: 'warning',
+                message: `${unverifiedNumbers.length} number(s) not A2P verified - SMS may be filtered`,
+                critical: false,
+                fixRoute: '/?tab=phone-numbers'
+              });
+            }
+          }
+
+          // Also check if campaign's selected SMS number exists in our phone pool
+          if (campaign.sms_from_number) {
+            const campaignSmsNumber = smsCapableNumbers.find(n => n.number === campaign.sms_from_number);
+            if (!campaignSmsNumber) {
+              checks.push({
+                id: 'campaign_sms_number_exists',
+                label: 'Campaign SMS number in pool',
+                status: 'warning',
+                message: `${campaign.sms_from_number} not found in your phone pool - will use rotation`,
+                critical: false,
+                fixRoute: '/?tab=phone-numbers'
+              });
+            }
           }
         }
 
