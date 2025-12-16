@@ -203,7 +203,9 @@ const QuickTestBroadcast: React.FC = () => {
               <p className="text-sm">Add/verify a Twilio number in Number Management</p>
               <div className="mt-3 flex items-center justify-center gap-2">
                 <Button asChild variant="outline" size="sm">
-                  <Link to="/?tab=overview#phone-numbers">Manage phone numbers</Link>
+                  <a href="/?tab=overview#phone-numbers" target="_blank" rel="noreferrer">
+                    Manage phone numbers
+                  </a>
                 </Button>
               </div>
             </div>

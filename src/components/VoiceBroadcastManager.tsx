@@ -702,7 +702,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="space-y-2">
-                      <Label>Select Phone Number</Label>
+                      <Label>From Number</Label>
                       <Select
                         value={formData.caller_id || 'auto'}
                         onValueChange={(value) =>
@@ -713,10 +713,10 @@ export const VoiceBroadcastManager: React.FC = () => {
                         }
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Auto-select (rotation enabled)" />
+                          <SelectValue placeholder="Choose auto or a single number" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="auto">Auto-select (rotation enabled)</SelectItem>
+                          <SelectItem value="auto">Auto (use pool / rotate if enabled)</SelectItem>
                           {phoneNumbers
                             .filter(
                               (p) =>
@@ -733,9 +733,9 @@ export const VoiceBroadcastManager: React.FC = () => {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        {formData.caller_id 
-                          ? "All calls will use this specific number" 
-                          : "System will auto-rotate through your available numbers"}
+                        {formData.caller_id
+                          ? 'Single number mode: rotation is off and all calls use this number.'
+                          : 'Auto mode: the system chooses from your pool (may rotate numbers for deliverability).'}
                       </p>
                       {phoneNumbers.some(p => p.retell_phone_id) && (
                         <p className="text-xs text-amber-600">
@@ -1244,10 +1244,10 @@ export const VoiceBroadcastManager: React.FC = () => {
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Auto-select (rotation enabled)" />
+                      <SelectValue placeholder="Choose auto or a single number" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="auto">Auto-select (rotation enabled)</SelectItem>
+                      <SelectItem value="auto">Auto (use pool / rotate if enabled)</SelectItem>
                       {phoneNumbers
                         .filter(
                           (p) =>
@@ -1267,11 +1267,13 @@ export const VoiceBroadcastManager: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
                       {selectedBroadcast.caller_id
-                        ? 'All calls will use this specific number'
-                        : 'System will auto-rotate through your available numbers'}
+                        ? 'Single number mode: rotation is off and all calls use this number.'
+                        : 'Auto mode: the system chooses from your pool (may rotate numbers for deliverability).'}
                     </p>
                     <Button asChild variant="outline" size="sm">
-                      <a href="/?tab=overview#phone-numbers">Manage numbers</a>
+                      <a href="/?tab=overview#phone-numbers" target="_blank" rel="noreferrer">
+                        Manage numbers
+                      </a>
                     </Button>
                   </div>
                 </div>
