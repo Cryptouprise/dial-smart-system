@@ -530,9 +530,30 @@ const RetellAIManager = () => {
                               </div>
                             ) : (
                               <div className="space-y-1">
-                                <div className="text-sm">
-                                  {number.inbound_agent_id ? getAgentName(number.inbound_agent_id) : 'No agent'}
+                                {/* Inbound Agent */}
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs shrink-0 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                                    Inbound
+                                  </Badge>
+                                  <span className="text-sm truncate">
+                                    {number.inbound_agent_id ? getAgentName(number.inbound_agent_id) : <span className="text-muted-foreground">Not set</span>}
+                                  </span>
                                 </div>
+                                {/* Outbound Agent */}
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs shrink-0 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">
+                                    Outbound
+                                  </Badge>
+                                  <span className="text-sm truncate">
+                                    {number.outbound_agent_id ? getAgentName(number.outbound_agent_id) : <span className="text-muted-foreground">Not set</span>}
+                                  </span>
+                                </div>
+                                {/* Warning if mismatched or missing */}
+                                {number.inbound_agent_id && number.outbound_agent_id && number.inbound_agent_id !== number.outbound_agent_id && (
+                                  <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800">
+                                    ⚠️ Different agents
+                                  </Badge>
+                                )}
                                 {!number.outbound_agent_id && (
                                   <Badge variant="destructive" className="text-xs">
                                     Outbound not configured

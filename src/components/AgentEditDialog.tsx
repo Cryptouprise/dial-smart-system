@@ -102,6 +102,52 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // Calendar test state
   const [calendarTestStatus, setCalendarTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [calendarTestMessage, setCalendarTestMessage] = useState('');
+  
+  // Calendar auto-configure state
+  const [isConfiguringCalendar, setIsConfiguringCalendar] = useState(false);
+  const [hasCalendarFunction, setHasCalendarFunction] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Load user ID and check calendar function status
+  useEffect(() => {
+    const loadUserAndCheckCalendar = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
+      
+      if (agent?.functions) {
+        setHasCalendarFunction(agent.functions.some((f: any) => f.name === 'manage_calendar'));
+      }
+    };
+    loadUserAndCheckCalendar();
+  }, [agent]);
+
+  const configureCalendarOnAgent = async () => {
+    if (!agent?.agent_id || !userId) {
+      toast({ title: 'Error', description: 'Missing agent ID or user ID', variant: 'destructive' });
+      return;
+    }
+    
+    setIsConfiguringCalendar(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        body: { 
+          action: 'configure_calendar',
+          agentId: agent.agent_id,
+          userId: userId
+        }
+      });
+      
+      if (error) throw error;
+      
+      setHasCalendarFunction(true);
+      toast({ title: 'Success!', description: 'Calendar function configured on this agent' });
+    } catch (error: any) {
+      console.error('Failed to configure calendar:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to configure calendar', variant: 'destructive' });
+    } finally {
+      setIsConfiguringCalendar(false);
+    }
+  };
 
   useEffect(() => {
     if (agent) {
@@ -1417,6 +1463,50 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       <Copy className="h-4 w-4 mr-2" />
                       Copy Configuration
                     </Button>
+                  </div>
+
+                  {/* Auto-Configure Calendar Function Button */}
+                  <div className="p-4 border-2 border-primary/30 bg-primary/5 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <Label className="font-medium flex items-center gap-2">
+                          <Wand2 className="h-4 w-4 text-primary" />
+                          Auto-Configure Calendar on This Agent
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          One-click setup: Adds the calendar booking function directly to this agent
+                        </p>
+                      </div>
+                      <Button
+                        variant="default"
+                        onClick={configureCalendarOnAgent}
+                        disabled={isConfiguringCalendar}
+                        className="shrink-0"
+                      >
+                        {isConfiguringCalendar ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Configuring...
+                          </>
+                        ) : hasCalendarFunction ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Calendar Configured
+                          </>
+                        ) : (
+                          <>
+                            <Calendar className="h-4 w-4 mr-2" />
+                            Configure Calendar
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {hasCalendarFunction && (
+                      <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 p-2 rounded">
+                        <CheckCircle2 className="h-4 w-4 inline mr-1" />
+                        This agent can check availability and book appointments!
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
