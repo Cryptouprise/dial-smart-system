@@ -1327,7 +1327,7 @@ COMMON OBJECTIONS:
                                       </SelectItem>
                                     ))}
                                   {a2pStatus.phone_numbers?.filter((num) => !num.messaging_service_sid).length === 0 && (
-                                    <SelectItem value="" disabled>
+                                    <SelectItem value="__disabled_all_registered" disabled>
                                       All numbers are already registered
                                     </SelectItem>
                                   )}
@@ -1358,9 +1358,9 @@ COMMON OBJECTIONS:
                                     </SelectItem>
                                   ))}
                                   {(!a2pStatus.messaging_services || a2pStatus.messaging_services.length === 0) && (
-                                    <SelectItem value="" disabled>
-                                      No messaging services found - create one in Twilio Console
-                                    </SelectItem>
+                                     <SelectItem value="__disabled_no_services" disabled>
+                                       No messaging services found - create one in Twilio Console
+                                     </SelectItem>
                                   )}
                                 </SelectContent>
                               </Select>
@@ -1440,7 +1440,7 @@ COMMON OBJECTIONS:
                             </SelectItem>
                           ))}
                           {availableTwilioNumbers.length === 0 && !loadingNumbers && (
-                            <SelectItem value="" disabled>
+                            <SelectItem value="__disabled_no_sms_numbers" disabled>
                               No SMS-capable numbers found in Twilio
                             </SelectItem>
                           )}

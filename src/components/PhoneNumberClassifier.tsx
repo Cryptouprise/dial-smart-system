@@ -158,12 +158,15 @@ export function PhoneNumberClassifier({ phoneNumber, onUpdate }: PhoneNumberClas
         {(provider === 'twilio' || provider === 'telnyx') && purpose === 'retell_agent' && (
           <div className="space-y-2">
             <Label>SIP Trunk To</Label>
-            <Select value={sipTrunkProvider} onValueChange={setSipTrunkProvider}>
+            <Select
+              value={sipTrunkProvider || 'none'}
+              onValueChange={(value) => setSipTrunkProvider(value === 'none' ? '' : value)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="No SIP trunk" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No SIP Trunk</SelectItem>
+                <SelectItem value="none">No SIP Trunk</SelectItem>
                 <SelectItem value="retell">Retell AI</SelectItem>
               </SelectContent>
             </Select>

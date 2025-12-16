@@ -28,6 +28,7 @@ interface PhoneNumber {
   number: string;
   friendly_name: string | null;
   status: string;
+  provider: string | null;
 }
 
 const QuickTestBroadcast: React.FC = () => {
@@ -58,10 +59,11 @@ const QuickTestBroadcast: React.FC = () => {
 
       const { data, error } = await supabase
         .from('phone_numbers')
-        .select('id, number, friendly_name, status')
+        .select('id, number, friendly_name, status, provider')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .eq('is_spam', false)
+        .eq('provider', 'twilio')
         .order('number');
 
       if (error) throw error;
@@ -193,12 +195,12 @@ const QuickTestBroadcast: React.FC = () => {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : phoneNumbers.length === 0 ? (
-          <div className="text-center py-4 text-muted-foreground">
-            <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No active phone numbers available</p>
-            <p className="text-sm">Add phone numbers in Number Management</p>
-          </div>
+          ) : phoneNumbers.length === 0 ? (
+           <div className="text-center py-4 text-muted-foreground">
+             <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
+             <p>No active Twilio phone numbers available</p>
+             <p className="text-sm">Add/verify a Twilio number in Number Management</p>
+           </div>
         ) : (
           <>
             {/* Caller ID Selection */}
