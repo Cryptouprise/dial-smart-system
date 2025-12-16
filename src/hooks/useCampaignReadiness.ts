@@ -117,84 +117,105 @@ export const useCampaignReadiness = () => {
       // =====================================================
       if (hasSmsSteps) {
         if (user) {
-          // Check for active phone numbers that can send SMS (not quarantined)
-          // Include stir_shaken_attestation for A2P status check
-          const { data: smsNumbers } = await supabase
-            .from('phone_numbers')
-            .select('id, number, quarantine_until, purpose, provider, stir_shaken_attestation')
-            .eq('user_id', user.id)
-            .eq('status', 'active');
+          // Prefer the same SMS-capable numbers source used by the campaign editor
+          // (Twilio -> internal edge function that returns A2P readiness per number)
+          type SmsCapableNumber = {
+            number: string;
+            friendly_name?: string;
+            a2p_registered?: boolean;
+            is_ready?: boolean;
+            status_details?: string;
+          };
 
-          const smsCapableNumbers = (smsNumbers || []).filter(p => !p.quarantine_until);
-          
+          let smsCapableNumbers: SmsCapableNumber[] = [];
+
+          try {
+            const { data, error } = await supabase.functions.invoke('sms-messaging', {
+              body: { action: 'get_available_numbers' }
+            });
+            if (!error) {
+              smsCapableNumbers = (data?.numbers || []) as SmsCapableNumber[];
+            }
+          } catch {
+            // ignore (we fall back to DB)
+          }
+
+          // Fallback: DB phone pool (cannot determine A2P status reliably, but still detects “no numbers”)
+          if (smsCapableNumbers.length === 0) {
+            const { data: smsNumbers } = await supabase
+              .from('phone_numbers')
+              .select('number, quarantine_until')
+              .eq('user_id', user.id)
+              .eq('status', 'active');
+
+            smsCapableNumbers = (smsNumbers || [])
+              .filter((p: any) => !p.quarantine_until)
+              .map((p: any) => ({ number: p.number }));
+          }
+
           if (smsCapableNumbers.length === 0) {
             checks.push({
               id: 'sms_phone_number',
               label: 'SMS-capable phone number',
               status: 'fail',
-              message: 'No active phone numbers - workflow has SMS steps',
+              message: 'No SMS-capable phone numbers available',
               critical: true,
               fixRoute: '/?tab=phone-numbers'
             });
-            blockingReasons.push('No active phone numbers for SMS');
+            blockingReasons.push('No SMS-capable phone numbers for SMS steps');
           } else {
             checks.push({
               id: 'sms_phone_number',
               label: 'SMS-capable phone number',
               status: 'pass',
-              message: `${smsCapableNumbers.length} active number(s) available`,
+              message: `${smsCapableNumbers.length} number(s) available`,
               critical: true
             });
           }
 
-          // Check A2P registration - look at actual phone number data
-          const twilioNumbers = smsCapableNumbers.filter(n => n.provider === 'twilio');
-          if (twilioNumbers.length > 0) {
-            // Check actual A2P/STIR-SHAKEN status from phone data
-            const a2pReadyNumbers = twilioNumbers.filter(n => 
-              n.stir_shaken_attestation === 'A' || 
-              n.stir_shaken_attestation === 'B' ||
-              n.stir_shaken_attestation === 'verified' ||
-              n.stir_shaken_attestation === 'a2p_ready'
-            );
-            const unverifiedNumbers = twilioNumbers.filter(n => 
-              !n.stir_shaken_attestation || 
-              n.stir_shaken_attestation === 'not_verified' ||
-              n.stir_shaken_attestation === 'pending'
-            );
+          // A2P (SMS compliance) should reflect the campaign's selected SMS-from number when set.
+          const usingRotation = !campaign.sms_from_number;
 
-            if (a2pReadyNumbers.length > 0) {
+          if (!usingRotation) {
+            const selected = smsCapableNumbers.find(n => n.number === campaign.sms_from_number);
+            const isA2PReady = !!(selected && (selected.is_ready || selected.a2p_registered));
+
+            checks.push({
+              id: 'a2p_registration',
+              label: 'A2P Registration (SMS compliance)',
+              status: isA2PReady ? 'pass' : 'warning',
+              message: isA2PReady
+                ? `Selected number is A2P ready: ${campaign.sms_from_number}`
+                : `Selected number is not A2P ready: ${campaign.sms_from_number}`,
+              critical: false
+            });
+          } else {
+            // If rotating, warn only if we can detect unverified numbers.
+            const hasA2PData = smsCapableNumbers.some(n => typeof n.is_ready === 'boolean' || typeof n.a2p_registered === 'boolean');
+            if (hasA2PData) {
+              const unverified = smsCapableNumbers.filter(n => (n.is_ready === false) || (n.a2p_registered === false));
               checks.push({
                 id: 'a2p_registration',
                 label: 'A2P Registration (SMS compliance)',
-                status: 'pass',
-                message: `${a2pReadyNumbers.length} number(s) A2P verified`,
+                status: unverified.length > 0 ? 'warning' : 'pass',
+                message: unverified.length > 0
+                  ? `${unverified.length} number(s) not A2P verified (rotation may use them)`
+                  : 'All SMS numbers are A2P ready',
                 critical: false
-              });
-            } else if (unverifiedNumbers.length > 0) {
-              // Only show warning if ALL numbers are unverified
-              checks.push({
-                id: 'a2p_registration',
-                label: 'A2P Registration (SMS compliance)',
-                status: 'warning',
-                message: `${unverifiedNumbers.length} number(s) not A2P verified - SMS may be filtered`,
-                critical: false,
-                fixRoute: '/?tab=phone-numbers'
               });
             }
           }
 
-          // Also check if campaign's selected SMS number exists in our phone pool
+          // Also check if campaign's selected SMS number exists in our SMS-capable list
           if (campaign.sms_from_number) {
             const campaignSmsNumber = smsCapableNumbers.find(n => n.number === campaign.sms_from_number);
             if (!campaignSmsNumber) {
               checks.push({
                 id: 'campaign_sms_number_exists',
-                label: 'Campaign SMS number in pool',
+                label: 'Campaign SMS number available',
                 status: 'warning',
-                message: `${campaign.sms_from_number} not found in your phone pool - will use rotation`,
-                critical: false,
-                fixRoute: '/?tab=phone-numbers'
+                message: `${campaign.sms_from_number} not found in your SMS-capable numbers`,
+                critical: false
               });
             }
           }
