@@ -378,53 +378,84 @@ const RetellAIManager = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {agents.map((agent) => (
-                    <div key={agent.agent_id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-semibold">{agent.agent_name}</h4>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {agent.agent_id}
-                          </Badge>
-                          {agent.hasCalendarFunction ? (
-                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700">
-                              <CalendarCheck className="h-3 w-3 mr-1" />
-                              Calendar Connected
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-muted-foreground">
-                              <CalendarX className="h-3 w-3 mr-1" />
-                              No Calendar
-                            </Badge>
-                          )}
+                  {agents.map((agent) => {
+                    // Find phone numbers using this agent
+                    const inboundNumbers = retellNumbers.filter(n => n.inbound_agent_id === agent.agent_id);
+                    const outboundNumbers = retellNumbers.filter(n => n.outbound_agent_id === agent.agent_id);
+                    
+                    return (
+                      <div key={agent.agent_id} className="p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                              <h4 className="font-semibold">{agent.agent_name}</h4>
+                              <Badge variant="outline" className="font-mono text-xs">
+                                {agent.agent_id}
+                              </Badge>
+                              {agent.hasCalendarFunction ? (
+                                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700">
+                                  <CalendarCheck className="h-3 w-3 mr-1" />
+                                  Calendar Connected
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  <CalendarX className="h-3 w-3 mr-1" />
+                                  No Calendar
+                                </Badge>
+                              )}
+                            </div>
+                            {agent.voice_id && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                Voice: {agent.voice_id}
+                              </p>
+                            )}
+                            
+                            {/* Phone number assignments */}
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {inboundNumbers.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                                    Inbound: {inboundNumbers.length} number{inboundNumbers.length !== 1 ? 's' : ''}
+                                  </Badge>
+                                </div>
+                              )}
+                              {outboundNumbers.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <Badge variant="outline" className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">
+                                    Outbound: {outboundNumbers.length} number{outboundNumbers.length !== 1 ? 's' : ''}
+                                  </Badge>
+                                </div>
+                              )}
+                              {inboundNumbers.length === 0 && outboundNumbers.length === 0 && (
+                                <Badge variant="outline" className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                                  No phone numbers assigned
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEditAgent(agent.agent_id)}
+                              disabled={isLoading}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeleteAgent(agent.agent_id, agent.agent_name)}
+                              disabled={isLoading}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                        {agent.voice_id && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Voice: {agent.voice_id}
-                          </p>
-                        )}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEditAgent(agent.agent_id)}
-                          disabled={isLoading}
-                        >
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteAgent(agent.agent_id, agent.agent_name)}
-                          disabled={isLoading}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
