@@ -106,6 +106,9 @@ export const VoiceBroadcastManager: React.FC = () => {
     ai_system_prompt: 'You are a friendly assistant. If the caller is interested, offer to transfer them.',
     calls_per_minute: 50,
     max_attempts: 1,
+    timezone: 'America/New_York',
+    calling_hours_start: '09:00',
+    calling_hours_end: '17:00',
     use_dialer_features: true, // Enable number rotation & local presence for better deliverability
     enable_local_presence: true,
     enable_number_rotation: true,
@@ -242,6 +245,9 @@ export const VoiceBroadcastManager: React.FC = () => {
         ai_system_prompt: formData.ai_system_prompt,
         calls_per_minute: formData.calls_per_minute,
         max_attempts: formData.max_attempts,
+        timezone: formData.timezone,
+        calling_hours_start: formData.calling_hours_start,
+        calling_hours_end: formData.calling_hours_end,
         caller_id: formData.caller_id || null,
       });
       setShowCreateDialog(false);
@@ -264,6 +270,9 @@ export const VoiceBroadcastManager: React.FC = () => {
       ai_system_prompt: 'You are a friendly assistant. If the caller is interested, offer to transfer them.',
       calls_per_minute: 50,
       max_attempts: 1,
+      timezone: 'America/New_York',
+      calling_hours_start: '09:00',
+      calling_hours_end: '17:00',
       use_dialer_features: true,
       enable_local_presence: true,
       enable_number_rotation: true,
@@ -691,6 +700,54 @@ export const VoiceBroadcastManager: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {/* Calling Window */}
+                <Card className="border-border/60">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      Calling Hours
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Timezone</Label>
+                      <Select
+                        value={formData.timezone}
+                        onValueChange={(value) => setFormData({ ...formData, timezone: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="America/New_York">America/New_York</SelectItem>
+                          <SelectItem value="America/Chicago">America/Chicago</SelectItem>
+                          <SelectItem value="America/Denver">America/Denver</SelectItem>
+                          <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
+                          <SelectItem value="UTC">UTC</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Start / End</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="time"
+                          value={formData.calling_hours_start}
+                          onChange={(e) => setFormData({ ...formData, calling_hours_start: e.target.value })}
+                        />
+                        <Input
+                          type="time"
+                          value={formData.calling_hours_end}
+                          onChange={(e) => setFormData({ ...formData, calling_hours_end: e.target.value })}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Calls will only be attempted inside this window (in the selected timezone).
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Caller ID Selection */}
                 <Card className="border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20">
@@ -1308,6 +1365,13 @@ export const VoiceBroadcastManager: React.FC = () => {
                   onClick={() => setSelectedBroadcast(null)}
                 >
                   Close
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => resetBroadcastQueue(selectedBroadcast.id)}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Reset Queue
                 </Button>
                 <Button 
                   onClick={() => {

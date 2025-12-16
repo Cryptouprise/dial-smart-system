@@ -225,7 +225,8 @@ serve(async (req) => {
             updated_at: new Date().toISOString()
           })
           .eq('broadcast_id', broadcastId)
-          .in('status', ['completed', 'transferred', 'callback', 'dnc', 'answered', 'failed', 'in_progress'])
+          // include "calling" so stuck calls can be reset
+          .in('status', ['pending', 'calling', 'completed', 'transferred', 'callback', 'dnc', 'answered', 'failed', 'in_progress', 'busy', 'no_answer'])
           .select();
 
         if (resetError) throw resetError;
