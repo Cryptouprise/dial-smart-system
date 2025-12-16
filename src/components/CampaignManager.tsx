@@ -1389,6 +1389,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                         handleStatusChange(campaign, 'active');
                       }}
                       onDone={() => setViewingReadiness(null)}
+                      onAfterFix={loadCampaigns}
                     />
                   </div>
                 )}

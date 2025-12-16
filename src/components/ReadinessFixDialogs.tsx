@@ -25,19 +25,45 @@ interface FixDialogProps {
 }
 
 // ===== A2P Registration Dialog =====
-export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, onFixed }) => {
-  const { checkA2PStatus, addNumberToCampaign, isLoading } = useTwilioIntegration();
+export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, campaignId, onFixed }) => {
+  const { checkA2PStatus, addNumberToCampaign } = useTwilioIntegration();
   const [a2pStatus, setA2pStatus] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  // Campaign wiring
+  const [campaignSmsFromNumber, setCampaignSmsFromNumber] = useState<string>('rotation');
+  const [savingCampaignNumber, setSavingCampaignNumber] = useState(false);
+
+  // A2P registration flow
   const [selectedNumber, setSelectedNumber] = useState('');
   const [selectedService, setSelectedService] = useState('');
   const [addingNumber, setAddingNumber] = useState(false);
 
   useEffect(() => {
     if (open) {
+      loadCampaignSmsFromNumber();
       loadA2PStatus();
     }
   }, [open]);
+
+  const loadCampaignSmsFromNumber = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('sms_from_number')
+        .eq('id', campaignId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const value = data?.sms_from_number;
+      setCampaignSmsFromNumber(value ? value : 'rotation');
+    } catch (e) {
+      // Non-blocking
+      console.warn('Could not load campaign SMS from number', e);
+      setCampaignSmsFromNumber('rotation');
+    }
+  };
 
   const loadA2PStatus = async () => {
     setLoading(true);
@@ -46,22 +72,26 @@ export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, onF
     setLoading(false);
   };
 
-  const handleAddNumberToCampaign = async () => {
-    if (!selectedNumber || !selectedService) {
-      toast.error('Select both a phone number and messaging service');
-      return;
-    }
-    setAddingNumber(true);
+  const handleSaveCampaignSmsNumber = async () => {
+    setSavingCampaignNumber(true);
     try {
-      await addNumberToCampaign(selectedNumber, selectedService);
-      await loadA2PStatus();
-      setSelectedNumber('');
-      setSelectedService('');
+      const smsFromNumber = campaignSmsFromNumber === 'rotation' ? null : campaignSmsFromNumber;
+
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ sms_from_number: smsFromNumber })
+        .eq('id', campaignId);
+
+      if (error) throw error;
+
+      toast.success('Campaign SMS number updated');
       onFixed?.();
     } catch (e) {
-      // Error handled by hook
+      console.error('Failed to update campaign SMS number:', e);
+      toast.error('Failed to update campaign SMS number');
+    } finally {
+      setSavingCampaignNumber(false);
     }
-    setAddingNumber(false);
   };
 
   const unregisteredNumbers = a2pStatus?.phone_numbers?.filter((n: any) => !n.a2p_registered) || [];
@@ -111,6 +141,58 @@ export const A2PFixDialog: React.FC<FixDialogProps> = ({ open, onOpenChange, onF
                 <p className="text-2xl font-bold text-red-600">{a2pStatus.summary?.unregistered_numbers || 0}</p>
                 <p className="text-xs text-muted-foreground">Unregistered</p>
               </div>
+            </div>
+
+            {/* Campaign wiring (set the same number the campaign editor uses) */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Campaign SMS From Number</p>
+                  <p className="text-xs text-muted-foreground">
+                    Pick which number this campaign will text from (this is the same field you edit on the campaign).
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSaveCampaignSmsNumber}
+                  disabled={savingCampaignNumber}
+                >
+                  {savingCampaignNumber ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Save
+                </Button>
+              </div>
+
+              <Select value={campaignSmsFromNumber} onValueChange={setCampaignSmsFromNumber}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a number" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rotation">Use rotation (no fixed number)</SelectItem>
+                  {registeredNumbers.map((n: any) => (
+                    <SelectItem key={n.sid} value={n.phone_number}>
+                      {n.phone_number}{n.messaging_service_name ? ` — ${n.messaging_service_name}` : ''}
+                    </SelectItem>
+                  ))}
+                  {unregisteredNumbers.map((n: any) => (
+                    <SelectItem key={n.sid} value={n.phone_number}>
+                      {n.phone_number} — Not A2P registered
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {campaignSmsFromNumber !== 'rotation' && unregisteredNumbers.some((n: any) => n.phone_number === campaignSmsFromNumber) && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    This number is not A2P registered. Text deliverability may be degraded until you register it.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <Tabs defaultValue="numbers" className="w-full">

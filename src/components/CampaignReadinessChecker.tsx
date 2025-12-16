@@ -21,6 +21,7 @@ interface CampaignReadinessCheckerProps {
   onLaunch?: () => void;
   onFixIssue?: (checkId: string) => void;
   onDone?: () => void;
+  onAfterFix?: () => void;
   compact?: boolean;
 }
 
@@ -30,6 +31,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
   onLaunch,
   onFixIssue,
   onDone,
+  onAfterFix,
   compact = false
 }) => {
   const { checkCampaignReadiness, isChecking } = useCampaignReadiness();
@@ -105,6 +107,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
   const handleFixed = () => {
     // Rerun checks after fixing
     runCheck();
+    onAfterFix?.();
   };
 
   if (compact) {
