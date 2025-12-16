@@ -850,14 +850,14 @@ export const VoiceBroadcastManager: React.FC = () => {
             return (
               <Card key={broadcast.id}>
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-3">
                       <Badge className={getStatusColor(broadcast.status)}>
                         {broadcast.status}
                       </Badge>
                       <CardTitle className="text-lg">{broadcast.name}</CardTitle>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                       {broadcast.status === 'active' ? (
                         <Button
                           variant="outline"
@@ -869,7 +869,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                           Pause
                         </Button>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {/* Show "Add leads first" if no leads at all */}
                           {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
                             <Button
@@ -926,20 +926,23 @@ export const VoiceBroadcastManager: React.FC = () => {
                         <BarChart3 className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onClick={() => {
                           setSelectedBroadcast(broadcast);
                           setSettingsTab('settings');
                         }}
+                        aria-label="Broadcast settings"
                       >
-                        <Settings className="h-4 w-4" />
+                        <Settings className="h-4 w-4 mr-1" />
+                        Settings
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => deleteBroadcast(broadcast.id)}
                         className="text-destructive"
+                        aria-label="Delete broadcast"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1247,6 +1250,61 @@ export const VoiceBroadcastManager: React.FC = () => {
                   <Gauge className="h-4 w-4 text-green-500" />
                   Calling Settings
                 </h3>
+
+                {/* Calling Hours */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Timezone</Label>
+                    <Select
+                      value={selectedBroadcast.timezone || 'America/New_York'}
+                      onValueChange={async (value) => {
+                        await updateBroadcast(selectedBroadcast.id, { timezone: value } as any);
+                        setSelectedBroadcast({ ...selectedBroadcast, timezone: value } as any);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="America/New_York">America/New_York</SelectItem>
+                        <SelectItem value="America/Chicago">America/Chicago</SelectItem>
+                        <SelectItem value="America/Denver">America/Denver</SelectItem>
+                        <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Calling Hours (Start / End)</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        type="time"
+                        defaultValue={((selectedBroadcast.calling_hours_start as any) || '09:00').slice(0, 5)}
+                        onBlur={async (e) => {
+                          const value = e.target.value;
+                          if (!value) return;
+                          await updateBroadcast(selectedBroadcast.id, { calling_hours_start: value } as any);
+                          setSelectedBroadcast({ ...selectedBroadcast, calling_hours_start: value } as any);
+                        }}
+                      />
+                      <Input
+                        type="time"
+                        defaultValue={((selectedBroadcast.calling_hours_end as any) || '17:00').slice(0, 5)}
+                        onBlur={async (e) => {
+                          const value = e.target.value;
+                          if (!value) return;
+                          await updateBroadcast(selectedBroadcast.id, { calling_hours_end: value } as any);
+                          setSelectedBroadcast({ ...selectedBroadcast, calling_hours_end: value } as any);
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Calls will only be attempted inside this window (in the selected timezone).
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Calls Per Minute: {selectedBroadcast.calls_per_minute || 50}</Label>
@@ -1256,7 +1314,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       max={200}
                       step={5}
                       onValueCommit={async (values) => {
-                        await updateBroadcast(selectedBroadcast.id, { 
+                        await updateBroadcast(selectedBroadcast.id, {
                           calls_per_minute: values[0]
                         });
                         setSelectedBroadcast({ ...selectedBroadcast, calls_per_minute: values[0] });
@@ -1274,8 +1332,8 @@ export const VoiceBroadcastManager: React.FC = () => {
                       type="number"
                       defaultValue={selectedBroadcast.max_attempts || 1}
                       onBlur={async (e) => {
-                        await updateBroadcast(selectedBroadcast.id, { 
-                          max_attempts: parseInt(e.target.value) || 1 
+                        await updateBroadcast(selectedBroadcast.id, {
+                          max_attempts: parseInt(e.target.value) || 1
                         });
                       }}
                     />
