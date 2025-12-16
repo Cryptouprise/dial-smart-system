@@ -280,14 +280,20 @@ export const useVoiceBroadcast = () => {
       
       // Parse ElevenLabs-specific errors for better UX
       let errorMessage = error.message || "Failed to generate audio";
-      if (errorMessage.includes('payment') || errorMessage.includes('subscription')) {
-        errorMessage = "ElevenLabs billing issue: Please check your ElevenLabs account payment status.";
-      } else if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
-        errorMessage = "ElevenLabs quota exceeded. Please upgrade your plan or wait for quota reset.";
+      const isBillingIssue = errorMessage.toLowerCase().includes('payment') || 
+                            errorMessage.toLowerCase().includes('subscription') ||
+                            errorMessage.toLowerCase().includes('billing');
+      const isQuotaIssue = errorMessage.toLowerCase().includes('quota') || 
+                          errorMessage.toLowerCase().includes('limit');
+      
+      if (isBillingIssue) {
+        errorMessage = "ElevenLabs billing issue detected. Please update your payment at: https://elevenlabs.io/subscription";
+      } else if (isQuotaIssue) {
+        errorMessage = "ElevenLabs quota exceeded. Upgrade at: https://elevenlabs.io/subscription";
       }
       
       toast({
-        title: "Audio Generation Failed",
+        title: isBillingIssue ? "ElevenLabs Billing Issue" : "Audio Generation Failed",
         description: errorMessage,
         variant: "destructive",
       });
