@@ -90,6 +90,9 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // Call simulator state
   const [isCallActive, setIsCallActive] = useState(false);
   const [callPhoneNumber, setCallPhoneNumber] = useState('');
+  const [callFromNumber, setCallFromNumber] = useState('');
+  const [availableFromNumbers, setAvailableFromNumbers] = useState<{number: string, friendly_name: string}[]>([]);
+  const [isLoadingNumbers, setIsLoadingNumbers] = useState(false);
   const [callStatus, setCallStatus] = useState<string>('');
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
   
@@ -126,6 +129,42 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     };
     loadUserAndCheckCalendar();
   }, [agent]);
+
+  // Load available phone numbers for test calls
+  useEffect(() => {
+    const loadPhoneNumbers = async () => {
+      if (!open) return;
+      
+      setIsLoadingNumbers(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-phone-management', {
+          body: { action: 'list' }
+        });
+        
+        if (error) throw error;
+        
+        const numbers = (data?.phone_numbers || []).map((p: any) => ({
+          number: p.phone_number,
+          friendly_name: p.nickname || p.phone_number
+        }));
+        
+        setAvailableFromNumbers(numbers);
+        
+        // Default to agent's inbound number if available
+        if (agent?.inbound_phone_number && numbers.some((n: any) => n.number === agent.inbound_phone_number)) {
+          setCallFromNumber(agent.inbound_phone_number);
+        } else if (numbers.length > 0) {
+          setCallFromNumber(numbers[0].number);
+        }
+      } catch (error) {
+        console.error('Failed to load phone numbers:', error);
+      } finally {
+        setIsLoadingNumbers(false);
+      }
+    };
+    
+    loadPhoneNumbers();
+  }, [open, agent?.inbound_phone_number]);
 
   // Fetch LLM data to show script/prompt
   useEffect(() => {
@@ -412,16 +451,14 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // Call simulator functions
   const startTestCall = async () => {
     if (!callPhoneNumber.trim()) {
-      toast({ title: 'Error', description: 'Please enter a phone number', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Please enter a phone number to call', variant: 'destructive' });
       return;
     }
     
-    // Validate that agent has a real phone number assigned
-    const callerIdNumber = agent?.inbound_phone_number;
-    if (!callerIdNumber || callerIdNumber.includes('555')) {
+    if (!callFromNumber) {
       toast({ 
-        title: 'No Phone Number Assigned', 
-        description: 'Please assign a phone number to this agent in Retell AI before making test calls. Go to Phone Numbers tab to import/assign a number.',
+        title: 'No From Number Selected', 
+        description: 'Please select a phone number to call from.',
         variant: 'destructive' 
       });
       return;
@@ -436,7 +473,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           action: 'create_call',
           agentId: agent?.agent_id,
           phoneNumber: callPhoneNumber,
-          callerId: callerIdNumber
+          callerId: callFromNumber
         }
       });
       
@@ -1963,7 +2000,34 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Your Phone Number</Label>
+                    <Label>Call From (Caller ID)</Label>
+                    {isLoadingNumbers ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading phone numbers...
+                      </div>
+                    ) : availableFromNumbers.length > 0 ? (
+                      <Select value={callFromNumber} onValueChange={setCallFromNumber} disabled={isCallActive}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a phone number" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableFromNumbers.map((num) => (
+                            <SelectItem key={num.number} value={num.number}>
+                              {num.friendly_name} ({num.number})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm text-destructive">
+                        No phone numbers available. Import numbers in the Phone Numbers tab first.
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Your Phone Number (To Call)</Label>
                     <Input
                       value={callPhoneNumber}
                       onChange={(e) => setCallPhoneNumber(e.target.value)}
@@ -1983,7 +2047,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                   
                   <div className="flex gap-2">
                     {!isCallActive ? (
-                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim()}>
+                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim() || !callFromNumber}>
                         <Phone className="h-4 w-4 mr-2" />
                         Start Test Call
                       </Button>
