@@ -416,6 +416,17 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       return;
     }
     
+    // Validate that agent has a real phone number assigned
+    const callerIdNumber = agent?.inbound_phone_number;
+    if (!callerIdNumber || callerIdNumber.includes('555')) {
+      toast({ 
+        title: 'No Phone Number Assigned', 
+        description: 'Please assign a phone number to this agent in Retell AI before making test calls. Go to Phone Numbers tab to import/assign a number.',
+        variant: 'destructive' 
+      });
+      return;
+    }
+    
     setIsCallActive(true);
     setCallStatus('Initiating call...');
     
@@ -425,7 +436,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           action: 'create_call',
           agentId: agent?.agent_id,
           phoneNumber: callPhoneNumber,
-          callerId: agent?.inbound_phone_number || '+15551234567' // Use agent's phone or placeholder
+          callerId: callerIdNumber
         }
       });
       
