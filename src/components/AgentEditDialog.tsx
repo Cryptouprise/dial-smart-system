@@ -134,37 +134,47 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   useEffect(() => {
     const loadPhoneNumbers = async () => {
       if (!open) return;
-      
+
       setIsLoadingNumbers(true);
       try {
         const { data, error } = await supabase.functions.invoke('retell-phone-management', {
-          body: { action: 'list' }
+          body: { action: 'list' },
         });
-        
+
         if (error) throw error;
-        
-        const numbers = (data?.phone_numbers || []).map((p: any) => ({
-          number: p.phone_number,
-          friendly_name: p.nickname || p.phone_number
-        }));
-        
+
+        // retell-phone-management returns an array directly
+        const rawNumbers = Array.isArray(data) ? data : (data?.phone_numbers || []);
+        const numbers = rawNumbers
+          .filter((p: any) => typeof p?.phone_number === 'string' && p.phone_number.length > 0)
+          .map((p: any) => ({
+            number: p.phone_number,
+            friendly_name: p.nickname || p.phone_number,
+          }));
+
         setAvailableFromNumbers(numbers);
-        
+
         // Default to agent's inbound number if available
         if (agent?.inbound_phone_number && numbers.some((n: any) => n.number === agent.inbound_phone_number)) {
           setCallFromNumber(agent.inbound_phone_number);
         } else if (numbers.length > 0) {
           setCallFromNumber(numbers[0].number);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to load phone numbers:', error);
+        toast({
+          title: 'Could not load Retell numbers',
+          description: error?.message || 'Please try again.',
+          variant: 'destructive',
+        });
+        setAvailableFromNumbers([]);
       } finally {
         setIsLoadingNumbers(false);
       }
     };
-    
+
     loadPhoneNumbers();
-  }, [open, agent?.inbound_phone_number]);
+  }, [open, agent?.inbound_phone_number, toast]);
 
   // Fetch LLM data to show script/prompt
   useEffect(() => {
