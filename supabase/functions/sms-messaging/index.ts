@@ -35,15 +35,6 @@ serve(async (req) => {
   }
 
   try {
-    // Verify authentication (supports both frontend JWT calls and internal service calls)
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Initialize Supabase admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -54,29 +45,46 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    // Parse request early so we can support internal calls with explicit user_id
+    // Parse request early so we can check action type
     const request: SmsRequest & { user_id?: string } = await req.json();
-
-    const token = authHeader.replace('Bearer ', '');
+    
+    // Actions that don't require user authentication (read-only Twilio operations)
+    const publicActions = ['get_available_numbers', 'check_webhook_status'];
+    
+    // Verify authentication (supports both frontend JWT calls and internal service calls)
+    const authHeader = req.headers.get('Authorization');
     let userId: string | null = null;
-
-    if (token === serviceRoleKey && request.user_id) {
-      // Internal service-to-service call (e.g. from workflow-executor)
-      userId = request.user_id;
-      console.log('[SMS Messaging] Internal call for user:', userId);
+    
+    if (publicActions.includes(request.action)) {
+      // These actions don't require user auth - they just query Twilio
+      console.log('[SMS Messaging] Public action:', request.action);
+      userId = null;
+    } else if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - Please log in to perform this action' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     } else {
-      // Standard JWT-based auth (frontend calls)
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      
-      if (authError || !user) {
-        return new Response(
-          JSON.stringify({ error: 'Authentication failed' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      const token = authHeader.replace('Bearer ', '');
 
-      userId = user.id;
-      console.log('[SMS Messaging] User authenticated:', userId);
+      if (token === serviceRoleKey && request.user_id) {
+        // Internal service-to-service call (e.g. from workflow-executor)
+        userId = request.user_id;
+        console.log('[SMS Messaging] Internal call for user:', userId);
+      } else {
+        // Standard JWT-based auth (frontend calls)
+        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+        
+        if (authError || !user) {
+          return new Response(
+            JSON.stringify({ error: 'Authentication failed - Please log in again' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        userId = user.id;
+        console.log('[SMS Messaging] User authenticated:', userId);
+      }
     }
 
     console.log('[SMS Messaging] Action:', request.action);
