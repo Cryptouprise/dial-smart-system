@@ -116,6 +116,9 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // LLM/Script state
   const [llmData, setLlmData] = useState<any>(null);
   const [isLoadingLlm, setIsLoadingLlm] = useState(false);
+  const [editablePrompt, setEditablePrompt] = useState('');
+  const [editableBeginMessage, setEditableBeginMessage] = useState('');
+  const [isSavingLlm, setIsSavingLlm] = useState(false);
 
   // Load user ID and check calendar function status
   useEffect(() => {
@@ -190,6 +193,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         
         if (error) throw error;
         setLlmData(data);
+        setEditablePrompt(data.general_prompt || data.system_prompt || '');
+        setEditableBeginMessage(data.begin_message || '');
         console.log('LLM data loaded:', data);
       } catch (error: any) {
         console.error('Failed to fetch LLM data:', error);
@@ -200,6 +205,37 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     
     fetchLlmData();
   }, [agent?.response_engine?.llm_id, open]);
+
+  // Save LLM/prompt changes
+  const saveLlmChanges = async () => {
+    const llmId = agent?.response_engine?.llm_id;
+    if (!llmId) {
+      toast({ title: 'Error', description: 'No LLM ID found for this agent', variant: 'destructive' });
+      return;
+    }
+
+    setIsSavingLlm(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-llm-management', {
+        body: {
+          action: 'update',
+          llmId,
+          generalPrompt: editablePrompt,
+          beginMessage: editableBeginMessage,
+        }
+      });
+
+      if (error) throw error;
+
+      setLlmData(data);
+      toast({ title: 'Success', description: 'Agent prompt updated successfully' });
+    } catch (error: any) {
+      console.error('Failed to save LLM changes:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to save prompt', variant: 'destructive' });
+    } finally {
+      setIsSavingLlm(false);
+    }
+  };
 
   // Fetch available slots to prove calendar is working
   const fetchAvailableSlots = async (targetUserId: string) => {
@@ -855,22 +891,31 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                     </div>
                   ) : llmData ? (
                     <>
-                      {llmData.begin_message && (
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Opening Message</Label>
-                          <div className="p-3 bg-muted rounded-lg text-sm">
-                            {llmData.begin_message}
-                          </div>
-                        </div>
-                      )}
+                      <div className="space-y-2">
+                        <Label>Opening Message</Label>
+                        <Textarea
+                          value={editableBeginMessage}
+                          onChange={(e) => setEditableBeginMessage(e.target.value)}
+                          placeholder="Hello! How can I help you today?"
+                          rows={2}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The first message the agent says when the call starts
+                        </p>
+                      </div>
                       
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">System Prompt / Script</Label>
-                        <ScrollArea className="h-64 w-full border rounded-lg">
-                          <div className="p-4 text-sm whitespace-pre-wrap font-mono">
-                            {llmData.general_prompt || llmData.system_prompt || 'No prompt configured'}
-                          </div>
-                        </ScrollArea>
+                      <div className="space-y-2">
+                        <Label>System Prompt / Script</Label>
+                        <Textarea
+                          value={editablePrompt}
+                          onChange={(e) => setEditablePrompt(e.target.value)}
+                          placeholder="You are a helpful AI assistant..."
+                          rows={12}
+                          className="font-mono text-sm"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The instructions and personality that define how this agent responds
+                        </p>
                       </div>
 
                       {llmData.model && (
@@ -879,6 +924,15 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                           <Badge variant="outline">{llmData.model}</Badge>
                         </div>
                       )}
+
+                      <Button 
+                        onClick={saveLlmChanges} 
+                        disabled={isSavingLlm}
+                        className="w-full"
+                      >
+                        {isSavingLlm && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Prompt Changes
+                      </Button>
                     </>
                   ) : (
                     <div className="text-sm text-muted-foreground">
