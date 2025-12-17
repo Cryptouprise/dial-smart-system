@@ -128,16 +128,35 @@ serve(async (req) => {
     }
 
     if (req.method === 'GET') {
-      // Get recent health logs
-      const { data: logs, error } = await supabaseClient
-        .from('system_health_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      // Get recent health logs with retry logic for transient errors
+      let logs = null;
+      let error = null;
+      
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await supabaseClient
+          .from('system_health_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        
+        if (!result.error) {
+          logs = result.data;
+          error = null;
+          break;
+        }
+        
+        error = result.error;
+        console.log(`Health logs fetch attempt ${attempt + 1} failed:`, error);
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 500));
+        }
+      }
 
       if (error) {
-        console.error('Health logs fetch error:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch health logs' }), {
+        console.error('Health logs fetch failed after retries:', error);
+        return new Response(JSON.stringify({ error: 'Failed to fetch health logs', details: error.message }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
