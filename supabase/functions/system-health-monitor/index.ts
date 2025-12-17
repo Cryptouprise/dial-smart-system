@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const SERVICES_TO_MONITOR = [
-  { name: 'retell-ai', url: 'https://api.retellai.com/health' },
+  { name: 'retell-ai', url: 'internal' },
   { name: 'supabase-db', url: 'internal' },
   { name: 'edge-functions', url: 'internal' },
   { name: 'phone-provisioning', url: 'internal' }
@@ -36,6 +36,49 @@ async function checkServiceHealth(service: { name: string; url: string }) {
           response_time: Date.now() - startTime,
           error: null
         };
+      }
+      
+      // Retell AI check - verify API connectivity
+      if (service.name === 'retell-ai') {
+        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        
+        if (!retellApiKey) {
+          return {
+            status: 'degraded',
+            response_time: Date.now() - startTime,
+            error: 'RETELL_AI_API_KEY not configured'
+          };
+        }
+        
+        // Make a lightweight API call to verify connectivity
+        const response = await fetch('https://api.retellai.com/v2/agent', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${retellApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        if (response.ok || response.status === 200) {
+          return {
+            status: 'online',
+            response_time: Date.now() - startTime,
+            error: null
+          };
+        } else if (response.status === 401) {
+          return {
+            status: 'degraded',
+            response_time: Date.now() - startTime,
+            error: 'Invalid API key'
+          };
+        } else {
+          return {
+            status: 'degraded',
+            response_time: Date.now() - startTime,
+            error: `HTTP ${response.status}`
+          };
+        }
       }
       
       return {
