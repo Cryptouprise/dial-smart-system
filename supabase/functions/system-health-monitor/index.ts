@@ -51,7 +51,7 @@ async function checkServiceHealth(service: { name: string; url: string }) {
         }
         
         // Make a lightweight API call to verify connectivity
-        const response = await fetch('https://api.retellai.com/v2/agent', {
+        const response = await fetch('https://api.retellai.com/list-agents', {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${retellApiKey}`,
@@ -60,7 +60,7 @@ async function checkServiceHealth(service: { name: string; url: string }) {
           signal: AbortSignal.timeout(5000)
         });
         
-        if (response.ok || response.status === 200) {
+        if (response.ok) {
           return {
             status: 'online',
             response_time: Date.now() - startTime,
