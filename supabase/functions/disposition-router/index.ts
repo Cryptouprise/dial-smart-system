@@ -289,7 +289,11 @@ serve(async (req) => {
           new_pipeline_stage: pipelineAfter?.pipeline_boards?.name || null,
           workflow_id: workflowId,
           campaign_id: campaignId,
-          actions_triggered: actions, // Array of actions executed
+          actions_triggered: actions.map((action, index) => ({
+            action: action,
+            triggered_at: new Date().toISOString(),
+            order: index + 1
+          })), // Structured array for better analytics
           metadata: {
             call_outcome: callOutcome,
             had_transcript: !!transcript,

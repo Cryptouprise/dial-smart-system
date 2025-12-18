@@ -236,11 +236,13 @@ serve(async (req) => {
           
           if (manualMessages && manualMessages.length > 0) {
             const lastManualMessage = manualMessages[0];
+            // Configurable threshold - default 24 hours, can be overridden in workflow settings
+            const pauseThresholdHours = settings.human_reply_pause_hours || 24;
             const timeSinceManual = (Date.now() - new Date(lastManualMessage.created_at).getTime()) / (1000 * 60); // minutes
             
-            // If human replied within last 24 hours, pause AI auto-reply for this conversation
-            if (timeSinceManual < 24 * 60) {
-              console.log('[AI SMS] Skipping auto-reply - human replied manually within last 24h');
+            // If human replied within threshold, pause AI auto-reply for this conversation
+            if (timeSinceManual < pauseThresholdHours * 60) {
+              console.log(`[AI SMS] Skipping auto-reply - human replied manually within last ${pauseThresholdHours}h`);
               
               // Mark conversation to indicate AI is paused
               await supabaseAdmin
@@ -248,7 +250,7 @@ serve(async (req) => {
                 .update({ 
                   ai_paused: true,
                   ai_pause_reason: 'human_reply_detected',
-                  ai_paused_at: lastManualMessage.created_at
+                  ai_paused_at: new Date().toISOString() // Use current timestamp when AI is paused
                 })
                 .eq('id', conversationId);
               

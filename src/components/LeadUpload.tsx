@@ -289,33 +289,42 @@ export const LeadUpload: React.FC = () => {
         });
         
         try {
-          // Get the IDs of the successfully inserted leads
+          // Get the IDs of the successfully inserted leads by using a timestamp filter
+          // Only get leads created in the last 10 seconds (just inserted)
+          const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+          
           const { data: newLeads } = await supabase
             .from('leads')
             .select('id')
             .eq('user_id', user.id)
-            .in('phone_number', leadsToInsert.map((l: any) => l.phone_number));
+            .in('phone_number', leadsToInsert.map((l: any) => l.phone_number))
+            .gte('created_at', tenSecondsAgo);
           
           if (newLeads && newLeads.length > 0) {
-            // Launch each lead into the workflow
-            for (const lead of newLeads) {
-              try {
-                const { error: workflowError } = await supabase.functions.invoke('workflow-executor', {
-                  body: {
-                    action: 'start_workflow',
-                    userId: user.id,
-                    leadId: lead.id,
-                    workflowId: selectedWorkflow,
-                    campaignId: selectedCampaign || null,
-                  },
-                });
-                
-                if (!workflowError) {
-                  launchedCount++;
-                }
-              } catch (launchError) {
-                console.error('Error launching lead into workflow:', launchError);
-              }
+            // Launch workflows concurrently with Promise.allSettled for better performance
+            const launchPromises = newLeads.map((lead) =>
+              supabase.functions.invoke('workflow-executor', {
+                body: {
+                  action: 'start_workflow',
+                  userId: user.id,
+                  leadId: lead.id,
+                  workflowId: selectedWorkflow,
+                  campaignId: selectedCampaign || null,
+                },
+              })
+            );
+            
+            const results = await Promise.allSettled(launchPromises);
+            
+            // Count successful launches
+            launchedCount = results.filter(
+              (result) => result.status === 'fulfilled' && !result.value.error
+            ).length;
+            
+            const failedCount = results.length - launchedCount;
+            
+            if (failedCount > 0) {
+              console.warn(`${failedCount} workflow launches failed`);
             }
             
             console.log(`Launched ${launchedCount}/${newLeads.length} leads into workflow`);
