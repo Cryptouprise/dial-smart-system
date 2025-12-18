@@ -189,6 +189,29 @@ Respond with a JSON object containing:
         .update(leadUpdate)
         .eq('id', callData.lead_id)
         .eq('user_id', user.id)
+      
+      // Call disposition-router to handle auto-actions and metrics tracking
+      const dispositionRouterResult = await supabaseAdmin.functions.invoke('disposition-router', {
+        body: {
+          action: 'process_disposition',
+          leadId: callData.lead_id,
+          userId: user.id,
+          dispositionName: aiAnalysis.disposition,
+          dispositionId: dispositionData?.id || null,
+          callOutcome: aiAnalysis.disposition,
+          transcript: transcript,
+          callId: callId,
+          aiConfidence: aiAnalysis.confidence,
+          setBy: 'ai', // This disposition was set by AI
+        },
+      });
+      
+      if (dispositionRouterResult.error) {
+        console.error('[Analyze Transcript] disposition-router error:', dispositionRouterResult.error);
+        // Don't fail the whole request, just log the error
+      } else {
+        console.log('[Analyze Transcript] Disposition actions processed:', dispositionRouterResult.data);
+      }
     }
 
     return new Response(
