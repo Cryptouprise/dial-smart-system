@@ -7,6 +7,63 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Retry helper for transient failures
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  context: string,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isLastAttempt = attempt === maxRetries - 1;
+      const isRetryable = error.message?.includes('rate limit') ||
+                         error.message?.includes('timeout') ||
+                         error.message?.includes('network') ||
+                         error.message?.includes('503') ||
+                         error.message?.includes('502');
+      
+      if (isLastAttempt || !isRetryable) {
+        throw error;
+      }
+      
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`[Retry ${context}] Attempt ${attempt + 1}/${maxRetries} failed, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
+// Helper to log errors to database
+async function logError(
+  supabase: any,
+  functionName: string,
+  action: string,
+  userId: string | null,
+  error: any,
+  context: any = {}
+) {
+  try {
+    await supabase.from('edge_function_errors').insert({
+      function_name: functionName,
+      action: action,
+      user_id: userId,
+      lead_id: context.leadId || null,
+      campaign_id: context.campaignId || null,
+      workflow_id: context.workflowId || null,
+      error_message: error instanceof Error ? error.message : String(error),
+      error_stack: error instanceof Error ? error.stack : null,
+      request_payload: context.payload || null,
+      severity: context.severity || 'error'
+    });
+  } catch (logError) {
+    console.error('[Error Logging] Failed to log error:', logError);
+  }
+}
+
 interface OutboundCallRequest {
   action: 'create_call' | 'get_call_status' | 'end_call';
   campaignId?: string;
@@ -192,21 +249,35 @@ serve(async (req) => {
           console.log('[Outbound Calling] Outbound agent set successfully');
         }
 
-        response = await fetch(`${baseUrl}/create-phone-call`, {
-          method: 'POST',
-          headers: retellHeaders,
-          body: JSON.stringify({
-            from_number: callerId,
-            to_number: finalPhone, // Use normalized phone
-            agent_id: agentId,
-            metadata: {
-              campaign_id: campaignId,
-              lead_id: leadId,
-              call_log_id: callLog.id,
-              user_id: userId // CRITICAL: Include user_id for webhook processing
+        response = await retryWithBackoff(
+          async () => {
+            const res = await fetch(`${baseUrl}/create-phone-call`, {
+              method: 'POST',
+              headers: retellHeaders,
+              body: JSON.stringify({
+                from_number: callerId,
+                to_number: finalPhone, // Use normalized phone
+                agent_id: agentId,
+                metadata: {
+                  campaign_id: campaignId,
+                  lead_id: leadId,
+                  call_log_id: callLog.id,
+                  user_id: userId // CRITICAL: Include user_id for webhook processing
+                }
+              }),
+            });
+            
+            if (!res.ok) {
+              const errorText = await res.text();
+              throw new Error(`Retell API error ${res.status}: ${errorText}`);
             }
-          }),
-        });
+            
+            return res;
+          },
+          'Retell create-phone-call',
+          3,  // 3 retries
+          2000 // 2 second base delay
+        );
 
         if (!response.ok) {
           const errorData = await response.text();
@@ -231,6 +302,12 @@ serve(async (req) => {
               notes: `Retell API error: ${errorMessage}`
             })
             .eq('id', callLog.id);
+          
+          // Log error to database
+          await logError(supabaseAdmin, 'outbound-calling', 'create_call', userId,
+            new Error(errorMessage),
+            { leadId, campaignId, severity: 'error' }
+          );
             
           throw new Error(`Failed to create call via Retell: ${errorMessage}`);
             

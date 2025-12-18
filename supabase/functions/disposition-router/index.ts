@@ -327,27 +327,31 @@ serve(async (req) => {
 
 async function executeAction(supabase: any, leadId: string, userId: string, autoAction: any) {
   const config = autoAction.action_config || {};
+  const startTime = Date.now();
+  let success = true;
+  let errorMessage = null;
 
-  switch (autoAction.action_type) {
-    case 'remove_all_campaigns':
-      await supabase
-        .from('lead_workflow_progress')
-        .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
-        .eq('lead_id', leadId)
-        .eq('status', 'active');
-      break;
-
-    case 'remove_from_campaign':
-      if (config.campaign_id) {
+  try {
+    switch (autoAction.action_type) {
+      case 'remove_all_campaigns':
         await supabase
           .from('lead_workflow_progress')
           .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
           .eq('lead_id', leadId)
-          .eq('campaign_id', config.campaign_id);
-      }
-      break;
+          .eq('status', 'active');
+        break;
 
-    case 'move_to_stage':
+      case 'remove_from_campaign':
+        if (config.campaign_id) {
+          await supabase
+            .from('lead_workflow_progress')
+            .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
+            .eq('lead_id', leadId)
+            .eq('campaign_id', config.campaign_id);
+        }
+        break;
+
+      case 'move_to_stage':
       if (config.target_stage_id) {
         await supabase.from('lead_pipeline_positions').upsert({
           user_id: userId,
@@ -476,5 +480,33 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
         console.log(`Booked appointment for lead ${leadId}`);
       }
       break;
+      
+    default:
+      console.warn(`[Disposition Router] Unknown action type: ${autoAction.action_type}`);
+      errorMessage = `Unknown action type: ${autoAction.action_type}`;
+      success = false;
   }
+  } catch (error: any) {
+    success = false;
+    errorMessage = error.message;
+    console.error(`[Disposition Router] Action ${autoAction.action_type} failed:`, error);
+    
+    // Log error to database
+    await supabase.from('edge_function_errors').insert({
+      function_name: 'disposition-router',
+      action: `executeAction: ${autoAction.action_type}`,
+      user_id: userId,
+      lead_id: leadId,
+      error_message: errorMessage,
+      error_stack: error.stack,
+      request_payload: { autoAction, config },
+      severity: 'error'
+    });
+  }
+  
+  // Track action execution
+  const executionTime = Date.now() - startTime;
+  console.log(`[Disposition Router] Action ${autoAction.action_type} ${success ? 'succeeded' : 'failed'} in ${executionTime}ms`);
+  
+  return { success, error: errorMessage, executionTime };
 }
