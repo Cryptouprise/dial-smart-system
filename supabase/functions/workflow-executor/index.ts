@@ -60,6 +60,27 @@ serve(async (req) => {
       // ============= PRE-START VALIDATION =============
       const validationErrors: string[] = [];
       
+      // Get lead data for validation
+      const { data: lead, error: leadError } = await supabase
+        .from('leads')
+        .select('phone_number, do_not_call')
+        .eq('id', leadId)
+        .maybeSingle();
+      
+      if (leadError || !lead) {
+        validationErrors.push('Lead not found');
+      } else {
+        // Check DNC list
+        if (lead.do_not_call) {
+          validationErrors.push('Lead is on Do Not Call list');
+        }
+        
+        // Validate phone number exists
+        if (!lead.phone_number) {
+          validationErrors.push('Lead has no phone number');
+        }
+      }
+      
       // Get campaign info if provided
       let campaign: any = null;
       if (campaignId) {
@@ -89,7 +110,11 @@ serve(async (req) => {
         // Validate CALL steps have agent
         if (step.step_type === 'call') {
           if (!campaign?.agent_id && !config.agent_id) {
-            validationErrors.push(`Step ${step.step_number} (call): No AI agent configured`);
+            validationErrors.push(`Step ${step.step_number} (call): No AI agent configured. ${!campaignId ? 'Campaign ID is required for call steps, or configure agent_id in step config.' : 'Configure agent_id in campaign or step.'}`);
+          }
+          // Warn if no campaign (calls might fail due to missing phone numbers)
+          if (!campaignId) {
+            console.warn(`[Workflow] Warning: Step ${step.step_number} (call) has no campaign - may fail if no phone numbers available`);
           }
         }
 

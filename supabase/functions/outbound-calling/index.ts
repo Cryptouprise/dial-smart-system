@@ -133,8 +133,18 @@ serve(async (req) => {
         if (!phoneNumber || !callerId || !agentId) {
           throw new Error('Phone number, caller ID, and agent ID are required');
         }
+        
+        // Validate and normalize phone number
+        const normalizedPhone = phoneNumber.replace(/\D/g, '');
+        if (normalizedPhone.length < 10 || normalizedPhone.length > 15) {
+          throw new Error(`Invalid phone number format: ${phoneNumber}. Must be 10-15 digits.`);
+        }
+        
+        // Ensure phone number has country code
+        const finalPhone = normalizedPhone.startsWith('1') ? `+${normalizedPhone}` : `+1${normalizedPhone}`;
 
         console.log('[Outbound Calling] Creating call log for user:', userId);
+        console.log('[Outbound Calling] Normalized phone:', finalPhone);
 
         // Use admin client for database operations
         const { data: callLog, error: callLogError } = await supabaseAdmin
@@ -143,7 +153,7 @@ serve(async (req) => {
             user_id: userId,
             campaign_id: campaignId,
             lead_id: leadId,
-            phone_number: phoneNumber,
+            phone_number: finalPhone, // Use normalized phone
             caller_id: callerId,
             status: 'queued'
           })
@@ -160,7 +170,7 @@ serve(async (req) => {
         // Create outbound call via Retell AI
         console.log('[Outbound Calling] Initiating Retell AI call:', {
           from: callerId,
-          to: phoneNumber,
+          to: finalPhone, // Use normalized phone
           agent: agentId
         });
 
@@ -187,7 +197,7 @@ serve(async (req) => {
           headers: retellHeaders,
           body: JSON.stringify({
             from_number: callerId,
-            to_number: phoneNumber,
+            to_number: finalPhone, // Use normalized phone
             agent_id: agentId,
             metadata: {
               campaign_id: campaignId,
@@ -201,12 +211,28 @@ serve(async (req) => {
         if (!response.ok) {
           const errorData = await response.text();
           console.error('[Outbound Calling] Retell API error:', errorData);
+          let errorMessage = 'Retell API call failed';
+          
+          // Parse Retell error for better user feedback
+          try {
+            const errorJson = JSON.parse(errorData);
+            if (errorJson.message) {
+              errorMessage = errorJson.message;
+            }
+          } catch {
+            errorMessage = errorData || 'Unknown Retell API error';
+          }
           
           // Update call log to failed using admin client
           await supabaseAdmin
             .from('call_logs')
-            .update({ status: 'failed' })
+            .update({ 
+              status: 'failed',
+              notes: `Retell API error: ${errorMessage}`
+            })
             .eq('id', callLog.id);
+            
+          throw new Error(`Failed to create call via Retell: ${errorMessage}`);
             
           throw new Error(`Retell AI API error: ${response.status} - ${errorData}`);
         }
