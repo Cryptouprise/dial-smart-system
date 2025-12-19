@@ -18,6 +18,27 @@ interface Agent {
   created_at?: string;
 }
 
+// Helper to extract user-friendly error messages from edge function responses
+const extractErrorMessage = async (error: any, defaultMessage: string): Promise<string> => {
+  if (!error) return defaultMessage;
+  
+  // Try to get error from response body
+  try {
+    const errorData = await error.context?.json?.();
+    if (errorData?.error) return errorData.error;
+    if (errorData?.message) return errorData.message;
+  } catch {
+    // Ignore parsing errors
+  }
+  
+  // Check if it's a generic edge function error
+  if (error.message?.includes('non-2xx status code')) {
+    return defaultMessage;
+  }
+  
+  return error.message || defaultMessage;
+};
+
 export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -41,25 +62,22 @@ export const useRetellAI = () => {
       });
 
       if (error) {
-        console.error('[useRetellAI] Import error:', error);
-        throw error;
+        const errorMessage = await extractErrorMessage(error, 'Failed to import phone number');
+        toast({ title: "Import Failed", description: errorMessage, variant: "destructive" });
+        return null;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Import Failed", description: data.error, variant: "destructive" });
+        return null;
       }
 
       console.log('[useRetellAI] Import success:', data);
-
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} imported to Retell AI`,
-      });
-
+      toast({ title: "Success", description: `Phone number ${phoneNumber} imported to Retell AI` });
       return data;
     } catch (error: any) {
-      console.error('[useRetellAI] Import failed:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to import phone number",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to import phone number');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return null;
     } finally {
       setIsLoading(false);
@@ -78,20 +96,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to update phone number');
+        toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
+        return null;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Update Failed", description: data.error, variant: "destructive" });
+        return null;
+      }
 
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} updated`,
-      });
-
+      toast({ title: "Success", description: `Phone number ${phoneNumber} updated` });
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update phone number",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to update phone number');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return null;
     } finally {
       setIsLoading(false);
@@ -108,20 +128,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to delete phone number');
+        toast({ title: "Delete Failed", description: errorMessage, variant: "destructive" });
+        return false;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Delete Failed", description: data.error, variant: "destructive" });
+        return false;
+      }
 
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} deleted from Retell AI`,
-      });
-
+      toast({ title: "Success", description: `Phone number ${phoneNumber} deleted from Retell AI` });
       return true;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete phone number",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to delete phone number');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return false;
     } finally {
       setIsLoading(false);
@@ -137,17 +159,21 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useRetellAI] List phone numbers error:', error);
+        return [];
+      }
+      
+      if (data?.error) {
+        console.error('[useRetellAI] List phone numbers error:', data.error);
+        return [];
+      }
+      
       console.log('[useRetellAI] Phone numbers response:', data);
-      // Retell AI returns array directly, not wrapped in an object
       return Array.isArray(data) ? data : (data?.phone_numbers || []);
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to list phone numbers",
-        variant: "destructive"
-      });
-      return null;
+      console.error('[useRetellAI] List phone numbers failed:', error);
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -163,15 +189,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to list available numbers');
+        toast({ title: "Error", description: errorMessage, variant: "destructive" });
+        return [];
+      }
+      
+      if (data?.error) {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+        return [];
+      }
+      
       return Array.isArray(data) ? data : (data?.available_numbers || []);
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to list available numbers",
-        variant: "destructive"
-      });
-      return null;
+      const errorMessage = await extractErrorMessage(error, 'Failed to list available numbers');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -187,20 +220,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to purchase phone number');
+        toast({ title: "Purchase Failed", description: errorMessage, variant: "destructive" });
+        return null;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Purchase Failed", description: data.error, variant: "destructive" });
+        return null;
+      }
 
-      toast({
-        title: "Success",
-        description: `Phone number ${phoneNumber} purchased from Retell AI`,
-      });
-
+      toast({ title: "Success", description: `Phone number ${phoneNumber} purchased from Retell AI` });
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to purchase phone number",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to purchase phone number');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return null;
     } finally {
       setIsLoading(false);
@@ -216,19 +251,32 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useRetellAI] List agents error:', error);
+        return [];
+      }
+      
+      if (data?.error) {
+        console.error('[useRetellAI] List agents error:', data.error);
+        return [];
+      }
+      
       console.log('[useRetellAI] Agents response:', data);
-      // Retell AI returns array directly, not wrapped in an object
       return Array.isArray(data) ? data : (data?.agents || []);
     } catch (error: any) {
-      console.error('Failed to list agents:', error);
-      return null;
+      console.error('[useRetellAI] List agents failed:', error);
+      return [];
     } finally {
       setIsLoading(false);
     }
   };
 
   const createAgent = async (agentName: string, llmId: string, voiceId?: string, webhookUrl?: string): Promise<Agent | null> => {
+    if (!agentName || !llmId) {
+      toast({ title: "Missing Information", description: "Agent name and LLM are required", variant: "destructive" });
+      return null;
+    }
+    
     setIsLoading(true);
     try {
       console.log('[useRetellAI] Creating agent:', { agentName, llmId, voiceId, webhookUrl });
@@ -244,25 +292,22 @@ export const useRetellAI = () => {
       });
 
       if (error) {
-        console.error('[useRetellAI] Create agent error:', error);
-        throw error;
+        const errorMessage = await extractErrorMessage(error, 'Failed to create agent');
+        toast({ title: "Create Failed", description: errorMessage, variant: "destructive" });
+        return null;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Create Failed", description: data.error, variant: "destructive" });
+        return null;
       }
 
       console.log('[useRetellAI] Agent created:', data);
-
-      toast({
-        title: "Success",
-        description: `Agent "${agentName}" created successfully with webhook configured`,
-      });
-
+      toast({ title: "Success", description: `Agent "${agentName}" created successfully` });
       return data;
     } catch (error: any) {
-      console.error('[useRetellAI] Create agent failed:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create agent",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to create agent');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return null;
     } finally {
       setIsLoading(false);
@@ -270,6 +315,11 @@ export const useRetellAI = () => {
   };
 
   const getAgent = async (agentId: string): Promise<any | null> => {
+    if (!agentId) {
+      console.warn('[useRetellAI] getAgent called without agentId');
+      return null;
+    }
+    
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
@@ -279,14 +329,20 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to get agent details');
+        console.error('[useRetellAI] Get agent error:', errorMessage);
+        return null;
+      }
+      
+      if (data?.error) {
+        console.error('[useRetellAI] Get agent error:', data.error);
+        return null;
+      }
+      
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to get agent details",
-        variant: "destructive"
-      });
+      console.error('[useRetellAI] Get agent failed:', error);
       return null;
     } finally {
       setIsLoading(false);
@@ -294,6 +350,11 @@ export const useRetellAI = () => {
   };
 
   const updateAgent = async (agentId: string, agentConfig: any): Promise<any | null> => {
+    if (!agentId) {
+      toast({ title: "Error", description: "Please select an agent first", variant: "destructive" });
+      return null;
+    }
+    
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
@@ -304,20 +365,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to update agent');
+        toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
+        return null;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Update Failed", description: data.error, variant: "destructive" });
+        return null;
+      }
 
-      toast({
-        title: "Success",
-        description: "Agent updated successfully",
-      });
-
+      toast({ title: "Success", description: "Agent updated successfully" });
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update agent",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to update agent');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return null;
     } finally {
       setIsLoading(false);
@@ -325,6 +388,11 @@ export const useRetellAI = () => {
   };
 
   const deleteAgent = async (agentId: string): Promise<boolean> => {
+    if (!agentId) {
+      toast({ title: "Error", description: "Please select an agent to delete", variant: "destructive" });
+      return false;
+    }
+    
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
@@ -334,20 +402,22 @@ export const useRetellAI = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        const errorMessage = await extractErrorMessage(error, 'Failed to delete agent');
+        toast({ title: "Delete Failed", description: errorMessage, variant: "destructive" });
+        return false;
+      }
+      
+      if (data?.error) {
+        toast({ title: "Delete Failed", description: data.error, variant: "destructive" });
+        return false;
+      }
 
-      toast({
-        title: "Success",
-        description: "Agent deleted successfully",
-      });
-
+      toast({ title: "Success", description: "Agent deleted successfully" });
       return true;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete agent",
-        variant: "destructive"
-      });
+      const errorMessage = await extractErrorMessage(error, 'Failed to delete agent');
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
       return false;
     } finally {
       setIsLoading(false);
