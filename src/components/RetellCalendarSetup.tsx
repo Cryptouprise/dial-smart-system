@@ -55,22 +55,34 @@ const CalendarTestButton: React.FC = () => {
         body: { action: 'test_google_calendar' }
       });
 
-      if (error) throw error;
+      // Handle edge function errors gracefully
+      if (error) {
+        let errorMessage = 'Please connect your Google Calendar first';
+        try {
+          const errorData = await error.context?.json?.();
+          errorMessage = errorData?.error || errorData?.message || errorMessage;
+        } catch {
+          // Keep default message
+        }
+        setTestResult({ success: false, error: errorMessage });
+        toast.error(errorMessage);
+        return;
+      }
       
       setTestResult(data);
       
-      if (data.success) {
+      if (data?.success) {
         toast.success('Calendar test passed!');
       } else {
-        toast.error(data.error || 'Calendar test failed');
+        const errorMsg = data?.error || 'Calendar not configured';
+        toast.error(errorMsg);
       }
     } catch (error: any) {
-      console.error('Calendar test error:', error);
       setTestResult({
         success: false,
-        error: error.message || 'Failed to test calendar connection'
+        error: 'Please connect your Google Calendar first'
       });
-      toast.error('Calendar test failed');
+      toast.error('Please connect your Google Calendar first');
     } finally {
       setIsTesting(false);
     }

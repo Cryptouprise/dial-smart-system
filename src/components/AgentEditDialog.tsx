@@ -643,7 +643,23 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         body: { action: 'test_google_calendar' }
       });
       
-      if (error) throw error;
+      // Handle edge function errors gracefully
+      if (error) {
+        // Try to extract actual error from response
+        let errorMessage = 'Calendar not connected';
+        try {
+          const errorData = await error.context?.json?.();
+          errorMessage = errorData?.error || errorData?.message || errorMessage;
+        } catch {
+          // If response parsing fails, use step-based message
+          if (error.message?.includes('non-2xx')) {
+            errorMessage = 'Please connect your Google Calendar first';
+          }
+        }
+        setCalendarTestStatus('error');
+        setCalendarTestMessage(errorMessage);
+        return;
+      }
       
       if (data?.success) {
         setCalendarTestStatus('success');
@@ -663,14 +679,12 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         toast({ title: 'Calendar Connected', description: 'Your Google Calendar is working correctly' });
       } else {
         setCalendarTestStatus('error');
-        setCalendarTestMessage(data?.message || 'Calendar connection failed');
-        toast({ title: 'Connection Failed', description: data?.message || 'Please check your calendar setup', variant: 'destructive' });
+        const errorMsg = data?.error || data?.message || 'Calendar not configured';
+        setCalendarTestMessage(errorMsg);
       }
     } catch (error: any) {
-      console.error('Calendar test error:', error);
       setCalendarTestStatus('error');
-      setCalendarTestMessage(error.message || 'Failed to test calendar connection');
-      toast({ title: 'Test Failed', description: error.message || 'Could not test calendar connection', variant: 'destructive' });
+      setCalendarTestMessage('Please connect your Google Calendar in the Calendar tab');
     }
   };
 

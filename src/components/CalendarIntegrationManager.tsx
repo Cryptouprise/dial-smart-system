@@ -237,17 +237,49 @@ export const CalendarIntegrationManager: React.FC = () => {
                         const { data, error } = await supabase.functions.invoke('calendar-integration', {
                           body: { action: 'test_google_calendar' }
                         });
-                        if (error) throw error;
-                        if (data.error) throw new Error(data.error);
-                        window.open(data.eventLink, '_blank');
-                        toast({
-                          title: 'Test Event Created!',
-                          description: 'Check your Google Calendar - a test event was added.',
-                        });
+                        
+                        // Handle edge function errors gracefully
+                        if (error) {
+                          let errorMessage = 'Calendar connection issue';
+                          try {
+                            const errorData = await error.context?.json?.();
+                            errorMessage = errorData?.error || errorData?.message || errorMessage;
+                          } catch {
+                            // Keep default message
+                          }
+                          toast({
+                            title: 'Test Failed',
+                            description: errorMessage,
+                            variant: 'destructive'
+                          });
+                          return;
+                        }
+                        
+                        if (data?.error) {
+                          toast({
+                            title: 'Test Failed',
+                            description: data.error,
+                            variant: 'destructive'
+                          });
+                          return;
+                        }
+                        
+                        if (data?.success) {
+                          toast({
+                            title: 'Calendar Connected!',
+                            description: data.message || 'Your calendar is working correctly.',
+                          });
+                        } else if (data?.eventLink) {
+                          window.open(data.eventLink, '_blank');
+                          toast({
+                            title: 'Test Event Created!',
+                            description: 'Check your Google Calendar - a test event was added.',
+                          });
+                        }
                       } catch (err: any) {
                         toast({
                           title: 'Test Failed',
-                          description: err.message || 'Could not create test event',
+                          description: 'Please reconnect your calendar',
                           variant: 'destructive'
                         });
                       }
