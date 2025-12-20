@@ -1,14 +1,14 @@
 import React from 'react';
-import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
-import { SipTrunkManager } from '../SipTrunkManager';
-import AdvancedDialerSettings from '../AdvancedDialerSettings';
-import CampaignSetupWizard from '../CampaignSetupWizard';
-import { AgentEditDialog } from '../AgentEditDialog';
-import WorkflowBuilder from '../WorkflowBuilder';
-import NumberPoolManager from '../NumberPoolManager';
-import VoiceBroadcastManager from '../VoiceBroadcastManager';
-import { LeadScoringSettings } from '../LeadScoringSettings';
-import { RetellCalendarSetup } from '../RetellCalendarSetup';
+import PhoneNumberPurchasing from '@/components/dialing/PhoneNumberPurchasing';
+import { SipTrunkManager } from '@/components/integrations/SipTrunkManager';
+import AdvancedDialerSettings from '@/components/dialing/AdvancedDialerSettings';
+import CampaignSetupWizard from '@/components/campaigns/CampaignSetupWizard';
+import { AgentEditDialog } from '@/components/core/AgentEditDialog';
+import WorkflowBuilder from '@/components/automation/WorkflowBuilder';
+import NumberPoolManager from '@/components/dialing/NumberPoolManager';
+import VoiceBroadcastManager from '@/components/communication/VoiceBroadcastManager';
+import { LeadScoringSettings } from '@/components/leads/LeadScoringSettings';
+import { RetellCalendarSetup } from '@/components/integrations/RetellCalendarSetup';
 
 /**
  * This file maps each configuration area ID to its corresponding existing component.

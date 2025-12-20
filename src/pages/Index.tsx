@@ -1,5 +1,5 @@
-import Navigation from '@/components/Navigation';
-import Dashboard from '@/components/Dashboard';
+import Navigation from '@/components/core/Navigation';
+import Dashboard from '@/components/core/Dashboard';
 
 const Index = () => {
   return (

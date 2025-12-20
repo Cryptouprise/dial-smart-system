@@ -1,6 +1,6 @@
 import React from 'react';
-import Navigation from '@/components/Navigation';
-import TwilioNumbersOverview from '@/components/TwilioNumbersOverview';
+import Navigation from '@/components/core/Navigation';
+import TwilioNumbersOverview from '@/components/integrations/TwilioNumbersOverview';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';

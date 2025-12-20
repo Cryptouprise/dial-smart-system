@@ -22,9 +22,9 @@ import {
   AlertTriangle, CheckCircle2, XCircle
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
-import QuickTestBroadcast from '@/components/QuickTestBroadcast';
-import BroadcastReadinessChecker from '@/components/BroadcastReadinessChecker';
-import BroadcastQueueManager from '@/components/BroadcastQueueManager';
+import QuickTestBroadcast from '@/components/communication/QuickTestBroadcast';
+import BroadcastReadinessChecker from '@/components/communication/BroadcastReadinessChecker';
+import BroadcastQueueManager from '@/components/communication/BroadcastQueueManager';
 
 const ELEVENLABS_VOICES = [
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },

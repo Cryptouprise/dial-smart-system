@@ -1,5 +1,5 @@
 
-import HelpSystem from '@/components/HelpSystem';
+import HelpSystem from '@/components/core/HelpSystem';
 
 const HelpPage = () => {
   return (

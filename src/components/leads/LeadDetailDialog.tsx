@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
+import { LeadScoreIndicator } from '@/components/leads/LeadScoreIndicator';
 import { 
   User, 
   Phone, 

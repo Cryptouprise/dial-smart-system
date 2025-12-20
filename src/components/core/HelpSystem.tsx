@@ -17,7 +17,7 @@ import {
   Bot,
   ExternalLink
 } from 'lucide-react';
-import Navigation from '@/components/Navigation';
+import Navigation from '@/components/core/Navigation';
 
 interface FeatureDoc {
   name: string;

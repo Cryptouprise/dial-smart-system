@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { WorkflowPreview } from './WorkflowPreview';
+import { WorkflowPreview } from '@/components/automation/WorkflowPreview';
 import { 
   Rocket, ChevronRight, ChevronLeft, Check, Users, 
   Workflow, Phone, Settings2, Sparkles, Zap

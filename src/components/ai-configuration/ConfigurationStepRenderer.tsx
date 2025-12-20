@@ -7,18 +7,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles } from 'lucide-react';
 
 // Import the actual configuration components
-import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
-import { SipTrunkManager } from '../SipTrunkManager';
-import AdvancedDialerSettings from '../AdvancedDialerSettings';
-import { CampaignSetupWizard } from '../CampaignSetupWizard';
-import WorkflowBuilder from '../WorkflowBuilder';
-import VoiceBroadcastManager from '../VoiceBroadcastManager';
-import { LeadScoringSettings } from '../LeadScoringSettings';
-import { BudgetManager } from '../BudgetManager';
-import GoHighLevelManager from '../GoHighLevelManager';
-import { RetellAISetupWizard } from '../RetellAISetupWizard';
-import { AIWorkflowGenerator } from '../AIWorkflowGenerator';
-import { LeadUpload } from '../LeadUpload';
+import PhoneNumberPurchasing from '@/components/dialing/PhoneNumberPurchasing';
+import { SipTrunkManager } from '@/components/integrations/SipTrunkManager';
+import AdvancedDialerSettings from '@/components/dialing/AdvancedDialerSettings';
+import { CampaignSetupWizard } from '@/components/campaigns/CampaignSetupWizard';
+import WorkflowBuilder from '@/components/automation/WorkflowBuilder';
+import VoiceBroadcastManager from '@/components/communication/VoiceBroadcastManager';
+import { LeadScoringSettings } from '@/components/leads/LeadScoringSettings';
+import { BudgetManager } from '@/components/core/BudgetManager';
+import GoHighLevelManager from '@/components/integrations/GoHighLevelManager';
+import { RetellAISetupWizard } from '@/components/integrations/RetellAISetupWizard';
+import { AIWorkflowGenerator } from '@/components/ai/AIWorkflowGenerator';
+import { LeadUpload } from '@/components/leads/LeadUpload';
 
 interface ConfigurationStepRendererProps {
   areaId: string;

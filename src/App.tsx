@@ -15,9 +15,9 @@ import ApiKeys from "./pages/ApiKeys";
 import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
-import AiSmsConversations from "./components/AiSmsConversations";
-import AIBrainChat from "./components/AIBrainChat";
-import AIAssistantChat from "./components/AIAssistantChat";
+import AiSmsConversations from "./components/communication/AiSmsConversations";
+import AIBrainChat from "./components/ai/AIBrainChat";
+import AIAssistantChat from "./components/ai/AIAssistantChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
 
 const queryClient = new QueryClient();

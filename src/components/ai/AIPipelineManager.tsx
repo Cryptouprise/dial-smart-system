@@ -29,7 +29,7 @@ import { useAIPipelineManager, useCallTracking } from '@/hooks/useCallTracking';
 import { useAutonomousAgent } from '@/hooks/useAutonomousAgent';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import ScriptManager from './ScriptManager';
+import ScriptManager from '@/components/core/ScriptManager';
 
 const AIPipelineManager: React.FC = () => {
   const { 
