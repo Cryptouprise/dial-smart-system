@@ -1190,6 +1190,64 @@ async function getUserPreferences(supabase: any, userId: string): Promise<Record
   return preferences;
 }
 
+// Learn from successful tool execution
+async function learnFromSuccess(
+  supabase: any,
+  userId: string,
+  toolName: string,
+  args: any,
+  result: any
+) {
+  try {
+    // Create a learning pattern based on the tool and its usage
+    const patternKey = `${toolName}_usage`;
+    const patternValue = {
+      tool: toolName,
+      common_args: args,
+      success_indicators: result.success ? 'completed' : 'failed',
+      timestamp: new Date().toISOString()
+    };
+
+    // Check if pattern exists
+    const { data: existing } = await supabase
+      .from('ai_learning')
+      .select('id, success_count, failure_count')
+      .eq('user_id', userId)
+      .eq('pattern_type', 'tool_usage')
+      .eq('pattern_key', patternKey)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing pattern
+      await supabase
+        .from('ai_learning')
+        .update({
+          success_count: existing.success_count + (result.success ? 1 : 0),
+          failure_count: existing.failure_count + (result.success ? 0 : 1),
+          last_used_at: new Date().toISOString(),
+          pattern_value: patternValue
+        })
+        .eq('id', existing.id);
+    } else {
+      // Create new pattern
+      await supabase
+        .from('ai_learning')
+        .insert({
+          user_id: userId,
+          pattern_type: 'tool_usage',
+          pattern_key: patternKey,
+          pattern_value: patternValue,
+          success_count: result.success ? 1 : 0,
+          failure_count: result.success ? 0 : 1,
+          last_used_at: new Date().toISOString()
+        });
+    }
+  } catch (error) {
+    console.error('Failed to record learning:', error);
+  }
+}
+
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -1335,6 +1393,10 @@ serve(async (req) => {
           toolCall.function.name, 
           args
         );
+        
+        // Learn from tool execution
+        await learnFromSuccess(supabase, user.id, toolCall.function.name, args, result);
+        
         toolResults.push({
           tool_call_id: toolCall.id,
           role: 'tool',
