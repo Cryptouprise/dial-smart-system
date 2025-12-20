@@ -2,6 +2,30 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+// Retry helper for API calls
+const retryWithBackoff = async <T,>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> => {
+  let lastError: Error | undefined;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (attempt < maxRetries - 1) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+};
+
 export interface CalendarIntegration {
   id: string;
   user_id: string;
@@ -190,6 +214,25 @@ export const useCalendarIntegration = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Validate availability data
+      if (updates.weekly_schedule) {
+        const schedule = updates.weekly_schedule;
+        const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        
+        for (const [day, slots] of Object.entries(schedule)) {
+          if (!validDays.includes(day)) {
+            throw new Error(`Invalid day: ${day}`);
+          }
+          if (Array.isArray(slots)) {
+            for (const slot of slots) {
+              if (!slot.start || !slot.end) {
+                throw new Error(`Invalid time slot for ${day}`);
+              }
+            }
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('calendar_availability')
         .upsert({
@@ -289,17 +332,26 @@ export const useCalendarIntegration = () => {
   };
   const syncAppointmentToCalendars = async (appointment: CalendarAppointment) => {
     try {
-      const { data, error } = await supabase.functions.invoke('calendar-integration', {
-        body: {
-          action: 'sync_appointment',
-          appointment
-        }
+      const result = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.functions.invoke('calendar-integration', {
+          body: {
+            action: 'sync_appointment',
+            appointment
+          }
+        });
+
+        if (error) throw error;
+        return data;
       });
 
-      if (error) throw error;
-      return data;
+      return result;
     } catch (error) {
       console.error('Error syncing to calendars:', error);
+      toast({ 
+        title: 'Calendar Sync Warning', 
+        description: 'Appointment created but calendar sync failed. You can manually sync later.',
+        variant: 'default'
+      });
     }
   };
 
