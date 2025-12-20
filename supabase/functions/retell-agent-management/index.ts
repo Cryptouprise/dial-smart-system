@@ -281,25 +281,72 @@ serve(async (req) => {
             if (llmGetResp.ok) {
               const llm = await llmGetResp.json();
               const currentPrompt = String(llm?.general_prompt || '');
-              const markerStart = '[CALENDAR_TOOLING_v1]';
+              const markerStart = '[CALENDAR_TOOLING_v2]';
+              const oldMarkerStart = '[CALENDAR_TOOLING_v1]';
 
-              if (!currentPrompt.includes(markerStart)) {
+              // Remove old version if present
+              let updatedPrompt = currentPrompt.replace(new RegExp(`${oldMarkerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]`, 'g'), '').trim();
+
+              if (!updatedPrompt.includes(markerStart)) {
+                // Get user's timezone for the instructions
+                const { data: availability } = await supabase
+                  .from('calendar_availability')
+                  .select('timezone')
+                  .eq('user_id', userId)
+                  .maybeSingle();
+                
+                const userTimezone = availability?.timezone || 'America/New_York';
+                const currentTime = new Date().toLocaleString('en-US', { 
+                  timeZone: userTimezone,
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZoneName: 'short'
+                });
+
                 const calendarToolingBlock = [
                   markerStart,
-                  'AVAILABILITY RULES:',
-                  '1) If the caller asks about availability / openings / schedule, you MUST call the tool manage_calendar with action="get_available_slots" BEFORE answering.',
-                  '2) Never say "fully booked" or "no openings" unless manage_calendar returns available_slots as an empty list.',
-                  '3) If available_slots is non-empty, read out 3–5 options from available_slots and ask which one they prefer.',
-                  '4) Use the timezone returned by manage_calendar; do not guess dates/times.',
-                  '[/CALENDAR_TOOLING_v1]',
+                  'CALENDAR BOOKING RULES (CRITICAL - ALWAYS FOLLOW):',
+                  '1. ALWAYS call manage_calendar with action="get_available_slots" FIRST before mentioning any appointment times.',
+                  '2. NEVER suggest times without checking availability first - you do not know what times are available until you call the function.',
+                  '3. NEVER book appointments in the past - always check that requested times are in the future.',
+                  '4. When user requests a specific time, check if it\'s in your available slots before confirming.',
+                  '5. If the requested time is not available, politely suggest 2-3 alternatives from the available_slots response.',
+                  '6. After booking, confirm with: "Perfect! I\'ve scheduled your appointment for [DAY] [DATE] at [TIME]."',
+                  '',
+                  'TIMEZONE AWARENESS:',
+                  `- Current time: ${currentTime}`,
+                  `- Your timezone: ${userTimezone}`,
+                  '- All times you mention must be in this timezone.',
+                  '- When someone asks "what time is it" or "today", reference the current time above.',
+                  '- NEVER book appointments for times that have already passed today.',
+                  '',
+                  'BOOKING FLOW:',
+                  '1. User asks for an appointment',
+                  '2. Call manage_calendar(action="get_available_slots", user_id="' + userId + '", duration_minutes=30)',
+                  '3. Wait for response with available_slots array',
+                  '4. Present 3-5 available times from the response',
+                  '5. User chooses a time',
+                  '6. Call manage_calendar(action="book_appointment", user_id="' + userId + '", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_email="...")',
+                  '7. Confirm the booking with full details',
+                  '',
+                  'EXAMPLE CONVERSATION:',
+                  'User: "I need an appointment"',
+                  'You: [Call manage_calendar with get_available_slots] "I have availability at 2 PM, 3 PM, and 4 PM today. Which time works best for you?"',
+                  'User: "2 PM works"',
+                  'You: [Call manage_calendar with book_appointment for 2 PM] "Perfect! I\'ve scheduled your appointment for today at 2 PM."',
+                  '[/CALENDAR_TOOLING_v2]',
                 ].join('\n');
 
-                const nextPrompt = `${currentPrompt}\n\n${calendarToolingBlock}`.trim();
+                updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
 
                 const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
                   method: 'PATCH',
                   headers,
-                  body: JSON.stringify({ general_prompt: nextPrompt }),
+                  body: JSON.stringify({ general_prompt: updatedPrompt }),
                 });
 
                 if (llmUpdateResp.ok) {
