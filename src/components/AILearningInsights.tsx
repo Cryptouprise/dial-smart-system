@@ -14,6 +14,10 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+// Constants
+const MAX_INSIGHTS_DAYS = 30;
+const MAX_TOP_PATTERNS = 5;
+
 interface LearningStats {
   totalInteractions: number;
   positiveFeedback: number;
@@ -51,7 +55,7 @@ export const AILearningInsights: React.FC = () => {
         .from('ai_daily_insights')
         .select('*')
         .order('insight_date', { ascending: false })
-        .limit(30);
+        .limit(MAX_INSIGHTS_DAYS);
 
       if (insights) {
         const totals = insights.reduce(
@@ -78,7 +82,7 @@ export const AILearningInsights: React.FC = () => {
           .from('ai_learning')
           .select('pattern_type, pattern_key, success_count, failure_count')
           .order('success_count', { ascending: false })
-          .limit(5);
+          .limit(MAX_TOP_PATTERNS);
 
         setStats({
           ...totals,
@@ -241,10 +245,12 @@ export const AILearningInsights: React.FC = () => {
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Success Rate</p>
                     <p className="font-bold text-sm">
-                      {(
-                        (pattern.success_count / (pattern.success_count + pattern.failure_count)) *
-                        100
-                      ).toFixed(0)}
+                      {(() => {
+                        const total = pattern.success_count + pattern.failure_count;
+                        return total > 0
+                          ? ((pattern.success_count / total) * 100).toFixed(0)
+                          : '0';
+                      })()}
                       %
                     </p>
                   </div>

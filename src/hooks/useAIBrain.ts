@@ -3,6 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+// Constants
+const MAX_TITLE_LENGTH = 50;
+const DEFAULT_PERSIST_CONVERSATION = true;
+
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -31,7 +35,7 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const persistConversation = options?.persistConversation ?? true; // Default to true
+  const persistConversation = options?.persistConversation ?? DEFAULT_PERSIST_CONVERSATION;
 
   // Parse navigation links from content: [[Display Text|/route]]
   const parseNavigationLinks = useCallback((content: string): { cleanContent: string; links: NavigationLink[] } => {
@@ -106,7 +110,8 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
           .insert({
             user_id: user.user.id,
             session_id: sessionIdRef.current,
-            title: messages.length === 0 ? message.content.slice(0, 50) : null
+            // Generate title from first user message
+            title: role === 'user' && !conversationId ? message.content.slice(0, MAX_TITLE_LENGTH) : null
           })
           .select()
           .single();

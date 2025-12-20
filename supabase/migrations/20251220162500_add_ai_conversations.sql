@@ -43,11 +43,17 @@ CREATE INDEX idx_ai_conversations_user_session ON public.ai_conversations(user_i
 CREATE INDEX idx_ai_conversations_user_updated ON public.ai_conversations(user_id, updated_at DESC);
 CREATE INDEX idx_ai_conversation_messages_conversation ON public.ai_conversation_messages(conversation_id, created_at);
 
--- Trigger for updated_at on ai_conversations
-CREATE TRIGGER update_ai_conversations_updated_at
-  BEFORE UPDATE ON public.ai_conversations
-  FOR EACH ROW
-  EXECUTE FUNCTION public.update_updated_at_column();
+-- Trigger for updated_at on ai_conversations (only if function exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'update_updated_at_column') THEN
+    CREATE TRIGGER update_ai_conversations_updated_at
+      BEFORE UPDATE ON public.ai_conversations
+      FOR EACH ROW
+      EXECUTE FUNCTION public.update_updated_at_column();
+  END IF;
+END
+$$;
 
 -- Function to automatically update conversation updated_at when messages are added
 CREATE OR REPLACE FUNCTION public.update_conversation_timestamp()

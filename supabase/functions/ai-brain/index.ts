@@ -1199,12 +1199,15 @@ async function learnFromSuccess(
   result: any
 ) {
   try {
+    // Validate result structure
+    const isSuccess = result && typeof result === 'object' && result.success === true;
+    
     // Create a learning pattern based on the tool and its usage
     const patternKey = `${toolName}_usage`;
     const patternValue = {
       tool: toolName,
       common_args: args,
-      success_indicators: result.success ? 'completed' : 'failed',
+      success_indicators: isSuccess ? 'completed' : 'failed',
       timestamp: new Date().toISOString()
     };
 
@@ -1222,8 +1225,8 @@ async function learnFromSuccess(
       await supabase
         .from('ai_learning')
         .update({
-          success_count: existing.success_count + (result.success ? 1 : 0),
-          failure_count: existing.failure_count + (result.success ? 0 : 1),
+          success_count: existing.success_count + (isSuccess ? 1 : 0),
+          failure_count: existing.failure_count + (isSuccess ? 0 : 1),
           last_used_at: new Date().toISOString(),
           pattern_value: patternValue
         })
@@ -1237,8 +1240,8 @@ async function learnFromSuccess(
           pattern_type: 'tool_usage',
           pattern_key: patternKey,
           pattern_value: patternValue,
-          success_count: result.success ? 1 : 0,
-          failure_count: result.success ? 0 : 1,
+          success_count: isSuccess ? 1 : 0,
+          failure_count: isSuccess ? 0 : 1,
           last_used_at: new Date().toISOString()
         });
     }
