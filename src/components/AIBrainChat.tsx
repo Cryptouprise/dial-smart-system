@@ -15,7 +15,9 @@ import {
   Trash2,
   Sparkles,
   ChevronRight,
-  Zap
+  Zap,
+  History,
+  Archive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -82,11 +84,15 @@ export const AIBrainChat: React.FC = () => {
     handleNavigation,
     openChat,
     closeChat,
-    quickActions
+    quickActions,
+    loadArchivedConversations,
+    loadConversation
   } = useAIBrainContext();
 
   const [input, setInput] = useState('');
   const [feedbackGiven, setFeedbackGiven] = useState<Set<string>>(new Set());
+  const [showHistory, setShowHistory] = useState(false);
+  const [archivedConversations, setArchivedConversations] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -148,6 +154,17 @@ export const AIBrainChat: React.FC = () => {
     navigate(route);
   }, [handleNavigation, navigate]);
 
+  const handleShowHistory = async () => {
+    setShowHistory(true);
+    const conversations = await loadArchivedConversations();
+    setArchivedConversations(conversations);
+  };
+
+  const handleLoadConversation = async (convId: string) => {
+    await loadConversation(convId);
+    setShowHistory(false);
+  };
+
   if (!isOpen) {
     return (
       <Button
@@ -169,15 +186,28 @@ export const AIBrainChat: React.FC = () => {
             <CardTitle className="text-lg">AI Assistant</CardTitle>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={clearMessages}
-              className="h-8 w-8"
-              title="Clear conversation"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            {!showHistory && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleShowHistory}
+                  className="h-8 w-8"
+                  title="View conversation history"
+                >
+                  <History className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={clearMessages}
+                  className="h-8 w-8"
+                  title="Clear conversation"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -189,37 +219,83 @@ export const AIBrainChat: React.FC = () => {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘K</kbd> to toggle
+          {showHistory ? 'Your conversation history' : (
+            <>Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘K</kbd> to toggle</>
+          )}
         </p>
       </CardHeader>
 
       <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-        {/* Messages */}
-        <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-          <div className="space-y-4 py-4">
-            {messages.length === 0 && (
-              <div className="text-center py-8">
-                <Sparkles className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-sm text-muted-foreground mb-4">
-                  I can help you manage your dialer system. Try asking me to:
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  <QuickActionButton
-                    label="System Status"
-                    onClick={() => quickActions.status()}
-                    icon={<Zap className="h-3 w-3" />}
-                  />
-                  <QuickActionButton
-                    label="Create Workflow"
-                    onClick={() => sendMessage('Help me create a workflow')}
-                  />
-                  <QuickActionButton
-                    label="Send SMS Blast"
-                    onClick={() => sendMessage('I want to send an SMS blast')}
-                  />
+        {showHistory ? (
+          /* Conversation History View */
+          <ScrollArea className="flex-1 px-4">
+            <div className="space-y-2 py-4">
+              {archivedConversations.length === 0 ? (
+                <div className="text-center py-8">
+                  <Archive className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                  <p className="text-sm text-muted-foreground">
+                    No archived conversations yet
+                  </p>
                 </div>
-              </div>
-            )}
+              ) : (
+                <>
+                  {archivedConversations.map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() => handleLoadConversation(conv.id)}
+                      className="w-full text-left p-3 rounded-lg border border-border hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm truncate">
+                          {conv.title || 'Untitled conversation'}
+                        </span>
+                        <Archive className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(conv.updated_at).toLocaleDateString()} at{' '}
+                        {new Date(conv.updated_at).toLocaleTimeString()}
+                      </p>
+                    </button>
+                  ))}
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full mt-4"
+                onClick={() => setShowHistory(false)}
+              >
+                Back to Chat
+              </Button>
+            </div>
+          </ScrollArea>
+        ) : (
+          <>
+            {/* Messages */}
+            <ScrollArea className="flex-1 px-4" ref={scrollRef}>
+              <div className="space-y-4 py-4">
+                {messages.length === 0 && (
+                  <div className="text-center py-8">
+                    <Sparkles className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-sm text-muted-foreground mb-4">
+                      I can help you manage your dialer system. Try asking me to:
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      <QuickActionButton
+                        label="System Status"
+                        onClick={() => quickActions.status()}
+                        icon={<Zap className="h-3 w-3" />}
+                      />
+                      <QuickActionButton
+                        label="Create Workflow"
+                        onClick={() => sendMessage('Help me create a workflow')}
+                      />
+                      <QuickActionButton
+                        label="Send SMS Blast"
+                        onClick={() => sendMessage('I want to send an SMS blast')}
+                      />
+                    </div>
+                  </div>
+                )}
 
             {messages.map((message) => (
               <div
@@ -284,24 +360,24 @@ export const AIBrainChat: React.FC = () => {
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-        </ScrollArea>
+              )}
+            </div>
+          </ScrollArea>
 
-        {/* Input */}
-        <div className="p-4 border-t">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything... (try /help)"
-              disabled={isLoading}
-              className="flex-1"
-            />
-            <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+          {/* Input */}
+          <div className="p-4 border-t">
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <Input
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask anything... (try /help)"
+                disabled={isLoading}
+                className="flex-1"
+              />
+              <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Send className="h-4 w-4" />
               )}
@@ -309,18 +385,20 @@ export const AIBrainChat: React.FC = () => {
           </form>
           
           {/* Retry button if last message was an error */}
-          {messages.length > 0 && messages[messages.length - 1]?.content?.includes('error') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={retryLastMessage}
-              className="mt-2 w-full"
-            >
-              <RefreshCw className="h-3 w-3 mr-2" />
-              Retry
-            </Button>
-          )}
-        </div>
+            {messages.length > 0 && messages[messages.length - 1]?.content?.includes('error') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={retryLastMessage}
+                className="mt-2 w-full"
+              >
+                <RefreshCw className="h-3 w-3 mr-2" />
+                Retry
+              </Button>
+            )}
+          </div>
+        </>
+        )}
       </CardContent>
     </Card>
   );
