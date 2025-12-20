@@ -9,25 +9,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import Navigation from '@/components/Navigation';
-import EnhancedSpamDashboard from '@/components/EnhancedSpamDashboard';
-import ChatbotSettings from '@/components/ChatbotSettings';
-import PhoneNumberRow from '@/components/PhoneNumberRow';
-import { LeadScoringSettings } from '@/components/LeadScoringSettings';
-import GoHighLevelManager from '@/components/GoHighLevelManager';
-import YellowstoneManager from '@/components/YellowstoneManager';
+import Navigation from '@/components/core/Navigation';
+import EnhancedSpamDashboard from '@/components/security/EnhancedSpamDashboard';
+import ChatbotSettings from '@/components/core/ChatbotSettings';
+import PhoneNumberRow from '@/components/dialing/PhoneNumberRow';
+import { LeadScoringSettings } from '@/components/leads/LeadScoringSettings';
+import GoHighLevelManager from '@/components/integrations/GoHighLevelManager';
+import YellowstoneManager from '@/components/integrations/YellowstoneManager';
 import { useAiSmsMessaging } from '@/hooks/useAiSmsMessaging';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { Sparkles, MessageSquare, Shield, AlertCircle, Phone, ShoppingCart, Target, Calendar, Link, Server, FlaskConical } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { RetellBusinessVerification } from '@/components/RetellBusinessVerification';
-import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
-import { SipTrunkManager } from '@/components/SipTrunkManager';
+import { RetellBusinessVerification } from '@/components/integrations/RetellBusinessVerification';
+import { CalendarIntegrationManager } from '@/components/integrations/CalendarIntegrationManager';
+import { SipTrunkManager } from '@/components/integrations/SipTrunkManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { CallSimulator } from '@/components/CallSimulator';
-import { RateLimitingSettings } from '@/components/RateLimitingSettings';
+import { CallSimulator } from '@/components/communication/CallSimulator';
+import { RateLimitingSettings } from '@/components/security/RateLimitingSettings';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);

@@ -10,7 +10,7 @@ import {
   Mail, Clock, AlertTriangle, CheckCircle, Loader2, Zap 
 } from 'lucide-react';
 import { useReachabilityScoring } from '@/hooks/useReachabilityScoring';
-import LowScoreAutomation from './LowScoreAutomation';
+import LowScoreAutomation from '@/components/leads/LowScoreAutomation';
 
 interface LeadWithScore {
   id: string;

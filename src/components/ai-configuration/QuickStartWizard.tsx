@@ -8,9 +8,9 @@ import {
   Phone, Bot, Users, Zap, CheckCircle2, ArrowRight, ArrowLeft, 
   ChevronDown, SkipForward, Sparkles, Rocket, Info
 } from 'lucide-react';
-import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
-import { RetellAISetupWizard } from '../RetellAISetupWizard';
-import { LeadUpload } from '../LeadUpload';
+import PhoneNumberPurchasing from '@/components/dialing/PhoneNumberPurchasing';
+import { RetellAISetupWizard } from '@/components/integrations/RetellAISetupWizard';
+import { LeadUpload } from '@/components/leads/LeadUpload';
 import { useToast } from '@/hooks/use-toast';
 
 interface QuickStartWizardProps {

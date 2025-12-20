@@ -2,9 +2,9 @@
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import Navigation from '@/components/Navigation';
+import Navigation from '@/components/core/Navigation';
 import TranscriptAnalyzer from '@/components/TranscriptAnalyzer';
-import PipelineKanban from '@/components/PipelineKanban';
+import PipelineKanban from '@/components/leads/PipelineKanban';
 import { Brain, BarChart3, Workflow, TrendingUp } from 'lucide-react';
 
 const Analytics = () => {

@@ -4,17 +4,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Phone, Users, Target, BarChart3, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
-import LeadManager from '@/components/LeadManager';
-import CampaignManager from '@/components/CampaignManager';
-import DialingAnalytics from '@/components/DialingAnalytics';
-import ConcurrencyMonitor from '@/components/ConcurrencyMonitor';
-import PredictiveDialingEngine from '@/components/PredictiveDialingEngine';
-import AdvancedDialerSettings from '@/components/AdvancedDialerSettings';
-import DialingPerformanceDashboard from '@/components/DialingPerformanceDashboard';
-import QuickTestCampaign from '@/components/QuickTestCampaign';
-import IntelligentPacingPanel from '@/components/IntelligentPacingPanel';
-import SmartRetryPanel from '@/components/SmartRetryPanel';
-import LiveCallMonitor from '@/components/LiveCallMonitor';
+import LeadManager from '@/components/leads/LeadManager';
+import CampaignManager from '@/components/campaigns/CampaignManager';
+import DialingAnalytics from '@/components/dialing/DialingAnalytics';
+import ConcurrencyMonitor from '@/components/dialing/ConcurrencyMonitor';
+import PredictiveDialingEngine from '@/components/dialing/PredictiveDialingEngine';
+import AdvancedDialerSettings from '@/components/dialing/AdvancedDialerSettings';
+import DialingPerformanceDashboard from '@/components/dialing/DialingPerformanceDashboard';
+import QuickTestCampaign from '@/components/campaigns/QuickTestCampaign';
+import IntelligentPacingPanel from '@/components/dialing/IntelligentPacingPanel';
+import SmartRetryPanel from '@/components/dialing/SmartRetryPanel';
+import LiveCallMonitor from '@/components/communication/LiveCallMonitor';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();

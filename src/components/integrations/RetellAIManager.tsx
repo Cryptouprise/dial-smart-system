@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
-import { AgentEditDialog } from './AgentEditDialog';
+import { AgentEditDialog } from '@/components/core/AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
 import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX } from 'lucide-react';
 

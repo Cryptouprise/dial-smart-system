@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
+import { AiSmsAgentGenerator } from '@/components/communication/AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useCampaignCompliance } from '@/hooks/useCampaignCompliance';
 import { useLeadPrioritization } from '@/hooks/useLeadPrioritization';
@@ -19,7 +19,7 @@ import { CampaignReadinessChecker } from './CampaignReadinessChecker';
 import { useCampaignReadiness } from '@/hooks/useCampaignReadiness';
 import { CampaignCallActivity } from './CampaignCallActivity';
 import { CampaignWizard } from './CampaignWizard';
-import { WorkflowPreview } from './WorkflowPreview';
+import { WorkflowPreview } from '@/components/automation/WorkflowPreview';
 import { CampaignWorkflowEditor } from './CampaignWorkflowEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';

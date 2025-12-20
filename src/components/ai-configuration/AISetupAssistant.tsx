@@ -6,7 +6,7 @@ import {
   Sparkles, Phone, User, MessageSquare, Settings, 
   Zap, TrendingUp, Target, Clock
 } from 'lucide-react';
-import { AIAssistantChat } from '../AIAssistantChat';
+import { AIAssistantChat } from '@/components/ai/AIAssistantChat';
 
 interface QuickAction {
   id: string;

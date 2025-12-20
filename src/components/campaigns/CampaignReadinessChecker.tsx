@@ -13,7 +13,7 @@ import {
   RetellPhoneFixDialog,
   WaitStepsFixDialog,
   AISmsFixDialog
-} from './ReadinessFixDialogs';
+} from '@/components/core/ReadinessFixDialogs';
 
 interface CampaignReadinessCheckerProps {
   campaignId: string;

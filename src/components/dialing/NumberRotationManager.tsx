@@ -10,11 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { Upload, RotateCw, Settings, Play, Pause, Zap, Bot, Shield, RefreshCw, BarChart3, History, Database } from 'lucide-react';
-import CallAnalytics from './CallAnalytics';
+import CallAnalytics from '@/components/analytics/CallAnalytics';
 import RotationHistory from './RotationHistory';
 import NumberPoolManager from './NumberPoolManager';
-import AutomationEngine from './AutomationEngine';
-import AlertSystem from './AlertSystem';
+import AutomationEngine from '@/components/automation/AutomationEngine';
+import AlertSystem from '@/components/core/AlertSystem';
 
 interface NumberRotationManagerProps {
   numbers: any[];

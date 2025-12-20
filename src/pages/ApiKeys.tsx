@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
-import Navigation from '@/components/Navigation';
+import Navigation from '@/components/core/Navigation';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ApiCredentials {
