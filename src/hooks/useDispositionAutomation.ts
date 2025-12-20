@@ -11,6 +11,7 @@ export interface DispositionRule {
   follow_up_action: 'none' | 'callback' | 'sequence';
   follow_up_delay_minutes?: number;
   sequence_id?: string;
+  confidence_threshold?: number; // New: minimum confidence for auto-apply
   created_at: string;
 }
 
@@ -118,12 +119,13 @@ export const useDispositionAutomation = () => {
     }
   }, [toast]);
 
-  // Apply disposition to a call/lead
+  // Apply disposition to a call/lead with ML learning
   const applyDisposition = useCallback(async (params: {
     callLogId: string;
     leadId: string;
     dispositionName: string;
     notes?: string;
+    confidenceScore?: number; // New: track AI confidence
   }) => {
     setIsLoading(true);
     try {
@@ -145,7 +147,8 @@ export const useDispositionAutomation = () => {
         .from('call_logs')
         .update({
           outcome: params.dispositionName.toLowerCase().replace(/\s+/g, '_'),
-          notes: params.notes
+          notes: params.notes,
+          confidence_score: params.confidenceScore
         })
         .eq('id', params.callLogId);
 
@@ -200,7 +203,7 @@ export const useDispositionAutomation = () => {
               position: 0,
               moved_at: new Date().toISOString(),
               moved_by_user: false,
-              notes: `Auto-moved from disposition: ${params.dispositionName}`
+              notes: `Auto-moved from disposition: ${params.dispositionName}${params.confidenceScore ? ` (confidence: ${(params.confidenceScore * 100).toFixed(1)}%)` : ''}`
             });
         }
       }
@@ -227,9 +230,64 @@ export const useDispositionAutomation = () => {
           });
       }
 
+      // Record ML learning data for disposition accuracy tracking
+      try {
+        await supabase
+          .from('ml_learning_data')
+          .insert({
+            user_id: user.id,
+            call_id: params.callLogId,
+            lead_id: params.leadId,
+            call_outcome: params.dispositionName,
+            disposition: params.dispositionName,
+            confidence_score: params.confidenceScore || 0,
+            sentiment_score: dispConfig?.sentiment === 'positive' ? 0.8 : dispConfig?.sentiment === 'negative' ? 0.2 : 0.5,
+            created_at: new Date().toISOString()
+          });
+      } catch (learningError) {
+        console.error('Error recording ML learning data:', learningError);
+        // Don't fail the main operation
+      }
+
+      // Update disposition accuracy tracking
+      try {
+        const { data: accuracyRecord } = await supabase
+          .from('disposition_accuracy_tracking')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('disposition_name', params.dispositionName)
+          .maybeSingle();
+
+        if (accuracyRecord) {
+          // Update existing record
+          await supabase
+            .from('disposition_accuracy_tracking')
+            .update({
+              auto_predicted_count: accuracyRecord.auto_predicted_count + 1,
+              last_updated: new Date().toISOString()
+            })
+            .eq('id', accuracyRecord.id);
+        } else {
+          // Create new record
+          await supabase
+            .from('disposition_accuracy_tracking')
+            .insert({
+              user_id: user.id,
+              disposition_name: params.dispositionName,
+              auto_predicted_count: 1,
+              correct_predictions: 0,
+              accuracy_rate: 0,
+              avg_confidence: params.confidenceScore || 0,
+              last_updated: new Date().toISOString()
+            });
+        }
+      } catch (trackingError) {
+        console.error('Error updating disposition tracking:', trackingError);
+      }
+
       toast({
         title: "Disposition Applied",
-        description: `${params.dispositionName} applied successfully`,
+        description: `${params.dispositionName} applied successfully${params.confidenceScore ? ` (${(params.confidenceScore * 100).toFixed(1)}% confidence)` : ''}`,
       });
 
       return true;
