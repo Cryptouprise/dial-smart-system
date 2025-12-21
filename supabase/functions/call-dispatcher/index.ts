@@ -46,8 +46,9 @@ serve(async (req) => {
     let requestBody = {};
     try {
       requestBody = await req.json();
-    } catch {
-      // No body or invalid JSON is fine
+    } catch (parseError) {
+      // No body or invalid JSON is fine for GET requests
+      console.warn('Request body parse failed (expected for GET):', parseError);
     }
 
     const action = (requestBody as any).action;

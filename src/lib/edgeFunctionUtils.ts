@@ -15,8 +15,9 @@ export async function extractEdgeFunctionError(error: any): Promise<string> {
       if (errorData?.message) {
         return errorData.message;
       }
-    } catch {
-      // If we can't parse the response, fall through
+    } catch (parseError) {
+      // If we can't parse the response, fall through - this is expected for some error types
+      console.error('Unable to parse edge function error response:', parseError);
     }
   }
   

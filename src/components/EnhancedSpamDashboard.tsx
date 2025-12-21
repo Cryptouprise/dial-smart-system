@@ -144,7 +144,9 @@ export const EnhancedSpamDashboard = () => {
         if (error.context?.body) {
           errorData = JSON.parse(error.context.body);
         }
-      } catch {}
+      } catch (parseError) {
+        console.error('Failed to parse error response:', parseError);
+      }
       
       if (errorData?.needsVoiceIntegrity) {
         toast({

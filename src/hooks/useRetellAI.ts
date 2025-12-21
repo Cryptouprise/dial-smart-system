@@ -27,8 +27,9 @@ const extractErrorMessage = async (error: any, defaultMessage: string): Promise<
     const errorData = await error.context?.json?.();
     if (errorData?.error) return errorData.error;
     if (errorData?.message) return errorData.message;
-  } catch {
-    // Ignore parsing errors
+  } catch (parseError) {
+    // Ignore parsing errors - this is expected for some error responses
+    console.error('Unable to parse Retell AI error response:', parseError);
   }
   
   // Check if it's a generic edge function error
