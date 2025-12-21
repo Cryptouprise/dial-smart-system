@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -89,7 +89,7 @@ const Dashboard = () => {
     setSearchParams({ tab });
   };
 
-  const loadNumbers = async () => {
+  const loadNumbers = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('phone_numbers')
@@ -129,11 +129,11 @@ const Dashboard = () => {
         variant: 'destructive'
       });
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadNumbers();
-  }, []);
+  }, [loadNumbers]);
 
   const handleTestCall = (phoneNumber: string) => {
     toast({
