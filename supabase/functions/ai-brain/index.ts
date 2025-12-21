@@ -1380,7 +1380,8 @@ serve(async (req) => {
       const parsedToolResults = toolResults.map(tr => {
         try {
           return JSON.parse(tr.content);
-        } catch {
+        } catch (parseError) {
+          console.error('Failed to parse tool result:', parseError);
           return { raw: tr.content, parseError: true };
         }
       });

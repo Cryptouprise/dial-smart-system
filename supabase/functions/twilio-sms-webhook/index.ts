@@ -78,7 +78,8 @@ function validateTwilioPayload(data: Record<string, string>): { valid: boolean; 
       if (!url.hostname.includes('twilio.com') && !url.hostname.includes('cloudfront.net')) {
         console.warn('[Twilio SMS Webhook] Non-Twilio media URL:', url.hostname);
       }
-    } catch {
+    } catch (error) {
+      console.error('Invalid MediaUrl0 format:', error);
       return { valid: false, error: 'Invalid MediaUrl0 format' };
     }
   }
