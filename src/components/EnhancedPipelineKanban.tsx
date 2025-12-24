@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Progress } from '@/components/ui/progress';
 import { usePipelineManagement } from '@/hooks/usePipelineManagement';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
@@ -17,7 +16,6 @@ import {
   Users, 
   Phone, 
   Calendar, 
-  ArrowRight, 
   Filter, 
   Mail, 
   Building, 
@@ -25,14 +23,11 @@ import {
   Clock, 
   Star, 
   TrendingUp,
-  TrendingDown,
   Activity,
   Zap,
   Target,
-  Sparkles,
-  BarChart3,
-  CheckCircle2,
-  AlertCircle
+  MoreHorizontal,
+  GripVertical
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format } from 'date-fns';
@@ -66,19 +61,14 @@ const EnhancedPipelineKanban = () => {
   const pipelineMetrics = useMemo(() => {
     const totalLeads = leadPositions.length;
     const activeBoards = pipelineBoards.length;
-    
-    // Calculate conversion rate (mock for now)
     const conversionRate = totalLeads > 0 ? Math.round((totalLeads * 0.23)) : 0;
-    
-    // Calculate velocity (leads moved in last 24h - mock)
     const velocity = Math.floor(totalLeads * 0.15);
     
     return {
       totalLeads,
       activeBoards,
-      conversionRate: Math.min(100, (conversionRate / totalLeads) * 100),
-      velocity,
-      averageTimeInStage: '2.3 days'
+      conversionRate: Math.min(100, (conversionRate / Math.max(totalLeads, 1)) * 100),
+      velocity
     };
   }, [leadPositions, pipelineBoards]);
 
@@ -152,7 +142,7 @@ const EnhancedPipelineKanban = () => {
     await moveLeadToPipeline(
       leadPosition.lead_id, 
       destination.droppableId,
-      'Moved via Enhanced Kanban board'
+      'Moved via Kanban board'
     );
   };
 
@@ -172,14 +162,16 @@ const EnhancedPipelineKanban = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center space-y-4">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
-            <Sparkles className="h-6 w-6 text-indigo-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          <div className="relative w-16 h-16 mx-auto">
+            <div className="absolute inset-0 rounded-full border-4 border-primary/20"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin"></div>
           </div>
-          <p className="text-lg font-medium text-slate-700 dark:text-slate-300">Loading Pipeline Intelligence...</p>
-          <p className="text-sm text-slate-500">Analyzing your sales data</p>
+          <div className="space-y-1">
+            <p className="text-lg font-semibold text-foreground">Loading Pipeline</p>
+            <p className="text-sm text-muted-foreground">Fetching your sales data...</p>
+          </div>
         </div>
       </div>
     );
@@ -187,427 +179,379 @@ const EnhancedPipelineKanban = () => {
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
-        {/* Enhanced Header with Metrics */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-1">
-          <div className="bg-slate-900/90 backdrop-blur-xl rounded-xl p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-indigo-500/20 rounded-xl backdrop-blur-sm">
-                    <Target className="h-6 w-6 text-indigo-400" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-                      Sales Pipeline
-                      <Sparkles className="h-5 w-5 text-yellow-400 animate-pulse" />
-                    </h1>
-                    <p className="text-indigo-200">AI-Powered Lead Management System</p>
-                  </div>
-                </div>
+      <div className="space-y-6 p-1">
+        {/* Header Section */}
+        <div className="flex flex-col gap-6">
+          {/* Title & Actions Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">Sales Pipeline</h1>
+              <p className="text-sm text-muted-foreground">Manage and track your leads through each stage</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={filterDisposition}
+                  onChange={(e) => setFilterDisposition(e.target.value)}
+                  className="h-9 px-3 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="all">All Stages</option>
+                  {dispositions.map(disposition => (
+                    <option key={disposition.id} value={disposition.name}>
+                      {disposition.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                  <div className="flex items-center gap-2 text-white/70 text-sm mb-1">
-                    <Users className="h-4 w-4" />
-                    <span>Total Leads</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white">{pipelineMetrics.totalLeads}</div>
-                </div>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                  <div className="flex items-center gap-2 text-white/70 text-sm mb-1">
-                    <TrendingUp className="h-4 w-4" />
-                    <span>Conversion</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white">{pipelineMetrics.conversionRate.toFixed(1)}%</div>
-                </div>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                  <div className="flex items-center gap-2 text-white/70 text-sm mb-1">
-                    <Zap className="h-4 w-4" />
-                    <span>Velocity</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white">{pipelineMetrics.velocity}/day</div>
-                </div>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                  <div className="flex items-center gap-2 text-white/70 text-sm mb-1">
-                    <Activity className="h-4 w-4" />
-                    <span>Stages</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white">{pipelineMetrics.activeBoards}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            <Filter className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-            <select
-              value={filterDisposition}
-              onChange={(e) => setFilterDisposition(e.target.value)}
-              className="flex-1 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-slate-800 hover:border-indigo-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-            >
-              <option value="all">All Pipeline Stages</option>
-              {dispositions.map(disposition => (
-                <option key={disposition.id} value={disposition.name}>
-                  {disposition.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 transition-all">
-                <Plus className="h-5 w-5 mr-2" />
-                Create New Stage
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="text-2xl flex items-center gap-2">
-                  <Sparkles className="h-6 w-6 text-indigo-500" />
-                  Create Pipeline Stage
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-5 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="stage-name" className="text-sm font-medium">Stage Name *</Label>
-                  <Input
-                    id="stage-name"
-                    placeholder="e.g., Qualified Prospects"
-                    value={newDisposition.name}
-                    onChange={(e) => setNewDisposition(prev => ({ 
-                      ...prev, 
-                      name: e.target.value,
-                      pipeline_stage: e.target.value.toLowerCase().replace(/\s+/g, '_')
-                    }))}
-                    className="border-2 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="stage-description" className="text-sm font-medium">Description</Label>
-                  <Textarea
-                    id="stage-description"
-                    placeholder="Describe the purpose of this stage..."
-                    value={newDisposition.description}
-                    onChange={(e) => setNewDisposition(prev => ({ ...prev, description: e.target.value }))}
-                    rows={3}
-                    className="border-2 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="stage-color" className="text-sm font-medium">Stage Color</Label>
-                    <div className="flex items-center gap-2">
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">Add Stage</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Create Pipeline Stage</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="stage-name">Stage Name</Label>
                       <Input
-                        id="stage-color"
-                        type="color"
-                        value={newDisposition.color}
-                        onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
-                        className="w-14 h-11 p-1 border-2 rounded-lg cursor-pointer"
-                      />
-                      <Input
-                        value={newDisposition.color}
-                        onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
-                        placeholder="#6366f1"
-                        className="flex-1 border-2"
+                        id="stage-name"
+                        placeholder="e.g., Qualified Leads"
+                        value={newDisposition.name}
+                        onChange={(e) => setNewDisposition(prev => ({ 
+                          ...prev, 
+                          name: e.target.value,
+                          pipeline_stage: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                        }))}
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="pipeline-stage" className="text-sm font-medium">Stage Key</Label>
-                    <Input
-                      id="pipeline-stage"
-                      placeholder="e.g., qualified_prospects"
-                      value={newDisposition.pipeline_stage}
-                      onChange={(e) => setNewDisposition(prev => ({ ...prev, pipeline_stage: e.target.value }))}
-                      className="border-2"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-3 pt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setIsDialogOpen(false)}
-                    disabled={isCreating}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleCreateDisposition} 
-                    disabled={!newDisposition.name.trim() || isCreating}
-                    className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-                  >
-                    {isCreating ? 'Creating...' : 'Create Stage'}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {/* Enhanced Kanban Board */}
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-            {pipelineBoards.map((board, boardIndex) => {
-              const boardLeads = groupedLeads[board.id] || [];
-              const stats = getBoardStats(boardLeads);
-              const completionRate = stats.total > 0 ? (stats.contacted / stats.total) * 100 : 0;
-              
-              return (
-                <div
-                  key={board.id}
-                  className="relative group"
-                  style={{ animationDelay: `${boardIndex * 50}ms` }}
-                >
-                  {/* Glassmorphic Card with Gradient Border */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                  
-                  <Card className="relative h-full backdrop-blur-sm bg-white/80 dark:bg-slate-900/80 border-2 border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all duration-300 shadow-lg hover:shadow-2xl hover:shadow-indigo-500/10">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3 flex-1">
-                          {board.disposition && (
-                            <div 
-                              className="w-4 h-4 rounded-full ring-4 ring-white dark:ring-slate-900 shadow-lg"
-                              style={{ backgroundColor: board.disposition.color }}
-                            />
-                          )}
-                          <CardTitle className="text-lg font-bold truncate">
-                            {board.name}
-                          </CardTitle>
-                        </div>
-                        <Badge 
-                          variant="secondary" 
-                          className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 font-semibold px-3 py-1"
-                        >
-                          {stats.total}
-                        </Badge>
-                      </div>
-                      
-                      {board.disposition?.description && (
-                        <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 mb-3">
-                          {board.disposition.description}
-                        </p>
-                      )}
-                      
-                      {/* Enhanced Stats */}
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-2">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex flex-col items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                <Users className="h-4 w-4 text-blue-600 dark:text-blue-400 mb-1" />
-                                <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{stats.newLeads}</span>
-                                <span className="text-xs text-blue-600 dark:text-blue-400">New</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>New leads in this stage</TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex flex-col items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                                <Phone className="h-4 w-4 text-green-600 dark:text-green-400 mb-1" />
-                                <span className="text-sm font-bold text-green-700 dark:text-green-300">{stats.contacted}</span>
-                                <span className="text-xs text-green-600 dark:text-green-400">Contact</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Contacted leads</TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex flex-col items-center p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                                <Star className="h-4 w-4 text-amber-600 dark:text-amber-400 mb-1" />
-                                <span className="text-sm font-bold text-amber-700 dark:text-amber-300">{stats.highPriority}</span>
-                                <span className="text-xs text-amber-600 dark:text-amber-400">Hot</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>High priority leads</TooltipContent>
-                          </Tooltip>
-                        </div>
-                        
-                        {/* Progress Bar */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-600 dark:text-slate-400">Engagement</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">{completionRate.toFixed(0)}%</span>
-                          </div>
-                          <Progress 
-                            value={completionRate} 
-                            className="h-2 bg-slate-200 dark:bg-slate-700"
+                    <div className="space-y-2">
+                      <Label htmlFor="stage-description">Description</Label>
+                      <Textarea
+                        id="stage-description"
+                        placeholder="Describe the purpose of this stage..."
+                        value={newDisposition.description}
+                        onChange={(e) => setNewDisposition(prev => ({ ...prev, description: e.target.value }))}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="space-y-2">
+                        <Label>Color</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={newDisposition.color}
+                            onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
+                            className="w-10 h-10 rounded-md cursor-pointer border border-input"
+                          />
+                          <Input
+                            value={newDisposition.color}
+                            onChange={(e) => setNewDisposition(prev => ({ ...prev, color: e.target.value }))}
+                            className="w-24 font-mono text-sm"
                           />
                         </div>
                       </div>
-                    </CardHeader>
-                    
-                    <Droppable droppableId={board.id}>
-                      {(provided, snapshot) => (
-                        <CardContent
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={`px-4 pb-4 transition-all duration-200 ${
-                            snapshot.isDraggingOver 
-                              ? 'bg-indigo-50/50 dark:bg-indigo-900/10 ring-2 ring-indigo-400 ring-inset' 
-                              : ''
-                          }`}
-                        >
-                          <ScrollArea className="h-[600px] pr-3">
-                            <div className="space-y-3">
-                              {boardLeads.map((position, index) => (
-                                <Draggable 
-                                  key={position.id} 
-                                  draggableId={position.id} 
-                                  index={index}
-                                >
-                                  {(provided, snapshot) => (
-                                    <div
-                                      ref={provided.innerRef}
-                                      {...provided.draggableProps}
-                                      {...provided.dragHandleProps}
-                                      onClick={() => position.lead && handleLeadClick(position.lead)}
-                                      className={`group/card relative p-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:border-indigo-400 dark:hover:border-indigo-500 transition-all duration-200 cursor-pointer ${
-                                        snapshot.isDragging 
-                                          ? 'rotate-2 scale-105 shadow-2xl shadow-indigo-500/30 ring-2 ring-indigo-500 border-indigo-500' 
-                                          : 'hover:scale-[1.02]'
-                                      }`}
-                                    >
-                                      {position.lead && (
-                                        <div className="space-y-3">
-                                          {/* Lead Header */}
-                                          <div className="flex items-start justify-between gap-3">
-                                            <div className="flex-1 min-w-0">
-                                              <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                                                {[position.lead.first_name, position.lead.last_name].filter(Boolean).join(' ') || 'Unknown Lead'}
-                                              </h4>
-                                              <Badge 
-                                                variant="outline" 
-                                                className="mt-1.5 text-xs capitalize"
-                                              >
-                                                {position.lead.status}
-                                              </Badge>
-                                            </div>
-                                            <LeadScoreIndicator priority={position.lead.priority} size="md" />
-                                          </div>
-                                          
-                                          {/* Contact Details */}
-                                          <div className="space-y-2 text-sm">
-                                            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                                              <Phone className="h-3.5 w-3.5 shrink-0" />
-                                              <span className="truncate font-medium">{position.lead.phone_number}</span>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2">
+                      <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isCreating}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateDisposition} disabled={!newDisposition.name.trim() || isCreating}>
+                        {isCreating ? 'Creating...' : 'Create Stage'}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+
+          {/* Metrics Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{pipelineMetrics.totalLeads}</p>
+                    <p className="text-xs text-muted-foreground">Total Leads</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-500/10 rounded-lg">
+                    <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{pipelineMetrics.conversionRate.toFixed(0)}%</p>
+                    <p className="text-xs text-muted-foreground">Conversion</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-500/10 rounded-lg">
+                    <Zap className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{pipelineMetrics.velocity}</p>
+                    <p className="text-xs text-muted-foreground">Daily Velocity</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-500/10 rounded-lg">
+                    <Target className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{pipelineMetrics.activeBoards}</p>
+                    <p className="text-xs text-muted-foreground">Active Stages</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Kanban Board */}
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="overflow-x-auto pb-4 -mx-1 px-1">
+            <div className="flex gap-4 min-w-max">
+              {pipelineBoards.map((board) => {
+                const boardLeads = groupedLeads[board.id] || [];
+                const stats = getBoardStats(boardLeads);
+                
+                return (
+                  <div key={board.id} className="w-80 flex-shrink-0">
+                    <Card className="bg-muted/30 border-border h-full">
+                      {/* Column Header */}
+                      <CardHeader className="p-4 pb-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {board.disposition && (
+                              <div 
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: board.disposition.color }}
+                              />
+                            )}
+                            <h3 className="font-semibold text-foreground text-sm">{board.name}</h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs font-medium px-2 py-0.5">
+                              {stats.total}
+                            </Badge>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Mini Stats */}
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                            {stats.newLeads} new
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                            {stats.contacted} contacted
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                            {stats.highPriority} hot
+                          </span>
+                        </div>
+                      </CardHeader>
+                      
+                      {/* Droppable Area */}
+                      <Droppable droppableId={board.id}>
+                        {(provided, snapshot) => (
+                          <CardContent
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`p-2 pt-0 min-h-[400px] transition-colors ${
+                              snapshot.isDraggingOver ? 'bg-primary/5' : ''
+                            }`}
+                          >
+                            <ScrollArea className="h-[500px]">
+                              <div className="space-y-2 pr-2">
+                                {boardLeads.map((position, index) => (
+                                  <Draggable 
+                                    key={position.id} 
+                                    draggableId={position.id} 
+                                    index={index}
+                                  >
+                                    {(provided, snapshot) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        onClick={() => position.lead && handleLeadClick(position.lead)}
+                                        className={`group bg-card border border-border rounded-lg p-3 cursor-pointer transition-all ${
+                                          snapshot.isDragging 
+                                            ? 'shadow-lg ring-2 ring-primary rotate-1 scale-[1.02]' 
+                                            : 'hover:border-primary/50 hover:shadow-sm'
+                                        }`}
+                                      >
+                                        {position.lead && (
+                                          <div className="space-y-2">
+                                            {/* Card Header */}
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div {...provided.dragHandleProps} className="pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                                                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <h4 className="font-medium text-foreground text-sm truncate">
+                                                  {[position.lead.first_name, position.lead.last_name].filter(Boolean).join(' ') || 'Unknown Lead'}
+                                                </h4>
+                                                <p className="text-xs text-muted-foreground truncate">{position.lead.phone_number}</p>
+                                              </div>
+                                              <LeadScoreIndicator priority={position.lead.priority} size="sm" />
                                             </div>
                                             
-                                            {position.lead.email && (
-                                              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                                                <Mail className="h-3.5 w-3.5 shrink-0" />
-                                                <span className="truncate">{position.lead.email}</span>
+                                            {/* Contact Info */}
+                                            {(position.lead.email || position.lead.company) && (
+                                              <div className="space-y-1">
+                                                {position.lead.email && (
+                                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <Mail className="h-3 w-3 shrink-0" />
+                                                    <span className="truncate">{position.lead.email}</span>
+                                                  </div>
+                                                )}
+                                                {position.lead.company && (
+                                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <Building className="h-3 w-3 shrink-0" />
+                                                    <span className="truncate">{position.lead.company}</span>
+                                                  </div>
+                                                )}
                                               </div>
                                             )}
                                             
-                                            {position.lead.company && (
-                                              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                                                <Building className="h-3.5 w-3.5 shrink-0" />
-                                                <span className="truncate">{position.lead.company}</span>
+                                            {/* Card Footer */}
+                                            <div className="flex items-center justify-between pt-2 border-t border-border">
+                                              <div className="flex items-center gap-2">
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 capitalize">
+                                                  {position.lead.status}
+                                                </Badge>
+                                                {position.lead.last_contacted_at && (
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                        <Calendar className="h-3 w-3" />
+                                                        {format(new Date(position.lead.last_contacted_at), 'MMM d')}
+                                                      </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      Last contact: {format(new Date(position.lead.last_contacted_at), 'PPp')}
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                )}
                                               </div>
-                                            )}
-                                          </div>
-                                          
-                                          {/* Footer */}
-                                          <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
-                                            <div className="flex items-center gap-2">
-                                              {position.lead.last_contacted_at && (
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                                                      <Calendar className="h-3.5 w-3.5" />
-                                                      {format(new Date(position.lead.last_contacted_at), 'MMM d')}
-                                                    </div>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    Last contact: {format(new Date(position.lead.last_contacted_at), 'PPp')}
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              )}
                                               
-                                              {position.lead.next_callback_at && (
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Badge variant="secondary" className="text-xs gap-1">
-                                                      <Clock className="h-3 w-3" />
-                                                      Callback
-                                                    </Badge>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    Scheduled: {format(new Date(position.lead.next_callback_at), 'PPp')}
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              )}
+                                              <div className="flex items-center gap-1">
+                                                {position.lead.next_callback_at && (
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 gap-0.5">
+                                                        <Clock className="h-2.5 w-2.5" />
+                                                        CB
+                                                      </Badge>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                      Callback: {format(new Date(position.lead.next_callback_at), 'PPp')}
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                )}
+                                                {!position.moved_by_user && (
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 gap-0.5 bg-primary/10 text-primary border-0">
+                                                        <Bot className="h-2.5 w-2.5" />
+                                                      </Badge>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>Moved by AI</TooltipContent>
+                                                  </Tooltip>
+                                                )}
+                                              </div>
                                             </div>
-                                            
-                                            {!position.moved_by_user && (
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <Badge variant="outline" className="text-xs gap-1 bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700">
-                                                    <Bot className="h-3 w-3" />
-                                                    AI
-                                                  </Badge>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  Automatically moved by AI
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            )}
                                           </div>
-                                        </div>
-                                      )}
+                                        )}
+                                      </div>
+                                    )}
+                                  </Draggable>
+                                ))}
+                                
+                                {boardLeads.length === 0 && (
+                                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                                      <Users className="h-5 w-5 text-muted-foreground" />
                                     </div>
-                                  )}
-                                </Draggable>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                          
-                          {boardLeads.length === 0 && (
-                            <div className="text-center py-12">
-                              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                <Users className="h-8 w-8 text-slate-400" />
+                                    <p className="text-sm font-medium text-muted-foreground">No leads</p>
+                                    <p className="text-xs text-muted-foreground/70 mt-1">Drag leads here</p>
+                                  </div>
+                                )}
+                                
+                                {provided.placeholder}
                               </div>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">No leads yet</p>
-                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Drag leads here to get started</p>
-                            </div>
-                          )}
-                          
-                          {provided.placeholder}
-                        </CardContent>
-                      )}
-                    </Droppable>
+                            </ScrollArea>
+                          </CardContent>
+                        )}
+                      </Droppable>
+                    </Card>
+                  </div>
+                );
+              })}
+              
+              {/* Add Stage Column */}
+              {pipelineBoards.length === 0 && (
+                <div className="w-80 flex-shrink-0">
+                  <Card className="bg-muted/20 border-dashed border-2 border-muted-foreground/20 h-full min-h-[500px] flex items-center justify-center">
+                    <div className="text-center p-6">
+                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                        <Plus className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <h3 className="font-medium text-foreground mb-1">Create Your First Stage</h3>
+                      <p className="text-sm text-muted-foreground mb-4">Set up pipeline stages to organize your leads</p>
+                      <Button size="sm" onClick={() => setIsDialogOpen(true)}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Stage
+                      </Button>
+                    </div>
                   </Card>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         </DragDropContext>
 
         {/* Lead Detail Dialog */}
-        {selectedLead && (
-          <LeadDetailDialog
-            lead={selectedLead}
-            isOpen={isLeadDetailOpen}
-            onClose={() => {
-              setIsLeadDetailOpen(false);
-              setSelectedLead(null);
-            }}
-          />
-        )}
+        <LeadDetailDialog
+          lead={selectedLead}
+          open={isLeadDetailOpen}
+          onOpenChange={(open) => {
+            setIsLeadDetailOpen(open);
+            if (!open) setSelectedLead(null);
+          }}
+        />
       </div>
     </TooltipProvider>
   );
