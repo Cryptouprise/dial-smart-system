@@ -96,7 +96,59 @@ Respond with a JSON object containing:
     if (!analysisResponse.ok) {
       const errorText = await analysisResponse.text();
       console.error('[Analyze Transcript] AI API error:', errorText);
-      throw new Error(`AI API error: ${analysisResponse.status}`)
+      
+      // FALLBACK: Set disposition based on call duration if AI fails
+      const { data: callData } = await supabaseAdmin
+        .from('call_logs')
+        .select('duration_seconds, status')
+        .eq('id', callId)
+        .maybeSingle();
+      
+      const duration = callData?.duration_seconds || 0;
+      const fallbackAnalysis = {
+        disposition: duration > 30 ? 'Connected - Manual Review Needed' : 'No Answer',
+        confidence: 0.3,
+        reasoning: `AI analysis failed (${analysisResponse.status}). Auto-classified by duration: ${duration}s`,
+        key_points: ['AI analysis unavailable - manual review recommended'],
+        next_action: 'Manual review required',
+        sentiment: 'neutral',
+        pain_points: [],
+        objections: []
+      };
+      
+      // Update with fallback
+      await supabaseAdmin
+        .from('call_logs')
+        .update({
+          transcript,
+          ai_analysis: fallbackAnalysis,
+          auto_disposition: fallbackAnalysis.disposition,
+          confidence_score: fallbackAnalysis.confidence,
+          outcome: fallbackAnalysis.disposition,
+          ai_analysis_error: errorText
+        })
+        .eq('id', callId);
+      
+      // Log error
+      await supabaseAdmin.from('edge_function_errors').insert({
+        function_name: 'analyze-call-transcript',
+        action: 'ai_analysis',
+        user_id: user.id,
+        error_message: `AI API error ${analysisResponse.status}`,
+        error_stack: errorText,
+        request_payload: { callId, transcriptLength: transcript?.length },
+        severity: 'warning'
+      });
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          analysis: fallbackAnalysis,
+          message: 'Call analyzed with fallback disposition (AI unavailable)',
+          ai_failed: true
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const analysisData = await analysisResponse.json()
@@ -189,6 +241,29 @@ Respond with a JSON object containing:
         .update(leadUpdate)
         .eq('id', callData.lead_id)
         .eq('user_id', user.id)
+      
+      // Call disposition-router to handle auto-actions and metrics tracking
+      const dispositionRouterResult = await supabaseAdmin.functions.invoke('disposition-router', {
+        body: {
+          action: 'process_disposition',
+          leadId: callData.lead_id,
+          userId: user.id,
+          dispositionName: aiAnalysis.disposition,
+          dispositionId: dispositionData?.id || null,
+          callOutcome: aiAnalysis.disposition,
+          transcript: transcript,
+          callId: callId,
+          aiConfidence: aiAnalysis.confidence,
+          setBy: 'ai', // This disposition was set by AI
+        },
+      });
+      
+      if (dispositionRouterResult.error) {
+        console.error('[Analyze Transcript] disposition-router error:', dispositionRouterResult.error);
+        // Don't fail the whole request, just log the error
+      } else {
+        console.log('[Analyze Transcript] Disposition actions processed:', dispositionRouterResult.data);
+      }
     }
 
     return new Response(

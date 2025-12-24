@@ -36,11 +36,67 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript } = await req.json();
+    const { action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy } = await req.json();
 
     if (action === 'process_disposition') {
       const normalizedDisposition = dispositionName?.toLowerCase().replace(/[^a-z0-9]/g, '_') || '';
       const actions: string[] = [];
+      
+      // Get lead's current state for before/after tracking
+      const { data: leadBefore } = await supabase
+        .from('leads')
+        .select('status')
+        .eq('id', leadId)
+        .maybeSingle();
+      
+      // Get lead's current pipeline position
+      const { data: pipelineBefore } = await supabase
+        .from('lead_pipeline_positions')
+        .select(`
+          pipeline_board_id,
+          pipeline_boards!inner(name)
+        `)
+        .eq('lead_id', leadId)
+        .order('moved_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      // Get call timing data if callId provided
+      let callEndedAt = null;
+      let timeToDisposition = null;
+      let workflowId = null;
+      let campaignId = null;
+      
+      if (callId) {
+        const { data: call } = await supabase
+          .from('call_logs')
+          .select('ended_at, campaign_id')
+          .eq('id', callId)
+          .maybeSingle();
+        
+        if (call?.ended_at) {
+          callEndedAt = call.ended_at;
+          campaignId = call.campaign_id;
+          const endTime = new Date(call.ended_at).getTime();
+          const nowTime = Date.now();
+          timeToDisposition = Math.round((nowTime - endTime) / 1000); // seconds
+        }
+      }
+      
+      // Check if lead is in an active workflow
+      const { data: activeWorkflow } = await supabase
+        .from('lead_workflow_progress')
+        .select('workflow_id, campaign_id')
+        .eq('lead_id', leadId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (activeWorkflow) {
+        workflowId = activeWorkflow.workflow_id;
+        if (!campaignId) campaignId = activeWorkflow.campaign_id;
+      }
 
       // 1. Check for user-defined auto-actions
       const { data: autoActions } = await supabase
@@ -193,6 +249,64 @@ serve(async (req) => {
         event_outcome: dispositionName,
         metadata: { dispositionId, callOutcome },
       });
+      
+      // 7. RECORD DISPOSITION METRICS for analytics
+      const { data: leadAfter } = await supabase
+        .from('leads')
+        .select('status')
+        .eq('id', leadId)
+        .maybeSingle();
+      
+      const { data: pipelineAfter } = await supabase
+        .from('lead_pipeline_positions')
+        .select(`
+          pipeline_board_id,
+          pipeline_boards!inner(name)
+        `)
+        .eq('lead_id', leadId)
+        .order('moved_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      // Insert comprehensive metrics
+      const metricsInsertResult = await supabase
+        .from('disposition_metrics')
+        .insert({
+          user_id: userId,
+          lead_id: leadId,
+          call_id: callId || null,
+          disposition_id: dispositionId || null,
+          disposition_name: dispositionName,
+          set_by: setBy || 'manual', // 'ai', 'manual', or 'automation'
+          set_by_user_id: setBy === 'manual' ? userId : null,
+          ai_confidence_score: aiConfidence || null,
+          call_ended_at: callEndedAt,
+          disposition_set_at: new Date().toISOString(),
+          time_to_disposition_seconds: timeToDisposition,
+          previous_status: leadBefore?.status || null,
+          new_status: leadAfter?.status || null,
+          previous_pipeline_stage: pipelineBefore?.pipeline_boards?.name || null,
+          new_pipeline_stage: pipelineAfter?.pipeline_boards?.name || null,
+          workflow_id: workflowId,
+          campaign_id: campaignId,
+          actions_triggered: actions.map((action, index) => ({
+            action: action,
+            triggered_at: new Date().toISOString(),
+            order: index + 1
+          })), // Structured array for better analytics
+          metadata: {
+            call_outcome: callOutcome,
+            had_transcript: !!transcript,
+            auto_actions_count: autoActions?.length || 0,
+          },
+        });
+      
+      if (metricsInsertResult.error) {
+        console.error('[Disposition Metrics] Failed to insert metrics:', metricsInsertResult.error);
+        // Don't fail the whole request, just log the error
+      } else {
+        console.log('[Disposition Metrics] Recorded metrics for disposition:', dispositionName);
+      }
 
       return new Response(JSON.stringify({ success: true, actions }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -213,27 +327,31 @@ serve(async (req) => {
 
 async function executeAction(supabase: any, leadId: string, userId: string, autoAction: any) {
   const config = autoAction.action_config || {};
+  const startTime = Date.now();
+  let success = true;
+  let errorMessage = null;
 
-  switch (autoAction.action_type) {
-    case 'remove_all_campaigns':
-      await supabase
-        .from('lead_workflow_progress')
-        .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
-        .eq('lead_id', leadId)
-        .eq('status', 'active');
-      break;
-
-    case 'remove_from_campaign':
-      if (config.campaign_id) {
+  try {
+    switch (autoAction.action_type) {
+      case 'remove_all_campaigns':
         await supabase
           .from('lead_workflow_progress')
           .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
           .eq('lead_id', leadId)
-          .eq('campaign_id', config.campaign_id);
-      }
-      break;
+          .eq('status', 'active');
+        break;
 
-    case 'move_to_stage':
+      case 'remove_from_campaign':
+        if (config.campaign_id) {
+          await supabase
+            .from('lead_workflow_progress')
+            .update({ status: 'removed', removal_reason: 'Auto-action', updated_at: new Date().toISOString() })
+            .eq('lead_id', leadId)
+            .eq('campaign_id', config.campaign_id);
+        }
+        break;
+
+      case 'move_to_stage':
       if (config.target_stage_id) {
         await supabase.from('lead_pipeline_positions').upsert({
           user_id: userId,
@@ -362,5 +480,33 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
         console.log(`Booked appointment for lead ${leadId}`);
       }
       break;
+      
+    default:
+      console.warn(`[Disposition Router] Unknown action type: ${autoAction.action_type}`);
+      errorMessage = `Unknown action type: ${autoAction.action_type}`;
+      success = false;
   }
+  } catch (error: any) {
+    success = false;
+    errorMessage = error.message;
+    console.error(`[Disposition Router] Action ${autoAction.action_type} failed:`, error);
+    
+    // Log error to database
+    await supabase.from('edge_function_errors').insert({
+      function_name: 'disposition-router',
+      action: `executeAction: ${autoAction.action_type}`,
+      user_id: userId,
+      lead_id: leadId,
+      error_message: errorMessage,
+      error_stack: error.stack,
+      request_payload: { autoAction, config },
+      severity: 'error'
+    });
+  }
+  
+  // Track action execution
+  const executionTime = Date.now() - startTime;
+  console.log(`[Disposition Router] Action ${autoAction.action_type} ${success ? 'succeeded' : 'failed'} in ${executionTime}ms`);
+  
+  return { success, error: errorMessage, executionTime };
 }
