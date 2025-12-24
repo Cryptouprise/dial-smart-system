@@ -24,6 +24,7 @@ import { CampaignWorkflowEditor } from './CampaignWorkflowEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
+import { useDemoData } from '@/hooks/useDemoData';
 
 interface Campaign {
   id: string;
@@ -72,6 +73,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
   const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
+  const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
@@ -115,12 +117,19 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
-    loadCampaigns();
-    loadAgentsWithPhoneStatus();
-    loadPhoneNumberStatus();
-    loadWorkflows();
-    loadTwilioNumbers();
-  }, []);
+    if (isDemoMode) {
+      // Use demo data
+      if (demoCampaigns) setCampaigns(demoCampaigns as any);
+      if (demoAgents) setAgents(demoAgents as any);
+      if (demoWorkflows) setWorkflows(demoWorkflows as any);
+    } else {
+      loadCampaigns();
+      loadAgentsWithPhoneStatus();
+      loadPhoneNumberStatus();
+      loadWorkflows();
+      loadTwilioNumbers();
+    }
+  }, [isDemoMode]);
 
   const loadWorkflows = async () => {
     try {
@@ -166,6 +175,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const loadCampaigns = async () => {
+    if (isDemoMode && demoCampaigns) {
+      setCampaigns(demoCampaigns as any);
+      return;
+    }
     const data = await getCampaigns();
     if (data) setCampaigns(data);
   };
