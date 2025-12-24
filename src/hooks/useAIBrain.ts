@@ -1,7 +1,11 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
+
+// Constants
+const MAX_TITLE_LENGTH = 50;
+const DEFAULT_PERSIST_CONVERSATION = true;
 
 export interface AIMessage {
   id: string;
@@ -19,16 +23,19 @@ interface NavigationLink {
 
 interface UseAIBrainOptions {
   onNavigate?: (route: string) => void;
+  persistConversation?: boolean; // New option to enable/disable persistence
 }
 
 export const useAIBrain = (options?: UseAIBrainOptions) => {
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const persistConversation = options?.persistConversation ?? DEFAULT_PERSIST_CONVERSATION;
 
   // Parse navigation links from content: [[Display Text|/route]]
   const parseNavigationLinks = useCallback((content: string): { cleanContent: string; links: NavigationLink[] } => {
@@ -42,6 +49,103 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
 
     return { cleanContent, links };
   }, []);
+
+  // Load conversation from database on mount
+  useEffect(() => {
+    if (!persistConversation) return;
+
+    const loadConversation = async () => {
+      try {
+        // Try to load the most recent conversation for this session
+        const { data: conversation } = await supabase
+          .from('ai_conversations')
+          .select('id')
+          .eq('session_id', sessionIdRef.current)
+          .eq('archived', false)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (conversation) {
+          setConversationId(conversation.id);
+          
+          // Load messages
+          const { data: messagesData } = await supabase
+            .from('ai_conversation_messages')
+            .select('*')
+            .eq('conversation_id', conversation.id)
+            .order('created_at', { ascending: true });
+
+          if (messagesData) {
+            const loadedMessages: AIMessage[] = messagesData.map(msg => ({
+              id: msg.id,
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content,
+              timestamp: new Date(msg.created_at),
+              toolResults: msg.tool_results || []
+            }));
+            setMessages(loadedMessages);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load conversation:', error);
+      }
+    };
+
+    loadConversation();
+  }, [persistConversation]);
+
+  // Save message to database
+  const saveMessageToDb = useCallback(async (message: AIMessage, role: 'user' | 'assistant') => {
+    if (!persistConversation) return;
+
+    try {
+      // Create conversation if it doesn't exist
+      if (!conversationId) {
+        const { data: user } = await supabase.auth.getUser();
+        if (!user.user) return;
+
+        const { data: newConversation } = await supabase
+          .from('ai_conversations')
+          .insert({
+            user_id: user.user.id,
+            session_id: sessionIdRef.current,
+            // Generate title from first user message
+            title: role === 'user' && !conversationId ? message.content.slice(0, MAX_TITLE_LENGTH) : null
+          })
+          .select()
+          .single();
+
+        if (newConversation) {
+          setConversationId(newConversation.id);
+          
+          // Save the message
+          await supabase
+            .from('ai_conversation_messages')
+            .insert({
+              conversation_id: newConversation.id,
+              role,
+              content: message.content,
+              tool_results: message.toolResults || [],
+              metadata: {}
+            });
+        }
+      } else {
+        // Save to existing conversation
+        await supabase
+          .from('ai_conversation_messages')
+          .insert({
+            conversation_id: conversationId,
+            role,
+            content: message.content,
+            tool_results: message.toolResults || [],
+            metadata: {}
+          });
+      }
+    } catch (error) {
+      console.error('Failed to save message:', error);
+    }
+  }, [conversationId, persistConversation, messages.length]);
 
   // Handle navigation while keeping chat open
   const handleNavigation = useCallback((route: string) => {
@@ -66,6 +170,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
     setIsTyping(true);
+
+    // Save user message to database
+    await saveMessageToDb(userMsg, 'user');
 
     try {
       // Build conversation history for context
@@ -102,6 +209,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
 
       setMessages(prev => [...prev, assistantMsg]);
 
+      // Save assistant message to database
+      await saveMessageToDb(assistantMsg, 'assistant');
+
       // Show toast for successful actions
       if (data.toolResults?.some((r: any) => r.success)) {
         const successResult = data.toolResults.find((r: any) => r.success && r.result?.message);
@@ -130,17 +240,21 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
       });
 
       // Add error message to chat
-      setMessages(prev => [...prev, {
+      const errorMsg: AIMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: `I encountered an error: ${errorMessage}`,
         timestamp: new Date()
-      }]);
+      };
+      setMessages(prev => [...prev, errorMsg]);
+      
+      // Save error message to database
+      await saveMessageToDb(errorMsg, 'assistant');
     } finally {
       setIsLoading(false);
       setIsTyping(false);
     }
-  }, [isLoading, messages, location, parseNavigationLinks, toast]);
+  }, [isLoading, messages, location, parseNavigationLinks, toast, saveMessageToDb]);
 
   // Submit feedback on a response
   const submitFeedback = useCallback(async (
@@ -172,10 +286,28 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
   }, [toast]);
 
   // Clear conversation
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback(async () => {
+    // Archive current conversation if it exists
+    if (persistConversation && conversationId) {
+      try {
+        await supabase
+          .from('ai_conversations')
+          .update({ archived: true })
+          .eq('id', conversationId);
+      } catch (error) {
+        console.error('Failed to archive conversation:', error);
+      }
+    }
+    
     setMessages([]);
+    setConversationId(null);
     sessionIdRef.current = crypto.randomUUID();
-  }, []);
+    
+    toast({
+      title: 'Chat cleared',
+      description: 'Previous conversation has been archived'
+    });
+  }, [conversationId, persistConversation, toast]);
 
   // Retry last message
   const retryLastMessage = useCallback(async () => {
@@ -201,6 +333,64 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     }
   }, [messages, sendMessage]);
 
+  // Load archived conversations
+  const loadArchivedConversations = useCallback(async () => {
+    try {
+      const { data: conversations } = await supabase
+        .from('ai_conversations')
+        .select('id, title, created_at, updated_at')
+        .eq('archived', true)
+        .order('updated_at', { ascending: false })
+        .limit(50);
+
+      return conversations || [];
+    } catch (error) {
+      console.error('Failed to load archived conversations:', error);
+      return [];
+    }
+  }, []);
+
+  // Load a specific conversation
+  const loadConversation = useCallback(async (convId: string) => {
+    try {
+      const { data: messagesData } = await supabase
+        .from('ai_conversation_messages')
+        .select('*')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: true });
+
+      if (messagesData) {
+        const loadedMessages: AIMessage[] = messagesData.map(msg => ({
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+          toolResults: msg.tool_results || []
+        }));
+        setMessages(loadedMessages);
+        setConversationId(convId);
+        
+        // Unarchive this conversation
+        await supabase
+          .from('ai_conversations')
+          .update({ archived: false })
+          .eq('id', convId);
+        
+        toast({
+          title: 'Conversation loaded',
+          description: 'Continue where you left off'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load conversation',
+        variant: 'destructive'
+      });
+    }
+  }, [toast]);
+
   // Quick actions
   const quickActions = {
     status: () => sendMessage('/status'),
@@ -222,6 +412,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     retryLastMessage,
     handleNavigation,
     quickActions,
-    sessionId: sessionIdRef.current
+    sessionId: sessionIdRef.current,
+    conversationId,
+    loadArchivedConversations,
+    loadConversation
   };
 };
