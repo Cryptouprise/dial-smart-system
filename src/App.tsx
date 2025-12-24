@@ -7,8 +7,11 @@ import { ThemeProvider } from "next-themes";
 import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
 import { AIErrorProvider } from "@/contexts/AIErrorContext";
 import { AIBrainProvider } from "@/contexts/AIBrainContext";
+import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
+import MobileBottomNav from "./components/MobileBottomNav";
+import InstallBanner from "./components/InstallBanner";
 
 // Lazy load pages for code splitting
 const Index = lazy(() => import("./pages/Index"));
@@ -20,8 +23,8 @@ const Analytics = lazy(() => import("./pages/Analytics"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const AiSmsConversations = lazy(() => import("./components/AiSmsConversations"));
 const AIBrainChat = lazy(() => import("./components/AIBrainChat"));
-const AIAssistantChat = lazy(() => import("./components/AIAssistantChat"));
 const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
+const InstallApp = lazy(() => import("./pages/InstallApp"));
 
 const queryClient = new QueryClient();
 
@@ -35,37 +38,43 @@ const LoadingFallback = () => (
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <SimpleModeProvider>
-        <AIErrorProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <AIBrainProvider>
-                <Suspense fallback={<LoadingFallback />}>
-                  <Routes>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/sms-conversations" element={<AiSmsConversations />} />
-                    <Route path="/number-webhooks" element={<NumberWebhooks />} />
-                    <Route path="/auth" element={<Auth />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="/api-keys" element={<ApiKeys />} />
-                    <Route path="/help" element={<HelpPage />} />
-                    <Route path="/analytics" element={<Analytics />} />
-                    {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Suspense>
-                {/* Global AI Assistants - available on all pages */}
-                <Suspense fallback={null}>
-                  <AIBrainChat />
-                  <AIAssistantChat />
-                </Suspense>
-              </AIBrainProvider>
-            </BrowserRouter>
-          </TooltipProvider>
-        </AIErrorProvider>
-      </SimpleModeProvider>
+      <DemoModeProvider>
+        <SimpleModeProvider>
+          <AIErrorProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <AIBrainProvider>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <Routes>
+                      <Route path="/" element={<Index />} />
+                      <Route path="/sms-conversations" element={<AiSmsConversations />} />
+                      <Route path="/number-webhooks" element={<NumberWebhooks />} />
+                      <Route path="/auth" element={<Auth />} />
+                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/api-keys" element={<ApiKeys />} />
+                      <Route path="/help" element={<HelpPage />} />
+                      <Route path="/analytics" element={<Analytics />} />
+                      <Route path="/install" element={<InstallApp />} />
+                      {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </Suspense>
+                  {/* Mobile Navigation */}
+                  <MobileBottomNav />
+                  {/* Install Banner for first-time mobile visitors */}
+                  <InstallBanner />
+                  {/* Global AI Assistant - available on all pages */}
+                  <Suspense fallback={null}>
+                    <AIBrainChat />
+                  </Suspense>
+                </AIBrainProvider>
+              </BrowserRouter>
+            </TooltipProvider>
+          </AIErrorProvider>
+        </SimpleModeProvider>
+      </DemoModeProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

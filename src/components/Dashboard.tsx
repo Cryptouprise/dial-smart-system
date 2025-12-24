@@ -35,6 +35,7 @@ import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import QuickStartCards from '@/components/QuickStartCards';
 import TodayPerformanceCard from '@/components/TodayPerformanceCard';
+import QuickLaunchButton from '@/components/QuickLaunchButton';
 import { BudgetManager } from '@/components/BudgetManager';
 import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
 import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
@@ -42,6 +43,9 @@ import { CalendarIntegrationManager } from '@/components/CalendarIntegrationMana
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
+import { useDemoMode } from '@/contexts/DemoModeContext';
+import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
 
 interface PhoneNumber {
   id: string;
@@ -65,6 +69,7 @@ const Dashboard = () => {
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const { toast } = useToast();
   const { isSimpleMode, onModeChange } = useSimpleMode();
+  const { isDemoMode } = useDemoMode();
 
   // Auto-redirect to Dashboard when switching to Simple Mode if on a hidden tab
   useEffect(() => {
@@ -90,6 +95,21 @@ const Dashboard = () => {
   };
 
   const loadNumbers = useCallback(async () => {
+    // Use demo data if in demo mode
+    if (isDemoMode) {
+      const demoNumbers: PhoneNumber[] = DEMO_PHONE_NUMBERS.map(num => ({
+        id: num.id,
+        phoneNumber: num.number,
+        status: num.status as 'active' | 'quarantined' | 'inactive',
+        dailyCalls: num.daily_calls,
+        spamScore: num.is_spam ? 100 : 0,
+        dateAdded: new Date().toISOString().split('T')[0],
+        provider: num.provider as 'twilio' | 'retell' | 'telnyx' | 'unknown',
+      }));
+      setNumbers(demoNumbers);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('phone_numbers')
@@ -129,7 +149,7 @@ const Dashboard = () => {
         variant: 'destructive'
       });
     }
-  }, [toast]);
+  }, [toast, isDemoMode]);
 
   useEffect(() => {
     loadNumbers();
