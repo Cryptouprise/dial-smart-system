@@ -13,12 +13,6 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      console.error('No authorization header provided')
-      throw new Error('Authorization header is required')
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -28,15 +22,36 @@ serve(async (req) => {
     
     const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-
-    if (authError || !user) {
-      console.error('Authentication failed:', authError)
-      throw new Error('Invalid authentication token')
+    // Try to authenticate, but don't fail if not authenticated
+    const authHeader = req.headers.get('Authorization');
+    let user = null;
+    
+    if (authHeader && authHeader !== 'Bearer ' + Deno.env.get('SUPABASE_ANON_KEY')) {
+      const token = authHeader.replace('Bearer ', '');
+      try {
+        const { data: { user: authUser }, error: authError } = await supabaseClient.auth.getUser(token);
+        if (!authError && authUser) {
+          user = authUser;
+          console.log('Authenticated user:', user.id);
+        }
+      } catch (e) {
+        console.log('Auth check failed, continuing as anonymous');
+      }
     }
-
-    console.log('Authenticated user:', user.id)
+    
+    // If no authenticated user, return empty data gracefully
+    if (!user) {
+      console.log('No authenticated user, returning empty data');
+      return new Response(
+        JSON.stringify({ success: true, data: [] }),
+        { 
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json' 
+          } 
+        }
+      );
+    }
 
     const { action, ...params } = await req.json()
     console.log('Processing action:', action)
