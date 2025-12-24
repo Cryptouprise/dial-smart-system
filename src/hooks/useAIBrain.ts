@@ -50,102 +50,17 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     return { cleanContent, links };
   }, []);
 
-  // Load conversation from database on mount
+  // Load conversation from database on mount - DISABLED until tables are created
   useEffect(() => {
-    if (!persistConversation) return;
-
-    const loadConversation = async () => {
-      try {
-        // Try to load the most recent conversation for this session
-        const { data: conversation } = await supabase
-          .from('ai_conversations')
-          .select('id')
-          .eq('session_id', sessionIdRef.current)
-          .eq('archived', false)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (conversation) {
-          setConversationId(conversation.id);
-          
-          // Load messages
-          const { data: messagesData } = await supabase
-            .from('ai_conversation_messages')
-            .select('*')
-            .eq('conversation_id', conversation.id)
-            .order('created_at', { ascending: true });
-
-          if (messagesData) {
-            const loadedMessages: AIMessage[] = messagesData.map(msg => ({
-              id: msg.id,
-              role: msg.role as 'user' | 'assistant',
-              content: msg.content,
-              timestamp: new Date(msg.created_at),
-              toolResults: msg.tool_results || []
-            }));
-            setMessages(loadedMessages);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load conversation:', error);
-      }
-    };
-
-    loadConversation();
+    // Database persistence disabled - tables don't exist yet
+    // Will work with in-memory state only
   }, [persistConversation]);
 
-  // Save message to database
+  // Save message to database - DISABLED until tables are created
   const saveMessageToDb = useCallback(async (message: AIMessage, role: 'user' | 'assistant') => {
-    if (!persistConversation) return;
-
-    try {
-      // Create conversation if it doesn't exist
-      if (!conversationId) {
-        const { data: user } = await supabase.auth.getUser();
-        if (!user.user) return;
-
-        const { data: newConversation } = await supabase
-          .from('ai_conversations')
-          .insert({
-            user_id: user.user.id,
-            session_id: sessionIdRef.current,
-            // Generate title from first user message
-            title: role === 'user' && !conversationId ? message.content.slice(0, MAX_TITLE_LENGTH) : null
-          })
-          .select()
-          .single();
-
-        if (newConversation) {
-          setConversationId(newConversation.id);
-          
-          // Save the message
-          await supabase
-            .from('ai_conversation_messages')
-            .insert({
-              conversation_id: newConversation.id,
-              role,
-              content: message.content,
-              tool_results: message.toolResults || [],
-              metadata: {}
-            });
-        }
-      } else {
-        // Save to existing conversation
-        await supabase
-          .from('ai_conversation_messages')
-          .insert({
-            conversation_id: conversationId,
-            role,
-            content: message.content,
-            tool_results: message.toolResults || [],
-            metadata: {}
-          });
-      }
-    } catch (error) {
-      console.error('Failed to save message:', error);
-    }
-  }, [conversationId, persistConversation, messages.length]);
+    // Database persistence disabled - tables don't exist yet
+    // Messages are kept in memory only
+  }, [conversationId, persistConversation]);
 
   // Handle navigation while keeping chat open
   const handleNavigation = useCallback((route: string) => {
@@ -287,27 +202,16 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
 
   // Clear conversation
   const clearMessages = useCallback(async () => {
-    // Archive current conversation if it exists
-    if (persistConversation && conversationId) {
-      try {
-        await supabase
-          .from('ai_conversations')
-          .update({ archived: true })
-          .eq('id', conversationId);
-      } catch (error) {
-        console.error('Failed to archive conversation:', error);
-      }
-    }
-    
+    // Database persistence disabled - clear memory only
     setMessages([]);
     setConversationId(null);
     sessionIdRef.current = crypto.randomUUID();
     
     toast({
       title: 'Chat cleared',
-      description: 'Previous conversation has been archived'
+      description: 'Conversation has been cleared'
     });
-  }, [conversationId, persistConversation, toast]);
+  }, [toast]);
 
   // Retry last message
   const retryLastMessage = useCallback(async () => {
@@ -333,62 +237,20 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     }
   }, [messages, sendMessage]);
 
-  // Load archived conversations
+  // Load archived conversations - DISABLED until tables are created
   const loadArchivedConversations = useCallback(async () => {
-    try {
-      const { data: conversations } = await supabase
-        .from('ai_conversations')
-        .select('id, title, created_at, updated_at')
-        .eq('archived', true)
-        .order('updated_at', { ascending: false })
-        .limit(50);
-
-      return conversations || [];
-    } catch (error) {
-      console.error('Failed to load archived conversations:', error);
-      return [];
-    }
+    // Database persistence disabled - return empty array
+    return [];
   }, []);
 
-  // Load a specific conversation
+  // Load a specific conversation - DISABLED until tables are created
   const loadConversation = useCallback(async (convId: string) => {
-    try {
-      const { data: messagesData } = await supabase
-        .from('ai_conversation_messages')
-        .select('*')
-        .eq('conversation_id', convId)
-        .order('created_at', { ascending: true });
-
-      if (messagesData) {
-        const loadedMessages: AIMessage[] = messagesData.map(msg => ({
-          id: msg.id,
-          role: msg.role as 'user' | 'assistant',
-          content: msg.content,
-          timestamp: new Date(msg.created_at),
-          toolResults: msg.tool_results || []
-        }));
-        setMessages(loadedMessages);
-        setConversationId(convId);
-        
-        // Unarchive this conversation
-        await supabase
-          .from('ai_conversations')
-          .update({ archived: false })
-          .eq('id', convId);
-        
-        toast({
-          title: 'Conversation loaded',
-          description: 'Continue where you left off'
-        });
-      }
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load conversation',
-        variant: 'destructive'
-      });
-    }
+    // Database persistence disabled
+    toast({
+      title: 'Feature unavailable',
+      description: 'Conversation history is not available yet',
+      variant: 'destructive'
+    });
   }, [toast]);
 
   // Quick actions

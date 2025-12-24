@@ -338,46 +338,49 @@ const EnhancedPipelineAnalytics: React.FC = () => {
         <TabsContent value="performance" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Top Performers */}
-            {metrics.bottlenecks?.map((bottleneck, idx) => (
-              <Card key={idx} className="border-2 hover:shadow-lg transition-all">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{bottleneck.stage}</CardTitle>
-                    {bottleneck.severity === 'high' && (
-                      <Badge variant="destructive" className="gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        Critical
-                      </Badge>
-                    )}
-                    {bottleneck.severity === 'medium' && (
-                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 gap-1">
-                        <Clock className="h-3 w-3" />
-                        Moderate
-                      </Badge>
-                    )}
-                    {bottleneck.severity === 'low' && (
-                      <Badge variant="outline" className="gap-1">
-                        <CheckCircle className="h-3 w-3" />
-                        Good
-                      </Badge>
-                    )}
-                  </div>
-                  <CardDescription className="mt-2">{bottleneck.suggestion}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600 dark:text-slate-400">Avg Time:</span>
-                      <span className="font-semibold">{bottleneck.avgTime}</span>
+            {metrics.bottlenecks?.map((bottleneck, idx) => {
+              const severity = bottleneck.averageDwellTime > 14 ? 'high' : bottleneck.averageDwellTime > 7 ? 'medium' : 'low';
+              return (
+                <Card key={idx} className="border-2 hover:shadow-lg transition-all">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{bottleneck.stageName}</CardTitle>
+                      {severity === 'high' && (
+                        <Badge variant="destructive" className="gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          Critical
+                        </Badge>
+                      )}
+                      {severity === 'medium' && (
+                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 gap-1">
+                          <Clock className="h-3 w-3" />
+                          Moderate
+                        </Badge>
+                      )}
+                      {severity === 'low' && (
+                        <Badge variant="outline" className="gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          Good
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600 dark:text-slate-400">Lead Count:</span>
-                      <span className="font-semibold">{bottleneck.leadCount}</span>
+                    <CardDescription className="mt-2">{bottleneck.suggestedAction}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600 dark:text-slate-400">Avg Time:</span>
+                        <span className="font-semibold">{bottleneck.averageDwellTime} days</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600 dark:text-slate-400">Lead Count:</span>
+                        <span className="font-semibold">{bottleneck.leadsStuck}</span>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
 
@@ -467,7 +470,7 @@ const EnhancedPipelineAnalytics: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-sm text-slate-500 dark:text-slate-400">
-                    {movement.timestamp}
+                    {movement.movedAt ? new Date(movement.movedAt).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
               ))}
