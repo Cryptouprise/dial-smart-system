@@ -8,6 +8,7 @@ import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
 import { AIErrorProvider } from "@/contexts/AIErrorContext";
 import { AIBrainProvider } from "@/contexts/AIBrainContext";
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
+<<<<<<< HEAD
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import MobileBottomNav from "./components/MobileBottomNav";
@@ -25,6 +26,21 @@ const AiSmsConversations = lazy(() => import("./components/AiSmsConversations"))
 const AIBrainChat = lazy(() => import("./components/AIBrainChat"));
 const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
+=======
+import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import Settings from "./pages/Settings";
+import ApiKeys from "./pages/ApiKeys";
+import HelpPage from "./pages/HelpPage";
+import Analytics from "./pages/Analytics";
+import NotFound from "./pages/NotFound";
+import AiSmsConversations from "./components/AiSmsConversations";
+import AIBrainChat from "./components/AIBrainChat";
+import NumberWebhooks from "./pages/NumberWebhooks";
+import InstallApp from "./pages/InstallApp";
+import MobileBottomNav from "./components/MobileBottomNav";
+import InstallBanner from "./components/InstallBanner";
+>>>>>>> 991030405d66e3302fdbd96e4d3f577011c4dab0
 
 const queryClient = new QueryClient();
 
@@ -45,6 +61,7 @@ const App = () => (
               <Toaster />
               <Sonner />
               <BrowserRouter>
+<<<<<<< HEAD
                 <AIBrainProvider>
                   <Suspense fallback={<LoadingFallback />}>
                     <Routes>
@@ -75,6 +92,34 @@ const App = () => (
           </AIErrorProvider>
         </SimpleModeProvider>
       </DemoModeProvider>
+=======
+              <AIBrainProvider>
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/sms-conversations" element={<AiSmsConversations />} />
+                  <Route path="/number-webhooks" element={<NumberWebhooks />} />
+                  <Route path="/auth" element={<Auth />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/api-keys" element={<ApiKeys />} />
+                  <Route path="/help" element={<HelpPage />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/install" element={<InstallApp />} />
+                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+                {/* Mobile Navigation */}
+                <MobileBottomNav />
+                {/* Install Banner for first-time mobile visitors */}
+                <InstallBanner />
+                {/* Global AI Assistant - available on all pages */}
+                <AIBrainChat />
+              </AIBrainProvider>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AIErrorProvider>
+      </SimpleModeProvider>
+    </DemoModeProvider>
+>>>>>>> 991030405d66e3302fdbd96e4d3f577011c4dab0
     </ThemeProvider>
   </QueryClientProvider>
 );

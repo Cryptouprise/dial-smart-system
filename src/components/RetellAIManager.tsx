@@ -15,6 +15,7 @@ import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
 import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX } from 'lucide-react';
+import { useDemoData } from '@/hooks/useDemoData';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -56,6 +57,7 @@ const RetellAIManager = () => {
   const [showAgentEditDialog, setShowAgentEditDialog] = useState(false);
   const [isConfiguringWebhooks, setIsConfiguringWebhooks] = useState(false);
   const { toast } = useToast();
+  const { isDemoMode, agents: demoAgents, phoneNumbers: demoPhoneNumbers, showDemoActionToast } = useDemoData();
   const { 
     listPhoneNumbers, 
     updatePhoneNumber, 
@@ -73,9 +75,34 @@ const RetellAIManager = () => {
 
   useEffect(() => {
     loadRetellData();
-  }, []);
+  }, [isDemoMode]);
 
   const loadRetellData = async () => {
+    if (isDemoMode) {
+      // Use demo data
+      if (demoAgents) {
+        setAgents(demoAgents.map(a => ({
+          agent_id: a.agent_id,
+          agent_name: a.agent_name,
+          voice_id: a.voice_id,
+          hasCalendarFunction: true
+        })));
+      }
+      if (demoPhoneNumbers) {
+        setRetellNumbers(demoPhoneNumbers.filter(p => p.retell_phone_id).map(p => ({
+          phone_number: p.number,
+          nickname: p.friendly_name || undefined,
+          inbound_agent_id: 'demo-agent-1',
+          outbound_agent_id: 'demo-agent-1'
+        })));
+      }
+      setLlms([
+        { llm_id: 'demo-llm-1', general_prompt: 'You are a helpful sales assistant...', begin_message: 'Hello! How can I help you today?', model: 'gpt-4' },
+        { llm_id: 'demo-llm-2', general_prompt: 'You are an appointment scheduler...', begin_message: 'Hi there! I can help schedule your appointment.', model: 'gpt-4' }
+      ]);
+      return;
+    }
+
     const [numbersData, agentsData, llmsData] = await Promise.all([
       listPhoneNumbers(),
       listAgents(),

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -94,7 +94,7 @@ const Dashboard = () => {
     setSearchParams({ tab });
   };
 
-  const loadNumbers = useCallback(async () => {
+  const loadNumbers = async () => {
     // Use demo data if in demo mode
     if (isDemoMode) {
       const demoNumbers: PhoneNumber[] = DEMO_PHONE_NUMBERS.map(num => ({
@@ -149,11 +149,11 @@ const Dashboard = () => {
         variant: 'destructive'
       });
     }
-  }, [toast, isDemoMode]);
+  };
 
   useEffect(() => {
     loadNumbers();
-  }, [loadNumbers]);
+  }, [isDemoMode]);
 
   const handleTestCall = (phoneNumber: string) => {
     toast({
@@ -187,6 +187,9 @@ const Dashboard = () => {
               {/* Today's Performance - Always visible for quick stats */}
               <TodayPerformanceCard />
               
+              {/* Quick Launch - One-Click Campaign Start */}
+              <QuickLaunchButton />
+              
               {/* Quick Start Cards - AI Guided Setup */}
               <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
               
@@ -202,9 +205,11 @@ const Dashboard = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0 px-4 pb-4">
-                    <div className="text-2xl font-bold">{numbers.length}</div>
+                    <div className="text-2xl font-bold">
+                      <AnimatedCounter value={numbers.length} />
+                    </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {numbers.filter(n => n.status === 'active').length} active
+                      <AnimatedCounter value={numbers.filter(n => n.status === 'active').length} /> active
                     </p>
                   </CardContent>
                 </Card>
@@ -217,10 +222,10 @@ const Dashboard = () => {
                   </CardHeader>
                   <CardContent className="pt-0 px-4 pb-4">
                     <div className="text-2xl font-bold">
-                      {numbers.reduce((sum, n) => sum + n.dailyCalls, 0)}
+                      <AnimatedCounter value={numbers.reduce((sum, n) => sum + n.dailyCalls, 0)} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Avg: {Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))}
+                      Avg: <AnimatedCounter value={Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))} />
                     </p>
                   </CardContent>
                 </Card>
@@ -233,10 +238,10 @@ const Dashboard = () => {
                   </CardHeader>
                   <CardContent className="pt-0 px-4 pb-4">
                     <div className="text-2xl font-bold">
-                      {numbers.filter(n => n.status === 'quarantined').length}
+                      <AnimatedCounter value={numbers.filter(n => n.status === 'quarantined').length} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)}% of total
+                      <AnimatedCounter value={Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)} suffix="%" /> of total
                     </p>
                   </CardContent>
                 </Card>
@@ -249,10 +254,10 @@ const Dashboard = () => {
                   </CardHeader>
                   <CardContent className="pt-0 px-4 pb-4">
                     <div className="text-2xl font-bold">
-                      {new Set(numbers.map(n => {
+                      <AnimatedCounter value={new Set(numbers.map(n => {
                         const cleaned = n.phoneNumber?.replace(/\D/g, '') || '';
                         return cleaned.length >= 4 ? cleaned.slice(cleaned.startsWith('1') ? 1 : 0, cleaned.startsWith('1') ? 4 : 3) : '';
-                      }).filter(Boolean)).size}
+                      }).filter(Boolean)).size} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Geographic spread</p>
                   </CardContent>

@@ -152,7 +152,7 @@ export const AIBrainChat: React.FC = () => {
     return (
       <Button
         onClick={openChat}
-        className="fixed bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-50"
+        className="fixed bottom-20 md:bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-40"
         size="icon"
       >
         <MessageSquare className="h-6 w-6" />
@@ -161,7 +161,7 @@ export const AIBrainChat: React.FC = () => {
   }
 
   return (
-    <Card className="fixed bottom-4 right-4 w-96 h-[600px] shadow-2xl z-50 flex flex-col">
+    <Card className="fixed bottom-20 md:bottom-4 right-2 left-2 md:left-auto md:right-4 md:w-96 h-[calc(100vh-6rem)] md:h-[600px] shadow-2xl z-40 flex flex-col max-h-[80vh]">
       <CardHeader className="pb-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
