@@ -1288,6 +1288,16 @@ serve(async (req) => {
           );
         }
 
+        // Get user's timezone from their settings
+        const { data: availability } = await supabase
+          .from('calendar_availability')
+          .select('timezone')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        const userTimezone = availability?.timezone || 'America/New_York';
+        console.log('[Calendar] Using timezone:', userTimezone);
+
         // Parse date and time
         let hours: number, minutes: number;
         if (time.includes(':')) {
@@ -1311,11 +1321,60 @@ serve(async (req) => {
           }
         }
 
-        const startTime = new Date(date);
-        startTime.setHours(hours, minutes, 0, 0);
+        const appointmentTime = new Date(date);
+        appointmentTime.setHours(hours, minutes, 0, 0);
+
+        // CRITICAL: Validate appointment is not in the past
+        const now = new Date();
+        const currentTimeInUserTz = new Date(now.toLocaleString('en-US', { timeZone: userTimezone }));
+        const appointmentTimeInUserTz = new Date(appointmentTime.toLocaleString('en-US', { timeZone: userTimezone }));
         
+        console.log('[Calendar] Time validation - Now:', currentTimeInUserTz, 'Appointment:', appointmentTimeInUserTz);
+
+        if (appointmentTime <= now) {
+          console.log('[Calendar] Rejected past appointment:', appointmentTime, 'vs now:', now);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "That time has already passed. Let me check what times I have available today or tomorrow. When would you prefer - morning or afternoon?" 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check for conflicts with existing appointments
+        const appointmentDate = date.split('T')[0]; // Get YYYY-MM-DD
+        const { data: existingAppts } = await supabase
+          .from('calendar_appointments')
+          .select('*')
+          .eq('user_id', targetUserId)
+          .gte('start_time', `${appointmentDate}T00:00:00`)
+          .lte('start_time', `${appointmentDate}T23:59:59`)
+          .in('status', ['confirmed', 'scheduled']);
+
+        // Check for time conflicts
         const duration = duration_minutes || 30;
-        const endTime = new Date(startTime.getTime() + duration * 60000);
+        const endTime = new Date(appointmentTime.getTime() + duration * 60000);
+        
+        const hasConflict = existingAppts?.some(appt => {
+          const apptStart = new Date(appt.start_time);
+          const apptEnd = new Date(appt.end_time);
+          // Check if appointment overlaps
+          return (appointmentTime >= apptStart && appointmentTime < apptEnd) ||
+                 (endTime > apptStart && endTime <= apptEnd) ||
+                 (appointmentTime <= apptStart && endTime >= apptEnd);
+        });
+
+        if (hasConflict) {
+          console.log('[Calendar] Time slot conflict detected');
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: "I'm sorry, that time slot is no longer available. Would you like me to check what other times I have open today?" 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
         // Try to sync with Google Calendar if connected
         let googleEventId: string | null = null;
@@ -1333,8 +1392,8 @@ serve(async (req) => {
             const event = {
               summary: title || `Appointment with ${attendee_name || 'Lead'}`,
               description: `Booked via AI Dialer\nAttendee: ${attendee_name || 'Unknown'}\nEmail: ${attendee_email || 'Not provided'}`,
-              start: { dateTime: startTime.toISOString(), timeZone: 'America/Chicago' },
-              end: { dateTime: endTime.toISOString(), timeZone: 'America/Chicago' },
+              start: { dateTime: appointmentTime.toISOString(), timeZone: userTimezone },
+              end: { dateTime: endTime.toISOString(), timeZone: userTimezone },
               attendees: attendee_email ? [{ email: attendee_email }] : []
             };
 
@@ -1362,11 +1421,11 @@ serve(async (req) => {
         const { data: appt, error } = await supabase.from('calendar_appointments').insert({
           user_id: targetUserId,
           title: title || `Appointment with ${attendee_name || 'Lead'}`,
-          start_time: startTime.toISOString(),
+          start_time: appointmentTime.toISOString(),
           end_time: endTime.toISOString(),
           google_event_id: googleEventId,
           status: 'confirmed',
-          timezone: 'America/Chicago',
+          timezone: userTimezone,
           metadata: { attendee_name, attendee_email, source: 'retell_ai' }
         }).select().single();
 

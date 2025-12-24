@@ -241,6 +241,28 @@ Respond with a JSON object containing:
         .update(leadUpdate)
         .eq('id', callData.lead_id)
         .eq('user_id', user.id)
+
+      // Record learning data for continuous improvement
+      try {
+        await supabaseAdmin
+          .from('ml_learning_data')
+          .insert({
+            user_id: user.id,
+            call_id: callId,
+            lead_id: callData.lead_id,
+            call_outcome: aiAnalysis.disposition,
+            disposition: aiAnalysis.disposition,
+            sentiment_score: aiAnalysis.sentiment === 'positive' ? 0.8 : aiAnalysis.sentiment === 'negative' ? 0.2 : 0.5,
+            confidence_score: aiAnalysis.confidence,
+            key_points: aiAnalysis.key_points,
+            objections: aiAnalysis.objections,
+            pain_points: aiAnalysis.pain_points,
+            created_at: new Date().toISOString()
+          });
+      } catch (learningError) {
+        console.error('Error recording learning data:', learningError);
+        // Don't fail the main operation if learning fails
+      }
       
       // Call disposition-router to handle auto-actions and metrics tracking
       const dispositionRouterResult = await supabaseAdmin.functions.invoke('disposition-router', {

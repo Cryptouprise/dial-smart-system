@@ -3,13 +3,15 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare } from 'lucide-react';
+import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare, LogOut } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import { useAuth } from '@/contexts/AuthContext';
 import DemoBadge from './DemoBadge';
 
 const Navigation = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { signOut } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -107,6 +109,16 @@ const Navigation = () => {
                 );
               })}
             </div>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
             
             <ThemeToggle />
           </div>

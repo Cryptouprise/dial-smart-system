@@ -426,6 +426,51 @@ export const useVoiceBroadcast = () => {
   const startBroadcast = async (broadcastId: string) => {
     setIsLoading(true);
     try {
+      // Pre-flight validation before starting
+      const { data: broadcast } = await supabase
+        .from('voice_broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .maybeSingle();
+
+      if (!broadcast) {
+        throw new Error('Broadcast not found');
+      }
+
+      // Check for required components
+      const validationErrors: string[] = [];
+
+      if (!broadcast.audio_url && !broadcast.message_text) {
+        validationErrors.push('Missing audio or message text');
+      }
+
+      // Check for active phone numbers
+      const { data: phoneNumbers } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .eq('status', 'active')
+        .limit(1);
+
+      if (!phoneNumbers || phoneNumbers.length === 0) {
+        validationErrors.push('No active phone numbers available');
+      }
+
+      // Check for leads in queue
+      const { data: queueItems, count } = await supabase
+        .from('voice_broadcast_queue')
+        .select('id', { count: 'exact', head: true })
+        .eq('broadcast_id', broadcastId)
+        .eq('status', 'pending');
+
+      if (!count || count === 0) {
+        validationErrors.push('No leads in the queue. Add leads first.');
+      }
+
+      if (validationErrors.length > 0) {
+        throw new Error(validationErrors.join('; '));
+      }
+
+      // All checks passed, start the broadcast
       const { data, error } = await supabase.functions.invoke('voice-broadcast-engine', {
         body: { action: 'start', broadcastId }
       });
@@ -434,7 +479,7 @@ export const useVoiceBroadcast = () => {
 
       toast({
         title: "Broadcast Started",
-        description: "Calls are now being made",
+        description: `Making calls to ${count} leads`,
       });
 
       await loadBroadcasts();
@@ -442,15 +487,9 @@ export const useVoiceBroadcast = () => {
     } catch (error: any) {
       console.error('Error starting broadcast:', error);
       
-      // Parse the error message for user-friendly display
-      let errorMessage = error.message || "Failed to start broadcast";
-      if (errorMessage.includes('No pending calls') || errorMessage.includes('Add leads first')) {
-        errorMessage = "No leads in the queue. Click 'Add Leads' to add contacts to this broadcast first.";
-      }
-      
       toast({
         title: "Cannot Start Broadcast",
-        description: errorMessage,
+        description: error.message || "Failed to start broadcast",
         variant: "destructive",
       });
       throw error;

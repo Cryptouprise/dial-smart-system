@@ -18,10 +18,13 @@ import {
   Activity,
   CheckCircle2,
   Loader2,
-  Copy
+  Copy,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useMLLearning } from '@/hooks/useMLLearning';
 
 interface CampaignScript {
   id: string;
@@ -79,15 +82,25 @@ Would it help if I {{offer_solution}}?`
 
 export const ScriptManager: React.FC = () => {
   const { toast } = useToast();
+  const { getScriptAnalytics, analyzePerformance, insights } = useMLLearning();
   const [campaigns, setCampaigns] = useState<CampaignScript[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignScript | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editScript, setEditScript] = useState('');
+  const [scriptAnalytics, setScriptAnalytics] = useState<any[]>([]);
 
   useEffect(() => {
     loadCampaigns();
+    loadScriptAnalytics();
   }, []);
+
+  const loadScriptAnalytics = async () => {
+    const analytics = await getScriptAnalytics();
+    if (analytics) {
+      setScriptAnalytics(analytics);
+    }
+  };
 
   const loadCampaigns = async () => {
     try {
@@ -186,6 +199,10 @@ export const ScriptManager: React.FC = () => {
         <TabsList>
           <TabsTrigger value="scripts">Campaign Scripts</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="analytics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Analytics & Learning
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="scripts">
@@ -292,6 +309,159 @@ export const ScriptManager: React.FC = () => {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="analytics">
+          <div className="space-y-6">
+            {/* AI Insights Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                  AI-Powered Script Insights
+                </CardTitle>
+                <CardDescription>
+                  The system continuously learns from call outcomes to recommend improvements
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <Button 
+                    onClick={analyzePerformance} 
+                    disabled={isLoading}
+                    className="w-full"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="h-4 w-4 mr-2" />
+                        Generate New Insights
+                      </>
+                    )}
+                  </Button>
+
+                  {insights && insights.recommendations && insights.recommendations.length > 0 && (
+                    <div className="space-y-3 mt-4">
+                      <h4 className="font-medium">Latest Recommendations:</h4>
+                      {insights.recommendations.map((rec, idx) => (
+                        <Card key={idx} className="bg-muted/50">
+                          <CardContent className="pt-4">
+                            <p className="text-sm">{rec}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Script Performance Metrics */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Script Performance Analytics
+                </CardTitle>
+                <CardDescription>
+                  Track how each script performs in real calls
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {scriptAnalytics.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No analytics data available yet</p>
+                    <p className="text-sm mt-2">Make some calls to start collecting performance data</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {scriptAnalytics.map((analytics) => (
+                      <Card key={analytics.id} className="bg-muted/30">
+                        <CardContent className="pt-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <h4 className="font-medium">{analytics.script_name}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Version {analytics.script_version}
+                              </p>
+                            </div>
+                            <Badge variant={analytics.success_rate >= 50 ? 'default' : 'secondary'}>
+                              {analytics.success_rate?.toFixed(1)}% Success
+                            </Badge>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Total Calls</p>
+                              <p className="font-medium text-lg">{analytics.total_calls}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Successful</p>
+                              <p className="font-medium text-lg">{analytics.successful_calls}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Avg Duration</p>
+                              <p className="font-medium text-lg">
+                                {analytics.avg_call_duration ? `${Math.round(analytics.avg_call_duration / 60)}m` : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Conversion</p>
+                              <p className="font-medium text-lg">
+                                {analytics.conversion_rate?.toFixed(1) || 0}%
+                              </p>
+                            </div>
+                          </div>
+
+                          {analytics.objection_count > 0 && (
+                            <div className="mt-3 pt-3 border-t">
+                              <p className="text-sm text-muted-foreground">
+                                Common objections: {analytics.objection_count} recorded
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Script Performance Insights */}
+            {insights && insights.scriptPerformance && Object.keys(insights.scriptPerformance).length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Script Comparison</CardTitle>
+                  <CardDescription>
+                    Compare performance across different scripts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {Object.entries(insights.scriptPerformance).map(([scriptName, performance]: [string, any]) => (
+                      <div key={scriptName} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                        <span className="font-medium">{scriptName}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            Success Rate:
+                          </span>
+                          <Badge variant={performance.successRate >= 50 ? 'default' : 'secondary'}>
+                            {performance.successRate.toFixed(1)}%
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </TabsContent>
       </Tabs>

@@ -44,9 +44,32 @@ export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Test Retell API connection
+  const testConnection = async (): Promise<{ valid: boolean; error?: string }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-phone-management', {
+        body: { action: 'list' }
+      });
+
+      if (error) {
+        return { valid: false, error: await extractErrorMessage(error, 'Connection failed') };
+      }
+
+      if (data?.error) {
+        return { valid: false, error: data.error };
+      }
+
+      return { valid: true };
+    } catch (error: any) {
+      return { valid: false, error: error.message || 'Connection test failed' };
+    }
+  };
+
   const getRetellCredentials = async () => {
     // API key is stored in Supabase secrets, not user_credentials table
-    return true; // Just return true to indicate credentials are configured
+    // Test the connection to verify it's configured
+    const result = await testConnection();
+    return result.valid;
   };
 
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
