@@ -724,7 +724,8 @@ function isValidUrl(url: string): boolean {
   try {
     new URL(url);
     return true;
-  } catch {
+  } catch (error) {
+    // Invalid URL format - expected for validation
     return false;
   }
 }

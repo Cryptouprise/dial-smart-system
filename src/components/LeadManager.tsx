@@ -28,6 +28,8 @@ import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
 import LeadActivityTimeline from './LeadActivityTimeline';
 import { LeadDetailDialog } from './LeadDetailDialog';
+import { useDemoData } from '@/hooks/useDemoData';
+
 interface LeadManagerProps {
   onStatsUpdate: (count: number) => void;
 }
@@ -35,6 +37,7 @@ interface LeadManagerProps {
 const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const { toast } = useToast();
   const { createLead, updateLead, getLeads, importLeads, resetLeadsForCalling, isLoading } = usePredictiveDialing();
+  const { isDemoMode, leads: demoLeads, showDemoActionToast } = useDemoData();
   const [leads, setLeads] = useState<any[]>([]);
   const [leadsWithActivity, setLeadsWithActivity] = useState<Set<string>>(new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -59,10 +62,13 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
 
   useEffect(() => {
     loadLeads();
-    loadLeadsWithActivity();
-  }, [filters]);
+    if (!isDemoMode) {
+      loadLeadsWithActivity();
+    }
+  }, [filters, isDemoMode]);
 
   const loadLeadsWithActivity = async () => {
+    if (isDemoMode) return;
     // Get leads that have recent agent decisions (last 24 hours)
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
@@ -80,6 +86,28 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   };
 
   const loadLeads = async () => {
+    // Use demo data if in demo mode
+    if (isDemoMode && demoLeads) {
+      let filteredLeads = [...demoLeads];
+      
+      if (filters.status && filters.status !== 'all') {
+        filteredLeads = filteredLeads.filter(lead => lead.status === filters.status);
+      }
+      
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        filteredLeads = filteredLeads.filter(lead => 
+          (lead.first_name?.toLowerCase().includes(searchLower)) ||
+          (lead.last_name?.toLowerCase().includes(searchLower)) ||
+          (lead.phone_number?.includes(searchLower)) ||
+          (lead.company?.toLowerCase().includes(searchLower))
+        );
+      }
+      setLeads(filteredLeads);
+      onStatsUpdate(filteredLeads.length);
+      return;
+    }
+
     const leadsData = await getLeads(filters.status && filters.status !== 'all' ? { status: filters.status } : undefined);
     if (leadsData) {
       let filteredLeads = leadsData;
@@ -104,6 +132,11 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   };
 
   const handleCreateLead = async () => {
+    if (showDemoActionToast('Lead created')) {
+      setIsCreateDialogOpen(false);
+      resetForm();
+      return;
+    }
     const result = await createLead(formData);
     if (result) {
       setIsCreateDialogOpen(false);

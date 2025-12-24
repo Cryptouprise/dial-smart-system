@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Upload, FileSpreadsheet, Check, X, AlertTriangle, 
-  Loader2, Download, RefreshCw, Users
+  Loader2, Download, RefreshCw, Users, Zap
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -44,10 +44,53 @@ export const LeadUpload: React.FC = () => {
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadResults, setUploadResults] = useState<{ success: number; duplicates: number; errors: number } | null>(null);
+  const [uploadResults, setUploadResults] = useState<{ success: number; duplicates: number; errors: number; launchedInWorkflow?: number } | null>(null);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [defaultSource, setDefaultSource] = useState('CSV Import');
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string>('');
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('');
+  const [launchIntoWorkflow, setLaunchIntoWorkflow] = useState(false);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
   const { toast } = useToast();
+
+  // Load available workflows and campaigns
+  useEffect(() => {
+    loadWorkflowsAndCampaigns();
+  }, []);
+
+  const loadWorkflowsAndCampaigns = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Load workflows
+      const { data: workflowData } = await supabase
+        .from('campaign_workflows')
+        .select('id, name, workflow_type, active')
+        .eq('user_id', user.id)
+        .eq('active', true)
+        .order('created_at', { ascending: false });
+
+      if (workflowData) {
+        setWorkflows(workflowData);
+      }
+
+      // Load campaigns
+      const { data: campaignData } = await supabase
+        .from('campaigns')
+        .select('id, name, status')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (campaignData) {
+        setCampaigns(campaignData);
+      }
+    } catch (error) {
+      console.error('Error loading workflows/campaigns:', error);
+    }
+  };
 
   const parseCSV = (text: string): { headers: string[]; rows: ParsedRow[] } => {
     const lines = text.trim().split('\n');
@@ -237,9 +280,74 @@ export const LeadUpload: React.FC = () => {
 
       setUploadResults({ success, duplicates, errors });
       
+      // WORKFLOW LAUNCH INTEGRATION
+      let launchedCount = 0;
+      if (launchIntoWorkflow && selectedWorkflow && success > 0) {
+        toast({
+          title: 'Launching Workflow',
+          description: `Starting ${success} leads in workflow...`
+        });
+        
+        try {
+          // Get the IDs of the successfully inserted leads by using a timestamp filter
+          // Only get leads created in the last 10 seconds (just inserted)
+          const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+          
+          const { data: newLeads } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('user_id', user.id)
+            .in('phone_number', leadsToInsert.map((l: any) => l.phone_number))
+            .gte('created_at', tenSecondsAgo);
+          
+          if (newLeads && newLeads.length > 0) {
+            // Launch workflows concurrently with Promise.allSettled for better performance
+            const launchPromises = newLeads.map((lead) =>
+              supabase.functions.invoke('workflow-executor', {
+                body: {
+                  action: 'start_workflow',
+                  userId: user.id,
+                  leadId: lead.id,
+                  workflowId: selectedWorkflow,
+                  campaignId: selectedCampaign || null,
+                },
+              })
+            );
+            
+            const results = await Promise.allSettled(launchPromises);
+            
+            // Count successful launches
+            launchedCount = results.filter(
+              (result) => result.status === 'fulfilled' && !result.value.error
+            ).length;
+            
+            const failedCount = results.length - launchedCount;
+            
+            if (failedCount > 0) {
+              console.warn(`${failedCount} workflow launches failed`);
+            }
+            
+            console.log(`Launched ${launchedCount}/${newLeads.length} leads into workflow`);
+          }
+        } catch (launchError) {
+          console.error('Error launching workflow:', launchError);
+          toast({
+            title: 'Workflow Launch Warning',
+            description: `${success} leads imported, but workflow launch encountered errors`,
+            variant: 'destructive'
+          });
+        }
+      }
+      
+      setUploadResults({ success, duplicates, errors, launchedInWorkflow: launchedCount });
+      
+      const message = launchedCount > 0
+        ? `${success} leads imported, ${launchedCount} launched into workflow, ${duplicates} duplicates skipped, ${errors} errors`
+        : `${success} leads imported, ${duplicates} duplicates skipped, ${errors} errors`;
+      
       toast({
         title: 'Upload Complete',
-        description: `${success} leads imported, ${duplicates} duplicates skipped, ${errors} errors`
+        description: message
       });
 
     } catch (error: any) {
@@ -397,6 +505,93 @@ export const LeadUpload: React.FC = () => {
             </CardContent>
           </Card>
 
+          {/* Workflow Launch Integration */}
+          <Card className="border-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-purple-600" />
+                <CardTitle>Auto-Launch into Workflow</CardTitle>
+              </div>
+              <CardDescription>
+                Automatically start leads in a workflow after import for hands-free automation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <div>
+                  <Label className="font-medium">Launch into Workflow After Import</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enable to automatically start the workflow for all imported leads
+                  </p>
+                </div>
+                <Switch 
+                  checked={launchIntoWorkflow} 
+                  onCheckedChange={setLaunchIntoWorkflow} 
+                />
+              </div>
+
+              {launchIntoWorkflow && (
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label>Select Workflow *</Label>
+                    <Select value={selectedWorkflow} onValueChange={setSelectedWorkflow}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a workflow..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workflows.length === 0 ? (
+                          <SelectItem value="none" disabled>
+                            No active workflows available
+                          </SelectItem>
+                        ) : (
+                          workflows.map((workflow) => (
+                            <SelectItem key={workflow.id} value={workflow.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{workflow.name}</span>
+                                <span className="text-xs text-muted-foreground capitalize">
+                                  {workflow.workflow_type.replace('_', ' ')}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Campaign (Optional)</Label>
+                    <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="No campaign (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No campaign</SelectItem>
+                        {campaigns.map((campaign) => (
+                          <SelectItem key={campaign.id} value={campaign.id}>
+                            {campaign.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Associate leads with a campaign for better tracking
+                    </p>
+                  </div>
+
+                  {selectedWorkflow && (
+                    <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+                      <p className="text-sm text-green-800 dark:text-green-200 flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        Ready! Leads will be imported and automatically launched into the workflow.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Preview */}
           <Card>
             <CardHeader>
@@ -447,7 +642,7 @@ export const LeadUpload: React.FC = () => {
           {uploadResults && (
             <Card>
               <CardContent className="py-6">
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className={`grid ${uploadResults.launchedInWorkflow ? 'grid-cols-4' : 'grid-cols-3'} gap-4 text-center`}>
                   <div>
                     <div className="flex items-center justify-center gap-2 text-green-600">
                       <Check className="h-5 w-5" />
@@ -455,6 +650,15 @@ export const LeadUpload: React.FC = () => {
                     </div>
                     <p className="text-sm text-muted-foreground">Imported</p>
                   </div>
+                  {uploadResults.launchedInWorkflow !== undefined && uploadResults.launchedInWorkflow > 0 && (
+                    <div>
+                      <div className="flex items-center justify-center gap-2 text-purple-600">
+                        <Zap className="h-5 w-5" />
+                        <span className="text-2xl font-bold">{uploadResults.launchedInWorkflow}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Launched in Workflow</p>
+                    </div>
+                  )}
                   <div>
                     <div className="flex items-center justify-center gap-2 text-yellow-600">
                       <AlertTriangle className="h-5 w-5" />

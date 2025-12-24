@@ -1034,7 +1034,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
                   message: `❌ Number ${fromNumber} cannot send SMS (likely not A2P registered).\n\nTry one of these numbers instead:\n${smsNums.map((n: string) => `• ${n}`).join('\n')}\n\nUse: send_sms with from_number parameter to specify which number to use.`
                 };
               }
-            } catch {}
+            } catch (error) {
+              console.error('Failed to fetch alternative SMS numbers:', error);
+            }
             
             return { success: false, message: `❌ Number ${fromNumber} cannot send SMS - it may not be A2P/10DLC registered. Use list_sms_numbers to see available options.` };
           }

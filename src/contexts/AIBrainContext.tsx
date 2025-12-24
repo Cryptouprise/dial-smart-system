@@ -7,13 +7,16 @@ interface AIBrainContextType {
   isLoading: boolean;
   isTyping: boolean;
   isOpen: boolean;
+  conversationId: string | null;
   
   // Actions
   sendMessage: (message: string) => Promise<void>;
   submitFeedback: (responseId: string, rating: 'up' | 'down', messageContent: string, responseContent: string) => Promise<void>;
-  clearMessages: () => void;
+  clearMessages: () => Promise<void>;
   retryLastMessage: () => Promise<void>;
   handleNavigation: (route: string) => void;
+  loadArchivedConversations: () => Promise<any[]>;
+  loadConversation: (conversationId: string) => Promise<void>;
   
   // UI controls
   openChat: () => void;

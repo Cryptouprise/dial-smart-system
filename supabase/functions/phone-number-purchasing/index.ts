@@ -137,8 +137,9 @@ serve(async (req) => {
               } else if (errorJson.error_message) {
                 errorMessage = errorJson.error_message;
               }
-            } catch {
-              // Use default error message
+            } catch (parseError) {
+              // Use default error message - JSON parse failed
+              console.error('Failed to parse Retell purchase error:', parseError);
             }
             
             throw new Error(errorMessage);

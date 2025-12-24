@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import { Plus, Play, Pause, BarChart3, Loader2, Beaker } from 'lucide-react';
+import { Plus, Play, Pause, BarChart3, Loader2, Beaker, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -115,10 +115,22 @@ export const WorkflowABTesting: React.FC = () => {
     setTests(prev => prev.map(t => {
       if (t.id === testId) {
         const newStatus = t.status === 'active' ? 'draft' : 'active';
+        toast({
+          title: newStatus === 'active' ? 'Test Started' : 'Test Paused',
+          description: newStatus === 'active' ? 'Leads will now be enrolled in this A/B test' : 'Test has been paused'
+        });
         return { ...t, status: newStatus };
       }
       return t;
     }));
+  };
+
+  const deleteTest = (testId: string) => {
+    setTests(prev => prev.filter(t => t.id !== testId));
+    toast({
+      title: 'Test Deleted',
+      description: 'The A/B test has been removed'
+    });
   };
 
   const calculateWinner = (test: ABTest) => {
@@ -272,23 +284,33 @@ export const WorkflowABTesting: React.FC = () => {
                         {test.split_percentage}% / {100 - test.split_percentage}% split
                       </CardDescription>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleTestStatus(test.id)}
-                    >
-                      {test.status === 'active' ? (
-                        <>
-                          <Pause className="h-4 w-4 mr-1" />
-                          Pause
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-1" />
-                          Start
-                        </>
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleTestStatus(test.id)}
+                      >
+                        {test.status === 'active' ? (
+                          <>
+                            <Pause className="h-4 w-4 mr-1" />
+                            Pause
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-1" />
+                            Start
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deleteTest(test.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

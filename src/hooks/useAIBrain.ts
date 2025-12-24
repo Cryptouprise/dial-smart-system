@@ -1,7 +1,11 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
+
+// Constants
+const MAX_TITLE_LENGTH = 50;
+const DEFAULT_PERSIST_CONVERSATION = true;
 
 export interface AIMessage {
   id: string;
@@ -19,16 +23,19 @@ interface NavigationLink {
 
 interface UseAIBrainOptions {
   onNavigate?: (route: string) => void;
+  persistConversation?: boolean; // New option to enable/disable persistence
 }
 
 export const useAIBrain = (options?: UseAIBrainOptions) => {
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const sessionIdRef = useRef(crypto.randomUUID());
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const persistConversation = options?.persistConversation ?? DEFAULT_PERSIST_CONVERSATION;
 
   // Parse navigation links from content: [[Display Text|/route]]
   const parseNavigationLinks = useCallback((content: string): { cleanContent: string; links: NavigationLink[] } => {
@@ -42,6 +49,18 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
 
     return { cleanContent, links };
   }, []);
+
+  // Load conversation from database on mount - DISABLED until tables are created
+  useEffect(() => {
+    // Database persistence disabled - tables don't exist yet
+    // Will work with in-memory state only
+  }, [persistConversation]);
+
+  // Save message to database - DISABLED until tables are created
+  const saveMessageToDb = useCallback(async (message: AIMessage, role: 'user' | 'assistant') => {
+    // Database persistence disabled - tables don't exist yet
+    // Messages are kept in memory only
+  }, [conversationId, persistConversation]);
 
   // Handle navigation while keeping chat open
   const handleNavigation = useCallback((route: string) => {
@@ -66,6 +85,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
     setIsTyping(true);
+
+    // Save user message to database
+    await saveMessageToDb(userMsg, 'user');
 
     try {
       // Build conversation history for context
@@ -102,6 +124,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
 
       setMessages(prev => [...prev, assistantMsg]);
 
+      // Save assistant message to database
+      await saveMessageToDb(assistantMsg, 'assistant');
+
       // Show toast for successful actions
       if (data.toolResults?.some((r: any) => r.success)) {
         const successResult = data.toolResults.find((r: any) => r.success && r.result?.message);
@@ -130,17 +155,21 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
       });
 
       // Add error message to chat
-      setMessages(prev => [...prev, {
+      const errorMsg: AIMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: `I encountered an error: ${errorMessage}`,
         timestamp: new Date()
-      }]);
+      };
+      setMessages(prev => [...prev, errorMsg]);
+      
+      // Save error message to database
+      await saveMessageToDb(errorMsg, 'assistant');
     } finally {
       setIsLoading(false);
       setIsTyping(false);
     }
-  }, [isLoading, messages, location, parseNavigationLinks, toast]);
+  }, [isLoading, messages, location, parseNavigationLinks, toast, saveMessageToDb]);
 
   // Submit feedback on a response
   const submitFeedback = useCallback(async (
@@ -172,10 +201,17 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
   }, [toast]);
 
   // Clear conversation
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback(async () => {
+    // Database persistence disabled - clear memory only
     setMessages([]);
+    setConversationId(null);
     sessionIdRef.current = crypto.randomUUID();
-  }, []);
+    
+    toast({
+      title: 'Chat cleared',
+      description: 'Conversation has been cleared'
+    });
+  }, [toast]);
 
   // Retry last message
   const retryLastMessage = useCallback(async () => {
@@ -201,6 +237,22 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     }
   }, [messages, sendMessage]);
 
+  // Load archived conversations - DISABLED until tables are created
+  const loadArchivedConversations = useCallback(async () => {
+    // Database persistence disabled - return empty array
+    return [];
+  }, []);
+
+  // Load a specific conversation - DISABLED until tables are created
+  const loadConversation = useCallback(async (convId: string) => {
+    // Database persistence disabled
+    toast({
+      title: 'Feature unavailable',
+      description: 'Conversation history is not available yet',
+      variant: 'destructive'
+    });
+  }, [toast]);
+
   // Quick actions
   const quickActions = {
     status: () => sendMessage('/status'),
@@ -222,6 +274,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     retryLastMessage,
     handleNavigation,
     quickActions,
-    sessionId: sessionIdRef.current
+    sessionId: sessionIdRef.current,
+    conversationId,
+    loadArchivedConversations,
+    loadConversation
   };
 };

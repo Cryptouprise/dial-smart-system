@@ -62,14 +62,16 @@ export const useGoHighLevel = () => {
           if (cred.credential_key === 'apiKey') credentials.apiKey = value;
           if (cred.credential_key === 'locationId') credentials.locationId = value;
           if (cred.credential_key === 'webhookKey') credentials.webhookKey = value;
-        } catch {
-          // Invalid base64, skip
+        } catch (decodeError) {
+          // Invalid base64 encoding - skip this credential
+          console.error('Failed to decode credential:', cred.credential_key, decodeError);
         }
       });
 
       if (!credentials.apiKey || !credentials.locationId) return null;
       return credentials;
-    } catch {
+    } catch (error) {
+      console.error('Failed to load GoHighLevel credentials:', error);
       return null;
     }
   }, []);
@@ -147,7 +149,8 @@ export const useGoHighLevel = () => {
 
       if (error) throw error;
       return true;
-    } catch {
+    } catch (error) {
+      console.error('Failed to save GoHighLevel credentials:', error);
       return false;
     }
   }, []);

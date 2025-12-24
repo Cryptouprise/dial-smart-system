@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { CalendarDays, Phone, Target, TrendingUp } from 'lucide-react';
@@ -18,11 +18,7 @@ const DialingAnalytics = () => {
     conversionRate: 0
   });
 
-  useEffect(() => {
-    loadAnalyticsData();
-  }, []);
-
-  const loadAnalyticsData = async () => {
+  const loadAnalyticsData = useCallback(async () => {
     const [callLogsData, campaignsData] = await Promise.all([
       getCallLogs(),
       getCampaigns()
@@ -34,7 +30,11 @@ const DialingAnalytics = () => {
     }
     
     if (campaignsData) setCampaigns(campaignsData);
-  };
+  }, [getCallLogs, getCampaigns]);
+
+  useEffect(() => {
+    loadAnalyticsData();
+  }, [loadAnalyticsData]);
 
   const calculateAnalytics = (logs: any[]) => {
     const totalCalls = logs.length;

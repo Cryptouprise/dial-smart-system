@@ -175,7 +175,8 @@ serve(async (req) => {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
-        } catch {
+        } catch (parseError) {
+          console.error('Failed to parse Retell error response:', parseError);
           return new Response(JSON.stringify({ 
             error: 'Failed to import to Retell AI', 
             details: errorText,
@@ -583,7 +584,8 @@ serve(async (req) => {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
-        } catch {
+        } catch (parseError) {
+          console.error('Failed to parse campaign error response:', parseError);
           return new Response(JSON.stringify({ error: 'Failed to add number to campaign' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

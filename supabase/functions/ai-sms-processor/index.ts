@@ -145,16 +145,125 @@ serve(async (req) => {
 
       if (saveError) throw saveError;
 
-      // Get AI settings
-      const { data: settings } = await supabaseAdmin
+      // WORKFLOW AUTO-REPLY INTEGRATION
+      // Check if this phone number is associated with an active workflow that has auto-reply enabled
+      let workflowAutoReplySettings = null;
+      let leadId = null;
+      
+      // First, find the lead by phone number
+      const { data: lead } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('phone_number', message.From)
+        .maybeSingle();
+      
+      leadId = lead?.id;
+      
+      if (leadId) {
+        // Check if lead is in an active workflow with auto-reply enabled
+        const { data: activeWorkflow } = await supabaseAdmin
+          .from('lead_workflow_progress')
+          .select(`
+            id,
+            campaign_workflows!inner(
+              id,
+              name,
+              auto_reply_settings
+            )
+          `)
+          .eq('lead_id', leadId)
+          .eq('status', 'active')
+          .not('campaign_workflows.auto_reply_settings', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (activeWorkflow?.campaign_workflows?.auto_reply_settings?.enabled) {
+          workflowAutoReplySettings = activeWorkflow.campaign_workflows.auto_reply_settings;
+          console.log('[AI SMS] Using workflow auto-reply settings from workflow:', activeWorkflow.campaign_workflows.name);
+        }
+      }
+
+      // Get global AI settings (fallback if no workflow auto-reply)
+      const { data: globalSettings } = await supabaseAdmin
         .from('ai_sms_settings')
         .select('*')
         .eq('user_id', userId)
         .maybeSingle();
 
-      const shouldAutoRespond = settings?.enabled && settings?.auto_response_enabled;
+      // Determine which settings to use
+      let settings = globalSettings;
+      let shouldAutoRespond = false;
+
+      if (workflowAutoReplySettings) {
+        // Use workflow-specific auto-reply settings
+        settings = {
+          ...globalSettings,
+          enabled: true,
+          auto_response_enabled: true,
+          custom_instructions: workflowAutoReplySettings.ai_instructions || globalSettings?.custom_instructions,
+          response_delay: workflowAutoReplySettings.response_delay_seconds || globalSettings?.response_delay || 5,
+          prevent_double_texting: globalSettings?.prevent_double_texting ?? true,
+          double_text_delay_seconds: globalSettings?.double_text_delay_seconds || 60,
+          // Add workflow-specific fields
+          workflow_knowledge_base: workflowAutoReplySettings.knowledge_base,
+          workflow_calendar_enabled: workflowAutoReplySettings.calendar_enabled,
+          workflow_booking_link: workflowAutoReplySettings.booking_link,
+          stop_on_human_reply: workflowAutoReplySettings.stop_on_human_reply ?? true,
+        };
+        shouldAutoRespond = true;
+        console.log('[AI SMS] Auto-reply enabled via workflow settings');
+      } else {
+        // Use global settings
+        shouldAutoRespond = globalSettings?.enabled && globalSettings?.auto_response_enabled;
+        console.log('[AI SMS] Using global auto-reply settings');
+      }
 
       if (shouldAutoRespond && !isReaction.isReaction) {
+        // Check if we should stop auto-reply on human reply
+        if (settings?.stop_on_human_reply) {
+          // Check if there are any manual (non-AI) outbound messages from user in this conversation
+          const { data: manualMessages } = await supabaseAdmin
+            .from('sms_messages')
+            .select('id, created_at')
+            .eq('conversation_id', conversationId)
+            .eq('user_id', userId)
+            .eq('direction', 'outbound')
+            .eq('is_ai_generated', false)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          if (manualMessages && manualMessages.length > 0) {
+            const lastManualMessage = manualMessages[0];
+            // Configurable threshold - default 24 hours, can be overridden in workflow settings
+            const pauseThresholdHours = settings.human_reply_pause_hours || 24;
+            const timeSinceManual = (Date.now() - new Date(lastManualMessage.created_at).getTime()) / (1000 * 60); // minutes
+            
+            // If human replied within threshold, pause AI auto-reply for this conversation
+            if (timeSinceManual < pauseThresholdHours * 60) {
+              console.log(`[AI SMS] Skipping auto-reply - human replied manually within last ${pauseThresholdHours}h`);
+              
+              // Mark conversation to indicate AI is paused
+              await supabaseAdmin
+                .from('sms_conversations')
+                .update({ 
+                  ai_paused: true,
+                  ai_pause_reason: 'human_reply_detected',
+                  ai_paused_at: new Date().toISOString() // Use current timestamp when AI is paused
+                })
+                .eq('id', conversationId);
+              
+              return new Response(JSON.stringify({ 
+                success: true, 
+                message: 'Processed without response - AI paused due to human reply' 
+              }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        }
+
         // Check double-texting prevention
         const canSend = await checkDoubleTextingPrevention(
           supabaseAdmin,
@@ -680,17 +789,33 @@ async function generateAIResponse(
     content: currentContent
   });
 
-  const systemPrompt = `You are an AI SMS assistant with the following personality: ${settings?.ai_personality || 'professional and helpful'}. 
+  // Build system prompt with workflow-specific knowledge if available
+  let customInstructions = settings?.custom_instructions || settings?.ai_personality || 'professional and helpful';
+  
+  // Add workflow-specific knowledge base if provided
+  let knowledgeBase = '';
+  if (settings?.workflow_knowledge_base) {
+    knowledgeBase = `\n\nKNOWLEDGE BASE:\n${settings.workflow_knowledge_base}`;
+    console.log('[AI SMS] Using workflow-specific knowledge base');
+  }
+
+  // Add calendar/booking capabilities if enabled
+  let calendarInfo = '';
+  if (settings?.workflow_calendar_enabled || settings?.calendar_enabled) {
+    const bookingLink = settings?.workflow_booking_link || settings?.booking_link || '';
+    calendarInfo = `\n\nIMPORTANT CALENDAR/APPOINTMENT CAPABILITIES:
+- You can help schedule appointments
+- If the user asks about availability, scheduling, or booking, be proactive
+- When they want to book, ask for their preferred date and time${bookingLink ? `\n- Share this booking link when appropriate: ${bookingLink}` : ''}
+- If they mention times like "tomorrow at 2pm" or "next Monday", acknowledge and offer to schedule`;
+    console.log('[AI SMS] Calendar booking enabled');
+  }
+
+  const systemPrompt = `You are an AI SMS assistant with the following personality: ${customInstructions}${knowledgeBase}${calendarInfo}
   
 Keep responses concise and appropriate for SMS (under 300 characters when possible). Be natural and conversational. 
 If the user sends an image, acknowledge it and respond appropriately based on the image analysis.
-DO NOT include any special characters or formatting that may not work well in SMS.
-
-IMPORTANT CALENDAR/APPOINTMENT CAPABILITIES:
-- If the user asks about availability, scheduling, or booking an appointment, let them know you can help with that
-- When they want to book, ask for their preferred date and time
-- You can check availability and book appointments on their behalf
-- If they mention times like "tomorrow at 2pm" or "next Monday", acknowledge and confirm`;
+DO NOT include any special characters or formatting that may not work well in SMS.`;
 
   // Check if message is about appointments/scheduling
   const appointmentKeywords = ['appointment', 'schedule', 'book', 'available', 'meet', 'calendar', 'time slot', 'when can'];

@@ -15,9 +15,11 @@ import QuickTestCampaign from '@/components/QuickTestCampaign';
 import IntelligentPacingPanel from '@/components/IntelligentPacingPanel';
 import SmartRetryPanel from '@/components/SmartRetryPanel';
 import LiveCallMonitor from '@/components/LiveCallMonitor';
+import { useDemoData } from '@/hooks/useDemoData';
 
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
+  const { isDemoMode, campaigns: demoCampaigns, callLogs: demoCallLogs, todayStats, leadCount } = useDemoData();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -28,6 +30,21 @@ const PredictiveDialingDashboard = () => {
   });
 
   useEffect(() => {
+    if (isDemoMode) {
+      // Use demo data
+      if (demoCampaigns) setCampaigns(demoCampaigns as any);
+      if (demoCallLogs) setCallLogs(demoCallLogs);
+      if (todayStats) {
+        setStats({
+          totalLeads: leadCount,
+          activeCampaigns: demoCampaigns?.filter(c => c.status === 'active').length || 0,
+          todayCalls: todayStats.totalCalls,
+          connectRate: Math.round((todayStats.connectedCalls / todayStats.totalCalls) * 100) || 0
+        });
+      }
+      return;
+    }
+
     loadDashboardData();
 
     // Set up real-time subscriptions for call_logs
@@ -59,7 +76,7 @@ const PredictiveDialingDashboard = () => {
       supabase.removeChannel(callLogsChannel);
       supabase.removeChannel(dialingQueuesChannel);
     };
-  }, []);
+  }, [isDemoMode]);
 
   const loadDashboardData = async () => {
     const campaignsData = await getCampaigns();
