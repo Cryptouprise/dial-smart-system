@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { usePipelineManagement } from '@/hooks/usePipelineManagement';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
@@ -213,8 +212,8 @@ const PipelineKanban = () => {
       ) : (
         /* Kanban Board */
         <DragDropContext onDragEnd={handleDragEnd}>
-          <ScrollArea className="flex-1">
-            <div className="flex gap-4 pb-4 min-h-[500px]">
+          <div className="flex-1 overflow-x-auto">
+            <div className="flex gap-4 pb-4 min-h-[500px] min-w-max">
               {pipelineBoards.map(board => {
                 const boardLeads = groupedLeads[board.id] || [];
                 const stageColor = board.disposition?.color || '#6b7280';
@@ -234,7 +233,7 @@ const PipelineKanban = () => {
                         </Badge>
                       </div>
                       {board.disposition?.description && (
-                        <p className="text-xs text-muted-foreground pl-4.5 line-clamp-1">
+                        <p className="text-xs text-muted-foreground pl-4 line-clamp-1">
                           {board.disposition.description}
                         </p>
                       )}
@@ -332,7 +331,7 @@ const PipelineKanban = () => {
                 );
               })}
             </div>
-          </ScrollArea>
+          </div>
         </DragDropContext>
       )}
 
