@@ -18,7 +18,6 @@ import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import AiSmsConversations from "./components/AiSmsConversations";
 import AIBrainChat from "./components/AIBrainChat";
-import AIAssistantChat from "./components/AIAssistantChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
 import InstallApp from "./pages/InstallApp";
 import MobileBottomNav from "./components/MobileBottomNav";
