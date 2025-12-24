@@ -98,12 +98,30 @@
   body {
     @apply bg-background text-foreground;
     overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Prevent horizontal overflow on cards and containers */
   .overflow-safe {
     max-width: 100%;
     overflow-x: auto;
+  }
+
+  /* Safe area for mobile devices with notches */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-area-left {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .safe-area-right {
+    padding-right: env(safe-area-inset-right);
   }
 }
 
@@ -123,5 +141,41 @@
   .scroll-area-safe {
     @apply overflow-y-auto overflow-x-hidden;
     max-height: calc(100vh - 200px);
+  }
+
+  /* Touch target minimum size (44x44px recommended by Apple) */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Mobile-friendly button sizing */
+  @media (max-width: 768px) {
+    .btn-mobile {
+      @apply min-h-[44px] px-4;
+    }
+  }
+
+  /* Bottom nav spacing for pages */
+  .pb-mobile-nav {
+    @apply pb-20 md:pb-0;
+  }
+
+  /* Pull-to-refresh support */
+  .pull-to-refresh {
+    overscroll-behavior-y: contain;
+  }
+
+  /* Smooth scrolling for mobile */
+  .smooth-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Mobile dialog improvements */
+  @media (max-width: 640px) {
+    [role="dialog"] {
+      @apply max-h-[85vh] overflow-y-auto;
+    }
   }
 }

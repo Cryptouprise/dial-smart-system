@@ -19,6 +19,9 @@ import AiSmsConversations from "./components/AiSmsConversations";
 import AIBrainChat from "./components/AIBrainChat";
 import AIAssistantChat from "./components/AIAssistantChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
+import InstallApp from "./pages/InstallApp";
+import MobileBottomNav from "./components/MobileBottomNav";
+import InstallBanner from "./components/InstallBanner";
 
 const queryClient = new QueryClient();
 
@@ -41,9 +44,14 @@ const App = () => (
                   <Route path="/api-keys" element={<ApiKeys />} />
                   <Route path="/help" element={<HelpPage />} />
                   <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/install" element={<InstallApp />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
+                {/* Mobile Navigation */}
+                <MobileBottomNav />
+                {/* Install Banner for first-time mobile visitors */}
+                <InstallBanner />
                 {/* Global AI Assistants - available on all pages */}
                 <AIBrainChat />
                 <AIAssistantChat />
