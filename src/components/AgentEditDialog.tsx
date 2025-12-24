@@ -650,8 +650,9 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         try {
           const errorData = await error.context?.json?.();
           errorMessage = errorData?.error || errorData?.message || errorMessage;
-        } catch {
+        } catch (parseError) {
           // If response parsing fails, use step-based message
+          console.error('Failed to parse calendar error response:', parseError);
           if (error.message?.includes('non-2xx')) {
             errorMessage = 'Please connect your Google Calendar first';
           }
@@ -989,7 +990,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                         try {
                           const parsed = JSON.parse(e.target.value);
                           updateConfig('post_call_analysis_data', parsed);
-                        } catch {}
+                        } catch (parseError) {
+                          // Invalid JSON - ignore update but log for debugging
+                          console.error('Invalid JSON in post_call_analysis_data:', parseError);
+                        }
                       }}
                       placeholder='[{"type":"string","name":"customer_name","description":"Customer name"}]'
                       rows={5}
@@ -1285,7 +1289,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       try {
                         const parsed = JSON.parse(e.target.value);
                         updateConfig('pronunciation_dictionary', parsed);
-                      } catch {}
+                      } catch (parseError) {
+                        // Invalid JSON - ignore update but log for debugging
+                        console.error('Invalid JSON in pronunciation_dictionary:', parseError);
+                      }
                     }}
                     placeholder='[{"word":"actually","alphabet":"ipa","phoneme":"ˈæktʃuəli"}]'
                     rows={4}

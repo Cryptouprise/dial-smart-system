@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -33,26 +33,7 @@ const DialingPerformanceDashboard = () => {
   const [performanceScore, setPerformanceScore] = useState(0);
   const [chartData, setChartData] = useState<any[]>([]);
 
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadMetricsWrapper = async () => {
-      if (!isMounted) return;
-      await loadMetrics();
-    };
-    
-    loadMetricsWrapper();
-    
-    // Update metrics every 5 seconds - no dependencies to avoid infinite loops
-    const interval = setInterval(loadMetricsWrapper, 5000);
-    
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []); // Empty dependency array - interval handles refresh
-
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
     const dialingRate = await calculateDialingRate();
     const insights = await learnFromHistory();
     
@@ -85,7 +66,18 @@ const DialingPerformanceDashboard = () => {
       }));
       setChartData(last10);
     }
-  };
+  }, [calculateDialingRate, learnFromHistory, historicalData]);
+
+  useEffect(() => {
+    loadMetrics();
+    
+    // Update metrics every 5 seconds
+    const interval = setInterval(() => {
+      loadMetrics();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [loadMetrics]);
 
   const calculatePerformanceScore = (metrics: any): number => {
     let score = 0;

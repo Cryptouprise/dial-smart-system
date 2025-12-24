@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,16 @@ const ConcurrencyMonitor = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  const loadSettings = useCallback(async () => {
+    const currentSettings = await getConcurrencySettings();
+    setSettings(currentSettings);
+  }, [getConcurrencySettings]);
+
+  const loadDialingRate = useCallback(async () => {
+    const rate = await calculateDialingRate();
+    setDialingRate(rate);
+  }, [calculateDialingRate]);
+
   useEffect(() => {
     loadSettings();
     loadDialingRate();
@@ -55,17 +65,7 @@ const ConcurrencyMonitor = () => {
     }, 5000);
     
     return () => clearInterval(interval);
-  }, [activeCalls]);
-
-  const loadSettings = async () => {
-    const currentSettings = await getConcurrencySettings();
-    setSettings(currentSettings);
-  };
-
-  const loadDialingRate = async () => {
-    const rate = await calculateDialingRate();
-    setDialingRate(rate);
-  };
+  }, [loadSettings, loadDialingRate, activeCalls]);
 
   const handleSaveSettings = async () => {
     const success = await updateConcurrencySettings(settings);

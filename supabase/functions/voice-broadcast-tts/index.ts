@@ -109,7 +109,8 @@ serve(async (req) => {
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.detail?.message || errorJson.message || errorText;
-      } catch {
+      } catch (parseError) {
+        console.error('Failed to parse ElevenLabs error response:', parseError);
         errorMessage = errorText;
       }
       

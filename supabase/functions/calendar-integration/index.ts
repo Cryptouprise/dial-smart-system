@@ -1239,8 +1239,9 @@ serve(async (req) => {
             } else {
               errorMessage = errorJson.error?.message || errorMessage;
             }
-          } catch {
-            // Keep default message
+          } catch (parseError) {
+            // Keep default message - JSON parse failed
+            console.error('Failed to parse Google Calendar error response:', parseError);
           }
           
           return new Response(
@@ -1663,7 +1664,8 @@ async function getCalEventTypeId(supabase: any, userId: string | null): Promise<
 function safeJsonParse<T>(value: string, fallback: T): T {
   try {
     return JSON.parse(value) as T;
-  } catch {
+  } catch (error) {
+    // JSON parse failed, return fallback - expected for invalid JSON
     return fallback;
   }
 }
