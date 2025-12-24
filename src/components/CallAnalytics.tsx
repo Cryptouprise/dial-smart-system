@@ -3,21 +3,26 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Phone, AlertTriangle, RotateCw } from 'lucide-react';
+import { useDemoData } from '@/hooks/useDemoData';
 
 interface CallAnalyticsProps {
   numbers: any[];
 }
 
 const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
+  const { isDemoMode, callVolumeData: demoCallVolumeData, todayStats } = useDemoData();
+  
   // Ensure numbers is always an array
   const safeNumbers = Array.isArray(numbers) ? numbers : [];
 
-  // Generate sample analytics data based on numbers
-  const callVolumeData = Array.from({ length: 7 }, (_, i) => ({
-    day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-    calls: Math.floor(Math.random() * 100) + 20,
-    spam: Math.floor(Math.random() * 10)
-  }));
+  // Use demo data or generate sample analytics data
+  const callVolumeData = isDemoMode && demoCallVolumeData 
+    ? demoCallVolumeData.map(d => ({ day: d.day, calls: d.calls, spam: Math.floor(d.calls * 0.05) }))
+    : Array.from({ length: 7 }, (_, i) => ({
+        day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
+        calls: Math.floor(Math.random() * 100) + 20,
+        spam: Math.floor(Math.random() * 10)
+      }));
 
   const numberStatusData = [
     { name: 'Active', value: safeNumbers.filter(n => n?.status === 'active').length, color: '#10B981' },
@@ -42,7 +47,7 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
     rotations: Math.floor(Math.random() * 5) + 1
   }));
 
-  const totalCalls = safeNumbers.reduce((sum, n) => sum + (n?.daily_calls || 0), 0);
+  const totalCalls = isDemoMode && todayStats ? todayStats.totalCalls : safeNumbers.reduce((sum, n) => sum + (n?.daily_calls || 0), 0);
   const avgCallsPerNumber = safeNumbers.length > 0 ? totalCalls / safeNumbers.length : 0;
   const highVolumeNumbers = safeNumbers.filter(n => (n?.daily_calls || 0) > 40).length;
 

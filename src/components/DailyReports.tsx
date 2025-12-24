@@ -20,6 +20,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format, subDays } from 'date-fns';
+import { useDemoData } from '@/hooks/useDemoData';
 
 interface DailyReport {
   id: string;
@@ -47,12 +48,22 @@ export const DailyReports: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const { toast } = useToast();
+  const { isDemoMode, dailyReports: demoReports } = useDemoData();
 
   useEffect(() => {
     fetchReports();
-  }, []);
+  }, [isDemoMode]);
 
   const fetchReports = async () => {
+    if (isDemoMode && demoReports) {
+      setReports(demoReports as any);
+      if (demoReports.length > 0) {
+        setSelectedReport(demoReports[0] as any);
+      }
+      setIsLoading(false);
+      return;
+    }
+    
     try {
       const { data, error } = await supabase
         .from('daily_reports')

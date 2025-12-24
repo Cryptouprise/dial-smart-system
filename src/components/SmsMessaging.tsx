@@ -35,11 +35,13 @@ import { useSmsMessaging, type SmsMessage, type TwilioNumber } from '@/hooks/use
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { normalizePhoneNumber, formatPhoneNumber, getPhoneValidationError } from '@/lib/phoneUtils';
+import { useDemoData } from '@/hooks/useDemoData';
 
 const SmsMessaging: React.FC = () => {
-  const { isLoading, messages, sendSms, getMessages, getAvailableNumbers, configureWebhook } = useSmsMessaging();
+  const { isLoading, messages: realMessages, sendSms, getMessages, getAvailableNumbers, configureWebhook } = useSmsMessaging();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { isDemoMode, smsMessages: demoMessages, phoneNumbers: demoPhoneNumbers, showDemoActionToast } = useDemoData();
   
   const [toNumber, setToNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -48,11 +50,29 @@ const SmsMessaging: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
 
+  // Use demo messages when in demo mode
+  const messages = isDemoMode && demoMessages ? demoMessages as any : realMessages;
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [isDemoMode]);
 
   const loadData = async () => {
+    if (isDemoMode && demoPhoneNumbers) {
+      const demoTwilioNumbers: TwilioNumber[] = demoPhoneNumbers.map(p => ({
+        number: p.number,
+        friendly_name: p.friendly_name,
+        webhook_configured: true,
+        a2p_registered: true,
+        is_ready: true
+      }));
+      setAvailableNumbers(demoTwilioNumbers);
+      if (demoTwilioNumbers.length > 0 && !fromNumber) {
+        setFromNumber(demoTwilioNumbers[0].number);
+      }
+      return;
+    }
+    
     try {
       const [numbers] = await Promise.all([
         getAvailableNumbers(),
