@@ -11,7 +11,7 @@ import { AIBrainProvider } from "@/contexts/AIBrainContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
-import { DemoModeProvider } from "@/contexts/DemoModeProvider";
+import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
