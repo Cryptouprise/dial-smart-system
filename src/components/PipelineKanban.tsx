@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,18 +14,32 @@ import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
 import { Plus, Users, Phone, Calendar, ArrowRight, Filter, Mail, Building, Bot, Clock, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format } from 'date-fns';
+import { useDemoData } from '@/hooks/useDemoData';
 
 const PipelineKanban = () => {
   const { 
-    dispositions, 
-    pipelineBoards, 
-    leadPositions, 
+    dispositions: realDispositions, 
+    pipelineBoards: realPipelineBoards, 
+    leadPositions: realLeadPositions, 
     isLoading,
     createDisposition,
     createPipelineBoard,
     moveLeadToPipeline,
     refetch
   } = usePipelineManagement();
+  
+  const { 
+    isDemoMode, 
+    pipelineBoards: demoPipelineBoards, 
+    dispositions: demoDispositions, 
+    leadPositions: demoLeadPositions,
+    showDemoActionToast 
+  } = useDemoData();
+  
+  // Use demo data when in demo mode
+  const dispositions = isDemoMode && demoDispositions ? demoDispositions : realDispositions;
+  const pipelineBoards = isDemoMode && demoPipelineBoards ? demoPipelineBoards : realPipelineBoards;
+  const leadPositions = isDemoMode && demoLeadPositions ? demoLeadPositions : realLeadPositions;
   
   const [newDisposition, setNewDisposition] = useState({
     name: '',
