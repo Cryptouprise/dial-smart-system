@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { CallSimulator } from '@/components/CallSimulator';
 import { RateLimitingSettings } from '@/components/RateLimitingSettings';
+import DemoModeToggle from '@/components/DemoModeToggle';
 
 const Settings = () => {
   const [autoQuarantine, setAutoQuarantine] = useState(true);
@@ -143,6 +144,9 @@ const Settings = () => {
             Sign Out
           </Button>
         </div>
+
+        {/* Demo Mode */}
+        <DemoModeToggle />
 
         {/* Dialer Settings */}
         <Card>

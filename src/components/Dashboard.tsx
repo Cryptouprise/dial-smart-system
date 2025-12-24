@@ -35,6 +35,7 @@ import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import QuickStartCards from '@/components/QuickStartCards';
 import TodayPerformanceCard from '@/components/TodayPerformanceCard';
+import QuickLaunchButton from '@/components/QuickLaunchButton';
 import { BudgetManager } from '@/components/BudgetManager';
 import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
 import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
@@ -166,6 +167,9 @@ const Dashboard = () => {
             <div className="space-y-4 lg:space-y-6">
               {/* Today's Performance - Always visible for quick stats */}
               <TodayPerformanceCard />
+              
+              {/* Quick Launch - One-Click Campaign Start */}
+              <QuickLaunchButton />
               
               {/* Quick Start Cards - AI Guided Setup */}
               <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
