@@ -54,9 +54,8 @@ const App = () => (
                 <MobileBottomNav />
                 {/* Install Banner for first-time mobile visitors */}
                 <InstallBanner />
-                {/* Global AI Assistants - available on all pages */}
+                {/* Global AI Assistant - available on all pages */}
                 <AIBrainChat />
-                <AIAssistantChat />
               </AIBrainProvider>
             </BrowserRouter>
           </TooltipProvider>
