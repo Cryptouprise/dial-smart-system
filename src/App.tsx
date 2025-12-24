@@ -8,6 +8,7 @@ import { ThemeProvider } from "next-themes";
 import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
 import { AIErrorProvider } from "@/contexts/AIErrorContext";
 import { AIBrainProvider } from "@/contexts/AIBrainContext";
+import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
@@ -28,10 +29,12 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <SimpleModeProvider>
-        <AIErrorProvider>
-          <TooltipProvider>
-            <Toaster />
+      <DemoModeProvider>
+        <SimpleModeProvider>
+          <AIErrorProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
             <Sonner />
             <BrowserRouter>
               <AIBrainProvider>
@@ -60,6 +63,7 @@ const App = () => (
           </TooltipProvider>
         </AIErrorProvider>
       </SimpleModeProvider>
+    </DemoModeProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

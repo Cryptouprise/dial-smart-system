@@ -3,6 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Phone, PhoneIncoming, Calendar, MessageSquare, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useDemoMode } from '@/contexts/DemoModeContext';
+import { DEMO_TODAY_STATS } from '@/data/demo/demoStats';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
 
 interface TodayStats {
   totalCalls: number;
@@ -15,6 +18,7 @@ interface TodayStats {
 }
 
 const TodayPerformanceCard: React.FC = () => {
+  const { isDemoMode } = useDemoMode();
   const [stats, setStats] = useState<TodayStats>({
     totalCalls: 0,
     connectedCalls: 0,
@@ -27,6 +31,15 @@ const TodayPerformanceCard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isDemoMode) {
+      // Use demo data with a slight delay for animation effect
+      setTimeout(() => {
+        setStats(DEMO_TODAY_STATS);
+        setLoading(false);
+      }, 300);
+      return;
+    }
+
     const loadTodayStats = async () => {
       try {
         const today = new Date();
@@ -87,7 +100,7 @@ const TodayPerformanceCard: React.FC = () => {
     };
 
     loadTodayStats();
-  }, []);
+  }, [isDemoMode]);
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -120,14 +133,14 @@ const TodayPerformanceCard: React.FC = () => {
   }
 
   return (
-    <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+    <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20 overflow-hidden">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
             Today's Performance
           </CardTitle>
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="outline" className="text-xs animate-pulse">
             Live
           </Badge>
         </div>
@@ -135,27 +148,29 @@ const TodayPerformanceCard: React.FC = () => {
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Calls Made */}
-          <div className="bg-background/60 rounded-lg p-3 space-y-1">
+          <div className="bg-background/60 rounded-lg p-3 space-y-1 transition-all hover:bg-background/80 hover:scale-[1.02]">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Phone className="h-4 w-4" />
               <span className="text-xs font-medium">Calls</span>
             </div>
-            <div className="text-2xl font-bold">{stats.totalCalls}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedCounter value={stats.totalCalls} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats.connectedCalls} connected
+              <AnimatedCounter value={stats.connectedCalls} /> connected
             </p>
           </div>
 
           {/* Answer Rate */}
-          <div className="bg-background/60 rounded-lg p-3 space-y-1">
+          <div className="bg-background/60 rounded-lg p-3 space-y-1 transition-all hover:bg-background/80 hover:scale-[1.02]">
             <div className="flex items-center gap-2 text-muted-foreground">
               <PhoneIncoming className="h-4 w-4" />
               <span className="text-xs font-medium">Answer Rate</span>
             </div>
             <div className="text-2xl font-bold flex items-center gap-1">
-              {stats.answerRate}%
+              <AnimatedCounter value={stats.answerRate} suffix="%" />
               {stats.answerRate >= 30 ? (
-                <TrendingUp className="h-4 w-4 text-green-500" />
+                <TrendingUp className="h-4 w-4 text-green-500 animate-bounce" />
               ) : stats.answerRate > 0 ? (
                 <TrendingDown className="h-4 w-4 text-amber-500" />
               ) : null}
@@ -166,13 +181,13 @@ const TodayPerformanceCard: React.FC = () => {
           </div>
 
           {/* Appointments */}
-          <div className="bg-background/60 rounded-lg p-3 space-y-1">
+          <div className="bg-background/60 rounded-lg p-3 space-y-1 transition-all hover:bg-background/80 hover:scale-[1.02]">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-4 w-4" />
               <span className="text-xs font-medium">Appointments</span>
             </div>
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {stats.appointments}
+              <AnimatedCounter value={stats.appointments} />
             </div>
             <p className="text-xs text-muted-foreground">
               Booked today
@@ -180,14 +195,16 @@ const TodayPerformanceCard: React.FC = () => {
           </div>
 
           {/* SMS Activity */}
-          <div className="bg-background/60 rounded-lg p-3 space-y-1">
+          <div className="bg-background/60 rounded-lg p-3 space-y-1 transition-all hover:bg-background/80 hover:scale-[1.02]">
             <div className="flex items-center gap-2 text-muted-foreground">
               <MessageSquare className="h-4 w-4" />
               <span className="text-xs font-medium">SMS</span>
             </div>
-            <div className="text-2xl font-bold">{stats.smsSent + stats.smsReceived}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedCounter value={stats.smsSent + stats.smsReceived} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats.smsSent} sent · {stats.smsReceived} received
+              <AnimatedCounter value={stats.smsSent} /> sent · <AnimatedCounter value={stats.smsReceived} /> received
             </p>
           </div>
         </div>

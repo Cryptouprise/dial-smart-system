@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import DemoBadge from './DemoBadge';
 
 const Navigation = () => {
   const location = useLocation();
@@ -63,6 +64,7 @@ const Navigation = () => {
             <Link to="/" className="font-bold text-lg md:text-xl text-primary">
               AI Dial Boss
             </Link>
+            <DemoBadge />
             
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center space-x-1">
