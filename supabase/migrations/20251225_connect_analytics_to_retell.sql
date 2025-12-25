@@ -81,17 +81,25 @@ BEGIN
       total_calls = agent_performance_metrics.total_calls + 1,
       successful_calls = agent_performance_metrics.successful_calls + 
         CASE WHEN NEW.outcome IN ('interested', 'hot_lead', 'appointment_booked') THEN 1 ELSE 0 END,
-      success_rate = ROUND(
-        (agent_performance_metrics.successful_calls::DECIMAL + 
-          CASE WHEN NEW.outcome IN ('interested', 'hot_lead', 'appointment_booked') THEN 1 ELSE 0 END) / 
-        (agent_performance_metrics.total_calls + 1) * 100, 
-        2
-      ),
-      avg_call_duration = ROUND(
-        (COALESCE(agent_performance_metrics.avg_call_duration, 0) * agent_performance_metrics.total_calls + 
-          COALESCE(NEW.duration_seconds, 0)) / 
-        (agent_performance_metrics.total_calls + 1)
-      ),
+      success_rate = CASE 
+        WHEN (agent_performance_metrics.total_calls + 1) > 0 THEN
+          ROUND(
+            (agent_performance_metrics.successful_calls::DECIMAL + 
+              CASE WHEN NEW.outcome IN ('interested', 'hot_lead', 'appointment_booked') THEN 1 ELSE 0 END) / 
+            (agent_performance_metrics.total_calls + 1) * 100, 
+            2
+          )
+        ELSE 0
+      END,
+      avg_call_duration = CASE
+        WHEN agent_performance_metrics.total_calls > 0 THEN
+          ROUND(
+            (COALESCE(agent_performance_metrics.avg_call_duration, 0) * agent_performance_metrics.total_calls + 
+              COALESCE(NEW.duration_seconds, 0)) / 
+            (agent_performance_metrics.total_calls + 1)
+          )
+        ELSE COALESCE(NEW.duration_seconds, 0)
+      END,
       last_updated = NOW();
   END IF;
   
