@@ -736,6 +736,15 @@ async function executeToolCall(
       }
 
       case 'send_sms_blast': {
+        // Normalize phone numbers to E.164 format
+        const normalizePhone = (phone: string): string => {
+          const digits = phone.replace(/\D/g, '');
+          if (digits.length === 10) return '+1' + digits;
+          if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
+          if (!phone.startsWith('+')) return '+' + digits;
+          return phone;
+        };
+
         // Get leads to send to
         let leadsQuery = supabase
           .from('leads')
@@ -753,7 +762,7 @@ async function executeToolCall(
           leadsQuery = leadsQuery.contains('tags', args.filter.tags);
         }
 
-        const { data: leads, error: leadsError } = await leadsQuery.limit(500);
+        const { data: leads, error: leadsError } = await leadsQuery.limit(100); // Limit to 100 for real sending
         if (leadsError) throw leadsError;
 
         if (!leads || leads.length === 0) {
@@ -777,21 +786,59 @@ async function executeToolCall(
           return { success: false, result: { error: 'No phone number available to send from. Add phone numbers first.' } };
         }
 
-        // Create SMS messages
-        const messages = leads.map((lead: any) => ({
-          user_id: userId,
-          to_number: lead.phone_number,
-          from_number: fromNumber,
-          body: args.message
-            .replace('{first_name}', lead.first_name || '')
-            .replace('{last_name}', lead.last_name || ''),
-          direction: 'outbound',
-          status: 'pending',
-          lead_id: lead.id
-        }));
+        const normalizedFrom = normalizePhone(fromNumber);
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-        const { error: insertError } = await supabase.from('sms_messages').insert(messages);
-        if (insertError) throw insertError;
+        // Send SMS to each lead via sms-messaging edge function
+        let successCount = 0;
+        let failCount = 0;
+        const errors: string[] = [];
+
+        console.log(`[AI Brain] Sending SMS blast to ${leads.length} leads from ${normalizedFrom}`);
+
+        for (const lead of leads) {
+          const personalizedMessage = args.message
+            .replace('{first_name}', lead.first_name || '')
+            .replace('{last_name}', lead.last_name || '');
+
+          const normalizedTo = normalizePhone(lead.phone_number);
+
+          try {
+            const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                action: 'send_sms',
+                to: normalizedTo,
+                from: normalizedFrom,
+                body: personalizedMessage,
+                user_id: userId,
+                lead_id: lead.id,
+              }),
+            });
+
+            const smsResult = await smsResponse.json();
+            
+            if (smsResponse.ok && smsResult.success) {
+              successCount++;
+            } else {
+              failCount++;
+              errors.push(`${lead.phone_number}: ${smsResult.error || 'Unknown error'}`);
+            }
+          } catch (error) {
+            failCount++;
+            errors.push(`${lead.phone_number}: ${error instanceof Error ? error.message : 'Send failed'}`);
+          }
+
+          // Small delay between sends to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        console.log(`[AI Brain] SMS blast complete: ${successCount} sent, ${failCount} failed`);
 
         await supabase.from('ai_session_memory').insert({
           user_id: userId,
@@ -799,13 +846,18 @@ async function executeToolCall(
           action_type: 'send_sms_blast',
           resource_type: 'sms_blast',
           resource_name: `SMS Blast to ${leads.length} leads`,
-          action_data: { message: args.message, lead_count: leads.length },
+          action_data: { message: args.message, lead_count: leads.length, success_count: successCount, fail_count: failCount },
           can_undo: false
         });
 
         return {
-          success: true,
-          result: { message: `SMS blast queued for ${leads.length} leads`, lead_count: leads.length },
+          success: successCount > 0,
+          result: { 
+            message: `SMS blast sent: ${successCount} delivered, ${failCount} failed`, 
+            success_count: successCount,
+            fail_count: failCount,
+            errors: errors.slice(0, 5) // Return first 5 errors
+          },
           location: LOCATION_MAP.sms.route
         };
       }
@@ -827,17 +879,69 @@ async function executeToolCall(
           return { success: false, result: { error: 'No phone number available. Add phone numbers first.' } };
         }
 
-        const { error } = await supabase.from('sms_messages').insert({
-          user_id: userId,
-          to_number: args.to_number,
-          from_number: fromNumber,
-          body: args.message,
-          direction: 'outbound',
-          status: 'pending'
+        // Normalize phone numbers to E.164 format
+        const normalizePhone = (phone: string): string => {
+          const digits = phone.replace(/\D/g, '');
+          if (digits.length === 10) return '+1' + digits;
+          if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
+          if (!phone.startsWith('+')) return '+' + digits;
+          return phone;
+        };
+
+        const normalizedTo = normalizePhone(args.to_number);
+        const normalizedFrom = normalizePhone(fromNumber);
+
+        console.log(`[AI Brain] Sending SMS from ${normalizedFrom} to ${normalizedTo}`);
+
+        // Call the sms-messaging edge function to actually send via Twilio
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            action: 'send_sms',
+            to: normalizedTo,
+            from: normalizedFrom,
+            body: args.message,
+            user_id: userId,
+          }),
         });
 
-        if (error) throw error;
-        return { success: true, result: { message: `Test SMS sent to ${args.to_number}` }, location: LOCATION_MAP.sms.route };
+        const smsResult = await smsResponse.json();
+        
+        if (!smsResponse.ok || !smsResult.success) {
+          console.error('[AI Brain] SMS send failed:', smsResult);
+          return { 
+            success: false, 
+            result: { error: smsResult.error || 'Failed to send SMS via Twilio' } 
+          };
+        }
+
+        console.log('[AI Brain] SMS sent successfully:', smsResult.provider_message_id);
+
+        await supabase.from('ai_session_memory').insert({
+          user_id: userId,
+          session_id: sessionId,
+          action_type: 'send_test_sms',
+          resource_type: 'sms',
+          resource_name: `SMS to ${normalizedTo}`,
+          action_data: { to: normalizedTo, from: normalizedFrom, message: args.message },
+          can_undo: false
+        });
+
+        return { 
+          success: true, 
+          result: { 
+            message: `SMS successfully sent to ${normalizedTo}`,
+            provider_message_id: smsResult.provider_message_id
+          }, 
+          location: LOCATION_MAP.sms.route 
+        };
       }
 
       case 'list_leads': {
