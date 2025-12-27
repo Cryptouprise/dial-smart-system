@@ -55,7 +55,7 @@ export const OptimizationInsightsDashboard: React.FC = () => {
   const loadInsights = async () => {
     const data = await getOptimizationInsights(filter === 'unread');
     if (data) {
-      setInsights(data);
+      setInsights(data as OptimizationInsight[]);
     }
   };
 
