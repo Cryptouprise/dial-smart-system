@@ -232,8 +232,8 @@ export const useDispositionAutomation = () => {
 
       // Record ML learning data for disposition accuracy tracking
       try {
-        await supabase
-          .from('ml_learning_data')
+        await (supabase
+          .from('ml_learning_data' as any)
           .insert({
             user_id: user.id,
             call_id: params.callLogId,
@@ -243,7 +243,7 @@ export const useDispositionAutomation = () => {
             confidence_score: params.confidenceScore || 0,
             sentiment_score: dispConfig?.sentiment === 'positive' ? 0.8 : dispConfig?.sentiment === 'negative' ? 0.2 : 0.5,
             created_at: new Date().toISOString()
-          });
+          }) as any);
       } catch (learningError) {
         console.error('Error recording ML learning data:', learningError);
         // Don't fail the main operation
@@ -251,26 +251,26 @@ export const useDispositionAutomation = () => {
 
       // Update disposition accuracy tracking
       try {
-        const { data: accuracyRecord } = await supabase
-          .from('disposition_accuracy_tracking')
+        const { data: accuracyRecord } = await (supabase
+          .from('disposition_accuracy_tracking' as any)
           .select('*')
           .eq('user_id', user.id)
           .eq('disposition_name', params.dispositionName)
-          .maybeSingle();
+          .maybeSingle() as any);
 
         if (accuracyRecord) {
           // Update existing record
-          await supabase
-            .from('disposition_accuracy_tracking')
+          await (supabase
+            .from('disposition_accuracy_tracking' as any)
             .update({
-              auto_predicted_count: accuracyRecord.auto_predicted_count + 1,
+              auto_predicted_count: (accuracyRecord as any).auto_predicted_count + 1,
               last_updated: new Date().toISOString()
             })
-            .eq('id', accuracyRecord.id);
+            .eq('id', (accuracyRecord as any).id) as any);
         } else {
           // Create new record
-          await supabase
-            .from('disposition_accuracy_tracking')
+          await (supabase
+            .from('disposition_accuracy_tracking' as any)
             .insert({
               user_id: user.id,
               disposition_name: params.dispositionName,
@@ -279,7 +279,7 @@ export const useDispositionAutomation = () => {
               accuracy_rate: 0,
               avg_confidence: params.confidenceScore || 0,
               last_updated: new Date().toISOString()
-            });
+            }) as any);
         }
       } catch (trackingError) {
         console.error('Error updating disposition tracking:', trackingError);

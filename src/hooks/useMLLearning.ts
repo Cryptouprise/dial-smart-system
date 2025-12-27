@@ -124,11 +124,11 @@ export const useMLLearning = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      const { data, error } = await supabase
-        .from('script_performance_analytics')
+      const { data, error } = await (supabase
+        .from('script_performance_analytics' as any)
         .select('*')
         .eq('user_id', user.id)
-        .order('success_rate', { ascending: false });
+        .order('success_rate', { ascending: false }) as any);
 
       if (error) throw error;
 
@@ -147,11 +147,11 @@ export const useMLLearning = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      const { data, error } = await supabase
-        .from('disposition_accuracy_tracking')
+      const { data, error } = await (supabase
+        .from('disposition_accuracy_tracking' as any)
         .select('*')
         .eq('user_id', user.id)
-        .order('accuracy_rate', { ascending: false });
+        .order('accuracy_rate', { ascending: false }) as any);
 
       if (error) throw error;
 
@@ -171,11 +171,11 @@ export const useMLLearning = () => {
       if (!user) return null;
 
       let query = supabase
-        .from('system_optimization_insights')
+        .from('system_optimization_insights' as any)
         .select('*')
         .eq('user_id', user.id)
         .order('priority', { ascending: false })
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }) as any;
 
       if (unreadOnly) {
         query = query.eq('is_read', false);
@@ -197,10 +197,10 @@ export const useMLLearning = () => {
    */
   const markInsightAsRead = useCallback(async (insightId: string) => {
     try {
-      const { error } = await supabase
-        .from('system_optimization_insights')
+      const { error } = await (supabase
+        .from('system_optimization_insights' as any)
         .update({ is_read: true })
-        .eq('id', insightId);
+        .eq('id', insightId) as any);
 
       if (error) throw error;
 
@@ -216,10 +216,10 @@ export const useMLLearning = () => {
    */
   const markInsightAsApplied = useCallback(async (insightId: string) => {
     try {
-      const { error } = await supabase
-        .from('system_optimization_insights')
+      const { error } = await (supabase
+        .from('system_optimization_insights' as any)
         .update({ is_applied: true })
-        .eq('id', insightId);
+        .eq('id', insightId) as any);
 
       if (error) throw error;
 

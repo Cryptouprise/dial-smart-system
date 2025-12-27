@@ -59,11 +59,11 @@ export function usePaginatedQuery<T = any>(
           throw new Error('User not authenticated');
         }
 
-        // Build query
-        let query = supabase
-          .from(tableName)
+        // Build query - use type assertion for dynamic table names
+        let query = (supabase
+          .from(tableName as any)
           .select('*', { count: 'exact' })
-          .eq('user_id', user.id); // SECURITY: Always filter by user_id
+          .eq('user_id', user.id) as any); // SECURITY: Always filter by user_id
 
         // Apply additional filters
         Object.entries(filters).forEach(([key, value]) => {
@@ -79,7 +79,7 @@ export function usePaginatedQuery<T = any>(
 
         if (queryError) throw queryError;
 
-        const newData = results || [];
+        const newData = (results || []) as T[];
         setData(append ? [...data, ...newData] : newData);
         setHasMore(newData.length === pageSize);
         setTotalCount(count || 0);

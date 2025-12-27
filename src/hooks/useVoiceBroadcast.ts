@@ -456,11 +456,11 @@ export const useVoiceBroadcast = () => {
       }
 
       // Check for leads in queue
-      const { data: queueItems, count } = await supabase
-        .from('voice_broadcast_queue')
+      const { data: queueItems, count } = await (supabase
+        .from('voice_broadcast_queue' as any)
         .select('id', { count: 'exact', head: true })
         .eq('broadcast_id', broadcastId)
-        .eq('status', 'pending');
+        .eq('status', 'pending') as any);
 
       if (!count || count === 0) {
         validationErrors.push('No leads in the queue. Add leads first.');
