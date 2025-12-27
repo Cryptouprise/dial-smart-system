@@ -169,16 +169,16 @@ export const AIBrainChat: React.FC = () => {
     return (
       <Button
         onClick={openChat}
-        className="fixed bottom-20 md:bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-40"
+        className="fixed bottom-[5.5rem] md:bottom-4 right-3 md:right-4 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40"
         size="icon"
       >
-        <MessageSquare className="h-6 w-6" />
+        <MessageSquare className="h-5 w-5 md:h-6 md:w-6" />
       </Button>
     );
   }
 
   return (
-    <Card className="fixed bottom-20 md:bottom-4 right-2 left-2 md:left-auto md:right-4 md:w-96 h-[calc(100vh-6rem)] md:h-[600px] shadow-2xl z-40 flex flex-col max-h-[80vh]">
+    <Card className="fixed bottom-20 md:bottom-4 right-2 left-2 md:left-auto md:right-4 md:w-96 h-[60vh] md:h-[500px] max-h-[calc(100vh-8rem)] shadow-2xl z-40 flex flex-col overflow-hidden">
       <CardHeader className="pb-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -218,7 +218,7 @@ export const AIBrainChat: React.FC = () => {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground hidden md:block">
           {showHistory ? 'Your conversation history' : (
             <>Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">⌘K</kbd> to toggle</>
           )}
@@ -271,26 +271,26 @@ export const AIBrainChat: React.FC = () => {
         ) : (
           <>
             {/* Messages */}
-            <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-              <div className="space-y-4 py-4">
+            <ScrollArea className="flex-1 px-3 md:px-4" ref={scrollRef}>
+              <div className="space-y-3 py-3">
                 {messages.length === 0 && (
-                  <div className="text-center py-8">
-                    <Sparkles className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-sm text-muted-foreground mb-4">
-                      I can help you manage your dialer system. Try asking me to:
+                  <div className="text-center py-4 md:py-8">
+                    <Sparkles className="h-10 w-10 md:h-12 md:w-12 mx-auto text-muted-foreground/50 mb-3" />
+                    <p className="text-xs md:text-sm text-muted-foreground mb-3">
+                      I can help manage your dialer. Try:
                     </p>
-                    <div className="flex flex-wrap gap-2 justify-center">
+                    <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center">
                       <QuickActionButton
-                        label="System Status"
+                        label="Status"
                         onClick={() => quickActions.status()}
                         icon={<Zap className="h-3 w-3" />}
                       />
                       <QuickActionButton
-                        label="Create Workflow"
+                        label="Workflow"
                         onClick={() => sendMessage('Help me create a workflow')}
                       />
                       <QuickActionButton
-                        label="Send SMS Blast"
+                        label="Send SMS"
                         onClick={() => sendMessage('I want to send an SMS blast')}
                       />
                     </div>
@@ -307,13 +307,13 @@ export const AIBrainChat: React.FC = () => {
               >
                 <div
                   className={cn(
-                    'max-w-[85%] rounded-lg px-3 py-2',
+                    'max-w-[90%] rounded-lg px-2.5 py-1.5 md:px-3 md:py-2',
                     message.role === 'user'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted'
                   )}
                 >
-                  <div className="text-sm whitespace-pre-wrap">
+                  <div className="text-xs md:text-sm whitespace-pre-wrap break-words">
                     {message.role === 'assistant' 
                       ? parseContent(message.content, onNavigate)
                       : message.content
@@ -365,17 +365,17 @@ export const AIBrainChat: React.FC = () => {
           </ScrollArea>
 
           {/* Input */}
-          <div className="p-4 border-t">
+          <div className="p-3 md:p-4 border-t flex-shrink-0">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask anything... (try /help)"
+                placeholder="Ask anything..."
                 disabled={isLoading}
-                className="flex-1"
+                className="flex-1 text-sm h-9 md:h-10"
               />
-              <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+              <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0">
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
