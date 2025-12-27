@@ -127,11 +127,7 @@ export const AISetupAssistant: React.FC = () => {
         </div>
         
         <div className="flex-1 overflow-hidden p-4">
-          <AIAssistantChat 
-            initialMessage={initialMessage}
-            configurationMode={true}
-            embedded={true}
-          />
+          <AIAssistantChat embedded={true} />
         </div>
       </div>
     );
