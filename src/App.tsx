@@ -20,7 +20,6 @@ import HelpPage from "./pages/HelpPage";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import AiSmsConversations from "./components/AiSmsConversations";
-import AIBrainChat from "./components/AIBrainChat";
 import AIAssistantChat from "./components/AIAssistantChat";
 import NumberWebhooks from "./pages/NumberWebhooks";
 import InstallApp from "./pages/InstallApp";
@@ -73,8 +72,7 @@ const App = () => (
                       <MobileBottomNav />
                       {/* Install Banner for first-time mobile visitors */}
                       <InstallBanner />
-                      {/* Global AI Assistants - available on all pages */}
-                      <AIBrainChat />
+                      {/* Global AI Assistant - available on all pages */}
                       <AIAssistantChat />
                     </AIBrainProvider>
                   </AuthProvider>

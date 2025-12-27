@@ -371,10 +371,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     return (
       <Button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50 bg-primary hover:bg-primary/90"
+        className="fixed bottom-[5.5rem] md:bottom-6 right-3 md:right-6 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-50 bg-primary hover:bg-primary/90"
         size="icon"
       >
-        <MessageCircle className="h-6 w-6" />
+        <MessageCircle className="h-5 w-5 md:h-6 md:w-6" />
         <span className="sr-only">Open AI Assistant</span>
       </Button>
     );
@@ -383,13 +383,13 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   // Minimized state (only for non-embedded mode)
   if (isMinimized && !embedded) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-[5.5rem] md:bottom-6 right-3 md:right-6 z-50">
         <Button
           onClick={() => setIsMinimized(false)}
-          className="h-14 px-4 rounded-full shadow-lg bg-primary hover:bg-primary/90 flex items-center gap-2"
+          className="h-12 md:h-14 px-3 md:px-4 rounded-full shadow-lg bg-primary hover:bg-primary/90 flex items-center gap-2"
         >
           <Bot className="h-5 w-5" />
-          <span>AI Assistant</span>
+          <span className="text-sm md:text-base">AI Assistant</span>
           <Maximize2 className="h-4 w-4" />
         </Button>
       </div>
@@ -490,17 +490,17 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
           )}
         </ScrollArea>
         
-        <div className="border-t p-4">
+        <div className="border-t p-3 md:p-4 flex-shrink-0">
           <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               ref={inputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Tell me what you want to set up..."
+              placeholder="Tell me what you want to do..."
               disabled={isLoading || isListening}
-              className="flex-1"
+              className="flex-1 text-sm h-9 md:h-10"
             />
-            <Button type="submit" disabled={isLoading || !inputValue.trim()}>
+            <Button type="submit" disabled={isLoading || !inputValue.trim()} className="h-9 w-9 md:h-10 md:w-10 p-0 flex-shrink-0">
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -513,10 +513,9 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     );
   }
 
-  // Floating card version (original)
+  // Floating card version
   return (
-    <Card className="fixed bottom-6 right-6 w-96 h-[500px] shadow-2xl z-50 flex flex-col border-2">
-      <CardHeader className="pb-2 flex-shrink-0 bg-primary text-primary-foreground rounded-t-lg">
+    <Card className="fixed bottom-[5.5rem] md:bottom-6 right-2 left-2 md:left-auto md:right-6 md:w-96 h-[60vh] md:h-[500px] max-h-[calc(100vh-8rem)] shadow-2xl z-50 flex flex-col border-2 overflow-hidden">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot className="h-5 w-5" />
@@ -610,7 +609,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       </CardHeader>
       
       <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+        <ScrollArea className="flex-1 p-3 md:p-4" ref={scrollAreaRef}>
           {messages.length === 0 ? (
             <div className="space-y-4">
               <div className="text-center text-muted-foreground py-4">
