@@ -295,7 +295,7 @@ async function findOrCreateLead(
   if (clientInfo.phone) {
     const { data } = await supabase
       .from('leads')
-      .select('id')
+      .select('id, first_name, last_name, email, phone_number')
       .eq('user_id', userId)
       .eq('phone_number', clientInfo.phone)
       .maybeSingle();
@@ -306,7 +306,7 @@ async function findOrCreateLead(
   if (!existingLead && clientInfo.email) {
     const { data } = await supabase
       .from('leads')
-      .select('id')
+      .select('id, first_name, last_name, email, phone_number')
       .eq('user_id', userId)
       .eq('email', clientInfo.email)
       .maybeSingle();

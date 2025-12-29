@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS inbound_transfers (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   
   -- Foreign keys
+  CONSTRAINT fk_inbound_transfers_user
+    FOREIGN KEY (user_id)
+    REFERENCES auth.users(id)
+    ON DELETE CASCADE,
   CONSTRAINT fk_inbound_transfers_lead
     FOREIGN KEY (lead_id) 
     REFERENCES leads(id) 
