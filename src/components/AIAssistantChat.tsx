@@ -168,61 +168,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     setShowHistory(false);
   };
 
-  // Embedded mode - always show the card inline
-  if (embedded) {
-    return (
-      <Card className="w-full h-full flex flex-col overflow-hidden">
-        <CardHeader className="pb-2 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">AI Assistant</CardTitle>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleShowHistory}
-                className="h-8 w-8"
-                title="View conversation history"
-              >
-                <History className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={clearMessages}
-                className="h-8 w-8"
-                title="Clear conversation"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-          {renderChatContent()}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Closed state - floating button
-  if (!isOpen) {
-    return (
-      <Button
-        onClick={openChat}
-        className="fixed bottom-[5.5rem] md:bottom-6 right-3 md:right-6 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40 bg-primary hover:bg-primary/90"
-        size="icon"
-      >
-        <Bot className="h-5 w-5 md:h-6 md:w-6" />
-        <span className="sr-only">Open AI Assistant</span>
-      </Button>
-    );
-  }
-
   // Render chat content (shared between embedded and floating modes)
-  function renderChatContent() {
+  const renderChatContent = () => {
     if (showHistory) {
       return (
         <ScrollArea className="flex-1 px-4">
@@ -396,6 +343,59 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
           )}
         </div>
       </>
+    );
+  };
+
+  // Embedded mode - always show the card inline
+  if (embedded) {
+    return (
+      <Card className="w-full h-full flex flex-col overflow-hidden">
+        <CardHeader className="pb-2 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">AI Assistant</CardTitle>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleShowHistory}
+                className="h-8 w-8"
+                title="View conversation history"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={clearMessages}
+                className="h-8 w-8"
+                title="Clear conversation"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
+          {renderChatContent()}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Closed state - floating button
+  if (!isOpen) {
+    return (
+      <Button
+        onClick={openChat}
+        className="fixed bottom-[5.5rem] md:bottom-6 right-3 md:right-6 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40 bg-primary hover:bg-primary/90"
+        size="icon"
+      >
+        <Bot className="h-5 w-5 md:h-6 md:w-6" />
+        <span className="sr-only">Open AI Assistant</span>
+      </Button>
     );
   }
 
