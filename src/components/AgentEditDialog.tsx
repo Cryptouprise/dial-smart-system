@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -908,10 +909,11 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                     <>
                       <div className="space-y-2">
                         <Label>Opening Message</Label>
-                        <Textarea
+                        <DynamicVariablesInput
                           value={editableBeginMessage}
-                          onChange={(e) => setEditableBeginMessage(e.target.value)}
-                          placeholder="Hello! How can I help you today?"
+                          onChange={setEditableBeginMessage}
+                          placeholder="Hello {{first_name}}! How can I help you today?"
+                          multiline
                           rows={2}
                         />
                         <p className="text-xs text-muted-foreground">
@@ -921,10 +923,11 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                       
                       <div className="space-y-2">
                         <Label>System Prompt / Script</Label>
-                        <Textarea
+                        <DynamicVariablesInput
                           value={editablePrompt}
-                          onChange={(e) => setEditablePrompt(e.target.value)}
-                          placeholder="You are a helpful AI assistant..."
+                          onChange={setEditablePrompt}
+                          placeholder="You are a helpful AI assistant talking to {{first_name}}..."
+                          multiline
                           rows={12}
                           className="font-mono text-sm"
                         />

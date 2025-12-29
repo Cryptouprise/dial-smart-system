@@ -3,9 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { useCalendarIntegration } from '@/hooks/useCalendarIntegration';
@@ -140,65 +140,24 @@ export const RetellAISetupWizard = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="llm-prompt">System Prompt</Label>
-              <Textarea
+              <DynamicVariablesInput
                 id="llm-prompt"
                 value={llmPrompt}
-                onChange={(e) => setLlmPrompt(e.target.value)}
+                onChange={setLlmPrompt}
+                multiline
                 rows={6}
-                placeholder="Instructions for how the AI should behave... Use {{first_name}} to personalize!"
+                placeholder="Instructions for how the AI should behave... Type {{ to insert dynamic variables!"
               />
-            </div>
-
-            {/* Dynamic Variables Helper */}
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                Available Dynamic Variables
-              </h4>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
-                Use these in your prompt to personalize calls with lead data:
-              </p>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{first_name}}"}</code>
-                  <span className="text-muted-foreground">Lead's first name</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{last_name}}"}</code>
-                  <span className="text-muted-foreground">Lead's last name</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{full_name}}"}</code>
-                  <span className="text-muted-foreground">Full name combined</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{company}}"}</code>
-                  <span className="text-muted-foreground">Lead's company</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{email}}"}</code>
-                  <span className="text-muted-foreground">Lead's email</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 rounded font-mono">{"{{lead_source}}"}</code>
-                  <span className="text-muted-foreground">Where lead came from</span>
-                </div>
-              </div>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-3 italic">
-                Custom fields from your leads are also available automatically.
-              </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="begin-message">First Message</Label>
-              <Input
+              <DynamicVariablesInput
                 id="begin-message"
                 value={llmBeginMessage}
-                onChange={(e) => setLlmBeginMessage(e.target.value)}
+                onChange={setLlmBeginMessage}
                 placeholder="e.g., Hi {{first_name}}, this is Sarah calling..."
               />
-              <p className="text-xs text-muted-foreground">
-                Tip: Use <code className="px-1 bg-muted rounded">{"{{first_name}}"}</code> here too for a personalized greeting!
-              </p>
             </div>
 
             <div className="space-y-2">
