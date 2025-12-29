@@ -639,14 +639,50 @@ serve(async (req) => {
 
             if (updateItemError) throw updateItemError;
 
-            // Prepare metadata
-            const callMetadata = {
+            // Fetch lead data if available to pass to Retell agents
+            // This enables dynamic variables (first name, last name, etc.) in the agent
+            let leadData: any = null;
+            if (item.lead_id) {
+              const { data: lead, error: leadError } = await supabase
+                .from('leads')
+                .select('first_name, last_name, email, phone_number, company, custom_fields, notes, timezone, lead_source')
+                .eq('id', item.lead_id)
+                .maybeSingle();
+              
+              if (!leadError && lead) {
+                leadData = lead;
+                console.log(`Fetched lead data for ${lead.first_name} ${lead.last_name}`);
+              }
+            }
+
+            // Prepare metadata - include lead data for Retell agents
+            const callMetadata: Record<string, unknown> = {
               broadcast_id: broadcastId,
               queue_item_id: item.id,
               ivr_mode: broadcast.ivr_mode,
               dtmf_actions: broadcast.dtmf_actions,
               lead_id: item.lead_id,
             };
+            
+            // Add lead details to metadata for Retell agents to access
+            // Retell agents can use these variables in their prompts and custom functions
+            if (leadData) {
+              callMetadata.first_name = leadData.first_name || '';
+              callMetadata.last_name = leadData.last_name || '';
+              callMetadata.email = leadData.email || '';
+              callMetadata.phone_number = leadData.phone_number || item.phone_number;
+              callMetadata.company = leadData.company || '';
+              callMetadata.lead_source = leadData.lead_source || '';
+              callMetadata.timezone = leadData.timezone || '';
+              // Include custom fields as a nested object (can contain address, etc.)
+              if (leadData.custom_fields) {
+                callMetadata.custom_fields = leadData.custom_fields;
+              }
+              // Include notes for agent context
+              if (leadData.notes) {
+                callMetadata.notes = leadData.notes;
+              }
+            }
 
             // Make the call based on provider - for audio broadcasts, always use selectedProvider (Twilio)
             // Try SIP trunk first if configured for the provider
