@@ -338,7 +338,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         normalize_for_speech: agent.normalize_for_speech ?? true,
         reminder_trigger_ms: agent.reminder_trigger_ms || 10000,
         reminder_max_count: agent.reminder_max_count || 2,
-        begin_message_delay_ms: agent.begin_message_delay_ms || 1000,
+        begin_message_delay_ms: agent.begin_message_delay_ms || 2500,
         ring_duration_ms: agent.ring_duration_ms || 30000,
         stt_mode: agent.stt_mode || 'fast',
         vocab_specialization: agent.vocab_specialization || 'general',

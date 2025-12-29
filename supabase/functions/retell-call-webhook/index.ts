@@ -50,6 +50,22 @@ interface RetellWebhookPayload {
   };
 }
 
+// Normalize phone number for matching - returns multiple formats to try
+function normalizePhoneFormats(phone: string): string[] {
+  if (!phone) return [];
+  const digitsOnly = phone.replace(/\D/g, '');
+  const last10 = digitsOnly.slice(-10);
+  
+  return [
+    phone,                    // Original
+    `+${digitsOnly}`,         // E.164 with +
+    `+1${last10}`,            // US E.164
+    digitsOnly,               // Just digits
+    `1${last10}`,             // US without +
+    last10,                   // Last 10 digits
+  ].filter((v, i, a) => v && a.indexOf(v) === i); // unique non-empty
+}
+
 serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -85,105 +101,161 @@ serve(async (req) => {
       const callerNumber = call.from_number;
       const receivingNumber = call.to_number;
       
-      if (callerNumber) {
-        // Normalize phone number for lookup
-        const normalizedCaller = callerNumber.replace(/\D/g, '').slice(-10);
-        console.log('[Retell Webhook] Looking up lead by phone:', normalizedCaller);
-        
-        // Find the user who owns this receiving number
-        const { data: phoneNumber } = await supabase
+      // Get multiple phone format variations for matching
+      const callerFormats = normalizePhoneFormats(callerNumber || '');
+      const receivingFormats = normalizePhoneFormats(receivingNumber || '');
+      
+      console.log('[Retell Webhook] Caller formats to match:', callerFormats);
+      console.log('[Retell Webhook] Receiving formats to match:', receivingFormats);
+      
+      // Find the user who owns this receiving number
+      let userId: string | null = null;
+      
+      if (receivingFormats.length > 0) {
+        // Build OR query for phone number matching
+        const phoneOrQuery = receivingFormats.map(f => `number.eq.${f}`).join(',');
+        const { data: phoneNumber, error: phoneError } = await supabase
           .from('phone_numbers')
           .select('user_id')
-          .or(`number.eq.${receivingNumber},number.eq.+${receivingNumber.replace(/\D/g, '')}`)
+          .or(phoneOrQuery)
+          .limit(1)
           .maybeSingle();
         
-        const userId = phoneNumber?.user_id;
-        console.log('[Retell Webhook] Phone owner user_id:', userId);
+        if (phoneError) {
+          console.error('[Retell Webhook] Phone lookup error:', phoneError);
+        }
         
-        if (userId) {
-          // Look up lead by caller's phone number
-          const { data: lead } = await supabase
-            .from('leads')
-            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
-            .eq('user_id', userId)
-            .or(`phone_number.ilike.%${normalizedCaller},phone_number.ilike.%${callerNumber.replace(/\D/g, '')}`)
-            .maybeSingle();
-          
-          if (lead) {
-            console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
-            
-            // Prepare dynamic variables
-            const dynamicVariables: Record<string, string> = {
-              first_name: lead.first_name || '',
-              last_name: lead.last_name || '',
-              full_name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
-              email: lead.email || '',
-              company: lead.company || '',
-              lead_source: lead.lead_source || '',
-              notes: lead.notes || '',
-              tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
-              preferred_contact_time: lead.preferred_contact_time || '',
-              timezone: lead.timezone || 'America/New_York',
-            };
-            
-            // Add custom fields
-            if (lead.custom_fields && typeof lead.custom_fields === 'object') {
-              for (const [key, value] of Object.entries(lead.custom_fields)) {
-                dynamicVariables[key] = String(value || '');
-              }
-            }
-            
-            console.log('[Retell Webhook] Injecting dynamic variables:', dynamicVariables);
-            
-            // Update the call with dynamic variables via Retell API
-            const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-            if (retellApiKey) {
-              try {
-                const updateResponse = await fetch(`https://api.retellai.com/v2/update-call/${call.call_id}`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${retellApiKey}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    retell_llm_dynamic_variables: dynamicVariables,
-                    metadata: {
-                      lead_id: lead.id,
-                      user_id: userId,
-                    },
-                  }),
-                });
-                
-                if (updateResponse.ok) {
-                  console.log('[Retell Webhook] Successfully injected dynamic variables for inbound call');
-                } else {
-                  const errorText = await updateResponse.text();
-                  console.error('[Retell Webhook] Failed to update call:', errorText);
-                }
-              } catch (apiError) {
-                console.error('[Retell Webhook] Error calling Retell update API:', apiError);
-              }
-            } else {
-              console.warn('[Retell Webhook] RETELL_AI_API_KEY not configured');
-            }
-            
-            // Create call log for inbound call
-            await supabase.from('call_logs').insert({
-              retell_call_id: call.call_id,
-              user_id: userId,
-              lead_id: lead.id,
-              phone_number: callerNumber,
-              caller_id: receivingNumber,
-              status: 'in-progress',
-              notes: 'Inbound call started',
-            });
-          } else {
-            console.log('[Retell Webhook] No lead found for caller:', callerNumber);
-          }
+        userId = phoneNumber?.user_id || null;
+        console.log('[Retell Webhook] Phone owner user_id:', userId);
+      }
+      
+      let lead: any = null;
+      
+      if (userId && callerFormats.length > 0) {
+        // Look up lead by caller's phone number - handle duplicates by preferring leads with names
+        // Try exact matches first, then partial
+        const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
+        
+        const { data: leads, error: leadError } = await supabase
+          .from('leads')
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number')
+          .eq('user_id', userId)
+          .or(`phone_number.ilike.%${last10}`)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+        
+        if (leadError) {
+          console.error('[Retell Webhook] Lead lookup error:', leadError);
+        } else if (leads && leads.length > 0) {
+          // Prefer leads with first_name populated
+          lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
+          console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
+        } else {
+          console.log('[Retell Webhook] No lead found for caller formats:', callerFormats);
         }
       }
       
-      return new Response(JSON.stringify({ received: true, processed: true, event: 'call_started' }), {
+      // Always create a call log entry at call_started so we have user_id for later events
+      const callLogEntry: any = {
+        retell_call_id: call.call_id,
+        user_id: userId,
+        phone_number: callerNumber || '',
+        caller_id: receivingNumber || '',
+        status: 'in-progress',
+        notes: 'Inbound call started',
+      };
+      
+      if (lead) {
+        callLogEntry.lead_id = lead.id;
+      }
+      
+      const { error: callLogInsertError } = await supabase
+        .from('call_logs')
+        .upsert(callLogEntry, { onConflict: 'retell_call_id' });
+      
+      if (callLogInsertError) {
+        console.error('[Retell Webhook] Failed to insert call log:', callLogInsertError);
+      } else {
+        console.log('[Retell Webhook] Created/updated call_log for call_started');
+      }
+      
+      // If we found a lead, inject dynamic variables
+      if (lead) {
+        console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
+        
+        // Prepare dynamic variables
+        const dynamicVariables: Record<string, string> = {
+          first_name: lead.first_name || '',
+          last_name: lead.last_name || '',
+          full_name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
+          email: lead.email || '',
+          company: lead.company || '',
+          lead_source: lead.lead_source || '',
+          notes: lead.notes || '',
+          tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
+          preferred_contact_time: lead.preferred_contact_time || '',
+          timezone: lead.timezone || 'America/New_York',
+        };
+        
+        // Add custom fields (including address fields if they exist)
+        if (lead.custom_fields && typeof lead.custom_fields === 'object') {
+          for (const [key, value] of Object.entries(lead.custom_fields)) {
+            dynamicVariables[key] = String(value || '');
+            // Also add contact.* aliases for compatibility
+            dynamicVariables[`contact.${key}`] = String(value || '');
+          }
+        }
+        
+        // Add contact.* aliases for standard fields
+        dynamicVariables['contact.first_name'] = dynamicVariables.first_name;
+        dynamicVariables['contact.last_name'] = dynamicVariables.last_name;
+        dynamicVariables['contact.email'] = dynamicVariables.email;
+        dynamicVariables['contact.company'] = dynamicVariables.company;
+        
+        console.log('[Retell Webhook] Injecting dynamic variables:', Object.keys(dynamicVariables));
+        
+        // Update the call with dynamic variables via Retell API
+        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        if (retellApiKey) {
+          try {
+            const updateResponse = await fetch(`https://api.retellai.com/v2/update-call/${call.call_id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${retellApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                retell_llm_dynamic_variables: dynamicVariables,
+                metadata: {
+                  lead_id: lead.id,
+                  user_id: userId,
+                },
+              }),
+            });
+            
+            if (updateResponse.ok) {
+              console.log('[Retell Webhook] Successfully injected dynamic variables for inbound call');
+            } else {
+              const errorText = await updateResponse.text();
+              console.error('[Retell Webhook] Failed to update call:', updateResponse.status, errorText);
+            }
+          } catch (apiError) {
+            console.error('[Retell Webhook] Error calling Retell update API:', apiError);
+          }
+        } else {
+          console.warn('[Retell Webhook] RETELL_AI_API_KEY not configured');
+        }
+      } else {
+        console.log('[Retell Webhook] No lead found for caller:', callerNumber);
+      }
+      
+      return new Response(JSON.stringify({ 
+        received: true, 
+        processed: true, 
+        event: 'call_started',
+        lead_found: !!lead,
+        user_id: userId,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -206,7 +278,7 @@ serve(async (req) => {
       console.log('[Retell Webhook] user_id missing from metadata, looking up from call_logs...');
       const { data: callLogLookup } = await supabase
         .from('call_logs')
-        .select('user_id')
+        .select('user_id, lead_id')
         .eq('retell_call_id', call.call_id)
         .maybeSingle();
       
@@ -496,21 +568,23 @@ async function analyzeTranscriptWithAI(
 }
 
 function mapDispositionToLeadStatus(disposition: string): string {
-  const statusMap: Record<string, string> = {
-    'appointment_set': 'qualified',
-    'interested': 'contacted',
+  const mapping: Record<string, string> = {
+    'appointment_set': 'appointment_set',
+    'interested': 'interested',
     'callback_requested': 'callback',
     'callback': 'callback',
     'not_interested': 'not_interested',
     'dnc': 'dnc',
     'do_not_call': 'dnc',
-    'voicemail': 'contacted',
-    'no_answer': 'contacted',
-    'busy': 'new',
-    'failed': 'new',
+    'voicemail': 'voicemail',
+    'no_answer': 'no_answer',
+    'busy': 'no_answer',
+    'failed': 'failed',
     'completed': 'contacted',
+    'contacted': 'contacted',
   };
-  return statusMap[disposition] || 'contacted';
+  
+  return mapping[disposition] || 'contacted';
 }
 
 async function updateNudgeTracking(
@@ -520,15 +594,15 @@ async function updateNudgeTracking(
   outcome: string
 ) {
   try {
-    // Check if nudge tracking exists
+    // Check if tracking exists
     const { data: existing } = await supabase
       .from('lead_nudge_tracking')
-      .select('id')
+      .select('id, nudge_count')
       .eq('lead_id', leadId)
       .maybeSingle();
 
-    const isEngaged = ['interested', 'appointment_set', 'callback_requested'].includes(outcome);
-    const shouldPause = ['appointment_set', 'dnc', 'not_interested'].includes(outcome);
+    const positiveOutcomes = ['appointment_set', 'interested', 'callback_requested', 'callback'];
+    const isEngaged = positiveOutcomes.includes(outcome);
 
     if (existing) {
       await supabase
@@ -536,11 +610,10 @@ async function updateNudgeTracking(
         .update({
           last_ai_contact_at: new Date().toISOString(),
           is_engaged: isEngaged,
-          sequence_paused: shouldPause,
-          pause_reason: shouldPause ? `Disposition: ${outcome}` : null,
+          sequence_paused: isEngaged || outcome === 'dnc' || outcome === 'not_interested',
           updated_at: new Date().toISOString(),
         })
-        .eq('lead_id', leadId);
+        .eq('id', existing.id);
     } else {
       await supabase
         .from('lead_nudge_tracking')
@@ -549,12 +622,11 @@ async function updateNudgeTracking(
           user_id: userId,
           last_ai_contact_at: new Date().toISOString(),
           is_engaged: isEngaged,
-          sequence_paused: shouldPause,
-          pause_reason: shouldPause ? `Disposition: ${outcome}` : null,
+          nudge_count: 0,
         });
     }
   } catch (error) {
-    console.error('[Retell Webhook] Nudge tracking error:', error);
+    console.error('[Retell Webhook] Nudge tracking update error:', error);
   }
 }
 
@@ -565,70 +637,48 @@ async function updatePipelinePosition(
   outcome: string
 ) {
   try {
-    // Find the appropriate pipeline stage for this disposition
-    const { data: stages } = await supabase
-      .from('pipeline_boards')
-      .select('id, name')
-      .eq('user_id', userId);
-
-    if (!stages || stages.length === 0) return;
-
-    // Map disposition to stage name
-    const stageMapping: Record<string, string[]> = {
-      'appointment_set': ['Qualified', 'Appointments', 'Booked'],
-      'interested': ['Interested', 'Hot Leads', 'Warm'],
-      'callback_requested': ['Callback', 'Follow Up', 'Pending'],
-      'not_interested': ['Not Interested', 'Lost', 'Closed Lost'],
-      'dnc': ['DNC', 'Do Not Call', 'Removed'],
-      'contacted': ['Contacted', 'In Progress', 'Working'],
+    // Map outcome to pipeline stage
+    const stageMapping: Record<string, string> = {
+      'appointment_set': 'Appointment Set',
+      'interested': 'Interested',
+      'callback_requested': 'Callback Scheduled',
+      'callback': 'Callback Scheduled',
+      'not_interested': 'Not Interested',
+      'dnc': 'DNC',
+      'contacted': 'Contacted',
     };
 
-    const possibleStageNames = stageMapping[outcome] || ['Contacted', 'New'];
-    const matchedStage = stages.find((s: any) => 
-      possibleStageNames.some(name => 
-        s.name.toLowerCase().includes(name.toLowerCase())
-      )
-    );
+    const stageName = stageMapping[outcome];
+    if (!stageName) return;
 
-    if (matchedStage) {
-      // Update or create pipeline position - first check if exists
-      const { data: existingPosition } = await supabase
+    // Find the pipeline board for this stage
+    const { data: board } = await supabase
+      .from('pipeline_boards')
+      .select('id')
+      .eq('user_id', userId)
+      .ilike('name', `%${stageName}%`)
+      .maybeSingle();
+
+    if (board) {
+      // Update or create pipeline position
+      await supabase
         .from('lead_pipeline_positions')
-        .select('id')
-        .eq('lead_id', leadId)
-        .eq('user_id', userId)
-        .eq('pipeline_board_id', matchedStage.id)
-        .maybeSingle();
-
-      if (existingPosition) {
-        await supabase
-          .from('lead_pipeline_positions')
-          .update({
-            moved_at: new Date().toISOString(),
-            moved_by_user: false,
-            notes: `Auto-moved from call disposition: ${outcome}`,
-          })
-          .eq('id', existingPosition.id);
-      } else {
-        await supabase
-          .from('lead_pipeline_positions')
-          .insert({
-            lead_id: leadId,
-            user_id: userId,
-            pipeline_board_id: matchedStage.id,
-            position: 0,
-            moved_at: new Date().toISOString(),
-            moved_by_user: false,
-            notes: `Auto-moved from call disposition: ${outcome}`,
-          });
-      }
+        .upsert({
+          lead_id: leadId,
+          user_id: userId,
+          pipeline_board_id: board.id,
+          moved_at: new Date().toISOString(),
+          moved_by_user: false,
+          notes: `Auto-moved after call: ${outcome}`,
+        }, {
+          onConflict: 'lead_id,pipeline_board_id',
+        });
     }
   } catch (error) {
-    console.error('[Retell Webhook] Pipeline update error:', error);
+    console.error('[Retell Webhook] Pipeline position update error:', error);
   }
 }
 
-// NEW: Advance workflow to next step after a call completes
 async function advanceWorkflowAfterCall(
   supabase: any,
   leadId: string,
@@ -636,67 +686,45 @@ async function advanceWorkflowAfterCall(
   outcome: string
 ) {
   try {
-    console.log(`[Retell Webhook] Advancing workflow for lead ${leadId} after call with outcome: ${outcome}`);
-
     // Find active workflow progress for this lead
-    const { data: activeProgress } = await supabase
+    const { data: progress } = await supabase
       .from('lead_workflow_progress')
-      .select(`
-        id,
-        workflow_id,
-        current_step_id,
-        status,
-        workflow_steps!lead_workflow_progress_current_step_id_fkey(id, step_type, step_number)
-      `)
+      .select('*, current_step:workflow_steps(*)')
       .eq('lead_id', leadId)
       .eq('status', 'active')
       .maybeSingle();
 
-    if (!activeProgress) {
-      console.log('[Retell Webhook] No active workflow found for lead');
+    if (!progress || !progress.current_step) {
       return;
     }
 
-    const currentStep = activeProgress.workflow_steps;
-    
-    // Only advance if current step is a call step
-    if (currentStep?.step_type !== 'call') {
-      console.log(`[Retell Webhook] Current step is not a call step (${currentStep?.step_type}), not advancing`);
-      return;
-    }
-
-    // Get all steps in order
-    const { data: allSteps } = await supabase
+    // Get the next step in the workflow
+    const { data: nextStep } = await supabase
       .from('workflow_steps')
       .select('*')
-      .eq('workflow_id', activeProgress.workflow_id)
-      .order('step_number', { ascending: true });
-
-    if (!allSteps || allSteps.length === 0) {
-      console.log('[Retell Webhook] No workflow steps found');
-      return;
-    }
-
-    const currentIndex = allSteps.findIndex((s: any) => s.id === currentStep?.id);
-    const nextStep = allSteps[currentIndex + 1];
+      .eq('workflow_id', progress.workflow_id)
+      .gt('step_order', progress.current_step.step_order)
+      .order('step_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
     if (nextStep) {
-      // Calculate when the next action should occur
+      // Advance to next step
       const nextActionAt = calculateNextActionTimeForWebhook(nextStep);
       
       await supabase
         .from('lead_workflow_progress')
         .update({
           current_step_id: nextStep.id,
-          next_action_at: nextActionAt,
           last_action_at: new Date().toISOString(),
+          next_action_at: nextActionAt,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', activeProgress.id);
+        .eq('id', progress.id);
 
-      console.log(`[Retell Webhook] Advanced to step ${nextStep.step_number} (${nextStep.step_type}), next action at: ${nextActionAt}`);
+      console.log('[Retell Webhook] Advanced workflow to step:', nextStep.step_order);
     } else {
-      // No more steps, mark workflow as completed
+      // No more steps - complete the workflow
       await supabase
         .from('lead_workflow_progress')
         .update({
@@ -704,40 +732,29 @@ async function advanceWorkflowAfterCall(
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', activeProgress.id);
+        .eq('id', progress.id);
 
-      console.log('[Retell Webhook] Workflow completed - no more steps');
+      console.log('[Retell Webhook] Workflow completed');
     }
   } catch (error) {
-    console.error('[Retell Webhook] Error advancing workflow:', error);
+    console.error('[Retell Webhook] Workflow advancement error:', error);
   }
 }
 
 function calculateNextActionTimeForWebhook(step: any): string {
-  const config = step.step_config || {};
   const now = new Date();
+  const config = step.config || {};
+  
+  // Default delays based on step type
+  const defaultDelays: Record<string, number> = {
+    'call': 60,          // 1 hour
+    'sms': 30,           // 30 minutes
+    'email': 60,         // 1 hour
+    'wait': 1440,        // 24 hours
+  };
 
-  if (step.step_type === 'wait') {
-    const delayMs =
-      (config.delay_minutes || 0) * 60 * 1000 +
-      (config.delay_hours || 0) * 60 * 60 * 1000 +
-      (config.delay_days || 0) * 24 * 60 * 60 * 1000;
-
-    let nextTime = new Date(now.getTime() + delayMs);
-
-    if (config.time_of_day) {
-      const [hours, minutes] = String(config.time_of_day).split(':').map(Number);
-      if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
-        nextTime.setHours(hours, minutes, 0, 0);
-        if (nextTime <= now) {
-          nextTime.setDate(nextTime.getDate() + 1);
-        }
-      }
-    }
-
-    return nextTime.toISOString();
-  }
-
-  // For SMS/call/other steps, add a small delay (1 minute) to allow webhook processing to complete
-  return new Date(now.getTime() + 60 * 1000).toISOString();
+  const delayMinutes = config.delay_minutes || defaultDelays[step.step_type] || 60;
+  now.setMinutes(now.getMinutes() + delayMinutes);
+  
+  return now.toISOString();
 }

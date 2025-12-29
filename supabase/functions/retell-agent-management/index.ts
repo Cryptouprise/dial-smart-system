@@ -66,7 +66,9 @@ serve(async (req) => {
             llm_id: llmId
           },
           // Auto-configure webhook URL for call tracking
-          webhook_url: webhookUrl || DEFAULT_WEBHOOK_URL
+          webhook_url: webhookUrl || DEFAULT_WEBHOOK_URL,
+          // Give time for dynamic variable injection on inbound calls
+          begin_message_delay_ms: 2500,
         };
         
         console.log('[Retell Agent] Creating agent with payload:', JSON.stringify(createPayload));
