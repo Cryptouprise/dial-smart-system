@@ -1,8 +1,38 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// DTMF handler for Twilio voice broadcast webhooks
-// This handles key presses during broadcast calls and updates queue status
+/**
+ * DTMF Handler for Twilio Voice Broadcast Webhooks
+ * 
+ * ⚠️ THIS WEBHOOK IS ALWAYS REQUIRED - Even for internal agent transfers!
+ * 
+ * PURPOSE:
+ * This webhook is called by Twilio when a recipient presses a digit (DTMF) during
+ * a voice broadcast call. It is ESSENTIAL for the following reasons:
+ * 
+ * 1. CALL CONTROL: Returns TwiML instructions to Twilio (e.g., transfer call, play message)
+ * 2. TRACKING: Updates broadcast_queue status (transferred, callback, dnc, completed)
+ * 3. ANALYTICS: Updates broadcast statistics (transfers_completed, callbacks_scheduled, etc.)
+ * 4. BUSINESS LOGIC: Handles DNC requests, callback scheduling, lead updates
+ * 
+ * WHEN IT'S CALLED:
+ * - Recipient listens to voice broadcast audio
+ * - Recipient presses a digit (1, 2, 3, etc.)
+ * - Twilio automatically calls this webhook with the digit pressed
+ * - This webhook returns TwiML to tell Twilio what to do next
+ * 
+ * INTERNAL VS EXTERNAL TRANSFERS:
+ * - Internal transfer (to your agent): This webhook is REQUIRED
+ * - External transfer (to any number): This webhook is REQUIRED
+ * - The destination number doesn't matter - the webhook is always needed!
+ * 
+ * WITHOUT THIS WEBHOOK:
+ * ❌ Transfers will NOT work (no TwiML instructions returned to Twilio)
+ * ❌ Statistics will NOT update (no tracking of responses)
+ * ❌ Calls will fail with "An error occurred"
+ * 
+ * See: VOICE_BROADCAST_TRANSFER_GUIDE.md for detailed explanation
+ */
 
 serve(async (req) => {
   const url = new URL(req.url);
@@ -62,11 +92,18 @@ serve(async (req) => {
     let queueStatus = 'completed';
     let dtmfPressed = digits;
     
+    // Handle digit "1" - Transfer to agent
+    // IMPORTANT: This works for BOTH internal and external transfers!
+    // - Internal: transferNumber is one of YOUR agent phone numbers
+    // - External: transferNumber is any other phone number
+    // The transfer process is identical - we return TwiML with <Dial> instructions
     if (digits === '1') {
       // Check if we have a transfer number in URL params
       if (transferNumber && transferNumber.trim() !== '') {
-        console.log(`Transferring call to ${transferNumber}`);
+        console.log(`Transferring call to ${transferNumber} (could be internal or external - doesn't matter!)`);
         queueStatus = 'transferred';
+        // Return TwiML to Twilio with transfer instructions
+        // Twilio will then dial the transfer number and bridge the calls
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Connecting you now.</Say>
