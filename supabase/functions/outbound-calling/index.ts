@@ -249,32 +249,59 @@ serve(async (req) => {
           console.log('[Outbound Calling] Outbound agent set successfully');
         }
 
-        // Fetch lead data for dynamic variables
+        // Fetch lead data for dynamic variables - try leadId first, then phone number lookup
         let dynamicVariables: Record<string, string> = {};
+        let resolvedLeadId = leadId;
+        
+        // Try to find lead by ID first, or by phone number if no leadId provided
+        let lead = null;
         if (leadId) {
-          const { data: lead } = await supabaseAdmin
+          const { data: leadById } = await supabaseAdmin
             .from('leads')
-            .select('first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
             .eq('id', leadId)
             .maybeSingle();
+          lead = leadById;
+        }
+        
+        // If no lead found by ID, try phone number lookup
+        if (!lead && finalPhone) {
+          const phoneDigits = finalPhone.replace(/\D/g, '');
+          console.log('[Outbound Calling] No leadId provided, looking up by phone:', phoneDigits);
           
-          if (lead) {
-            dynamicVariables = {
-              first_name: lead.first_name || '',
-              last_name: lead.last_name || '',
-              full_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'there',
-              email: lead.email || '',
-              company: lead.company || '',
-              lead_source: lead.lead_source || '',
-              notes: lead.notes || '',
-              tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
-              preferred_contact_time: lead.preferred_contact_time || '',
-              timezone: lead.timezone || '',
-              // Spread custom fields if they exist
-              ...(typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? lead.custom_fields as Record<string, string> : {})
-            };
-            console.log('[Outbound Calling] Dynamic variables prepared:', Object.keys(dynamicVariables));
+          const { data: leadByPhone } = await supabaseAdmin
+            .from('leads')
+            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .eq('user_id', userId)
+            .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
+            .limit(1)
+            .maybeSingle();
+          
+          if (leadByPhone) {
+            lead = leadByPhone;
+            resolvedLeadId = leadByPhone.id;
+            console.log('[Outbound Calling] Found lead by phone number:', lead.first_name, lead.last_name, lead.id);
           }
+        }
+        
+        if (lead) {
+          dynamicVariables = {
+            first_name: lead.first_name || '',
+            last_name: lead.last_name || '',
+            full_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'there',
+            email: lead.email || '',
+            company: lead.company || '',
+            lead_source: lead.lead_source || '',
+            notes: lead.notes || '',
+            tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
+            preferred_contact_time: lead.preferred_contact_time || '',
+            timezone: lead.timezone || '',
+            // Spread custom fields if they exist
+            ...(typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? lead.custom_fields as Record<string, string> : {})
+          };
+          console.log('[Outbound Calling] Dynamic variables prepared:', JSON.stringify(dynamicVariables));
+        } else {
+          console.log('[Outbound Calling] No lead found, using empty dynamic variables');
         }
 
         response = await retryWithBackoff(
