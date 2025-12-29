@@ -287,7 +287,7 @@ serve(async (req) => {
       caller_id: fromNumber,
       status: 'queued',
       notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}, speed: ${speed || 1.0}) | Transfer: ${formattedTransfer || 'none'}`,
-    }).then(() => console.log('Call logged')).catch((e: any) => console.log('Log error (ignored):', e.message));
+    }).then(() => console.log('Call logged'), (e: any) => console.log('Log error (ignored):', e.message));
 
     return new Response(
       JSON.stringify({ 

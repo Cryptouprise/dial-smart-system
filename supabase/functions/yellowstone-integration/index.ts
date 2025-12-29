@@ -124,7 +124,7 @@ serve(async (req) => {
       if (body.action === 'configure') {
         // Validate input
         const validationResult = validateConfig(body);
-        if (!validationResult.success) {
+        if (!validationResult.success || !validationResult.data) {
           return new Response(
             JSON.stringify({ 
               error: 'Invalid configuration data',

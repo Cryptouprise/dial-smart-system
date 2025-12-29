@@ -289,7 +289,7 @@ serve(async (req) => {
 
               if (!updatedPrompt.includes(markerStart)) {
                 // Get user's timezone for the instructions
-                const { data: availability } = await supabase
+                const { data: availability } = await supabaseClient
                   .from('calendar_availability')
                   .select('timezone')
                   .eq('user_id', userId)

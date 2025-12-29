@@ -278,7 +278,12 @@ async function runOptimizations(supabase: any, userId: string): Promise<any> {
   const insights = await generateLearningInsights(supabase, userId);
   
   // Apply optimizations based on insights
-  const optimizations = {
+  const optimizations: {
+    scriptRecommendations: any[];
+    dispositionAdjustments: any[];
+    leadScoringUpdates: { metric: string; value: number; reason: string }[];
+    pipelineOptimizations: any[];
+  } = {
     scriptRecommendations: [],
     dispositionAdjustments: [],
     leadScoringUpdates: [],
