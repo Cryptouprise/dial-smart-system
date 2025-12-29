@@ -224,6 +224,22 @@ serve(async (req) => {
 
         console.log('[Outbound Calling] Call log created:', callLog.id);
 
+        // Fetch lead data if available to pass to Retell agents
+        // This enables dynamic variables (first name, last name, etc.) in the agent
+        let leadData: any = null;
+        if (leadId) {
+          const { data: lead, error: leadError } = await supabaseAdmin
+            .from('leads')
+            .select('first_name, last_name, email, phone_number, company, custom_fields, notes, timezone, lead_source')
+            .eq('id', leadId)
+            .maybeSingle();
+          
+          if (!leadError && lead) {
+            leadData = lead;
+            console.log(`[Outbound Calling] Fetched lead data for ${lead.first_name} ${lead.last_name}`);
+          }
+        }
+
         // Create outbound call via Retell AI
         console.log('[Outbound Calling] Initiating Retell AI call:', {
           from: callerId,
@@ -262,7 +278,20 @@ serve(async (req) => {
                   campaign_id: campaignId,
                   lead_id: leadId,
                   call_log_id: callLog.id,
-                  user_id: userId // CRITICAL: Include user_id for webhook processing
+                  user_id: userId, // CRITICAL: Include user_id for webhook processing
+                  // Add lead details for Retell agents to access
+                  // Retell agents can use these variables in their prompts and custom functions
+                  ...(leadData && {
+                    first_name: leadData.first_name || '',
+                    last_name: leadData.last_name || '',
+                    email: leadData.email || '',
+                    phone_number: leadData.phone_number || finalPhone,
+                    company: leadData.company || '',
+                    lead_source: leadData.lead_source || '',
+                    timezone: leadData.timezone || '',
+                    notes: leadData.notes || '',
+                    custom_fields: leadData.custom_fields || {}
+                  })
                 }
               }),
             });
