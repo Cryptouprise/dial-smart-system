@@ -185,7 +185,8 @@ serve(async (req) => {
           
           let enrolledCount = 0;
           for (const cl of callableLeads) {
-            const leadId = cl.leads?.id;
+            const leadsData = cl.leads as any;
+            const leadId = Array.isArray(leadsData) ? leadsData[0]?.id : leadsData?.id;
             if (!leadId) continue;
 
             // Check if lead is already in this workflow

@@ -181,8 +181,9 @@ serve(async (req) => {
           .eq('id', queueItemId)
           .maybeSingle();
         
-        const broadcast = queueItem?.broadcast as { user_id: string } | null;
-        if (broadcast?.user_id) {
+        const broadcastData = queueItem?.broadcast as any;
+        const broadcast = Array.isArray(broadcastData) ? broadcastData[0] : broadcastData;
+        if (broadcast?.user_id && queueItem) {
           // Add to DNC list
           await supabase
             .from('dnc_list')

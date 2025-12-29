@@ -1447,14 +1447,14 @@ serve(async (req) => {
             success: true,
             appointment_id: appt?.id,
             event_id: googleEventId,
-            message: `Perfect! I've booked your appointment for ${formatTimeForVoice(startTime)}. ${attendee_email ? `You should receive a confirmation at ${attendee_email}.` : 'Looking forward to speaking with you!'}`
+            message: `Perfect! I've booked your appointment for ${formatTimeForVoice(appointmentTime)}. ${attendee_email ? `You should receive a confirmation at ${attendee_email}.` : 'Looking forward to speaking with you!'}`
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       case 'cancel_appointment': {
-        const { event_id, date, time } = body;
+        const { event_id, date, time } = requestBody;
 
         // Get user's Google Calendar integration
         const { data: integrations } = await supabase

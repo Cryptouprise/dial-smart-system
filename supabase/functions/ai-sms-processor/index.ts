@@ -268,7 +268,7 @@ serve(async (req) => {
         const canSend = await checkDoubleTextingPrevention(
           supabaseAdmin,
           conversationId,
-          userId,
+          userId || '',
           settings?.prevent_double_texting,
           settings?.double_text_delay_seconds
         );
@@ -280,7 +280,7 @@ serve(async (req) => {
             lovableApiKey,
             retellApiKey,
             conversationId,
-            userId,
+            userId || '',
             message,
             imageAnalysis,
             settings

@@ -157,7 +157,7 @@ serve(async (req) => {
         if (call.call_analysis) {
           dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis);
           console.log('[Retell Webhook] Using Retell analysis:', dispositionResult);
-        } else {
+        } else if (userId) {
           // Fall back to our AI analysis
           dispositionResult = await analyzeTranscriptWithAI(supabase, {
             transcript: formattedTranscript,
@@ -221,14 +221,16 @@ serve(async (req) => {
         console.error('[Retell Webhook] Disposition router error:', routerError);
       }
 
-      // 5. Update nudge tracking
-      await updateNudgeTracking(supabase, leadId, userId, outcome);
+      // 5. Update nudge tracking (only if userId is available)
+      if (userId) {
+        await updateNudgeTracking(supabase, leadId, userId, outcome);
 
-      // 6. Update pipeline position
-      await updatePipelinePosition(supabase, leadId, userId, outcome);
+        // 6. Update pipeline position
+        await updatePipelinePosition(supabase, leadId, userId, outcome);
 
-      // 7. CRITICAL: Advance workflow to next step after call ends
-      await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
+        // 7. CRITICAL: Advance workflow to next step after call ends
+        await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
+      }
     }
 
     // 7. Update phone number usage stats

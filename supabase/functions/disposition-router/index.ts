@@ -285,8 +285,8 @@ serve(async (req) => {
           time_to_disposition_seconds: timeToDisposition,
           previous_status: leadBefore?.status || null,
           new_status: leadAfter?.status || null,
-          previous_pipeline_stage: pipelineBefore?.pipeline_boards?.name || null,
-          new_pipeline_stage: pipelineAfter?.pipeline_boards?.name || null,
+          previous_pipeline_stage: Array.isArray(pipelineBefore?.pipeline_boards) ? pipelineBefore.pipeline_boards[0]?.name : pipelineBefore?.pipeline_boards?.name || null,
+          new_pipeline_stage: Array.isArray(pipelineAfter?.pipeline_boards) ? pipelineAfter.pipeline_boards[0]?.name : pipelineAfter?.pipeline_boards?.name || null,
           workflow_id: workflowId,
           campaign_id: campaignId,
           actions_triggered: actions.map((action, index) => ({
