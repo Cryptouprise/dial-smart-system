@@ -249,6 +249,34 @@ serve(async (req) => {
           console.log('[Outbound Calling] Outbound agent set successfully');
         }
 
+        // Fetch lead data for dynamic variables
+        let dynamicVariables: Record<string, string> = {};
+        if (leadId) {
+          const { data: lead } = await supabaseAdmin
+            .from('leads')
+            .select('first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .eq('id', leadId)
+            .maybeSingle();
+          
+          if (lead) {
+            dynamicVariables = {
+              first_name: lead.first_name || '',
+              last_name: lead.last_name || '',
+              full_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'there',
+              email: lead.email || '',
+              company: lead.company || '',
+              lead_source: lead.lead_source || '',
+              notes: lead.notes || '',
+              tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
+              preferred_contact_time: lead.preferred_contact_time || '',
+              timezone: lead.timezone || '',
+              // Spread custom fields if they exist
+              ...(typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? lead.custom_fields as Record<string, string> : {})
+            };
+            console.log('[Outbound Calling] Dynamic variables prepared:', Object.keys(dynamicVariables));
+          }
+        }
+
         response = await retryWithBackoff(
           async () => {
             const res = await fetch(`${baseUrl}/create-phone-call`, {
@@ -256,13 +284,14 @@ serve(async (req) => {
               headers: retellHeaders,
               body: JSON.stringify({
                 from_number: callerId,
-                to_number: finalPhone, // Use normalized phone
+                to_number: finalPhone,
                 agent_id: agentId,
+                retell_llm_dynamic_variables: dynamicVariables,
                 metadata: {
                   campaign_id: campaignId,
                   lead_id: leadId,
                   call_log_id: callLog.id,
-                  user_id: userId // CRITICAL: Include user_id for webhook processing
+                  user_id: userId
                 }
               }),
             });
