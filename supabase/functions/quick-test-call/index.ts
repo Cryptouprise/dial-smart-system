@@ -206,7 +206,23 @@ serve(async (req) => {
       formattedTransfer = cleanTransfer.startsWith('1') ? `+${cleanTransfer}` : `+1${cleanTransfer}`;
     }
 
-    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}, voice=${voiceId || 'default'}, speed=${speed || 1.0}`);
+    // Look up lead by phone number to get personalization data
+    let leadData: any = null;
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields')
+      .eq('user_id', user.id)
+      .or(`phone_number.eq.${cleanTo},phone_number.eq.+${cleanTo},phone_number.eq.+1${cleanTo}`)
+      .maybeSingle();
+    
+    if (lead) {
+      leadData = lead;
+      console.log(`Found lead for test call: ${lead.id} - ${lead.first_name} ${lead.last_name}`);
+    } else {
+      console.log(`No lead found for phone number: ${formattedTo}`);
+    }
+
+    console.log(`Initiating call: from=${fromNumber}, to=${formattedTo}, transfer=${formattedTransfer || 'none'}, voice=${voiceId || 'default'}, speed=${speed || 1.0}, lead=${leadData?.id || 'none'}`);
 
     // Generate ElevenLabs audio if API key is configured
     let audioUrl = '';
@@ -280,13 +296,14 @@ serve(async (req) => {
     const result = await twilioResponse.json();
     console.log('Call initiated successfully:', result.sid);
 
-    // Log call (non-blocking)
+    // Log call with lead data if found
     supabase.from('call_logs').insert({
       user_id: user.id,
+      lead_id: leadData?.id || null,
       phone_number: formattedTo,
       caller_id: fromNumber,
       status: 'queued',
-      notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}, speed: ${speed || 1.0}) | Transfer: ${formattedTransfer || 'none'}`,
+      notes: `Test broadcast (ElevenLabs: ${voiceId || 'none'}, speed: ${speed || 1.0}) | Transfer: ${formattedTransfer || 'none'}${leadData ? ` | Lead: ${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() : ''}`,
     }).then(() => console.log('Call logged'), (e: any) => console.log('Log error (ignored):', e.message));
 
     return new Response(
