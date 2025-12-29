@@ -4,6 +4,7 @@ import { Input } from './input';
 import { cn } from '@/lib/utils';
 
 const DYNAMIC_VARIABLES = [
+  // Standard lead fields
   { key: 'first_name', label: 'First Name', description: "Lead's first name" },
   { key: 'last_name', label: 'Last Name', description: "Lead's last name" },
   { key: 'full_name', label: 'Full Name', description: 'First + last name combined' },
@@ -14,6 +15,29 @@ const DYNAMIC_VARIABLES = [
   { key: 'tags', label: 'Tags', description: 'Lead tags (comma separated)' },
   { key: 'timezone', label: 'Timezone', description: "Lead's timezone" },
   { key: 'preferred_contact_time', label: 'Preferred Contact Time', description: 'Best time to call' },
+  
+  // Address fields (stored in custom_fields)
+  { key: 'address1', label: 'Address Line 1', description: 'Street address' },
+  { key: 'address2', label: 'Address Line 2', description: 'Apt/Suite/Unit' },
+  { key: 'city', label: 'City', description: 'City name' },
+  { key: 'state', label: 'State', description: 'State/Province' },
+  { key: 'zip', label: 'ZIP Code', description: 'Postal/ZIP code' },
+  { key: 'postal_code', label: 'Postal Code', description: 'Postal/ZIP code' },
+  { key: 'country', label: 'Country', description: 'Country' },
+  { key: 'full_address', label: 'Full Address', description: 'Complete address' },
+  
+  // Contact.* aliases (for GHL compatibility)
+  { key: 'contact.first_name', label: 'Contact First Name', description: "Contact's first name (GHL)" },
+  { key: 'contact.last_name', label: 'Contact Last Name', description: "Contact's last name (GHL)" },
+  { key: 'contact.email', label: 'Contact Email', description: "Contact's email (GHL)" },
+  { key: 'contact.company', label: 'Contact Company', description: "Contact's company (GHL)" },
+  { key: 'contact.address1', label: 'Contact Address 1', description: "Contact's street address (GHL)" },
+  { key: 'contact.address2', label: 'Contact Address 2', description: "Contact's address line 2 (GHL)" },
+  { key: 'contact.city', label: 'Contact City', description: "Contact's city (GHL)" },
+  { key: 'contact.state', label: 'Contact State', description: "Contact's state (GHL)" },
+  { key: 'contact.zip', label: 'Contact ZIP', description: "Contact's ZIP code (GHL)" },
+  { key: 'contact.postal_code', label: 'Contact Postal Code', description: "Contact's postal code (GHL)" },
+  { key: 'contact.country', label: 'Contact Country', description: "Contact's country (GHL)" },
 ];
 
 interface DynamicVariablesInputProps {
