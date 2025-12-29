@@ -75,7 +75,120 @@ serve(async (req) => {
 
     const { event, call } = payload;
 
-    // Only process call_ended and call_analyzed events
+    // Handle call_started for inbound calls - inject dynamic variables
+    if (event === 'call_started') {
+      console.log('[Retell Webhook] Processing call_started for dynamic variable injection');
+      console.log('[Retell Webhook] Call direction:', call.direction);
+      console.log('[Retell Webhook] From:', call.from_number, 'To:', call.to_number);
+      
+      // For inbound calls, the caller is from_number
+      const callerNumber = call.from_number;
+      const receivingNumber = call.to_number;
+      
+      if (callerNumber) {
+        // Normalize phone number for lookup
+        const normalizedCaller = callerNumber.replace(/\D/g, '').slice(-10);
+        console.log('[Retell Webhook] Looking up lead by phone:', normalizedCaller);
+        
+        // Find the user who owns this receiving number
+        const { data: phoneNumber } = await supabase
+          .from('phone_numbers')
+          .select('user_id')
+          .or(`number.eq.${receivingNumber},number.eq.+${receivingNumber.replace(/\D/g, '')}`)
+          .maybeSingle();
+        
+        const userId = phoneNumber?.user_id;
+        console.log('[Retell Webhook] Phone owner user_id:', userId);
+        
+        if (userId) {
+          // Look up lead by caller's phone number
+          const { data: lead } = await supabase
+            .from('leads')
+            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .eq('user_id', userId)
+            .or(`phone_number.ilike.%${normalizedCaller},phone_number.ilike.%${callerNumber.replace(/\D/g, '')}`)
+            .maybeSingle();
+          
+          if (lead) {
+            console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
+            
+            // Prepare dynamic variables
+            const dynamicVariables: Record<string, string> = {
+              first_name: lead.first_name || '',
+              last_name: lead.last_name || '',
+              full_name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
+              email: lead.email || '',
+              company: lead.company || '',
+              lead_source: lead.lead_source || '',
+              notes: lead.notes || '',
+              tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
+              preferred_contact_time: lead.preferred_contact_time || '',
+              timezone: lead.timezone || 'America/New_York',
+            };
+            
+            // Add custom fields
+            if (lead.custom_fields && typeof lead.custom_fields === 'object') {
+              for (const [key, value] of Object.entries(lead.custom_fields)) {
+                dynamicVariables[key] = String(value || '');
+              }
+            }
+            
+            console.log('[Retell Webhook] Injecting dynamic variables:', dynamicVariables);
+            
+            // Update the call with dynamic variables via Retell API
+            const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+            if (retellApiKey) {
+              try {
+                const updateResponse = await fetch(`https://api.retellai.com/v2/update-call/${call.call_id}`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${retellApiKey}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    retell_llm_dynamic_variables: dynamicVariables,
+                    metadata: {
+                      lead_id: lead.id,
+                      user_id: userId,
+                    },
+                  }),
+                });
+                
+                if (updateResponse.ok) {
+                  console.log('[Retell Webhook] Successfully injected dynamic variables for inbound call');
+                } else {
+                  const errorText = await updateResponse.text();
+                  console.error('[Retell Webhook] Failed to update call:', errorText);
+                }
+              } catch (apiError) {
+                console.error('[Retell Webhook] Error calling Retell update API:', apiError);
+              }
+            } else {
+              console.warn('[Retell Webhook] RETELL_AI_API_KEY not configured');
+            }
+            
+            // Create call log for inbound call
+            await supabase.from('call_logs').insert({
+              retell_call_id: call.call_id,
+              user_id: userId,
+              lead_id: lead.id,
+              phone_number: callerNumber,
+              caller_id: receivingNumber,
+              status: 'in-progress',
+              notes: 'Inbound call started',
+            });
+          } else {
+            console.log('[Retell Webhook] No lead found for caller:', callerNumber);
+          }
+        }
+      }
+      
+      return new Response(JSON.stringify({ received: true, processed: true, event: 'call_started' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Only process call_ended and call_analyzed events for the rest
     if (!['call_ended', 'call_analyzed'].includes(event)) {
       console.log('[Retell Webhook] Ignoring event type:', event);
       return new Response(JSON.stringify({ received: true, processed: false }), {
