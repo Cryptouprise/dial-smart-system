@@ -406,7 +406,3 @@ If you have questions about:
 - **Voice broadcast transfers** (press 1 to talk to agent) → This document
 - **External system transfers** (VICIdial → You) → See INBOUND_TRANSFER_INTEGRATION.md
 - **General voice broadcast setup** → See voice broadcast documentation
-
----
-
-**Last Updated**: December 29, 2024

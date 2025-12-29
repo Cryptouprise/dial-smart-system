@@ -182,7 +182,3 @@ With the webhook:
 - ✅ Full tracking and analytics
 - ✅ Business logic executes
 - ✅ Works for internal AND external numbers
-
----
-
-**Last Updated**: December 29, 2024
