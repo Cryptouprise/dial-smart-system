@@ -172,6 +172,10 @@ async function callWithTwilio(
     console.log(`Audio URL: ${audioUrl}`);
     
     // Build DTMF action URL with transfer number if available
+    // This URL will be called by Twilio when the recipient presses a digit
+    // The transfer number (if configured) is passed as a query parameter
+    // NOTE: The webhook is REQUIRED regardless of whether the transfer is to an internal
+    //       or external number. The webhook returns TwiML to actually perform the transfer.
     const dtmfActionUrl = transferNumber 
       ? `${dtmfHandlerUrl}?transfer=${encodeURIComponent(transferNumber)}&queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`
       : `${dtmfHandlerUrl}?queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`;
@@ -184,6 +188,11 @@ async function callWithTwilio(
     console.log(`Escaped DTMF Action URL: ${escapedDtmfActionUrl}`);
     
     // Create TwiML for playing audio and handling DTMF
+    // The <Gather> element tells Twilio to:
+    // 1. Play the audio message
+    // 2. Listen for DTMF digit presses (up to 1 digit)
+    // 3. Call the 'action' webhook when a digit is pressed
+    // The webhook at dtmfActionUrl will return more TwiML with transfer instructions
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="dtmf" numDigits="1" action="${escapedDtmfActionUrl}" method="POST" timeout="10">
@@ -554,9 +563,19 @@ serve(async (req) => {
         let sipTrunkCalls = 0;
         const errors: string[] = [];
         const statusCallbackUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
+        
+        // ⚠️ IMPORTANT: DTMF Handler Webhook Configuration
+        // This webhook URL is embedded in the TwiML and called by Twilio when recipients press digits
+        // The webhook is REQUIRED for ALL transfers (internal or external) because:
+        // 1. It returns TwiML instructions to Twilio (e.g., <Dial> to transfer the call)
+        // 2. It tracks statistics and updates broadcast_queue status
+        // 3. It handles business logic (DNC, callbacks, lead updates)
+        // See: VOICE_BROADCAST_TRANSFER_GUIDE.md for detailed explanation
         const dtmfHandlerUrl = `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
         
         // Get transfer number from DTMF actions
+        // If digit "1" is configured for transfer, this is where the call will be transferred to
+        // This can be an internal agent number or any external number - the webhook is still required!
         const dtmfActions = broadcast.dtmf_actions || [];
         const transferAction = dtmfActions.find((a: any) => a.digit === '1' && a.action === 'transfer');
         const transferNumber = transferAction?.transfer_to || '';

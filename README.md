@@ -48,6 +48,15 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 
 ## 📚 Documentation
 
+### Voice Broadcast & Transfer Guides
+See [VOICE_BROADCAST_TRANSFER_GUIDE.md](./VOICE_BROADCAST_TRANSFER_GUIDE.md) for **critical information** about voice broadcast transfers:
+- ⚠️ **Webhook requirements for internal agent transfers** (ALWAYS required!)
+- Voice broadcast DTMF handling and call transfer flow
+- Internal vs external transfer explanations
+- Configuration checklist and testing guide
+- Troubleshooting common issues
+
+### Inbound Transfer Integration
 See [INBOUND_TRANSFER_INTEGRATION.md](./INBOUND_TRANSFER_INTEGRATION.md) for inbound transfer webhook guide including:
 - Setup instructions and configuration
 - VICIdial integration examples
@@ -55,6 +64,7 @@ See [INBOUND_TRANSFER_INTEGRATION.md](./INBOUND_TRANSFER_INTEGRATION.md) for inb
 - Testing and troubleshooting
 - Security best practices
 
+### Provider Integration
 See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup guide including:
 - Environment variable configuration
 - Provider credential setup
@@ -62,6 +72,7 @@ See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup
 - STIR/SHAKEN and SMS setup
 - API reference and troubleshooting
 
+### Predictive Dialing
 See [PREDICTIVE_DIALING_GUIDE.md](./PREDICTIVE_DIALING_GUIDE.md) for comprehensive documentation including:
 - Feature descriptions and usage examples
 - Integration guide with code samples
