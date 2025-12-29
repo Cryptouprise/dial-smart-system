@@ -3,15 +3,17 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // DTMF handler for Twilio voice broadcast webhooks
 // This handles key presses during broadcast calls and updates queue status
+// When transferring (press 1), fires internal webhook with lead data
 
 serve(async (req) => {
   const url = new URL(req.url);
   const transferNumber = url.searchParams.get('transfer') || '';
   const queueItemId = url.searchParams.get('queue_item_id') || '';
   const broadcastId = url.searchParams.get('broadcast_id') || '';
+  const retellAgentId = url.searchParams.get('retell_agent_id') || '';
   
   console.log(`DTMF Handler - Method: ${req.method}, URL: ${req.url}`);
-  console.log(`Params - transfer: ${transferNumber}, queue_item_id: ${queueItemId}, broadcast_id: ${broadcastId}`);
+  console.log(`Params - transfer: ${transferNumber}, queue_item_id: ${queueItemId}, broadcast_id: ${broadcastId}, retell_agent_id: ${retellAgentId}`);
   
   // Initialize Supabase client
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -62,12 +64,92 @@ serve(async (req) => {
     let queueStatus = 'completed';
     let dtmfPressed = digits;
     
+    // Look up lead by phone number (the "To" number is the lead's phone)
+    let leadData: any = null;
+    let userId: string | null = null;
+    
+    if (to) {
+      const normalizedPhone = to.replace(/\D/g, '');
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, user_id')
+        .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone},phone_number.eq.+1${normalizedPhone}`)
+        .maybeSingle();
+      
+      if (lead) {
+        leadData = lead;
+        userId = lead.user_id;
+        console.log(`Found lead: ${lead.id} - ${lead.first_name} ${lead.last_name}`);
+      }
+    }
+    
+    // Also get user_id from broadcast if we don't have it
+    if (!userId && broadcastId) {
+      const { data: broadcast } = await supabase
+        .from('voice_broadcasts')
+        .select('user_id')
+        .eq('id', broadcastId)
+        .maybeSingle();
+      if (broadcast) userId = broadcast.user_id;
+    }
+    
     if (digits === '1') {
       // Check if we have a transfer number in URL params
       if (transferNumber && transferNumber.trim() !== '') {
         console.log(`Transferring call to ${transferNumber}`);
         queueStatus = 'transferred';
-        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+        
+        // Fire internal webhook with transfer data
+        await fireTransferWebhook(supabase, {
+          event: 'transfer_initiated',
+          callSid,
+          fromNumber: from,
+          toNumber: to,
+          transferNumber,
+          broadcastId,
+          queueItemId,
+          leadId: leadData?.id,
+          leadData: leadData ? {
+            first_name: leadData.first_name,
+            last_name: leadData.last_name,
+            full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim(),
+            email: leadData.email,
+            company: leadData.company,
+            lead_source: leadData.lead_source,
+            notes: leadData.notes,
+            tags: leadData.tags,
+            custom_fields: leadData.custom_fields,
+          } : null,
+          userId,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // Check if this is a Retell agent transfer
+        if (retellAgentId) {
+          // Transfer to Retell AI agent with dynamic variables
+          const retellResult = await transferToRetellAgent(
+            supabase,
+            retellAgentId,
+            transferNumber,
+            to,
+            leadData,
+            { broadcastId, queueItemId, callSid, userId }
+          );
+          
+          if (retellResult.success) {
+            twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Connecting you to our AI assistant now.</Say>
+  <Pause length="1"/>
+  <Dial timeout="60">
+    <Number>${transferNumber}</Number>
+  </Dial>
+  <Say>We could not connect you. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+          } else {
+            // Fall back to regular transfer
+            twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Connecting you now.</Say>
   <Dial timeout="30">
@@ -76,6 +158,19 @@ serve(async (req) => {
   <Say>We could not connect you. Goodbye.</Say>
   <Hangup/>
 </Response>`;
+          }
+        } else {
+          // Regular phone transfer
+          twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Connecting you now.</Say>
+  <Dial timeout="30">
+    <Number>${transferNumber}</Number>
+  </Dial>
+  <Say>We could not connect you. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+        }
       } else {
         // No transfer number configured - mark as answered/interested
         console.log('No transfer number configured, marking as answered');
@@ -253,3 +348,121 @@ serve(async (req) => {
     });
   }
 });
+
+// Fire internal webhook when transfer is initiated
+async function fireTransferWebhook(
+  supabase: any,
+  payload: {
+    event: string;
+    callSid: string;
+    fromNumber: string;
+    toNumber: string;
+    transferNumber: string;
+    broadcastId: string;
+    queueItemId: string;
+    leadId?: string;
+    leadData?: any;
+    userId?: string | null;
+    timestamp: string;
+  }
+) {
+  try {
+    console.log('Firing internal transfer webhook with payload:', JSON.stringify(payload, null, 2));
+    
+    // Store transfer event in database for tracking
+    const { error } = await supabase
+      .from('call_logs')
+      .insert({
+        user_id: payload.userId,
+        lead_id: payload.leadId,
+        phone_number: payload.toNumber,
+        caller_id: payload.fromNumber,
+        status: 'transferred',
+        outcome: 'transferred',
+        notes: `Voice broadcast transfer - Lead: ${payload.leadData?.full_name || 'Unknown'}, Transfer to: ${payload.transferNumber}`,
+      });
+    
+    if (error) {
+      console.error('Error logging transfer:', error);
+    }
+    
+    console.log('Transfer webhook fired successfully');
+  } catch (error: any) {
+    console.error('Error firing transfer webhook:', error.message);
+  }
+}
+
+// Transfer call to Retell AI agent with dynamic variables
+async function transferToRetellAgent(
+  supabase: any,
+  agentId: string,
+  fromNumber: string,
+  toNumber: string,
+  leadData: any,
+  metadata: { broadcastId: string; queueItemId: string; callSid: string; userId?: string | null }
+): Promise<{ success: boolean; callId?: string; error?: string }> {
+  try {
+    const retellKey = Deno.env.get('RETELL_AI_API_KEY');
+    if (!retellKey) {
+      console.error('RETELL_AI_API_KEY not configured');
+      return { success: false, error: 'Retell API key not configured' };
+    }
+    
+    // Build dynamic variables from lead data
+    const dynamicVariables: Record<string, string> = {};
+    if (leadData) {
+      dynamicVariables.first_name = leadData.first_name || '';
+      dynamicVariables.last_name = leadData.last_name || '';
+      dynamicVariables.full_name = `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there';
+      dynamicVariables.email = leadData.email || '';
+      dynamicVariables.company = leadData.company || '';
+      dynamicVariables.lead_source = leadData.lead_source || '';
+      dynamicVariables.notes = leadData.notes || '';
+      dynamicVariables.tags = Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '';
+      
+      // Include custom fields
+      if (typeof leadData.custom_fields === 'object' && leadData.custom_fields !== null) {
+        Object.assign(dynamicVariables, leadData.custom_fields);
+      }
+    }
+    
+    console.log('Initiating Retell transfer with dynamic variables:', Object.keys(dynamicVariables));
+    
+    // Create Retell call for transfer
+    const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${retellKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from_number: fromNumber,
+        to_number: toNumber,
+        agent_id: agentId,
+        retell_llm_dynamic_variables: dynamicVariables,
+        metadata: {
+          broadcast_id: metadata.broadcastId,
+          queue_item_id: metadata.queueItemId,
+          original_call_sid: metadata.callSid,
+          user_id: metadata.userId,
+          lead_id: leadData?.id,
+          transfer_type: 'broadcast_press_1',
+        },
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Retell transfer API error:', errorText);
+      return { success: false, error: errorText };
+    }
+    
+    const result = await response.json();
+    console.log('Retell transfer call created:', result.call_id);
+    
+    return { success: true, callId: result.call_id };
+  } catch (error: any) {
+    console.error('Error transferring to Retell:', error.message);
+    return { success: false, error: error.message };
+  }
+}
