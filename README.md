@@ -38,7 +38,22 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 - **Ringless Voicemail (RVM)**: Queue and deliver voicemails without ringing
 - **Provider management UI**: Easy setup and number import
 
+### Inbound Transfer Webhook/API
+- **Receive Live Transfers**: Accept inbound transfers from external dialers (VICIdial, etc.)
+- **Client Data Transfer**: Receive complete lead/client information via webhook
+- **Automatic Lead Creation**: Create or update lead records automatically
+- **High Volume Support**: Handle transfers from systems calling 500K+ per day
+- **Flexible Metadata**: Support for custom fields and campaign data
+- **Secure Authentication**: Optional webhook secret verification
+
 ## 📚 Documentation
+
+See [INBOUND_TRANSFER_INTEGRATION.md](./INBOUND_TRANSFER_INTEGRATION.md) for inbound transfer webhook guide including:
+- Setup instructions and configuration
+- VICIdial integration examples
+- Webhook API reference and payload format
+- Testing and troubleshooting
+- Security best practices
 
 See [PROVIDER_INTEGRATION.md](./PROVIDER_INTEGRATION.md) for multi-carrier setup guide including:
 - Environment variable configuration
