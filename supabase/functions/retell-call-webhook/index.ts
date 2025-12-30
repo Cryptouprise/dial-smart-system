@@ -155,66 +155,57 @@ serve(async (req) => {
         }
       }
       
-      // Always create a call log entry at call_started so we have user_id for later events
-      const callLogEntry: any = {
-        retell_call_id: call.call_id,
-        user_id: userId,
-        phone_number: callerNumber || '',
-        caller_id: receivingNumber || '',
-        status: 'in-progress',
-        notes: 'Inbound call started',
-      };
-      
-      if (lead) {
-        callLogEntry.lead_id = lead.id;
+      // Create a call log entry at call_started so we have context for later events
+      // NOTE: call_logs.status is constrained in Postgres; use an allowed value.
+      if (userId) {
+        const callLogEntry: any = {
+          retell_call_id: call.call_id,
+          user_id: userId,
+          phone_number: receivingNumber || '',
+          caller_id: callerNumber || '',
+          status: 'ringing',
+          notes: 'Inbound call started',
+        };
+
+        if (lead) {
+          callLogEntry.lead_id = lead.id;
+        }
+
+        const { error: callLogInsertError } = await supabase
+          .from('call_logs')
+          .upsert(callLogEntry, { onConflict: 'retell_call_id' });
+
+        if (callLogInsertError) {
+          console.error('[Retell Webhook] Failed to insert call log:', callLogInsertError);
+        } else {
+          console.log('[Retell Webhook] Created/updated call_log for call_started');
+        }
       }
-      
-      const { error: callLogInsertError } = await supabase
-        .from('call_logs')
-        .upsert(callLogEntry, { onConflict: 'retell_call_id' });
-      
-      if (callLogInsertError) {
-        console.error('[Retell Webhook] Failed to insert call log:', callLogInsertError);
-      } else {
-        console.log('[Retell Webhook] Created/updated call_log for call_started');
-      }
-      
-      // If we found a lead, inject dynamic variables
+
+      // If we found a lead, we *attempt* to inject dynamic variables.
+      // For reliable "name on greeting" behavior, configure Retell's Inbound Webhook
+      // (retell-inbound-webhook) which provides dynamic variables before call connects.
       if (lead) {
         console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
-        
-        // Prepare dynamic variables
+
+        // Prepare dynamic variables (Retell requires string values)
         const dynamicVariables: Record<string, string> = {
-          first_name: lead.first_name || '',
-          last_name: lead.last_name || '',
-          full_name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
-          email: lead.email || '',
-          company: lead.company || '',
-          lead_source: lead.lead_source || '',
-          notes: lead.notes || '',
-          tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
-          preferred_contact_time: lead.preferred_contact_time || '',
-          timezone: lead.timezone || 'America/New_York',
+          first_name: String(lead.first_name || ''),
+          last_name: String(lead.last_name || ''),
+          full_name: String([lead.first_name, lead.last_name].filter(Boolean).join(' ') || ''),
+          email: String(lead.email || ''),
+          company: String(lead.company || ''),
+          lead_source: String(lead.lead_source || ''),
+          notes: String(lead.notes || ''),
+          tags: String(Array.isArray(lead.tags) ? lead.tags.join(', ') : ''),
+          preferred_contact_time: String(lead.preferred_contact_time || ''),
+          timezone: String(lead.timezone || 'America/New_York'),
         };
-        
-        // Add custom fields (including address fields if they exist)
-        if (lead.custom_fields && typeof lead.custom_fields === 'object') {
-          for (const [key, value] of Object.entries(lead.custom_fields)) {
-            dynamicVariables[key] = String(value || '');
-            // Also add contact.* aliases for compatibility
-            dynamicVariables[`contact.${key}`] = String(value || '');
-          }
-        }
-        
-        // Add contact.* aliases for standard fields
-        dynamicVariables['contact.first_name'] = dynamicVariables.first_name;
-        dynamicVariables['contact.last_name'] = dynamicVariables.last_name;
-        dynamicVariables['contact.email'] = dynamicVariables.email;
-        dynamicVariables['contact.company'] = dynamicVariables.company;
-        
-        console.log('[Retell Webhook] Injecting dynamic variables:', Object.keys(dynamicVariables));
-        
-        // Update the call with dynamic variables via Retell API
+
+        console.log('[Retell Webhook] Prepared dynamic variables:', Object.keys(dynamicVariables));
+
+        // Best-effort: Update the call with dynamic variables via Retell API.
+        // If Retell rejects this (schema validation), inbound webhook is the supported way.
         const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
         if (retellApiKey) {
           try {
@@ -226,13 +217,9 @@ serve(async (req) => {
               },
               body: JSON.stringify({
                 retell_llm_dynamic_variables: dynamicVariables,
-                metadata: {
-                  lead_id: lead.id,
-                  user_id: userId,
-                },
               }),
             });
-            
+
             if (updateResponse.ok) {
               console.log('[Retell Webhook] Successfully injected dynamic variables for inbound call');
             } else {
@@ -248,10 +235,10 @@ serve(async (req) => {
       } else {
         console.log('[Retell Webhook] No lead found for caller:', callerNumber);
       }
-      
-      return new Response(JSON.stringify({ 
-        received: true, 
-        processed: true, 
+
+      return new Response(JSON.stringify({
+        received: true,
+        processed: true,
         event: 'call_started',
         lead_found: !!lead,
         user_id: userId,

@@ -153,7 +153,7 @@ const RetellAIManager = () => {
       if (results.success > 0) {
         toast({
           title: "Webhooks Configured",
-          description: `${results.success} agent(s) now connected. Calls will trigger transcript analysis, disposition routing, and workflows automatically.`,
+          description: `${results.success} agent(s) updated. Inbound webhook applied to all numbers so {{first_name}} works on pickup.`,
         });
       }
     } finally {

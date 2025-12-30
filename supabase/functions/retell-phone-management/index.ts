@@ -13,6 +13,7 @@ interface RetellPhoneNumberRequest {
   agentId?: string;
   nickname?: string;
   areaCode?: string;
+  inboundWebhookUrl?: string;
 }
 
 serve(async (req) => {
@@ -22,7 +23,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, phoneNumber, terminationUri, agentId, nickname, areaCode }: RetellPhoneNumberRequest = await req.json();
+    const { action, phoneNumber, terminationUri, agentId, nickname, areaCode, inboundWebhookUrl }: RetellPhoneNumberRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -66,6 +67,7 @@ serve(async (req) => {
           updateData.outbound_agent_id = agentId; // Required for outbound calls
         }
         if (nickname) updateData.nickname = nickname;
+        if (inboundWebhookUrl) updateData.inbound_webhook_url = inboundWebhookUrl;
         
         response = await fetch(`${baseUrl}/update-phone-number/${encodeURIComponent(phoneNumber)}`, {
           method: 'PATCH',
