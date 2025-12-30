@@ -29,6 +29,7 @@ import {
   Rocket,
   AlertCircle,
   DollarSign,
+  Users,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -93,6 +94,7 @@ const navigationGroups: NavGroup[] = [
     label: 'Leads & Pipeline',
     defaultOpen: false,
     items: [
+      { title: 'Leads', value: 'leads', icon: Users, simpleMode: true },
       { title: 'Pipeline', value: 'pipeline', icon: Workflow },
       { title: 'Lead Upload', value: 'lead-upload', icon: Upload },
       { title: 'Appointments', value: 'calendar', icon: Calendar, simpleMode: true },

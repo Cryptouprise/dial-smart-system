@@ -35,7 +35,8 @@ import {
   Tag,
   Star,
   RotateCcw,
-  Ban
+  Ban,
+  MapPin
 } from 'lucide-react';
 
 interface Lead {
@@ -45,6 +46,10 @@ interface Lead {
   phone_number: string;
   email: string | null;
   company: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
   status: string;
   notes: string | null;
   tags: string[] | null;
@@ -231,6 +236,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           last_name: editedLead.last_name,
           email: editedLead.email,
           company: editedLead.company,
+          address: editedLead.address,
+          city: editedLead.city,
+          state: editedLead.state,
+          zip_code: editedLead.zip_code,
           phone_number: editedLead.phone_number,
           notes: editedLead.notes,
           status: editedLead.status,
@@ -494,6 +503,54 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         />
                       ) : (
                         <p className="font-medium">{lead.company || '—'}</p>
+                      )}
+                    </div>
+                    
+                    {/* Address Section */}
+                    <Separator className="my-3" />
+                    <div>
+                      <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
+                        <MapPin className="h-3 w-3" />
+                        Address
+                      </Label>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <Input
+                            placeholder="Street Address"
+                            value={editedLead.address || ''}
+                            onChange={(e) => setEditedLead(prev => ({ ...prev, address: e.target.value }))}
+                          />
+                          <div className="grid grid-cols-3 gap-2">
+                            <Input
+                              placeholder="City"
+                              value={editedLead.city || ''}
+                              onChange={(e) => setEditedLead(prev => ({ ...prev, city: e.target.value }))}
+                            />
+                            <Input
+                              placeholder="State"
+                              value={editedLead.state || ''}
+                              onChange={(e) => setEditedLead(prev => ({ ...prev, state: e.target.value }))}
+                            />
+                            <Input
+                              placeholder="ZIP"
+                              value={editedLead.zip_code || ''}
+                              onChange={(e) => setEditedLead(prev => ({ ...prev, zip_code: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm">
+                          {lead.address || lead.city || lead.state || lead.zip_code ? (
+                            <>
+                              {lead.address && <p className="font-medium">{lead.address}</p>}
+                              <p className="text-muted-foreground">
+                                {[lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-muted-foreground">No address on file</p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </CardContent>

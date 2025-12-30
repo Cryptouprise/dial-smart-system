@@ -18,6 +18,10 @@ interface Lead {
   last_name?: string;
   email?: string;
   company?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
   status: string;
   ghl_contact_id?: string;
 }
@@ -99,6 +103,22 @@ const EnhancedLeadManager = () => {
                   break;
                 case 'company':
                   lead.company = value;
+                  break;
+                case 'address':
+                case 'street':
+                case 'street_address':
+                  lead.address = value;
+                  break;
+                case 'city':
+                  lead.city = value;
+                  break;
+                case 'state':
+                  lead.state = value;
+                  break;
+                case 'zip':
+                case 'zip_code':
+                case 'postal_code':
+                  lead.zip_code = value;
                   break;
               }
             });
@@ -234,6 +254,10 @@ const EnhancedLeadManager = () => {
                       <li>last_name</li>
                       <li>email</li>
                       <li>company</li>
+                      <li>address</li>
+                      <li>city</li>
+                      <li>state</li>
+                      <li>zip_code</li>
                     </ul>
                   </div>
                 </div>
