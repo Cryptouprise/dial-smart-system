@@ -59,6 +59,10 @@ export interface Lead {
   email: string;
   phone_number: string;
   company: string;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
   status: 'new' | 'contacted' | 'qualified' | 'converted' | 'lost';
   priority: number;
   notes: string;

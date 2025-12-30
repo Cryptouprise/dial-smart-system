@@ -25,6 +25,7 @@ import AgentActivityDashboard from '@/components/AgentActivityDashboard';
 import AgentActivityWidget from '@/components/AgentActivityWidget';
 import WorkflowBuilder from '@/components/WorkflowBuilder';
 import LeadUpload from '@/components/LeadUpload';
+import EnhancedLeadManager from '@/components/EnhancedLeadManager';
 import AIWorkflowGenerator from '@/components/AIWorkflowGenerator';
 import ReachabilityDashboard from '@/components/ReachabilityDashboard';
 import CampaignResultsDashboard from '@/components/CampaignResultsDashboard';
@@ -75,7 +76,7 @@ const Dashboard = () => {
   useEffect(() => {
     const unsubscribe = onModeChange((isSimple) => {
       if (isSimple) {
-        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar'];
+        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads'];
         if (!simpleTabs.includes(activeTab)) {
           setActiveTab('overview');
           setSearchParams({ tab: 'overview' });
@@ -342,6 +343,8 @@ const Dashboard = () => {
             </div>
           </TabErrorBoundary>
         );
+      case 'leads':
+        return <TabErrorBoundary tabName="Leads"><EnhancedLeadManager /></TabErrorBoundary>;
       case 'pipeline':
         return <TabErrorBoundary tabName="Pipeline"><PipelineKanban /></TabErrorBoundary>;
       case 'predictive':

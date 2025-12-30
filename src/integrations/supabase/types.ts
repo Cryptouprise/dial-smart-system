@@ -1873,6 +1873,8 @@ export type Database = {
       }
       leads: {
         Row: {
+          address: string | null
+          city: string | null
           company: string | null
           created_at: string
           custom_fields: Json | null
@@ -1889,13 +1891,17 @@ export type Database = {
           phone_number: string
           preferred_contact_time: string | null
           priority: number | null
+          state: string | null
           status: string
           tags: string[] | null
           timezone: string | null
           updated_at: string
           user_id: string
+          zip_code: string | null
         }
         Insert: {
+          address?: string | null
+          city?: string | null
           company?: string | null
           created_at?: string
           custom_fields?: Json | null
@@ -1912,13 +1918,17 @@ export type Database = {
           phone_number: string
           preferred_contact_time?: string | null
           priority?: number | null
+          state?: string | null
           status?: string
           tags?: string[] | null
           timezone?: string | null
           updated_at?: string
           user_id: string
+          zip_code?: string | null
         }
         Update: {
+          address?: string | null
+          city?: string | null
           company?: string | null
           created_at?: string
           custom_fields?: Json | null
@@ -1935,11 +1945,13 @@ export type Database = {
           phone_number?: string
           preferred_contact_time?: string | null
           priority?: number | null
+          state?: string | null
           status?: string
           tags?: string[] | null
           timezone?: string | null
           updated_at?: string
           user_id?: string
+          zip_code?: string | null
         }
         Relationships: []
       }
