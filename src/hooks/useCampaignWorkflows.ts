@@ -100,35 +100,48 @@ export function useCampaignWorkflows() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('campaign_workflows')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Load steps for each workflow
-      const workflowsWithSteps: CampaignWorkflow[] = [];
-      for (const workflow of (data || [])) {
-        const { data: steps } = await supabase
+      // Fetch workflows and all steps in parallel (single query each)
+      const [workflowsResult, stepsResult] = await Promise.all([
+        supabase
+          .from('campaign_workflows')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        supabase
           .from('workflow_steps')
           .select('*')
-          .eq('workflow_id', workflow.id)
-          .order('step_number', { ascending: true });
+          .order('step_number', { ascending: true })
+      ]);
 
-        workflowsWithSteps.push({
-          ...workflow,
-          workflow_type: workflow.workflow_type as CampaignWorkflow['workflow_type'],
-          settings: workflow.settings as CampaignWorkflow['settings'],
-          auto_reply_settings: workflow.auto_reply_settings as unknown as WorkflowAutoReplySettings | null,
-          steps: (steps || []).map(s => ({
-            ...s,
-            step_type: s.step_type as WorkflowStep['step_type'],
-            step_config: s.step_config as WorkflowStep['step_config']
-          }))
-        });
+      if (workflowsResult.error) throw workflowsResult.error;
+
+      const allWorkflows = workflowsResult.data || [];
+      const allSteps = stepsResult.data || [];
+      
+      // Get workflow IDs to filter steps
+      const workflowIds = new Set(allWorkflows.map(w => w.id));
+      
+      // Group steps by workflow_id (only for user's workflows)
+      const stepsByWorkflow = new Map<string, typeof allSteps>();
+      for (const step of allSteps) {
+        if (!workflowIds.has(step.workflow_id)) continue;
+        const existing = stepsByWorkflow.get(step.workflow_id) || [];
+        existing.push(step);
+        stepsByWorkflow.set(step.workflow_id, existing);
       }
+
+      // Build workflows with steps
+      const workflowsWithSteps: CampaignWorkflow[] = allWorkflows.map(workflow => ({
+        ...workflow,
+        workflow_type: workflow.workflow_type as CampaignWorkflow['workflow_type'],
+        settings: workflow.settings as CampaignWorkflow['settings'],
+        auto_reply_settings: workflow.auto_reply_settings as unknown as WorkflowAutoReplySettings | null,
+        steps: (stepsByWorkflow.get(workflow.id) || []).map(s => ({
+          ...s,
+          step_type: s.step_type as WorkflowStep['step_type'],
+          step_config: s.step_config as WorkflowStep['step_config']
+        }))
+      }));
 
       setWorkflows(workflowsWithSteps);
     } catch (error: any) {
