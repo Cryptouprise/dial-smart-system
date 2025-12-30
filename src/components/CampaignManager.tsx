@@ -364,19 +364,17 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Delete campaign leads first
-      await supabase
-        .from('campaign_leads')
-        .delete()
-        .eq('campaign_id', campaignId);
+      // Delete all related data in parallel for speed
+      await Promise.all([
+        supabase.from('campaign_leads').delete().eq('campaign_id', campaignId),
+        supabase.from('dialing_queues').delete().eq('campaign_id', campaignId),
+        supabase.from('campaign_phone_pools').delete().eq('campaign_id', campaignId),
+        supabase.from('campaign_automation_rules').delete().eq('campaign_id', campaignId),
+        supabase.from('budget_settings').delete().eq('campaign_id', campaignId),
+        supabase.from('lead_workflow_progress').delete().eq('campaign_id', campaignId),
+      ]);
 
-      // Delete dialing queue entries
-      await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('campaign_id', campaignId);
-
-      // Delete the campaign
+      // Now delete the campaign itself
       const { error } = await supabase
         .from('campaigns')
         .delete()
@@ -389,7 +387,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
         title: "Campaign deleted",
         description: "The campaign has been permanently deleted.",
       });
-      loadCampaigns();
+      
+      // Update local state immediately for instant UI feedback
+      setCampaigns(prev => prev.filter(c => c.id !== campaignId));
       onRefresh?.();
     } catch (error) {
       console.error('Error deleting campaign:', error);
