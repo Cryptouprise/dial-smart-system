@@ -535,14 +535,32 @@ export const VoiceBroadcastManager: React.FC = () => {
                                 />
                               </div>
                               {action.action === 'transfer' && (
-                                <div className="pl-16">
-                                  <Label className="text-xs text-muted-foreground mb-1 block">Transfer To Number</Label>
-                                  <Input
-                                    value={action.transfer_to || ''}
-                                    onChange={(e) => updateDTMFAction(index, 'transfer_to', e.target.value)}
-                                    placeholder="e.g., +14695551234 (your Retell AI agent number)"
-                                    className="w-full"
-                                  />
+                                <div className="pl-16 space-y-2">
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground mb-1 block">Transfer Destination Type</Label>
+                                    <Select
+                                      value={action.destination_type || 'retell'}
+                                      onValueChange={(value) => updateDTMFAction(index, 'destination_type', value)}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="retell">Retell AI (concurrency limited)</SelectItem>
+                                        <SelectItem value="assistable">Assistable (high concurrency)</SelectItem>
+                                        <SelectItem value="external">External/Human Team (no AI limit)</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground mb-1 block">Transfer To Number</Label>
+                                    <Input
+                                      value={action.transfer_to || ''}
+                                      onChange={(e) => updateDTMFAction(index, 'transfer_to', e.target.value)}
+                                      placeholder="e.g., +14695551234"
+                                      className="w-full"
+                                    />
+                                  </div>
                                 </div>
                               )}
                               {action.action === 'callback' && (
