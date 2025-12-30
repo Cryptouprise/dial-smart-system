@@ -92,7 +92,24 @@ serve(async (req) => {
         .maybeSingle();
       if (broadcast) userId = broadcast.user_id;
     }
-    
+
+    // Fallback: for voice broadcasts, "from" is our Twilio number; resolve owner user_id from phone_numbers
+    if (!userId && from) {
+      const { data: phoneOwner, error: phoneOwnerError } = await supabase
+        .from('phone_numbers')
+        .select('user_id')
+        .eq('number', from)
+        .maybeSingle();
+
+      if (phoneOwnerError) {
+        console.error('Error looking up phone owner:', phoneOwnerError);
+      }
+
+      if (phoneOwner?.user_id) {
+        userId = phoneOwner.user_id;
+        console.log(`Resolved userId from from-number owner: ${userId}`);
+      }
+    }
     if (digits === '1') {
       // Check if we have a transfer number in URL params
       if (transferNumber && transferNumber.trim() !== '') {
@@ -166,6 +183,7 @@ serve(async (req) => {
         });
         
         // Check if this is a Retell agent transfer
+        // NOTE: even if retellAgentId is empty, we still wrote transfer context above so the Retell inbound webhook can greet with the lead name.
         if (retellAgentId) {
           // Transfer to Retell AI agent with dynamic variables
           const retellResult = await transferToRetellAgent(
@@ -410,7 +428,8 @@ async function fireTransferWebhook(
   try {
     console.log('Firing internal transfer webhook with payload:', JSON.stringify(payload, null, 2));
     
-    // Store transfer event in database for tracking
+    // Store transfer event in database for tracking (best-effort)
+    // IMPORTANT: call_logs has strict enum-like CHECK constraints; keep status/outcome within allowed values.
     const { error } = await supabase
       .from('call_logs')
       .insert({
@@ -418,8 +437,8 @@ async function fireTransferWebhook(
         lead_id: payload.leadId,
         phone_number: payload.toNumber,
         caller_id: payload.fromNumber,
-        status: 'transferred',
-        outcome: 'transferred',
+        status: 'completed',
+        outcome: null,
         notes: `Voice broadcast transfer - Lead: ${payload.leadData?.full_name || 'Unknown'}, Transfer to: ${payload.transferNumber}`,
       });
     
