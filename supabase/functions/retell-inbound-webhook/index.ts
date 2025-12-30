@@ -124,6 +124,24 @@ serve(async (req) => {
       console.log('[Retell Inbound Webhook] Found transfer context! Lead ID:', transferCtx.lead_id, 'Original caller:', transferCtx.from_number);
       console.log('[Retell Inbound Webhook] Lead snapshot:', JSON.stringify(transferCtx.lead_snapshot));
       lead = { id: transferCtx.lead_id, ...transferCtx.lead_snapshot };
+
+      // IMPORTANT: lead_snapshot may be stale / partial (e.g. missing address).
+      // Best-effort: load the latest lead record from DB and merge it in.
+      if (transferCtx.lead_id) {
+        const { data: dbLead, error: dbLeadError } = await supabase
+          .from('leads')
+          .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code')
+          .eq('user_id', userId)
+          .eq('id', transferCtx.lead_id)
+          .maybeSingle();
+
+        if (dbLeadError) {
+          console.error('[Retell Inbound Webhook] Lead enrich lookup error:', dbLeadError);
+        } else if (dbLead) {
+          lead = { ...lead, ...dbLead };
+          console.log('[Retell Inbound Webhook] Enriched lead from DB:', dbLead.id);
+        }
+      }
     } else {
       console.log('[Retell Inbound Webhook] No transfer context found, trying caller lookup');
       

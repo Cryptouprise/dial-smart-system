@@ -132,7 +132,7 @@ serve(async (req) => {
 
       const base = supabase
         .from('leads')
-        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, user_id, updated_at')
+        .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, address, city, state, zip_code, user_id, updated_at')
         .in('phone_number', toFormats)
         .order('updated_at', { ascending: false })
         .limit(10);
@@ -189,6 +189,10 @@ serve(async (req) => {
               tags: leadData?.tags || [],
               custom_fields: leadData?.custom_fields || {},
               phone_number: to, // Store the lead's actual phone
+              address: String(leadData?.address || ''),
+              city: String(leadData?.city || ''),
+              state: String(leadData?.state || ''),
+              zip_code: String(leadData?.zip_code || ''),
             },
             source: 'broadcast_press_1',
           });
@@ -522,7 +526,14 @@ async function transferToRetellAgent(
     const leadSource = String(leadData?.lead_source || '');
     const notes = String(leadData?.notes || '');
     const tags = Array.isArray(leadData?.tags) ? leadData.tags.join(', ') : '';
-    const phone = String(toNumber || '');
+    const phone = String(leadData?.phone_number || toNumber || '');
+
+    // Address fields
+    const address = String(leadData?.address || '');
+    const city = String(leadData?.city || '');
+    const state = String(leadData?.state || '');
+    const zipCode = String(leadData?.zip_code || '');
+    const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
 
     const dynamicVariables: Record<string, string> = {
       // Standard variables
@@ -537,6 +548,16 @@ async function transferToRetellAgent(
       tags: tags,
       phone: phone,
       phone_number: phone,
+
+      // Address variables
+      address: address,
+      city: city,
+      state: state,
+      zip_code: zipCode,
+      zipCode: zipCode,
+      zip: zipCode,
+      full_address: fullAddress,
+      fullAddress: fullAddress,
 
       // GoHighLevel-style contact.* variables
       'contact.first_name': firstName,
@@ -557,6 +578,14 @@ async function transferToRetellAgent(
       'contact.lead_source': leadSource,
       'contact.notes': notes,
       'contact.tags': tags,
+      'contact.address': address,
+      'contact.city': city,
+      'contact.state': state,
+      'contact.zip_code': zipCode,
+      'contact.zipCode': zipCode,
+      'contact.zip': zipCode,
+      'contact.full_address': fullAddress,
+      'contact.fullAddress': fullAddress,
 
       // Alternative formats some systems use
       'customer.first_name': firstName,
@@ -565,6 +594,11 @@ async function transferToRetellAgent(
       'customer.email': email,
       'customer.phone': phone,
       'customer.company': company,
+      'customer.address': address,
+      'customer.city': city,
+      'customer.state': state,
+      'customer.zip_code': zipCode,
+      'customer.full_address': fullAddress,
 
       // Lead prefix
       'lead.first_name': firstName,
@@ -573,6 +607,11 @@ async function transferToRetellAgent(
       'lead.email': email,
       'lead.phone': phone,
       'lead.company': company,
+      'lead.address': address,
+      'lead.city': city,
+      'lead.state': state,
+      'lead.zip_code': zipCode,
+      'lead.full_address': fullAddress,
     };
 
     // Include custom fields as additional variables with multiple alias prefixes
@@ -625,6 +664,11 @@ async function transferToRetellAgent(
           notes: notes,
           tags: leadData?.tags || [],
           custom_fields: leadData?.custom_fields || {},
+          phone_number: String(leadData?.phone_number || ''),
+          address: String(leadData?.address || ''),
+          city: String(leadData?.city || ''),
+          state: String(leadData?.state || ''),
+          zip_code: String(leadData?.zip_code || ''),
         },
         source: 'broadcast_press_1',
       });
