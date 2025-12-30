@@ -188,19 +188,105 @@ serve(async (req) => {
       if (lead) {
         console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
 
+        // Support BOTH our variables AND GoHighLevel-style variables (contact.*)
+        const firstName = String(lead?.first_name || '');
+        const lastName = String(lead?.last_name || '');
+        const fullName = String([lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || '');
+        const email = String(lead?.email || '');
+        const company = String(lead?.company || '');
+        const leadSource = String(lead?.lead_source || '');
+        const notes = String(lead?.notes || '');
+        const tags = String(Array.isArray(lead?.tags) ? lead.tags.join(', ') : '');
+        const preferredContactTime = String(lead?.preferred_contact_time || '');
+        const timezone = String(lead?.timezone || 'America/New_York');
+        const phone = String(callerNumber || '');
+
         // Prepare dynamic variables (Retell requires string values)
         const dynamicVariables: Record<string, string> = {
-          first_name: String(lead.first_name || ''),
-          last_name: String(lead.last_name || ''),
-          full_name: String([lead.first_name, lead.last_name].filter(Boolean).join(' ') || ''),
-          email: String(lead.email || ''),
-          company: String(lead.company || ''),
-          lead_source: String(lead.lead_source || ''),
-          notes: String(lead.notes || ''),
-          tags: String(Array.isArray(lead.tags) ? lead.tags.join(', ') : ''),
-          preferred_contact_time: String(lead.preferred_contact_time || ''),
-          timezone: String(lead.timezone || 'America/New_York'),
+          // Standard variables
+          first_name: firstName,
+          last_name: lastName,
+          full_name: fullName,
+          name: fullName,
+          email: email,
+          company: company,
+          lead_source: leadSource,
+          notes: notes,
+          tags: tags,
+          preferred_contact_time: preferredContactTime,
+          timezone: timezone,
+          phone: phone,
+          phone_number: phone,
+
+          // GoHighLevel-style contact.* variables
+          'contact.first_name': firstName,
+          'contact.firstName': firstName,
+          'contact.last_name': lastName,
+          'contact.lastName': lastName,
+          'contact.full_name': fullName,
+          'contact.fullName': fullName,
+          'contact.name': fullName,
+          'contact.email': email,
+          'contact.company': company,
+          'contact.companyName': company,
+          'contact.phone': phone,
+          'contact.phoneNumber': phone,
+          'contact.phone_number': phone,
+          'contact.source': leadSource,
+          'contact.leadSource': leadSource,
+          'contact.lead_source': leadSource,
+          'contact.timezone': timezone,
+          'contact.notes': notes,
+          'contact.tags': tags,
+
+          // Alternative formats some systems use
+          'customer.first_name': firstName,
+          'customer.last_name': lastName,
+          'customer.name': fullName,
+          'customer.email': email,
+          'customer.phone': phone,
+          'customer.company': company,
+
+          // Lead prefix
+          'lead.first_name': firstName,
+          'lead.last_name': lastName,
+          'lead.name': fullName,
+          'lead.email': email,
+          'lead.phone': phone,
+          'lead.company': company,
         };
+
+        // Include lead custom_fields as additional variables
+        if (lead?.custom_fields && typeof lead.custom_fields === 'object') {
+          for (const [rawKey, rawVal] of Object.entries(lead.custom_fields as Record<string, unknown>)) {
+            const key = String(rawKey || '').trim();
+            if (!key) continue;
+
+            const value =
+              rawVal === null || rawVal === undefined
+                ? ''
+                : typeof rawVal === 'string'
+                  ? rawVal
+                  : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
+                    ? String(rawVal)
+                    : JSON.stringify(rawVal);
+
+            const snakeKey = key
+              .replace(/[^\w]+/g, '_')
+              .replace(/^_+|_+$/g, '')
+              .toLowerCase();
+
+            dynamicVariables[key] = value;
+            if (snakeKey) dynamicVariables[snakeKey] = value;
+
+            dynamicVariables[`contact.${key}`] = value;
+            if (snakeKey) {
+              dynamicVariables[`contact.${snakeKey}`] = value;
+              dynamicVariables[`lead.${snakeKey}`] = value;
+              dynamicVariables[`customer.${snakeKey}`] = value;
+            }
+          }
+        }
 
         console.log('[Retell Webhook] Prepared dynamic variables:', Object.keys(dynamicVariables));
 

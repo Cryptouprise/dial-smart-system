@@ -106,7 +106,7 @@ serve(async (req) => {
 
       const { data: leads, error: leadError } = await supabase
         .from('leads')
-        .select('id, first_name, last_name, email, company, lead_source, notes, tags, preferred_contact_time, timezone')
+        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
         .eq('user_id', userId)
         .or(`phone_number.ilike.%${last10}`)
         .order('updated_at', { ascending: false })
@@ -185,6 +185,38 @@ serve(async (req) => {
       'lead.phone': phone,
       'lead.company': company,
     };
+
+    // Include lead custom_fields as additional variables
+    if (lead?.custom_fields && typeof lead.custom_fields === 'object') {
+      for (const [rawKey, rawVal] of Object.entries(lead.custom_fields as Record<string, unknown>)) {
+        const key = String(rawKey || '').trim();
+        if (!key) continue;
+
+        const value =
+          rawVal === null || rawVal === undefined
+            ? ''
+            : typeof rawVal === 'string'
+              ? rawVal
+              : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
+                ? String(rawVal)
+                : JSON.stringify(rawVal);
+
+        const snakeKey = key
+          .replace(/[^\w]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .toLowerCase();
+
+        dynamicVariables[key] = value;
+        if (snakeKey) dynamicVariables[snakeKey] = value;
+
+        dynamicVariables[`contact.${key}`] = value;
+        if (snakeKey) {
+          dynamicVariables[`contact.${snakeKey}`] = value;
+          dynamicVariables[`lead.${snakeKey}`] = value;
+          dynamicVariables[`customer.${snakeKey}`] = value;
+        }
+      }
+    }
 
     console.log('[Retell Inbound Webhook] Matched user_id:', userId, 'lead_id:', lead?.id || null);
 
