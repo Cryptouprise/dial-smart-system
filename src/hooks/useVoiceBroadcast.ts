@@ -43,6 +43,8 @@ export interface DTMFAction {
   delay_hours?: number;
   label: string;
   custom_message?: string;
+  // Transfer destination type for concurrency management
+  destination_type?: 'retell' | 'assistable' | 'external';
   // Enhanced callback options
   callback_options?: {
     create_calendar_event?: boolean;

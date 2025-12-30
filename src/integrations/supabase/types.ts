@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      active_ai_transfers: {
+        Row: {
+          broadcast_id: string | null
+          call_sid: string | null
+          created_at: string | null
+          ended_at: string | null
+          id: string
+          lead_id: string | null
+          platform: string
+          retell_call_id: string | null
+          started_at: string | null
+          status: string | null
+          transfer_number: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          broadcast_id?: string | null
+          call_sid?: string | null
+          created_at?: string | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          platform: string
+          retell_call_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          transfer_number?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          broadcast_id?: string | null
+          call_sid?: string | null
+          created_at?: string | null
+          ended_at?: string | null
+          id?: string
+          lead_id?: string | null
+          platform?: string
+          retell_call_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          transfer_number?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "active_ai_transfers_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "voice_broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "active_ai_transfers_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       advanced_dialer_settings: {
         Row: {
           amd_sensitivity: string | null
@@ -2959,32 +3022,41 @@ export type Database = {
       }
       system_settings: {
         Row: {
+          assistable_max_concurrent: number | null
           calls_per_minute: number | null
           created_at: string | null
           enable_adaptive_pacing: boolean | null
           id: string
           max_calls_per_agent: number | null
           max_concurrent_calls: number | null
+          retell_max_concurrent: number | null
+          transfer_queue_enabled: boolean | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          assistable_max_concurrent?: number | null
           calls_per_minute?: number | null
           created_at?: string | null
           enable_adaptive_pacing?: boolean | null
           id?: string
           max_calls_per_agent?: number | null
           max_concurrent_calls?: number | null
+          retell_max_concurrent?: number | null
+          transfer_queue_enabled?: boolean | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          assistable_max_concurrent?: number | null
           calls_per_minute?: number | null
           created_at?: string | null
           enable_adaptive_pacing?: boolean | null
           id?: string
           max_calls_per_agent?: number | null
           max_concurrent_calls?: number | null
+          retell_max_concurrent?: number | null
+          transfer_queue_enabled?: boolean | null
           updated_at?: string | null
           user_id?: string
         }
