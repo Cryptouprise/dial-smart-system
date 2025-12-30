@@ -103,9 +103,12 @@ serve(async (req) => {
 
     // First check if there's a recent transfer context for this receiving number (within 15 min)
     // This handles the case where caller ID during transfer is our Twilio number instead of the lead's.
-    const { data: transferCtx } = await supabase
+    // We look up by to_number (the Retell number being called, which is the transfer target)
+    console.log('[Retell Inbound Webhook] Checking transfer context for to_number:', toNumber);
+    
+    const { data: transferCtx, error: transferCtxError } = await supabase
       .from('retell_transfer_context')
-      .select('lead_id, lead_snapshot')
+      .select('lead_id, lead_snapshot, from_number')
       .eq('user_id', userId)
       .eq('to_number', toNumber)
       .gt('expires_at', new Date().toISOString())
@@ -113,24 +116,34 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
+    if (transferCtxError) {
+      console.error('[Retell Inbound Webhook] Transfer context lookup error:', transferCtxError);
+    }
+
     if (transferCtx && transferCtx.lead_snapshot) {
-      console.log('[Retell Inbound Webhook] Found transfer context, using lead snapshot');
+      console.log('[Retell Inbound Webhook] Found transfer context! Lead ID:', transferCtx.lead_id, 'Original caller:', transferCtx.from_number);
+      console.log('[Retell Inbound Webhook] Lead snapshot:', JSON.stringify(transferCtx.lead_snapshot));
       lead = { id: transferCtx.lead_id, ...transferCtx.lead_snapshot };
-    } else if (callerFormats.length > 0) {
-      const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
+    } else {
+      console.log('[Retell Inbound Webhook] No transfer context found, trying caller lookup');
+      
+      if (callerFormats.length > 0) {
+        const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
 
-      const { data: leads, error: leadError } = await supabase
-        .from('leads')
-        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
-        .eq('user_id', userId)
-        .or(`phone_number.ilike.%${last10}`)
-        .order('updated_at', { ascending: false })
-        .limit(10);
+        const { data: leads, error: leadError } = await supabase
+          .from('leads')
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+          .eq('user_id', userId)
+          .or(`phone_number.ilike.%${last10}`)
+          .order('updated_at', { ascending: false })
+          .limit(10);
 
-      if (leadError) {
-        console.error('[Retell Inbound Webhook] Lead lookup error:', leadError);
-      } else if (leads && leads.length > 0) {
-        lead = leads.find((l: any) => l.first_name && String(l.first_name).trim() !== '') || leads[0];
+        if (leadError) {
+          console.error('[Retell Inbound Webhook] Lead lookup error:', leadError);
+        } else if (leads && leads.length > 0) {
+          lead = leads.find((l: any) => l.first_name && String(l.first_name).trim() !== '') || leads[0];
+          console.log('[Retell Inbound Webhook] Found lead via caller lookup:', lead?.id, lead?.first_name);
+        }
       }
     }
 
