@@ -119,28 +119,71 @@ serve(async (req) => {
       }
     }
 
-    // Retell dynamic variables are a flat map of string->string.
-    // Some existing agents use dotted names like {{contact.first_name}}.
-    // To support both styles, we set BOTH:
-    // - {{first_name}}
-    // - {{contact.first_name}}
-    const dynamicVariables: Record<string, string> = {
-      first_name: String(lead?.first_name || ''),
-      last_name: String(lead?.last_name || ''),
-      full_name: String([lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || ''),
-      email: String(lead?.email || ''),
-      company: String(lead?.company || ''),
-      lead_source: String(lead?.lead_source || ''),
-      notes: String(lead?.notes || ''),
-      tags: String(Array.isArray(lead?.tags) ? lead.tags.join(', ') : ''),
-      preferred_contact_time: String(lead?.preferred_contact_time || ''),
-      timezone: String(lead?.timezone || 'America/New_York'),
+    // Support BOTH our variables AND GoHighLevel-style variables (contact.*)
+    const firstName = String(lead?.first_name || '');
+    const lastName = String(lead?.last_name || '');
+    const fullName = String([lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || '');
+    const email = String(lead?.email || '');
+    const company = String(lead?.company || '');
+    const leadSource = String(lead?.lead_source || '');
+    const notes = String(lead?.notes || '');
+    const tags = String(Array.isArray(lead?.tags) ? lead.tags.join(', ') : '');
+    const preferredContactTime = String(lead?.preferred_contact_time || '');
+    const timezone = String(lead?.timezone || 'America/New_York');
+    const phone = String(fromNumber || '');
 
-      'contact.first_name': String(lead?.first_name || ''),
-      'contact.last_name': String(lead?.last_name || ''),
-      'contact.full_name': String([lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || ''),
-      'contact.email': String(lead?.email || ''),
-      'contact.company': String(lead?.company || ''),
+    const dynamicVariables: Record<string, string> = {
+      // Standard variables
+      first_name: firstName,
+      last_name: lastName,
+      full_name: fullName,
+      name: fullName,
+      email: email,
+      company: company,
+      lead_source: leadSource,
+      notes: notes,
+      tags: tags,
+      preferred_contact_time: preferredContactTime,
+      timezone: timezone,
+      phone: phone,
+      phone_number: phone,
+
+      // GoHighLevel-style contact.* variables
+      'contact.first_name': firstName,
+      'contact.firstName': firstName,
+      'contact.last_name': lastName,
+      'contact.lastName': lastName,
+      'contact.full_name': fullName,
+      'contact.fullName': fullName,
+      'contact.name': fullName,
+      'contact.email': email,
+      'contact.company': company,
+      'contact.companyName': company,
+      'contact.phone': phone,
+      'contact.phoneNumber': phone,
+      'contact.phone_number': phone,
+      'contact.source': leadSource,
+      'contact.leadSource': leadSource,
+      'contact.lead_source': leadSource,
+      'contact.timezone': timezone,
+      'contact.notes': notes,
+      'contact.tags': tags,
+
+      // Alternative formats some systems use
+      'customer.first_name': firstName,
+      'customer.last_name': lastName,
+      'customer.name': fullName,
+      'customer.email': email,
+      'customer.phone': phone,
+      'customer.company': company,
+
+      // Lead prefix
+      'lead.first_name': firstName,
+      'lead.last_name': lastName,
+      'lead.name': fullName,
+      'lead.email': email,
+      'lead.phone': phone,
+      'lead.company': company,
     };
 
     console.log('[Retell Inbound Webhook] Matched user_id:', userId, 'lead_id:', lead?.id || null);
