@@ -316,8 +316,19 @@ serve(async (req) => {
       }
     }
 
-    console.log('[Retell Inbound Webhook] Matched user_id:', userId, 'lead_id:', lead?.id || null);
-    console.log('[Retell Inbound Webhook] Returning dynamic_variables:', JSON.stringify(dynamicVariables));
+    // PROOF LOGGING - Easy to verify address is being returned correctly
+    console.log('[Retell Inbound Webhook] ===== PROOF OF ADDRESS INJECTION =====');
+    console.log('[Retell Inbound Webhook] to_number:', toNumber);
+    console.log('[Retell Inbound Webhook] from_number:', fromNumber);
+    console.log('[Retell Inbound Webhook] user_id:', userId);
+    console.log('[Retell Inbound Webhook] lead_id:', lead?.id || null);
+    console.log('[Retell Inbound Webhook] lead_name:', fullName || '(no name)');
+    console.log('[Retell Inbound Webhook] RAW ADDRESS FIELDS: address=', address, 'city=', city, 'state=', state, 'zip=', zipCode);
+    console.log('[Retell Inbound Webhook] full_address:', fullAddress);
+    console.log('[Retell Inbound Webhook] contact.address1:', dynamicVariables['contact.address1']);
+    console.log('[Retell Inbound Webhook] contact.postal_code:', dynamicVariables['contact.postal_code']);
+    console.log('[Retell Inbound Webhook] Total dynamic variable keys:', Object.keys(dynamicVariables).length);
+    console.log('[Retell Inbound Webhook] =========================================');
 
     return new Response(JSON.stringify({
       call_inbound: {
