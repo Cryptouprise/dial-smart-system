@@ -97,7 +97,48 @@ serve(async (req) => {
       // Check if we have a transfer number in URL params
       if (transferNumber && transferNumber.trim() !== '') {
         console.log(`Transferring call to ${transferNumber}`);
+        console.log(`Lead phone (to): ${to}, Our number (from): ${from}, Transfer target: ${transferNumber}`);
         queueStatus = 'transferred';
+        
+        // ALWAYS store transfer context so retell-inbound-webhook can look up the lead
+        // The key insight: "to" is the lead's phone (who we called), "from" is our Twilio number
+        // When we transfer to Retell, the caller ID will be our Twilio number, not the lead's
+        // So we store context keyed by the transfer target number (Retell's inbound number)
+        const firstName = String(leadData?.first_name || '');
+        const lastName = String(leadData?.last_name || '');
+        const email = String(leadData?.email || '');
+        const company = String(leadData?.company || '');
+        const leadSource = String(leadData?.lead_source || '');
+        const notes = String(leadData?.notes || '');
+        
+        if (userId) {
+          const { error: ctxError } = await supabase.from('retell_transfer_context').insert({
+            user_id: userId,
+            from_number: to, // Lead's phone number (who we originally called)
+            to_number: transferNumber, // The Retell inbound number we're transferring to
+            lead_id: leadData?.id || null,
+            lead_snapshot: {
+              first_name: firstName,
+              last_name: lastName,
+              email: email,
+              company: company,
+              lead_source: leadSource,
+              notes: notes,
+              tags: leadData?.tags || [],
+              custom_fields: leadData?.custom_fields || {},
+              phone_number: to, // Store the lead's actual phone
+            },
+            source: 'broadcast_press_1',
+          });
+          
+          if (ctxError) {
+            console.error('Error storing transfer context:', ctxError);
+          } else {
+            console.log(`Stored transfer context: lead ${leadData?.id}, lead_phone=${to}, transfer_to=${transferNumber}`);
+          }
+        } else {
+          console.warn('No userId available, cannot store transfer context');
+        }
         
         // Fire internal webhook with transfer data
         await fireTransferWebhook(supabase, {
@@ -110,15 +151,15 @@ serve(async (req) => {
           queueItemId,
           leadId: leadData?.id,
           leadData: leadData ? {
-            first_name: leadData.first_name,
-            last_name: leadData.last_name,
-            full_name: `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim(),
-            email: leadData.email,
-            company: leadData.company,
-            lead_source: leadData.lead_source,
-            notes: leadData.notes,
-            tags: leadData.tags,
-            custom_fields: leadData.custom_fields,
+            first_name: firstName,
+            last_name: lastName,
+            full_name: `${firstName} ${lastName}`.trim(),
+            email: email,
+            company: company,
+            lead_source: leadSource,
+            notes: notes,
+            tags: leadData?.tags,
+            custom_fields: leadData?.custom_fields,
           } : null,
           userId,
           timestamp: new Date().toISOString(),
