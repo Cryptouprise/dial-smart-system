@@ -65,40 +65,46 @@ serve(async (req) => {
     let dtmfPressed = digits;
     
     // Look up lead by phone number (the "To" number is the lead's phone)
+    // IMPORTANT: multiple leads can match the same phone in different formats (+1..., 1..., etc.)
+    // so we must NOT use maybeSingle() here.
     let leadData: any = null;
     let userId: string | null = null;
-    
-    if (to) {
-      const normalizedPhone = to.replace(/\D/g, '');
-      const { data: lead } = await supabase
-        .from('leads')
-        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, user_id')
-        .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone},phone_number.eq.+1${normalizedPhone}`)
-        .maybeSingle();
-      
-      if (lead) {
-        leadData = lead;
-        userId = lead.user_id;
-        console.log(`Found lead: ${lead.id} - ${lead.first_name} ${lead.last_name}`);
-      }
-    }
-    
-    // Also get user_id from broadcast if we don't have it
-    if (!userId && broadcastId) {
-      const { data: broadcast } = await supabase
+
+    // Resolve user_id from broadcast (if provided)
+    if (broadcastId) {
+      const { data: broadcast, error: broadcastError } = await supabase
         .from('voice_broadcasts')
         .select('user_id')
         .eq('id', broadcastId)
         .maybeSingle();
-      if (broadcast) userId = broadcast.user_id;
+
+      if (broadcastError) {
+        console.error('Error looking up broadcast owner:', broadcastError);
+      }
+
+      if (broadcast?.user_id) userId = broadcast.user_id;
     }
 
-    // Fallback: for voice broadcasts, "from" is our Twilio number; resolve owner user_id from phone_numbers
+    // Resolve user_id from our outbound caller ID number ("from" is our Twilio number)
     if (!userId && from) {
+      const digitsOnly = from.replace(/\D/g, '');
+      const last10 = digitsOnly.slice(-10);
+      const fromFormats = [
+        from,
+        digitsOnly,
+        `+${digitsOnly}`,
+        `+1${last10}`,
+        `1${last10}`,
+        last10,
+      ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+      const phoneOrQuery = fromFormats.map((f) => `number.eq.${f}`).join(',');
+
       const { data: phoneOwner, error: phoneOwnerError } = await supabase
         .from('phone_numbers')
         .select('user_id')
-        .eq('number', from)
+        .or(phoneOrQuery)
+        .limit(1)
         .maybeSingle();
 
       if (phoneOwnerError) {
@@ -108,6 +114,45 @@ serve(async (req) => {
       if (phoneOwner?.user_id) {
         userId = phoneOwner.user_id;
         console.log(`Resolved userId from from-number owner: ${userId}`);
+      }
+    }
+
+    // Resolve lead (prefer leads with a name when duplicates exist)
+    if (to) {
+      const digitsOnly = to.replace(/\D/g, '');
+      const last10 = digitsOnly.slice(-10);
+      const toFormats = [
+        to,
+        digitsOnly,
+        `+${digitsOnly}`,
+        `+1${last10}`,
+        `1${last10}`,
+        last10,
+      ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+      const base = supabase
+        .from('leads')
+        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, user_id, updated_at')
+        .in('phone_number', toFormats)
+        .order('updated_at', { ascending: false })
+        .limit(10);
+
+      const { data: leads, error: leadsError } = userId ? await base.eq('user_id', userId) : await base;
+
+      if (leadsError) {
+        console.error('Lead lookup error:', leadsError);
+      } else if (leads && leads.length > 0) {
+        const best =
+          leads.find((l: any) => String(l?.first_name || '').trim() !== '') ||
+          leads.find((l: any) => String(l?.last_name || '').trim() !== '') ||
+          leads[0];
+
+        leadData = best;
+        if (!userId && best?.user_id) userId = best.user_id;
+
+        console.log(
+          `Found lead candidates=${leads.length}; using lead=${best?.id} (${String(best?.first_name || '').trim()} ${String(best?.last_name || '').trim()})`
+        );
       }
     }
     if (digits === '1') {

@@ -158,7 +158,10 @@ serve(async (req) => {
     const tags = String(Array.isArray(lead?.tags) ? lead.tags.join(', ') : '');
     const preferredContactTime = String(lead?.preferred_contact_time || '');
     const timezone = String(lead?.timezone || 'America/New_York');
-    const phone = String(fromNumber || '');
+
+    // During transfers, Retell's from_number is often our Twilio number (not the lead).
+    // Prefer the lead phone from transfer context / lead snapshot when available.
+    const phone = String((lead as any)?.phone_number || fromNumber || '');
 
     const dynamicVariables: Record<string, string> = {
       // Standard variables
