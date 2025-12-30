@@ -119,6 +119,11 @@ serve(async (req) => {
       }
     }
 
+    // Retell dynamic variables are a flat map of string->string.
+    // Some existing agents use dotted names like {{contact.first_name}}.
+    // To support both styles, we set BOTH:
+    // - {{first_name}}
+    // - {{contact.first_name}}
     const dynamicVariables: Record<string, string> = {
       first_name: String(lead?.first_name || ''),
       last_name: String(lead?.last_name || ''),
@@ -130,6 +135,12 @@ serve(async (req) => {
       tags: String(Array.isArray(lead?.tags) ? lead.tags.join(', ') : ''),
       preferred_contact_time: String(lead?.preferred_contact_time || ''),
       timezone: String(lead?.timezone || 'America/New_York'),
+
+      'contact.first_name': String(lead?.first_name || ''),
+      'contact.last_name': String(lead?.last_name || ''),
+      'contact.full_name': String([lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || ''),
+      'contact.email': String(lead?.email || ''),
+      'contact.company': String(lead?.company || ''),
     };
 
     console.log('[Retell Inbound Webhook] Matched user_id:', userId, 'lead_id:', lead?.id || null);
