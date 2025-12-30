@@ -2305,6 +2305,42 @@ export type Database = {
         }
         Relationships: []
       }
+      retell_transfer_context: {
+        Row: {
+          created_at: string
+          expires_at: string
+          from_number: string
+          id: string
+          lead_id: string | null
+          lead_snapshot: Json
+          source: string | null
+          to_number: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          from_number: string
+          id?: string
+          lead_id?: string | null
+          lead_snapshot?: Json
+          source?: string | null
+          to_number: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          from_number?: string
+          id?: string
+          lead_id?: string | null
+          lead_snapshot?: Json
+          source?: string | null
+          to_number?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       retell_verified_numbers: {
         Row: {
           approved_at: string | null

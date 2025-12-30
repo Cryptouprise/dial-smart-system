@@ -98,10 +98,25 @@ serve(async (req) => {
       });
     }
 
-    // 2) Try to find the lead by caller number
+    // 2) Try to find the lead by caller number (or via retell_transfer_context if transfer)
     let lead: any = null;
 
-    if (callerFormats.length > 0) {
+    // First check if there's a recent transfer context for this receiving number (within 15 min)
+    // This handles the case where caller ID during transfer is our Twilio number instead of the lead's.
+    const { data: transferCtx } = await supabase
+      .from('retell_transfer_context')
+      .select('lead_id, lead_snapshot')
+      .eq('user_id', userId)
+      .eq('to_number', toNumber)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (transferCtx && transferCtx.lead_snapshot) {
+      console.log('[Retell Inbound Webhook] Found transfer context, using lead snapshot');
+      lead = { id: transferCtx.lead_id, ...transferCtx.lead_snapshot };
+    } else if (callerFormats.length > 0) {
       const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
 
       const { data: leads, error: leadError } = await supabase

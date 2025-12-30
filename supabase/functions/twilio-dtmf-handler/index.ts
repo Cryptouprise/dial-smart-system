@@ -409,24 +409,122 @@ async function transferToRetellAgent(
     }
     
     // Build dynamic variables from lead data
-    const dynamicVariables: Record<string, string> = {};
-    if (leadData) {
-      dynamicVariables.first_name = leadData.first_name || '';
-      dynamicVariables.last_name = leadData.last_name || '';
-      dynamicVariables.full_name = `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'there';
-      dynamicVariables.email = leadData.email || '';
-      dynamicVariables.company = leadData.company || '';
-      dynamicVariables.lead_source = leadData.lead_source || '';
-      dynamicVariables.notes = leadData.notes || '';
-      dynamicVariables.tags = Array.isArray(leadData.tags) ? leadData.tags.join(', ') : '';
-      
-      // Include custom fields
-      if (typeof leadData.custom_fields === 'object' && leadData.custom_fields !== null) {
-        Object.assign(dynamicVariables, leadData.custom_fields);
+    const firstName = String(leadData?.first_name || '');
+    const lastName = String(leadData?.last_name || '');
+    const fullName = `${firstName} ${lastName}`.trim() || 'there';
+    const email = String(leadData?.email || '');
+    const company = String(leadData?.company || '');
+    const leadSource = String(leadData?.lead_source || '');
+    const notes = String(leadData?.notes || '');
+    const tags = Array.isArray(leadData?.tags) ? leadData.tags.join(', ') : '';
+    const phone = String(toNumber || '');
+
+    const dynamicVariables: Record<string, string> = {
+      // Standard variables
+      first_name: firstName,
+      last_name: lastName,
+      full_name: fullName,
+      name: fullName,
+      email: email,
+      company: company,
+      lead_source: leadSource,
+      notes: notes,
+      tags: tags,
+      phone: phone,
+      phone_number: phone,
+
+      // GoHighLevel-style contact.* variables
+      'contact.first_name': firstName,
+      'contact.firstName': firstName,
+      'contact.last_name': lastName,
+      'contact.lastName': lastName,
+      'contact.full_name': fullName,
+      'contact.fullName': fullName,
+      'contact.name': fullName,
+      'contact.email': email,
+      'contact.company': company,
+      'contact.companyName': company,
+      'contact.phone': phone,
+      'contact.phoneNumber': phone,
+      'contact.phone_number': phone,
+      'contact.source': leadSource,
+      'contact.leadSource': leadSource,
+      'contact.lead_source': leadSource,
+      'contact.notes': notes,
+      'contact.tags': tags,
+
+      // Alternative formats some systems use
+      'customer.first_name': firstName,
+      'customer.last_name': lastName,
+      'customer.name': fullName,
+      'customer.email': email,
+      'customer.phone': phone,
+      'customer.company': company,
+
+      // Lead prefix
+      'lead.first_name': firstName,
+      'lead.last_name': lastName,
+      'lead.name': fullName,
+      'lead.email': email,
+      'lead.phone': phone,
+      'lead.company': company,
+    };
+
+    // Include custom fields as additional variables with multiple alias prefixes
+    if (typeof leadData?.custom_fields === 'object' && leadData.custom_fields !== null) {
+      for (const [rawKey, rawVal] of Object.entries(leadData.custom_fields as Record<string, unknown>)) {
+        const key = String(rawKey || '').trim();
+        if (!key) continue;
+
+        const value =
+          rawVal === null || rawVal === undefined
+            ? ''
+            : typeof rawVal === 'string'
+              ? rawVal
+              : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
+                ? String(rawVal)
+                : JSON.stringify(rawVal);
+
+        const snakeKey = key
+          .replace(/[^\w]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .toLowerCase();
+
+        dynamicVariables[key] = value;
+        if (snakeKey) dynamicVariables[snakeKey] = value;
+
+        dynamicVariables[`contact.${key}`] = value;
+        if (snakeKey) {
+          dynamicVariables[`contact.${snakeKey}`] = value;
+          dynamicVariables[`lead.${snakeKey}`] = value;
+          dynamicVariables[`customer.${snakeKey}`] = value;
+        }
       }
     }
     
     console.log('Initiating Retell transfer with dynamic variables:', Object.keys(dynamicVariables));
+
+    // Write transfer context so retell-inbound-webhook can lookup the lead even when caller ID is our Twilio number
+    if (metadata.userId && leadData?.id) {
+      await supabase.from('retell_transfer_context').insert({
+        user_id: metadata.userId,
+        from_number: fromNumber,
+        to_number: toNumber,
+        lead_id: leadData.id,
+        lead_snapshot: {
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          company: company,
+          lead_source: leadSource,
+          notes: notes,
+          tags: leadData?.tags || [],
+          custom_fields: leadData?.custom_fields || {},
+        },
+        source: 'broadcast_press_1',
+      });
+      console.log('[transferToRetellAgent] Stored retell_transfer_context for lead', leadData.id);
+    }
     
     // Create Retell call for transfer
     const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
