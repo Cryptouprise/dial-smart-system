@@ -242,6 +242,16 @@ serve(async (req) => {
       'contact.zip': zipCode,
       'contact.full_address': fullAddress,
       'contact.fullAddress': fullAddress,
+      // GoHighLevel-specific address aliases
+      'contact.address1': address,
+      'contact.address_1': address,
+      'contact.address_line_1': address,
+      'contact.addressLine1': address,
+      'contact.street': address,
+      'contact.street_address': address,
+      'contact.streetAddress': address,
+      'contact.postal_code': zipCode,
+      'contact.postalCode': zipCode,
 
       // Alternative formats some systems use
       'customer.first_name': firstName,
@@ -255,6 +265,8 @@ serve(async (req) => {
       'customer.state': state,
       'customer.zip_code': zipCode,
       'customer.full_address': fullAddress,
+      'customer.address1': address,
+      'customer.postal_code': zipCode,
 
       // Lead prefix
       'lead.first_name': firstName,
@@ -268,6 +280,8 @@ serve(async (req) => {
       'lead.state': state,
       'lead.zip_code': zipCode,
       'lead.full_address': fullAddress,
+      'lead.address1': address,
+      'lead.postal_code': zipCode,
     };
 
     // Include lead custom_fields as additional variables
@@ -303,6 +317,7 @@ serve(async (req) => {
     }
 
     console.log('[Retell Inbound Webhook] Matched user_id:', userId, 'lead_id:', lead?.id || null);
+    console.log('[Retell Inbound Webhook] Returning dynamic_variables:', JSON.stringify(dynamicVariables));
 
     return new Response(JSON.stringify({
       call_inbound: {
