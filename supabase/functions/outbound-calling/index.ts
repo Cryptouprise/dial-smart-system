@@ -258,7 +258,7 @@ serve(async (req) => {
         if (leadId) {
           const { data: leadById } = await supabaseAdmin
             .from('leads')
-            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code')
             .eq('id', leadId)
             .maybeSingle();
           lead = leadById;
@@ -271,7 +271,7 @@ serve(async (req) => {
           
           const { data: leadByPhone } = await supabaseAdmin
             .from('leads')
-            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code')
             .eq('user_id', userId)
             .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
             .limit(1)
@@ -285,20 +285,111 @@ serve(async (req) => {
         }
         
         if (lead) {
+          const firstName = String(lead.first_name || '');
+          const lastName = String(lead.last_name || '');
+          const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
+          const email = String(lead.email || '');
+          const phone = String(lead.phone_number || finalPhone || '');
+          const company = String(lead.company || '');
+          const leadSource = String(lead.lead_source || '');
+          const notes = String(lead.notes || '');
+          const tags = Array.isArray(lead.tags) ? lead.tags.join(', ') : '';
+          const preferredContactTime = String(lead.preferred_contact_time || '');
+          const timezone = String(lead.timezone || 'America/New_York');
+          
+          // Address fields
+          const address = String(lead.address || '');
+          const city = String(lead.city || '');
+          const state = String(lead.state || '');
+          const zipCode = String(lead.zip_code || '');
+          const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
           dynamicVariables = {
-            first_name: lead.first_name || '',
-            last_name: lead.last_name || '',
-            full_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'there',
-            email: lead.email || '',
-            company: lead.company || '',
-            lead_source: lead.lead_source || '',
-            notes: lead.notes || '',
-            tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
-            preferred_contact_time: lead.preferred_contact_time || '',
-            timezone: lead.timezone || '',
-            // Spread custom fields if they exist
-            ...(typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? lead.custom_fields as Record<string, string> : {})
+            // Standard variables
+            first_name: firstName,
+            last_name: lastName,
+            full_name: fullName,
+            name: fullName,
+            email: email,
+            phone: phone,
+            phone_number: phone,
+            company: company,
+            lead_source: leadSource,
+            notes: notes,
+            tags: tags,
+            preferred_contact_time: preferredContactTime,
+            timezone: timezone,
+            
+            // Address variables
+            address: address,
+            city: city,
+            state: state,
+            zip_code: zipCode,
+            zipCode: zipCode,
+            zip: zipCode,
+            full_address: fullAddress,
+            fullAddress: fullAddress,
+
+            // GoHighLevel-style contact.* variables
+            'contact.first_name': firstName,
+            'contact.firstName': firstName,
+            'contact.last_name': lastName,
+            'contact.lastName': lastName,
+            'contact.full_name': fullName,
+            'contact.fullName': fullName,
+            'contact.name': fullName,
+            'contact.email': email,
+            'contact.phone': phone,
+            'contact.phoneNumber': phone,
+            'contact.phone_number': phone,
+            'contact.company': company,
+            'contact.companyName': company,
+            'contact.source': leadSource,
+            'contact.leadSource': leadSource,
+            'contact.lead_source': leadSource,
+            'contact.timezone': timezone,
+            'contact.notes': notes,
+            'contact.tags': tags,
+            'contact.address': address,
+            'contact.city': city,
+            'contact.state': state,
+            'contact.zip_code': zipCode,
+            'contact.zipCode': zipCode,
+            'contact.zip': zipCode,
+            'contact.full_address': fullAddress,
+            'contact.fullAddress': fullAddress,
           };
+
+          // Include lead custom_fields as additional variables
+          if (lead.custom_fields && typeof lead.custom_fields === 'object') {
+            for (const [rawKey, rawVal] of Object.entries(lead.custom_fields as Record<string, unknown>)) {
+              const key = String(rawKey || '').trim();
+              if (!key) continue;
+
+              const value =
+                rawVal === null || rawVal === undefined
+                  ? ''
+                  : typeof rawVal === 'string'
+                    ? rawVal
+                    : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
+                      ? String(rawVal)
+                      : JSON.stringify(rawVal);
+
+              const snakeKey = key
+                .replace(/[^\w]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .toLowerCase();
+
+              dynamicVariables[key] = value;
+              if (snakeKey) dynamicVariables[snakeKey] = value;
+
+              dynamicVariables[`contact.${key}`] = value;
+              if (snakeKey) {
+                dynamicVariables[`contact.${snakeKey}`] = value;
+              }
+            }
+          }
+
           console.log('[Outbound Calling] Dynamic variables prepared:', JSON.stringify(dynamicVariables));
         } else {
           console.log('[Outbound Calling] No lead found, using empty dynamic variables');
