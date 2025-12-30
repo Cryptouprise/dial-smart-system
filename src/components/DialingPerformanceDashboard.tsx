@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { usePredictiveDialingAlgorithm } from '@/hooks/usePredictiveDialingAlgorithm';
 import { useConcurrencyManager } from '@/hooks/useConcurrencyManager';
+import { computeDialingRate } from '@/lib/concurrencyUtils';
 
 const DialingPerformanceDashboard = () => {
   const { historicalData, learnFromHistory } = usePredictiveDialingAlgorithm();
@@ -34,9 +35,13 @@ const DialingPerformanceDashboard = () => {
   const [chartData, setChartData] = useState<any[]>([]);
 
   const loadMetrics = useCallback(async () => {
-    const dialingRate = await calculateDialingRate();
-    const insights = await learnFromHistory();
-    
+    const [settings, insights] = await Promise.all([
+      getConcurrencySettings(),
+      learnFromHistory(),
+    ]);
+
+    const dialingRate = computeDialingRate(activeCalls.length, settings);
+
     // Calculate real-time metrics
     const metrics = {
       currentConcurrency: dialingRate.currentConcurrency,
@@ -44,38 +49,38 @@ const DialingPerformanceDashboard = () => {
       answerRate: insights?.avgAnswerRate || 0,
       abandonmentRate: insights?.avgAbandonmentRate || 0,
       avgWaitTime: 0, // Would come from call logs
-      callsPerMinute: dialingRate.recommendedRate
+      callsPerMinute: dialingRate.recommendedRate,
     };
-    
+
     setRealTimeMetrics(metrics);
-    
+
     // Calculate performance score (0-100)
     const score = calculatePerformanceScore(metrics);
     setPerformanceScore(score);
-    
+
     // Prepare chart data from historical stats
     if (historicalData && historicalData.length > 0) {
-      const last10 = historicalData.slice(0, 10).reverse().map((stat, index) => ({
-        time: new Date(stat.timestamp).toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit' 
+      const last10 = historicalData.slice(0, 10).reverse().map((stat) => ({
+        time: new Date(stat.timestamp).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
         }),
         answerRate: stat.answer_rate || 0,
         abandonmentRate: stat.abandonment_rate || 0,
-        concurrent: stat.concurrent_calls || 0
+        concurrent: stat.concurrent_calls || 0,
       }));
       setChartData(last10);
     }
-  }, [calculateDialingRate, learnFromHistory, historicalData]);
+  }, [activeCalls.length, getConcurrencySettings, learnFromHistory, historicalData]);
 
   useEffect(() => {
     loadMetrics();
     
-    // Update metrics every 5 seconds
+    // Update metrics every 10 seconds
     const interval = setInterval(() => {
       loadMetrics();
-    }, 5000);
-    
+    }, 10000);
+
     return () => clearInterval(interval);
   }, [loadMetrics]);
 

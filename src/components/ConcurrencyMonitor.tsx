@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Phone, PhoneOff, Activity, TrendingUp, Settings as SettingsIcon, Trash2, RefreshCw, Bot, Zap, AlertTriangle, DollarSign } from 'lucide-react';
 import { useConcurrencyManager } from '@/hooks/useConcurrencyManager';
+import { computeDialingRate, computePlatformCapacities } from '@/lib/concurrencyUtils';
 import {
   Dialog,
   DialogContent,
@@ -19,20 +20,18 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const ConcurrencyMonitor = () => {
-  const { 
+  const {
     activeCalls,
-    activeTransfers, 
-    getConcurrencySettings, 
+    activeTransfers,
+    getConcurrencySettings,
     updateConcurrencySettings,
-    calculateDialingRate,
     cleanupStuckCalls,
     cleanupStuckTransfers,
     loadActiveCalls,
     loadActiveTransfers,
-    getAllPlatformCapacities,
-    isLoading
+    isLoading,
   } = useConcurrencyManager();
-  
+
   const [settings, setSettings] = useState({
     maxConcurrentCalls: 10,
     callsPerMinute: 30,
@@ -63,45 +62,30 @@ const ConcurrencyMonitor = () => {
     setSettings(currentSettings);
   }, [getConcurrencySettings]);
 
-  const loadDialingRate = useCallback(async () => {
-    const rate = await calculateDialingRate();
-    setDialingRate(rate);
-  }, [calculateDialingRate]);
-
-  const loadPlatformCapacity = useCallback(async () => {
-    const capacity = await getAllPlatformCapacities();
-    setPlatformCapacity(capacity);
-  }, [getAllPlatformCapacities]);
-
   useEffect(() => {
     loadSettings();
-    loadDialingRate();
-    loadPlatformCapacity();
-    
-    // Refresh every 5 seconds
-    const interval = setInterval(() => {
-      loadDialingRate();
-      loadPlatformCapacity();
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, [loadSettings, loadDialingRate, loadPlatformCapacity, activeCalls, activeTransfers]);
+  }, [loadSettings]);
+
+  useEffect(() => {
+    setDialingRate(computeDialingRate(activeCalls.length, settings));
+  }, [activeCalls.length, settings]);
+
+  useEffect(() => {
+    setPlatformCapacity(computePlatformCapacities(activeTransfers, settings));
+  }, [activeTransfers, settings]);
 
   const handleSaveSettings = async () => {
     const success = await updateConcurrencySettings(settings);
     if (success) {
       setIsSettingsOpen(false);
-      loadSettings();
-      loadDialingRate();
-      loadPlatformCapacity();
+      await loadSettings();
     }
   };
 
   const handleRefresh = () => {
     loadActiveCalls();
     loadActiveTransfers();
-    loadDialingRate();
-    loadPlatformCapacity();
+    loadSettings();
   };
 
   const utilizationPercentage = (dialingRate.currentConcurrency / dialingRate.maxConcurrency) * 100;
