@@ -111,12 +111,15 @@ export const useRetellAI = () => {
   const updatePhoneNumber = async (phoneNumber: string, agentId?: string, nickname?: string) => {
     setIsLoading(true);
     try {
+      const inboundWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-inbound-webhook';
+
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
         body: {
           action: 'update',
           phoneNumber,
           agentId,
-          nickname
+          nickname,
+          inboundWebhookUrl,
         }
       });
 
@@ -453,7 +456,7 @@ export const useRetellAI = () => {
     const results = { success: 0, failed: 0 };
     
     try {
-      // First, list all agents
+      // 1) Configure agent event webhooks (call_started/call_ended/call_analyzed)
       const agents = await listAgents();
       if (!agents || agents.length === 0) {
         toast({
@@ -463,9 +466,8 @@ export const useRetellAI = () => {
         return results;
       }
 
-      const webhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
+      const agentWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
 
-      // Update each agent with the webhook URL
       for (const agent of agents) {
         try {
           const { error } = await supabase.functions.invoke('retell-agent-management', {
@@ -473,16 +475,15 @@ export const useRetellAI = () => {
               action: 'update',
               agentId: agent.agent_id,
               agentConfig: {
-                webhook_url: webhookUrl
-              }
-            }
+                webhook_url: agentWebhookUrl,
+              },
+            },
           });
 
           if (error) {
             console.error(`Failed to update agent ${agent.agent_id}:`, error);
             results.failed++;
           } else {
-            console.log(`Successfully configured webhook for agent ${agent.agent_id}`);
             results.success++;
           }
         } catch (err) {
@@ -491,9 +492,36 @@ export const useRetellAI = () => {
         }
       }
 
+      // 2) Configure inbound webhook on ALL phone numbers (this is what makes {{first_name}} work on pickup)
+      const inboundWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-inbound-webhook';
+      try {
+        const { data: numbersData, error: listErr } = await supabase.functions.invoke('retell-phone-management', {
+          body: { action: 'list' },
+        });
+
+        if (listErr) {
+          console.error('[useRetellAI] Failed to list phone numbers for inbound webhook config:', listErr);
+        } else {
+          const numbers = Array.isArray(numbersData) ? numbersData : (numbersData?.phone_numbers || []);
+          for (const n of numbers) {
+            const pn = n?.phone_number;
+            if (!pn) continue;
+            await supabase.functions.invoke('retell-phone-management', {
+              body: {
+                action: 'update',
+                phoneNumber: pn,
+                inboundWebhookUrl,
+              },
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[useRetellAI] Inbound webhook configuration failed:', e);
+      }
+
       toast({
         title: "Webhook Configuration Complete",
-        description: `Updated ${results.success} agents. ${results.failed > 0 ? `${results.failed} failed.` : ''}`,
+        description: `Updated ${results.success} agents. ${results.failed > 0 ? `${results.failed} failed.` : ''} Inbound webhook applied to all numbers.`,
       });
 
       return results;
