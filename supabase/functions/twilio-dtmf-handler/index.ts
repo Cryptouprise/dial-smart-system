@@ -586,6 +586,16 @@ async function transferToRetellAgent(
       'contact.zip': zipCode,
       'contact.full_address': fullAddress,
       'contact.fullAddress': fullAddress,
+      // GoHighLevel-specific address aliases
+      'contact.address1': address,
+      'contact.address_1': address,
+      'contact.address_line_1': address,
+      'contact.addressLine1': address,
+      'contact.street': address,
+      'contact.street_address': address,
+      'contact.streetAddress': address,
+      'contact.postal_code': zipCode,
+      'contact.postalCode': zipCode,
 
       // Alternative formats some systems use
       'customer.first_name': firstName,
@@ -599,6 +609,8 @@ async function transferToRetellAgent(
       'customer.state': state,
       'customer.zip_code': zipCode,
       'customer.full_address': fullAddress,
+      'customer.address1': address,
+      'customer.postal_code': zipCode,
 
       // Lead prefix
       'lead.first_name': firstName,
@@ -612,7 +624,18 @@ async function transferToRetellAgent(
       'lead.state': state,
       'lead.zip_code': zipCode,
       'lead.full_address': fullAddress,
+      'lead.address1': address,
+      'lead.postal_code': zipCode,
     };
+
+    // PROOF LOGGING - Easy to verify address is being passed
+    console.log('[transferToRetellAgent] ===== PROOF OF ADDRESS INJECTION =====');
+    console.log('[transferToRetellAgent] lead_id:', leadData?.id || null);
+    console.log('[transferToRetellAgent] lead_name:', fullName || '(no name)');
+    console.log('[transferToRetellAgent] RAW ADDRESS FIELDS: address=', address, 'city=', city, 'state=', state, 'zip=', zipCode);
+    console.log('[transferToRetellAgent] full_address:', fullAddress);
+    console.log('[transferToRetellAgent] contact.address1:', dynamicVariables['contact.address1']);
+    console.log('[transferToRetellAgent] =========================================');
 
     // Include custom fields as additional variables with multiple alias prefixes
     if (typeof leadData?.custom_fields === 'object' && leadData.custom_fields !== null) {
