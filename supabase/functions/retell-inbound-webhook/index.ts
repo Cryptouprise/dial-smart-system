@@ -132,7 +132,7 @@ serve(async (req) => {
 
         const { data: leads, error: leadError } = await supabase
           .from('leads')
-          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone')
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, phone_number')
           .eq('user_id', userId)
           .or(`phone_number.ilike.%${last10}`)
           .order('updated_at', { ascending: false })
@@ -159,6 +159,13 @@ serve(async (req) => {
     const preferredContactTime = String(lead?.preferred_contact_time || '');
     const timezone = String(lead?.timezone || 'America/New_York');
 
+    // Address fields
+    const address = String(lead?.address || '');
+    const city = String(lead?.city || '');
+    const state = String(lead?.state || '');
+    const zipCode = String(lead?.zip_code || '');
+    const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
     // During transfers, Retell's from_number is often our Twilio number (not the lead).
     // Prefer the lead phone from transfer context / lead snapshot when available.
     const phone = String((lead as any)?.phone_number || fromNumber || '');
@@ -178,6 +185,16 @@ serve(async (req) => {
       timezone: timezone,
       phone: phone,
       phone_number: phone,
+
+      // Address variables
+      address: address,
+      city: city,
+      state: state,
+      zip_code: zipCode,
+      zipCode: zipCode,
+      zip: zipCode,
+      full_address: fullAddress,
+      fullAddress: fullAddress,
 
       // GoHighLevel-style contact.* variables
       'contact.first_name': firstName,
@@ -199,6 +216,14 @@ serve(async (req) => {
       'contact.timezone': timezone,
       'contact.notes': notes,
       'contact.tags': tags,
+      'contact.address': address,
+      'contact.city': city,
+      'contact.state': state,
+      'contact.zip_code': zipCode,
+      'contact.zipCode': zipCode,
+      'contact.zip': zipCode,
+      'contact.full_address': fullAddress,
+      'contact.fullAddress': fullAddress,
 
       // Alternative formats some systems use
       'customer.first_name': firstName,
@@ -207,6 +232,11 @@ serve(async (req) => {
       'customer.email': email,
       'customer.phone': phone,
       'customer.company': company,
+      'customer.address': address,
+      'customer.city': city,
+      'customer.state': state,
+      'customer.zip_code': zipCode,
+      'customer.full_address': fullAddress,
 
       // Lead prefix
       'lead.first_name': firstName,
@@ -215,6 +245,11 @@ serve(async (req) => {
       'lead.email': email,
       'lead.phone': phone,
       'lead.company': company,
+      'lead.address': address,
+      'lead.city': city,
+      'lead.state': state,
+      'lead.zip_code': zipCode,
+      'lead.full_address': fullAddress,
     };
 
     // Include lead custom_fields as additional variables
