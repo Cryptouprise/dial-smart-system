@@ -219,7 +219,7 @@ serve(async (req) => {
         if (retellApiKey) {
           try {
             const updateResponse = await fetch(`https://api.retellai.com/v2/update-call/${call.call_id}`, {
-              method: 'POST',
+              method: 'PATCH',
               headers: {
                 'Authorization': `Bearer ${retellApiKey}`,
                 'Content-Type': 'application/json',
