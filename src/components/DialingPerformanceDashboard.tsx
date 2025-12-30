@@ -20,7 +20,7 @@ import { computeDialingRate } from '@/lib/concurrencyUtils';
 
 const DialingPerformanceDashboard = () => {
   const { historicalData, learnFromHistory } = usePredictiveDialingAlgorithm();
-  const { activeCalls, calculateDialingRate } = useConcurrencyManager();
+  const { activeCalls, getConcurrencySettings } = useConcurrencyManager();
   
   const [realTimeMetrics, setRealTimeMetrics] = useState({
     currentConcurrency: 0,
