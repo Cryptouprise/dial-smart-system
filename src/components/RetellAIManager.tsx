@@ -341,7 +341,7 @@ const RetellAIManager = () => {
       </div>
 
       <Tabs defaultValue="wizard" className="space-y-4" onValueChange={async (value) => {
-        if (value === 'calendar' && !calendarStatusLoaded && !isDemoMode) {
+        if ((value === 'calendar' || value === 'agents') && !calendarStatusLoaded && !isDemoMode) {
           await loadAllAgentCalendarStatus();
           setCalendarStatusLoaded(true);
         }
