@@ -177,6 +177,24 @@ serve(async (req) => {
         const calendarsData = await calendarsResponse.json();
         const primaryCalendar = calendarsData.items?.find((c: any) => c.primary) || calendarsData.items?.[0];
 
+        // CRITICAL: Preserve existing refresh_token if Google didn't return a new one
+        // (Google only returns refresh_token on first consent, not on subsequent re-auths)
+        let refreshTokenToSave = tokens.refresh_token ? btoa(tokens.refresh_token) : null;
+        
+        // Check if we already have a refresh token stored
+        const { data: existingIntegration } = await supabase
+          .from('calendar_integrations')
+          .select('refresh_token_encrypted')
+          .eq('user_id', state)
+          .eq('provider', 'google')
+          .maybeSingle();
+        
+        // If no new refresh token but we have an existing one, keep it
+        if (!refreshTokenToSave && existingIntegration?.refresh_token_encrypted) {
+          console.log('[Calendar] Preserving existing refresh token');
+          refreshTokenToSave = existingIntegration.refresh_token_encrypted;
+        }
+
         // Save integration
         await supabase
           .from('calendar_integrations')
@@ -186,7 +204,7 @@ serve(async (req) => {
             provider_account_id: userInfo.id,
             provider_account_email: userInfo.email,
             access_token_encrypted: btoa(tokens.access_token),
-            refresh_token_encrypted: tokens.refresh_token ? btoa(tokens.refresh_token) : null,
+            refresh_token_encrypted: refreshTokenToSave,
             token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
             calendar_id: primaryCalendar?.id,
             calendar_name: primaryCalendar?.summary || 'Primary Calendar',

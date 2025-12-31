@@ -304,7 +304,29 @@ serve(async (req) => {
           const zipCode = String(lead.zip_code || '');
           const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
 
+          // Generate current time in user's timezone for agent awareness
+          const currentTimeFormatted = new Date().toLocaleString('en-US', {
+            timeZone: timezone,
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          const currentTimeIso = new Date().toISOString();
+          const currentDateYmd = new Date().toLocaleDateString('en-CA', { timeZone: timezone }); // YYYY-MM-DD
+          const currentDayOfWeek = new Date().toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' });
+
           dynamicVariables = {
+            // CRITICAL: Current time variables so agent always knows the date/time
+            current_time: currentTimeFormatted,
+            current_time_iso: currentTimeIso,
+            current_timezone: timezone,
+            current_date_ymd: currentDateYmd,
+            current_day_of_week: currentDayOfWeek,
+
             // Standard variables
             first_name: firstName,
             last_name: lastName,
