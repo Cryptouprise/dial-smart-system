@@ -76,9 +76,9 @@ serve(async (req) => {
         // Check if we have a refresh token
         const hasRefreshToken = !!integration.refresh_token_encrypted;
         
-        // Check if token is expired
+        // Check if token is expired or will expire within 10 minutes
         const isExpired = integration.token_expires_at 
-          ? new Date(integration.token_expires_at) < new Date() 
+          ? new Date(integration.token_expires_at) < new Date(Date.now() + 10 * 60 * 1000)
           : true;
 
         // Needs reconnect if: no refresh token, or token is expired and no way to refresh
@@ -91,7 +91,8 @@ serve(async (req) => {
             connected: true, 
             needsReconnect,
             hasRefreshToken,
-            isExpired 
+            isExpired,
+            expiresAt: integration.token_expires_at
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -634,18 +635,45 @@ serve(async (req) => {
         console.log('[Calendar] Availability found:', !!availability, availability?.timezone);
 
         if (!availability) {
+          // Get the user's actual timezone and current time
+          const userTimeZone = 'America/New_York'; // Default fallback
+          const currentTime = new Date().toLocaleString('en-US', {
+            timeZone: userTimeZone,
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          
           // Return default business hours if no availability configured
           return new Response(
             JSON.stringify({
               success: true,
               available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
-              message: 'I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?',
+              current_time: currentTime,
+              timezone: userTimeZone,
+              message: `I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?`,
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
         const timeZone = (availability.timezone as string) || 'America/Chicago';
+        
+        // CRITICAL: Include current date/time in user's timezone in the response
+        const currentTime = new Date().toLocaleString('en-US', {
+          timeZone,
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZoneName: 'short'
+        });
         const weeklySchedule =
           typeof availability.weekly_schedule === 'string'
             ? safeJsonParse(availability.weekly_schedule, {})
@@ -685,7 +713,49 @@ serve(async (req) => {
 
         if (integration?.access_token_encrypted) {
           try {
-            const accessToken = atob(integration.access_token_encrypted);
+            let accessToken = atob(integration.access_token_encrypted);
+            
+            // PROACTIVE TOKEN REFRESH: Check if token expires within 10 minutes and refresh if needed
+            const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
+            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+            
+            if (expiresAt && expiresAt < tenMinutesFromNow && integration.refresh_token_encrypted) {
+              console.log('[Calendar] Token expiring soon, proactively refreshing...');
+              
+              const refreshToken = atob(integration.refresh_token_encrypted);
+              const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+              const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+              
+              const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  client_id: clientId!,
+                  client_secret: clientSecret!,
+                  refresh_token: refreshToken,
+                  grant_type: 'refresh_token'
+                })
+              });
+              
+              if (refreshResponse.ok) {
+                const tokens = await refreshResponse.json();
+                accessToken = tokens.access_token;
+                
+                // Update stored token
+                await supabase
+                  .from('calendar_integrations')
+                  .update({
+                    access_token_encrypted: btoa(tokens.access_token),
+                    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+                  })
+                  .eq('id', integration.id);
+                
+                console.log('[Calendar] Token refreshed proactively');
+              } else {
+                console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
+              }
+            }
+            
             const calendarId = integration.calendar_id || 'primary';
 
             const eventsResponse = await fetch(
@@ -705,6 +775,10 @@ serve(async (req) => {
               console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
             } else {
               console.error('[Calendar] Google Calendar API error:', eventsResponse.status);
+              // If 401, the token is invalid despite our refresh attempt
+              if (eventsResponse.status === 401) {
+                console.error('[Calendar] Token invalid after refresh - user needs to reconnect');
+              }
             }
           } catch (error) {
             console.error('[Calendar] Google Calendar error:', error);
@@ -796,6 +870,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             success: true,
+            current_time: currentTime,
             timezone: timeZone,
             range_start: rangeStartYmd,
             range_end: rangeEndYmd,
@@ -1388,7 +1463,49 @@ serve(async (req) => {
 
         if (integration?.access_token_encrypted) {
           try {
-            const accessToken = atob(integration.access_token_encrypted);
+            let accessToken = atob(integration.access_token_encrypted);
+            
+            // PROACTIVE TOKEN REFRESH: Check if token expires within 10 minutes and refresh if needed
+            const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
+            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+            
+            if (expiresAt && expiresAt < tenMinutesFromNow && integration.refresh_token_encrypted) {
+              console.log('[Calendar] Token expiring soon, proactively refreshing before booking...');
+              
+              const refreshToken = atob(integration.refresh_token_encrypted);
+              const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+              const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+              
+              const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  client_id: clientId!,
+                  client_secret: clientSecret!,
+                  refresh_token: refreshToken,
+                  grant_type: 'refresh_token'
+                })
+              });
+              
+              if (refreshResponse.ok) {
+                const tokens = await refreshResponse.json();
+                accessToken = tokens.access_token;
+                
+                // Update stored token
+                await supabase
+                  .from('calendar_integrations')
+                  .update({
+                    access_token_encrypted: btoa(tokens.access_token),
+                    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+                  })
+                  .eq('id', integration.id);
+                
+                console.log('[Calendar] Token refreshed proactively before booking');
+              } else {
+                console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
+              }
+            }
+            
             const event = {
               summary: title || `Appointment with ${attendee_name || 'Lead'}`,
               description: `Booked via AI Dialer\nAttendee: ${attendee_name || 'Unknown'}\nEmail: ${attendee_email || 'Not provided'}`,
@@ -1411,6 +1528,9 @@ serve(async (req) => {
               const createdEvent = await createResponse.json();
               googleEventId = createdEvent.id;
               console.log('[Calendar] Google event created:', googleEventId);
+            } else {
+              const errorText = await createResponse.text();
+              console.error('[Calendar] Google Calendar creation failed:', createResponse.status, errorText);
             }
           } catch (error) {
             console.error('[Calendar] Google Calendar error:', error);

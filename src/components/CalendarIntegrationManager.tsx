@@ -70,18 +70,30 @@ export const CalendarIntegrationManager: React.FC = () => {
           const { data, error } = await supabase.functions.invoke('calendar-integration', {
             body: { action: 'check_token_status' }
           });
-          if (data?.needsReconnect) {
+          if (data?.needsReconnect || data?.isExpired) {
             setNeedsReconnect(true);
+            // Show a toast notification
+            toast({ 
+              title: 'Calendar Connection Issue', 
+              description: data?.needsReconnect 
+                ? 'Your Google Calendar needs to be reconnected for automatic syncing.'
+                : 'Your calendar token will expire soon. Please reconnect to ensure smooth operation.',
+              variant: 'default'
+            });
           } else {
             setNeedsReconnect(false);
           }
-        } catch {
-          // If check fails, don't show warning
+        } catch (error) {
+          // If check fails, don't show warning to avoid false alarms
+          console.error('Calendar token check failed:', error);
         }
       }
     };
+    // Check immediately and then every 5 minutes
     checkGoogleIntegration();
-  }, [integrations]);
+    const interval = setInterval(checkGoogleIntegration, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [integrations, toast]);
 
   useEffect(() => {
     if (availability) {
