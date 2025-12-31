@@ -48,34 +48,50 @@ serve(async (req) => {
       const body = await req.json();
       
       // ROBUST PAYLOAD PARSING for Retell custom function calls
-      // Retell may send: { action, ... }, { arguments: {...} }, { params: {...} }, or just {}
+      // Retell may send various formats:
+      // - { action, ... } (standard)
+      // - { arguments: {...} } (some SDKs)
+      // - { args: {...} } (Retell custom function format!)
+      // - { params: {...} } (alternative)
+      // - { call, name, args: {...} } (Retell tool execution format)
       const receivedKeys = Object.keys(body || {});
       const hasArguments = 'arguments' in body;
+      const hasArgs = 'args' in body; // Retell uses 'args' not 'arguments'!
       const hasParams = 'params' in body;
       const hasAction = 'action' in body;
       
-      console.log(`[Calendar] Received body keys: ${receivedKeys.join(', ')}, hasArguments: ${hasArguments}, hasParams: ${hasParams}, hasAction: ${hasAction}`);
+      console.log(`[Calendar] Received body keys: ${receivedKeys.join(', ')}, hasArguments: ${hasArguments}, hasArgs: ${hasArgs}, hasParams: ${hasParams}, hasAction: ${hasAction}`);
       
-      // Extract the actual parameters
-      if (hasArguments && typeof body.arguments === 'object') {
-        // Retell sends { arguments: { action, user_id, ... } }
+      // Extract the actual parameters - check 'args' first (Retell's format)
+      if (hasArgs && typeof body.args === 'object') {
+        // Retell sends { call, name, args: { action, ... } }
+        params = body.args;
+        action = params.action || 'get_available_slots';
+        delete params.action;
+        console.log(`[Calendar] Extracted from args: action=${action}`);
+      } else if (hasArguments && typeof body.arguments === 'object') {
+        // Some SDKs send { arguments: { action, user_id, ... } }
         params = body.arguments;
         action = params.action || 'get_available_slots';
         delete params.action;
+        console.log(`[Calendar] Extracted from arguments: action=${action}`);
       } else if (hasParams && typeof body.params === 'object') {
         // Alternative format: { params: { action, user_id, ... } }
         params = body.params;
         action = params.action || 'get_available_slots';
         delete params.action;
+        console.log(`[Calendar] Extracted from params: action=${action}`);
       } else if (hasAction) {
         // Standard format: { action, user_id, ... }
         action = body.action;
         params = { ...body };
         delete params.action;
+        console.log(`[Calendar] Extracted from body.action: action=${action}`);
       } else {
         // No action specified - default to get_available_slots (most common Retell call)
         action = 'get_available_slots';
         params = { ...body };
+        console.log(`[Calendar] No action found, defaulting to: ${action}`);
       }
       
       // Apply URL user_id if not in params
