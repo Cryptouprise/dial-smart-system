@@ -79,6 +79,19 @@ const RetellAIManager = () => {
     loadRetellData();
   }, [isDemoMode]);
 
+  // Auto-load calendar status once agents are loaded
+  useEffect(() => {
+    if (agents.length > 0 && !calendarStatusLoaded && !isDemoMode) {
+      // Check if any agent needs calendar status loaded
+      const needsLoading = agents.some(a => a.hasCalendarFunction === undefined);
+      if (needsLoading) {
+        loadAllAgentCalendarStatus().then(() => {
+          setCalendarStatusLoaded(true);
+        });
+      }
+    }
+  }, [agents, calendarStatusLoaded, isDemoMode]);
+
   // Load calendar status for a single agent (lazy-loaded when needed)
   // FIXED: Check the LLM's general_tools, not agent's functions
   // Returns: 'configured' | 'not_configured' | 'error'
