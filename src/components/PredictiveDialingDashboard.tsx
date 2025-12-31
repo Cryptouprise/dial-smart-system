@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Phone, Users, Target, BarChart3, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
@@ -17,6 +17,29 @@ import SmartRetryPanel from '@/components/SmartRetryPanel';
 import LiveCallMonitor from '@/components/LiveCallMonitor';
 import { useDemoData } from '@/hooks/useDemoData';
 
+// Throttle helper to prevent rapid successive calls
+const useThrottledCallback = (callback: () => void, delay: number) => {
+  const lastRun = useRef<number>(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  return useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastRun = now - lastRun.current;
+
+    if (timeSinceLastRun >= delay) {
+      lastRun.current = now;
+      callback();
+    } else if (!timeoutRef.current) {
+      // Schedule a call for later
+      timeoutRef.current = setTimeout(() => {
+        lastRun.current = Date.now();
+        timeoutRef.current = null;
+        callback();
+      }, delay - timeSinceLastRun);
+    }
+  }, [callback, delay]);
+};
+
 const PredictiveDialingDashboard = () => {
   const { getCampaigns, getCallLogs, isLoading } = usePredictiveDialing();
   const { isDemoMode, campaigns: demoCampaigns, callLogs: demoCallLogs, todayStats, leadCount } = useDemoData();
@@ -28,6 +51,11 @@ const PredictiveDialingDashboard = () => {
     todayCalls: 0,
     connectRate: 0
   });
+
+  // Throttled refresh function - max once per 3 seconds
+  const throttledRefresh = useThrottledCallback(() => {
+    loadDashboardData();
+  }, 3000);
 
   useEffect(() => {
     if (isDemoMode) {
@@ -47,7 +75,7 @@ const PredictiveDialingDashboard = () => {
 
     loadDashboardData();
 
-    // Set up real-time subscriptions for call_logs
+    // Set up real-time subscriptions for call_logs with THROTTLED refresh
     const callLogsChannel = supabase
       .channel('call-logs-realtime')
       .on(
@@ -55,12 +83,12 @@ const PredictiveDialingDashboard = () => {
         { event: '*', schema: 'public', table: 'call_logs' },
         (payload) => {
           console.log('Call log update:', payload);
-          loadDashboardData(); // Refresh data on changes
+          throttledRefresh(); // Throttled refresh instead of immediate
         }
       )
       .subscribe();
 
-    // Set up real-time subscriptions for dialing_queues
+    // Set up real-time subscriptions for dialing_queues (no refresh needed, just log)
     const dialingQueuesChannel = supabase
       .channel('dialing-queues-realtime')
       .on(
@@ -76,7 +104,7 @@ const PredictiveDialingDashboard = () => {
       supabase.removeChannel(callLogsChannel);
       supabase.removeChannel(dialingQueuesChannel);
     };
-  }, [isDemoMode]);
+  }, [isDemoMode, throttledRefresh]);
 
   const loadDashboardData = async () => {
     const campaignsData = await getCampaigns();

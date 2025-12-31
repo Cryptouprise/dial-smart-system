@@ -25,6 +25,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
 import { useDemoData } from '@/hooks/useDemoData';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface Campaign {
   id: string;
@@ -74,6 +75,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
+  const { userId } = useCurrentUser();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
@@ -132,14 +134,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   }, [isDemoMode]);
 
   const loadWorkflows = async () => {
+    if (!userId) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('campaign_workflows')
         .select('id, name, description, active')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('name');
 
       if (error) throw error;
@@ -150,14 +150,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const loadPhoneNumberStatus = async () => {
+    if (!userId) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('phone_numbers')
         .select('number, retell_phone_id, status, quarantine_until')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
 
@@ -284,19 +282,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     } catch (error) {
       console.error('Error loading Twilio numbers:', error);
       // Fallback to database if API fails
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+      if (userId) {
+        try {
           const { data } = await supabase
             .from('phone_numbers')
             .select('number, friendly_name')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .eq('provider', 'twilio')
             .eq('status', 'active');
           setTwilioNumbers((data || []).map(n => ({ number: n.number, friendly_name: n.friendly_name || undefined })));
+        } catch (fallbackError) {
+          console.error('Fallback also failed:', fallbackError);
         }
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
       }
     } finally {
       setLoadingTwilioNumbers(false);
@@ -360,10 +357,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const handleDeleteCampaign = async (campaignId: string) => {
+    if (!userId) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       // Delete all related data in parallel for speed
       await Promise.all([
         supabase.from('campaign_leads').delete().eq('campaign_id', campaignId),
@@ -379,7 +374,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
         .from('campaigns')
         .delete()
         .eq('id', campaignId)
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
 
@@ -406,13 +401,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   
   useEffect(() => {
     const checkCalendarIntegration = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
       
       const { data } = await supabase
         .from('calendar_integrations')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('sync_enabled', true)
         .limit(1);
       
