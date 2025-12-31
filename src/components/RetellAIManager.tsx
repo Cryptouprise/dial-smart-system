@@ -30,6 +30,7 @@ interface Agent {
   agent_name: string;
   voice_id?: string;
   hasCalendarFunction?: boolean;
+  calendarStatus?: 'configured' | 'not_configured' | 'error';
 }
 
 interface RetellLLM {
@@ -80,30 +81,41 @@ const RetellAIManager = () => {
 
   // Load calendar status for a single agent (lazy-loaded when needed)
   // FIXED: Check the LLM's general_tools, not agent's functions
-  const loadAgentCalendarStatus = async (agentId: string): Promise<boolean> => {
+  // Returns: 'configured' | 'not_configured' | 'error'
+  const loadAgentCalendarStatus = async (agentId: string): Promise<'configured' | 'not_configured' | 'error'> => {
     try {
       // Get agent details to find the LLM ID
       const agentDetails = await getAgent(agentId);
+      if (!agentDetails) {
+        console.log(`[RetellAIManager] Agent ${agentId} not found`);
+        return 'error';
+      }
+      
       const llmId = agentDetails?.response_engine?.llm_id || 
                     agentDetails?.response_engine?.llmId || 
                     agentDetails?.llm_id;
       
       if (!llmId) {
-        console.log(`[RetellAIManager] Agent ${agentId} has no LLM ID, cannot check calendar status`);
-        return false;
+        console.log(`[RetellAIManager] Agent ${agentId} has no LLM ID, calendar not configured`);
+        return 'not_configured';
       }
       
       // Get LLM details and check general_tools for manage_calendar
       const llmDetails = await getLLM(llmId);
+      if (!llmDetails) {
+        console.log(`[RetellAIManager] LLM ${llmId} not found`);
+        return 'error';
+      }
+      
       const hasCalendar = llmDetails?.general_tools?.some(
         (tool: any) => tool.name === 'manage_calendar'
       ) || false;
       
-      console.log(`[RetellAIManager] Agent ${agentId} (LLM: ${llmId}) calendar status: ${hasCalendar}`);
-      return hasCalendar;
+      console.log(`[RetellAIManager] Agent ${agentId} (LLM: ${llmId}) calendar status: ${hasCalendar ? 'configured' : 'not_configured'}`);
+      return hasCalendar ? 'configured' : 'not_configured';
     } catch (err) {
       console.error(`[RetellAIManager] Error checking calendar status for agent ${agentId}:`, err);
-      return false;
+      return 'error';
     }
   };
 
@@ -167,8 +179,10 @@ const RetellAIManager = () => {
     const updatedAgents = await Promise.all(
       agents.map(async (agent) => {
         if (agent.hasCalendarFunction !== undefined) return agent; // Already loaded
-        const hasCalendarFunction = await loadAgentCalendarStatus(agent.agent_id);
-        return { ...agent, hasCalendarFunction };
+        const status = await loadAgentCalendarStatus(agent.agent_id);
+        // Map status to boolean for backward compatibility
+        const hasCalendarFunction = status === 'configured';
+        return { ...agent, hasCalendarFunction, calendarStatus: status };
       })
     );
     setAgents(updatedAgents);
@@ -460,10 +474,15 @@ const RetellAIManager = () => {
                               <Badge variant="outline" className="font-mono text-xs">
                                 {agent.agent_id}
                               </Badge>
-                              {agent.hasCalendarFunction === undefined ? (
+                              {agent.calendarStatus === undefined && agent.hasCalendarFunction === undefined ? (
                                 <Badge variant="outline" className="text-muted-foreground">
                                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                   Checking...
+                                </Badge>
+                              ) : agent.calendarStatus === 'error' ? (
+                                <Badge variant="destructive" className="text-xs">
+                                  <CalendarX className="h-3 w-3 mr-1" />
+                                  Status Error
                                 </Badge>
                               ) : agent.hasCalendarFunction ? (
                                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700">
