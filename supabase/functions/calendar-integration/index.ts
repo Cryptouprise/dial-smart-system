@@ -1732,33 +1732,43 @@ async function ensureFreshGoogleToken(integration: any, supabase: any): Promise<
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
     const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
     
-    const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId!,
-        client_secret: clientSecret!,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token'
-      })
-    });
+    if (!clientId || !clientSecret) {
+      console.error('[Calendar] Missing Google OAuth credentials (GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET)');
+      return accessToken; // Return existing token if we can't refresh
+    }
     
-    if (refreshResponse.ok) {
-      const tokens = await refreshResponse.json();
-      accessToken = tokens.access_token;
-      
-      // Update stored token
-      await supabase
-        .from('calendar_integrations')
-        .update({
-          access_token_encrypted: btoa(tokens.access_token),
-          token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+    try {
+      const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token'
         })
-        .eq('id', integration.id);
+      });
       
-      console.log('[Calendar] Token refreshed proactively');
-    } else {
-      console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
+      if (refreshResponse.ok) {
+        const tokens = await refreshResponse.json();
+        accessToken = tokens.access_token;
+        
+        // Update stored token
+        await supabase
+          .from('calendar_integrations')
+          .update({
+            access_token_encrypted: btoa(tokens.access_token),
+            token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+          })
+          .eq('id', integration.id);
+        
+        console.log('[Calendar] Token refreshed proactively');
+      } else {
+        const errorText = await refreshResponse.text().catch(() => 'Unable to read error response');
+        console.error('[Calendar] Proactive token refresh failed:', errorText);
+      }
+    } catch (error) {
+      console.error('[Calendar] Token refresh error:', error);
     }
   }
   
