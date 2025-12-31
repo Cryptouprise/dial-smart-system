@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -61,27 +61,40 @@ export const CalendarIntegrationManager: React.FC = () => {
   });
 
   // Check if integration needs reconnection (no refresh token or expired)
-  useEffect(() => {
-    const checkGoogleIntegration = async () => {
-      const googleInt = integrations.find(i => i.provider === 'google');
-      if (googleInt) {
-        // Check via edge function if token is valid
-        try {
-          const { data, error } = await supabase.functions.invoke('calendar-integration', {
-            body: { action: 'check_token_status' }
+  const checkGoogleIntegration = useCallback(async () => {
+    const googleInt = integrations.find(i => i.provider === 'google');
+    if (googleInt) {
+      // Check via edge function if token is valid
+      try {
+        const { data, error } = await supabase.functions.invoke('calendar-integration', {
+          body: { action: 'check_token_status' }
+        });
+        if (data?.needsReconnect || data?.isExpired) {
+          setNeedsReconnect(true);
+          // Show a toast notification
+          toast({ 
+            title: 'Calendar Connection Issue', 
+            description: data?.needsReconnect 
+              ? 'Your Google Calendar needs to be reconnected for automatic syncing.'
+              : 'Your calendar token will expire soon. Please reconnect to ensure smooth operation.',
+            variant: 'default'
           });
-          if (data?.needsReconnect) {
-            setNeedsReconnect(true);
-          } else {
-            setNeedsReconnect(false);
-          }
-        } catch {
-          // If check fails, don't show warning
+        } else {
+          setNeedsReconnect(false);
         }
+      } catch (error) {
+        // If check fails, don't show warning to avoid false alarms
+        console.error('Calendar token check failed:', error);
       }
-    };
+    }
+  }, [integrations, toast]);
+
+  useEffect(() => {
+    // Check immediately and then every 5 minutes
     checkGoogleIntegration();
-  }, [integrations]);
+    const interval = setInterval(checkGoogleIntegration, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [checkGoogleIntegration]);
 
   useEffect(() => {
     if (availability) {
