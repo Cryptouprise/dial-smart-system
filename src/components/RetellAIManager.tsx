@@ -14,7 +14,7 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2 } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
 
 interface RetellPhoneNumber {
@@ -56,6 +56,7 @@ const RetellAIManager = () => {
   const [editingAgent, setEditingAgent] = useState<any>(null);
   const [showAgentEditDialog, setShowAgentEditDialog] = useState(false);
   const [isConfiguringWebhooks, setIsConfiguringWebhooks] = useState(false);
+  const [calendarStatusLoaded, setCalendarStatusLoaded] = useState(false);
   const { toast } = useToast();
   const { isDemoMode, agents: demoAgents, phoneNumbers: demoPhoneNumbers, showDemoActionToast } = useDemoData();
   const { 
@@ -339,7 +340,12 @@ const RetellAIManager = () => {
         </Card>
       </div>
 
-      <Tabs defaultValue="wizard" className="space-y-4">
+      <Tabs defaultValue="wizard" className="space-y-4" onValueChange={async (value) => {
+        if (value === 'calendar' && !calendarStatusLoaded && !isDemoMode) {
+          await loadAllAgentCalendarStatus();
+          setCalendarStatusLoaded(true);
+        }
+      }}>
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="wizard">
             <Sparkles className="h-4 w-4 mr-2" />
@@ -437,7 +443,12 @@ const RetellAIManager = () => {
                               <Badge variant="outline" className="font-mono text-xs">
                                 {agent.agent_id}
                               </Badge>
-                              {agent.hasCalendarFunction ? (
+                              {agent.hasCalendarFunction === undefined ? (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                  Checking...
+                                </Badge>
+                              ) : agent.hasCalendarFunction ? (
                                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700">
                                   <CalendarCheck className="h-3 w-3 mr-1" />
                                   Calendar Connected
