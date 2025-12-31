@@ -171,7 +171,7 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Configuring calendar function for agent ${agentId} with user ${userId}`);
         
-        // First, get the current agent to see existing functions
+        // First, get the current agent to find the LLM ID
         const getAgentResp = await fetch(`${baseUrl}/get-agent/${agentId}`, {
           method: 'GET',
           headers,
@@ -185,9 +185,30 @@ serve(async (req) => {
         const currentAgent = await getAgentResp.json();
         console.log(`[Retell Agent] Current agent config:`, JSON.stringify(currentAgent));
         
-        // Build the calendar function configuration
-        // CRITICAL: speak_during_execution must be FALSE to prevent agent from guessing while tool runs
-        const calendarFunction = {
+        // Get the LLM ID from the agent
+        const agentLlmId =
+          currentAgent?.response_engine?.llm_id ||
+          currentAgent?.response_engine?.llmId ||
+          currentAgent?.llm_id;
+        
+        if (!agentLlmId) {
+          throw new Error('Could not determine LLM ID from agent config. Make sure the agent uses a Retell LLM.');
+        }
+        
+        console.log(`[Retell Agent] Agent uses LLM: ${agentLlmId}`);
+        
+        // Get user's timezone for the instructions
+        const { data: availability } = await supabaseClient
+          .from('calendar_availability')
+          .select('timezone')
+          .eq('user_id', userId)
+          .maybeSingle();
+        
+        const userTimezone = availability?.timezone || 'America/New_York';
+        
+        // Build the calendar function configuration for LLM general_tools
+        // CRITICAL: This MUST be added to the LLM's general_tools, NOT the agent's functions
+        const calendarTool = {
           type: "custom",
           name: "manage_calendar",
           description: "REQUIRED: You MUST call this function before answering ANY question about time, date, or availability. Do NOT guess or assume - always call this first. The function returns current_time and available_slots.",
@@ -237,151 +258,117 @@ serve(async (req) => {
             required: ["action", "user_id"]
           },
           speak_during_execution: false,
-          speak_after_execution: true
+          speak_after_execution: true,
+          execution_message_description: "Checking calendar availability..."
         };
         
-        // Get existing functions and add/replace the calendar function
-        let existingFunctions = currentAgent.functions || [];
+        // Get current LLM config
+        const llmGetResp = await fetch(`${baseUrl}/get-retell-llm/${agentLlmId}`, {
+          method: 'GET',
+          headers,
+        });
         
-        // Remove any existing calendar function
-        existingFunctions = existingFunctions.filter((f: any) => f.name !== 'manage_calendar');
+        if (!llmGetResp.ok) {
+          const errorText = await llmGetResp.text();
+          throw new Error(`Failed to get LLM config: ${errorText}`);
+        }
         
-        // Add the new calendar function
-        existingFunctions.push(calendarFunction);
+        const llm = await llmGetResp.json();
+        console.log(`[Retell Agent] Current LLM config:`, JSON.stringify(llm));
         
-        console.log(`[Retell Agent] Updating agent with ${existingFunctions.length} functions`);
+        // Get existing general_tools and add/replace the calendar tool
+        let existingTools = llm.general_tools || [];
         
-        // Update the agent with the new functions
-        response = await fetch(`${baseUrl}/update-agent/${agentId}`, {
+        // Remove any existing calendar tool
+        existingTools = existingTools.filter((t: any) => t.name !== 'manage_calendar');
+        
+        // Add the new calendar tool
+        existingTools.push(calendarTool);
+        
+        console.log(`[Retell Agent] Updating LLM with ${existingTools.length} general_tools`);
+        
+        // Update the LLM prompt with calendar instructions
+        const currentPrompt = String(llm?.general_prompt || '');
+        const markerStart = '[CALENDAR_TOOLING_v2]';
+        const oldMarkerStart = '[CALENDAR_TOOLING_v1]';
+
+        // Remove old versions if present
+        let updatedPrompt = currentPrompt
+          .replace(new RegExp(`${oldMarkerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]`, 'g'), '')
+          .replace(new RegExp(`${markerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v2\\]`, 'g'), '')
+          .trim();
+
+        const calendarToolingBlock = [
+          markerStart,
+          '=== MANDATORY CALENDAR RULES (YOU MUST FOLLOW THESE) ===',
+          '',
+          'RULE #1 - NEVER GUESS TIME OR AVAILABILITY:',
+          '- You do NOT know what time it is until you call manage_calendar.',
+          '- You do NOT know what times are available until you call manage_calendar.',
+          '- If you guess or assume, you WILL be wrong. Always call the function FIRST.',
+          '',
+          'RULE #2 - CALL manage_calendar FOR ANY TIME/DATE/AVAILABILITY QUESTION:',
+          '- "What time is it?" → Call manage_calendar(action="get_available_slots") FIRST, then read current_time from response.',
+          '- "Do you have availability?" → Call manage_calendar(action="get_available_slots") FIRST, then read available_slots from response.',
+          '- "Can I book tomorrow at 3pm?" → Call manage_calendar(action="get_available_slots") FIRST, check if 3pm is in available_slots.',
+          '',
+          'RULE #3 - USE THE FUNCTION RESPONSE:',
+          '- current_time: This is the ACTUAL current date and time. Use it to answer time questions.',
+          '- available_slots: This is the list of ACTUAL available times. Only offer these times.',
+          '- If available_slots is empty, say "I don\'t have any openings in the next few days. Would you like to check a different week?"',
+          '- NEVER say "no availability" unless available_slots returned empty.',
+          '',
+          'RULE #4 - WAIT FOR FUNCTION RESULTS:',
+          '- Do NOT speak while the function is executing.',
+          '- Do NOT guess what the results will be.',
+          '- Wait for the function to return, then use those results to respond.',
+          '',
+          `TIMEZONE: ${userTimezone}`,
+          `USER_ID FOR ALL CALLS: ${userId}`,
+          '',
+          'BOOKING FLOW:',
+          `1. Call manage_calendar(action="get_available_slots", user_id="${userId}")`,
+          '2. Read current_time and available_slots from response',
+          '3. Present 2-3 options from available_slots',
+          '4. User picks a time',
+          `5. Call manage_calendar(action="book_appointment", user_id="${userId}", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")`,
+          '6. Confirm booking with full details',
+          '',
+          '=== END CALENDAR RULES ===',
+          '[/CALENDAR_TOOLING_v2]',
+        ].join('\n');
+
+        updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
+        
+        // Update the LLM with both the tool AND the prompt
+        const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify({
-            functions: existingFunctions
+            general_tools: existingTools,
+            general_prompt: updatedPrompt
           }),
         });
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[Retell Agent] Failed to update agent with calendar function: ${errorText}`);
-          throw new Error(`Failed to configure calendar: ${errorText}`);
+        if (!llmUpdateResp.ok) {
+          const errorText = await llmUpdateResp.text();
+          console.error(`[Retell Agent] Failed to update LLM with calendar tool: ${errorText}`);
+          throw new Error(`Failed to configure calendar on LLM: ${errorText}`);
         }
         
-        const updatedAgent = await response.json();
-        console.log(`[Retell Agent] Successfully configured calendar function`);
-
-        // Also update the underlying Retell LLM prompt so it actually USES the calendar tool
-        // (otherwise the model may guess and say "fully booked" without calling manage_calendar).
-        let llmPromptUpdated = false;
-        let llmPromptUpdateError: string | null = null;
-
-        try {
-          const agentLlmId =
-            currentAgent?.response_engine?.llm_id ||
-            currentAgent?.response_engine?.llmId ||
-            currentAgent?.llm_id;
-
-          if (agentLlmId) {
-            const llmGetResp = await fetch(`${baseUrl}/get-retell-llm/${agentLlmId}`, {
-              method: 'GET',
-              headers,
-            });
-
-            if (llmGetResp.ok) {
-              const llm = await llmGetResp.json();
-              const currentPrompt = String(llm?.general_prompt || '');
-              const markerStart = '[CALENDAR_TOOLING_v2]';
-              const oldMarkerStart = '[CALENDAR_TOOLING_v1]';
-
-              // Remove old version if present
-              let updatedPrompt = currentPrompt.replace(new RegExp(`${oldMarkerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]`, 'g'), '').trim();
-
-              // Always update prompt to ensure latest instructions (remove check for markerStart)
-              // Get user's timezone for the instructions
-              const { data: availability } = await supabaseClient
-                .from('calendar_availability')
-                .select('timezone')
-                .eq('user_id', userId)
-                .maybeSingle();
-              
-              const userTimezone = availability?.timezone || 'America/New_York';
-
-              // Remove any existing calendar tooling blocks before adding new one
-              updatedPrompt = updatedPrompt
-                .replace(new RegExp(`${markerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v2\\]`, 'g'), '')
-                .trim();
-
-              const calendarToolingBlock = [
-                markerStart,
-                '=== MANDATORY CALENDAR RULES (YOU MUST FOLLOW THESE) ===',
-                '',
-                'RULE #1 - NEVER GUESS TIME OR AVAILABILITY:',
-                '- You do NOT know what time it is until you call manage_calendar.',
-                '- You do NOT know what times are available until you call manage_calendar.',
-                '- If you guess or assume, you WILL be wrong. Always call the function FIRST.',
-                '',
-                'RULE #2 - CALL manage_calendar FOR ANY TIME/DATE/AVAILABILITY QUESTION:',
-                '- "What time is it?" → Call manage_calendar(action="get_available_slots") FIRST, then read current_time from response.',
-                '- "Do you have availability?" → Call manage_calendar(action="get_available_slots") FIRST, then read available_slots from response.',
-                '- "Can I book tomorrow at 3pm?" → Call manage_calendar(action="get_available_slots") FIRST, check if 3pm is in available_slots.',
-                '',
-                'RULE #3 - USE THE FUNCTION RESPONSE:',
-                '- current_time: This is the ACTUAL current date and time. Use it to answer time questions.',
-                '- available_slots: This is the list of ACTUAL available times. Only offer these times.',
-                '- If available_slots is empty, say "I don\'t have any openings in the next few days. Would you like to check a different week?"',
-                '- NEVER say "no availability" unless available_slots returned empty.',
-                '',
-                'RULE #4 - WAIT FOR FUNCTION RESULTS:',
-                '- Do NOT speak while the function is executing.',
-                '- Do NOT guess what the results will be.',
-                '- Wait for the function to return, then use those results to respond.',
-                '',
-                `TIMEZONE: ${userTimezone}`,
-                `USER_ID FOR ALL CALLS: ${userId}`,
-                '',
-                'BOOKING FLOW:',
-                `1. Call manage_calendar(action="get_available_slots", user_id="${userId}")`,
-                '2. Read current_time and available_slots from response',
-                '3. Present 2-3 options from available_slots',
-                '4. User picks a time',
-                `5. Call manage_calendar(action="book_appointment", user_id="${userId}", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")`,
-                '6. Confirm booking with full details',
-                '',
-                '=== END CALENDAR RULES ===',
-                '[/CALENDAR_TOOLING_v2]',
-              ].join('\n');
-
-              updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
-
-              const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
-                method: 'PATCH',
-                headers,
-                body: JSON.stringify({ general_prompt: updatedPrompt }),
-              });
-
-              if (llmUpdateResp.ok) {
-                llmPromptUpdated = true;
-                console.log('[Retell Agent] LLM prompt updated with calendar tooling block');
-              } else {
-                llmPromptUpdateError = await llmUpdateResp.text();
-              }
-            } else {
-              llmPromptUpdateError = await llmGetResp.text();
-            }
-          } else {
-            llmPromptUpdateError = 'Could not determine llm_id from agent config.';
-          }
-        } catch (e) {
-          llmPromptUpdateError = e instanceof Error ? e.message : String(e);
-        }
+        const updatedLlm = await llmUpdateResp.json();
+        console.log(`[Retell Agent] Successfully configured calendar tool on LLM ${agentLlmId}`);
+        console.log(`[Retell Agent] LLM now has ${updatedLlm.general_tools?.length || 0} general_tools`);
 
         return new Response(
           JSON.stringify({
             success: true,
-            message: 'Calendar function configured successfully',
-            agent: updatedAgent,
+            message: 'Calendar function configured successfully on LLM',
+            llmId: agentLlmId,
+            agentId: agentId,
             userId: userId,
-            llmPromptUpdated,
-            llmPromptUpdateError,
+            toolsCount: updatedLlm.general_tools?.length || 0,
+            llmPromptUpdated: true,
           }),
           {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },

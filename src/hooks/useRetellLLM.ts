@@ -8,6 +8,15 @@ interface RetellLLM {
   begin_message: string;
   model: string;
   created_at?: string;
+  general_tools?: Array<{
+    type: string;
+    name: string;
+    description?: string;
+    url?: string;
+    parameters?: any;
+    speak_during_execution?: boolean;
+    speak_after_execution?: boolean;
+  }>;
 }
 
 export const useRetellLLM = () => {

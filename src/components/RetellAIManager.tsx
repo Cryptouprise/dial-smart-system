@@ -72,20 +72,37 @@ const RetellAIManager = () => {
     isLoading 
   } = useRetellAI();
   
-  const { listLLMs, deleteLLM, isLoading: llmLoading } = useRetellLLM();
+  const { listLLMs, getLLM, deleteLLM, isLoading: llmLoading } = useRetellLLM();
 
   useEffect(() => {
     loadRetellData();
   }, [isDemoMode]);
 
   // Load calendar status for a single agent (lazy-loaded when needed)
+  // FIXED: Check the LLM's general_tools, not agent's functions
   const loadAgentCalendarStatus = async (agentId: string): Promise<boolean> => {
     try {
-      const details = await getAgent(agentId);
-      return details?.functions?.some(
-        (fn: any) => fn.name === 'manage_calendar'
+      // Get agent details to find the LLM ID
+      const agentDetails = await getAgent(agentId);
+      const llmId = agentDetails?.response_engine?.llm_id || 
+                    agentDetails?.response_engine?.llmId || 
+                    agentDetails?.llm_id;
+      
+      if (!llmId) {
+        console.log(`[RetellAIManager] Agent ${agentId} has no LLM ID, cannot check calendar status`);
+        return false;
+      }
+      
+      // Get LLM details and check general_tools for manage_calendar
+      const llmDetails = await getLLM(llmId);
+      const hasCalendar = llmDetails?.general_tools?.some(
+        (tool: any) => tool.name === 'manage_calendar'
       ) || false;
-    } catch {
+      
+      console.log(`[RetellAIManager] Agent ${agentId} (LLM: ${llmId}) calendar status: ${hasCalendar}`);
+      return hasCalendar;
+    } catch (err) {
+      console.error(`[RetellAIManager] Error checking calendar status for agent ${agentId}:`, err);
       return false;
     }
   };
