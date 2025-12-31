@@ -90,9 +90,31 @@ serve(async (req) => {
       userId = phoneNumber?.user_id || null;
     }
 
+    // Fallback: If phone not found in our DB, try to find user by looking up leads with caller number
+    // This handles cases where Retell number exists in Retell but wasn't synced to our phone_numbers table
+    if (!userId && callerFormats.length > 0) {
+      console.log('[Retell Inbound Webhook] Phone not in DB, trying to find user via caller lead lookup');
+      const last10Caller = callerFormats.find(f => f.length === 10) || callerFormats[0];
+      
+      const { data: callerLead, error: callerLeadError } = await supabase
+        .from('leads')
+        .select('user_id')
+        .ilike('phone_number', `%${last10Caller}`)
+        .limit(1)
+        .maybeSingle();
+      
+      if (callerLeadError) {
+        console.error('[Retell Inbound Webhook] Caller lead lookup error:', callerLeadError);
+      } else if (callerLead) {
+        userId = callerLead.user_id;
+        console.log('[Retell Inbound Webhook] Found user via caller lead:', userId);
+      }
+    }
+
     if (!userId) {
-      console.warn('[Retell Inbound Webhook] No user found for receiving number:', toNumber);
+      console.warn('[Retell Inbound Webhook] No user found for receiving number:', toNumber, 'or caller:', fromNumber);
       // Return empty config so Retell can fall back to its configured inbound agent
+      // Still proceed with empty variables - agent will work, just without personalization
       return new Response(JSON.stringify({ call_inbound: {} }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
