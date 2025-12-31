@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Phone, Play, Plus, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 const QuickTestCampaign = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -16,20 +17,19 @@ const QuickTestCampaign = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastAction, setLastAction] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const { toast } = useToast();
+  const { userId } = useCurrentUser();
 
   useEffect(() => {
-    loadCampaigns();
-  }, []);
+    if (userId) loadCampaigns();
+  }, [userId]);
 
   const loadCampaigns = async () => {
+    if (!userId) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('campaigns')
         .select('id, name, status, agent_id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -60,8 +60,7 @@ const QuickTestCampaign = () => {
     setLastAction(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!userId) throw new Error('Not authenticated');
 
       const formattedPhone = formatPhoneNumber(testPhone);
 
@@ -69,7 +68,7 @@ const QuickTestCampaign = () => {
       const { data: existingLead } = await supabase
         .from('leads')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('phone_number', formattedPhone)
         .maybeSingle();
 
@@ -87,7 +86,7 @@ const QuickTestCampaign = () => {
         const { data: newLead, error: leadError } = await supabase
           .from('leads')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             phone_number: formattedPhone,
             first_name: 'Test',
             last_name: 'Call',

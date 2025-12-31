@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface ConcurrencySettings {
   maxConcurrentCalls: number;
@@ -44,6 +45,8 @@ export const useConcurrencyManager = () => {
   const [concurrencyLimit, setConcurrencyLimit] = useState(10);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { userId } = useCurrentUser();
+  const cachedSettingsRef = useRef<ConcurrencySettings | null>(null);
 
   // Load active calls from database - only recent ones (last 5 minutes)
   const loadActiveCalls = async () => {
@@ -75,16 +78,15 @@ export const useConcurrencyManager = () => {
     }
   };
 
-  // Load active AI transfers by platform
+  // Load active AI transfers by platform - uses cached userId
   const loadActiveTransfers = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
+      if (!userId) return [];
 
       const { data, error } = await supabase
         .from('active_ai_transfers')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'active')
         .order('started_at', { ascending: false });
 
@@ -172,12 +174,11 @@ export const useConcurrencyManager = () => {
     }
   };
 
-  // Clean up stuck transfers
+  // Clean up stuck transfers - uses cached userId
   const cleanupStuckTransfers = async () => {
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!userId) throw new Error('Not authenticated');
 
       // Mark transfers older than 30 minutes as completed (stuck)
       const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -188,7 +189,7 @@ export const useConcurrencyManager = () => {
           status: 'completed', 
           ended_at: new Date().toISOString() 
         })
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'active')
         .lt('started_at', thirtyMinutesAgo)
         .select();
@@ -217,21 +218,25 @@ export const useConcurrencyManager = () => {
     }
   };
 
-  // Get current concurrency settings
+  // Get current concurrency settings - uses cached userId and caches result
   const getConcurrencySettings = async (): Promise<ConcurrencySettings> => {
+    // Return cached settings if available
+    if (cachedSettingsRef.current) {
+      return cachedSettingsRef.current;
+    }
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!userId) throw new Error('User not authenticated');
 
       const { data, error } = await supabase
         .from('system_settings')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle();
 
       if (error) throw error;
 
-      return {
+      const settings: ConcurrencySettings = {
         maxConcurrentCalls: data?.max_concurrent_calls || 10,
         callsPerMinute: data?.calls_per_minute || 30,
         maxCallsPerAgent: data?.max_calls_per_agent || 3,
@@ -240,9 +245,13 @@ export const useConcurrencyManager = () => {
         assistableMaxConcurrent: data?.assistable_max_concurrent || 200,
         transferQueueEnabled: data?.transfer_queue_enabled ?? true
       };
+      
+      // Cache the settings
+      cachedSettingsRef.current = settings;
+      return settings;
     } catch (error: any) {
       console.error('Error getting concurrency settings:', error);
-      return {
+      const defaultSettings: ConcurrencySettings = {
         maxConcurrentCalls: 10,
         callsPerMinute: 30,
         maxCallsPerAgent: 3,
@@ -251,19 +260,23 @@ export const useConcurrencyManager = () => {
         assistableMaxConcurrent: 200,
         transferQueueEnabled: true
       };
+      cachedSettingsRef.current = defaultSettings;
+      return defaultSettings;
     }
   };
 
-  // Update concurrency settings
+  // Update concurrency settings - uses cached userId and invalidates cache
   const updateConcurrencySettings = async (settings: Partial<ConcurrencySettings>) => {
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!userId) throw new Error('User not authenticated');
+
+      // Invalidate cache
+      cachedSettingsRef.current = null;
 
       // Build the update object with required fields
       const updateData = {
-        user_id: user.id,
+        user_id: userId,
         updated_at: new Date().toISOString(),
         max_concurrent_calls: settings.maxConcurrentCalls,
         calls_per_minute: settings.callsPerMinute,
@@ -341,8 +354,10 @@ export const useConcurrencyManager = () => {
     };
   };
 
-  // Subscribe to real-time updates
+  // Subscribe to real-time updates - NO polling since realtime handles it
   useEffect(() => {
+    if (!userId) return;
+    
     loadActiveCalls();
     loadActiveTransfers();
     
@@ -376,18 +391,14 @@ export const useConcurrencyManager = () => {
       )
       .subscribe();
 
-    // Refresh every 10 seconds
-    const interval = setInterval(() => {
-      loadActiveCalls();
-      loadActiveTransfers();
-    }, 10000);
+    // REMOVED: 10 second polling interval - realtime subscriptions handle updates
+    // This eliminates duplicate requests and reduces background load by 50%
 
     return () => {
       callsChannel.unsubscribe();
       transfersChannel.unsubscribe();
-      clearInterval(interval);
     };
-  }, []);
+  }, [userId]);
 
   return {
     activeCalls,

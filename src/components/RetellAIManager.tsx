@@ -77,6 +77,18 @@ const RetellAIManager = () => {
     loadRetellData();
   }, [isDemoMode]);
 
+  // Load calendar status for a single agent (lazy-loaded when needed)
+  const loadAgentCalendarStatus = async (agentId: string): Promise<boolean> => {
+    try {
+      const details = await getAgent(agentId);
+      return details?.functions?.some(
+        (fn: any) => fn.name === 'manage_calendar'
+      ) || false;
+    } catch {
+      return false;
+    }
+  };
+
   const loadRetellData = async () => {
     if (isDemoMode) {
       // Use demo data
@@ -103,6 +115,8 @@ const RetellAIManager = () => {
       return;
     }
 
+    // Load all data in parallel - but DON'T check calendar status for each agent (N+1 problem)
+    // Calendar status will be checked lazily when viewing the Calendar tab
     const [numbersData, agentsData, llmsData] = await Promise.all([
       listPhoneNumbers(),
       listAgents(),
@@ -119,23 +133,27 @@ const RetellAIManager = () => {
         return acc;
       }, []);
       
-      // Check each agent for calendar function
-      const agentsWithCalendarStatus = await Promise.all(
-        uniqueAgents.map(async (agent: any) => {
-          try {
-            const details = await getAgent(agent.agent_id);
-            const hasCalendarFunction = details?.functions?.some(
-              (fn: any) => fn.name === 'manage_calendar'
-            ) || false;
-            return { ...agent, hasCalendarFunction };
-          } catch {
-            return { ...agent, hasCalendarFunction: false };
-          }
-        })
-      );
-      setAgents(agentsWithCalendarStatus);
+      // Set agents without calendar status - it will be loaded lazily
+      setAgents(uniqueAgents.map((agent: any) => ({
+        ...agent,
+        hasCalendarFunction: undefined // Will be loaded when Calendar tab is opened
+      })));
     }
     if (llmsData) setLlms(llmsData);
+  };
+
+  // Load calendar status for all agents (called when Calendar tab is opened)
+  const loadAllAgentCalendarStatus = async () => {
+    if (isDemoMode || agents.length === 0) return;
+    
+    const updatedAgents = await Promise.all(
+      agents.map(async (agent) => {
+        if (agent.hasCalendarFunction !== undefined) return agent; // Already loaded
+        const hasCalendarFunction = await loadAgentCalendarStatus(agent.agent_id);
+        return { ...agent, hasCalendarFunction };
+      })
+    );
+    setAgents(updatedAgents);
   };
 
   const handleRefresh = () => {
