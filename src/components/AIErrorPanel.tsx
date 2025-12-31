@@ -19,7 +19,8 @@ import {
   Bot,
   XCircle
 } from 'lucide-react';
-import { useAIErrorHandler, ErrorRecord } from '@/hooks/useAIErrorHandler';
+import { ErrorRecord } from '@/hooks/useAIErrorHandler';
+import { useAIErrors } from '@/contexts/AIErrorContext';
 import { formatDistanceToNow } from 'date-fns';
 
 const statusColors: Record<ErrorRecord['status'], string> = {
@@ -51,7 +52,7 @@ const AIErrorPanel: React.FC = () => {
     clearAllErrors,
     retryError,
     isProcessing,
-  } = useAIErrorHandler();
+  } = useAIErrors();
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [expandedErrors, setExpandedErrors] = React.useState<Set<string>>(new Set());

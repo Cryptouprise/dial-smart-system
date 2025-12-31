@@ -26,6 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAIErrors } from '@/contexts/AIErrorContext';
 
 interface Campaign {
   id: string;
@@ -76,6 +77,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
+  const { captureError } = useAIErrors();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
@@ -359,8 +361,15 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const handleDeleteCampaign = async (campaignId: string) => {
     if (!userId) return;
     try {
-      // Delete all related data in parallel for speed
+      // Important: call_logs has an FK to campaigns (call_logs_campaign_id_fkey).
+      // Keep call history, but detach it from the campaign so the campaign can be deleted.
       await Promise.all([
+        supabase
+          .from('call_logs')
+          .update({ campaign_id: null })
+          .eq('campaign_id', campaignId)
+          .eq('user_id', userId),
+
         supabase.from('campaign_leads').delete().eq('campaign_id', campaignId),
         supabase.from('dialing_queues').delete().eq('campaign_id', campaignId),
         supabase.from('campaign_phone_pools').delete().eq('campaign_id', campaignId),
@@ -382,15 +391,22 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
         title: "Campaign deleted",
         description: "The campaign has been permanently deleted.",
       });
-      
+
       // Update local state immediately for instant UI feedback
       setCampaigns(prev => prev.filter(c => c.id !== campaignId));
       onRefresh?.();
-    } catch (error) {
-      console.error('Error deleting campaign:', error);
+    } catch (error: any) {
+      await captureError(error instanceof Error ? error : String(error), 'api', {
+        action: 'delete_campaign',
+        campaignId,
+      });
+
+      // Prefix to avoid double-capture via console.error interception
+      console.error('[AI Error Handler] Error deleting campaign:', error);
+
       toast({
         title: "Error",
-        description: "Failed to delete campaign. Please try again.",
+        description: error?.message || "Failed to delete campaign. Please try again.",
         variant: "destructive"
       });
     }

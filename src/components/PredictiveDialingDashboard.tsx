@@ -20,7 +20,7 @@ import { useDemoData } from '@/hooks/useDemoData';
 // Throttle helper to prevent rapid successive calls
 const useThrottledCallback = (callback: () => void, delay: number) => {
   const lastRun = useRef<number>(0);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   return useCallback(() => {
     const now = Date.now();
