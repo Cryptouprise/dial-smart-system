@@ -636,17 +636,8 @@ serve(async (req) => {
 
         if (!availability) {
           // Get the user's actual timezone and current time
-          const userTimeZone = 'America/New_York'; // Default fallback
-          const currentTime = new Date().toLocaleString('en-US', {
-            timeZone: userTimeZone,
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZoneName: 'short'
-          });
+          const userTimeZone = 'UTC'; // Universal default when no config exists
+          const currentTime = formatCurrentTime(userTimeZone);
           
           // Return default business hours if no availability configured
           return new Response(
@@ -661,19 +652,10 @@ serve(async (req) => {
           );
         }
 
-        const timeZone = (availability.timezone as string) || 'America/Chicago';
+        const timeZone = (availability.timezone as string) || 'UTC';
         
         // CRITICAL: Include current date/time in user's timezone in the response
-        const currentTime = new Date().toLocaleString('en-US', {
-          timeZone,
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZoneName: 'short'
-        });
+        const currentTime = formatCurrentTime(timeZone);
         const weeklySchedule =
           typeof availability.weekly_schedule === 'string'
             ? safeJsonParse(availability.weekly_schedule, {})
@@ -713,48 +695,8 @@ serve(async (req) => {
 
         if (integration?.access_token_encrypted) {
           try {
-            let accessToken = atob(integration.access_token_encrypted);
-            
-            // PROACTIVE TOKEN REFRESH: Check if token expires within 10 minutes and refresh if needed
-            const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
-            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
-            
-            if (expiresAt && expiresAt < tenMinutesFromNow && integration.refresh_token_encrypted) {
-              console.log('[Calendar] Token expiring soon, proactively refreshing...');
-              
-              const refreshToken = atob(integration.refresh_token_encrypted);
-              const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-              const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-              
-              const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                  client_id: clientId!,
-                  client_secret: clientSecret!,
-                  refresh_token: refreshToken,
-                  grant_type: 'refresh_token'
-                })
-              });
-              
-              if (refreshResponse.ok) {
-                const tokens = await refreshResponse.json();
-                accessToken = tokens.access_token;
-                
-                // Update stored token
-                await supabase
-                  .from('calendar_integrations')
-                  .update({
-                    access_token_encrypted: btoa(tokens.access_token),
-                    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-                  })
-                  .eq('id', integration.id);
-                
-                console.log('[Calendar] Token refreshed proactively');
-              } else {
-                console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
-              }
-            }
+            // Use helper function to ensure fresh token
+            const accessToken = await ensureFreshGoogleToken(integration, supabase);
             
             const calendarId = integration.calendar_id || 'primary';
 
@@ -1463,48 +1405,8 @@ serve(async (req) => {
 
         if (integration?.access_token_encrypted) {
           try {
-            let accessToken = atob(integration.access_token_encrypted);
-            
-            // PROACTIVE TOKEN REFRESH: Check if token expires within 10 minutes and refresh if needed
-            const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
-            const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
-            
-            if (expiresAt && expiresAt < tenMinutesFromNow && integration.refresh_token_encrypted) {
-              console.log('[Calendar] Token expiring soon, proactively refreshing before booking...');
-              
-              const refreshToken = atob(integration.refresh_token_encrypted);
-              const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-              const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-              
-              const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                  client_id: clientId!,
-                  client_secret: clientSecret!,
-                  refresh_token: refreshToken,
-                  grant_type: 'refresh_token'
-                })
-              });
-              
-              if (refreshResponse.ok) {
-                const tokens = await refreshResponse.json();
-                accessToken = tokens.access_token;
-                
-                // Update stored token
-                await supabase
-                  .from('calendar_integrations')
-                  .update({
-                    access_token_encrypted: btoa(tokens.access_token),
-                    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-                  })
-                  .eq('id', integration.id);
-                
-                console.log('[Calendar] Token refreshed proactively before booking');
-              } else {
-                console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
-              }
-            }
+            // Use helper function to ensure fresh token
+            const accessToken = await ensureFreshGoogleToken(integration, supabase);
             
             const event = {
               summary: title || `Appointment with ${attendee_name || 'Lead'}`,
@@ -1815,8 +1717,69 @@ serve(async (req) => {
   }
 });
 
-// Helper functions
-async function getCalApiKey(supabase: any, userId: string | null): Promise<string | null> {
+// Helper function to proactively refresh Google Calendar token if expiring soon
+async function ensureFreshGoogleToken(integration: any, supabase: any): Promise<string> {
+  let accessToken = atob(integration.access_token_encrypted);
+  
+  // Check if token expires within 10 minutes and refresh if needed
+  const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
+  const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+  
+  if (expiresAt && expiresAt < tenMinutesFromNow && integration.refresh_token_encrypted) {
+    console.log('[Calendar] Token expiring soon, proactively refreshing...');
+    
+    const refreshToken = atob(integration.refresh_token_encrypted);
+    const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+    const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+    
+    const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId!,
+        client_secret: clientSecret!,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token'
+      })
+    });
+    
+    if (refreshResponse.ok) {
+      const tokens = await refreshResponse.json();
+      accessToken = tokens.access_token;
+      
+      // Update stored token
+      await supabase
+        .from('calendar_integrations')
+        .update({
+          access_token_encrypted: btoa(tokens.access_token),
+          token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        })
+        .eq('id', integration.id);
+      
+      console.log('[Calendar] Token refreshed proactively');
+    } else {
+      console.error('[Calendar] Proactive token refresh failed:', await refreshResponse.text());
+    }
+  }
+  
+  return accessToken;
+}
+
+// Helper function to format current time for voice agents
+function formatCurrentTime(timeZone: string): string {
+  return new Date().toLocaleString('en-US', {
+    timeZone,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+}
+
+
   if (!userId) return null;
   const { data } = await supabase
     .from('user_credentials')
