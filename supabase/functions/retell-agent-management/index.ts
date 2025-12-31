@@ -186,10 +186,11 @@ serve(async (req) => {
         console.log(`[Retell Agent] Current agent config:`, JSON.stringify(currentAgent));
         
         // Build the calendar function configuration
+        // CRITICAL: speak_during_execution must be FALSE to prevent agent from guessing while tool runs
         const calendarFunction = {
           type: "custom",
           name: "manage_calendar",
-          description: "Check availability and book/cancel appointments. Always call get_available_slots first before booking.",
+          description: "REQUIRED: You MUST call this function before answering ANY question about time, date, or availability. Do NOT guess or assume - always call this first. The function returns current_time and available_slots.",
           url: CALENDAR_FUNCTION_URL,
           parameters: {
             type: "object",
@@ -197,7 +198,7 @@ serve(async (req) => {
               action: {
                 type: "string",
                 enum: ["get_available_slots", "book_appointment", "cancel_appointment"],
-                description: "The calendar action to perform"
+                description: "The calendar action to perform. Use get_available_slots for ANY time/availability question."
               },
               user_id: {
                 type: "string",
@@ -235,7 +236,7 @@ serve(async (req) => {
             },
             required: ["action", "user_id"]
           },
-          speak_during_execution: true,
+          speak_during_execution: false,
           speak_after_execution: true
         };
         
@@ -294,81 +295,74 @@ serve(async (req) => {
               // Remove old version if present
               let updatedPrompt = currentPrompt.replace(new RegExp(`${oldMarkerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]`, 'g'), '').trim();
 
-              if (!updatedPrompt.includes(markerStart)) {
-                // Get user's timezone for the instructions
-                const { data: availability } = await supabaseClient
-                  .from('calendar_availability')
-                  .select('timezone')
-                  .eq('user_id', userId)
-                  .maybeSingle();
-                
-                const userTimezone = availability?.timezone || 'America/New_York';
-                const currentTime = new Date().toLocaleString('en-US', { 
-                  timeZone: userTimezone,
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  timeZoneName: 'short'
-                });
+              // Always update prompt to ensure latest instructions (remove check for markerStart)
+              // Get user's timezone for the instructions
+              const { data: availability } = await supabaseClient
+                .from('calendar_availability')
+                .select('timezone')
+                .eq('user_id', userId)
+                .maybeSingle();
+              
+              const userTimezone = availability?.timezone || 'America/New_York';
 
-                const calendarToolingBlock = [
-                  markerStart,
-                  'CALENDAR BOOKING RULES (CRITICAL - ALWAYS FOLLOW):',
-                  '1. ALWAYS call manage_calendar with action="get_available_slots" FIRST before mentioning any appointment times.',
-                  '   - The function will return the current_time in the response - use this to know what time it is now.',
-                  '2. NEVER suggest times without checking availability first - you do not know what times are available until you call the function.',
-                  '3. NEVER book appointments in the past - the get_available_slots response includes current_time, so check that first.',
-                  '4. When user requests a specific time, check if it\'s in your available_slots response before confirming.',
-                  '5. If the requested time is not available, politely suggest 2-3 alternatives from the available_slots response.',
-                  '6. After booking, confirm with: "Perfect! I\'ve scheduled your appointment for [DAY] [DATE] at [TIME]."',
-                  '',
-                  'TIMEZONE & DATE AWARENESS:',
-                  `- Your timezone: ${userTimezone}`,
-                  `- IMPORTANT: When you call get_available_slots, the response includes "current_time" - ALWAYS use that to know what time it is now.`,
-                  '- All times you mention must be in this timezone.',
-                  '- When someone asks "what time is it" or "today", call get_available_slots first to get the current_time, then answer.',
-                  '- NEVER book appointments for times that have already passed.',
-                  '- The available_slots returned are ONLY future times that are available - never suggest past times.',
-                  '',
-                  'BOOKING FLOW:',
-                  '1. User asks for an appointment',
-                  '2. Call manage_calendar(action="get_available_slots", user_id="' + userId + '", duration_minutes=30)',
-                  '3. Wait for response with current_time and available_slots array',
-                  '4. Use current_time from response to understand what day and time it is now',
-                  '5. Present 3-5 available times from the available_slots',
-                  '6. User chooses a time',
-                  '7. Call manage_calendar(action="book_appointment", user_id="' + userId + '", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_email="...")',
-                  '8. Confirm the booking with full details',
-                  '',
-                  'EXAMPLE CONVERSATION:',
-                  'User: "What time is it?"',
-                  'You: [Call manage_calendar with get_available_slots to get current_time] "It\'s currently 2:30 PM on Thursday."',
-                  'User: "I need an appointment"',
-                  'You: [Call manage_calendar with get_available_slots] "I have availability at 3 PM, 4 PM, and 5 PM today. Which time works best for you?"',
-                  'User: "3 PM works"',
-                  'You: [Call manage_calendar with book_appointment for 3 PM] "Perfect! I\'ve scheduled your appointment for today at 3 PM."',
-                  '[/CALENDAR_TOOLING_v2]',
-                ].join('\n');
+              // Remove any existing calendar tooling blocks before adding new one
+              updatedPrompt = updatedPrompt
+                .replace(new RegExp(`${markerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v2\\]`, 'g'), '')
+                .trim();
 
-                updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
+              const calendarToolingBlock = [
+                markerStart,
+                '=== MANDATORY CALENDAR RULES (YOU MUST FOLLOW THESE) ===',
+                '',
+                'RULE #1 - NEVER GUESS TIME OR AVAILABILITY:',
+                '- You do NOT know what time it is until you call manage_calendar.',
+                '- You do NOT know what times are available until you call manage_calendar.',
+                '- If you guess or assume, you WILL be wrong. Always call the function FIRST.',
+                '',
+                'RULE #2 - CALL manage_calendar FOR ANY TIME/DATE/AVAILABILITY QUESTION:',
+                '- "What time is it?" → Call manage_calendar(action="get_available_slots") FIRST, then read current_time from response.',
+                '- "Do you have availability?" → Call manage_calendar(action="get_available_slots") FIRST, then read available_slots from response.',
+                '- "Can I book tomorrow at 3pm?" → Call manage_calendar(action="get_available_slots") FIRST, check if 3pm is in available_slots.',
+                '',
+                'RULE #3 - USE THE FUNCTION RESPONSE:',
+                '- current_time: This is the ACTUAL current date and time. Use it to answer time questions.',
+                '- available_slots: This is the list of ACTUAL available times. Only offer these times.',
+                '- If available_slots is empty, say "I don\'t have any openings in the next few days. Would you like to check a different week?"',
+                '- NEVER say "no availability" unless available_slots returned empty.',
+                '',
+                'RULE #4 - WAIT FOR FUNCTION RESULTS:',
+                '- Do NOT speak while the function is executing.',
+                '- Do NOT guess what the results will be.',
+                '- Wait for the function to return, then use those results to respond.',
+                '',
+                `TIMEZONE: ${userTimezone}`,
+                `USER_ID FOR ALL CALLS: ${userId}`,
+                '',
+                'BOOKING FLOW:',
+                `1. Call manage_calendar(action="get_available_slots", user_id="${userId}")`,
+                '2. Read current_time and available_slots from response',
+                '3. Present 2-3 options from available_slots',
+                '4. User picks a time',
+                `5. Call manage_calendar(action="book_appointment", user_id="${userId}", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")`,
+                '6. Confirm booking with full details',
+                '',
+                '=== END CALENDAR RULES ===',
+                '[/CALENDAR_TOOLING_v2]',
+              ].join('\n');
 
-                const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
-                  method: 'PATCH',
-                  headers,
-                  body: JSON.stringify({ general_prompt: updatedPrompt }),
-                });
+              updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
 
-                if (llmUpdateResp.ok) {
-                  llmPromptUpdated = true;
-                } else {
-                  llmPromptUpdateError = await llmUpdateResp.text();
-                }
-              } else {
-                // Already updated previously
+              const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ general_prompt: updatedPrompt }),
+              });
+
+              if (llmUpdateResp.ok) {
                 llmPromptUpdated = true;
+                console.log('[Retell Agent] LLM prompt updated with calendar tooling block');
+              } else {
+                llmPromptUpdateError = await llmUpdateResp.text();
               }
             } else {
               llmPromptUpdateError = await llmGetResp.text();

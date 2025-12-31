@@ -188,7 +188,29 @@ serve(async (req) => {
     // Prefer the lead phone from transfer context / lead snapshot when available.
     const phone = String((lead as any)?.phone_number || fromNumber || '');
 
+    // Generate current time in user's timezone for agent awareness
+    const currentTimeFormatted = new Date().toLocaleString('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    const currentTimeIso = new Date().toISOString();
+    const currentDateYmd = new Date().toLocaleDateString('en-CA', { timeZone: timezone }); // YYYY-MM-DD
+    const currentDayOfWeek = new Date().toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' });
+
     const dynamicVariables: Record<string, string> = {
+      // CRITICAL: Current time variables so agent always knows the date/time
+      current_time: currentTimeFormatted,
+      current_time_iso: currentTimeIso,
+      current_timezone: timezone,
+      current_date_ymd: currentDateYmd,
+      current_day_of_week: currentDayOfWeek,
+
       // Standard variables
       first_name: firstName,
       last_name: lastName,
