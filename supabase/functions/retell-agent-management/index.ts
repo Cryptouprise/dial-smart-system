@@ -286,18 +286,34 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Updating LLM with ${existingTools.length} general_tools`);
         
-        // Update the LLM prompt with calendar instructions
+        // CRITICAL: Preserve the existing prompt and ONLY append/update calendar rules
         const currentPrompt = String(llm?.general_prompt || '');
+        const originalPromptLength = currentPrompt.length;
+        
+        console.log(`[Retell Agent] Original prompt length: ${originalPromptLength} chars`);
+        
         const markerStart = '[CALENDAR_TOOLING_v2]';
         const oldMarkerStart = '[CALENDAR_TOOLING_v1]';
 
-        // Remove old versions if present
-        let updatedPrompt = currentPrompt
-          .replace(new RegExp(`${oldMarkerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]`, 'g'), '')
-          .replace(new RegExp(`${markerStart}[\\s\\S]*?\\[/CALENDAR_TOOLING_v2\\]`, 'g'), '')
+        // Remove old versions if present - use non-greedy matching to be safe
+        let basePrompt = currentPrompt
+          .replace(new RegExp(`\\n*${oldMarkerStart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?\\[/CALENDAR_TOOLING_v1\\]\\n*`, 'g'), '')
+          .replace(new RegExp(`\\n*${markerStart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?\\[/CALENDAR_TOOLING_v2\\]\\n*`, 'g'), '')
           .trim();
+        
+        console.log(`[Retell Agent] Base prompt after removing old calendar blocks: ${basePrompt.length} chars`);
+        
+        // Safety check: if somehow base prompt is way shorter, something went wrong
+        // The calendar block is typically ~1500 chars, so allow for that margin
+        if (originalPromptLength > 500 && basePrompt.length < originalPromptLength * 0.3) {
+          console.error(`[Retell Agent] WARNING: Prompt shrunk dramatically! Original: ${originalPromptLength}, After: ${basePrompt.length}`);
+          // Use original prompt without any replacements as a safety fallback
+          basePrompt = currentPrompt;
+          console.log(`[Retell Agent] Using original prompt as fallback`);
+        }
 
         const calendarToolingBlock = [
+          '',
           markerStart,
           '=== MANDATORY CALENDAR RULES (YOU MUST FOLLOW THESE) ===',
           '',
@@ -323,21 +339,23 @@ serve(async (req) => {
           '- Wait for the function to return, then use those results to respond.',
           '',
           `TIMEZONE: ${userTimezone}`,
-          `USER_ID FOR ALL CALLS: ${userId}`,
           '',
           'BOOKING FLOW:',
-          `1. Call manage_calendar(action="get_available_slots", user_id="${userId}")`,
+          '1. Call manage_calendar(action="get_available_slots")',
           '2. Read current_time and available_slots from response',
           '3. Present 2-3 options from available_slots',
           '4. User picks a time',
-          `5. Call manage_calendar(action="book_appointment", user_id="${userId}", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")`,
+          '5. Call manage_calendar(action="book_appointment", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")',
           '6. Confirm booking with full details',
           '',
           '=== END CALENDAR RULES ===',
           '[/CALENDAR_TOOLING_v2]',
         ].join('\n');
 
-        updatedPrompt = `${updatedPrompt}\n\n${calendarToolingBlock}`.trim();
+        // Append calendar block to the preserved base prompt
+        const updatedPrompt = `${basePrompt}\n${calendarToolingBlock}`.trim();
+        
+        console.log(`[Retell Agent] Final prompt length: ${updatedPrompt.length} chars (base: ${basePrompt.length} + calendar block)`);
         
         // Update the LLM with both the tool AND the prompt
         const llmUpdateResp = await fetch(`${baseUrl}/update-retell-llm/${agentLlmId}`, {
