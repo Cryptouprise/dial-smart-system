@@ -1779,7 +1779,8 @@ function formatCurrentTime(timeZone: string): string {
   });
 }
 
-
+// Helper functions
+async function getCalApiKey(supabase: any, userId: string | null): Promise<string | null> {
   if (!userId) return null;
   const { data } = await supabase
     .from('user_credentials')
