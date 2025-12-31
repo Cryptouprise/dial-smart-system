@@ -208,11 +208,14 @@ serve(async (req) => {
         
         // Build the calendar function configuration for LLM general_tools
         // CRITICAL: This MUST be added to the LLM's general_tools, NOT the agent's functions
+        // EMBED user_id directly in the URL so the model doesn't need to remember it
+        const calendarToolUrl = `${CALENDAR_FUNCTION_URL}?user_id=${userId}`;
+        
         const calendarTool = {
           type: "custom",
           name: "manage_calendar",
           description: "REQUIRED: You MUST call this function before answering ANY question about time, date, or availability. Do NOT guess or assume - always call this first. The function returns current_time and available_slots.",
-          url: CALENDAR_FUNCTION_URL,
+          url: calendarToolUrl,
           parameters: {
             type: "object",
             properties: {
@@ -221,18 +224,13 @@ serve(async (req) => {
                 enum: ["get_available_slots", "book_appointment", "cancel_appointment"],
                 description: "The calendar action to perform. Use get_available_slots for ANY time/availability question."
               },
-              user_id: {
-                type: "string",
-                description: `The user ID for calendar operations. Always use: ${userId}`,
-                default: userId
-              },
               date: {
                 type: "string",
-                description: "Date in YYYY-MM-DD format"
+                description: "Date in YYYY-MM-DD format (optional, defaults to today)"
               },
               time: {
                 type: "string",
-                description: "Time in HH:MM format (24-hour)"
+                description: "Time in HH:MM format (24-hour) - required for booking"
               },
               duration_minutes: {
                 type: "number",
@@ -244,7 +242,7 @@ serve(async (req) => {
               },
               attendee_email: {
                 type: "string",
-                description: "Email of the person booking"
+                description: "Email of the person booking (optional)"
               },
               attendee_phone: {
                 type: "string",
@@ -255,12 +253,13 @@ serve(async (req) => {
                 description: "Meeting title/subject"
               }
             },
-            required: ["action", "user_id"]
+            required: ["action"]
           },
           speak_during_execution: false,
-          speak_after_execution: true,
-          execution_message_description: "Checking calendar availability..."
+          speak_after_execution: true
         };
+        
+        console.log(`[Retell Agent] Calendar tool URL: ${calendarToolUrl}`);
         
         // Get current LLM config
         const llmGetResp = await fetch(`${baseUrl}/get-retell-llm/${agentLlmId}`, {

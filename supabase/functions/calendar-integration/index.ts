@@ -36,6 +36,9 @@ serve(async (req) => {
     let action: string;
     let params: Record<string, any> = {};
 
+    // Check for user_id in URL query string (for Retell tool calls)
+    const urlUserId = url.searchParams.get('user_id');
+
     if (req.method === 'GET') {
       action = url.searchParams.get('action') || '';
       url.searchParams.forEach((value, key) => {
@@ -43,12 +46,50 @@ serve(async (req) => {
       });
     } else {
       const body = await req.json();
-      action = body.action;
-      params = body;
-      delete params.action;
+      
+      // ROBUST PAYLOAD PARSING for Retell custom function calls
+      // Retell may send: { action, ... }, { arguments: {...} }, { params: {...} }, or just {}
+      const receivedKeys = Object.keys(body || {});
+      const hasArguments = 'arguments' in body;
+      const hasParams = 'params' in body;
+      const hasAction = 'action' in body;
+      
+      console.log(`[Calendar] Received body keys: ${receivedKeys.join(', ')}, hasArguments: ${hasArguments}, hasParams: ${hasParams}, hasAction: ${hasAction}`);
+      
+      // Extract the actual parameters
+      if (hasArguments && typeof body.arguments === 'object') {
+        // Retell sends { arguments: { action, user_id, ... } }
+        params = body.arguments;
+        action = params.action || 'get_available_slots';
+        delete params.action;
+      } else if (hasParams && typeof body.params === 'object') {
+        // Alternative format: { params: { action, user_id, ... } }
+        params = body.params;
+        action = params.action || 'get_available_slots';
+        delete params.action;
+      } else if (hasAction) {
+        // Standard format: { action, user_id, ... }
+        action = body.action;
+        params = { ...body };
+        delete params.action;
+      } else {
+        // No action specified - default to get_available_slots (most common Retell call)
+        action = 'get_available_slots';
+        params = { ...body };
+      }
+      
+      // Apply URL user_id if not in params
+      if (urlUserId && !params.user_id) {
+        params.user_id = urlUserId;
+      }
+    }
+    
+    // Final fallback: if still no user_id, check URL
+    if (!params.user_id && urlUserId) {
+      params.user_id = urlUserId;
     }
 
-    console.log(`Calendar integration action: ${action}`);
+    console.log(`Calendar integration action: ${action}, targetUserId: ${params.user_id || userId || 'none'}`);
 
     switch (action) {
       case 'check_token_status': {

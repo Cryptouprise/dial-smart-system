@@ -210,6 +210,9 @@ serve(async (req) => {
       current_timezone: timezone,
       current_date_ymd: currentDateYmd,
       current_day_of_week: currentDayOfWeek,
+      // Aliases for user convenience (same as current_time variants)
+      current_datetime: currentTimeFormatted,
+      current_datetime_iso: currentTimeIso,
 
       // Standard variables
       first_name: firstName,
