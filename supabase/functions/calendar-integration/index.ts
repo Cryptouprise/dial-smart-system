@@ -1364,17 +1364,47 @@ serve(async (req) => {
 
       // NOTE: get_available_slots is handled above (primary handler that works for both JWT auth and Retell calls)
 
+      case 'create_appointment':
+      case 'createAppointment':
+      case 'schedule_appointment':
       case 'book_appointment': {
-        const { date, time, duration_minutes, attendee_name, attendee_email, title, user_id: paramUserId } = params;
+        const {
+          date: rawDate,
+          time: rawTime,
+          start_time,
+          end_time,
+          startTime: startTimeParam,
+          endTime: endTimeParam,
+          duration_minutes,
+          attendee_name,
+          attendee_email,
+          name,
+          email,
+          title,
+          user_id: paramUserId,
+        } = params;
+
+        const attendeeName = attendee_name || name;
+        const attendeeEmail = attendee_email || email;
+        const startIso = start_time || startTimeParam;
+        const endIso = end_time || endTimeParam;
+
         const targetUserId = paramUserId || userId || '5969774f-5340-4e4f-8517-bcc89fa6b1eb';
 
-        console.log('[Calendar] book_appointment called:', { date, time, attendee_name, targetUserId });
+        console.log('[Calendar] book_appointment called:', {
+          rawDate,
+          rawTime,
+          startIsoPresent: !!startIso,
+          attendeeName,
+          targetUserId,
+        });
 
-        if (!date || !time) {
+        if ((!rawDate || !rawTime) && !startIso) {
           return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "I need the date and time to book the appointment. What date and time works for you?" 
+            JSON.stringify({
+              success: false,
+              message:
+                "I need a date and time to book the appointment. What date and time works for you?",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1390,52 +1420,94 @@ serve(async (req) => {
         const userTimezone = availability?.timezone || 'America/New_York';
         console.log('[Calendar] Using timezone:', userTimezone);
 
-        // Parse date and time
-        let hours: number, minutes: number;
-        if (time.includes(':')) {
-          [hours, minutes] = time.split(':').map(Number);
-        } else {
-          // Handle "2 PM", "10 AM" format
-          const timeMatch = time.match(/(\d+)(?::(\d+))?\s*(am|pm)?/i);
-          if (timeMatch) {
-            hours = parseInt(timeMatch[1]);
-            minutes = parseInt(timeMatch[2] || '0');
-            if (timeMatch[3]?.toLowerCase() === 'pm' && hours < 12) hours += 12;
-            if (timeMatch[3]?.toLowerCase() === 'am' && hours === 12) hours = 0;
-          } else {
+        const duration = duration_minutes || 30;
+        const date = rawDate || (startIso ? new Date(startIso).toISOString().split('T')[0] : undefined);
+        const time = rawTime;
+
+        let appointmentTime: Date;
+        let endTime: Date;
+
+        if (startIso) {
+          appointmentTime = new Date(startIso);
+          if (Number.isNaN(appointmentTime.getTime())) {
             return new Response(
-              JSON.stringify({ 
-                success: false, 
-                message: "I couldn't understand that time. Could you say it like '2 PM' or '10:30 AM'?" 
+              JSON.stringify({
+                success: false,
+                message:
+                  "I couldn't understand that appointment time. Could you tell me the date and time again?",
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
-        }
 
-        const appointmentTime = new Date(date);
-        appointmentTime.setHours(hours, minutes, 0, 0);
+          if (endIso) {
+            endTime = new Date(endIso);
+            if (Number.isNaN(endTime.getTime())) {
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  message:
+                    "I couldn't understand the end time for that appointment. What time should it end?",
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          } else {
+            endTime = new Date(appointmentTime.getTime() + duration * 60000);
+          }
+        } else {
+          // Parse date and time
+          let hours: number, minutes: number;
+          if ((time || '').includes(':')) {
+            [hours, minutes] = (time || '').split(':').map(Number);
+          } else {
+            // Handle "2 PM", "10 AM" format
+            const timeMatch = (time || '').match(/(\d+)(?::(\d+))?\s*(am|pm)?/i);
+            if (timeMatch) {
+              hours = parseInt(timeMatch[1]);
+              minutes = parseInt(timeMatch[2] || '0');
+              if (timeMatch[3]?.toLowerCase() === 'pm' && hours < 12) hours += 12;
+              if (timeMatch[3]?.toLowerCase() === 'am' && hours === 12) hours = 0;
+            } else {
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  message:
+                    "I couldn't understand that time. Could you say it like '2 PM' or '10:30 AM'?",
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+
+          appointmentTime = new Date(date as string);
+          appointmentTime.setHours(hours, minutes, 0, 0);
+          endTime = new Date(appointmentTime.getTime() + duration * 60000);
+        }
 
         // CRITICAL: Validate appointment is not in the past
         const now = new Date();
         const currentTimeInUserTz = new Date(now.toLocaleString('en-US', { timeZone: userTimezone }));
-        const appointmentTimeInUserTz = new Date(appointmentTime.toLocaleString('en-US', { timeZone: userTimezone }));
-        
+        const appointmentTimeInUserTz = new Date(
+          appointmentTime.toLocaleString('en-US', { timeZone: userTimezone })
+        );
+
         console.log('[Calendar] Time validation - Now:', currentTimeInUserTz, 'Appointment:', appointmentTimeInUserTz);
 
         if (appointmentTime <= now) {
           console.log('[Calendar] Rejected past appointment:', appointmentTime, 'vs now:', now);
           return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "That time has already passed. Let me check what times I have available today or tomorrow. When would you prefer - morning or afternoon?" 
+            JSON.stringify({
+              success: false,
+              message:
+                'That time has already passed. Let me check what times I have available today or tomorrow. When would you prefer - morning or afternoon?',
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
         // Check for conflicts with existing appointments
-        const appointmentDate = date.split('T')[0]; // Get YYYY-MM-DD
+        const appointmentDate = (date || appointmentTime.toISOString()).split('T')[0]; // Get YYYY-MM-DD
         const { data: existingAppts } = await supabase
           .from('calendar_appointments')
           .select('*')
@@ -1445,24 +1517,24 @@ serve(async (req) => {
           .in('status', ['confirmed', 'scheduled']);
 
         // Check for time conflicts
-        const duration = duration_minutes || 30;
-        const endTime = new Date(appointmentTime.getTime() + duration * 60000);
-        
-        const hasConflict = existingAppts?.some(appt => {
+        const hasConflict = existingAppts?.some((appt) => {
           const apptStart = new Date(appt.start_time);
           const apptEnd = new Date(appt.end_time);
           // Check if appointment overlaps
-          return (appointmentTime >= apptStart && appointmentTime < apptEnd) ||
-                 (endTime > apptStart && endTime <= apptEnd) ||
-                 (appointmentTime <= apptStart && endTime >= apptEnd);
+          return (
+            (appointmentTime >= apptStart && appointmentTime < apptEnd) ||
+            (endTime > apptStart && endTime <= apptEnd) ||
+            (appointmentTime <= apptStart && endTime >= apptEnd)
+          );
         });
 
         if (hasConflict) {
           console.log('[Calendar] Time slot conflict detected');
           return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "I'm sorry, that time slot is no longer available. Would you like me to check what other times I have open today?" 
+            JSON.stringify({
+              success: false,
+              message:
+                "I'm sorry, that time slot is no longer available. Would you like me to check what other times I have open today?",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1470,7 +1542,7 @@ serve(async (req) => {
 
         // Try to sync with Google Calendar if connected
         let googleEventId: string | null = null;
-        
+
         const { data: integration } = await supabase
           .from('calendar_integrations')
           .select('*')
@@ -1482,13 +1554,13 @@ serve(async (req) => {
           try {
             // Use helper function to ensure fresh token
             const accessToken = await ensureFreshGoogleToken(integration, supabase);
-            
+
             const event = {
-              summary: title || `Appointment with ${attendee_name || 'Lead'}`,
-              description: `Booked via AI Dialer\nAttendee: ${attendee_name || 'Unknown'}\nEmail: ${attendee_email || 'Not provided'}`,
+              summary: title || `Appointment with ${attendeeName || 'Lead'}`,
+              description: `Booked via AI Dialer\nAttendee: ${attendeeName || 'Unknown'}\nEmail: ${attendeeEmail || 'Not provided'}`,
               start: { dateTime: appointmentTime.toISOString(), timeZone: userTimezone },
               end: { dateTime: endTime.toISOString(), timeZone: userTimezone },
-              attendees: attendee_email ? [{ email: attendee_email }] : []
+              attendees: attendeeEmail ? [{ email: attendeeEmail }] : [],
             };
 
             const calendarId = integration.calendar_id || 'primary';
@@ -1496,8 +1568,8 @@ serve(async (req) => {
               `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`,
               {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(event)
+                headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(event),
               }
             );
 
@@ -1507,7 +1579,11 @@ serve(async (req) => {
               console.log('[Calendar] Google event created:', googleEventId);
             } else {
               const errorText = await createResponse.text();
-              console.error('[Calendar] Google Calendar creation failed:', createResponse.status, errorText);
+              console.error(
+                '[Calendar] Google Calendar creation failed:',
+                createResponse.status,
+                errorText
+              );
             }
           } catch (error) {
             console.error('[Calendar] Google Calendar error:', error);
@@ -1515,23 +1591,27 @@ serve(async (req) => {
         }
 
         // Always save to our local appointments table
-        const { data: appt, error } = await supabase.from('calendar_appointments').insert({
-          user_id: targetUserId,
-          title: title || `Appointment with ${attendee_name || 'Lead'}`,
-          start_time: appointmentTime.toISOString(),
-          end_time: endTime.toISOString(),
-          google_event_id: googleEventId,
-          status: 'confirmed',
-          timezone: userTimezone,
-          metadata: { attendee_name, attendee_email, source: 'retell_ai' }
-        }).select().single();
+        const { data: appt, error } = await supabase
+          .from('calendar_appointments')
+          .insert({
+            user_id: targetUserId,
+            title: title || `Appointment with ${attendeeName || 'Lead'}`,
+            start_time: appointmentTime.toISOString(),
+            end_time: endTime.toISOString(),
+            google_event_id: googleEventId,
+            status: 'confirmed',
+            timezone: userTimezone,
+            metadata: { attendee_name: attendeeName, attendee_email: attendeeEmail, source: 'retell_ai' },
+          })
+          .select()
+          .single();
 
         if (error) {
           console.error('[Calendar] Error saving appointment:', error);
           return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "I had trouble booking that appointment. Let me try again. What time works for you?" 
+            JSON.stringify({
+              success: false,
+              message: 'I had trouble booking that appointment. Let me try again. What time works for you?',
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1544,7 +1624,7 @@ serve(async (req) => {
             success: true,
             appointment_id: appt?.id,
             event_id: googleEventId,
-            message: `Perfect! I've booked your appointment for ${formatTimeForVoice(appointmentTime)}. ${attendee_email ? `You should receive a confirmation at ${attendee_email}.` : 'Looking forward to speaking with you!'}`
+            message: `Perfect! I've booked your appointment for ${formatTimeForVoice(appointmentTime, userTimezone)}. ${attendeeEmail ? `You should receive a confirmation at ${attendeeEmail}.` : 'Looking forward to speaking with you!'}`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
