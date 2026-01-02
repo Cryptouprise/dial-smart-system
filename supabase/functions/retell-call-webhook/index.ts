@@ -131,27 +131,37 @@ serve(async (req) => {
       
       let lead: any = null;
       
-      if (userId && callerFormats.length > 0) {
-        // Look up lead by caller's phone number - handle duplicates by preferring leads with names
-        // Try exact matches first, then partial
-        const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
-        
-        const { data: leads, error: leadError } = await supabase
+      const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
+      
+      if (callerFormats.length > 0) {
+        // Look up lead by caller's phone number
+        // If we have userId, filter by it; otherwise search all leads
+        let query = supabase
           .from('leads')
-          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code')
-          .eq('user_id', userId)
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
           .or(`phone_number.ilike.%${last10}`)
           .order('updated_at', { ascending: false })
           .limit(10);
+        
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+        
+        const { data: leads, error: leadError } = await query;
         
         if (leadError) {
           console.error('[Retell Webhook] Lead lookup error:', leadError);
         } else if (leads && leads.length > 0) {
           // Prefer leads with first_name populated
           lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
+          // If we didn't have userId, get it from the lead
+          if (!userId && lead.user_id) {
+            userId = lead.user_id;
+            console.log('[Retell Webhook] Got userId from lead:', userId);
+          }
           console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
         } else {
-          console.log('[Retell Webhook] No lead found for caller formats:', callerFormats);
+          console.log('[Retell Webhook] No lead found for caller:', callerNumber);
         }
       }
       
