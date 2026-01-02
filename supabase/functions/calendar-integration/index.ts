@@ -1420,14 +1420,19 @@ serve(async (req) => {
           );
         }
 
-        // Get user's timezone from their settings
+        // Get user's timezone + weekly schedule from their settings
         const { data: availability } = await supabase
           .from('calendar_availability')
-          .select('timezone')
+          .select('timezone, weekly_schedule')
           .eq('user_id', targetUserId)
           .maybeSingle();
 
-        const userTimezone = availability?.timezone || 'America/New_York';
+        const userTimezone = (availability?.timezone as string) || 'America/New_York';
+        const weeklySchedule =
+          typeof availability?.weekly_schedule === 'string'
+            ? safeJsonParse<Record<string, any[]>>(availability.weekly_schedule, {})
+            : (availability?.weekly_schedule as Record<string, any[]> | null) || {};
+
         console.log('[Calendar] Using timezone:', userTimezone);
 
         const duration = duration_minutes || 30;
@@ -1442,16 +1447,37 @@ serve(async (req) => {
             typeof startIso === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(startIso);
 
           if (isBareIsoLocal) {
-            // Interpret bare ISO as *local time in the user's timezone* (Retell often omits the offset)
+            // Retell sometimes provides a datetime without timezone ("YYYY-MM-DDTHH:mm:ss").
+            // That string is ambiguous: it could be a wall-clock time in the user's timezone OR a UTC time copied from slots.
+            // Disambiguate by picking the interpretation that falls inside the user's configured weekly schedule.
             const [datePart, timePart] = startIso.split('T');
             const [y, m, d] = datePart.split('-').map(Number);
             const [hh, mm, ss = '0'] = timePart.split(':');
+            const ymd = datePart;
+            const hm = `${hh}:${mm}`;
 
-            const utcGuess = new Date(Date.UTC(y, m - 1, d, Number(hh), Number(mm), Number(ss)));
-            const tzDateStr = utcGuess.toLocaleString('en-US', { timeZone: userTimezone });
-            const tzDate = new Date(tzDateStr);
-            const offsetMs = utcGuess.getTime() - tzDate.getTime();
-            appointmentTime = new Date(utcGuess.getTime() + offsetMs);
+            const candidateAssumeUtc = new Date(Date.UTC(y, m - 1, d, Number(hh), Number(mm), Number(ss)));
+            const candidateAssumeLocal = (() => {
+              const base = zonedLocalToUtc(ymd, hm, userTimezone);
+              const withSeconds = new Date(base.getTime());
+              withSeconds.setUTCSeconds(Number(ss), 0);
+              return withSeconds;
+            })();
+
+            const inScheduleUtc = isWithinWeeklySchedule(candidateAssumeUtc, userTimezone, weeklySchedule);
+            const inScheduleLocal = isWithinWeeklySchedule(candidateAssumeLocal, userTimezone, weeklySchedule);
+
+            // Prefer the candidate that's inside schedule; default to local if both/none match.
+            appointmentTime = inScheduleUtc && !inScheduleLocal ? candidateAssumeUtc : candidateAssumeLocal;
+
+            console.log('[Calendar] Parsed bare ISO time:', {
+              startIso,
+              picked: appointmentTime.toISOString(),
+              pickedInterpretation: inScheduleUtc && !inScheduleLocal ? 'assume_utc' : 'assume_user_timezone',
+              inScheduleUtc,
+              inScheduleLocal,
+              userTimezone,
+            });
           } else {
             appointmentTime = new Date(startIso);
           }
@@ -1657,96 +1683,429 @@ serve(async (req) => {
         );
       }
 
-      case 'cancel_appointment': {
-        const { event_id, date, time } = requestBody;
+      case 'cancel_appointment':
+      case 'cancelAppointment':
+      case 'delete_appointment': {
+        const {
+          appointment_id,
+          id,
+          event_id,
+          google_event_id,
+          user_id: paramUserId,
+          date,
+          time,
+        } = params;
 
-        // Get user's Google Calendar integration
-        const { data: integrations } = await supabase
-          .from('calendar_integrations')
-          .select('*')
-          .eq('provider', 'google')
-          .limit(1);
+        const targetUserId = paramUserId || userId;
 
-        if (!integrations || integrations.length === 0) {
+        if (!targetUserId) {
           return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "Calendar is not connected." 
+            JSON.stringify({
+              success: false,
+              message: "I can't access the calendar right now. Which user should I book for?",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const integration = integrations[0];
-        const accessToken = atob(integration.access_token_encrypted);
-        const calendarId = integration.calendar_id || 'primary';
+        // Get timezone for interpreting any date/time the caller provides
+        const { data: tzRow } = await supabase
+          .from('calendar_availability')
+          .select('timezone')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+        const userTimezone = (tzRow?.timezone as string) || 'UTC';
 
-        let eventIdToCancel = event_id;
+        const appointmentId = appointment_id || id;
+        const eventIdParam = event_id || google_event_id;
 
-        // If no event_id, try to find by date/time
-        if (!eventIdToCancel && date && time) {
-          const [hours, minutes] = time.split(':').map(Number);
-          const searchTime = new Date(date);
-          searchTime.setHours(hours, minutes, 0, 0);
-          
-          const timeMin = new Date(searchTime.getTime() - 5 * 60000);
-          const timeMax = new Date(searchTime.getTime() + 5 * 60000);
+        // If no specific appointment is provided, we may have multiple upcoming appointments.
+        if (!appointmentId && !eventIdParam && !(date && time)) {
+          const { data: upcoming } = await supabase
+            .from('calendar_appointments')
+            .select('id, title, start_time, google_event_id, timezone, status')
+            .eq('user_id', targetUserId)
+            .neq('status', 'cancelled')
+            .gte('start_time', new Date().toISOString())
+            .order('start_time', { ascending: true })
+            .limit(3);
 
-          const eventsResponse = await fetch(
-            `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
-            `timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}&singleEvents=true`,
-            {
-              headers: { 'Authorization': `Bearer ${accessToken}` }
-            }
+          if (!upcoming || upcoming.length === 0) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                message: "I don't see any upcoming appointments to cancel.",
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          if (upcoming.length > 1) {
+            const options = upcoming
+              .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`)
+              .join('; ');
+
+            return new Response(
+              JSON.stringify({
+                success: false,
+                appointments: upcoming.map((a) => ({
+                  appointment_id: a.id,
+                  title: a.title,
+                  start_time: a.start_time,
+                  timezone: a.timezone || userTimezone,
+                })),
+                message: `I found multiple upcoming appointments. Which one should I cancel? ${options}`,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Only one upcoming appointment — cancel it.
+          const only = upcoming[0];
+          params.appointment_id = only.id;
+        }
+
+        // Find the appointment record
+        let appointment: any = null;
+
+        if (appointmentId) {
+          const { data } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('id', appointmentId)
+            .maybeSingle();
+          appointment = data;
+        } else if (eventIdParam) {
+          const { data } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('google_event_id', eventIdParam)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          appointment = data;
+        } else if (date && time) {
+          const minutes = parseTimeToMinutes(String(time));
+          if (minutes == null || !isYmd(String(date))) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                message: "I couldn't understand that date/time. Can you repeat the appointment date and time?",
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+          const mm = String(minutes % 60).padStart(2, '0');
+          const targetUtc = zonedLocalToUtc(String(date), `${hh}:${mm}`, userTimezone);
+
+          const windowStart = new Date(targetUtc.getTime() - 2 * 60 * 60 * 1000).toISOString();
+          const windowEnd = new Date(targetUtc.getTime() + 2 * 60 * 60 * 1000).toISOString();
+
+          const { data } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .neq('status', 'cancelled')
+            .gte('start_time', windowStart)
+            .lte('start_time', windowEnd)
+            .order('start_time', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          appointment = data;
+        }
+
+        if (!appointment) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              message: "I couldn't find that appointment. If you tell me the date and time, I can cancel it.",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
+        }
 
-          if (eventsResponse.ok) {
-            const eventsData = await eventsResponse.json();
-            if (eventsData.items && eventsData.items.length > 0) {
-              eventIdToCancel = eventsData.items[0].id;
+        // Try to cancel in Google Calendar (if linked)
+        if (appointment.google_event_id) {
+          const { data: integration } = await supabase
+            .from('calendar_integrations')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('provider', 'google')
+            .maybeSingle();
+
+          if (integration?.access_token_encrypted) {
+            try {
+              const accessToken = await ensureFreshGoogleToken(integration, supabase);
+              const calendarId = integration.calendar_id || 'primary';
+
+              const deleteResponse = await fetch(
+                `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${appointment.google_event_id}?sendUpdates=all`,
+                { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
+              );
+
+              if (!deleteResponse.ok && deleteResponse.status !== 204 && deleteResponse.status !== 404) {
+                const errorText = await deleteResponse.text();
+                console.error('[Calendar] Google cancel failed:', deleteResponse.status, errorText);
+              }
+            } catch (e) {
+              console.error('[Calendar] Google cancel error:', e);
             }
           }
         }
 
-        if (!eventIdToCancel) {
-          return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "I couldn't find that appointment. Can you confirm the date and time?" 
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Delete the event
-        const deleteResponse = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventIdToCancel}`,
-          {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          }
-        );
-
-        if (!deleteResponse.ok && deleteResponse.status !== 204) {
-          return new Response(
-            JSON.stringify({ 
-              success: false, 
-              message: "I wasn't able to cancel that appointment. Please try again." 
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Update our appointments table
         await supabase
           .from('calendar_appointments')
           .update({ status: 'cancelled' })
-          .eq('google_event_id', eventIdToCancel);
+          .eq('user_id', targetUserId)
+          .eq('id', appointment.id);
 
         return new Response(
           JSON.stringify({
             success: true,
-            message: "Done! I've cancelled that appointment for you."
+            appointment_id: appointment.id,
+            event_id: appointment.google_event_id,
+            message: `Done — I cancelled ${appointment.title || 'the appointment'} scheduled for ${formatTimeForVoice(new Date(appointment.start_time), appointment.timezone || userTimezone)}.`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'reschedule_appointment':
+      case 'rescheduleAppointment':
+      case 'update_appointment': {
+        const {
+          appointment_id,
+          id,
+          event_id,
+          google_event_id,
+          user_id: paramUserId,
+
+          // new time fields
+          date,
+          time,
+          new_date,
+          new_time,
+          start_time,
+          end_time,
+          startTime,
+          endTime,
+          duration_minutes,
+        } = params;
+
+        const targetUserId = paramUserId || userId;
+
+        if (!targetUserId) {
+          return new Response(
+            JSON.stringify({ success: false, message: "I can't access the calendar right now." }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Load timezone + schedule for disambiguation
+        const { data: availability } = await supabase
+          .from('calendar_availability')
+          .select('timezone, weekly_schedule')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        const userTimezone = (availability?.timezone as string) || 'UTC';
+        const weeklySchedule =
+          typeof availability?.weekly_schedule === 'string'
+            ? safeJsonParse<Record<string, any[]>>(availability.weekly_schedule, {})
+            : (availability?.weekly_schedule as Record<string, any[]> | null) || {};
+
+        // Identify appointment
+        const appointmentId = appointment_id || id;
+        const eventIdParam = event_id || google_event_id;
+
+        let appointment: any = null;
+        if (appointmentId) {
+          const { data } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('id', appointmentId)
+            .maybeSingle();
+          appointment = data;
+        } else if (eventIdParam) {
+          const { data } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('google_event_id', eventIdParam)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          appointment = data;
+        } else {
+          const { data: upcoming } = await supabase
+            .from('calendar_appointments')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .neq('status', 'cancelled')
+            .gte('start_time', new Date().toISOString())
+            .order('start_time', { ascending: true })
+            .limit(3);
+
+          if (!upcoming || upcoming.length === 0) {
+            return new Response(
+              JSON.stringify({ success: false, message: "I don't see any upcoming appointments to reschedule." }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          if (upcoming.length > 1) {
+            const options = upcoming
+              .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`)
+              .join('; ');
+
+            return new Response(
+              JSON.stringify({
+                success: false,
+                appointments: upcoming.map((a) => ({
+                  appointment_id: a.id,
+                  title: a.title,
+                  start_time: a.start_time,
+                  timezone: a.timezone || userTimezone,
+                })),
+                message: `I found multiple upcoming appointments. Which one should I reschedule? ${options}`,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          appointment = upcoming[0];
+        }
+
+        if (!appointment) {
+          return new Response(
+            JSON.stringify({ success: false, message: "I couldn't find that appointment to reschedule." }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const duration = Number(duration_minutes || 30);
+
+        const rawDate = new_date || date;
+        const rawTime = new_time || time;
+        const startIso = start_time || startTime;
+        const endIso = end_time || endTime;
+        const inferredStartIsoFromRawTime =
+          typeof rawTime === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(rawTime)
+            ? rawTime
+            : null;
+
+        let newStart: Date | null = null;
+        let newEnd: Date | null = null;
+
+        const chosenStartIso = startIso || inferredStartIsoFromRawTime;
+
+        if (chosenStartIso) {
+          const isBare = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(chosenStartIso);
+          if (isBare) {
+            const [datePart, timePart] = chosenStartIso.split('T');
+            const [y, m, d] = datePart.split('-').map(Number);
+            const [hh, mm, ss = '0'] = timePart.split(':');
+            const hm = `${hh}:${mm}`;
+
+            const candidateAssumeUtc = new Date(Date.UTC(y, m - 1, d, Number(hh), Number(mm), Number(ss)));
+            const candidateAssumeLocal = (() => {
+              const base = zonedLocalToUtc(datePart, hm, userTimezone);
+              const withSeconds = new Date(base.getTime());
+              withSeconds.setUTCSeconds(Number(ss), 0);
+              return withSeconds;
+            })();
+
+            const inScheduleUtc = isWithinWeeklySchedule(candidateAssumeUtc, userTimezone, weeklySchedule);
+            const inScheduleLocal = isWithinWeeklySchedule(candidateAssumeLocal, userTimezone, weeklySchedule);
+            newStart = inScheduleUtc && !inScheduleLocal ? candidateAssumeUtc : candidateAssumeLocal;
+          } else {
+            newStart = new Date(chosenStartIso);
+          }
+        } else if (rawDate && rawTime && isYmd(String(rawDate))) {
+          const minutes = parseTimeToMinutes(String(rawTime));
+          if (minutes != null) {
+            const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+            const mm = String(minutes % 60).padStart(2, '0');
+            newStart = zonedLocalToUtc(String(rawDate), `${hh}:${mm}`, userTimezone);
+          }
+        }
+
+        if (!newStart || Number.isNaN(newStart.getTime())) {
+          return new Response(
+            JSON.stringify({ success: false, message: "What date and time would you like to move it to?" }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (endIso) {
+          newEnd = new Date(endIso);
+          if (Number.isNaN(newEnd.getTime())) newEnd = null;
+        }
+        if (!newEnd) {
+          newEnd = new Date(newStart.getTime() + duration * 60_000);
+        }
+
+        // Update Google event if linked
+        if (appointment.google_event_id) {
+          const { data: integration } = await supabase
+            .from('calendar_integrations')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('provider', 'google')
+            .maybeSingle();
+
+          if (integration?.access_token_encrypted) {
+            try {
+              const accessToken = await ensureFreshGoogleToken(integration, supabase);
+              const calendarId = integration.calendar_id || 'primary';
+
+              const patchBody = {
+                start: { dateTime: newStart.toISOString(), timeZone: userTimezone },
+                end: { dateTime: newEnd.toISOString(), timeZone: userTimezone },
+              };
+
+              const patchResp = await fetch(
+                `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${appointment.google_event_id}?sendUpdates=all`,
+                {
+                  method: 'PATCH',
+                  headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(patchBody),
+                }
+              );
+
+              if (!patchResp.ok) {
+                const errorText = await patchResp.text();
+                console.error('[Calendar] Google reschedule failed:', patchResp.status, errorText);
+              }
+            } catch (e) {
+              console.error('[Calendar] Google reschedule error:', e);
+            }
+          }
+        }
+
+        await supabase
+          .from('calendar_appointments')
+          .update({
+            start_time: newStart.toISOString(),
+            end_time: newEnd.toISOString(),
+            timezone: userTimezone,
+            status: 'confirmed',
+          })
+          .eq('user_id', targetUserId)
+          .eq('id', appointment.id);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            appointment_id: appointment.id,
+            event_id: appointment.google_event_id,
+            message: `Done — I've rescheduled it to ${formatTimeForVoice(newStart, userTimezone)}.`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -2083,6 +2442,71 @@ function* iterateYmdRange(startYmd: string, endYmd: string, timeZone: string): G
 function getWeekdayInTimeZone(ymd: string, timeZone: string): string {
   const date = zonedLocalToUtc(ymd, '12:00', timeZone);
   return date.toLocaleDateString('en-US', { weekday: 'long', timeZone }).toLowerCase();
+}
+
+function formatHmInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+  return `${get('hour')}:${get('minute')}`;
+}
+
+function parseTimeToMinutes(value: string): number | null {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return null;
+
+  // HH:MM (24h)
+  if (/^\d{1,2}:\d{2}$/.test(v)) {
+    const [h, m] = v.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  // H or HH (assume :00)
+  if (/^\d{1,2}$/.test(v)) {
+    return Number(v) * 60;
+  }
+
+  // 10am, 10:30 pm
+  const match = v.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (match) {
+    let h = Number(match[1]);
+    const m = Number(match[2] || '0');
+    const ap = match[3].toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  return null;
+}
+
+function isWithinWeeklySchedule(
+  utcDate: Date,
+  timeZone: string,
+  weeklySchedule: Record<string, any[]>
+): boolean {
+  if (!weeklySchedule || Object.keys(weeklySchedule).length === 0) return false;
+
+  const ymd = formatYmdInTimeZone(utcDate, timeZone);
+  const weekday = getWeekdayInTimeZone(ymd, timeZone);
+  const windows = weeklySchedule?.[weekday] || [];
+  if (!Array.isArray(windows) || windows.length === 0) return false;
+
+  const hm = formatHmInTimeZone(utcDate, timeZone);
+  const tMin = parseTimeToMinutes(hm);
+  if (tMin == null) return false;
+
+  return windows.some((w: any) => {
+    const startMin = parseTimeToMinutes(w?.start);
+    const endMin = parseTimeToMinutes(w?.end);
+    if (startMin == null || endMin == null) return false;
+    return tMin >= startMin && tMin < endMin;
+  });
 }
 
 function formatTimeForVoice(date: Date, timeZone?: string): string {
