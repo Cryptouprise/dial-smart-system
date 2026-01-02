@@ -1396,33 +1396,34 @@ serve(async (req) => {
         const callerPhone = extractCallerPhone(params, retellCall);
         const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
 
-        const max = Math.max(1, Math.min(Number(limit || 5), 10));
+        const max = Math.max(1, Math.min(Number(limit || 10), 20));
         const nowIso = new Date().toISOString();
 
-        let query = supabase
+        // IMPORTANT: Always show ALL upcoming appointments for this user
+        // The agent can see all appointments on the calendar, not just filtered by caller
+        // This matches user expectation - the agent should see all 5 appointments on the calendar
+        const { data: appts } = await supabase
           .from('calendar_appointments')
-          .select('id, title, start_time, end_time, timezone, status')
+          .select('id, title, start_time, end_time, timezone, status, metadata')
           .eq('user_id', targetUserId)
           .neq('status', 'cancelled')
           .gte('start_time', nowIso)
           .order('start_time', { ascending: true })
           .limit(max);
 
-        if (leadId) {
-          query = query.eq('lead_id', leadId);
-        } else if (callerPhone) {
-          // Backfill-friendly: we store caller_phone in metadata on new bookings
-          query = query.contains('metadata', { caller_phone: callerPhone });
-        }
-
-        const { data: appts } = await query;
+        console.log('[Calendar] list_appointments query result:', {
+          targetUserId,
+          callerPhone,
+          leadId,
+          appointmentsFound: appts?.length || 0,
+        });
 
         if (!appts || appts.length === 0) {
           return new Response(
             JSON.stringify({
               success: true,
               appointments: [],
-              message: "I don't see any upcoming appointments booked for this phone number.",
+              message: "There are no upcoming appointments on the calendar right now.",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1431,10 +1432,12 @@ serve(async (req) => {
         const appointments = appts.map((a: any, idx: number) => {
           const ref = String.fromCharCode(65 + idx);
           const tz = (a.timezone as string) || userTimezone;
+          const attendeeName = a.metadata?.attendee_name || a.title?.replace('Appointment with ', '') || 'Unknown';
           return {
             reference: ref,
             appointment_id: a.id,
             title: a.title,
+            attendee_name: attendeeName,
             start_time: a.start_time,
             end_time: a.end_time,
             timezone: tz,
@@ -1443,14 +1446,15 @@ serve(async (req) => {
         });
 
         const summary = appointments
-          .map((a: any) => `${a.reference}) ${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone)}`)
+          .map((a: any) => `${a.reference}) ${a.attendee_name} — ${formatTimeForVoice(new Date(a.start_time), a.timezone)}`)
           .join('; ');
 
         return new Response(
           JSON.stringify({
             success: true,
             appointments,
-            message: `Here are your upcoming appointments: ${summary}`,
+            count: appointments.length,
+            message: `You have ${appointments.length} upcoming appointment${appointments.length === 1 ? '' : 's'}: ${summary}`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1501,19 +1505,8 @@ serve(async (req) => {
           targetUserId,
         });
 
-        // If we have an ISO start time, we don't need rawDate/rawTime separately.
-        if ((!rawDate || !rawTime) && !startIso) {
-          return new Response(
-            JSON.stringify({
-              success: false,
-              message:
-                "I need a date and time to book the appointment. What date and time works for you?",
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Get user's timezone + weekly schedule from their settings
+        // Get user's timezone + weekly schedule from their settings FIRST
+        // We need this to properly interpret times when date is missing
         const { data: availability } = await supabase
           .from('calendar_availability')
           .select('timezone, weekly_schedule')
@@ -1532,7 +1525,71 @@ serve(async (req) => {
         const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
 
         const duration = duration_minutes || 30;
-        const date = rawDate || (startIso ? new Date(startIso).toISOString().split('T')[0] : undefined);
+
+        // SMART DATE INFERENCE: If we have a time but no date, infer today or tomorrow
+        // This is crucial for half-hour bookings where Retell sends time="15:30" but no date
+        let inferredDate = rawDate;
+        if (!rawDate && rawTime && !startIso) {
+          // Parse the time to determine if it's still available today
+          let hours: number, minutes: number;
+          if (rawTime.includes(':')) {
+            [hours, minutes] = rawTime.split(':').map(Number);
+          } else {
+            const timeMatch = rawTime.match(/(\d+)(?::(\d+))?\s*(am|pm)?/i);
+            if (timeMatch) {
+              hours = parseInt(timeMatch[1]);
+              minutes = parseInt(timeMatch[2] || '0');
+              if (timeMatch[3]?.toLowerCase() === 'pm' && hours < 12) hours += 12;
+              if (timeMatch[3]?.toLowerCase() === 'am' && hours === 12) hours = 0;
+            } else {
+              hours = 12;
+              minutes = 0;
+            }
+          }
+
+          // Get current time in user's timezone
+          const now = new Date();
+          const userNow = new Date(now.toLocaleString('en-US', { timeZone: userTimezone }));
+          const currentHours = userNow.getHours();
+          const currentMinutes = userNow.getMinutes();
+
+          // If the requested time is still in the future today, use today; otherwise tomorrow
+          const requestedTimeInMinutes = hours * 60 + minutes;
+          const currentTimeInMinutes = currentHours * 60 + currentMinutes;
+
+          if (requestedTimeInMinutes > currentTimeInMinutes + 30) {
+            // Use today
+            inferredDate = userNow.toISOString().split('T')[0];
+          } else {
+            // Use tomorrow
+            const tomorrow = new Date(userNow);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            inferredDate = tomorrow.toISOString().split('T')[0];
+          }
+
+          console.log('[Calendar] Inferred date from time:', {
+            rawTime,
+            parsedHours: hours,
+            parsedMinutes: minutes,
+            currentTimeInMinutes,
+            requestedTimeInMinutes,
+            inferredDate,
+          });
+        }
+
+        // If we STILL have no date and no startIso, ask for clarification
+        if ((!inferredDate && !rawTime) && !startIso) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              message:
+                "I need a date and time to book the appointment. What date and time works for you?",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const date = inferredDate || (startIso ? new Date(startIso).toISOString().split('T')[0] : undefined);
         const time = inferredStartIsoFromRawTime ? undefined : rawTime;
 
         let appointmentTime: Date;
@@ -1605,7 +1662,7 @@ serve(async (req) => {
             endTime = new Date(appointmentTime.getTime() + duration * 60000);
           }
         } else {
-          // Parse date and time
+          // Parse date and time separately - PROPERLY handle timezone!
           let hours: number, minutes: number;
           if ((time || '').includes(':')) {
             [hours, minutes] = (time || '').split(':').map(Number);
@@ -1629,9 +1686,21 @@ serve(async (req) => {
             }
           }
 
-          appointmentTime = new Date(date as string);
-          appointmentTime.setHours(hours, minutes, 0, 0);
+          // CRITICAL FIX: Use zonedLocalToUtc to properly convert user's local time to UTC
+          // This ensures half-hour times like "15:30" are preserved correctly
+          const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          appointmentTime = zonedLocalToUtc(date as string, timeStr, userTimezone);
           endTime = new Date(appointmentTime.getTime() + duration * 60000);
+
+          console.log('[Calendar] Parsed date+time using timezone:', {
+            date,
+            time,
+            hours,
+            minutes,
+            timeStr,
+            userTimezone,
+            appointmentTimeUtc: appointmentTime.toISOString(),
+          });
         }
 
         // CRITICAL: Validate appointment is not in the past
