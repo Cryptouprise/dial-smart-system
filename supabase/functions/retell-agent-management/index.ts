@@ -221,8 +221,14 @@ serve(async (req) => {
             properties: {
               action: {
                 type: "string",
-                enum: ["get_available_slots", "book_appointment", "cancel_appointment"],
-                description: "The calendar action to perform. Use get_available_slots for ANY time/availability question."
+                enum: [
+                  "get_available_slots",
+                  "book_appointment",
+                  "cancel_appointment",
+                  "list_appointments",
+                  "reschedule_appointment"
+                ],
+                description: "The calendar action to perform. Use get_available_slots for ANY time/availability question. Use list_appointments to see the caller's booked appointments."
               },
               date: {
                 type: "string",
@@ -230,7 +236,15 @@ serve(async (req) => {
               },
               time: {
                 type: "string",
-                description: "Time in HH:MM format (24-hour) - required for booking"
+                description: "Time in HH:MM format (24-hour) or natural language like 'noon' - required for booking/rescheduling"
+              },
+              new_date: {
+                type: "string",
+                description: "New date for reschedule (YYYY-MM-DD)"
+              },
+              new_time: {
+                type: "string",
+                description: "New time for reschedule (HH:MM or natural language)"
               },
               duration_minutes: {
                 type: "number",
@@ -251,6 +265,10 @@ serve(async (req) => {
               title: {
                 type: "string",
                 description: "Meeting title/subject"
+              },
+              cancel_all: {
+                type: "boolean",
+                description: "Set to true to cancel all upcoming appointments for this caller"
               }
             },
             required: ["action"]
@@ -345,8 +363,14 @@ serve(async (req) => {
           '2. Read current_time and available_slots from response',
           '3. Present 2-3 options from available_slots',
           '4. User picks a time',
-          '5. Call manage_calendar(action="book_appointment", date="YYYY-MM-DD", time="HH:MM", attendee_name="...", attendee_phone="...")',
+          '5. Call manage_calendar(action="book_appointment", time="HH:MM" or natural like "noon", attendee_name="...", attendee_phone="...")',
           '6. Confirm booking with full details',
+          '',
+          'CANCEL / RESCHEDULE FLOW:',
+          '- To see what appointments the caller has: manage_calendar(action="list_appointments")',
+          '- To cancel: manage_calendar(action="cancel_appointment") — the system uses the caller\'s phone to find the appointment automatically; DO NOT ask for any ID.',
+          '- To reschedule: manage_calendar(action="reschedule_appointment", new_time="HH:MM") — the system finds the next appointment for this caller.',
+          '- If the caller asks "do I have any appointments?", call list_appointments FIRST, then read the response.',
           '',
           '=== END CALENDAR RULES ===',
           '[/CALENDAR_TOOLING_v2]',

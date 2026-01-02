@@ -2268,14 +2268,22 @@ serve(async (req) => {
             .maybeSingle();
           appointment = data;
         } else {
-          const { data: upcoming } = await supabase
+          let upcomingQuery = supabase
             .from('calendar_appointments')
             .select('*')
             .eq('user_id', targetUserId)
             .neq('status', 'cancelled')
             .gte('start_time', new Date().toISOString())
             .order('start_time', { ascending: true })
-            .limit(3);
+            .limit(5);
+
+          if (leadId) {
+            upcomingQuery = upcomingQuery.eq('lead_id', leadId);
+          } else if (callerPhone) {
+            upcomingQuery = upcomingQuery.contains('metadata', { caller_phone: callerPhone });
+          }
+
+          const { data: upcoming } = await upcomingQuery;
 
           if (!upcoming || upcoming.length === 0) {
             return new Response(
@@ -2287,30 +2295,7 @@ serve(async (req) => {
             );
           }
 
-          if (upcoming.length > 1) {
-            const options = upcoming
-              .map(
-                (a) =>
-                  `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`
-              )
-              .join('; ');
-
-            return new Response(
-              JSON.stringify({
-                success: true,
-                needs_selection: true,
-                appointments: upcoming.map((a) => ({
-                  appointment_id: a.id,
-                  title: a.title,
-                  start_time: a.start_time,
-                  timezone: a.timezone || userTimezone,
-                })),
-                message: `I found multiple upcoming appointments. Which one should I reschedule? ${options}`,
-              }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-
+          // Reschedule the soonest one (no reading long IDs).
           appointment = upcoming[0];
         }
 
@@ -2871,5 +2856,78 @@ async function handleAction(action: string, params: any, supabase: any, userId: 
     JSON.stringify({ redirect: action, params }),
     { headers: { 'Content-Type': 'application/json' } }
   );
+}
+
+// ---------------------------------------------------------------------------
+// extractCallerPhone: Pulls the inbound caller's phone from the Retell payload
+// ---------------------------------------------------------------------------
+function extractCallerPhone(params: Record<string, any>, retellCall: any): string | null {
+  // 1. Explicit param the agent might have sent
+  const fromParams =
+    params.attendee_phone ||
+    params.phone ||
+    params.caller_phone ||
+    params.from_number ||
+    null;
+  if (fromParams) {
+    return normalizePhone(String(fromParams));
+  }
+
+  // 2. Retell's call object contains the inbound caller in `from_number` (their phone)
+  if (retellCall) {
+    const fromCall = retellCall.from_number || retellCall.caller_number || retellCall.phone || null;
+    if (fromCall) {
+      return normalizePhone(String(fromCall));
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// findLeadIdByPhone: Looks up a lead by phone number (normalized).
+// ---------------------------------------------------------------------------
+async function findLeadIdByPhone(
+  supabase: any,
+  userId: string,
+  phone: string
+): Promise<string | null> {
+  const norm = normalizePhone(phone);
+  if (!norm) return null;
+
+  // Try exact match first
+  const { data } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('phone_number', norm)
+    .limit(1)
+    .maybeSingle();
+
+  if (data?.id) return data.id;
+
+  // Also try without +1 prefix in case stored differently
+  const alt = norm.startsWith('+1') ? norm.slice(2) : `+1${norm.replace(/\D/g, '')}`;
+  const { data: data2 } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('phone_number', alt)
+    .limit(1)
+    .maybeSingle();
+
+  return data2?.id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// normalizePhone: Removes non-digits and ensures E.164-ish format
+// ---------------------------------------------------------------------------
+function normalizePhone(raw: string): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  // Ensure leading +
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return `+${digits}`;
 }
 
