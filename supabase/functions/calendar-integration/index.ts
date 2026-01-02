@@ -1386,7 +1386,15 @@ serve(async (req) => {
 
         const attendeeName = attendee_name || name;
         const attendeeEmail = attendee_email || email;
-        const startIso = start_time || startTimeParam;
+
+        // Retell sometimes sends an ISO-like datetime in `time` (e.g. "2026-01-03T11:00:00")
+        // instead of `start_time`. Treat that as the start time.
+        const inferredStartIsoFromRawTime =
+          typeof rawTime === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(rawTime)
+            ? rawTime
+            : null;
+
+        const startIso = start_time || startTimeParam || inferredStartIsoFromRawTime;
         const endIso = end_time || endTimeParam;
 
         const targetUserId = paramUserId || userId || '5969774f-5340-4e4f-8517-bcc89fa6b1eb';
@@ -1395,10 +1403,12 @@ serve(async (req) => {
           rawDate,
           rawTime,
           startIsoPresent: !!startIso,
+          inferredStartIsoFromRawTime: !!inferredStartIsoFromRawTime,
           attendeeName,
           targetUserId,
         });
 
+        // If we have an ISO start time, we don't need rawDate/rawTime separately.
         if ((!rawDate || !rawTime) && !startIso) {
           return new Response(
             JSON.stringify({
@@ -1422,13 +1432,30 @@ serve(async (req) => {
 
         const duration = duration_minutes || 30;
         const date = rawDate || (startIso ? new Date(startIso).toISOString().split('T')[0] : undefined);
-        const time = rawTime;
+        const time = inferredStartIsoFromRawTime ? undefined : rawTime;
 
         let appointmentTime: Date;
         let endTime: Date;
 
         if (startIso) {
-          appointmentTime = new Date(startIso);
+          const isBareIsoLocal =
+            typeof startIso === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(startIso);
+
+          if (isBareIsoLocal) {
+            // Interpret bare ISO as *local time in the user's timezone* (Retell often omits the offset)
+            const [datePart, timePart] = startIso.split('T');
+            const [y, m, d] = datePart.split('-').map(Number);
+            const [hh, mm, ss = '0'] = timePart.split(':');
+
+            const utcGuess = new Date(Date.UTC(y, m - 1, d, Number(hh), Number(mm), Number(ss)));
+            const tzDateStr = utcGuess.toLocaleString('en-US', { timeZone: userTimezone });
+            const tzDate = new Date(tzDateStr);
+            const offsetMs = utcGuess.getTime() - tzDate.getTime();
+            appointmentTime = new Date(utcGuess.getTime() + offsetMs);
+          } else {
+            appointmentTime = new Date(startIso);
+          }
+
           if (Number.isNaN(appointmentTime.getTime())) {
             return new Response(
               JSON.stringify({
