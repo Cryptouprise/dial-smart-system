@@ -35,6 +35,8 @@ serve(async (req) => {
     const url = new URL(req.url);
     let action: string;
     let params: Record<string, any> = {};
+    let retellCall: any | null = null;
+    let retellToolName: string | null = null;
 
     // Check for user_id in URL query string (for Retell tool calls)
     const urlUserId = url.searchParams.get('user_id');
@@ -46,6 +48,12 @@ serve(async (req) => {
       });
     } else {
       const body = await req.json();
+
+      // Preserve Retell call context (caller phone, etc.) if present
+      if (body && typeof body === 'object') {
+        retellCall = (body as any).call ?? null;
+        retellToolName = typeof (body as any).name === 'string' ? (body as any).name : null;
+      }
       
       // ROBUST PAYLOAD PARSING for Retell custom function calls
       // Retell may send various formats:
@@ -1364,6 +1372,90 @@ serve(async (req) => {
 
       // NOTE: get_available_slots is handled above (primary handler that works for both JWT auth and Retell calls)
 
+      case 'list_appointments':
+      case 'listAppointments':
+      case 'get_appointments':
+      case 'my_appointments': {
+        const { user_id: paramUserId, limit } = params;
+
+        const targetUserId = paramUserId || userId;
+        if (!targetUserId) {
+          return new Response(
+            JSON.stringify({ success: true, message: "I can't access the calendar right now." }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const { data: availability } = await supabase
+          .from('calendar_availability')
+          .select('timezone')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        const userTimezone = (availability?.timezone as string) || 'UTC';
+        const callerPhone = extractCallerPhone(params, retellCall);
+        const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
+
+        const max = Math.max(1, Math.min(Number(limit || 5), 10));
+        const nowIso = new Date().toISOString();
+
+        let query = supabase
+          .from('calendar_appointments')
+          .select('id, title, start_time, end_time, timezone, status')
+          .eq('user_id', targetUserId)
+          .neq('status', 'cancelled')
+          .gte('start_time', nowIso)
+          .order('start_time', { ascending: true })
+          .limit(max);
+
+        if (leadId) {
+          query = query.eq('lead_id', leadId);
+        } else if (callerPhone) {
+          // Backfill-friendly: we store caller_phone in metadata on new bookings
+          query = query.contains('metadata', { caller_phone: callerPhone });
+        }
+
+        const { data: appts } = await query;
+
+        if (!appts || appts.length === 0) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              appointments: [],
+              message: "I don't see any upcoming appointments booked for this phone number.",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const appointments = appts.map((a: any, idx: number) => {
+          const ref = String.fromCharCode(65 + idx);
+          const tz = (a.timezone as string) || userTimezone;
+          return {
+            reference: ref,
+            appointment_id: a.id,
+            title: a.title,
+            start_time: a.start_time,
+            end_time: a.end_time,
+            timezone: tz,
+            status: a.status,
+          };
+        });
+
+        const summary = appointments
+          .map((a: any) => `${a.reference}) ${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone)}`)
+          .join('; ');
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            appointments,
+            message: `Here are your upcoming appointments: ${summary}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'create_appointment':
       case 'createAppointment':
       case 'schedule_appointment':
@@ -1378,6 +1470,7 @@ serve(async (req) => {
           duration_minutes,
           attendee_name,
           attendee_email,
+          attendee_phone,
           name,
           email,
           title,
@@ -1434,6 +1527,9 @@ serve(async (req) => {
             : (availability?.weekly_schedule as Record<string, any[]> | null) || {};
 
         console.log('[Calendar] Using timezone:', userTimezone);
+
+        const callerPhone = extractCallerPhone(params, retellCall);
+        const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
 
         const duration = duration_minutes || 30;
         const date = rawDate || (startIso ? new Date(startIso).toISOString().split('T')[0] : undefined);
@@ -1679,13 +1775,20 @@ serve(async (req) => {
           .from('calendar_appointments')
           .insert({
             user_id: targetUserId,
+            lead_id: leadId,
             title: title || `Appointment with ${attendeeName || 'Lead'}`,
             start_time: appointmentTime.toISOString(),
             end_time: endTime.toISOString(),
             google_event_id: googleEventId,
             status: 'confirmed',
             timezone: userTimezone,
-            metadata: { attendee_name: attendeeName, attendee_email: attendeeEmail, source: 'retell_ai' },
+            metadata: {
+              attendee_name: attendeeName,
+              attendee_email: attendeeEmail,
+              attendee_phone: callerPhone || attendee_phone || null,
+              caller_phone: callerPhone || null,
+              source: 'retell_ai',
+            },
           })
           .select()
           .single();
@@ -1749,6 +1852,11 @@ serve(async (req) => {
           .maybeSingle();
         const userTimezone = (tzRow?.timezone as string) || 'UTC';
 
+        // Scope actions to the caller (by phone/lead) so we never require reading long IDs aloud.
+        const callerPhone = extractCallerPhone(params, retellCall);
+        const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
+        const hasCallerScope = !!leadId || !!callerPhone;
+
         const boolish = (v: any) => {
           if (v === true) return true;
           if (v === false || v == null) return false;
@@ -1771,10 +1879,22 @@ serve(async (req) => {
           userTimezone,
         });
 
+        if (!appointmentId && !eventIdParam && !hasCallerScope) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message:
+                "I can do that — I just need the phone number on the booking (or tell me the appointment time) so I cancel the right one.",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
         // Cancel ALL upcoming appointments
         if (cancelAll) {
           const nowIso = new Date().toISOString();
-          const { data: upcomingAll } = await supabase
+
+          let upcomingAllQuery = supabase
             .from('calendar_appointments')
             .select('id, title, start_time, end_time, timezone, status, google_event_id')
             .eq('user_id', targetUserId)
@@ -1782,6 +1902,14 @@ serve(async (req) => {
             .gte('start_time', nowIso)
             .order('start_time', { ascending: true })
             .limit(25);
+
+          if (leadId) {
+            upcomingAllQuery = upcomingAllQuery.eq('lead_id', leadId);
+          } else if (callerPhone) {
+            upcomingAllQuery = upcomingAllQuery.contains('metadata', { caller_phone: callerPhone });
+          }
+
+          const { data: upcomingAll } = await upcomingAllQuery;
 
           if (!upcomingAll || upcomingAll.length === 0) {
             return new Response(
@@ -1859,7 +1987,7 @@ serve(async (req) => {
           const minutesOnly = parseTimeToMinutes(String(time));
 
           if (minutesOnly != null) {
-            const { data: upcoming } = await supabase
+            let upcomingQuery = supabase
               .from('calendar_appointments')
               .select('id, title, start_time, timezone, status, google_event_id')
               .eq('user_id', targetUserId)
@@ -1868,6 +1996,14 @@ serve(async (req) => {
               .order('start_time', { ascending: true })
               .limit(25);
 
+            if (leadId) {
+              upcomingQuery = upcomingQuery.eq('lead_id', leadId);
+            } else if (callerPhone) {
+              upcomingQuery = upcomingQuery.contains('metadata', { caller_phone: callerPhone });
+            }
+
+            const { data: upcoming } = await upcomingQuery;
+
             const matches = (upcoming || []).filter((a) => {
               const tz = (a.timezone as string) || userTimezone;
               const hm = formatHmInTimeZone(new Date(a.start_time), tz);
@@ -1875,34 +2011,16 @@ serve(async (req) => {
               return mins === minutesOnly;
             });
 
-            if (matches.length === 1) {
+            // If multiple match, cancel the soonest one (no reading long IDs aloud).
+            if (matches.length >= 1) {
               appointmentId = matches[0].id;
-            } else if (matches.length > 1) {
-              const options = matches
-                .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), (a.timezone as string) || userTimezone)} (id: ${a.id})`)
-                .join('; ');
-
-              return new Response(
-                JSON.stringify({
-                  success: true,
-                  needs_selection: true,
-                  appointments: matches.map((a) => ({
-                    appointment_id: a.id,
-                    title: a.title,
-                    start_time: a.start_time,
-                    timezone: (a.timezone as string) || userTimezone,
-                  })),
-                  message: `I found multiple appointments at that time. Which one should I cancel? ${options}`,
-                }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-              );
             }
           }
         }
 
         // If no specific appointment is provided, list upcoming.
         if (!appointmentId && !eventIdParam && !(date && time)) {
-          const { data: upcoming } = await supabase
+          let upcomingQuery = supabase
             .from('calendar_appointments')
             .select('id, title, start_time, timezone, status, google_event_id')
             .eq('user_id', targetUserId)
@@ -1911,6 +2029,14 @@ serve(async (req) => {
             .order('start_time', { ascending: true })
             .limit(10);
 
+          if (leadId) {
+            upcomingQuery = upcomingQuery.eq('lead_id', leadId);
+          } else if (callerPhone) {
+            upcomingQuery = upcomingQuery.contains('metadata', { caller_phone: callerPhone });
+          }
+
+          const { data: upcoming } = await upcomingQuery;
+
           if (!upcoming || upcoming.length === 0) {
             return new Response(
               JSON.stringify({ success: true, message: "I don't see any upcoming appointments to cancel." }),
@@ -1918,32 +2044,7 @@ serve(async (req) => {
             );
           }
 
-          if (upcoming.length > 1) {
-            const options = upcoming
-              .slice(0, 3)
-              .map(
-                (a) =>
-                  `${a.title} — ${formatTimeForVoice(new Date(a.start_time), (a.timezone as string) || userTimezone)} (id: ${a.id})`
-              )
-              .join('; ');
-
-            return new Response(
-              JSON.stringify({
-                success: true,
-                needs_selection: true,
-                appointments: upcoming.slice(0, 3).map((a) => ({
-                  appointment_id: a.id,
-                  title: a.title,
-                  start_time: a.start_time,
-                  timezone: (a.timezone as string) || userTimezone,
-                })),
-                message: `I found multiple upcoming appointments. Which one should I cancel? ${options}`,
-              }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-
-          // Only one upcoming appointment — cancel it.
+          // Cancel the next upcoming appointment (soonest).
           appointmentId = upcoming[0].id;
         }
 
@@ -1987,7 +2088,7 @@ serve(async (req) => {
           const windowStart = new Date(targetUtc.getTime() - 2 * 60 * 60 * 1000).toISOString();
           const windowEnd = new Date(targetUtc.getTime() + 2 * 60 * 60 * 1000).toISOString();
 
-          const { data } = await supabase
+          let dateQuery = supabase
             .from('calendar_appointments')
             .select('*')
             .eq('user_id', targetUserId)
@@ -1996,6 +2097,14 @@ serve(async (req) => {
             .lte('start_time', windowEnd)
             .order('start_time', { ascending: true })
             .limit(10);
+
+          if (leadId) {
+            dateQuery = dateQuery.eq('lead_id', leadId);
+          } else if (callerPhone) {
+            dateQuery = dateQuery.contains('metadata', { caller_phone: callerPhone });
+          }
+
+          const { data } = await dateQuery;
 
           const candidates = Array.isArray(data) ? data : [];
           if (candidates.length > 0) {
@@ -2130,6 +2239,10 @@ serve(async (req) => {
           typeof availability?.weekly_schedule === 'string'
             ? safeJsonParse<Record<string, any[]>>(availability.weekly_schedule, {})
             : (availability?.weekly_schedule as Record<string, any[]> | null) || {};
+
+        const callerPhone = extractCallerPhone(params, retellCall);
+        const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
+        const hasCallerScope = !!leadId || !!callerPhone;
 
         // Identify appointment
         const appointmentId = appointment_id || id;
