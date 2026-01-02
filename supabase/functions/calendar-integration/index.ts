@@ -1582,6 +1582,37 @@ serve(async (req) => {
         });
 
         if (hasConflict) {
+          const conflicting = existingAppts?.find((appt) => {
+            const apptStart = new Date(appt.start_time);
+            const apptEnd = new Date(appt.end_time);
+            return (
+              (appointmentTime >= apptStart && appointmentTime < apptEnd) ||
+              (endTime > apptStart && endTime <= apptEnd) ||
+              (appointmentTime <= apptStart && endTime >= apptEnd)
+            );
+          });
+
+          // If the agent repeats the booking call, treat an exact overlap as "already booked"
+          // so it doesn't say it "hit a snag" after we successfully created the appointment.
+          if (conflicting) {
+            const diffMs = Math.abs(new Date(conflicting.start_time).getTime() - appointmentTime.getTime());
+            const attendeeText = String(attendeeName || '').trim().toLowerCase();
+            const titleText = String(conflicting.title || '').toLowerCase();
+            const looksSame = diffMs <= 2 * 60 * 1000 && (!attendeeText || titleText.includes(attendeeText));
+
+            if (looksSame) {
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  appointment_id: conflicting.id,
+                  event_id: conflicting.google_event_id,
+                  message: `You're all set — I already have you booked for ${formatTimeForVoice(new Date(conflicting.start_time), conflicting.timezone || userTimezone)}.`,
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+
           console.log('[Calendar] Time slot conflict detected');
           return new Response(
             JSON.stringify({
@@ -1694,6 +1725,8 @@ serve(async (req) => {
           user_id: paramUserId,
           date,
           time,
+          cancel_all,
+          all,
         } = params;
 
         const targetUserId = paramUserId || userId;
@@ -1701,8 +1734,8 @@ serve(async (req) => {
         if (!targetUserId) {
           return new Response(
             JSON.stringify({
-              success: false,
-              message: "I can't access the calendar right now. Which user should I book for?",
+              success: true,
+              message: "I can't access the calendar right now. Which user should I cancel for?",
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1716,43 +1749,193 @@ serve(async (req) => {
           .maybeSingle();
         const userTimezone = (tzRow?.timezone as string) || 'UTC';
 
-        const appointmentId = appointment_id || id;
-        const eventIdParam = event_id || google_event_id;
+        const boolish = (v: any) => {
+          if (v === true) return true;
+          if (v === false || v == null) return false;
+          const s = String(v).trim().toLowerCase();
+          return s === 'true' || s === '1' || s === 'yes' || s === 'y';
+        };
 
-        // If no specific appointment is provided, we may have multiple upcoming appointments.
+        const cancelAll = boolish(cancel_all) || boolish(all);
+
+        let appointmentId: string | null = (appointment_id || id || null) as string | null;
+        const eventIdParam: string | null = (event_id || google_event_id || null) as string | null;
+
+        console.log('[Calendar] cancel_appointment called', {
+          targetUserId,
+          appointmentId,
+          eventIdParam,
+          date,
+          time,
+          cancelAll,
+          userTimezone,
+        });
+
+        // Cancel ALL upcoming appointments
+        if (cancelAll) {
+          const nowIso = new Date().toISOString();
+          const { data: upcomingAll } = await supabase
+            .from('calendar_appointments')
+            .select('id, title, start_time, end_time, timezone, status, google_event_id')
+            .eq('user_id', targetUserId)
+            .neq('status', 'cancelled')
+            .gte('start_time', nowIso)
+            .order('start_time', { ascending: true })
+            .limit(25);
+
+          if (!upcomingAll || upcomingAll.length === 0) {
+            return new Response(
+              JSON.stringify({ success: true, cancelled: 0, message: "I don't see any upcoming appointments to cancel." }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Fetch Google integration once (best-effort)
+          const { data: integration } = await supabase
+            .from('calendar_integrations')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('provider', 'google')
+            .maybeSingle();
+
+          let accessToken: string | null = null;
+          const calendarId = integration?.calendar_id || 'primary';
+
+          if (integration?.access_token_encrypted) {
+            try {
+              accessToken = await ensureFreshGoogleToken(integration, supabase);
+            } catch (e) {
+              console.error('[Calendar] Failed to refresh Google token for cancel_all:', e);
+            }
+          }
+
+          // Best-effort delete in Google; always mark cancelled locally.
+          for (const appt of upcomingAll) {
+            if (appt.google_event_id && accessToken) {
+              try {
+                const resp = await fetch(
+                  `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${appt.google_event_id}?sendUpdates=all`,
+                  { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
+                );
+
+                if (!resp.ok && resp.status !== 204 && resp.status !== 404) {
+                  const errorText = await resp.text();
+                  console.error('[Calendar] Google cancel_all failed:', resp.status, errorText);
+                }
+              } catch (e) {
+                console.error('[Calendar] Google cancel_all error:', e);
+              }
+            }
+          }
+
+          const ids = upcomingAll.map((a) => a.id);
+          const { error: updateError } = await supabase
+            .from('calendar_appointments')
+            .update({ status: 'cancelled' })
+            .eq('user_id', targetUserId)
+            .in('id', ids);
+
+          if (updateError) {
+            console.error('[Calendar] cancel_all DB update failed:', updateError);
+            return new Response(
+              JSON.stringify({ success: false, message: "I couldn't update the calendar right now. Please try again." }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              cancelled: ids.length,
+              appointment_ids: ids,
+              message: `Done — I cancelled ${ids.length} appointment${ids.length === 1 ? '' : 's'}.`,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // If they provided only a time (e.g., "noon"), find the closest upcoming appointment at that time.
+        if (!appointmentId && !eventIdParam && time && !date) {
+          const minutesOnly = parseTimeToMinutes(String(time));
+
+          if (minutesOnly != null) {
+            const { data: upcoming } = await supabase
+              .from('calendar_appointments')
+              .select('id, title, start_time, timezone, status, google_event_id')
+              .eq('user_id', targetUserId)
+              .neq('status', 'cancelled')
+              .gte('start_time', new Date().toISOString())
+              .order('start_time', { ascending: true })
+              .limit(25);
+
+            const matches = (upcoming || []).filter((a) => {
+              const tz = (a.timezone as string) || userTimezone;
+              const hm = formatHmInTimeZone(new Date(a.start_time), tz);
+              const mins = parseTimeToMinutes(hm);
+              return mins === minutesOnly;
+            });
+
+            if (matches.length === 1) {
+              appointmentId = matches[0].id;
+            } else if (matches.length > 1) {
+              const options = matches
+                .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), (a.timezone as string) || userTimezone)} (id: ${a.id})`)
+                .join('; ');
+
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  needs_selection: true,
+                  appointments: matches.map((a) => ({
+                    appointment_id: a.id,
+                    title: a.title,
+                    start_time: a.start_time,
+                    timezone: (a.timezone as string) || userTimezone,
+                  })),
+                  message: `I found multiple appointments at that time. Which one should I cancel? ${options}`,
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+        }
+
+        // If no specific appointment is provided, list upcoming.
         if (!appointmentId && !eventIdParam && !(date && time)) {
           const { data: upcoming } = await supabase
             .from('calendar_appointments')
-            .select('id, title, start_time, google_event_id, timezone, status')
+            .select('id, title, start_time, timezone, status, google_event_id')
             .eq('user_id', targetUserId)
             .neq('status', 'cancelled')
             .gte('start_time', new Date().toISOString())
             .order('start_time', { ascending: true })
-            .limit(3);
+            .limit(10);
 
           if (!upcoming || upcoming.length === 0) {
             return new Response(
-              JSON.stringify({
-                success: false,
-                message: "I don't see any upcoming appointments to cancel.",
-              }),
+              JSON.stringify({ success: true, message: "I don't see any upcoming appointments to cancel." }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
 
           if (upcoming.length > 1) {
             const options = upcoming
-              .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`)
+              .slice(0, 3)
+              .map(
+                (a) =>
+                  `${a.title} — ${formatTimeForVoice(new Date(a.start_time), (a.timezone as string) || userTimezone)} (id: ${a.id})`
+              )
               .join('; ');
 
             return new Response(
               JSON.stringify({
-                success: false,
-                appointments: upcoming.map((a) => ({
+                success: true,
+                needs_selection: true,
+                appointments: upcoming.slice(0, 3).map((a) => ({
                   appointment_id: a.id,
                   title: a.title,
                   start_time: a.start_time,
-                  timezone: a.timezone || userTimezone,
+                  timezone: (a.timezone as string) || userTimezone,
                 })),
                 message: `I found multiple upcoming appointments. Which one should I cancel? ${options}`,
               }),
@@ -1761,8 +1944,7 @@ serve(async (req) => {
           }
 
           // Only one upcoming appointment — cancel it.
-          const only = upcoming[0];
-          params.appointment_id = only.id;
+          appointmentId = upcoming[0].id;
         }
 
         // Find the appointment record
@@ -1791,7 +1973,7 @@ serve(async (req) => {
           if (minutes == null || !isYmd(String(date))) {
             return new Response(
               JSON.stringify({
-                success: false,
+                success: true,
                 message: "I couldn't understand that date/time. Can you repeat the appointment date and time?",
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1813,17 +1995,36 @@ serve(async (req) => {
             .gte('start_time', windowStart)
             .lte('start_time', windowEnd)
             .order('start_time', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .limit(10);
 
-          appointment = data;
+          const candidates = Array.isArray(data) ? data : [];
+          if (candidates.length > 0) {
+            candidates.sort(
+              (a, b) =>
+                Math.abs(new Date(a.start_time).getTime() - targetUtc.getTime()) -
+                Math.abs(new Date(b.start_time).getTime() - targetUtc.getTime())
+            );
+            appointment = candidates[0];
+          }
         }
 
         if (!appointment) {
           return new Response(
             JSON.stringify({
-              success: false,
+              success: true,
               message: "I couldn't find that appointment. If you tell me the date and time, I can cancel it.",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (String(appointment.status || '').toLowerCase() === 'cancelled') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              appointment_id: appointment.id,
+              event_id: appointment.google_event_id,
+              message: `That appointment is already cancelled.`,
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -1858,11 +2059,22 @@ serve(async (req) => {
           }
         }
 
-        await supabase
+        const { error: updateError } = await supabase
           .from('calendar_appointments')
           .update({ status: 'cancelled' })
           .eq('user_id', targetUserId)
           .eq('id', appointment.id);
+
+        if (updateError) {
+          console.error('[Calendar] cancel DB update failed:', updateError);
+          return new Response(
+            JSON.stringify({
+              success: false,
+              message: "I hit a snag updating that appointment. Please try again in a moment.",
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
         return new Response(
           JSON.stringify({
@@ -1954,19 +2166,26 @@ serve(async (req) => {
 
           if (!upcoming || upcoming.length === 0) {
             return new Response(
-              JSON.stringify({ success: false, message: "I don't see any upcoming appointments to reschedule." }),
+              JSON.stringify({
+                success: true,
+                message: "I don't see any upcoming appointments to reschedule.",
+              }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
 
           if (upcoming.length > 1) {
             const options = upcoming
-              .map((a) => `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`)
+              .map(
+                (a) =>
+                  `${a.title} — ${formatTimeForVoice(new Date(a.start_time), a.timezone || userTimezone)} (id: ${a.id})`
+              )
               .join('; ');
 
             return new Response(
               JSON.stringify({
-                success: false,
+                success: true,
+                needs_selection: true,
                 appointments: upcoming.map((a) => ({
                   appointment_id: a.id,
                   title: a.title,
@@ -2459,6 +2678,10 @@ function formatHmInTimeZone(date: Date, timeZone: string): string {
 function parseTimeToMinutes(value: string): number | null {
   const v = String(value || '').trim().toLowerCase();
   if (!v) return null;
+
+  // Common natural language times
+  if (v === 'noon' || v === 'midday') return 12 * 60;
+  if (v === 'midnight') return 0;
 
   // HH:MM (24h)
   if (/^\d{1,2}:\d{2}$/.test(v)) {
