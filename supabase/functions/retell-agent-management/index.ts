@@ -268,7 +268,11 @@ serve(async (req) => {
               },
               cancel_all: {
                 type: "boolean",
-                description: "Set to true to cancel all upcoming appointments for this caller"
+                description: "Set to true to cancel ALL upcoming appointments for this caller"
+              },
+              title_contains: {
+                type: "string",
+                description: "Partial name match for cancellation - use when caller says 'cancel the one with [name]' or 'cancel my appointment with [name]'"
               }
             },
             required: ["action"]
@@ -366,11 +370,14 @@ serve(async (req) => {
           '5. Call manage_calendar(action="book_appointment", time="HH:MM" or natural like "noon", attendee_name="...", attendee_phone="...")',
           '6. Confirm booking with full details',
           '',
-          'CANCEL / RESCHEDULE FLOW:',
+        'CANCEL / RESCHEDULE FLOW:',
           '- To see what appointments the caller has: manage_calendar(action="list_appointments")',
-          '- To cancel: manage_calendar(action="cancel_appointment") — the system uses the caller\'s phone to find the appointment automatically; DO NOT ask for any ID.',
+          '- "Cancel all my appointments" or "Cancel them all" → manage_calendar(action="cancel_appointment", cancel_all=true)',
+          '- "Cancel the one with [name]" → manage_calendar(action="cancel_appointment", title_contains="[name]")',
+          '- "Cancel my next appointment" or just "Cancel it" → manage_calendar(action="cancel_appointment") — cancels the soonest upcoming',
           '- To reschedule: manage_calendar(action="reschedule_appointment", new_time="HH:MM") — the system finds the next appointment for this caller.',
           '- If the caller asks "do I have any appointments?", call list_appointments FIRST, then read the response.',
+          '- IMPORTANT: Do NOT ask for appointment IDs. Use cancel_all=true for all, title_contains for specific names, or just call cancel_appointment to cancel the next one.',
           '',
           '=== END CALENDAR RULES ===',
           '[/CALENDAR_TOOLING_v2]',
