@@ -1998,10 +1998,14 @@ serve(async (req) => {
 
           let upcomingAll: any[] = [];
 
+          // Try the most specific match first, but always fall back to ALL upcoming
+          // (some appointments are not linked to a lead_id even if we can identify the caller).
           if (leadId) {
             const { data } = await baseUpcomingAllQuery().eq('lead_id', leadId);
             upcomingAll = Array.isArray(data) ? data : [];
-          } else if (callerPhone) {
+          }
+
+          if (upcomingAll.length === 0 && callerPhone) {
             // First try caller_phone, then attendee_phone (older records may not have caller_phone)
             const { data } = await baseUpcomingAllQuery().contains('metadata', { caller_phone: callerPhone });
             upcomingAll = Array.isArray(data) ? data : [];
@@ -2010,16 +2014,19 @@ serve(async (req) => {
               const { data: data2 } = await baseUpcomingAllQuery().contains('metadata', { attendee_phone: callerPhone });
               upcomingAll = Array.isArray(data2) ? data2 : [];
             }
+          }
 
-            // If still nothing, fall back to all upcoming for this user (common when appointments were created outside our system)
-            if (upcomingAll.length === 0) {
-              const { data: data3 } = await baseUpcomingAllQuery();
-              upcomingAll = Array.isArray(data3) ? data3 : [];
-            }
-          } else {
+          if (upcomingAll.length === 0) {
             const { data } = await baseUpcomingAllQuery();
             upcomingAll = Array.isArray(data) ? data : [];
           }
+
+          console.log('[Calendar] cancel_all selection result:', {
+            targetUserId,
+            leadId,
+            callerPhone,
+            upcomingAll: upcomingAll.length,
+          });
 
           if (upcomingAll.length === 0) {
             return new Response(
