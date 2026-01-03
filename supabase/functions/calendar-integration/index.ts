@@ -1951,7 +1951,8 @@ serve(async (req) => {
           return s === 'true' || s === '1' || s === 'yes' || s === 'y';
         };
 
-        const cancelAll = boolish(cancel_all) || boolish(all);
+        const cancelAll =
+          boolish(cancel_all) || boolish(all) || boolish((params as any).cancelAll);
 
         let appointmentId: string | null = (appointment_id || id || null) as string | null;
         const eventIdParam: string | null = (event_id || google_event_id || null) as string | null;
@@ -1968,7 +1969,9 @@ serve(async (req) => {
           userTimezone,
         });
 
-        if (!appointmentId && !eventIdParam && !hasCallerScope) {
+        // If we don't have an ID/eventId AND the caller didn't give us a time/date AND we can't scope by phone/lead,
+        // we can't safely identify which appointment to cancel.
+        if (!cancelAll && !appointmentId && !eventIdParam && !requestedDate && !requestedTime && !hasCallerScope) {
           return new Response(
             JSON.stringify({
               success: true,
