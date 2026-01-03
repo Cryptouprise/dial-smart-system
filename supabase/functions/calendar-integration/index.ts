@@ -1921,6 +1921,24 @@ serve(async (req) => {
           .maybeSingle();
         const userTimezone = (tzRow?.timezone as string) || 'UTC';
 
+        // Retell sometimes sends a full local datetime in the `time` field (e.g. "2026-01-03T16:00:00")
+        // Normalize that into { date: YYYY-MM-DD, time: HH:MM } in the user's timezone.
+        let requestedDate: string | undefined = date as string | undefined;
+        let requestedTime: any = time;
+
+        const inferredStartIsoFromTime =
+          typeof requestedTime === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(requestedTime)
+            ? requestedTime
+            : null;
+
+        if (!requestedDate && inferredStartIsoFromTime) {
+          const [dPart, tPart] = inferredStartIsoFromTime.split('T');
+          if (isYmd(dPart)) {
+            requestedDate = dPart;
+            requestedTime = tPart.slice(0, 5);
+          }
+        }
+
         // Scope actions to the caller (by phone/lead) so we never require reading long IDs aloud.
         const callerPhone = extractCallerPhone(params, retellCall);
         const leadId = callerPhone ? await findLeadIdByPhone(supabase, targetUserId, callerPhone) : null;
@@ -1942,8 +1960,10 @@ serve(async (req) => {
           targetUserId,
           appointmentId,
           eventIdParam,
-          date,
-          time,
+          rawDate: date,
+          rawTime: time,
+          date: requestedDate,
+          time: requestedTime,
           cancelAll,
           userTimezone,
         });
@@ -1963,24 +1983,42 @@ serve(async (req) => {
         if (cancelAll) {
           const nowIso = new Date().toISOString();
 
-          let upcomingAllQuery = supabase
-            .from('calendar_appointments')
-            .select('id, title, start_time, end_time, timezone, status, google_event_id')
-            .eq('user_id', targetUserId)
-            .neq('status', 'cancelled')
-            .gte('start_time', nowIso)
-            .order('start_time', { ascending: true })
-            .limit(25);
+          const baseUpcomingAllQuery = () =>
+            supabase
+              .from('calendar_appointments')
+              .select('id, title, start_time, end_time, timezone, status, google_event_id')
+              .eq('user_id', targetUserId)
+              .neq('status', 'cancelled')
+              .gte('start_time', nowIso)
+              .order('start_time', { ascending: true })
+              .limit(25);
+
+          let upcomingAll: any[] = [];
 
           if (leadId) {
-            upcomingAllQuery = upcomingAllQuery.eq('lead_id', leadId);
+            const { data } = await baseUpcomingAllQuery().eq('lead_id', leadId);
+            upcomingAll = Array.isArray(data) ? data : [];
           } else if (callerPhone) {
-            upcomingAllQuery = upcomingAllQuery.contains('metadata', { caller_phone: callerPhone });
+            // First try caller_phone, then attendee_phone (older records may not have caller_phone)
+            const { data } = await baseUpcomingAllQuery().contains('metadata', { caller_phone: callerPhone });
+            upcomingAll = Array.isArray(data) ? data : [];
+
+            if (upcomingAll.length === 0) {
+              const { data: data2 } = await baseUpcomingAllQuery().contains('metadata', { attendee_phone: callerPhone });
+              upcomingAll = Array.isArray(data2) ? data2 : [];
+            }
+
+            // If still nothing, fall back to all upcoming for this user (common when appointments were created outside our system)
+            if (upcomingAll.length === 0) {
+              const { data: data3 } = await baseUpcomingAllQuery();
+              upcomingAll = Array.isArray(data3) ? data3 : [];
+            }
+          } else {
+            const { data } = await baseUpcomingAllQuery();
+            upcomingAll = Array.isArray(data) ? data : [];
           }
 
-          const { data: upcomingAll } = await upcomingAllQuery;
-
-          if (!upcomingAll || upcomingAll.length === 0) {
+          if (upcomingAll.length === 0) {
             return new Response(
               JSON.stringify({ success: true, cancelled: 0, message: "I don't see any upcoming appointments to cancel." }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -2052,8 +2090,8 @@ serve(async (req) => {
         }
 
         // If they provided only a time (e.g., "noon"), find the closest upcoming appointment at that time.
-        if (!appointmentId && !eventIdParam && time && !date) {
-          const minutesOnly = parseTimeToMinutes(String(time));
+        if (!appointmentId && !eventIdParam && requestedTime && !requestedDate) {
+          const minutesOnly = parseTimeToMinutes(String(requestedTime));
 
           if (minutesOnly != null) {
             let upcomingQuery = supabase
@@ -2088,7 +2126,7 @@ serve(async (req) => {
         }
 
         // If no specific appointment is provided, list upcoming.
-        if (!appointmentId && !eventIdParam && !(date && time)) {
+        if (!appointmentId && !eventIdParam && !(requestedDate && requestedTime)) {
           let upcomingQuery = supabase
             .from('calendar_appointments')
             .select('id, title, start_time, timezone, status, google_event_id')
@@ -2138,9 +2176,9 @@ serve(async (req) => {
             .limit(1)
             .maybeSingle();
           appointment = data;
-        } else if (date && time) {
-          const minutes = parseTimeToMinutes(String(time));
-          if (minutes == null || !isYmd(String(date))) {
+        } else if (requestedDate && requestedTime) {
+          const minutes = parseTimeToMinutes(String(requestedTime));
+          if (minutes == null || !isYmd(String(requestedDate))) {
             return new Response(
               JSON.stringify({
                 success: true,
@@ -2152,30 +2190,46 @@ serve(async (req) => {
 
           const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
           const mm = String(minutes % 60).padStart(2, '0');
-          const targetUtc = zonedLocalToUtc(String(date), `${hh}:${mm}`, userTimezone);
+          const targetUtc = zonedLocalToUtc(String(requestedDate), `${hh}:${mm}`, userTimezone);
 
           const windowStart = new Date(targetUtc.getTime() - 2 * 60 * 60 * 1000).toISOString();
           const windowEnd = new Date(targetUtc.getTime() + 2 * 60 * 60 * 1000).toISOString();
 
-          let dateQuery = supabase
-            .from('calendar_appointments')
-            .select('*')
-            .eq('user_id', targetUserId)
-            .neq('status', 'cancelled')
-            .gte('start_time', windowStart)
-            .lte('start_time', windowEnd)
-            .order('start_time', { ascending: true })
-            .limit(10);
+          const baseDateQuery = () =>
+            supabase
+              .from('calendar_appointments')
+              .select('*')
+              .eq('user_id', targetUserId)
+              .neq('status', 'cancelled')
+              .gte('start_time', windowStart)
+              .lte('start_time', windowEnd)
+              .order('start_time', { ascending: true })
+              .limit(10);
+
+          let candidates: any[] = [];
 
           if (leadId) {
-            dateQuery = dateQuery.eq('lead_id', leadId);
+            const { data } = await baseDateQuery().eq('lead_id', leadId);
+            candidates = Array.isArray(data) ? data : [];
           } else if (callerPhone) {
-            dateQuery = dateQuery.contains('metadata', { caller_phone: callerPhone });
+            const { data } = await baseDateQuery().contains('metadata', { caller_phone: callerPhone });
+            candidates = Array.isArray(data) ? data : [];
+
+            if (candidates.length === 0) {
+              const { data: data2 } = await baseDateQuery().contains('metadata', { attendee_phone: callerPhone });
+              candidates = Array.isArray(data2) ? data2 : [];
+            }
+
+            // If we still can't match by phone, fall back to the user's calendar within the requested time window.
+            if (candidates.length === 0) {
+              const { data: data3 } = await baseDateQuery();
+              candidates = Array.isArray(data3) ? data3 : [];
+            }
+          } else {
+            const { data } = await baseDateQuery();
+            candidates = Array.isArray(data) ? data : [];
           }
 
-          const { data } = await dateQuery;
-
-          const candidates = Array.isArray(data) ? data : [];
           if (candidates.length > 0) {
             candidates.sort(
               (a, b) =>
