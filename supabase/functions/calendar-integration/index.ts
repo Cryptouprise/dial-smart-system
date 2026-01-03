@@ -2135,24 +2135,53 @@ serve(async (req) => {
           }
         }
 
-        // If no specific appointment is provided, list upcoming.
+        // Extract title_contains from the request for natural language matching (e.g., "cancel the one with John")
+        const titleContains = body.title_contains || body.titleContains || null;
+
+        // If no specific appointment is provided, find the right one to cancel
         if (!appointmentId && !eventIdParam && !(requestedDate && requestedTime)) {
-          let upcomingQuery = supabase
+          // Base query for all upcoming appointments for this user
+          const baseUpcomingQuery = () => supabase
             .from('calendar_appointments')
-            .select('id, title, start_time, timezone, status, google_event_id')
+            .select('id, title, start_time, timezone, status, google_event_id, metadata')
             .eq('user_id', targetUserId)
             .neq('status', 'cancelled')
             .gte('start_time', new Date().toISOString())
             .order('start_time', { ascending: true })
-            .limit(10);
+            .limit(25);
 
+          let upcoming: any[] = [];
+
+          // Priority 1: Try lead_id match
           if (leadId) {
-            upcomingQuery = upcomingQuery.eq('lead_id', leadId);
-          } else if (callerPhone) {
-            upcomingQuery = upcomingQuery.contains('metadata', { caller_phone: callerPhone });
+            const { data } = await baseUpcomingQuery().eq('lead_id', leadId);
+            upcoming = Array.isArray(data) ? data : [];
           }
 
-          const { data: upcoming } = await upcomingQuery;
+          // Priority 2: Try caller_phone match
+          if (upcoming.length === 0 && callerPhone) {
+            const { data } = await baseUpcomingQuery().contains('metadata', { caller_phone: callerPhone });
+            upcoming = Array.isArray(data) ? data : [];
+
+            if (upcoming.length === 0) {
+              const { data: data2 } = await baseUpcomingQuery().contains('metadata', { attendee_phone: callerPhone });
+              upcoming = Array.isArray(data2) ? data2 : [];
+            }
+          }
+
+          // Priority 3: Fall back to ALL upcoming for this user (CRITICAL - prevents "I don't see any" when list shows appointments)
+          if (upcoming.length === 0) {
+            const { data } = await baseUpcomingQuery();
+            upcoming = Array.isArray(data) ? data : [];
+          }
+
+          console.log('[Calendar] cancel single selection:', {
+            targetUserId,
+            leadId,
+            callerPhone,
+            titleContains,
+            upcomingCount: upcoming.length,
+          });
 
           if (!upcoming || upcoming.length === 0) {
             return new Response(
@@ -2161,8 +2190,33 @@ serve(async (req) => {
             );
           }
 
-          // Cancel the next upcoming appointment (soonest).
-          appointmentId = upcoming[0].id;
+          // If title_contains is provided, filter by name/title match
+          if (titleContains) {
+            const searchTerm = String(titleContains).toLowerCase();
+            const matched = upcoming.filter((a) => {
+              const title = String(a.title || '').toLowerCase();
+              const attendeeName = String((a.metadata as any)?.attendee_name || '').toLowerCase();
+              return title.includes(searchTerm) || attendeeName.includes(searchTerm);
+            });
+
+            if (matched.length > 0) {
+              appointmentId = matched[0].id;
+              console.log('[Calendar] Matched by title_contains:', titleContains, '→', appointmentId);
+            } else {
+              // No match by name - tell the user
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  message: `I couldn't find an appointment matching "${titleContains}". Would you like me to list your appointments?`,
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          } else {
+            // No title filter - cancel the next upcoming appointment (soonest)
+            appointmentId = upcoming[0].id;
+            console.log('[Calendar] Cancelling soonest appointment:', appointmentId);
+          }
         }
 
         // Find the appointment record
