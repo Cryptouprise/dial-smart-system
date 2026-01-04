@@ -194,3 +194,12 @@ verify_jwt = true
 
 [functions.nudge-scheduler]
 verify_jwt = true
+
+[functions.campaign-health-monitor]
+verify_jwt = true
+
+[functions.inbound-transfer-webhook]
+verify_jwt = false
+
+[functions.ml-learning-engine]
+verify_jwt = true

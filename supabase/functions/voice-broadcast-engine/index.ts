@@ -6,6 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rate limiting and concurrency configuration
+const MAX_CONCURRENT_CALLS = 100; // Maximum calls in 'calling' status at once
+const ERROR_RATE_PAUSE_THRESHOLD = 0.25; // 25% error rate triggers pause
+const ERROR_RATE_ALERT_THRESHOLD = 0.10; // 10% error rate triggers alert
+const CALL_DELAY_MS = 100; // Delay between individual calls to avoid API hammering
+const MAX_RETRIES_ON_429 = 3; // Max retries on rate limit errors
+
 interface ProviderConfig {
   retellKey?: string;
   twilioAccountSid?: string;
@@ -38,9 +45,42 @@ interface CallResult {
   callId?: string;
   error?: string;
   usedSipTrunk?: boolean;
+  rateLimited?: boolean;
 }
 
-// Make a call using Retell AI
+// Helper function for exponential backoff
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Create a system alert for monitoring
+async function createSystemAlert(
+  supabase: any,
+  userId: string,
+  alertType: string,
+  severity: string,
+  title: string,
+  message: string,
+  broadcastId?: string
+): Promise<void> {
+  try {
+    await supabase.from('system_alerts').insert({
+      user_id: userId,
+      alert_type: alertType,
+      severity,
+      title,
+      message,
+      related_id: broadcastId,
+      related_type: 'broadcast',
+      metadata: { broadcastId, timestamp: new Date().toISOString() },
+    });
+    console.log(`[Alert Created] ${alertType}: ${message}`);
+  } catch (error) {
+    console.error('Failed to create system alert:', error);
+  }
+}
+
+// Make a call using Retell AI with retry logic
 async function callWithRetell(
   retellKey: string,
   fromNumber: string,
@@ -48,42 +88,57 @@ async function callWithRetell(
   metadata: Record<string, unknown>,
   agentId?: string
 ): Promise<CallResult> {
-  try {
-    console.log(`Making Retell call from ${fromNumber} to ${toNumber}${agentId ? ` with agent ${agentId}` : ''}`);
-    
-    // Build request body - only include override_agent_id if it's a valid string
-    const requestBody: Record<string, unknown> = {
-      from_number: fromNumber,
-      to_number: toNumber,
-      metadata,
-    };
-    
-    // Only add override_agent_id if it's a non-empty string
-    if (agentId && typeof agentId === 'string' && agentId.trim() !== '') {
-      requestBody.override_agent_id = agentId;
-    }
-    
-    const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${retellKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+  for (let attempt = 0; attempt <= MAX_RETRIES_ON_429; attempt++) {
+    try {
+      console.log(`Making Retell call from ${fromNumber} to ${toNumber}${agentId ? ` with agent ${agentId}` : ''} (attempt ${attempt + 1})`);
+      
+      // Build request body - only include override_agent_id if it's a valid string
+      const requestBody: Record<string, unknown> = {
+        from_number: fromNumber,
+        to_number: toNumber,
+        metadata,
+      };
+      
+      // Only add override_agent_id if it's a non-empty string
+      if (agentId && typeof agentId === 'string' && agentId.trim() !== '') {
+        requestBody.override_agent_id = agentId;
+      }
+      
+      const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${retellKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Retell API error:', errorText);
-      return { success: false, provider: 'retell', error: errorText };
-    }
+      if (response.status === 429) {
+        console.warn(`Retell rate limited, waiting before retry (attempt ${attempt + 1}/${MAX_RETRIES_ON_429})`);
+        if (attempt < MAX_RETRIES_ON_429) {
+          await sleep(Math.pow(2, attempt) * 1000); // Exponential backoff: 1s, 2s, 4s
+          continue;
+        }
+        return { success: false, provider: 'retell', error: 'Rate limited after retries', rateLimited: true };
+      }
 
-    const result = await response.json();
-    return { success: true, provider: 'retell', callId: result.call_id };
-  } catch (error: any) {
-    console.error('Retell call error:', error);
-    return { success: false, provider: 'retell', error: error.message };
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Retell API error:', errorText);
+        return { success: false, provider: 'retell', error: errorText };
+      }
+
+      const result = await response.json();
+      return { success: true, provider: 'retell', callId: result.call_id };
+    } catch (error: any) {
+      console.error('Retell call error:', error);
+      if (attempt === MAX_RETRIES_ON_429) {
+        return { success: false, provider: 'retell', error: error.message };
+      }
+      await sleep(Math.pow(2, attempt) * 1000);
+    }
   }
+  return { success: false, provider: 'retell', error: 'Max retries exceeded' };
 }
 
 // Smart number selection with local presence and rotation
@@ -537,8 +592,94 @@ serve(async (req) => {
 
         console.log(`Using provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
 
-        // Start dispatching calls (in batches based on calls_per_minute)
-        const batchSize = Math.min(broadcast.calls_per_minute || 50, pendingCount);
+        // === CONCURRENCY CHECK ===
+        // Check current concurrent calls and limit if necessary
+        const { count: currentCallingCount } = await supabase
+          .from('broadcast_queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'calling');
+
+        const currentConcurrent = currentCallingCount || 0;
+        console.log(`Current concurrent calls: ${currentConcurrent}/${MAX_CONCURRENT_CALLS}`);
+
+        if (currentConcurrent >= MAX_CONCURRENT_CALLS) {
+          console.log('Max concurrent calls reached, waiting for current calls to complete');
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              status: 'throttled',
+              message: `Max concurrent calls (${MAX_CONCURRENT_CALLS}) reached. Waiting for current calls to complete.`,
+              currentConcurrent,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // === ERROR RATE CHECK ===
+        // Check recent error rate and auto-pause if too high
+        const { data: recentQueue } = await supabase
+          .from('broadcast_queue')
+          .select('status')
+          .eq('broadcast_id', broadcastId)
+          .in('status', ['completed', 'answered', 'transferred', 'failed', 'dnc'])
+          .order('updated_at', { ascending: false })
+          .limit(100);
+
+        if (recentQueue && recentQueue.length >= 10) {
+          const recentFailed = recentQueue.filter(q => q.status === 'failed').length;
+          const recentErrorRate = recentFailed / recentQueue.length;
+          
+          if (recentErrorRate >= ERROR_RATE_PAUSE_THRESHOLD) {
+            console.error(`Error rate ${(recentErrorRate * 100).toFixed(1)}% exceeds threshold, auto-pausing broadcast`);
+            
+            await supabase
+              .from('voice_broadcasts')
+              .update({ 
+                status: 'paused',
+                last_error: `Auto-paused: ${(recentErrorRate * 100).toFixed(1)}% error rate in last ${recentQueue.length} calls`,
+                last_error_at: new Date().toISOString()
+              })
+              .eq('id', broadcastId);
+
+            await createSystemAlert(
+              supabase, 
+              user.id, 
+              'high_error_rate', 
+              'critical',
+              'Campaign Auto-Paused',
+              `Campaign paused due to ${(recentErrorRate * 100).toFixed(1)}% error rate. Please check your configuration.`,
+              broadcastId
+            );
+
+            return new Response(
+              JSON.stringify({ 
+                success: false, 
+                status: 'paused',
+                error: `Campaign auto-paused due to high error rate (${(recentErrorRate * 100).toFixed(1)}%)`,
+                errorRate: recentErrorRate,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          } else if (recentErrorRate >= ERROR_RATE_ALERT_THRESHOLD) {
+            console.warn(`Error rate ${(recentErrorRate * 100).toFixed(1)}% above alert threshold`);
+            await createSystemAlert(
+              supabase, 
+              user.id, 
+              'error_rate_warning', 
+              'warning',
+              'High Error Rate Warning',
+              `Campaign has ${(recentErrorRate * 100).toFixed(1)}% error rate. Monitor closely.`,
+              broadcastId
+            );
+          }
+        }
+
+        // Calculate actual batch size accounting for concurrent limit
+        const availableConcurrency = MAX_CONCURRENT_CALLS - currentConcurrent;
+        const batchSize = Math.min(broadcast.calls_per_minute || 50, pendingCount, availableConcurrency);
+        
+        console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency})`);
         
         const { data: queueItems, error: queueError } = await supabase
           .from('broadcast_queue')
@@ -552,6 +693,7 @@ serve(async (req) => {
 
         let dispatched = 0;
         let sipTrunkCalls = 0;
+        let rateLimitHits = 0;
         const errors: string[] = [];
         const statusCallbackUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
         const dtmfHandlerUrl = `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
@@ -720,7 +862,17 @@ serve(async (req) => {
                 })
                 .eq('id', callerNumber.id);
             } else {
+              // Track rate limit hits
+              if (callResult.rateLimited) {
+                rateLimitHits++;
+                console.warn(`Rate limited on call to ${item.phone_number}`);
+              }
               throw new Error(callResult.error || 'Call failed');
+            }
+
+            // Add delay between calls to avoid hammering APIs
+            if (CALL_DELAY_MS > 0) {
+              await sleep(CALL_DELAY_MS);
             }
 
           } catch (callError: any) {
@@ -741,6 +893,19 @@ serve(async (req) => {
           }
         }
 
+        // Check if we hit too many rate limits
+        if (rateLimitHits > 5) {
+          await createSystemAlert(
+            supabase,
+            user.id,
+            'api_rate_limit',
+            'warning',
+            'API Rate Limiting Detected',
+            `${rateLimitHits} calls were rate-limited. Consider reducing calls_per_minute setting.`,
+            broadcastId
+          );
+        }
+
         // Update broadcast stats
         const { error: statsUpdateError } = await supabase
           .from('voice_broadcasts')
@@ -749,7 +914,7 @@ serve(async (req) => {
 
         if (statsUpdateError) console.error('Error updating broadcast stats:', statsUpdateError);
 
-        console.log(`Broadcast ${broadcastId} started: ${dispatched} calls dispatched (${sipTrunkCalls} via SIP trunk)`);
+        console.log(`Broadcast ${broadcastId} started: ${dispatched} calls dispatched (${sipTrunkCalls} via SIP trunk, ${rateLimitHits} rate limited)`);
 
         return new Response(
           JSON.stringify({ 
@@ -758,6 +923,7 @@ serve(async (req) => {
             provider: selectedProvider,
             dispatched,
             sipTrunkCalls,
+            rateLimitHits,
             usingSipTrunk: sipConfig ? sipConfig.provider_type : null,
             pending: (pendingCount || 0) - dispatched,
             errors: errors.length > 0 ? errors : undefined,

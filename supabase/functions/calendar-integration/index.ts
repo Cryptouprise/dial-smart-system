@@ -6,6 +6,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper to log calendar tool invocations for audit trail
+async function logCalendarInvocation(
+  supabase: any,
+  userId: string | null,
+  action: string,
+  parameters: Record<string, any>,
+  result: Record<string, any>,
+  success: boolean,
+  errorMessage?: string,
+  startTime?: number
+): Promise<void> {
+  if (!userId) return;
+  
+  try {
+    const durationMs = startTime ? Date.now() - startTime : undefined;
+    await supabase.from('calendar_tool_invocations').insert({
+      user_id: userId,
+      action,
+      parameters: JSON.stringify(parameters).substring(0, 5000),
+      result: JSON.stringify(result).substring(0, 5000),
+      success,
+      error_message: errorMessage?.substring(0, 500),
+      duration_ms: durationMs,
+    });
+  } catch (logError) {
+    console.error('[Calendar] Failed to log invocation:', logError);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });

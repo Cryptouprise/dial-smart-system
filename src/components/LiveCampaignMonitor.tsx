@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Phone, PhoneIncoming, PhoneOff, Clock, Pause, Play, Activity, RefreshCw, Trash2 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Phone, PhoneIncoming, PhoneOff, Clock, Pause, Play, Activity, RefreshCw, Trash2, AlertTriangle, XCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -30,6 +31,14 @@ export const LiveCampaignMonitor: React.FC = () => {
     connectedLast5Min: 0,
     waitingInQueue: 0
   });
+  const [systemAlerts, setSystemAlerts] = useState<Array<{
+    id: string;
+    alertType: string;
+    severity: string;
+    title: string;
+    message: string;
+    createdAt: string;
+  }>>([]);
 
   useEffect(() => {
     loadCampaigns();
@@ -143,6 +152,24 @@ export const LiveCampaignMonitor: React.FC = () => {
       connectedLast5Min,
       waitingInQueue: queueCount || 0
     });
+
+    // Load system alerts for this campaign
+    const { data: alerts } = await supabase
+      .from('system_alerts')
+      .select('*')
+      .eq('related_id', selectedCampaignId)
+      .eq('acknowledged', false)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    setSystemAlerts((alerts || []).map(a => ({
+      id: a.id,
+      alertType: a.alert_type,
+      severity: a.severity,
+      title: a.title,
+      message: a.message,
+      createdAt: a.created_at,
+    })));
   };
 
   const handleStatusChange = async (newStatus: string) => {

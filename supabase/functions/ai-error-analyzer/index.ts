@@ -7,16 +7,18 @@ const corsHeaders = {
 };
 
 interface ErrorPayload {
-  type: 'ui' | 'api' | 'runtime' | 'network';
+  type: 'ui' | 'api' | 'runtime' | 'network' | 'backend' | 'database' | 'provider';
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
+  source?: 'client' | 'edge_function' | 'webhook';
+  functionName?: string;
 }
 
 interface RequestBody {
   error: ErrorPayload;
   suggestion?: string;
-  action: 'analyze' | 'execute';
+  action: 'analyze' | 'execute' | 'log_backend_error';
 }
 
 serve(async (req) => {
@@ -152,6 +154,37 @@ Format your response as:
       });
 
       return new Response(JSON.stringify(fixResult), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+
+    } else if (action === 'log_backend_error') {
+      // Log backend/edge function errors for monitoring
+      console.log(`[AI Error Analyzer] Logging backend error from ${errorPayload.functionName || 'unknown'}`);
+
+      // Create system alert for visibility
+      await supabase.from('system_alerts').insert({
+        user_id: user.id,
+        alert_type: 'backend_error',
+        severity: errorPayload.type === 'provider' ? 'error' : 'warning',
+        title: `Backend Error: ${errorPayload.functionName || errorPayload.type}`,
+        message: errorPayload.message.substring(0, 500),
+        metadata: {
+          type: errorPayload.type,
+          source: errorPayload.source || 'edge_function',
+          functionName: errorPayload.functionName,
+          context: errorPayload.context,
+          stack: errorPayload.stack?.substring(0, 1000),
+        },
+      });
+
+      // Generate fix suggestion for backend errors
+      const backendSuggestion = generateBackendErrorSuggestion(errorPayload);
+
+      return new Response(JSON.stringify({
+        logged: true,
+        suggestion: backendSuggestion,
+        alertCreated: true,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -309,6 +342,55 @@ async function executeAutoFix(
       }
     }
 
+    // Backend/Provider errors
+    if (error.type === 'backend' || error.type === 'provider') {
+      if (message.includes('twilio') || message.includes('retell') || message.includes('telnyx')) {
+        if (message.includes('429') || message.includes('rate')) {
+          return {
+            success: true,
+            message: 'Provider rate limit hit. Reducing call rate and retrying with backoff.',
+            action: 'provider_rate_limit_backoff',
+          };
+        }
+        if (message.includes('401') || message.includes('403') || message.includes('credential')) {
+          return {
+            success: false,
+            message: 'Provider authentication failed. Please verify your API keys in settings.',
+            action: 'provider_auth_check_needed',
+          };
+        }
+      }
+
+      // Broadcast/campaign specific errors
+      if (message.includes('broadcast') || message.includes('campaign')) {
+        if (message.includes('stuck') || message.includes('timeout')) {
+          return {
+            success: true,
+            message: 'Detected stuck calls. Resetting to pending status for retry.',
+            action: 'reset_stuck_calls',
+          };
+        }
+      }
+    }
+
+    // Database errors
+    if (error.type === 'database') {
+      if (message.includes('connection') || message.includes('timeout')) {
+        return {
+          success: true,
+          message: 'Database connection issue detected. Retrying with fresh connection.',
+          action: 'db_reconnect',
+        };
+      }
+      if (message.includes('constraint') || message.includes('violation')) {
+        return {
+          success: false,
+          message: 'Database constraint violation. Data integrity check needed.',
+          action: 'constraint_check_needed',
+        };
+      }
+    }
+
     // Generic fallback
     return {
       success: false,
@@ -324,4 +406,42 @@ async function executeAutoFix(
       action: 'fix_failed',
     };
   }
+}
+
+function generateBackendErrorSuggestion(error: ErrorPayload): string {
+  const message = error.message.toLowerCase();
+
+  if (message.includes('twilio')) {
+    return `Twilio API Error: ${error.message}
+
+1. Check Twilio account status and balance
+2. Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN secrets
+3. Review Twilio console for detailed error logs
+4. If rate limited, reduce calls_per_minute setting`;
+  }
+
+  if (message.includes('retell')) {
+    return `Retell AI Error: ${error.message}
+
+1. Verify RETELL_AI_API_KEY is valid
+2. Check Retell dashboard for agent status
+3. Ensure phone numbers are properly registered
+4. Review Retell call logs for details`;
+  }
+
+  if (message.includes('database') || message.includes('supabase')) {
+    return `Database Error: ${error.message}
+
+1. Check RLS policies for the affected table
+2. Verify user has proper permissions
+3. Review database logs in Supabase dashboard
+4. Check for constraint violations in data`;
+  }
+
+  return `Backend Error: ${error.message}
+
+1. Check edge function logs for details
+2. Verify all required secrets are configured
+3. Review the specific function code for issues
+4. Check network connectivity to external services`;
 }

@@ -492,8 +492,15 @@ serve(async (req) => {
           
           outcome = dispositionResult.disposition;
         }
-      } catch (analysisError) {
+      } catch (analysisError: any) {
         console.error('[Retell Webhook] Analysis error:', analysisError);
+        // Queue for retry by logging to system_alerts
+        await logFailedOperation(supabase, userId, 'transcript_analysis', {
+          callId: call.call_id,
+          leadId,
+          error: analysisError.message,
+          transcript: formattedTranscript.substring(0, 500),
+        });
       }
     }
 
@@ -534,19 +541,43 @@ serve(async (req) => {
           },
         });
         console.log('[Retell Webhook] Disposition router response:', dispositionResponse.data);
-      } catch (routerError) {
+      } catch (routerError: any) {
         console.error('[Retell Webhook] Disposition router error:', routerError);
+        // Queue for retry
+        await logFailedOperation(supabase, userId, 'disposition_routing', {
+          leadId,
+          outcome,
+          callId: call.call_id,
+          error: routerError.message,
+        });
       }
 
       // 5. Update nudge tracking (only if userId is available)
       if (userId) {
-        await updateNudgeTracking(supabase, leadId, userId, outcome);
+        try {
+          await updateNudgeTracking(supabase, leadId, userId, outcome);
+        } catch (nudgeError: any) {
+          console.error('[Retell Webhook] Nudge tracking error:', nudgeError);
+        }
 
         // 6. Update pipeline position
-        await updatePipelinePosition(supabase, leadId, userId, outcome);
+        try {
+          await updatePipelinePosition(supabase, leadId, userId, outcome);
+        } catch (pipelineError: any) {
+          console.error('[Retell Webhook] Pipeline position error:', pipelineError);
+        }
 
         // 7. CRITICAL: Advance workflow to next step after call ends
-        await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
+        try {
+          await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
+        } catch (workflowError: any) {
+          console.error('[Retell Webhook] Workflow advance error:', workflowError);
+          await logFailedOperation(supabase, userId, 'workflow_advance', {
+            leadId,
+            outcome,
+            error: workflowError.message,
+          });
+        }
       }
     }
 
@@ -889,4 +920,33 @@ function calculateNextActionTimeForWebhook(step: any): string {
   now.setMinutes(now.getMinutes() + delayMinutes);
   
   return now.toISOString();
+}
+
+// Helper function to log failed operations for retry
+async function logFailedOperation(
+  supabase: any,
+  userId: string | null,
+  operationType: string,
+  details: Record<string, any>
+): Promise<void> {
+  if (!userId) return;
+  
+  try {
+    await supabase.from('system_alerts').insert({
+      user_id: userId,
+      alert_type: 'failed_operation',
+      severity: 'warning',
+      title: `Failed Operation: ${operationType}`,
+      message: `A ${operationType} operation failed and may need manual review.`,
+      metadata: {
+        operationType,
+        ...details,
+        timestamp: new Date().toISOString(),
+        requiresRetry: true,
+      },
+    });
+    console.log(`[Retell Webhook] Logged failed ${operationType} operation for retry`);
+  } catch (logError) {
+    console.error('[Retell Webhook] Failed to log operation for retry:', logError);
+  }
 }
