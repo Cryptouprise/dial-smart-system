@@ -114,32 +114,43 @@ export const useBroadcastReadiness = () => {
       // Check: Phone numbers available
       const { data: phoneNumbers } = await supabase
         .from('phone_numbers')
-        .select('id, number, status, is_spam, retell_phone_id')
+        .select('id, number, status, is_spam, retell_phone_id, quarantine_until')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .eq('is_spam', false);
 
-      const availableNumbers = phoneNumbers?.filter(p => !p.retell_phone_id) || [];
+      // Filter out quarantined and Retell-only numbers for voice broadcasts
+      const now = new Date();
+      const availableNumbers = phoneNumbers?.filter(p => {
+        if (p.retell_phone_id && broadcast.ivr_mode !== 'ai_conversational') return false;
+        if (p.quarantine_until && new Date(p.quarantine_until) > now) return false;
+        return true;
+      }) || [];
+      
+      const quarantinedCount = phoneNumbers?.filter(p => p.quarantine_until && new Date(p.quarantine_until) > now).length || 0;
       
       checks.push({
         id: 'phone_numbers',
         label: 'Phone numbers available',
         status: availableNumbers.length > 0 ? 'pass' : 'fail',
         message: availableNumbers.length > 0 
-          ? `${availableNumbers.length} number(s) ready for calls` 
-          : 'No phone numbers available (Retell numbers excluded for broadcasts)',
+          ? `${availableNumbers.length} number(s) ready${quarantinedCount > 0 ? ` (${quarantinedCount} quarantined)` : ''}`
+          : 'No phone numbers available for broadcasts',
         critical: true
       });
       if (availableNumbers.length === 0) blockingReasons.push('No phone numbers available for broadcasts');
 
-      // Check: Provider credentials (can't verify from frontend, just show as info)
-      checks.push({
-        id: 'provider_credentials',
-        label: 'Provider credentials',
-        status: 'warning',
-        message: 'Verify Twilio/Telnyx credentials are set in Supabase secrets',
-        critical: false
-      });
+      // Check: Spam-flagged numbers warning
+      const spamNumbers = phoneNumbers?.filter(p => p.is_spam).length || 0;
+      if (spamNumbers > 0) {
+        checks.push({
+          id: 'spam_numbers',
+          label: 'Spam-flagged numbers',
+          status: 'warning',
+          message: `${spamNumbers} number(s) flagged as spam and excluded from use`,
+          critical: false
+        });
+      }
 
       // Check: Calling hours
       const bypassHours = broadcast.bypass_calling_hours === true;
@@ -149,14 +160,14 @@ export const useBroadcastReadiness = () => {
         const endTime = broadcast.calling_hours_end || '17:00';
         
         // Get current time in broadcast timezone
-        const now = new Date();
+        const nowDate = new Date();
         const options: Intl.DateTimeFormatOptions = {
           timeZone: timezone,
           hour: '2-digit',
           minute: '2-digit',
           hour12: false
         };
-        const currentTimeStr = now.toLocaleTimeString('en-US', options);
+        const currentTimeStr = nowDate.toLocaleTimeString('en-US', options);
         const [currentHour, currentMinute] = currentTimeStr.split(':').map(Number);
         const currentMinutes = currentHour * 60 + currentMinute;
         
@@ -207,20 +218,87 @@ export const useBroadcastReadiness = () => {
       }
 
       // Check: Stuck calls (items in 'calling' status for too long)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { count: stuckCount } = await supabase
         .from('broadcast_queue')
         .select('*', { count: 'exact', head: true })
         .eq('broadcast_id', broadcastId)
-        .eq('status', 'calling');
+        .eq('status', 'calling')
+        .lt('updated_at', fiveMinutesAgo);
 
       if (stuckCount && stuckCount > 0) {
         checks.push({
           id: 'stuck_calls',
           label: 'Stuck calls detected',
           status: 'warning',
-          message: `${stuckCount} call(s) stuck in "calling" status. Consider resetting queue.`,
+          message: `${stuckCount} call(s) stuck in "calling" status for >5 min. Will be auto-reset on start.`,
           critical: false,
           fixAction: 'reset_queue'
+        });
+      }
+
+      // Check: Recent error rate
+      const { data: recentQueue } = await supabase
+        .from('broadcast_queue')
+        .select('status')
+        .eq('broadcast_id', broadcastId)
+        .in('status', ['completed', 'answered', 'transferred', 'failed', 'dnc'])
+        .order('updated_at', { ascending: false })
+        .limit(50);
+
+      if (recentQueue && recentQueue.length >= 10) {
+        const recentFailed = recentQueue.filter(q => q.status === 'failed').length;
+        const errorRate = (recentFailed / recentQueue.length) * 100;
+        
+        if (errorRate >= 25) {
+          checks.push({
+            id: 'error_rate',
+            label: 'Recent error rate',
+            status: 'warning',
+            message: `${errorRate.toFixed(1)}% of recent calls failed. Check configuration.`,
+            critical: false
+          });
+        }
+      }
+
+      // Check: Max attempts setting
+      const maxAttempts = broadcast.max_attempts || 1;
+      checks.push({
+        id: 'max_attempts',
+        label: 'Retry configuration',
+        status: maxAttempts > 1 ? 'pass' : 'warning',
+        message: maxAttempts > 1 
+          ? `Will retry failed calls up to ${maxAttempts} times`
+          : 'No retries configured. Consider setting max_attempts > 1 for better reach.',
+        critical: false
+      });
+
+      // Check: Calls per minute setting
+      const callsPerMinute = broadcast.calls_per_minute || 50;
+      checks.push({
+        id: 'call_rate',
+        label: 'Call rate',
+        status: callsPerMinute <= 100 ? 'pass' : 'warning',
+        message: `${callsPerMinute} calls/minute${callsPerMinute > 100 ? ' (high rate may trigger rate limits)' : ''}`,
+        critical: false
+      });
+
+      // Check: Unacknowledged system alerts
+      const { count: alertCount } = await supabase
+        .from('system_alerts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('related_id', broadcastId)
+        .eq('acknowledged', false)
+        .in('severity', ['error', 'critical']);
+
+      if (alertCount && alertCount > 0) {
+        checks.push({
+          id: 'system_alerts',
+          label: 'Unresolved alerts',
+          status: 'warning',
+          message: `${alertCount} unacknowledged alert(s) for this broadcast`,
+          critical: false
         });
       }
 
@@ -251,5 +329,97 @@ export const useBroadcastReadiness = () => {
     }
   }, []);
 
-  return { checkBroadcastReadiness, isChecking };
+  // Run a test batch of calls
+  const runTestBatch = useCallback(async (broadcastId: string, testSize: number = 10): Promise<{
+    success: boolean;
+    message: string;
+    dispatched?: number;
+    errors?: string[];
+  }> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return { success: false, message: 'Not authenticated' };
+      }
+
+      // First run readiness check
+      const readiness = await checkBroadcastReadiness(broadcastId);
+      if (!readiness.isReady) {
+        return { 
+          success: false, 
+          message: `Cannot run test: ${readiness.blockingReasons.join(', ')}` 
+        };
+      }
+
+      // Temporarily limit the batch size for testing
+      const response = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { 
+          action: 'start', 
+          broadcastId,
+          // Engine will respect calls_per_minute from broadcast settings
+        }
+      });
+
+      if (response.error) {
+        return { 
+          success: false, 
+          message: response.error.message || 'Test failed' 
+        };
+      }
+
+      return {
+        success: true,
+        message: `Test batch started: ${response.data?.dispatched || 0} calls dispatched`,
+        dispatched: response.data?.dispatched,
+        errors: response.data?.errors
+      };
+
+    } catch (error: any) {
+      return { success: false, message: error.message };
+    }
+  }, [checkBroadcastReadiness]);
+
+  // Emergency stop function
+  const emergencyStop = useCallback(async (broadcastId: string): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return { success: false, message: 'Not authenticated' };
+      }
+
+      const response = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { action: 'stop', broadcastId }
+      });
+
+      if (response.error) {
+        return { success: false, message: response.error.message || 'Stop failed' };
+      }
+
+      // Also create a system alert about the emergency stop
+      await supabase.from('system_alerts').insert({
+        user_id: session.user.id,
+        alert_type: 'emergency_stop',
+        severity: 'info',
+        title: 'Campaign Emergency Stop',
+        message: 'Campaign was manually stopped by user',
+        related_id: broadcastId,
+        related_type: 'broadcast',
+      });
+
+      return { success: true, message: 'Broadcast stopped successfully' };
+
+    } catch (error: any) {
+      return { success: false, message: error.message };
+    }
+  }, []);
+
+  return { 
+    checkBroadcastReadiness, 
+    runTestBatch,
+    emergencyStop,
+    isChecking 
+  };
 };

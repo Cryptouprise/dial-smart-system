@@ -900,6 +900,42 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_tool_invocations: {
+        Row: {
+          action: string
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          parameters: Json | null
+          result: Json | null
+          success: boolean | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          parameters?: Json | null
+          result?: Json | null
+          success?: boolean | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          parameters?: Json | null
+          result?: Json | null
+          success?: boolean | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       call_logs: {
         Row: {
           amd_result: string | null
@@ -3001,6 +3037,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_alerts: {
+        Row: {
+          acknowledged: boolean | null
+          acknowledged_at: string | null
+          alert_type: string
+          auto_resolved: boolean | null
+          created_at: string
+          id: string
+          message: string
+          metadata: Json | null
+          related_id: string | null
+          related_type: string | null
+          resolved_at: string | null
+          severity: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          alert_type: string
+          auto_resolved?: boolean | null
+          created_at?: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          related_id?: string | null
+          related_type?: string | null
+          resolved_at?: string | null
+          severity?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          alert_type?: string
+          auto_resolved?: boolean | null
+          created_at?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          related_id?: string | null
+          related_type?: string | null
+          resolved_at?: string | null
+          severity?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       system_health_logs: {
         Row: {
