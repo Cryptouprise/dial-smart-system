@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useVoiceBroadcast, VoiceBroadcast, DTMFAction, parseDTMFActions } from '@/hooks/useVoiceBroadcast';
 import { useBroadcastReadiness, BroadcastReadinessResult } from '@/hooks/useBroadcastReadiness';
+import { useLiveCampaignStats, useSystemHealth } from '@/hooks/useLiveCampaignStats';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
@@ -342,8 +343,71 @@ export const VoiceBroadcastManager: React.FC = () => {
     setFormData({ ...formData, dtmf_actions: newActions });
   };
 
+  // Find active broadcast for live stats
+  const activeBroadcast = broadcasts.find(b => b.status === 'active');
+  const { stats: liveStats, alerts: liveAlerts, refetch: refetchLiveStats } = useLiveCampaignStats(activeBroadcast?.id || '');
+  const { health, runHealthCheck } = useSystemHealth();
+  
   return (
     <div className="space-y-6">
+      {/* Live Campaign Stats Panel - Only shows when a broadcast is active */}
+      {activeBroadcast && liveStats && (
+        <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 via-transparent to-primary/5">
+          <CardHeader className="py-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Radio className="h-4 w-4 animate-pulse text-primary" />
+                Live: {activeBroadcast.name}
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {health && (
+                  <Badge variant={health.healthy ? 'default' : 'destructive'} className="text-xs">
+                    {health.healthy ? 'Healthy' : `${health.stuckCalls} stuck`}
+                  </Badge>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => { refetchLiveStats(); loadBroadcasts(); }}>
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="text-center p-2 rounded-lg bg-blue-500/10">
+                <div className="text-2xl font-bold text-blue-600">{liveStats.calling || 0}</div>
+                <div className="text-xs text-muted-foreground">Calling</div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-slate-500/10">
+                <div className="text-2xl font-bold">{liveStats.pending || 0}</div>
+                <div className="text-xs text-muted-foreground">Pending</div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-green-500/10">
+                <div className="text-2xl font-bold text-green-600">{(liveStats.completed || 0) + (liveStats.answered || 0)}</div>
+                <div className="text-xs text-muted-foreground">Completed</div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-red-500/10">
+                <div className="text-2xl font-bold text-red-600">{liveStats.failed || 0}</div>
+                <div className="text-xs text-muted-foreground">Failed</div>
+              </div>
+              <div className={`text-center p-2 rounded-lg ${(liveStats.errorRate || 0) > 10 ? 'bg-red-500/20' : (liveStats.errorRate || 0) > 5 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+                <div className={`text-2xl font-bold ${(liveStats.errorRate || 0) > 10 ? 'text-red-600' : (liveStats.errorRate || 0) > 5 ? 'text-amber-600' : 'text-green-600'}`}>
+                  {(liveStats.errorRate || 0).toFixed(1)}%
+                </div>
+                <div className="text-xs text-muted-foreground">Error Rate</div>
+              </div>
+            </div>
+            {liveAlerts && liveAlerts.length > 0 && (
+              <div className="mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <div className="flex items-center gap-2 text-sm text-amber-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>{liveAlerts.length} alert{liveAlerts.length > 1 ? 's' : ''}: {liveAlerts[0].message}</span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Quick Test Section */}
       <QuickTestBroadcast />
       

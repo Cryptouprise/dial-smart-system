@@ -37,6 +37,7 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import QuickStartCards from '@/components/QuickStartCards';
 import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import QuickLaunchButton from '@/components/QuickLaunchButton';
+import SystemHealthIndicator from '@/components/SystemHealthIndicator';
 import { BudgetManager } from '@/components/BudgetManager';
 import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
 import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
@@ -185,6 +186,9 @@ const Dashboard = () => {
         return (
           <TabErrorBoundary tabName="Overview">
             <div className="space-y-4 lg:space-y-6">
+              {/* System Health Indicator - Always visible at top */}
+              <SystemHealthIndicator compact />
+              
               {/* Today's Performance - Always visible for quick stats */}
               <TodayPerformanceCard />
               
