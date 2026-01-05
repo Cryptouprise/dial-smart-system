@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,17 +17,30 @@ export interface ErrorRecord {
 
 export interface AIErrorSettings {
   enabled: boolean;
-  autoFixMode: boolean; // true = auto-fix, false = suggest-only
+  autoFixMode: boolean;
   maxRetries: number;
   logErrors: boolean;
 }
 
 const DEFAULT_SETTINGS: AIErrorSettings = {
   enabled: true,
-  autoFixMode: true, // Auto-fix enabled by default for self-healing
+  autoFixMode: true,
   maxRetries: 3,
   logErrors: true,
 };
+
+// Patterns to ignore (Supabase auth errors, etc.)
+const IGNORED_ERROR_PATTERNS = [
+  'Failed to fetch',
+  '_getUser',
+  '_useSession',
+  'SupabaseAuthClient',
+  'AuthApiError',
+  'AuthSessionMissingError',
+  'TypeError: Load failed',
+  'NetworkError',
+  'net::ERR_',
+];
 
 export const useAIErrorHandler = () => {
   const [errors, setErrors] = useState<ErrorRecord[]>([]);
@@ -37,14 +50,20 @@ export const useAIErrorHandler = () => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
+  
+  // Deduplication: track recent errors to prevent loops
+  const recentErrorsRef = useRef<Set<string>>(new Set());
 
-  // Save settings to localStorage
   useEffect(() => {
     localStorage.setItem('ai-error-settings', JSON.stringify(settings));
   }, [settings]);
 
   const updateSettings = useCallback((newSettings: Partial<AIErrorSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
+  }, []);
+
+  const shouldIgnoreError = useCallback((message: string): boolean => {
+    return IGNORED_ERROR_PATTERNS.some(pattern => message.includes(pattern));
   }, []);
 
   const captureError = useCallback(async (
@@ -57,6 +76,19 @@ export const useAIErrorHandler = () => {
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
+    // Skip ignored patterns (Supabase auth, network errors)
+    if (shouldIgnoreError(errorMessage)) {
+      return null;
+    }
+
+    // Deduplication: skip if we've seen this error recently
+    const errorKey = `${type}:${errorMessage.substring(0, 100)}`;
+    if (recentErrorsRef.current.has(errorKey)) {
+      return null;
+    }
+    recentErrorsRef.current.add(errorKey);
+    setTimeout(() => recentErrorsRef.current.delete(errorKey), 5000);
+
     const record: ErrorRecord = {
       id: crypto.randomUUID(),
       timestamp: new Date(),
@@ -68,29 +100,16 @@ export const useAIErrorHandler = () => {
       retryCount: 0,
     };
 
-    setErrors(prev => [record, ...prev].slice(0, 50)); // Keep last 50 errors
+    setErrors(prev => [record, ...prev].slice(0, 50));
 
-    // Log to database if enabled
-    if (settings.logErrors) {
+    // Log to database if enabled AND online (skip auth call to prevent loop)
+    if (settings.logErrors && navigator.onLine) {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          // Log to agent_decisions table instead of system_health_logs
-          await supabase.from('agent_decisions').insert({
-            user_id: user.id,
-            decision_type: 'error_captured',
-            reasoning: `Captured ${type} error: ${errorMessage.substring(0, 200)}`,
-            action_taken: 'Error logged for analysis',
-            outcome: JSON.stringify({
-              stack: errorStack?.substring(0, 500),
-              context,
-              error_id: record.id,
-            }),
-            success: false,
-          });
-        }
+        // Don't call supabase.auth.getUser() - it causes the loop!
+        // Just log locally for now
+        console.log('[AI Error Handler] Captured:', type, errorMessage.substring(0, 100));
       } catch (logError) {
-        console.error('Failed to log error:', logError);
+        // Silently fail - don't log errors about logging errors
       }
     }
 
@@ -100,7 +119,7 @@ export const useAIErrorHandler = () => {
     }
 
     return record.id;
-  }, [settings]);
+  }, [settings, shouldIgnoreError]);
 
   const analyzeError = useCallback(async (errorId: string): Promise<string | null> => {
     const error = errors.find(e => e.id === errorId);
@@ -287,8 +306,21 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
     ).join(' ');
     
-    // Don't capture our own logs
-    if (!message.includes('[AI Error Handler]')) {
+    // Don't capture our own logs OR Supabase auth/network errors
+    const shouldIgnore = [
+      '[AI Error Handler]',
+      'Failed to fetch',
+      '_getUser',
+      '_useSession',
+      'SupabaseAuthClient',
+      'AuthApiError',
+      'AuthSessionMissingError',
+      'TypeError: Load failed',
+      'NetworkError',
+      'net::ERR_',
+    ].some(pattern => message.includes(pattern));
+    
+    if (!shouldIgnore) {
       captureError(message, 'runtime', { source: 'console.error' });
     }
   };
