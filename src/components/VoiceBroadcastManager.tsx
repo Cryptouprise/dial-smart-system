@@ -19,9 +19,19 @@ import {
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
   Phone, PhoneOff, Clock, Settings, BarChart3, 
   MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw,
-  AlertTriangle, CheckCircle2, XCircle
+  AlertTriangle, CheckCircle2, XCircle, Square, TestTube
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
 import BroadcastReadinessChecker from '@/components/BroadcastReadinessChecker';
 import BroadcastQueueManager from '@/components/BroadcastQueueManager';
@@ -87,7 +97,7 @@ export const VoiceBroadcastManager: React.FC = () => {
     retryFailedCalls,
   } = useVoiceBroadcast();
   
-  const { checkBroadcastReadiness, isChecking: isCheckingReadiness } = useBroadcastReadiness();
+  const { checkBroadcastReadiness, runTestBatch, emergencyStop, isChecking: isCheckingReadiness } = useBroadcastReadiness();
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<VoiceBroadcast | null>(null);
@@ -105,6 +115,8 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [queueManagerBroadcastId, setQueueManagerBroadcastId] = useState<string | null>(null);
   const [readinessResults, setReadinessResults] = useState<Record<string, BroadcastReadinessResult>>({});
   const [startingBroadcastId, setStartingBroadcastId] = useState<string | null>(null);
+  const [emergencyStopId, setEmergencyStopId] = useState<string | null>(null);
+  const [testingBroadcastId, setTestingBroadcastId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -890,15 +902,25 @@ export const VoiceBroadcastManager: React.FC = () => {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                       {broadcast.status === 'active' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => stopBroadcast(broadcast.id)}
-                          disabled={isLoading}
-                        >
-                          <Pause className="h-4 w-4 mr-1" />
-                          Pause
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => stopBroadcast(broadcast.id)}
+                            disabled={isLoading}
+                          >
+                            <Pause className="h-4 w-4 mr-1" />
+                            Pause
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setEmergencyStopId(broadcast.id)}
+                          >
+                            <Square className="h-4 w-4 mr-1" />
+                            STOP
+                          </Button>
+                        </>
                       ) : (
                         <div className="flex flex-wrap items-center gap-2">
                           {/* Show "Add leads first" if no leads at all */}
@@ -923,6 +945,39 @@ export const VoiceBroadcastManager: React.FC = () => {
                             >
                               <RotateCcw className="h-4 w-4 mr-1" />
                               Reset & Run Again
+                            </Button>
+                          )}
+                          {/* Test Batch Button */}
+                          {(broadcastStats.pending || 0) > 0 && broadcast.audio_url && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                setTestingBroadcastId(broadcast.id);
+                                const result = await runTestBatch(broadcast.id, 10);
+                                if (result.success) {
+                                  toast({
+                                    title: "Test Batch Started",
+                                    description: result.message,
+                                  });
+                                } else {
+                                  toast({
+                                    title: "Test Failed",
+                                    description: result.message,
+                                    variant: "destructive",
+                                  });
+                                }
+                                setTestingBroadcastId(null);
+                              }}
+                              disabled={isLoading || testingBroadcastId === broadcast.id}
+                              title="Test with 10 calls before full launch"
+                            >
+                              {testingBroadcastId === broadcast.id ? (
+                                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <TestTube className="h-4 w-4 mr-1" />
+                              )}
+                              Test 10
                             </Button>
                           )}
                           <Button
@@ -1657,6 +1712,49 @@ export const VoiceBroadcastManager: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Emergency Stop Confirmation Dialog */}
+      <AlertDialog open={emergencyStopId !== null} onOpenChange={(open) => !open && setEmergencyStopId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Emergency Stop Confirmation
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will immediately stop all active calls and pause the campaign. 
+              Calls currently in progress may be disconnected. Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (emergencyStopId) {
+                  const result = await emergencyStop(emergencyStopId);
+                  if (result.success) {
+                    toast({
+                      title: "Emergency Stop Executed",
+                      description: "All calls have been stopped",
+                    });
+                    loadBroadcasts();
+                  } else {
+                    toast({
+                      title: "Stop Failed",
+                      description: result.message,
+                      variant: "destructive",
+                    });
+                  }
+                }
+                setEmergencyStopId(null);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Yes, Stop All Calls
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Refresh Button */}
       <div className="flex justify-center">
