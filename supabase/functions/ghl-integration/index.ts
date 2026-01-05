@@ -18,7 +18,8 @@ interface GHLRequest {
     | 'get_custom_fields'
     | 'create_custom_field'
     | 'update_pipeline_stage'
-    | 'sync_with_field_mapping';
+    | 'sync_with_field_mapping'
+    | 'get_calendars';
   apiKey: string;
   locationId: string;
   webhookKey?: string;
@@ -32,6 +33,15 @@ interface GHLRequest {
   stageId?: string;
   fieldMappings?: Record<string, string>;
   tagRules?: Record<string, string[]>;
+}
+
+// Helper to join array fields as comma-separated strings
+function formatFieldValue(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
 
 serve(async (req) => {
@@ -111,6 +121,32 @@ serve(async (req) => {
         };
         break;
 
+      case 'get_calendars':
+        // Fetch all calendars for this location
+        console.log('[GHL] Fetching calendars for location:', locationId);
+        response = await fetch(`${baseUrl}/calendars/?locationId=${locationId}`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+        }
+
+        const calendarsData = await response.json();
+        console.log('[GHL] Found calendars:', calendarsData.calendars?.length || 0);
+        result = { 
+          calendars: (calendarsData.calendars || []).map((cal: any) => ({
+            id: cal.id,
+            name: cal.name,
+            calendarType: cal.calendarType,
+            isActive: cal.isActive,
+            teamMembers: cal.teamMembers
+          }))
+        };
+        break;
+
       case 'get_contacts':
         let contactsUrl = `${baseUrl}/contacts/?locationId=${locationId}`;
         
@@ -165,7 +201,7 @@ serve(async (req) => {
           headers,
           body: JSON.stringify({
             name: fieldData.name,
-            dataType: fieldData.dataType, // TEXT, LARGE_TEXT, NUMERICAL, PHONE, MONETORY, CHECKBOX, SINGLE_OPTIONS, MULTIPLE_OPTIONS, FLOAT, TIME, DATE, TEXTBOX_LIST, FILE_UPLOAD, SIGNATURE
+            dataType: fieldData.dataType,
             placeholder: fieldData.placeholder || '',
             position: fieldData.position || 0,
             model: 'contact'
@@ -209,7 +245,7 @@ serve(async (req) => {
             priority: 1,
             notes: `Imported from GHL - Contact ID: ${contact.id}`,
             ghl_contact_id: contact.id
-          })).filter((lead: any) => lead.phone_number); // Only import contacts with phone numbers
+          })).filter((lead: any) => lead.phone_number);
 
           if (leadsToInsert.length > 0) {
             const { error: insertError } = await supabaseClient
@@ -247,35 +283,16 @@ serve(async (req) => {
           date: 'last_call_date'
         };
 
-        // Map call data to GHL custom fields
-        if (mappings.outcome && callData.outcome) {
-          customFields[mappings.outcome] = callData.outcome;
-        }
-        if (mappings.notes && callData.notes) {
-          customFields[mappings.notes] = callData.notes;
-        }
-        if (mappings.duration && callData.duration !== undefined) {
-          customFields[mappings.duration] = String(callData.duration);
-        }
-        if (mappings.date) {
-          customFields[mappings.date] = new Date().toISOString();
+        // Map all call data fields to GHL custom fields
+        for (const [systemField, ghlField] of Object.entries(mappings)) {
+          if (ghlField && callData[systemField] !== undefined) {
+            customFields[ghlField] = formatFieldValue(callData[systemField]);
+          }
         }
 
-        // Add additional fields if provided
-        if (callData.recordingUrl && mappings.recordingUrl) {
-          customFields[mappings.recordingUrl] = callData.recordingUrl;
-        }
-        if (callData.sentiment && mappings.sentiment) {
-          customFields[mappings.sentiment] = callData.sentiment;
-        }
-        if (callData.summary && mappings.summary) {
-          customFields[mappings.summary] = callData.summary;
-        }
-        if (callData.totalCalls !== undefined && mappings.totalCalls) {
-          customFields[mappings.totalCalls] = String(callData.totalCalls);
-        }
-        if (callData.leadScore !== undefined && mappings.leadScore) {
-          customFields[mappings.leadScore] = String(callData.leadScore);
+        // Always include date if mapped
+        if (mappings.date) {
+          customFields[mappings.date] = new Date().toISOString();
         }
 
         // Build update data
@@ -336,7 +353,6 @@ serve(async (req) => {
         if (response.ok) {
           const oppSearchData = await response.json();
           const opportunities = oppSearchData.opportunities || [];
-          // Get the most recent open opportunity
           const existingOpp = opportunities.find((o: any) => o.status === 'open');
           opportunityId = existingOpp?.id;
         }
@@ -390,6 +406,7 @@ serve(async (req) => {
         }
 
         console.log('[GHL] Enhanced sync with field mapping for contact:', contactId);
+        console.log('[GHL] Call data received:', Object.keys(callData));
 
         // Get user's sync settings
         const { data: syncSettings } = await supabaseClient
@@ -407,14 +424,16 @@ serve(async (req) => {
         
         for (const [systemField, ghlField] of Object.entries(userFieldMappings)) {
           if (ghlField && callData[systemField] !== undefined) {
-            syncCustomFields[ghlField as string] = String(callData[systemField]);
+            syncCustomFields[ghlField as string] = formatFieldValue(callData[systemField]);
           }
         }
 
-        // Always include date
+        // Always include date if mapped
         if (userFieldMappings.date) {
           syncCustomFields[userFieldMappings.date as string] = new Date().toISOString();
         }
+
+        console.log('[GHL] Mapped custom fields:', Object.keys(syncCustomFields));
 
         // Update contact with mapped fields
         const syncUpdateData: { customFields: Record<string, any>; tags?: string[] } = {
@@ -487,7 +506,8 @@ serve(async (req) => {
           synced: true, 
           customFields: syncCustomFields,
           tags: syncUpdateData.tags,
-          pipelineUpdated: !!stageMapping
+          pipelineUpdated: !!stageMapping,
+          fieldsCount: Object.keys(syncCustomFields).length
         };
         break;
 

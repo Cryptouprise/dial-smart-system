@@ -1931,15 +1931,16 @@ serve(async (req) => {
           );
         }
 
-        // Get user's calendar preference
+        // Get user's calendar preference and GHL calendar selection
         const { data: syncSettings } = await supabase
           .from('ghl_sync_settings')
-          .select('calendar_preference')
+          .select('calendar_preference, ghl_calendar_id, ghl_calendar_name')
           .eq('user_id', targetUserId)
           .maybeSingle();
 
         const calendarPreference = syncSettings?.calendar_preference || 'both';
-        console.log('[Calendar] User calendar preference:', calendarPreference);
+        const ghlCalendarId = syncSettings?.ghl_calendar_id || null;
+        console.log('[Calendar] User calendar preference:', calendarPreference, 'GHL Calendar ID:', ghlCalendarId);
 
         // Try to sync with Google Calendar if connected and preference allows
         let googleEventId: string | null = null;
@@ -2024,7 +2025,7 @@ serve(async (req) => {
                 ghlContactId = lead?.ghl_contact_id || null;
               }
 
-              const ghlEvent = {
+              const ghlEvent: Record<string, any> = {
                 locationId: credentials.locationId,
                 title: title || `Appointment with ${attendeeName || 'Lead'}`,
                 startTime: appointmentTime.toISOString(),
@@ -2033,6 +2034,12 @@ serve(async (req) => {
                 notes: `Booked via AI Voice System${attendeeName ? ` - ${attendeeName}` : ''}${attendeeEmail ? ` - ${attendeeEmail}` : ''}`,
                 ...(ghlContactId && { contactId: ghlContactId }),
               };
+
+              // Include calendarId if user has selected a specific GHL calendar
+              if (ghlCalendarId) {
+                ghlEvent.calendarId = ghlCalendarId;
+                console.log('[Calendar] Using GHL calendar ID:', ghlCalendarId);
+              }
 
               console.log('[Calendar] Creating GHL Calendar appointment...');
 
