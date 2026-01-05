@@ -305,19 +305,22 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
                         </div>
                         <div className="w-64">
                           <Select
-                            value={fieldMappings[field.key] || ''}
+                            value={fieldMappings[field.key] || '_none_'}
                             onValueChange={(value) => setFieldMappings(prev => ({
                               ...prev,
-                              [field.key]: value
+                              [field.key]: value === '_none_' ? '' : value
                             }))}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select GHL field..." />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Don't sync</SelectItem>
+                              <SelectItem value="_none_">Don't sync</SelectItem>
                               {ghlCustomFields.map(ghlField => (
-                                <SelectItem key={ghlField.id} value={ghlField.fieldKey || ghlField.name}>
+                                <SelectItem 
+                                  key={ghlField.id} 
+                                  value={ghlField.fieldKey || ghlField.name || ghlField.id}
+                                >
                                   {ghlField.name}
                                 </SelectItem>
                               ))}
@@ -456,17 +459,17 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
                           </div>
                           <div className="w-64">
                             <Select
-                              value={pipelineMappings[outcome] || ''}
+                              value={pipelineMappings[outcome] || '_none_'}
                               onValueChange={(value) => setPipelineMappings(prev => ({
                                 ...prev,
-                                [outcome]: value
+                                [outcome]: value === '_none_' ? '' : value
                               }))}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select stage..." />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Don't move</SelectItem>
+                                <SelectItem value="_none_">Don't move</SelectItem>
                                 {selectedPipeline.stages?.map(stage => (
                                   <SelectItem key={stage.id} value={stage.id}>
                                     {stage.name}
