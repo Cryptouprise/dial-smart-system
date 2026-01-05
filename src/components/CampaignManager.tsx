@@ -73,7 +73,7 @@ interface PhoneNumberStatus {
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
-  const { dispatchCalls, startAutoDispatch, forceRequeueLeads, isDispatching } = useCallDispatcher();
+  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, forceRequeueLeads, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
@@ -607,10 +607,13 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       return;
     }
 
-    setAutoDispatchEnabled(!autoDispatchEnabled);
-    
-    if (!autoDispatchEnabled) {
+    const nextEnabled = !autoDispatchEnabled;
+    setAutoDispatchEnabled(nextEnabled);
+
+    if (nextEnabled) {
       startAutoDispatch(30);
+    } else {
+      stopAutoDispatch();
     }
     
     toast({
@@ -1266,7 +1269,6 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                   variant="default"
                                   onClick={() => forceRequeueLeads(campaign.id)}
                                   disabled={isDispatching}
-                                  className="bg-green-600 hover:bg-green-700"
                                 >
                                   <Play className="h-4 w-4 mr-1" />
                                   {isDispatching ? 'Queuing...' : 'Force Re-queue'}
