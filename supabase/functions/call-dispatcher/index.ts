@@ -203,13 +203,13 @@ serve(async (req) => {
     console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
 
     // **CRITICAL FIX**: Check for RECENT call_logs to prevent re-calling leads
-    // Look for any calls made in the last 30 minutes for these campaigns
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    // Reduced from 30 minutes to 5 minutes to allow faster re-testing
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: recentCallLogs } = await supabase
       .from('call_logs')
       .select('lead_id, status, outcome')
       .in('campaign_id', campaignIds)
-      .gte('created_at', thirtyMinutesAgo);
+      .gte('created_at', fiveMinutesAgo);
 
     // Build set of leads that were called recently (any status except failed)
     const recentlyCalledLeadIds = new Set(

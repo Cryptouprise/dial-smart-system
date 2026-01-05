@@ -1,10 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
 // Prevent noisy toast loops when the browser temporarily can't reach Supabase
 const DISPATCH_FETCH_COOLDOWN_MS = 60_000;
 let dispatchFetchCooldownUntil = 0;
+
+// Global singleton state - ensures only ONE auto-dispatch interval runs app-wide
+let globalAutoDispatchActive = false;
+let globalIntervalRef: ReturnType<typeof setInterval> | null = null;
+let globalDispatchInFlight = false;
 
 const isTransientFetchFailure = (err: unknown) => {
   const msg = (err as any)?.message ? String((err as any).message) : String(err);
@@ -23,21 +28,20 @@ const shouldSkipDispatchFetch = () => {
 export const useCallDispatcher = () => {
   const [isDispatching, setIsDispatching] = useState(false);
   const { toast } = useToast();
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const dispatchInFlightRef = useRef(false);
 
   const dispatchCalls = useCallback(
     async (options: { silent?: boolean } = {}) => {
-      if (dispatchInFlightRef.current || shouldSkipDispatchFetch()) return null;
+      if (globalDispatchInFlight || shouldSkipDispatchFetch()) return null;
 
-      dispatchInFlightRef.current = true;
+      globalDispatchInFlight = true;
       setIsDispatching(true);
 
       try {
-        console.log('Dispatching calls...');
+        console.log('[Call Dispatcher] Dispatching calls...');
 
         const { data, error } = await supabase.functions.invoke('call-dispatcher', {
           method: 'POST',
+          body: {}, // Empty body to prevent parse warnings
         });
 
         if (error) throw error;
@@ -64,7 +68,7 @@ export const useCallDispatcher = () => {
           return null;
         }
 
-        console.error('Call dispatch error:', error);
+        console.error('[Call Dispatcher] Error:', error);
         if (!options.silent) {
           toast({
             title: 'Dispatch Failed',
@@ -75,7 +79,7 @@ export const useCallDispatcher = () => {
         return null;
       } finally {
         setIsDispatching(false);
-        dispatchInFlightRef.current = false;
+        globalDispatchInFlight = false;
       }
     },
     [toast]
@@ -83,15 +87,22 @@ export const useCallDispatcher = () => {
 
   const startAutoDispatch = useCallback(
     (intervalSeconds: number = 30) => {
-      console.log(`Starting auto-dispatch every ${intervalSeconds} seconds`);
-
-      // Ensure we never create multiple overlapping intervals
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      // CRITICAL: Prevent duplicate intervals across all components
+      if (globalAutoDispatchActive) {
+        console.warn('[Auto-Dispatch] Already running globally, ignoring duplicate start');
+        return () => {}; // Return no-op cleanup
       }
 
-      intervalRef.current = setInterval(() => {
+      console.log(`[Auto-Dispatch] Starting globally every ${intervalSeconds} seconds`);
+      globalAutoDispatchActive = true;
+
+      // Clear any lingering intervals
+      if (globalIntervalRef) {
+        clearInterval(globalIntervalRef);
+        globalIntervalRef = null;
+      }
+
+      globalIntervalRef = setInterval(() => {
         void dispatchCalls({ silent: true });
       }, intervalSeconds * 1000);
 
@@ -99,20 +110,89 @@ export const useCallDispatcher = () => {
       void dispatchCalls({ silent: true });
 
       return () => {
-        console.log('Stopping auto-dispatch');
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
+        console.log('[Auto-Dispatch] Stopping globally');
+        if (globalIntervalRef) {
+          clearInterval(globalIntervalRef);
+          globalIntervalRef = null;
         }
+        globalAutoDispatchActive = false;
       };
     },
     [dispatchCalls]
   );
 
+  // Force re-queue all leads for a campaign
+  const forceRequeueLeads = useCallback(
+    async (campaignId: string) => {
+      try {
+        // Get all campaign leads with phone numbers
+        const { data: campaignLeadData, error: fetchError } = await supabase
+          .from('campaign_leads')
+          .select('lead_id, leads(phone_number)')
+          .eq('campaign_id', campaignId);
+
+        if (fetchError) throw fetchError;
+
+        if (!campaignLeadData || campaignLeadData.length === 0) {
+          toast({
+            title: 'No Leads Found',
+            description: 'No leads in this campaign to re-queue',
+            variant: 'default',
+          });
+          return;
+        }
+
+        // Delete existing queue entries for this campaign
+        await supabase
+          .from('dialing_queues')
+          .delete()
+          .eq('campaign_id', campaignId);
+
+        // Re-add leads to queue with immediate scheduling
+        const queueEntries = campaignLeadData
+          .filter((cl: any) => cl.leads?.phone_number)
+          .map((cl: any) => ({
+            campaign_id: campaignId,
+            lead_id: cl.lead_id,
+            phone_number: cl.leads.phone_number,
+            status: 'pending',
+            priority: 1,
+            max_attempts: 3,
+            attempts: 0,
+            scheduled_at: new Date().toISOString(),
+          }));
+
+        if (queueEntries.length > 0) {
+          const { error: insertError } = await supabase
+            .from('dialing_queues')
+            .insert(queueEntries);
+
+          if (insertError) throw insertError;
+        }
+
+        toast({
+          title: 'Leads Re-queued',
+          description: `${queueEntries.length} leads added to queue for immediate calling`,
+        });
+
+        // Trigger immediate dispatch
+        await dispatchCalls({ silent: false });
+      } catch (error: any) {
+        console.error('[Force Requeue] Error:', error);
+        toast({
+          title: 'Re-queue Failed',
+          description: error.message || 'Failed to re-queue leads',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast, dispatchCalls]
+  );
 
   return {
     dispatchCalls,
     startAutoDispatch,
-    isDispatching
+    forceRequeueLeads,
+    isDispatching,
   };
 };

@@ -73,7 +73,7 @@ interface PhoneNumberStatus {
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
-  const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
+  const { dispatchCalls, startAutoDispatch, forceRequeueLeads, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
@@ -1260,6 +1260,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                 >
                                   <RotateCcw className="h-4 w-4 mr-1" />
                                   {clearingHistory ? 'Clearing...' : 'Clear History'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => forceRequeueLeads(campaign.id)}
+                                  disabled={isDispatching}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  <Play className="h-4 w-4 mr-1" />
+                                  {isDispatching ? 'Queuing...' : 'Force Re-queue'}
                                 </Button>
                               </div>
                             </div>
