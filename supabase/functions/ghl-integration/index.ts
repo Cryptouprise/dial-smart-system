@@ -8,7 +8,17 @@ const corsHeaders = {
 };
 
 interface GHLRequest {
-  action: 'test_connection' | 'sync_contacts' | 'update_contact_post_call' | 'create_opportunity' | 'get_pipelines' | 'get_contacts';
+  action: 
+    | 'test_connection' 
+    | 'sync_contacts' 
+    | 'update_contact_post_call' 
+    | 'create_opportunity' 
+    | 'get_pipelines' 
+    | 'get_contacts'
+    | 'get_custom_fields'
+    | 'create_custom_field'
+    | 'update_pipeline_stage'
+    | 'sync_with_field_mapping';
   apiKey: string;
   locationId: string;
   webhookKey?: string;
@@ -17,6 +27,11 @@ interface GHLRequest {
   callData?: any;
   opportunityData?: any;
   filters?: any;
+  fieldData?: any;
+  pipelineId?: string;
+  stageId?: string;
+  fieldMappings?: Record<string, string>;
+  tagRules?: Record<string, string[]>;
 }
 
 serve(async (req) => {
@@ -44,6 +59,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
+    const requestBody: GHLRequest = await req.json();
     const { 
       action, 
       apiKey, 
@@ -53,8 +69,13 @@ serve(async (req) => {
       contactId,
       callData,
       opportunityData,
-      filters
-    }: GHLRequest = await req.json();
+      filters,
+      fieldData,
+      pipelineId,
+      stageId,
+      fieldMappings,
+      tagRules
+    } = requestBody;
 
     if (!apiKey || !locationId) {
       throw new Error('API Key and Location ID are required');
@@ -111,6 +132,56 @@ serve(async (req) => {
         result = { contacts: contactsData.contacts || [] };
         break;
 
+      case 'get_custom_fields':
+        // Fetch all custom fields for contacts in this location
+        console.log('[GHL] Fetching custom fields for location:', locationId);
+        response = await fetch(`${baseUrl}/locations/${locationId}/customFields?model=contact`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+        }
+
+        const customFieldsData = await response.json();
+        console.log('[GHL] Found custom fields:', customFieldsData);
+        result = { 
+          customFields: customFieldsData.customFields || [],
+          total: customFieldsData.customFields?.length || 0
+        };
+        break;
+
+      case 'create_custom_field':
+        // Create a new custom field
+        if (!fieldData || !fieldData.name || !fieldData.dataType) {
+          throw new Error('Field name and dataType are required');
+        }
+
+        console.log('[GHL] Creating custom field:', fieldData);
+        response = await fetch(`${baseUrl}/locations/${locationId}/customFields`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            name: fieldData.name,
+            dataType: fieldData.dataType, // TEXT, LARGE_TEXT, NUMERICAL, PHONE, MONETORY, CHECKBOX, SINGLE_OPTIONS, MULTIPLE_OPTIONS, FLOAT, TIME, DATE, TEXTBOX_LIST, FILE_UPLOAD, SIGNATURE
+            placeholder: fieldData.placeholder || '',
+            position: fieldData.position || 0,
+            model: 'contact'
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`Failed to create custom field: ${response.status} - ${errorData}`);
+        }
+
+        const newField = await response.json();
+        console.log('[GHL] Created custom field:', newField);
+        result = { success: true, customField: newField.customField || newField };
+        break;
+
       case 'sync_contacts':
         if (direction === 'import' || direction === 'bidirectional') {
           // Import contacts from GHL
@@ -165,26 +236,72 @@ serve(async (req) => {
           throw new Error('Contact ID and call data are required');
         }
 
-        // Update contact in GHL with call outcome
+        console.log('[GHL] Updating contact post-call:', contactId, callData);
+
+        // Build custom fields based on user's field mappings or use defaults
+        const customFields: Record<string, any> = {};
+        const mappings = fieldMappings || {
+          outcome: 'last_call_outcome',
+          notes: 'last_call_notes',
+          duration: 'last_call_duration',
+          date: 'last_call_date'
+        };
+
+        // Map call data to GHL custom fields
+        if (mappings.outcome && callData.outcome) {
+          customFields[mappings.outcome] = callData.outcome;
+        }
+        if (mappings.notes && callData.notes) {
+          customFields[mappings.notes] = callData.notes;
+        }
+        if (mappings.duration && callData.duration !== undefined) {
+          customFields[mappings.duration] = String(callData.duration);
+        }
+        if (mappings.date) {
+          customFields[mappings.date] = new Date().toISOString();
+        }
+
+        // Add additional fields if provided
+        if (callData.recordingUrl && mappings.recordingUrl) {
+          customFields[mappings.recordingUrl] = callData.recordingUrl;
+        }
+        if (callData.sentiment && mappings.sentiment) {
+          customFields[mappings.sentiment] = callData.sentiment;
+        }
+        if (callData.summary && mappings.summary) {
+          customFields[mappings.summary] = callData.summary;
+        }
+        if (callData.totalCalls !== undefined && mappings.totalCalls) {
+          customFields[mappings.totalCalls] = String(callData.totalCalls);
+        }
+        if (callData.leadScore !== undefined && mappings.leadScore) {
+          customFields[mappings.leadScore] = String(callData.leadScore);
+        }
+
+        // Build update data
         const updateData: {
           customFields: Record<string, any>;
           tags?: string[];
         } = {
-          customFields: {
-            last_call_outcome: callData.outcome,
-            last_call_notes: callData.notes,
-            last_call_duration: callData.duration,
-            last_call_date: new Date().toISOString()
-          }
+          customFields
         };
 
-        // Add tags based on call outcome
-        if (callData.outcome === 'interested') {
-          updateData.tags = ['interested', 'hot-lead'];
-        } else if (callData.outcome === 'not_interested') {
-          updateData.tags = ['not-interested', 'cold-lead'];
-        } else if (callData.outcome === 'callback') {
-          updateData.tags = ['callback-requested'];
+        // Add tags based on call outcome using tag rules or defaults
+        const rules = tagRules || {
+          interested: ['interested', 'hot-lead'],
+          not_interested: ['not-interested', 'cold-lead'],
+          callback_requested: ['callback-requested', 'needs-followup'],
+          callback: ['callback-requested', 'needs-followup'],
+          appointment_set: ['appointment-booked', 'qualified'],
+          voicemail: ['voicemail-left'],
+          no_answer: ['no-answer'],
+          dnc: ['dnc', 'do-not-call'],
+          do_not_call: ['dnc', 'do-not-call']
+        };
+
+        const outcomeTags = rules[callData.outcome as keyof typeof rules];
+        if (outcomeTags) {
+          updateData.tags = outcomeTags;
         }
 
         response = await fetch(`${baseUrl}/contacts/${contactId}`, {
@@ -198,7 +315,180 @@ serve(async (req) => {
           throw new Error(`Failed to update GHL contact: ${response.status} - ${errorData}`);
         }
 
-        result = { success: true, updated: true };
+        console.log('[GHL] Contact updated successfully');
+        result = { success: true, updated: true, customFields, tags: updateData.tags };
+        break;
+
+      case 'update_pipeline_stage':
+        if (!contactId || !pipelineId || !stageId) {
+          throw new Error('Contact ID, Pipeline ID, and Stage ID are required');
+        }
+
+        console.log('[GHL] Updating pipeline stage for contact:', contactId);
+
+        // First, find existing opportunity for this contact
+        response = await fetch(`${baseUrl}/opportunities/search?locationId=${locationId}&contactId=${contactId}`, {
+          method: 'GET',
+          headers
+        });
+
+        let opportunityId = null;
+        if (response.ok) {
+          const oppSearchData = await response.json();
+          const opportunities = oppSearchData.opportunities || [];
+          // Get the most recent open opportunity
+          const existingOpp = opportunities.find((o: any) => o.status === 'open');
+          opportunityId = existingOpp?.id;
+        }
+
+        if (opportunityId) {
+          // Update existing opportunity stage
+          response = await fetch(`${baseUrl}/opportunities/${opportunityId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              pipelineId,
+              pipelineStageId: stageId
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`Failed to update opportunity stage: ${response.status} - ${errorData}`);
+          }
+
+          result = { success: true, updated: true, opportunityId };
+        } else {
+          // Create new opportunity
+          response = await fetch(`${baseUrl}/opportunities/`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              contactId,
+              pipelineId,
+              pipelineStageId: stageId,
+              title: 'AI Voice Campaign',
+              status: 'open',
+              monetaryValue: 0
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`Failed to create opportunity: ${response.status} - ${errorData}`);
+          }
+
+          const newOpp = await response.json();
+          result = { success: true, created: true, opportunity: newOpp };
+        }
+        break;
+
+      case 'sync_with_field_mapping':
+        // Enhanced sync using user's configured field mappings
+        if (!contactId || !callData) {
+          throw new Error('Contact ID and call data are required');
+        }
+
+        console.log('[GHL] Enhanced sync with field mapping for contact:', contactId);
+
+        // Get user's sync settings
+        const { data: syncSettings } = await supabaseClient
+          .from('ghl_sync_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const userFieldMappings = syncSettings?.field_mappings || {};
+        const userTagRules = syncSettings?.tag_rules || {};
+        const userPipelineMappings = syncSettings?.pipeline_stage_mappings || {};
+
+        // Build custom fields from configured mappings
+        const syncCustomFields: Record<string, any> = {};
+        
+        for (const [systemField, ghlField] of Object.entries(userFieldMappings)) {
+          if (ghlField && callData[systemField] !== undefined) {
+            syncCustomFields[ghlField as string] = String(callData[systemField]);
+          }
+        }
+
+        // Always include date
+        if (userFieldMappings.date) {
+          syncCustomFields[userFieldMappings.date as string] = new Date().toISOString();
+        }
+
+        // Update contact with mapped fields
+        const syncUpdateData: { customFields: Record<string, any>; tags?: string[] } = {
+          customFields: syncCustomFields
+        };
+
+        // Apply tag rules
+        const outcomeTagRules = userTagRules[callData.outcome];
+        if (outcomeTagRules && Array.isArray(outcomeTagRules)) {
+          syncUpdateData.tags = outcomeTagRules;
+        }
+
+        response = await fetch(`${baseUrl}/contacts/${contactId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(syncUpdateData)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`Failed to update GHL contact: ${response.status} - ${errorData}`);
+        }
+
+        // Update pipeline stage if configured
+        const stageMapping = userPipelineMappings[callData.outcome];
+        if (stageMapping && syncSettings?.default_pipeline_id) {
+          try {
+            // Find or create opportunity and move to mapped stage
+            const oppSearchResp = await fetch(
+              `${baseUrl}/opportunities/search?locationId=${locationId}&contactId=${contactId}`,
+              { method: 'GET', headers }
+            );
+            
+            let existingOppId = null;
+            if (oppSearchResp.ok) {
+              const oppData = await oppSearchResp.json();
+              existingOppId = oppData.opportunities?.find((o: any) => o.status === 'open')?.id;
+            }
+
+            if (existingOppId) {
+              await fetch(`${baseUrl}/opportunities/${existingOppId}`, {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({
+                  pipelineId: syncSettings.default_pipeline_id,
+                  pipelineStageId: stageMapping
+                })
+              });
+            } else if (syncSettings.auto_create_opportunities) {
+              await fetch(`${baseUrl}/opportunities/`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  contactId,
+                  pipelineId: syncSettings.default_pipeline_id,
+                  pipelineStageId: stageMapping,
+                  title: `AI Call - ${callData.outcome}`,
+                  status: 'open',
+                  monetaryValue: syncSettings.default_opportunity_value || 0
+                })
+              });
+            }
+          } catch (pipelineError) {
+            console.error('[GHL] Pipeline update error:', pipelineError);
+          }
+        }
+
+        result = { 
+          success: true, 
+          synced: true, 
+          customFields: syncCustomFields,
+          tags: syncUpdateData.tags,
+          pipelineUpdated: !!stageMapping
+        };
         break;
 
       case 'create_opportunity':

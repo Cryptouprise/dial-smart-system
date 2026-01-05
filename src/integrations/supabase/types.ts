@@ -1628,6 +1628,51 @@ export type Database = {
           },
         ]
       }
+      ghl_sync_settings: {
+        Row: {
+          auto_create_opportunities: boolean | null
+          created_at: string | null
+          default_opportunity_value: number | null
+          default_pipeline_id: string | null
+          field_mappings: Json | null
+          id: string
+          pipeline_stage_mappings: Json | null
+          remove_conflicting_tags: boolean | null
+          sync_enabled: boolean | null
+          tag_rules: Json | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          auto_create_opportunities?: boolean | null
+          created_at?: string | null
+          default_opportunity_value?: number | null
+          default_pipeline_id?: string | null
+          field_mappings?: Json | null
+          id?: string
+          pipeline_stage_mappings?: Json | null
+          remove_conflicting_tags?: boolean | null
+          sync_enabled?: boolean | null
+          tag_rules?: Json | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          auto_create_opportunities?: boolean | null
+          created_at?: string | null
+          default_opportunity_value?: number | null
+          default_pipeline_id?: string | null
+          field_mappings?: Json | null
+          id?: string
+          pipeline_stage_mappings?: Json | null
+          remove_conflicting_tags?: boolean | null
+          sync_enabled?: boolean | null
+          tag_rules?: Json | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       lead_nudge_tracking: {
         Row: {
           created_at: string | null
