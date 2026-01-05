@@ -17,6 +17,24 @@ interface ComplianceCheck {
   warnings: string[];
 }
 
+// Prevent noisy error loops when the browser temporarily can't reach Supabase
+const COMPLIANCE_FETCH_COOLDOWN_MS = 60_000;
+let complianceFetchCooldownUntil = 0;
+
+const isTransientFetchFailure = (err: unknown) => {
+  const msg = (err as any)?.message ? String((err as any).message) : String(err);
+  return msg.includes('Failed to fetch') || msg.includes('Load failed') || msg.includes('NetworkError');
+};
+
+const enterComplianceFetchCooldown = () => {
+  complianceFetchCooldownUntil = Date.now() + COMPLIANCE_FETCH_COOLDOWN_MS;
+};
+
+const shouldSkipComplianceFetch = () => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  return Date.now() < complianceFetchCooldownUntil;
+};
+
 export const useCampaignCompliance = (campaignId: string | null) => {
   const [metrics, setMetrics] = useState<ComplianceMetrics>({
     abandonmentRate: 0,
@@ -57,6 +75,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
 
       return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        enterComplianceFetchCooldown();
+        return false;
+      }
       console.error('Error checking calling hours:', error);
       return false;
     }
@@ -86,6 +108,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
       if (totalAnswered === 0) return 0;
       return (abandoned / totalAnswered) * 100;
     } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        enterComplianceFetchCooldown();
+        return 0;
+      }
       console.error('Error calculating abandonment rate:', error);
       return 0;
     }
@@ -103,6 +129,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
       if (error) throw error;
       return violations?.length || 0;
     } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        enterComplianceFetchCooldown();
+        return 0;
+      }
       console.error('Error checking DNC compliance:', error);
       return 0;
     }
@@ -113,6 +143,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     const violations: string[] = [];
     const warnings: string[] = [];
 
+    // If the browser can't reach Supabase right now, skip (avoid error loops)
+    if (shouldSkipComplianceFetch()) {
+      return { passed: true, violations, warnings };
+    }
     // Check abandonment rate (FCC limit: 3%)
     const abandonmentRate = await calculateAbandonmentRate(campaignId);
     if (abandonmentRate > 3) {
@@ -134,16 +168,26 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     }
 
     // Check call volume limits
-    const today = new Date().toISOString().split('T')[0];
-    const { data: todayCalls } = await supabase
-      .from('call_logs')
-      .select('id', { count: 'exact' })
-      .eq('campaign_id', campaignId)
-      .gte('created_at', today);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: todayCalls, error } = await supabase
+        .from('call_logs')
+        .select('id', { count: 'exact' })
+        .eq('campaign_id', campaignId)
+        .gte('created_at', today);
 
-    const callsToday = todayCalls?.length || 0;
-    if (callsToday > 1000) {
-      warnings.push(`High call volume today: ${callsToday} calls`);
+      if (error) throw error;
+
+      const callsToday = todayCalls?.length || 0;
+      if (callsToday > 1000) {
+        warnings.push(`High call volume today: ${callsToday} calls`);
+      }
+    } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        enterComplianceFetchCooldown();
+      } else {
+        console.error('Error checking call volume limits:', error);
+      }
     }
 
     return {
@@ -190,8 +234,8 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     let isChecking = false;
 
     const monitorInterval = setInterval(async () => {
-      // Skip if previous check is still running
-      if (isChecking) return;
+      // Skip if previous check is still running or we're in network cooldown
+      if (isChecking || shouldSkipComplianceFetch()) return;
       
       isChecking = true;
       try {
@@ -247,7 +291,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     let isActive = true;
 
     const runComplianceCheck = async () => {
-      if (isChecking || !isActive) return;
+      if (isChecking || !isActive || shouldSkipComplianceFetch()) return;
       isChecking = true;
 
       try {
