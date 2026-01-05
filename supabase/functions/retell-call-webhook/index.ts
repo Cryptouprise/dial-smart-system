@@ -504,6 +504,55 @@ serve(async (req) => {
       }
     }
 
+    // 2.5 Update dialing queue status / schedule retries (if this call was dispatched from dialing_queues)
+    if (leadId && campaignId) {
+      try {
+        const { data: queueEntry, error: queueLookupError } = await supabase
+          .from('dialing_queues')
+          .select('id, attempts, max_attempts, status')
+          .eq('lead_id', leadId)
+          .eq('campaign_id', campaignId)
+          .in('status', ['calling'])
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (queueLookupError) throw queueLookupError;
+
+        if (queueEntry) {
+          const attempts = queueEntry.attempts || 1;
+          const maxAttempts = queueEntry.max_attempts || 3;
+          const retryEligibleOutcomes = ['no_answer', 'voicemail', 'busy', 'failed', 'unknown'];
+          const shouldRetry = retryEligibleOutcomes.includes(outcome) && attempts < maxAttempts;
+
+          if (shouldRetry) {
+            await supabase
+              .from('dialing_queues')
+              .update({
+                status: 'pending',
+                scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', queueEntry.id);
+
+            console.log(`[Retell Webhook] Scheduled retry for lead ${leadId}: ${attempts}/${maxAttempts} in 30 minutes`);
+          } else {
+            await supabase
+              .from('dialing_queues')
+              .update({
+                status: retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', queueEntry.id);
+
+            console.log(`[Retell Webhook] Dialing queue marked ${retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed'} for lead ${leadId}`);
+          }
+        }
+      } catch (queueError: any) {
+        console.error('[Retell Webhook] Dialing queue update error:', queueError);
+      }
+    }
+
     // 3. Update lead status based on disposition
     if (leadId) {
       console.log('[Retell Webhook] Updating lead status...');

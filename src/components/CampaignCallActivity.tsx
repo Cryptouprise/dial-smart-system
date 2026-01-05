@@ -121,7 +121,7 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
       if (error) throw error;
 
       const pending = data?.filter(q => q.status === 'pending').length || 0;
-      const inProgress = data?.filter(q => q.status === 'in-progress' || q.status === 'dialing').length || 0;
+      const inProgress = data?.filter(q => q.status === 'in-progress' || q.status === 'dialing' || q.status === 'calling').length || 0;
       const completed = data?.filter(q => q.status === 'completed').length || 0;
       const failed = data?.filter(q => q.status === 'failed' || q.status === 'max_attempts').length || 0;
 
@@ -167,7 +167,7 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
       const allMessages = messages || [];
       const sent = allMessages.filter(m => m.direction === 'outbound' && m.status === 'delivered').length;
       const received = allMessages.filter(m => m.direction === 'inbound').length;
-      const pending = allMessages.filter(m => m.direction === 'outbound' && (m.status === 'pending' || m.status === 'sent')).length;
+      const pending = allMessages.filter(m => m.direction === 'outbound' && (m.status === 'pending' || m.status === 'queued' || m.status === 'sending')).length;
 
       setSmsStats({ sent, received, pending });
       setRecentSms(allMessages.slice(0, 15)); // Keep recent 15 for display

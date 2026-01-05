@@ -334,6 +334,35 @@ async function executeStep(supabase: any, progress: any) {
   const campaign = progress.campaign_workflows;
   const config = step?.step_config || {};
 
+  // Guard: if the campaign's workflow was turned off/changed, pause this progress so it stops sending SMS.
+  if (progress.campaign_id) {
+    const { data: campaignRow, error: campaignRowError } = await supabase
+      .from('campaigns')
+      .select('status, workflow_id')
+      .eq('id', progress.campaign_id)
+      .maybeSingle();
+
+    if (campaignRowError) {
+      console.error('[Workflow] Campaign lookup error:', campaignRowError);
+    } else {
+      const workflowDisabledOrChanged =
+        !campaignRow ||
+        campaignRow.status !== 'active' ||
+        !campaignRow.workflow_id ||
+        campaignRow.workflow_id !== progress.workflow_id;
+
+      if (workflowDisabledOrChanged) {
+        console.log(`[Workflow] Pausing workflow progress ${progress.id} - campaign workflow disabled/changed`);
+        await supabase
+          .from('lead_workflow_progress')
+          .update({ status: 'paused', updated_at: new Date().toISOString() })
+          .eq('id', progress.id);
+
+        return { success: true, action: 'paused_due_to_campaign_workflow_change' };
+      }
+    }
+  }
+
   console.log(`[Workflow] Executing step ${step?.step_type} for lead ${lead?.id}`);
 
   // Update last action timestamp
