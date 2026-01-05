@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useDispositionAutomation, FollowUpSequence, ScheduledFollowUp, SequenceStep } from '@/hooks/useDispositionAutomation';
 import { supabase } from '@/integrations/supabase/client';
+import { CallbackMonitorWidget } from '@/components/CallbackMonitorWidget';
 import { 
   Calendar, 
   Clock, 
@@ -23,7 +24,8 @@ import {
   Mail,
   Timer,
   Bot,
-  RefreshCw
+  RefreshCw,
+  PhoneCall
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -323,8 +325,12 @@ const FollowUpScheduler = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="sequences">
+      <Tabs defaultValue="callbacks">
         <TabsList>
+          <TabsTrigger value="callbacks">
+            <PhoneCall className="h-4 w-4 mr-2" />
+            Callbacks
+          </TabsTrigger>
           <TabsTrigger value="sequences">
             <Calendar className="h-4 w-4 mr-2" />
             Sequences ({sequences.length})
@@ -334,6 +340,10 @@ const FollowUpScheduler = () => {
             Pending ({pendingFollowUps.length})
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="callbacks" className="space-y-4">
+          <CallbackMonitorWidget />
+        </TabsContent>
 
         <TabsContent value="sequences" className="space-y-4">
           {showCreateForm && (

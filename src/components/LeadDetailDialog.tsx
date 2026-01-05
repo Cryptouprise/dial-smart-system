@@ -91,6 +91,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [smsMessages, setSmsMessages] = useState<any[]>([]);
+  const [currentDisposition, setCurrentDisposition] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingHistory, setIsResettingHistory] = useState(false);
@@ -145,6 +146,14 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
       setCallLogs(callLogsRes.data || []);
       setSmsMessages(smsRes.data || []);
+      
+      // Get the most recent disposition from call logs
+      const recentCallWithOutcome = (callLogsRes.data || []).find((call: any) => call.outcome);
+      if (recentCallWithOutcome?.outcome) {
+        setCurrentDisposition(recentCallWithOutcome.outcome);
+      } else {
+        setCurrentDisposition(null);
+      }
 
       // Combine all activities into a single timeline
       const allActivities: ActivityItem[] = [];
@@ -309,6 +318,42 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     }
   };
 
+  const getDispositionColor = (disposition: string): string => {
+    const colors: Record<string, string> = {
+      // Positive outcomes - green shades
+      'appointment_set': '#22c55e',
+      'appointment_booked': '#22c55e',
+      'interested': '#3b82f6',
+      'qualified': '#22c55e',
+      'converted': '#16a34a',
+      
+      // Neutral/Callback - amber shades
+      'callback_requested': '#f59e0b',
+      'callback': '#f59e0b',
+      'contacted': '#6b7280',
+      'follow_up': '#f59e0b',
+      
+      // Negative outcomes - red shades
+      'not_interested': '#ef4444',
+      'dnc': '#991b1b',
+      'do_not_call': '#991b1b',
+      'wrong_number': '#dc2626',
+      
+      // Status outcomes
+      'voicemail': '#8b5cf6',
+      'no_answer': '#6b7280',
+      'busy': '#6b7280',
+      'completed': '#22c55e',
+    };
+    return colors[disposition] || '#6b7280';
+  };
+
+  const formatDispositionName = (disposition: string): string => {
+    return disposition
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  };
+
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'call': return <Phone className="h-4 w-4" />;
@@ -360,6 +405,19 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   <Badge variant={lead.status === 'new' ? 'default' : 'secondary'} className="text-xs">
                     {lead.status}
                   </Badge>
+                  {currentDisposition && currentDisposition !== lead.status && (
+                    <Badge 
+                      variant="outline" 
+                      className="text-xs"
+                      style={{ 
+                        backgroundColor: getDispositionColor(currentDisposition) + '20',
+                        borderColor: getDispositionColor(currentDisposition),
+                        color: getDispositionColor(currentDisposition)
+                      }}
+                    >
+                      {formatDispositionName(currentDisposition)}
+                    </Badge>
+                  )}
                   {lead.do_not_call && (
                     <Badge variant="destructive" className="text-xs">DNC</Badge>
                   )}

@@ -582,7 +582,7 @@ serve(async (req) => {
         const callSummary = dispositionResult?.summary || 'Callback requested';
         const { data: currentLead } = await supabase
           .from('leads')
-          .select('notes')
+          .select('notes, first_name')
           .eq('id', leadId)
           .maybeSingle();
         
@@ -611,6 +611,46 @@ serve(async (req) => {
           } catch (queueError) {
             console.error('[Retell Webhook] Failed to add callback to dialing queue:', queueError);
           }
+        }
+        
+        // Send auto-confirmation SMS to the lead
+        try {
+          const formattedTime = callbackTime.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          });
+          
+          // Get an SMS-capable from number
+          const { data: fromNumber } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          
+          if (fromNumber?.number && call.to_number) {
+            const leadName = currentLead?.first_name ? ` ${currentLead.first_name}` : '';
+            const confirmationMessage = `Hi${leadName}! Just confirming - we'll call you back at ${formattedTime}. Looking forward to speaking with you!`;
+            
+            await supabase.functions.invoke('sms-messaging', {
+              body: {
+                action: 'send_sms',
+                to: call.to_number,
+                from: fromNumber.number,
+                body: confirmationMessage,
+                lead_id: leadId,
+              }
+            });
+            
+            console.log(`[Retell Webhook] Sent callback confirmation SMS to ${call.to_number}`);
+          } else {
+            console.log('[Retell Webhook] Could not send confirmation SMS - no from number available');
+          }
+        } catch (smsError) {
+          console.error('[Retell Webhook] Failed to send confirmation SMS:', smsError);
+          // Don't fail the main flow for SMS errors
         }
       }
 
@@ -839,11 +879,35 @@ function mapRetellAnalysisToDisposition(
   return { disposition: 'contacted', confidence: 0.5, summary: analysis.call_summary || '' };
 }
 
-// Extract callback time from transcript (e.g. "call me back in 10 minutes")
+// Extract callback time from transcript (e.g. "call me back in 10 minutes" or "four minutes")
 function extractCallbackTimeFromTranscript(transcript: string): number {
   const text = transcript.toLowerCase();
   
-  // Pattern matching for specific time mentions
+  // Map spoken numbers to digits - must check BEFORE digit patterns
+  const numberWords: Record<string, number> = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+    'twenty-five': 25, 'thirty': 30, 'forty': 40, 'forty-five': 45, 'fifty': 50
+  };
+  
+  // Check for spoken number + time unit patterns FIRST (e.g., "four minutes", "ten hours")
+  for (const [word, num] of Object.entries(numberWords)) {
+    const minutePattern = new RegExp(`${word}\\s*(minute|min)`, 'i');
+    const hourPattern = new RegExp(`${word}\\s*hour`, 'i');
+    
+    if (minutePattern.test(text)) {
+      console.log(`[extractCallbackTime] Matched spoken number: "${word}" minutes = ${num}`);
+      return num;
+    }
+    if (hourPattern.test(text)) {
+      console.log(`[extractCallbackTime] Matched spoken number: "${word}" hours = ${num * 60} minutes`);
+      return num * 60;
+    }
+  }
+  
+  // Pattern matching for digit-based time mentions
   const patterns: Array<{ regex: RegExp; unit?: number; value?: number }> = [
     { regex: /(\d+)\s*minutes?/i, unit: 1 },
     { regex: /(\d+)\s*hours?/i, unit: 60 },
@@ -862,12 +926,20 @@ function extractCallbackTimeFromTranscript(transcript: string): number {
   for (const pattern of patterns) {
     const match = text.match(pattern.regex);
     if (match) {
-      if (pattern.value !== undefined) return pattern.value;
-      if (match[1] && pattern.unit !== undefined) return parseInt(match[1]) * pattern.unit;
+      if (pattern.value !== undefined) {
+        console.log(`[extractCallbackTime] Matched pattern with value: ${pattern.value} minutes`);
+        return pattern.value;
+      }
+      if (match[1] && pattern.unit !== undefined) {
+        const result = parseInt(match[1]) * pattern.unit;
+        console.log(`[extractCallbackTime] Matched pattern with digits: ${match[1]} * ${pattern.unit} = ${result} minutes`);
+        return result;
+      }
     }
   }
   
   // Default: 30 minutes if callback requested but no specific time mentioned
+  console.log('[extractCallbackTime] No specific time found, defaulting to 30 minutes');
   return 30;
 }
 

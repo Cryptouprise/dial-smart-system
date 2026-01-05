@@ -13,9 +13,23 @@ const DNC_DISPOSITIONS = [
 ];
 
 // Dispositions that should remove from all active campaigns/workflows
+// Includes BOTH negative outcomes AND positive terminal outcomes (appointment, callback, etc.)
 const REMOVE_ALL_DISPOSITIONS = [
+  // Negative outcomes - stop calling, they're not interested
   'not_interested', 'wrong_number', 'already_has_solar', 'already_has_service',
-  'deceased', 'business_closed', 'invalid_number', 'disconnected'
+  'deceased', 'business_closed', 'invalid_number', 'disconnected',
+  
+  // Positive terminal outcomes - lead is handled, stop the sequence!
+  'appointment_set', 'appointment_booked', 'appointment_scheduled', 'appointment',
+  'callback_requested', 'callback_scheduled', 'callback',
+  'converted', 'sale', 'closed_won', 'qualified', 'booked',
+  'transferred', 'spoke_with_decision_maker', 'hot_lead'
+];
+
+// Dispositions that should PAUSE (not remove) the workflow - lead needs more nurturing later
+const PAUSE_WORKFLOW_DISPOSITIONS = [
+  'follow_up', 'potential_prospect', 'needs_more_info', 'timing_not_right',
+  'send_info', 'left_voicemail', 'nurture'
 ];
 
 serve(async (req) => {

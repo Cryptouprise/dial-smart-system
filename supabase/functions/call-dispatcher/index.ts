@@ -596,6 +596,10 @@ serve(async (req) => {
               })
               .eq('id', call.id);
             console.log(`[Dispatcher] Call failed, max attempts (${maxAttempts}) reached`);
+            
+            // CRITICAL: Advance workflow to next step when max_attempts exhausted
+            // This ensures the workflow continues (e.g., SMS step) even if calls don't connect
+            await advanceWorkflowPastFailedCallStep(supabase, call.lead_id, call.campaign_id);
           }
           
           continue;
@@ -694,6 +698,74 @@ serve(async (req) => {
     );
   }
 });
+
+// Advance workflow to next step when a call step fails after max_attempts
+async function advanceWorkflowPastFailedCallStep(supabase: any, leadId: string, campaignId: string) {
+  try {
+    // Find active workflow progress for this lead/campaign
+    const { data: progress, error: progressError } = await supabase
+      .from('lead_workflow_progress')
+      .select(`
+        id, workflow_id, current_step_id,
+        workflow_steps!lead_workflow_progress_current_step_id_fkey(id, step_order, step_type, workflow_id)
+      `)
+      .eq('lead_id', leadId)
+      .eq('campaign_id', campaignId)
+      .eq('status', 'active')
+      .maybeSingle();
+    
+    if (progressError || !progress) {
+      console.log(`[Dispatcher] No active workflow found for lead ${leadId} in campaign ${campaignId}`);
+      return;
+    }
+    
+    const currentStep = progress.workflow_steps;
+    if (!currentStep) {
+      console.log(`[Dispatcher] No current step found for workflow progress ${progress.id}`);
+      return;
+    }
+    
+    // Get the next step in the workflow
+    const { data: nextStep } = await supabase
+      .from('workflow_steps')
+      .select('id, step_order, step_type, step_config')
+      .eq('workflow_id', progress.workflow_id)
+      .gt('step_order', currentStep.step_order)
+      .order('step_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    
+    if (nextStep) {
+      // Move to next step
+      const nextActionAt = calculateNextActionTime(nextStep);
+      await supabase
+        .from('lead_workflow_progress')
+        .update({
+          current_step_id: nextStep.id,
+          next_action_at: nextActionAt,
+          last_action_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', progress.id);
+      
+      console.log(`[Dispatcher] Advanced workflow for lead ${leadId} to step ${nextStep.step_order} (${nextStep.step_type})`);
+    } else {
+      // No more steps - complete the workflow
+      await supabase
+        .from('lead_workflow_progress')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', progress.id);
+      
+      console.log(`[Dispatcher] Workflow completed for lead ${leadId} (no more steps after failed call)`);
+    }
+  } catch (error) {
+    console.error(`[Dispatcher] Error advancing workflow for lead ${leadId}:`, error);
+  }
+}
 
 function calculateNextActionTime(step: any): string {
   const config = step?.step_config || {};
