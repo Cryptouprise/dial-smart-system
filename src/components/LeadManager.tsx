@@ -48,6 +48,8 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<any | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<any | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -268,6 +270,49 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedLeads.length === 0) return;
+    
+    setBulkDeleting(true);
+    let deleted = 0;
+    let archived = 0;
+    
+    try {
+      for (const leadId of selectedLeads) {
+        try {
+          const { error } = await supabase.from('leads').delete().eq('id', leadId);
+          if (error) throw error;
+          deleted++;
+        } catch (err) {
+          // Fall back to archiving
+          await archiveLead(leadId);
+          archived++;
+        }
+      }
+      
+      const messages = [];
+      if (deleted > 0) messages.push(`${deleted} deleted`);
+      if (archived > 0) messages.push(`${archived} archived (had history)`);
+      
+      toast({
+        title: 'Bulk delete complete',
+        description: messages.join(', '),
+      });
+      
+      setSelectedLeads([]);
+      loadLeads();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete some leads',
+        variant: 'destructive',
+      });
+    } finally {
+      setBulkDeleting(false);
+      setBulkDeleteDialogOpen(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Actions */}
@@ -298,16 +343,26 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
           </Select>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {selectedLeads.length > 0 && (
-            <Button 
-              variant="outline" 
-              onClick={handleResetForCalling}
-              disabled={isLoading}
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Reset for Calling ({selectedLeads.length})
-            </Button>
+            <>
+              <Button 
+                variant="outline" 
+                onClick={handleResetForCalling}
+                disabled={isLoading}
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset for Calling ({selectedLeads.length})
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setBulkDeleteDialogOpen(true)}
+                disabled={bulkDeleting}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedLeads.length})
+              </Button>
+            </>
           )}
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
@@ -780,6 +835,27 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => leadToDelete && deleteOrArchiveLead(leadToDelete)}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedLeads.length} leads?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all selected leads. Leads with call/SMS history will be archived (Do Not Call) instead of deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleting ? 'Deleting...' : `Delete ${selectedLeads.length} Leads`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

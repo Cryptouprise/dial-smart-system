@@ -9,13 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
-import { Upload, RotateCw, Settings, Play, Pause, Zap, Bot, Shield, RefreshCw, BarChart3, History, Database } from 'lucide-react';
+import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
+import { Upload, RotateCw, Settings, Play, Pause, Zap, Bot, Shield, RefreshCw, BarChart3, History, Database, Download, CheckCircle, Loader2 } from 'lucide-react';
 import CallAnalytics from './CallAnalytics';
 import RotationHistory from './RotationHistory';
 import NumberPoolManager from './NumberPoolManager';
 import AutomationEngine from './AutomationEngine';
 import AlertSystem from './AlertSystem';
-
+import { supabase } from '@/integrations/supabase/client';
 interface NumberRotationManagerProps {
   numbers: any[];
   onRefreshNumbers: () => void;
@@ -39,6 +40,8 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
   const { importPhoneNumber, deletePhoneNumber, listPhoneNumbers, listAgents, isLoading } = useRetellAI();
 
   const [agents, setAgents] = useState<any[]>([]);
+  const [fetchingTrunk, setFetchingTrunk] = useState(false);
+  const [trunkInfo, setTrunkInfo] = useState<{ name: string; sid: string } | null>(null);
 
   useEffect(() => {
     loadAgents();
@@ -75,6 +78,43 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
       }
     } catch (error) {
       console.error('Error loading automation settings:', error);
+    }
+  };
+
+  const fetchTerminationUri = async () => {
+    setFetchingTrunk(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'list_sip_trunks' }
+      });
+
+      if (error) throw error;
+
+      if (data?.trunks && data.trunks.length > 0) {
+        const trunk = data.trunks[0];
+        const uri = trunk.termination_uri || `${trunk.sid.toLowerCase()}.pstn.twilio.com`;
+        setTerminationUri(uri);
+        setTrunkInfo({ name: trunk.friendly_name || trunk.sid, sid: trunk.sid });
+        toast({
+          title: "SIP Trunk Found",
+          description: `Connected to: ${trunk.friendly_name || trunk.sid}`,
+        });
+      } else {
+        toast({
+          title: "No SIP Trunk Found",
+          description: "You need to create a SIP trunk in your Twilio console first",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      console.error('Error fetching SIP trunks:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch SIP trunks from Twilio",
+        variant: "destructive"
+      });
+    } finally {
+      setFetchingTrunk(false);
     }
   };
 
@@ -235,13 +275,36 @@ const NumberRotationManager = ({ numbers, onRefreshNumbers }: NumberRotationMana
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="automationTerminationUri">Default Termination URI</Label>
-                  <Input
-                    id="automationTerminationUri"
-                    placeholder="e.g., someuri.pstn.twilio.com"
-                    value={terminationUri}
-                    onChange={(e) => setTerminationUri(e.target.value)}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Used for all automatic imports</p>
+                  <div className="flex gap-2">
+                    <Input
+                      id="automationTerminationUri"
+                      placeholder="e.g., someuri.pstn.twilio.com"
+                      value={terminationUri}
+                      onChange={(e) => setTerminationUri(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={fetchTerminationUri}
+                      disabled={fetchingTrunk}
+                      className="shrink-0"
+                    >
+                      {fetchingTrunk ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      <span className="ml-2 hidden sm:inline">Fetch from Twilio</span>
+                    </Button>
+                  </div>
+                  {trunkInfo ? (
+                    <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                      <CheckCircle className="h-3 w-3" />
+                      Connected: {trunkInfo.name}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">Used for all automatic imports</p>
+                  )}
                 </div>
 
                 {autoAssignAgent && (
