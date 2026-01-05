@@ -688,7 +688,96 @@ serve(async (req) => {
           }
 
           if (integration.provider === 'ghl') {
-            results.ghl = { success: true, message: 'GHL sync pending' };
+            try {
+              // Get GHL credentials
+              const { data: creds } = await supabase
+                .from('user_credentials')
+                .select('credential_key, credential_value_encrypted')
+                .eq('user_id', appointment.user_id)
+                .eq('service_name', 'gohighlevel');
+
+              if (creds && creds.length > 0) {
+                const ghlCreds: Record<string, string> = {};
+                creds.forEach((c) => {
+                  try {
+                    ghlCreds[c.credential_key] = atob(c.credential_value_encrypted);
+                  } catch (e) {
+                    console.error('[Calendar] Failed to decode GHL credential');
+                  }
+                });
+
+                if (ghlCreds.apiKey && ghlCreds.locationId) {
+                  // Create appointment in GHL Calendar
+                  const ghlEvent = {
+                    locationId: ghlCreds.locationId,
+                    title: appointment.title || 'Appointment',
+                    startTime: appointment.start_time,
+                    endTime: appointment.end_time,
+                    timezone: appointment.timezone || 'America/New_York',
+                    notes: appointment.description || 'Booked via AI Voice System',
+                  };
+
+                  // If we have a lead with GHL contact ID, include it
+                  if (appointment.lead_id) {
+                    const { data: lead } = await supabase
+                      .from('leads')
+                      .select('ghl_contact_id, first_name, last_name, phone_number, email')
+                      .eq('id', appointment.lead_id)
+                      .maybeSingle();
+
+                    if (lead?.ghl_contact_id) {
+                      (ghlEvent as any).contactId = lead.ghl_contact_id;
+                    }
+                    if (lead?.email) {
+                      (ghlEvent as any).email = lead.email;
+                    }
+                    if (lead?.phone_number) {
+                      (ghlEvent as any).phone = lead.phone_number;
+                    }
+                  }
+
+                  console.log('[Calendar] Creating GHL appointment:', JSON.stringify(ghlEvent));
+
+                  const ghlResponse = await fetch(
+                    `https://services.leadconnectorhq.com/calendars/events`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${ghlCreds.apiKey}`,
+                        'Content-Type': 'application/json',
+                        'Version': '2021-07-28'
+                      },
+                      body: JSON.stringify(ghlEvent)
+                    }
+                  );
+
+                  if (ghlResponse.ok) {
+                    const ghlResult = await ghlResponse.json();
+                    results.ghl = { success: true, eventId: ghlResult.id || ghlResult.event?.id };
+                    console.log('[Calendar] GHL event created:', results.ghl.eventId);
+
+                    // Update appointment with GHL event ID
+                    if (results.ghl.eventId) {
+                      await supabase
+                        .from('calendar_appointments')
+                        .update({ ghl_appointment_id: results.ghl.eventId })
+                        .eq('id', appointment.id);
+                    }
+                  } else {
+                    const errorText = await ghlResponse.text();
+                    console.error('[Calendar] GHL API error:', ghlResponse.status, errorText);
+                    results.ghl = { success: false, error: `API error: ${ghlResponse.status}` };
+                  }
+                } else {
+                  results.ghl = { success: false, error: 'GHL credentials incomplete' };
+                }
+              } else {
+                results.ghl = { success: false, error: 'GHL not connected' };
+              }
+            } catch (error) {
+              console.error('[Calendar] GHL sync error:', error);
+              results.ghl = { success: false, error: String(error) };
+            }
           }
         }
 
@@ -1892,6 +1981,75 @@ serve(async (req) => {
           }
         }
 
+        // Try to sync with GHL Calendar if connected
+        let ghlAppointmentId: string | null = null;
+
+        const { data: ghlCreds } = await supabase
+          .from('user_credentials')
+          .select('credential_key, credential_value_encrypted')
+          .eq('user_id', targetUserId)
+          .eq('service_name', 'gohighlevel');
+
+        if (ghlCreds && ghlCreds.length > 0) {
+          try {
+            const credentials: Record<string, string> = {};
+            ghlCreds.forEach((c) => {
+              try {
+                credentials[c.credential_key] = atob(c.credential_value_encrypted);
+              } catch (e) {}
+            });
+
+            if (credentials.apiKey && credentials.locationId) {
+              // Get lead's GHL contact ID if available
+              let ghlContactId: string | null = null;
+              if (leadId) {
+                const { data: lead } = await supabase
+                  .from('leads')
+                  .select('ghl_contact_id')
+                  .eq('id', leadId)
+                  .maybeSingle();
+                ghlContactId = lead?.ghl_contact_id || null;
+              }
+
+              const ghlEvent = {
+                locationId: credentials.locationId,
+                title: title || `Appointment with ${attendeeName || 'Lead'}`,
+                startTime: appointmentTime.toISOString(),
+                endTime: endTime.toISOString(),
+                timezone: userTimezone,
+                notes: `Booked via AI Voice System${attendeeName ? ` - ${attendeeName}` : ''}${attendeeEmail ? ` - ${attendeeEmail}` : ''}`,
+                ...(ghlContactId && { contactId: ghlContactId }),
+              };
+
+              console.log('[Calendar] Creating GHL Calendar appointment...');
+
+              const ghlResponse = await fetch(
+                `https://services.leadconnectorhq.com/calendars/events`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${credentials.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'Version': '2021-07-28'
+                  },
+                  body: JSON.stringify(ghlEvent)
+                }
+              );
+
+              if (ghlResponse.ok) {
+                const ghlResult = await ghlResponse.json();
+                ghlAppointmentId = ghlResult.id || ghlResult.event?.id;
+                console.log('[Calendar] GHL appointment created:', ghlAppointmentId);
+              } else {
+                const errorText = await ghlResponse.text();
+                console.error('[Calendar] GHL Calendar creation failed:', ghlResponse.status, errorText);
+              }
+            }
+          } catch (ghlError) {
+            console.error('[Calendar] GHL Calendar error:', ghlError);
+          }
+        }
+
         // Always save to our local appointments table
         const { data: appt, error } = await supabase
           .from('calendar_appointments')
@@ -1902,6 +2060,7 @@ serve(async (req) => {
             start_time: appointmentTime.toISOString(),
             end_time: endTime.toISOString(),
             google_event_id: googleEventId,
+            ghl_appointment_id: ghlAppointmentId,
             status: 'confirmed',
             timezone: userTimezone,
             metadata: {
@@ -1910,6 +2069,8 @@ serve(async (req) => {
               attendee_phone: callerPhone || attendee_phone || null,
               caller_phone: callerPhone || null,
               source: 'retell_ai',
+              synced_to_google: !!googleEventId,
+              synced_to_ghl: !!ghlAppointmentId,
             },
           })
           .select()
@@ -1934,7 +2095,7 @@ serve(async (req) => {
           targetUserId,
           'book_appointment',
           { attendee_name: attendeeName, attendee_email: attendeeEmail, start_time: appointmentTime.toISOString() },
-          { appointment_id: appt?.id, google_event_id: googleEventId },
+          { appointment_id: appt?.id, google_event_id: googleEventId, ghl_appointment_id: ghlAppointmentId },
           true,
           undefined,
           bookStartTime
