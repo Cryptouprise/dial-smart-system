@@ -258,7 +258,7 @@ serve(async (req) => {
         if (leadId) {
           const { data: leadById } = await supabaseAdmin
             .from('leads')
-            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code')
+            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
             .eq('id', leadId)
             .maybeSingle();
           lead = leadById;
@@ -271,7 +271,7 @@ serve(async (req) => {
           
           const { data: leadByPhone } = await supabaseAdmin
             .from('leads')
-            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code')
+            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
             .eq('user_id', userId)
             .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
             .limit(1)
@@ -381,6 +381,63 @@ serve(async (req) => {
             'contact.full_address': fullAddress,
             'contact.fullAddress': fullAddress,
           };
+
+          // CALLBACK CONTEXT INJECTION
+          // Check if this is a callback (lead has next_callback_at within 5 minutes of now)
+          const isCallback = lead.next_callback_at && 
+            new Date(lead.next_callback_at) <= new Date(Date.now() + 5 * 60 * 1000);
+          
+          if (isCallback) {
+            console.log('[Outbound Calling] This is a CALLBACK - injecting context');
+            
+            // Fetch last call transcript from call_logs
+            const { data: lastCall } = await supabaseAdmin
+              .from('call_logs')
+              .select('notes, ended_at, outcome')
+              .eq('lead_id', resolvedLeadId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            
+            const lastCallDate = lastCall?.ended_at 
+              ? new Date(lastCall.ended_at).toLocaleString('en-US', { 
+                  timeZone: timezone,
+                  dateStyle: 'medium',
+                  timeStyle: 'short'
+                })
+              : 'recently';
+            
+            // Extract key points from previous transcript (limit to 500 chars for context)
+            const previousConversation = lastCall?.notes || '';
+            const conversationSummary = previousConversation.length > 500 
+              ? previousConversation.substring(0, 500) + '...'
+              : previousConversation;
+            
+            // Add callback-specific variables
+            dynamicVariables['is_callback'] = 'true';
+            dynamicVariables['callback_context'] = 'This is a callback - the customer previously requested we call them back.';
+            dynamicVariables['last_call_date'] = lastCallDate;
+            dynamicVariables['previous_conversation'] = conversationSummary;
+            dynamicVariables['previous_outcome'] = lastCall?.outcome || 'callback_requested';
+            
+            // GoHighLevel-style prefixes for callback
+            dynamicVariables['contact.is_callback'] = 'true';
+            dynamicVariables['contact.last_call_date'] = lastCallDate;
+            dynamicVariables['contact.previous_conversation'] = conversationSummary;
+            dynamicVariables['contact.previous_outcome'] = lastCall?.outcome || 'callback_requested';
+            
+            console.log('[Outbound Calling] Callback context injected:', {
+              is_callback: true,
+              last_call_date: lastCallDate,
+              previous_outcome: lastCall?.outcome,
+              conversation_length: conversationSummary.length
+            });
+          } else {
+            dynamicVariables['is_callback'] = 'false';
+            dynamicVariables['callback_context'] = '';
+            dynamicVariables['previous_conversation'] = '';
+            dynamicVariables['contact.is_callback'] = 'false';
+          }
 
           // Include lead custom_fields as additional variables
           if (lead.custom_fields && typeof lead.custom_fields === 'object') {
