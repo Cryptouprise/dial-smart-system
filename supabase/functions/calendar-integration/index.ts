@@ -709,6 +709,7 @@ serve(async (req) => {
 
       // This is the PRIMARY get_available_slots handler - works for both JWT auth AND Retell custom function calls
       case 'get_available_slots': {
+        const startTime = Date.now();
         // Accept user_id from params (for Retell custom function calls) OR from auth header
         const targetUserId = params.user_id || userId;
 
@@ -727,12 +728,14 @@ serve(async (req) => {
 
         if (!targetUserId) {
           // Return a helpful message for Retell instead of an error
+          const result = {
+            success: false,
+            available_slots: [],
+            message: "I'm having trouble accessing the calendar. Please try again or contact support.",
+          };
+          await logCalendarInvocation(supabase, userId, 'get_available_slots', params, result, false, 'No user ID', startTime);
           return new Response(
-            JSON.stringify({
-              success: false,
-              available_slots: [],
-              message: "I'm having trouble accessing the calendar. Please try again or contact support.",
-            }),
+            JSON.stringify(result),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -752,14 +755,16 @@ serve(async (req) => {
           const currentTime = formatCurrentTime(userTimeZone);
           
           // Return default business hours if no availability configured
+          const result = {
+            success: true,
+            available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
+            current_time: currentTime,
+            timezone: userTimeZone,
+            message: `I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?`,
+          };
+          await logCalendarInvocation(supabase, targetUserId, 'get_available_slots', params, result, true, undefined, startTime);
           return new Response(
-            JSON.stringify({
-              success: true,
-              available_slots: ['9:00 AM', '10:00 AM', '11:00 AM', '2:00 PM', '3:00 PM'],
-              current_time: currentTime,
-              timezone: userTimeZone,
-              message: `I have availability at 9 AM, 10 AM, 11 AM, 2 PM, and 3 PM. Which time works best for you?`,
-            }),
+            JSON.stringify(result),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -921,20 +926,25 @@ serve(async (req) => {
 
         console.log('[Calendar] Available slots:', availableSlots.length);
 
+        // Log successful get_available_slots invocation
+        const result = {
+          success: true,
+          current_time: currentTime,
+          timezone: timeZone,
+          range_start: rangeStartYmd,
+          range_end: rangeEndYmd,
+          available_slots: availableSlots,
+          slots: detailedSlots.slice(0, 10),
+          message:
+            availableSlots.length > 0
+              ? `I have ${availableSlots.length} available time slots: ${availableSlots.join(', ')}. Which time works best for you?`
+              : "I don't have any available slots in the next few days. Would you like to try a different week?",
+        };
+        
+        await logCalendarInvocation(supabase, targetUserId, 'get_available_slots', params, { slotsCount: availableSlots.length }, true, undefined, startTime);
+        
         return new Response(
-          JSON.stringify({
-            success: true,
-            current_time: currentTime,
-            timezone: timeZone,
-            range_start: rangeStartYmd,
-            range_end: rangeEndYmd,
-            available_slots: availableSlots,
-            slots: detailedSlots.slice(0, 10),
-            message:
-              availableSlots.length > 0
-                ? `I have ${availableSlots.length} available time slots: ${availableSlots.join(', ')}. Which time works best for you?`
-                : "I don't have any available slots in the next few days. Would you like to try a different week?",
-          }),
+          JSON.stringify(result),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
