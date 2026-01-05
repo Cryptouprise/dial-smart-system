@@ -743,6 +743,9 @@ async function analyzeTranscriptWithAI(
 }
 
 function mapDispositionToLeadStatus(disposition: string): string {
+  // IMPORTANT: For non-connecting outcomes (voicemail, no_answer, busy, failed),
+  // keep the lead status as 'new' so they remain eligible for retry attempts.
+  // Only change status to definitive values when a real conversation happens.
   const mapping: Record<string, string> = {
     'appointment_set': 'appointment_set',
     'interested': 'interested',
@@ -751,10 +754,13 @@ function mapDispositionToLeadStatus(disposition: string): string {
     'not_interested': 'not_interested',
     'dnc': 'dnc',
     'do_not_call': 'dnc',
-    'voicemail': 'voicemail',
-    'no_answer': 'no_answer',
-    'busy': 'no_answer',
-    'failed': 'failed',
+    // Non-connecting outcomes - keep as 'new' to allow retries
+    'voicemail': 'new',
+    'no_answer': 'new',
+    'busy': 'new',
+    'failed': 'new',
+    'unknown': 'new',
+    // Only mark as 'contacted' when a real conversation happened
     'completed': 'contacted',
     'contacted': 'contacted',
   };
