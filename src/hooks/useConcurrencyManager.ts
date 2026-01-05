@@ -236,12 +236,13 @@ export const useConcurrencyManager = () => {
 
       if (error) throw error;
 
+      // Higher defaults for high-volume campaigns (10k+ leads)
       const settings: ConcurrencySettings = {
-        maxConcurrentCalls: data?.max_concurrent_calls || 10,
-        callsPerMinute: data?.calls_per_minute || 30,
-        maxCallsPerAgent: data?.max_calls_per_agent || 3,
+        maxConcurrentCalls: data?.max_concurrent_calls || 50,
+        callsPerMinute: data?.calls_per_minute || 60,
+        maxCallsPerAgent: data?.max_calls_per_agent || 5,
         enableAdaptivePacing: data?.enable_adaptive_pacing ?? true,
-        retellMaxConcurrent: data?.retell_max_concurrent || 10,
+        retellMaxConcurrent: data?.retell_max_concurrent || 25,
         assistableMaxConcurrent: data?.assistable_max_concurrent || 200,
         transferQueueEnabled: data?.transfer_queue_enabled ?? true
       };
@@ -251,12 +252,13 @@ export const useConcurrencyManager = () => {
       return settings;
     } catch (error: any) {
       console.error('Error getting concurrency settings:', error);
+      // Higher defaults for high-volume campaigns (10k+ leads)
       const defaultSettings: ConcurrencySettings = {
-        maxConcurrentCalls: 10,
-        callsPerMinute: 30,
-        maxCallsPerAgent: 3,
+        maxConcurrentCalls: 50,
+        callsPerMinute: 60,
+        maxCallsPerAgent: 5,
         enableAdaptivePacing: true,
-        retellMaxConcurrent: 10,
+        retellMaxConcurrent: 25,
         assistableMaxConcurrent: 200,
         transferQueueEnabled: true
       };

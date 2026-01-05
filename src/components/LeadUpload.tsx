@@ -225,7 +225,7 @@ export const LeadUpload: React.FC = () => {
       let success = 0;
       let duplicates = 0;
       let errors = 0;
-      const batchSize = 50;
+      const batchSize = 200; // Increased for faster large uploads
       const leadsToInsert: any[] = [];
 
       // Prepare leads
