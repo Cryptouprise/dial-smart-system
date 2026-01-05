@@ -234,8 +234,8 @@ serve(async (req) => {
       if (recentlyCalledLeadIds.has(cl.lead_id)) return false;
       // **NEW**: Skip leads that were successfully contacted
       if (successfullyContactedLeadIds.has(cl.lead_id)) return false;
-      // Only queue leads with status 'new', 'contacted', or 'callback'
-      if (!['new', 'contacted', 'callback'].includes(lead.status)) return false;
+      // Only queue leads with eligible statuses (including retry-eligible statuses)
+      if (!['new', 'contacted', 'callback', 'no_answer', 'voicemail', 'failed'].includes(lead.status)) return false;
       return true;
     });
 
@@ -521,14 +521,33 @@ serve(async (req) => {
         if (!callResponse.ok || callData.error) {
           console.error('Call creation failed:', callData.error || `HTTP ${callResponse.status}`);
           
-          await supabase
-            .from('dialing_queues')
-            .update({ 
-              status: 'failed',
-              attempts: call.attempts + 1,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', call.id);
+          const newAttempts = (call.attempts || 0) + 1;
+          const maxAttempts = call.max_attempts || 3;
+          
+          if (newAttempts < maxAttempts) {
+            // Re-queue for retry with 30 minute delay
+            await supabase
+              .from('dialing_queues')
+              .update({ 
+                status: 'pending',
+                attempts: newAttempts,
+                scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', call.id);
+            console.log(`[Dispatcher] Call failed, scheduled retry ${newAttempts}/${maxAttempts} in 30 minutes`);
+          } else {
+            // Max attempts reached - mark as failed
+            await supabase
+              .from('dialing_queues')
+              .update({ 
+                status: 'failed',
+                attempts: newAttempts,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', call.id);
+            console.log(`[Dispatcher] Call failed, max attempts (${maxAttempts}) reached`);
+          }
           
           continue;
         }
