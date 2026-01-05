@@ -83,11 +83,47 @@ serve(async (req) => {
       const cleanedCount = stuckCalls?.length || 0;
       console.log(`Cleaned up ${cleanedCount} stuck calls`);
 
+      // Also reset dialing queue entries that got stuck in 'calling'
+      // (e.g., webhook never arrived / browser closed)
+      const { data: userCampaigns, error: userCampaignsError } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('user_id', user.id);
+
+      if (userCampaignsError) {
+        console.error('Failed to load user campaigns for queue reset:', userCampaignsError);
+      }
+
+      const userCampaignIds = (userCampaigns || []).map((c: any) => c.id);
+
+      let resetQueueCount = 0;
+      if (userCampaignIds.length > 0) {
+        const { data: resetQueues, error: resetError } = await supabase
+          .from('dialing_queues')
+          .update({
+            status: 'pending',
+            scheduled_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .in('campaign_id', userCampaignIds)
+          .eq('status', 'calling')
+          .lt('updated_at', fiveMinutesAgo)
+          .select('id');
+
+        if (resetError) {
+          console.error('Queue reset error:', resetError);
+        } else {
+          resetQueueCount = resetQueues?.length || 0;
+          console.log(`Reset ${resetQueueCount} stuck queue entries`);
+        }
+      }
+
       return new Response(
         JSON.stringify({ 
           success: true, 
           cleaned: cleanedCount,
-          message: `Cleaned up ${cleanedCount} stuck calls`
+          resetQueue: resetQueueCount,
+          message: `Cleaned up ${cleanedCount} stuck calls and reset ${resetQueueCount} stuck queue entries`
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -401,6 +437,7 @@ serve(async (req) => {
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending')
+      .lte('scheduled_at', new Date().toISOString())
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
       .limit(10);
@@ -563,13 +600,14 @@ serve(async (req) => {
           })
           .eq('id', selectedNumber.id);
 
-        // Mark queue entry as completed
+        // Update queue entry - keep as calling until webhook closes the loop
+        const newAttempts = (call.attempts || 0) + 1;
         await supabase
           .from('dialing_queues')
-          .update({ 
-            status: 'completed',
-            attempts: call.attempts + 1,
-            updated_at: new Date().toISOString()
+          .update({
+            status: 'calling',
+            attempts: newAttempts,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', call.id);
 
