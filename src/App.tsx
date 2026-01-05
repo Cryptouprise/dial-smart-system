@@ -1,4 +1,4 @@
-
+import React, { Suspense, lazy } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,17 +12,22 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import Settings from "./pages/Settings";
-import ApiKeys from "./pages/ApiKeys";
-import HelpPage from "./pages/HelpPage";
-import Analytics from "./pages/Analytics";
-import NotFound from "./pages/NotFound";
-import AiSmsConversations from "./components/AiSmsConversations";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Lazy load all route components for faster initial load
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Settings = lazy(() => import("./pages/Settings"));
+const ApiKeys = lazy(() => import("./pages/ApiKeys"));
+const HelpPage = lazy(() => import("./pages/HelpPage"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AiSmsConversations = lazy(() => import("./components/AiSmsConversations"));
+const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
+const InstallApp = lazy(() => import("./pages/InstallApp"));
+
+// Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
-import NumberWebhooks from "./pages/NumberWebhooks";
-import InstallApp from "./pages/InstallApp";
 import MobileBottomNav from "./components/MobileBottomNav";
 import InstallBanner from "./components/InstallBanner";
 
@@ -38,6 +43,22 @@ const queryClient = new QueryClient({
   },
 });
 
+// Loading fallback for lazy-loaded routes
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="space-y-4 w-full max-w-md px-4">
+      <Skeleton className="h-8 w-3/4 mx-auto" />
+      <Skeleton className="h-4 w-1/2 mx-auto" />
+      <div className="grid grid-cols-2 gap-4 mt-8">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+      </div>
+    </div>
+  </div>
+);
+
 const App = () => (
   <GlobalErrorBoundary>
     <QueryClientProvider client={queryClient}>
@@ -51,23 +72,25 @@ const App = () => (
                 <BrowserRouter>
                   <AuthProvider>
                     <AIBrainProvider>
-                      <Routes>
-                        {/* Public route */}
-                        <Route path="/auth" element={<Auth />} />
-                        
-                        {/* Protected routes */}
-                        <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                        <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
-                        <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
-                        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                        <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
-                        <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
-                        <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-                        <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
-                        
-                        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
+                      <Suspense fallback={<PageLoader />}>
+                        <Routes>
+                          {/* Public route */}
+                          <Route path="/auth" element={<Auth />} />
+                          
+                          {/* Protected routes */}
+                          <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                          <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
+                          <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
+                          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                          <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
+                          <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+                          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                          <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
+                          
+                          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
+                      </Suspense>
                       {/* Mobile Navigation */}
                       <MobileBottomNav />
                       {/* Install Banner for first-time mobile visitors */}

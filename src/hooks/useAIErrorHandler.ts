@@ -24,7 +24,7 @@ export interface AIErrorSettings {
 
 const DEFAULT_SETTINGS: AIErrorSettings = {
   enabled: true,
-  autoFixMode: false,
+  autoFixMode: true, // Auto-fix enabled by default for self-healing
   maxRetries: 3,
   logErrors: true,
 };

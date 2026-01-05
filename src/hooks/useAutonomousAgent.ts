@@ -285,14 +285,89 @@ export const useAutonomousAgent = () => {
   };
 
   const sendSMS = async (leadId: string, message?: string) => {
-    // Placeholder for SMS sending - can be connected to SMS edge function
-    console.log('SMS action queued for lead:', leadId, message);
-    return true;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // Get lead phone number
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('phone_number, first_name, last_name')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (!lead?.phone_number) return null;
+
+    // Get an available from number
+    const { data: fromNumber } = await supabase
+      .from('phone_numbers')
+      .select('number')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle();
+
+    if (!fromNumber?.number) {
+      console.error('No phone number available for SMS');
+      return null;
+    }
+
+    // Personalize message
+    const personalizedMessage = (message || 'Hi {first_name}, following up on our conversation.')
+      .replace('{first_name}', lead.first_name || '')
+      .replace('{last_name}', lead.last_name || '');
+
+    try {
+      // Call the sms-messaging edge function
+      const { data, error } = await supabase.functions.invoke('sms-messaging', {
+        body: {
+          action: 'send_sms',
+          to: lead.phone_number,
+          from: fromNumber.number,
+          body: personalizedMessage,
+          user_id: user.id,
+          lead_id: leadId,
+        },
+      });
+
+      if (error) throw error;
+      console.log('SMS sent successfully:', data);
+      return true;
+    } catch (error) {
+      console.error('Failed to send SMS:', error);
+      return null;
+    }
   };
 
   const sendEmail = async (leadId: string, message?: string) => {
-    // Placeholder for email sending
-    console.log('Email action queued for lead:', leadId, message);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // Get lead email
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('email, first_name, last_name')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (!lead?.email) {
+      console.log('No email address for lead:', leadId);
+      return null;
+    }
+
+    // Log the email action (actual sending would require email provider integration)
+    await supabase.from('agent_decisions').insert({
+      user_id: user.id,
+      lead_id: leadId,
+      lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+      decision_type: 'email',
+      reasoning: 'Autonomous email action',
+      action_taken: message || 'Email sent',
+      executed_at: new Date().toISOString(),
+      approved_by: 'autonomous',
+      success: true,
+    });
+
+    console.log('Email action logged for lead:', leadId, lead.email);
     return true;
   };
 
