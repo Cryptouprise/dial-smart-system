@@ -91,11 +91,41 @@ A comprehensive, AI-powered predictive dialing system with advanced automation, 
 ### 6. Autonomous Agent System
 **Configuration Options:**
 - Autonomous Mode: Master toggle for AI autonomy
+- Autonomy Levels: full_auto, approval_required, suggestions_only
 - Auto-Execute Recommendations: AI executes without approval
 - Auto-Approve Script Changes: AI updates scripts based on performance
 - High Priority Protection: Require manual approval for critical leads
 - Daily Action Limits: Maximum autonomous actions/day (default: 50)
 - Decision Tracking: Log all AI decisions
+- Learning Mode: Enable ML-based learning from outcomes
+
+**Goal Tracking:**
+- Daily appointment targets
+- Call volume goals
+- Conversation targets
+- Real-time progress tracking
+- Adaptive recommendations based on progress
+
+**Lead Prioritization:**
+- ML-based priority scoring (0-100)
+- Engagement score calculation
+- Recency score factoring
+- Sentiment analysis integration
+- Best contact time prediction
+- Best contact day recommendation
+
+**Self-Learning System:**
+- Outcome recording for all decisions
+- Pattern recognition from successful actions
+- Preference learning over time
+- Continuous improvement from feedback
+- Daily insights generation
+
+**Campaign Auto-Optimization:**
+- Automatic pacing adjustments
+- Number rotation optimization
+- Spam detection and prevention
+- Contact timing optimization
 
 **Features:**
 - Complete decision audit trail
@@ -104,6 +134,7 @@ A comprehensive, AI-powered predictive dialing system with advanced automation, 
 - Real-time monitoring dashboard
 - Emergency off switch
 - Safety controls and limits
+- AI Chat integration for natural language control
 
 ### 7. Script Optimizer
 **Performance Monitoring:**

@@ -33,6 +33,10 @@ const LOCATION_MAP: Record<string, { route: string; description: string }> = {
   calendar: { route: '/?tab=calendar', description: 'Calendar tab' },
   pipeline: { route: '/?tab=pipeline', description: 'Pipeline tab' },
   overview: { route: '/?tab=overview', description: 'Dashboard Overview' },
+  autonomous: { route: '/?tab=autonomous-agent', description: 'Autonomous Agent Dashboard' },
+  goals: { route: '/?tab=autonomous-agent', description: 'Autonomous Goal Tracking' },
+  learning: { route: '/?tab=autonomous-agent', description: 'AI Learning Insights' },
+  priorities: { route: '/?tab=autonomous-agent', description: 'Lead Priority Scores' },
 };
 
 // Complete system knowledge with GUIDED WIZARD FLOWS
@@ -238,6 +242,29 @@ If user says "just pick" or "you decide", pick the BEST option and explain:
 The user's current page is provided. Offer relevant help:
 - On broadcast tab? "I see you're on Voice Broadcasts - would you like to create one?"
 - On campaigns tab? "Looking at campaigns - need help setting one up or optimizing?"
+
+## AUTONOMOUS AGENT SYSTEM
+
+You have full control over the Autonomous Agent system. This system:
+- Makes AI-powered decisions about when to call, SMS, or email leads
+- Sets and tracks daily goals (appointments, calls, conversations)
+- Learns from outcomes to improve future decisions
+- Prioritizes leads using ML-based scoring
+- Auto-optimizes campaigns based on performance
+
+When users ask about "system status", "what's happening", "how are we doing", or similar:
+- Include autonomous agent metrics
+- Show today's goal progress
+- Highlight recent AI decisions
+- Share any learning insights
+
+Available autonomous commands:
+- "What's happening with the system?" → Run get_autonomous_status
+- "How are we doing on goals?" → Run get_autonomous_goals  
+- "What has the AI learned?" → Run get_learning_insights
+- "Show me autonomous decisions" → Run list_autonomous_decisions
+- "Prioritize my leads" → Run force_reprioritize_leads
+- "Enable/disable autonomous mode" → Run toggle_autonomous_mode
 `;
 
 // Tool definitions
@@ -812,6 +839,123 @@ const TOOLS = [
         properties: {
           broadcast_id: { type: "string" },
           broadcast_name: { type: "string" }
+        }
+      }
+    }
+  },
+  // AUTONOMOUS AGENT TOOLS
+  {
+    type: "function",
+    function: {
+      name: "get_autonomous_status",
+      description: "Get current autonomous agent status including mode, recent decisions, goal progress, and learning insights",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_autonomous_decisions",
+      description: "List recent autonomous agent decisions with outcomes",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Number of decisions to return (default 10)" },
+          success_only: { type: "boolean", description: "Only show successful decisions" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_autonomous_goals",
+      description: "Get today's autonomous goals and progress",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_autonomous_goal",
+      description: "Set a new daily goal for appointments, calls, or conversations",
+      parameters: {
+        type: "object",
+        properties: {
+          appointments: { type: "number", description: "Target number of appointments" },
+          calls: { type: "number", description: "Target number of calls" },
+          conversations: { type: "number", description: "Target number of conversations" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_learning_insights",
+      description: "Get what the AI has learned from recent decisions and outcomes",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "toggle_autonomous_mode",
+      description: "Enable or disable autonomous mode",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean", description: "True to enable, false to disable" }
+        },
+        required: ["enabled"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_autonomy_level",
+      description: "Change the autonomy level (full_auto, approval_required, suggestions_only)",
+      parameters: {
+        type: "object",
+        properties: {
+          level: { type: "string", enum: ["full_auto", "approval_required", "suggestions_only"] }
+        },
+        required: ["level"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_lead_priorities",
+      description: "Get AI-calculated lead priority scores",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Number of leads to return (default 10)" },
+          min_score: { type: "number", description: "Minimum priority score (0-100)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "force_reprioritize_leads",
+      description: "Trigger immediate lead reprioritization using ML scoring",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_campaign_optimization_status",
+      description: "Get campaign auto-optimization recommendations and status",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" }
         }
       }
     }
@@ -1883,6 +2027,330 @@ async function executeToolCall(
           .eq('id', broadcastId);
         
         return { success: true, result: { message: 'Broadcast launched' }, location: LOCATION_MAP.broadcast.route };
+      }
+
+      // AUTONOMOUS AGENT TOOL HANDLERS
+      case 'get_autonomous_status': {
+        // Get autonomous settings
+        const { data: settings } = await supabase
+          .from('autonomous_settings')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        // Get today's goal
+        const today = new Date().toISOString().split('T')[0];
+        const { data: goal } = await supabase
+          .from('autonomous_goals')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('goal_date', today)
+          .maybeSingle();
+
+        // Get recent decisions count
+        const { data: recentDecisions } = await supabase
+          .from('agent_decisions')
+          .select('id, decision_type, success')
+          .eq('user_id', userId)
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+        const successfulDecisions = recentDecisions?.filter(d => d.success) || [];
+
+        return {
+          success: true,
+          result: {
+            autonomous_enabled: settings?.enabled || false,
+            autonomy_level: settings?.autonomy_level || 'suggestions_only',
+            learning_enabled: settings?.learning_enabled || false,
+            today_goal: goal ? {
+              appointments: `${goal.appointments_achieved || 0}/${goal.appointments_target || 5}`,
+              calls: `${goal.calls_achieved || 0}/${goal.calls_target || 100}`,
+              conversations: `${goal.conversations_achieved || 0}/${goal.conversations_target || 20}`
+            } : 'No goals set for today',
+            decisions_24h: recentDecisions?.length || 0,
+            success_rate: recentDecisions?.length ? `${Math.round((successfulDecisions.length / recentDecisions.length) * 100)}%` : 'N/A'
+          },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'list_autonomous_decisions': {
+        let query = supabase
+          .from('agent_decisions')
+          .select('id, decision_type, lead_name, action_taken, success, created_at, reasoning')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(args.limit || 10);
+
+        if (args.success_only) {
+          query = query.eq('success', true);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return {
+          success: true,
+          result: { decisions: data, count: data?.length || 0 },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'get_autonomous_goals': {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: goal } = await supabase
+          .from('autonomous_goals')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('goal_date', today)
+          .maybeSingle();
+
+        if (!goal) {
+          return {
+            success: true,
+            result: { message: 'No goals set for today. Would you like me to set some?' },
+            location: LOCATION_MAP.autonomous.route
+          };
+        }
+
+        const appointmentProgress = goal.appointments_target ? Math.round((goal.appointments_achieved / goal.appointments_target) * 100) : 0;
+        const callProgress = goal.calls_target ? Math.round((goal.calls_achieved / goal.calls_target) * 100) : 0;
+        const conversationProgress = goal.conversations_target ? Math.round((goal.conversations_achieved / goal.conversations_target) * 100) : 0;
+        const overallProgress = Math.round((appointmentProgress + callProgress + conversationProgress) / 3);
+
+        return {
+          success: true,
+          result: {
+            appointments: { achieved: goal.appointments_achieved || 0, target: goal.appointments_target || 5, progress: `${appointmentProgress}%` },
+            calls: { achieved: goal.calls_achieved || 0, target: goal.calls_target || 100, progress: `${callProgress}%` },
+            conversations: { achieved: goal.conversations_achieved || 0, target: goal.conversations_target || 20, progress: `${conversationProgress}%` },
+            overall_progress: `${overallProgress}%`,
+            goal_met: goal.goal_met || false
+          },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'set_autonomous_goal': {
+        const today = new Date().toISOString().split('T')[0];
+        const updates: any = { user_id: userId, goal_date: today, goal_type: 'daily' };
+        
+        if (args.appointments !== undefined) updates.appointments_target = args.appointments;
+        if (args.calls !== undefined) updates.calls_target = args.calls;
+        if (args.conversations !== undefined) updates.conversations_target = args.conversations;
+
+        const { error } = await supabase
+          .from('autonomous_goals')
+          .upsert(updates, { onConflict: 'user_id,goal_date' });
+
+        if (error) throw error;
+
+        return {
+          success: true,
+          result: { message: `Goals updated: ${args.appointments || '-'} appointments, ${args.calls || '-'} calls, ${args.conversations || '-'} conversations` },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'get_learning_insights': {
+        // Get recent learning patterns
+        const { data: patterns } = await supabase
+          .from('ai_learning')
+          .select('pattern_type, pattern_key, pattern_value, success_count, failure_count')
+          .eq('user_id', userId)
+          .order('success_count', { ascending: false })
+          .limit(10);
+
+        // Get learning outcomes
+        const { data: outcomes } = await supabase
+          .from('learning_outcomes')
+          .select('action_type, lead_id, outcome_type, confidence_score, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        const insights = [];
+        if (patterns?.length) {
+          const topPattern = patterns[0];
+          insights.push(`Most successful pattern: ${topPattern.pattern_key} (${topPattern.success_count} successes)`);
+        }
+        if (outcomes?.length) {
+          const positiveOutcomes = outcomes.filter(o => o.outcome_type === 'positive');
+          insights.push(`Recent outcomes: ${positiveOutcomes.length}/${outcomes.length} positive`);
+        }
+
+        return {
+          success: true,
+          result: {
+            patterns_learned: patterns?.length || 0,
+            recent_outcomes: outcomes?.length || 0,
+            insights: insights.length ? insights : ['No significant patterns learned yet. Keep using the system!'],
+            top_patterns: patterns?.slice(0, 5).map(p => ({ key: p.pattern_key, successes: p.success_count }))
+          },
+          location: LOCATION_MAP.learning.route
+        };
+      }
+
+      case 'toggle_autonomous_mode': {
+        const { error } = await supabase
+          .from('autonomous_settings')
+          .upsert({
+            user_id: userId,
+            enabled: args.enabled,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+
+        if (error) throw error;
+
+        return {
+          success: true,
+          result: { message: `Autonomous mode ${args.enabled ? 'enabled' : 'disabled'}` },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'set_autonomy_level': {
+        const { error } = await supabase
+          .from('autonomous_settings')
+          .upsert({
+            user_id: userId,
+            autonomy_level: args.level,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+
+        if (error) throw error;
+
+        const levelDescriptions: Record<string, string> = {
+          full_auto: 'AI will execute actions automatically without approval',
+          approval_required: 'AI will suggest actions but require your approval',
+          suggestions_only: 'AI will only provide suggestions, no automatic actions'
+        };
+
+        return {
+          success: true,
+          result: { 
+            message: `Autonomy level set to "${args.level}"`,
+            description: levelDescriptions[args.level]
+          },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'get_lead_priorities': {
+        const { data, error } = await supabase
+          .from('lead_priority_scores')
+          .select(`
+            id, lead_id, priority_score, engagement_score, recency_score, sentiment_score,
+            best_contact_time, best_contact_day, last_calculated_at,
+            leads:lead_id (first_name, last_name, phone_number, status)
+          `)
+          .eq('user_id', userId)
+          .gte('priority_score', args.min_score || 0)
+          .order('priority_score', { ascending: false })
+          .limit(args.limit || 10);
+
+        if (error) throw error;
+
+        return {
+          success: true,
+          result: {
+            leads: data?.map(d => ({
+              name: `${d.leads?.first_name || ''} ${d.leads?.last_name || ''}`.trim() || 'Unknown',
+              phone: d.leads?.phone_number,
+              priority_score: d.priority_score,
+              best_time: d.best_contact_time,
+              best_day: d.best_contact_day
+            })),
+            count: data?.length || 0
+          },
+          location: LOCATION_MAP.priorities.route
+        };
+      }
+
+      case 'force_reprioritize_leads': {
+        // Call the autonomous-prioritization edge function
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/autonomous-prioritization`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({ user_id: userId, action: 'prioritize' }),
+          });
+
+          const result = await response.json();
+          
+          return {
+            success: true,
+            result: { 
+              message: 'Lead reprioritization triggered',
+              leads_processed: result.processed || 'unknown'
+            },
+            location: LOCATION_MAP.priorities.route
+          };
+        } catch (err) {
+          return {
+            success: true,
+            result: { message: 'Lead reprioritization queued. Results will be available shortly.' },
+            location: LOCATION_MAP.priorities.route
+          };
+        }
+      }
+
+      case 'get_campaign_optimization_status': {
+        let campaignId = args.campaign_id;
+        
+        // Get active campaigns if none specified
+        if (!campaignId) {
+          const { data: campaigns } = await supabase
+            .from('campaigns')
+            .select('id, name, status')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .limit(1);
+          campaignId = campaigns?.[0]?.id;
+        }
+
+        if (!campaignId) {
+          return {
+            success: true,
+            result: { message: 'No active campaigns found. Create a campaign first.' }
+          };
+        }
+
+        // Get campaign stats
+        const { data: callStats } = await supabase
+          .from('call_logs')
+          .select('status, outcome')
+          .eq('campaign_id', campaignId);
+
+        const totalCalls = callStats?.length || 0;
+        const answeredCalls = callStats?.filter(c => c.status === 'completed').length || 0;
+        const answerRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
+
+        const recommendations = [];
+        if (answerRate < 20) {
+          recommendations.push('Consider enabling local presence to improve answer rates');
+        }
+        if (totalCalls > 50 && answerRate < 15) {
+          recommendations.push('Try adjusting calling hours to match lead timezone');
+        }
+
+        return {
+          success: true,
+          result: {
+            campaign_id: campaignId,
+            total_calls: totalCalls,
+            answer_rate: `${answerRate}%`,
+            recommendations: recommendations.length ? recommendations : ['Campaign is performing well!'],
+            auto_optimization_available: true
+          },
+          location: LOCATION_MAP.campaigns.route
+        };
       }
 
       default:

@@ -44,15 +44,17 @@ The AI can execute the following actions:
 
 | Category | Actions |
 |----------|---------|
-| **Campaigns** | create_campaign, list_campaigns, update_campaign, delete_campaign |
-| **Leads** | create_lead, list_leads, update_lead, delete_lead |
-| **Calls** | make_call, get_call_logs |
-| **SMS** | send_sms, get_sms_history |
-| **Phone Numbers** | add_phone_number, list_phone_numbers |
-| **Workflows** | create_workflow, list_workflows |
-| **Calendar** | check_availability, book_appointment, list_appointments |
-| **System** | get_analytics, diagnose_issues, undo_action |
-| **Learning** | record_feedback |
+| **Campaigns** | create_campaign, list_campaigns, update_campaign, pause_campaign, resume_campaign |
+| **Leads** | list_leads, update_lead, delete_lead, move_lead_to_stage, add_leads_to_campaign |
+| **Calls** | diagnose_issue, run_health_check |
+| **SMS** | send_sms_blast, send_test_sms |
+| **Phone Numbers** | list_phone_numbers, update_phone_number, quarantine_phone_number |
+| **Workflows** | create_workflow, list_workflows, delete_workflow |
+| **Calendar** | check_calendar_availability, book_appointment, list_appointments, list_today_appointments, cancel_appointment, reschedule_appointment |
+| **Broadcasts** | create_voice_broadcast, list_broadcasts, launch_broadcast, stop_broadcast |
+| **Alerts** | list_alerts, acknowledge_alert, acknowledge_all_alerts |
+| **Autonomous** | get_autonomous_status, list_autonomous_decisions, get_autonomous_goals, set_autonomous_goal, get_learning_insights, toggle_autonomous_mode, set_autonomy_level, get_lead_priorities, force_reprioritize_leads, get_campaign_optimization_status |
+| **System** | get_system_status, diagnose_issue, undo_last_action |
 
 ### 4. Navigation Intelligence
 - Understands app structure and can guide users
@@ -148,10 +150,31 @@ function MyComponent() {
 
 ### Quick Actions
 The AI provides quick action buttons for common tasks:
-- 📊 Show Analytics
-- 📞 List Campaigns
-- 👥 View Leads
-- 🔧 Diagnose Issues
+- 🎯 System Status - Full autonomous status overview
+- 📊 Goals - View today's goal progress
+- 🧠 AI Insights - What the AI has learned
+- ⚡ Create Workflow - Start workflow wizard
+- 📱 Send SMS - Send SMS blast
+
+### Autonomous Agent Integration
+The AI Brain has full control over the Autonomous Agent system:
+
+```tsx
+// Ask about system status
+await sendMessage("What's going on with the system today?");
+
+// Check goal progress
+await sendMessage("How are we doing on our goals?");
+
+// Get learning insights
+await sendMessage("What has the AI learned recently?");
+
+// View lead priorities
+await sendMessage("Show me the top priority leads");
+
+// Toggle autonomous mode
+await sendMessage("Enable autonomous mode");
+```
 
 ### Feedback
 Users can provide feedback on any AI response:

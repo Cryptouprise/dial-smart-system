@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { 
   Phone, Settings, Zap, MessageSquare, Users, Workflow, 
   Radio, Database, Link, Shield, DollarSign, BarChart, Bot,
-  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, ChevronLeft, X, AlertCircle, ArrowLeft, Wrench
+  CheckCircle2, Circle, Loader2, Sparkles, ChevronRight, ChevronLeft, X, AlertCircle, ArrowLeft, Wrench,
+  Brain
 } from 'lucide-react';
 import { ConfigurationProgress } from './ConfigurationProgress';
 import { useAIConfiguration } from '@/hooks/useAIConfiguration';
@@ -137,6 +138,15 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
     icon: <BarChart className="h-5 w-5" />,
     category: 'optional',
     estimatedTime: '2-3 min',
+  },
+  {
+    id: 'autonomous_agent',
+    title: 'Autonomous Agent',
+    description: 'Enable AI-powered autonomous decision making',
+    icon: <Brain className="h-5 w-5" />,
+    category: 'recommended',
+    estimatedTime: '2-3 min',
+    dependencies: ['ai_agent', 'campaign'],
   },
 ];
 
@@ -303,11 +313,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     
     switch (useCase) {
       case 'cold_calling':
-        return [...base, 'workflows', 'dialer_settings', 'compliance', 'budget'];
+        return [...base, 'workflows', 'dialer_settings', 'compliance', 'budget', 'autonomous_agent'];
       case 'solar':
-        return [...base, 'workflows', 'dialer_settings', 'compliance', 'lead_scoring', 'budget'];
+        return [...base, 'workflows', 'dialer_settings', 'compliance', 'lead_scoring', 'budget', 'autonomous_agent'];
       case 'real_estate':
-        return [...base, 'workflows', 'integrations', 'budget'];
+        return [...base, 'workflows', 'integrations', 'budget', 'autonomous_agent'];
       case 'broadcast':
         return ['phone_numbers', 'sip_trunk', 'voice_broadcast', 'leads', 'budget'];
       case 'sms_only':
