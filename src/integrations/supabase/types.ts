@@ -1631,6 +1631,7 @@ export type Database = {
       ghl_sync_settings: {
         Row: {
           auto_create_opportunities: boolean | null
+          calendar_preference: string | null
           created_at: string | null
           default_opportunity_value: number | null
           default_pipeline_id: string | null
@@ -1645,6 +1646,7 @@ export type Database = {
         }
         Insert: {
           auto_create_opportunities?: boolean | null
+          calendar_preference?: string | null
           created_at?: string | null
           default_opportunity_value?: number | null
           default_pipeline_id?: string | null
@@ -1659,6 +1661,7 @@ export type Database = {
         }
         Update: {
           auto_create_opportunities?: boolean | null
+          calendar_preference?: string | null
           created_at?: string | null
           default_opportunity_value?: number | null
           default_pipeline_id?: string | null

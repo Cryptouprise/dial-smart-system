@@ -329,6 +329,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
       setDefaultOpportunityValue(settings.default_opportunity_value);
       setRemoveConflictingTags(settings.remove_conflicting_tags);
       setSyncEnabled(settings.sync_enabled);
+      setCalendarPreference(settings.calendar_preference || 'both');
     }
   };
 
@@ -363,7 +364,8 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
       auto_create_opportunities: autoCreateOpportunities,
       default_opportunity_value: defaultOpportunityValue,
       remove_conflicting_tags: removeConflictingTags,
-      sync_enabled: syncEnabled
+      sync_enabled: syncEnabled,
+      calendar_preference: calendarPreference
     });
 
     if (success) {
