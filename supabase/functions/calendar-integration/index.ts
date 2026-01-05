@@ -1415,6 +1415,7 @@ serve(async (req) => {
       case 'listAppointments':
       case 'get_appointments':
       case 'my_appointments': {
+        const listStartTime = Date.now();
         const { user_id: paramUserId, limit } = params;
 
         const targetUserId = paramUserId || userId;
@@ -1488,6 +1489,18 @@ serve(async (req) => {
           .map((a: any) => `${a.reference}) ${a.attendee_name} — ${formatTimeForVoice(new Date(a.start_time), a.timezone)}`)
           .join('; ');
 
+        // Log the successful list_appointments invocation
+        await logCalendarInvocation(
+          supabase,
+          targetUserId,
+          'list_appointments',
+          { limit: max, caller_phone: callerPhone },
+          { count: appointments.length },
+          true,
+          undefined,
+          listStartTime
+        );
+
         return new Response(
           JSON.stringify({
             success: true,
@@ -1503,6 +1516,7 @@ serve(async (req) => {
       case 'createAppointment':
       case 'schedule_appointment':
       case 'book_appointment': {
+        const bookStartTime = Date.now();
         const {
           date: rawDate,
           time: rawTime,
@@ -1914,6 +1928,18 @@ serve(async (req) => {
 
         console.log('[Calendar] Appointment booked:', appt?.id);
 
+        // Log the successful book_appointment invocation
+        await logCalendarInvocation(
+          supabase,
+          targetUserId,
+          'book_appointment',
+          { attendee_name: attendeeName, attendee_email: attendeeEmail, start_time: appointmentTime.toISOString() },
+          { appointment_id: appt?.id, google_event_id: googleEventId },
+          true,
+          undefined,
+          bookStartTime
+        );
+
         return new Response(
           JSON.stringify({
             success: true,
@@ -1928,6 +1954,7 @@ serve(async (req) => {
       case 'cancel_appointment':
       case 'cancelAppointment':
       case 'delete_appointment': {
+        const cancelStartTime = Date.now();
         const {
           appointment_id,
           id,
@@ -2126,6 +2153,18 @@ serve(async (req) => {
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
+
+          // Log the successful cancel_all invocation
+          await logCalendarInvocation(
+            supabase,
+            targetUserId,
+            'cancel_appointment',
+            { cancel_all: true, caller_phone: callerPhone },
+            { cancelled: ids.length, appointment_ids: ids },
+            true,
+            undefined,
+            cancelStartTime
+          );
 
           return new Response(
             JSON.stringify({
@@ -2411,6 +2450,18 @@ serve(async (req) => {
           );
         }
 
+        // Log the successful cancel_appointment invocation
+        await logCalendarInvocation(
+          supabase,
+          targetUserId,
+          'cancel_appointment',
+          { appointment_id: appointment.id, caller_phone: callerPhone },
+          { appointment_id: appointment.id, event_id: appointment.google_event_id },
+          true,
+          undefined,
+          cancelStartTime
+        );
+
         return new Response(
           JSON.stringify({
             success: true,
@@ -2425,6 +2476,7 @@ serve(async (req) => {
       case 'reschedule_appointment':
       case 'rescheduleAppointment':
       case 'update_appointment': {
+        const rescheduleStartTime = Date.now();
         const {
           appointment_id,
           id,
@@ -2642,6 +2694,18 @@ serve(async (req) => {
           })
           .eq('user_id', targetUserId)
           .eq('id', appointment.id);
+
+        // Log the successful reschedule_appointment invocation
+        await logCalendarInvocation(
+          supabase,
+          targetUserId,
+          'reschedule_appointment',
+          { appointment_id: appointment.id, new_start: newStart.toISOString() },
+          { appointment_id: appointment.id, event_id: appointment.google_event_id },
+          true,
+          undefined,
+          rescheduleStartTime
+        );
 
         return new Response(
           JSON.stringify({

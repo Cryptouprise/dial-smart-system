@@ -254,22 +254,60 @@ export const LiveCampaignMonitor: React.FC = () => {
 
       {selectedBroadcast ? (
         <>
-          {/* Alerts Banner */}
+          {/* Unacknowledged Alerts Section */}
           {alerts && alerts.length > 0 && (
-            <div className="space-y-2">
-              {alerts.slice(0, 3).map(alert => (
-                <Alert key={alert.id} variant={alert.severity === 'critical' || alert.severity === 'error' ? 'destructive' : 'default'}>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>{alert.title}</AlertTitle>
-                  <AlertDescription className="flex items-center justify-between">
-                    <span>{alert.message}</span>
-                    <Button variant="ghost" size="sm" onClick={() => acknowledgeAlert(alert.id)}>
-                      Dismiss
+            <Card className="border-2 border-amber-500/30">
+              <CardHeader className="py-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2 text-amber-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    Unacknowledged Alerts ({alerts.length})
+                  </CardTitle>
+                  {alerts.length > 1 && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => alerts.forEach(a => acknowledgeAlert(a.id))}
+                    >
+                      Acknowledge All
                     </Button>
-                  </AlertDescription>
-                </Alert>
-              ))}
-            </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {alerts.map(alert => (
+                    <div 
+                      key={alert.id}
+                      className={`flex items-center justify-between p-3 rounded-lg ${
+                        alert.severity === 'critical' || alert.severity === 'error' 
+                          ? 'bg-red-500/10 border border-red-500/20' 
+                          : alert.severity === 'warning'
+                          ? 'bg-amber-500/10 border border-amber-500/20'
+                          : 'bg-blue-500/10 border border-blue-500/20'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {alert.severity === 'critical' || alert.severity === 'error' ? (
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        ) : alert.severity === 'warning' ? (
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 text-blue-500" />
+                        )}
+                        <div>
+                          <p className="font-medium text-sm">{alert.title}</p>
+                          <p className="text-xs text-muted-foreground">{alert.message}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => acknowledgeAlert(alert.id)}>
+                        Dismiss
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Quick Actions */}
