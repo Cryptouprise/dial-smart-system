@@ -332,3 +332,128 @@ export function clearCache(keyPrefix?: string): void {
     cache.clear();
   }
 }
+
+/**
+ * Circuit Breaker Pattern for external service calls
+ * Prevents cascade failures when external services are down
+ */
+interface CircuitState {
+  failures: number;
+  lastFailure: number;
+  state: 'closed' | 'open' | 'half-open';
+}
+
+const circuitBreakers = new Map<string, CircuitState>();
+
+const CIRCUIT_BREAKER_THRESHOLD = 5; // Open after 5 consecutive failures
+const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 seconds before half-open
+
+export function getCircuitState(serviceName: string): CircuitState {
+  const existing = circuitBreakers.get(serviceName);
+  if (!existing) {
+    return { failures: 0, lastFailure: 0, state: 'closed' };
+  }
+  
+  // Check if we should transition from open to half-open
+  if (existing.state === 'open' && Date.now() - existing.lastFailure > CIRCUIT_BREAKER_TIMEOUT) {
+    existing.state = 'half-open';
+    circuitBreakers.set(serviceName, existing);
+  }
+  
+  return existing;
+}
+
+export function recordSuccess(serviceName: string): void {
+  const state = getCircuitState(serviceName);
+  state.failures = 0;
+  state.state = 'closed';
+  circuitBreakers.set(serviceName, state);
+}
+
+export function recordFailure(serviceName: string): void {
+  const state = getCircuitState(serviceName);
+  state.failures++;
+  state.lastFailure = Date.now();
+  
+  if (state.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    state.state = 'open';
+    log('warn', `Circuit breaker opened for ${serviceName}`, { failures: state.failures });
+  }
+  
+  circuitBreakers.set(serviceName, state);
+}
+
+export function isCircuitOpen(serviceName: string): boolean {
+  const state = getCircuitState(serviceName);
+  return state.state === 'open';
+}
+
+/**
+ * Execute a function with circuit breaker protection
+ */
+export async function withCircuitBreaker<T>(
+  serviceName: string,
+  fn: () => Promise<T>,
+  fallback?: T
+): Promise<T> {
+  const state = getCircuitState(serviceName);
+  
+  if (state.state === 'open') {
+    log('warn', `Circuit breaker is open for ${serviceName}, using fallback`);
+    if (fallback !== undefined) return fallback;
+    throw new Error(`Service ${serviceName} is temporarily unavailable`);
+  }
+  
+  try {
+    const result = await fn();
+    recordSuccess(serviceName);
+    return result;
+  } catch (error) {
+    recordFailure(serviceName);
+    throw error;
+  }
+}
+
+/**
+ * Database operation with automatic retry and reconnection
+ */
+export async function withDatabaseRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if it's a retryable error
+      const errorMessage = lastError.message.toLowerCase();
+      const isRetryable = 
+        errorMessage.includes('connection') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('econnreset') ||
+        errorMessage.includes('503') ||
+        errorMessage.includes('temporarily unavailable');
+      
+      if (!isRetryable) {
+        throw lastError;
+      }
+      
+      log('warn', `Database operation failed, attempt ${attempt + 1}/${maxRetries}`, {
+        error: lastError.message,
+      });
+
+      if (attempt < maxRetries - 1) {
+        // Exponential backoff with jitter
+        const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError || new Error('Max retries exceeded');
+}

@@ -563,6 +563,258 @@ const TOOLS = [
       description: "List all phone numbers",
       parameters: { type: "object", properties: {} }
     }
+  },
+  // NEW POWER TOOLS - Campaign Control
+  {
+    type: "function",
+    function: {
+      name: "pause_campaign",
+      description: "Pause an active campaign immediately",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" },
+          campaign_name: { type: "string" },
+          reason: { type: "string", description: "Reason for pausing" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "resume_campaign",
+      description: "Resume a paused campaign",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" },
+          campaign_name: { type: "string" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "stop_broadcast",
+      description: "Stop a voice broadcast immediately",
+      parameters: {
+        type: "object",
+        properties: {
+          broadcast_id: { type: "string" },
+          broadcast_name: { type: "string" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_health_check",
+      description: "Run a full system health check and get diagnostics",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  // Lead Management Tools
+  {
+    type: "function",
+    function: {
+      name: "update_lead",
+      description: "Update a lead's information, status, or tags",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_id: { type: "string" },
+          lead_phone: { type: "string", description: "Phone number to find lead" },
+          updates: { 
+            type: "object",
+            properties: {
+              status: { type: "string" },
+              notes: { type: "string" },
+              tags: { type: "array", items: { type: "string" } },
+              priority: { type: "number" },
+              do_not_call: { type: "boolean" }
+            }
+          }
+        },
+        required: ["updates"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_lead",
+      description: "Delete a lead from the system",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_id: { type: "string" },
+          lead_phone: { type: "string" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "move_lead_to_stage",
+      description: "Move a lead to a different pipeline stage",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_id: { type: "string" },
+          lead_phone: { type: "string" },
+          stage_name: { type: "string" },
+          stage_id: { type: "string" }
+        }
+      }
+    }
+  },
+  // Alert Management Tools
+  {
+    type: "function",
+    function: {
+      name: "list_alerts",
+      description: "List unacknowledged system alerts",
+      parameters: {
+        type: "object",
+        properties: {
+          severity: { type: "string", enum: ["info", "warning", "critical"] },
+          limit: { type: "number" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "acknowledge_alert",
+      description: "Acknowledge a system alert",
+      parameters: {
+        type: "object",
+        properties: {
+          alert_id: { type: "string" }
+        },
+        required: ["alert_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "acknowledge_all_alerts",
+      description: "Acknowledge all pending system alerts",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  // Phone Number Management
+  {
+    type: "function",
+    function: {
+      name: "update_phone_number",
+      description: "Update a phone number's status or settings",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number_id: { type: "string" },
+          phone_number: { type: "string" },
+          updates: {
+            type: "object",
+            properties: {
+              status: { type: "string", enum: ["active", "quarantined", "inactive"] },
+              friendly_name: { type: "string" },
+              purpose: { type: "string" }
+            }
+          }
+        },
+        required: ["updates"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "quarantine_phone_number",
+      description: "Put a phone number in quarantine to protect from spam flags",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number_id: { type: "string" },
+          phone_number: { type: "string" },
+          reason: { type: "string" }
+        }
+      }
+    }
+  },
+  // Appointment Management
+  {
+    type: "function",
+    function: {
+      name: "cancel_appointment",
+      description: "Cancel an existing appointment",
+      parameters: {
+        type: "object",
+        properties: {
+          appointment_id: { type: "string" },
+          reason: { type: "string" }
+        },
+        required: ["appointment_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "reschedule_appointment",
+      description: "Reschedule an appointment to a new time",
+      parameters: {
+        type: "object",
+        properties: {
+          appointment_id: { type: "string" },
+          new_start_time: { type: "string", description: "New start time in ISO format" },
+          new_duration_minutes: { type: "number" }
+        },
+        required: ["appointment_id", "new_start_time"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_today_appointments",
+      description: "List all appointments for today",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  // Broadcast Control
+  {
+    type: "function",
+    function: {
+      name: "list_broadcasts",
+      description: "List all voice broadcasts",
+      parameters: {
+        type: "object",
+        properties: {
+          status: { type: "string", enum: ["draft", "scheduled", "in_progress", "completed", "paused", "cancelled"] }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "launch_broadcast",
+      description: "Launch a draft voice broadcast",
+      parameters: {
+        type: "object",
+        properties: {
+          broadcast_id: { type: "string" },
+          broadcast_name: { type: "string" }
+        }
+      }
+    }
   }
 ];
 
@@ -1225,6 +1477,412 @@ async function executeToolCall(
           result: { broadcast: data, message: `Created voice broadcast "${args.name}"` },
           location: LOCATION_MAP.broadcast.route
         };
+      }
+
+      // NEW POWER TOOLS EXECUTION
+      case 'pause_campaign': {
+        let campaignId = args.campaign_id;
+        if (!campaignId && args.campaign_name) {
+          const { data } = await supabase
+            .from('campaigns')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.campaign_name}%`)
+            .maybeSingle();
+          campaignId = data?.id;
+        }
+        if (!campaignId) {
+          return { success: false, result: { error: 'Campaign not found' } };
+        }
+        const { error } = await supabase
+          .from('campaigns')
+          .update({ status: 'paused' })
+          .eq('id', campaignId);
+        if (error) throw error;
+        
+        // Log the action
+        await supabase.from('system_alerts').insert({
+          user_id: userId,
+          alert_type: 'campaign_paused',
+          severity: 'info',
+          message: `Campaign paused${args.reason ? `: ${args.reason}` : ''}`,
+          context: { campaign_id: campaignId }
+        });
+        
+        return { success: true, result: { message: 'Campaign paused' }, location: LOCATION_MAP.campaigns.route };
+      }
+
+      case 'resume_campaign': {
+        let campaignId = args.campaign_id;
+        if (!campaignId && args.campaign_name) {
+          const { data } = await supabase
+            .from('campaigns')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.campaign_name}%`)
+            .maybeSingle();
+          campaignId = data?.id;
+        }
+        if (!campaignId) {
+          return { success: false, result: { error: 'Campaign not found' } };
+        }
+        const { error } = await supabase
+          .from('campaigns')
+          .update({ status: 'active' })
+          .eq('id', campaignId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Campaign resumed' }, location: LOCATION_MAP.campaigns.route };
+      }
+
+      case 'stop_broadcast': {
+        let broadcastId = args.broadcast_id;
+        if (!broadcastId && args.broadcast_name) {
+          const { data } = await supabase
+            .from('voice_broadcasts')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.broadcast_name}%`)
+            .maybeSingle();
+          broadcastId = data?.id;
+        }
+        if (!broadcastId) {
+          return { success: false, result: { error: 'Broadcast not found' } };
+        }
+        await supabase.from('voice_broadcasts').update({ status: 'cancelled' }).eq('id', broadcastId);
+        await supabase.from('broadcast_queue').update({ status: 'cancelled' }).eq('broadcast_id', broadcastId).eq('status', 'pending');
+        return { success: true, result: { message: 'Broadcast stopped and pending calls cancelled' }, location: LOCATION_MAP.broadcast.route };
+      }
+
+      case 'run_health_check': {
+        const diagnostics: string[] = [];
+        
+        // Check phone numbers
+        const { data: numbers } = await supabase
+          .from('phone_numbers')
+          .select('id, status')
+          .eq('user_id', userId);
+        const activeNumbers = numbers?.filter((n: any) => n.status === 'active') || [];
+        diagnostics.push(activeNumbers.length > 0 
+          ? `✅ ${activeNumbers.length} active phone numbers` 
+          : '❌ No active phone numbers');
+
+        // Check campaigns
+        const { data: campaigns } = await supabase
+          .from('campaigns')
+          .select('id, status')
+          .eq('user_id', userId);
+        const activeCampaigns = campaigns?.filter((c: any) => c.status === 'active') || [];
+        diagnostics.push(`📊 ${campaigns?.length || 0} total campaigns, ${activeCampaigns.length} active`);
+
+        // Check leads
+        const { count: leadCount } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId);
+        diagnostics.push(`👥 ${leadCount || 0} total leads`);
+
+        // Check unacknowledged alerts
+        const { data: alerts } = await supabase
+          .from('system_alerts')
+          .select('id, severity')
+          .eq('user_id', userId)
+          .eq('acknowledged', false);
+        const criticalAlerts = alerts?.filter((a: any) => a.severity === 'critical') || [];
+        if (criticalAlerts.length > 0) {
+          diagnostics.push(`🚨 ${criticalAlerts.length} unacknowledged critical alerts`);
+        } else if (alerts && alerts.length > 0) {
+          diagnostics.push(`⚠️ ${alerts.length} unacknowledged alerts`);
+        } else {
+          diagnostics.push('✅ No pending alerts');
+        }
+
+        // Check recent errors
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: recentCalls } = await supabase
+          .from('call_logs')
+          .select('id, status')
+          .eq('user_id', userId)
+          .gte('created_at', oneHourAgo);
+        if (recentCalls && recentCalls.length > 0) {
+          const failedCount = recentCalls.filter((c: any) => c.status === 'failed').length;
+          const errorRate = (failedCount / recentCalls.length) * 100;
+          diagnostics.push(errorRate > 10 
+            ? `⚠️ Call error rate: ${errorRate.toFixed(1)}%`
+            : `✅ Call error rate: ${errorRate.toFixed(1)}%`);
+        }
+
+        const hasIssues = diagnostics.some(d => d.includes('❌') || d.includes('🚨'));
+        return {
+          success: true,
+          result: {
+            status: hasIssues ? 'issues_found' : 'healthy',
+            diagnostics,
+            summary: hasIssues ? 'System has issues that need attention' : 'System is healthy'
+          }
+        };
+      }
+
+      case 'update_lead': {
+        let leadId = args.lead_id;
+        if (!leadId && args.lead_phone) {
+          const { data } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('phone_number', args.lead_phone)
+            .maybeSingle();
+          leadId = data?.id;
+        }
+        if (!leadId) {
+          return { success: false, result: { error: 'Lead not found' } };
+        }
+        const { error } = await supabase
+          .from('leads')
+          .update({ ...args.updates, updated_at: new Date().toISOString() })
+          .eq('id', leadId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Lead updated' }, location: LOCATION_MAP.leads.route };
+      }
+
+      case 'delete_lead': {
+        let leadId = args.lead_id;
+        if (!leadId && args.lead_phone) {
+          const { data } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('phone_number', args.lead_phone)
+            .maybeSingle();
+          leadId = data?.id;
+        }
+        if (!leadId) {
+          return { success: false, result: { error: 'Lead not found' } };
+        }
+        const { error } = await supabase.from('leads').delete().eq('id', leadId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Lead deleted' } };
+      }
+
+      case 'move_lead_to_stage': {
+        let leadId = args.lead_id;
+        if (!leadId && args.lead_phone) {
+          const { data } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('phone_number', args.lead_phone)
+            .maybeSingle();
+          leadId = data?.id;
+        }
+        if (!leadId) {
+          return { success: false, result: { error: 'Lead not found' } };
+        }
+        
+        let stageId = args.stage_id;
+        if (!stageId && args.stage_name) {
+          const { data } = await supabase
+            .from('pipeline_boards')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.stage_name}%`)
+            .maybeSingle();
+          stageId = data?.id;
+        }
+        if (!stageId) {
+          return { success: false, result: { error: 'Pipeline stage not found' } };
+        }
+
+        // Upsert lead pipeline position
+        await supabase.from('lead_pipeline_positions').upsert({
+          user_id: userId,
+          lead_id: leadId,
+          pipeline_board_id: stageId,
+          moved_at: new Date().toISOString(),
+          moved_by_user: false
+        }, { onConflict: 'lead_id,pipeline_board_id' });
+
+        return { success: true, result: { message: 'Lead moved to new stage' }, location: LOCATION_MAP.pipeline.route };
+      }
+
+      case 'list_alerts': {
+        let query = supabase
+          .from('system_alerts')
+          .select('id, alert_type, severity, message, created_at, context')
+          .eq('user_id', userId)
+          .eq('acknowledged', false)
+          .order('created_at', { ascending: false });
+        
+        if (args.severity) query = query.eq('severity', args.severity);
+        if (args.limit) query = query.limit(args.limit);
+        else query = query.limit(20);
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return { success: true, result: { alerts: data, count: data?.length || 0 } };
+      }
+
+      case 'acknowledge_alert': {
+        const { error } = await supabase
+          .from('system_alerts')
+          .update({ acknowledged: true, acknowledged_at: new Date().toISOString() })
+          .eq('id', args.alert_id)
+          .eq('user_id', userId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Alert acknowledged' } };
+      }
+
+      case 'acknowledge_all_alerts': {
+        const { data, error } = await supabase
+          .from('system_alerts')
+          .update({ acknowledged: true, acknowledged_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('acknowledged', false)
+          .select('id');
+        if (error) throw error;
+        return { success: true, result: { message: `${data?.length || 0} alerts acknowledged` } };
+      }
+
+      case 'update_phone_number': {
+        let numberId = args.phone_number_id;
+        if (!numberId && args.phone_number) {
+          const { data } = await supabase
+            .from('phone_numbers')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('number', args.phone_number)
+            .maybeSingle();
+          numberId = data?.id;
+        }
+        if (!numberId) {
+          return { success: false, result: { error: 'Phone number not found' } };
+        }
+        const { error } = await supabase
+          .from('phone_numbers')
+          .update({ ...args.updates, updated_at: new Date().toISOString() })
+          .eq('id', numberId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Phone number updated' }, location: LOCATION_MAP.numbers.route };
+      }
+
+      case 'quarantine_phone_number': {
+        let numberId = args.phone_number_id;
+        if (!numberId && args.phone_number) {
+          const { data } = await supabase
+            .from('phone_numbers')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('number', args.phone_number)
+            .maybeSingle();
+          numberId = data?.id;
+        }
+        if (!numberId) {
+          return { success: false, result: { error: 'Phone number not found' } };
+        }
+        await supabase
+          .from('phone_numbers')
+          .update({ 
+            status: 'quarantined', 
+            quarantine_reason: args.reason || 'AI-initiated quarantine',
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', numberId);
+        return { success: true, result: { message: 'Phone number quarantined' }, location: LOCATION_MAP.numbers.route };
+      }
+
+      case 'cancel_appointment': {
+        const { error } = await supabase
+          .from('calendar_appointments')
+          .update({ 
+            status: 'cancelled',
+            notes: args.reason ? `Cancelled: ${args.reason}` : 'Cancelled via AI',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', args.appointment_id)
+          .eq('user_id', userId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Appointment cancelled' }, location: LOCATION_MAP.calendar.route };
+      }
+
+      case 'reschedule_appointment': {
+        const duration = args.new_duration_minutes || 30;
+        const startTime = new Date(args.new_start_time);
+        const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+        
+        const { error } = await supabase
+          .from('calendar_appointments')
+          .update({ 
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', args.appointment_id)
+          .eq('user_id', userId);
+        if (error) throw error;
+        return { success: true, result: { message: 'Appointment rescheduled' }, location: LOCATION_MAP.calendar.route };
+      }
+
+      case 'list_today_appointments': {
+        const today = new Date();
+        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+        
+        const { data, error } = await supabase
+          .from('calendar_appointments')
+          .select('id, title, start_time, end_time, status, lead_id')
+          .eq('user_id', userId)
+          .gte('start_time', startOfDay)
+          .lte('start_time', endOfDay)
+          .order('start_time', { ascending: true });
+        if (error) throw error;
+        return { success: true, result: { appointments: data, count: data?.length || 0 }, location: LOCATION_MAP.calendar.route };
+      }
+
+      case 'list_broadcasts': {
+        let query = supabase
+          .from('voice_broadcasts')
+          .select('id, name, status, created_at, message_type')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        if (args.status) query = query.eq('status', args.status);
+        
+        const { data, error } = await query.limit(20);
+        if (error) throw error;
+        return { success: true, result: { broadcasts: data, count: data?.length || 0 }, location: LOCATION_MAP.broadcast.route };
+      }
+
+      case 'launch_broadcast': {
+        let broadcastId = args.broadcast_id;
+        if (!broadcastId && args.broadcast_name) {
+          const { data } = await supabase
+            .from('voice_broadcasts')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.broadcast_name}%`)
+            .maybeSingle();
+          broadcastId = data?.id;
+        }
+        if (!broadcastId) {
+          return { success: false, result: { error: 'Broadcast not found' } };
+        }
+        
+        // Check if it's in draft status
+        const { data: broadcast } = await supabase
+          .from('voice_broadcasts')
+          .select('status')
+          .eq('id', broadcastId)
+          .maybeSingle();
+        
+        if (broadcast?.status !== 'draft') {
+          return { success: false, result: { error: `Cannot launch broadcast in ${broadcast?.status} status` } };
+        }
+        
+        await supabase
+          .from('voice_broadcasts')
+          .update({ status: 'in_progress', started_at: new Date().toISOString() })
+          .eq('id', broadcastId);
+        
+        return { success: true, result: { message: 'Broadcast launched' }, location: LOCATION_MAP.broadcast.route };
       }
 
       default:
