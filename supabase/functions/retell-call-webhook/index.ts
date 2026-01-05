@@ -484,13 +484,23 @@ serve(async (req) => {
         }
 
         // Update call log with disposition
+        // IMPORTANT: Do NOT let transcript analysis override hard "non-connection" outcomes (voicemail/no_answer/etc)
+        // unless it detected a *stronger* intent (callback_requested, appointment_set, etc).
         if (dispositionResult && callLog?.id) {
+          const nonConnectionOutcomes = ['voicemail', 'no_answer', 'busy', 'failed', 'unknown'];
+          const analyzedDisposition = dispositionResult.disposition;
+
+          const shouldKeepStatusOutcome =
+            nonConnectionOutcomes.includes(outcome) && analyzedDisposition === 'contacted';
+
+          const finalOutcome = shouldKeepStatusOutcome ? outcome : analyzedDisposition;
+
           await supabase
             .from('call_logs')
-            .update({ outcome: dispositionResult.disposition })
+            .update({ outcome: finalOutcome })
             .eq('id', callLog.id);
-          
-          outcome = dispositionResult.disposition;
+
+          outcome = finalOutcome;
         }
       } catch (analysisError: any) {
         console.error('[Retell Webhook] Analysis error:', analysisError);

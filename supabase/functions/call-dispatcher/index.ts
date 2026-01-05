@@ -6,6 +6,71 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
+  console.log('[Dispatcher Cleanup] Cleaning up stuck calls for user:', userId);
+
+  // Mark old "ringing" / "initiated" / "in_progress" calls as "no_answer" if older than 5 minutes
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+  const { data: stuckCalls, error: cleanupError } = await supabase
+    .from('call_logs')
+    .update({
+      status: 'no_answer',
+      ended_at: new Date().toISOString(),
+      notes: 'Auto-cleaned: stuck in ringing state',
+    })
+    .eq('user_id', userId)
+    .in('status', ['initiated', 'ringing', 'in_progress'])
+    .lt('created_at', fiveMinutesAgo)
+    .select();
+
+  if (cleanupError) {
+    console.error('[Dispatcher Cleanup] Call log cleanup error:', cleanupError);
+    throw cleanupError;
+  }
+
+  const cleanedCount = stuckCalls?.length || 0;
+
+  // Reset dialing queue entries that got stuck in 'calling'
+  const { data: userCampaigns, error: userCampaignsError } = await supabase
+    .from('campaigns')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (userCampaignsError) {
+    console.error('[Dispatcher Cleanup] Failed to load user campaigns for queue reset:', userCampaignsError);
+  }
+
+  const userCampaignIds = (userCampaigns || []).map((c: any) => c.id);
+
+  let resetQueueCount = 0;
+  if (userCampaignIds.length > 0) {
+    const { data: resetQueues, error: resetError } = await supabase
+      .from('dialing_queues')
+      .update({
+        status: 'pending',
+        scheduled_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .in('campaign_id', userCampaignIds)
+      .eq('status', 'calling')
+      .lt('updated_at', fiveMinutesAgo)
+      .select('id');
+
+    if (resetError) {
+      console.error('[Dispatcher Cleanup] Queue reset error:', resetError);
+    } else {
+      resetQueueCount = resetQueues?.length || 0;
+    }
+  }
+
+  if (cleanedCount > 0 || resetQueueCount > 0) {
+    console.log(`[Dispatcher Cleanup] Cleaned ${cleanedCount} stuck calls; reset ${resetQueueCount} stuck queue entries`);
+  }
+
+  return { cleanedCount, resetQueueCount };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -14,14 +79,14 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
+
     if (!supabaseUrl || !supabaseKey) {
       return new Response(
         JSON.stringify({ error: 'Supabase configuration missing' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get('Authorization');
@@ -48,7 +113,6 @@ serve(async (req) => {
       requestBody = await req.json();
     } catch (parseError) {
       // No body or invalid JSON - expected for GET requests
-      // For POST requests, the body parsing will be attempted again if needed
       if (req.method !== 'GET') {
         console.warn('Request body parse failed for', req.method, 'request:', parseError);
       }
@@ -58,78 +122,26 @@ serve(async (req) => {
 
     // Handle cleanup action
     if (action === 'cleanup_stuck_calls') {
-      console.log('Cleaning up stuck calls for user:', user.id);
-      
-      // Mark old "ringing" or "initiated" calls as "no_answer" if older than 5 minutes
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      
-      const { data: stuckCalls, error: cleanupError } = await supabase
-        .from('call_logs')
-        .update({ 
-          status: 'no_answer',
-          ended_at: new Date().toISOString(),
-          notes: 'Auto-cleaned: stuck in ringing state'
-        })
-        .eq('user_id', user.id)
-        .in('status', ['initiated', 'ringing', 'in_progress'])
-        .lt('created_at', fiveMinutesAgo)
-        .select();
-
-      if (cleanupError) {
-        console.error('Cleanup error:', cleanupError);
-        throw cleanupError;
-      }
-
-      const cleanedCount = stuckCalls?.length || 0;
-      console.log(`Cleaned up ${cleanedCount} stuck calls`);
-
-      // Also reset dialing queue entries that got stuck in 'calling'
-      // (e.g., webhook never arrived / browser closed)
-      const { data: userCampaigns, error: userCampaignsError } = await supabase
-        .from('campaigns')
-        .select('id')
-        .eq('user_id', user.id);
-
-      if (userCampaignsError) {
-        console.error('Failed to load user campaigns for queue reset:', userCampaignsError);
-      }
-
-      const userCampaignIds = (userCampaigns || []).map((c: any) => c.id);
-
-      let resetQueueCount = 0;
-      if (userCampaignIds.length > 0) {
-        const { data: resetQueues, error: resetError } = await supabase
-          .from('dialing_queues')
-          .update({
-            status: 'pending',
-            scheduled_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .in('campaign_id', userCampaignIds)
-          .eq('status', 'calling')
-          .lt('updated_at', fiveMinutesAgo)
-          .select('id');
-
-        if (resetError) {
-          console.error('Queue reset error:', resetError);
-        } else {
-          resetQueueCount = resetQueues?.length || 0;
-          console.log(`Reset ${resetQueueCount} stuck queue entries`);
-        }
-      }
-
+      const { cleanedCount, resetQueueCount } = await cleanupStuckCallsAndQueues(supabase, user.id);
       return new Response(
-        JSON.stringify({ 
-          success: true, 
+        JSON.stringify({
+          success: true,
           cleaned: cleanedCount,
           resetQueue: resetQueueCount,
-          message: `Cleaned up ${cleanedCount} stuck calls and reset ${resetQueueCount} stuck queue entries`
+          message: `Cleaned up ${cleanedCount} stuck calls and reset ${resetQueueCount} stuck queue entries`,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('Call Dispatcher running for user:', user.id);
+
+    // Automatic cleanup (so you don't need to press the "unstuck" button)
+    try {
+      await cleanupStuckCallsAndQueues(supabase, user.id);
+    } catch (cleanupError) {
+      console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
+    }
 
     // Get user's active campaigns with their workflows
     const { data: activeCampaigns, error: campaignError } = await supabase
@@ -627,8 +639,36 @@ serve(async (req) => {
         if (idx !== -1) numberPool.splice(idx, 1);
 
       } catch (err: unknown) {
-        const error = err as Error;
-        console.error('Error dispatching call:', call.id, error.message);
+        const error = err as any;
+        console.error('Error dispatching call:', call.id, error?.message || error);
+
+        // CRITICAL: If the fetch/json parsing fails, the queue entry would otherwise remain stuck in "calling".
+        try {
+          const newAttempts = (call.attempts || 0) + 1;
+          const maxAttempts = call.max_attempts || 3;
+          const shouldRetry = newAttempts < maxAttempts;
+
+          const update: Record<string, any> = {
+            status: shouldRetry ? 'pending' : 'failed',
+            attempts: newAttempts,
+            updated_at: new Date().toISOString(),
+          };
+
+          if (shouldRetry) {
+            update.scheduled_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          }
+
+          await supabase
+            .from('dialing_queues')
+            .update(update)
+            .eq('id', call.id);
+
+          console.log(
+            `[Dispatcher] Queue entry recovered after dispatch error: ${call.id} -> ${update.status} (${newAttempts}/${maxAttempts})`
+          );
+        } catch (queueFixError) {
+          console.error('[Dispatcher] Failed to recover queue entry after dispatch error:', call.id, queueFixError);
+        }
       }
     }
 
