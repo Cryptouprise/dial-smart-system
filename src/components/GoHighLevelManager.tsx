@@ -8,10 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Link, Settings, RefreshCw, Users, ArrowLeftRight, CheckCircle, XCircle, RefreshCw as RefreshIcon, Zap, Plus, Search, Eye, Edit, Phone } from 'lucide-react';
+import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database } from 'lucide-react';
+import GHLFieldMappingTab from './GHLFieldMappingTab';
 
 const GoHighLevelManager = () => {
   const [credentials, setCredentials] = useState({
@@ -284,10 +284,14 @@ const GoHighLevelManager = () => {
 
       {isConnected && (
         <Tabs defaultValue="contacts" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="contacts">Contacts</TabsTrigger>
             <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
             <TabsTrigger value="sync">Sync & Import</TabsTrigger>
+            <TabsTrigger value="field-mapping" className="flex items-center gap-1">
+              <Database className="h-3 w-3" />
+              Field Mapping
+            </TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
           </TabsList>
 
@@ -582,6 +586,10 @@ const GoHighLevelManager = () => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="field-mapping">
+            <GHLFieldMappingTab isConnected={isConnected} />
           </TabsContent>
 
           <TabsContent value="automation">

@@ -578,6 +578,18 @@ serve(async (req) => {
             error: workflowError.message,
           });
         }
+
+        // 8. Sync to Go High Level if configured
+        try {
+          await syncToGoHighLevel(supabase, leadId, userId, outcome, formattedTranscript, durationSeconds, call);
+        } catch (ghlError: any) {
+          console.error('[Retell Webhook] GHL sync error:', ghlError);
+          await logFailedOperation(supabase, userId, 'ghl_sync', {
+            leadId,
+            outcome,
+            error: ghlError.message,
+          });
+        }
       }
     }
 
@@ -949,4 +961,108 @@ async function logFailedOperation(
   } catch (logError) {
     console.error('[Retell Webhook] Failed to log operation for retry:', logError);
   }
+}
+
+// Go High Level Sync after call completion
+async function syncToGoHighLevel(
+  supabase: any,
+  leadId: string,
+  userId: string,
+  outcome: string,
+  transcript: string,
+  durationSeconds: number,
+  callData: any
+): Promise<void> {
+  console.log('[Retell Webhook] Checking GHL sync settings for user:', userId);
+
+  // Check if user has GHL credentials
+  const { data: ghlCredentials } = await supabase
+    .from('user_credentials')
+    .select('credential_key, credential_value_encrypted')
+    .eq('user_id', userId)
+    .eq('service_name', 'gohighlevel');
+
+  if (!ghlCredentials || ghlCredentials.length === 0) {
+    console.log('[Retell Webhook] No GHL credentials found, skipping sync');
+    return;
+  }
+
+  // Get GHL sync settings
+  const { data: syncSettings } = await supabase
+    .from('ghl_sync_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!syncSettings?.sync_enabled) {
+    console.log('[Retell Webhook] GHL sync disabled, skipping');
+    return;
+  }
+
+  // Get lead info including GHL contact ID
+  const { data: lead } = await supabase
+    .from('leads')
+    .select('ghl_contact_id, first_name, last_name, priority, phone_number')
+    .eq('id', leadId)
+    .maybeSingle();
+
+  if (!lead?.ghl_contact_id) {
+    console.log('[Retell Webhook] Lead has no GHL contact ID, skipping sync');
+    return;
+  }
+
+  // Get call count for this lead
+  const { count: totalCalls } = await supabase
+    .from('call_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('lead_id', leadId);
+
+  // Decode credentials
+  let apiKey = '';
+  let locationId = '';
+  
+  for (const cred of ghlCredentials) {
+    try {
+      const value = atob(cred.credential_value_encrypted);
+      if (cred.credential_key === 'apiKey') apiKey = value;
+      if (cred.credential_key === 'locationId') locationId = value;
+    } catch (e) {
+      console.error('[Retell Webhook] Failed to decode GHL credential');
+    }
+  }
+
+  if (!apiKey || !locationId) {
+    console.log('[Retell Webhook] GHL credentials incomplete');
+    return;
+  }
+
+  console.log('[Retell Webhook] Triggering GHL sync for contact:', lead.ghl_contact_id);
+
+  // Call ghl-integration edge function
+  const { error: ghlError } = await supabase.functions.invoke('ghl-integration', {
+    body: {
+      action: 'sync_with_field_mapping',
+      apiKey,
+      locationId,
+      contactId: lead.ghl_contact_id,
+      callData: {
+        outcome,
+        notes: transcript?.substring(0, 1000) || '',
+        duration: durationSeconds,
+        date: new Date().toISOString(),
+        recordingUrl: callData.recording_url || '',
+        sentiment: callData.call_analysis?.user_sentiment || 'neutral',
+        summary: callData.call_analysis?.call_summary || '',
+        totalCalls: totalCalls || 1,
+        leadScore: lead.priority || 1
+      }
+    }
+  });
+
+  if (ghlError) {
+    console.error('[Retell Webhook] GHL sync failed:', ghlError);
+    throw new Error(`GHL sync failed: ${ghlError.message}`);
+  }
+
+  console.log('[Retell Webhook] GHL sync completed successfully');
 }
