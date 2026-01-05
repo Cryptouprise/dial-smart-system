@@ -892,44 +892,121 @@ serve(async (req) => {
         // Try to get Google Calendar busy times if connected
         let busyTimes: { start: number; end: number }[] = [];
 
-        const { data: integration } = await supabase
-          .from('calendar_integrations')
-          .select('*')
+        // Get user's GHL sync settings for calendar preference
+        const { data: ghlSettings } = await supabase
+          .from('ghl_sync_settings')
+          .select('calendar_preference, ghl_calendar_id, ghl_calendar_name')
           .eq('user_id', targetUserId)
-          .eq('provider', 'google')
           .maybeSingle();
 
-        if (integration?.access_token_encrypted) {
-          try {
-            // Use helper function to ensure fresh token
-            const accessToken = await ensureFreshGoogleToken(integration, supabase);
-            
-            const calendarId = integration.calendar_id || 'primary';
+        const calendarPref = ghlSettings?.calendar_preference || 'google';
+        const ghlCalendarId = ghlSettings?.ghl_calendar_id;
 
-            const eventsResponse = await fetch(
-              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-                `timeMin=${rangeStartUtc.toISOString()}&timeMax=${rangeEndUtc.toISOString()}&singleEvents=true`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
+        console.log('[Calendar] Calendar preference:', calendarPref, 'GHL Calendar ID:', ghlCalendarId);
 
-            if (eventsResponse.ok) {
-              const eventsData = await eventsResponse.json();
-              busyTimes = (eventsData.items || [])
-                .filter((event: any) => event?.start && event?.end)
-                .map((event: any) => ({
-                  start: new Date(event.start.dateTime || event.start.date).getTime(),
-                  end: new Date(event.end.dateTime || event.end.date).getTime(),
-                }));
-              console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
-            } else {
-              console.error('[Calendar] Google Calendar API error:', eventsResponse.status);
-              // If 401, the token is invalid despite our refresh attempt
-              if (eventsResponse.status === 401) {
-                console.error('[Calendar] Token invalid after refresh - user needs to reconnect');
+        // Check Google Calendar if preference includes Google
+        if (calendarPref === 'google' || calendarPref === 'both') {
+          const { data: integration } = await supabase
+            .from('calendar_integrations')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('provider', 'google')
+            .maybeSingle();
+
+          if (integration?.access_token_encrypted) {
+            try {
+              // Use helper function to ensure fresh token
+              const accessToken = await ensureFreshGoogleToken(integration, supabase);
+              
+              const calendarId = integration.calendar_id || 'primary';
+
+              const eventsResponse = await fetch(
+                `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
+                  `timeMin=${rangeStartUtc.toISOString()}&timeMax=${rangeEndUtc.toISOString()}&singleEvents=true`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+              );
+
+              if (eventsResponse.ok) {
+                const eventsData = await eventsResponse.json();
+                busyTimes = (eventsData.items || [])
+                  .filter((event: any) => event?.start && event?.end)
+                  .map((event: any) => ({
+                    start: new Date(event.start.dateTime || event.start.date).getTime(),
+                    end: new Date(event.end.dateTime || event.end.date).getTime(),
+                  }));
+                console.log('[Calendar] Google Calendar busy times:', busyTimes.length);
+              } else {
+                console.error('[Calendar] Google Calendar API error:', eventsResponse.status);
+                // If 401, the token is invalid despite our refresh attempt
+                if (eventsResponse.status === 401) {
+                  console.error('[Calendar] Token invalid after refresh - user needs to reconnect');
+                }
               }
+            } catch (error) {
+              console.error('[Calendar] Google Calendar error:', error);
+            }
+          }
+        }
+
+        // Check GHL Calendar if preference includes GHL
+        if ((calendarPref === 'ghl' || calendarPref === 'both') && ghlCalendarId) {
+          try {
+            // Get GHL credentials
+            const { data: creds } = await supabase
+              .from('user_credentials')
+              .select('credential_key, credential_value_encrypted')
+              .eq('user_id', targetUserId)
+              .eq('service_name', 'gohighlevel');
+
+            if (creds && creds.length > 0) {
+              const ghlCreds: Record<string, string> = {};
+              creds.forEach((c) => {
+                try {
+                  ghlCreds[c.credential_key] = atob(c.credential_value_encrypted);
+                } catch (e) {
+                  console.error('[Calendar] Failed to decode GHL credential');
+                }
+              });
+
+              if (ghlCreds.apiKey && ghlCreds.locationId) {
+                console.log('[Calendar] Fetching GHL calendar events...');
+                
+                // Fetch GHL calendar events for the date range
+                const ghlEventsUrl = `https://services.leadconnectorhq.com/calendars/${ghlCalendarId}/events?` +
+                  `locationId=${ghlCreds.locationId}&startTime=${rangeStartUtc.toISOString()}&endTime=${rangeEndUtc.toISOString()}`;
+                
+                const ghlResponse = await fetch(ghlEventsUrl, {
+                  headers: {
+                    'Authorization': `Bearer ${ghlCreds.apiKey}`,
+                    'Version': '2021-07-28'
+                  }
+                });
+
+                if (ghlResponse.ok) {
+                  const ghlEventsData = await ghlResponse.json();
+                  const ghlEvents = ghlEventsData.events || [];
+                  
+                  const ghlBusyTimes = ghlEvents
+                    .filter((event: any) => event.startTime && event.endTime)
+                    .map((event: any) => ({
+                      start: new Date(event.startTime).getTime(),
+                      end: new Date(event.endTime).getTime(),
+                    }));
+                  
+                  console.log('[Calendar] GHL Calendar busy times:', ghlBusyTimes.length);
+                  busyTimes = busyTimes.concat(ghlBusyTimes);
+                } else {
+                  const errorText = await ghlResponse.text();
+                  console.error('[Calendar] GHL Calendar API error:', ghlResponse.status, errorText);
+                }
+              } else {
+                console.log('[Calendar] GHL credentials incomplete - skipping GHL calendar check');
+              }
+            } else {
+              console.log('[Calendar] No GHL credentials found - skipping GHL calendar check');
             }
           } catch (error) {
-            console.error('[Calendar] Google Calendar error:', error);
+            console.error('[Calendar] GHL Calendar error:', error);
           }
         }
 
