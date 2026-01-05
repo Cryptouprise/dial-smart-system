@@ -17,7 +17,7 @@ interface CallCenterProps {
 
 const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
   const { getCampaigns, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
-  const { dispatchCalls, startAutoDispatch, isDispatching } = useCallDispatcher();
+  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
@@ -41,13 +41,18 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
 
   // Auto-dispatch effect
   useEffect(() => {
-    if (!autoDispatchEnabled) return;
-    
+    if (!autoDispatchEnabled) {
+      stopAutoDispatch();
+      return;
+    }
+
     console.log('Starting auto-dispatch for campaign:', selectedCampaign);
-    const cleanup = startAutoDispatch(30); // Dispatch every 30 seconds
-    
-    return cleanup;
-  }, [autoDispatchEnabled, selectedCampaign]);
+    startAutoDispatch(30); // Dispatch every 30 seconds
+
+    return () => {
+      stopAutoDispatch();
+    };
+  }, [autoDispatchEnabled, selectedCampaign, startAutoDispatch, stopAutoDispatch]);
 
   const loadCampaigns = async () => {
     const data = await getCampaigns();

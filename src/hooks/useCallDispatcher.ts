@@ -4,16 +4,44 @@ import { supabase } from '@/integrations/supabase/client';
 
 // Prevent noisy toast loops when the browser temporarily can't reach Supabase
 const DISPATCH_FETCH_COOLDOWN_MS = 60_000;
+const MIN_DISPATCH_INTERVAL_MS = 5_000;
+
 let dispatchFetchCooldownUntil = 0;
 
 // Global singleton state - ensures only ONE auto-dispatch interval runs app-wide
 let globalAutoDispatchActive = false;
 let globalIntervalRef: ReturnType<typeof setInterval> | null = null;
 let globalDispatchInFlight = false;
+let globalLastDispatchAttemptAt = 0;
+
+const getErrorText = (err: unknown) => {
+  const anyErr = err as any;
+  const parts = [
+    anyErr?.name,
+    anyErr?.message,
+    anyErr?.context?.message,
+    anyErr?.context?.value?.message,
+    anyErr?.cause?.message,
+  ].filter(Boolean);
+
+  // Avoid huge JSON.stringify spam, but still include something useful
+  return parts.map(String).join(' | ');
+};
 
 const isTransientFetchFailure = (err: unknown) => {
-  const msg = (err as any)?.message ? String((err as any).message) : String(err);
-  return msg.includes('Failed to fetch') || msg.includes('Load failed') || msg.includes('NetworkError');
+  const anyErr = err as any;
+  const text = getErrorText(err);
+
+  // Supabase-js uses this when the function endpoint can’t be reached
+  if (anyErr?.name === 'FunctionsFetchError') return true;
+  if (text.includes('Failed to send a request to the Edge Function')) return true;
+
+  return (
+    text.includes('Failed to fetch') ||
+    text.includes('Load failed') ||
+    text.includes('NetworkError') ||
+    text.includes('net::ERR_')
+  );
 };
 
 const enterDispatchFetchCooldown = () => {
@@ -22,6 +50,7 @@ const enterDispatchFetchCooldown = () => {
 
 const shouldSkipDispatchFetch = () => {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (Date.now() - globalLastDispatchAttemptAt < MIN_DISPATCH_INTERVAL_MS) return true;
   return Date.now() < dispatchFetchCooldownUntil;
 };
 
@@ -34,6 +63,7 @@ export const useCallDispatcher = () => {
       if (globalDispatchInFlight || shouldSkipDispatchFetch()) return null;
 
       globalDispatchInFlight = true;
+      globalLastDispatchAttemptAt = Date.now();
       setIsDispatching(true);
 
       try {
@@ -61,15 +91,21 @@ export const useCallDispatcher = () => {
 
         return data;
       } catch (error: any) {
-        // Avoid toast spam during temporary network issues
+        // Avoid toast/log spam during temporary network/edge-function reachability issues
         if (isTransientFetchFailure(error)) {
-          console.warn('[Call Dispatcher] Transient fetch failure, entering cooldown:', error?.message || error);
           enterDispatchFetchCooldown();
+          if (!options.silent) {
+            toast({
+              title: 'Network Issue',
+              description: 'Can’t reach the call dispatcher right now. Retrying automatically in ~1 minute.',
+              variant: 'destructive',
+            });
+          }
           return null;
         }
 
-        console.error('[Call Dispatcher] Error:', error);
         if (!options.silent) {
+          console.error('[Call Dispatcher] Error:', error);
           toast({
             title: 'Dispatch Failed',
             description: error.message || 'Failed to dispatch calls',
@@ -87,13 +123,15 @@ export const useCallDispatcher = () => {
 
   const startAutoDispatch = useCallback(
     (intervalSeconds: number = 30) => {
+      const safeIntervalSeconds = Number.isFinite(intervalSeconds) && intervalSeconds >= 5 ? intervalSeconds : 30;
+
       // CRITICAL: Prevent duplicate intervals across all components
       if (globalAutoDispatchActive) {
         console.warn('[Auto-Dispatch] Already running globally, ignoring duplicate start');
         return () => {}; // Return no-op cleanup
       }
 
-      console.log(`[Auto-Dispatch] Starting globally every ${intervalSeconds} seconds`);
+      console.log(`[Auto-Dispatch] Starting globally every ${safeIntervalSeconds} seconds`);
       globalAutoDispatchActive = true;
 
       // Clear any lingering intervals
@@ -104,7 +142,7 @@ export const useCallDispatcher = () => {
 
       globalIntervalRef = setInterval(() => {
         void dispatchCalls({ silent: true });
-      }, intervalSeconds * 1000);
+      }, safeIntervalSeconds * 1000);
 
       // Initial dispatch (silent)
       void dispatchCalls({ silent: true });
@@ -120,6 +158,14 @@ export const useCallDispatcher = () => {
     },
     [dispatchCalls]
   );
+
+  const stopAutoDispatch = useCallback(() => {
+    if (globalIntervalRef) {
+      clearInterval(globalIntervalRef);
+      globalIntervalRef = null;
+    }
+    globalAutoDispatchActive = false;
+  }, []);
 
   // Force re-queue all leads for a campaign
   const forceRequeueLeads = useCallback(
@@ -192,6 +238,7 @@ export const useCallDispatcher = () => {
   return {
     dispatchCalls,
     startAutoDispatch,
+    stopAutoDispatch,
     forceRequeueLeads,
     isDispatching,
   };
