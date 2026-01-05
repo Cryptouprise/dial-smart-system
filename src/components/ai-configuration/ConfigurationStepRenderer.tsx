@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ArrowRight, SkipForward, Sparkles, Brain } from 'lucide-react';
 
 // Import the actual configuration components
 import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
@@ -515,6 +515,67 @@ export const ConfigurationStepRenderer: React.FC<ConfigurationStepRendererProps>
               onSkip={onSkip}
               hasInteracted={true}
               tip="You can configure detailed compliance settings in the Settings page."
+            />
+          </div>
+        );
+
+      case 'autonomous_agent':
+        return (
+          <div className="space-y-6 p-4">
+            <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-lg p-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-full bg-primary/20">
+                  <Brain className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg mb-2">🤖 Autonomous Agent System</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Let the AI manage your leads 24/7. The autonomous agent can:
+                  </p>
+                  <ul className="text-sm space-y-2 mb-4">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Make intelligent decisions about when to call, SMS, or email leads
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Set and track daily goals (appointments, calls, conversations)
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Learn from outcomes to continuously improve performance
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Prioritize leads using ML-based scoring
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Auto-optimize campaigns based on real-time performance
+                    </li>
+                  </ul>
+                  <div className="bg-background/80 rounded-lg p-4 border">
+                    <h4 className="font-medium mb-2">Autonomy Levels:</h4>
+                    <div className="space-y-2 text-sm">
+                      <p><strong>Full Auto:</strong> AI executes actions automatically without approval</p>
+                      <p><strong>Approval Required:</strong> AI suggests actions but requires your approval</p>
+                      <p><strong>Suggestions Only:</strong> AI provides recommendations, no automatic actions</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                💡 <strong>Tip:</strong> Start with "Suggestions Only" mode to see how the AI thinks, then gradually increase autonomy as you build trust.
+              </p>
+            </div>
+            <Separator />
+            <CompletionFooter 
+              onComplete={handleCompleteClick} 
+              onSkip={onSkip}
+              hasInteracted={true}
+              tip="Access the full Autonomous Agent dashboard from the sidebar."
             />
           </div>
         );

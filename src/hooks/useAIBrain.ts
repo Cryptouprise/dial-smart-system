@@ -261,7 +261,13 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     createCampaign: (name: string) => sendMessage(`Create a campaign called "${name}"`),
     sendSmsBlast: (message: string) => sendMessage(`Send SMS blast: ${message}`),
     listLeads: () => sendMessage('List my leads'),
-    diagnose: (issue: string) => sendMessage(`Diagnose: ${issue}`)
+    diagnose: (issue: string) => sendMessage(`Diagnose: ${issue}`),
+    // Autonomous Agent quick actions
+    systemStatus: () => sendMessage("What's going on with the system today?"),
+    goalProgress: () => sendMessage("Show me today's autonomous goal progress"),
+    aiInsights: () => sendMessage("What has the AI learned from recent calls?"),
+    leadPriorities: () => sendMessage("Show me the top priority leads right now"),
+    toggleAutonomous: (enabled: boolean) => sendMessage(`${enabled ? 'Enable' : 'Disable'} autonomous mode`)
   };
 
   return {

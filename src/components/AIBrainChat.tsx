@@ -17,7 +17,10 @@ import {
   ChevronRight,
   Zap,
   History,
-  Archive
+  Archive,
+  Activity,
+  Target,
+  Brain
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -281,17 +284,24 @@ export const AIBrainChat: React.FC = () => {
                     </p>
                     <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center">
                       <QuickActionButton
-                        label="Status"
-                        onClick={() => quickActions.status()}
-                        icon={<Zap className="h-3 w-3" />}
+                        label="System Status"
+                        onClick={() => sendMessage("What's going on with the system today?")}
+                        icon={<Activity className="h-3 w-3" />}
+                      />
+                      <QuickActionButton
+                        label="Goals"
+                        onClick={() => sendMessage("How are we doing on our goals?")}
+                        icon={<Target className="h-3 w-3" />}
+                      />
+                      <QuickActionButton
+                        label="AI Insights"
+                        onClick={() => sendMessage("What has the AI learned recently?")}
+                        icon={<Brain className="h-3 w-3" />}
                       />
                       <QuickActionButton
                         label="Workflow"
                         onClick={() => sendMessage('Help me create a workflow')}
-                      />
-                      <QuickActionButton
-                        label="Send SMS"
-                        onClick={() => sendMessage('I want to send an SMS blast')}
+                        icon={<Zap className="h-3 w-3" />}
                       />
                     </div>
                   </div>

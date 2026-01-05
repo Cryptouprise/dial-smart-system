@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { 
   Phone, Bot, Users, Zap, CheckCircle2, ArrowRight, ArrowLeft, 
-  ChevronDown, SkipForward, Sparkles, Rocket, Info
+  ChevronDown, SkipForward, Sparkles, Rocket, Info, Brain
 } from 'lucide-react';
 import PhoneNumberPurchasing from '../PhoneNumberPurchasing';
 import { RetellAISetupWizard } from '../RetellAISetupWizard';
@@ -44,8 +44,16 @@ const STEPS = [
     tip: 'Upload a CSV or add leads manually',
   },
   {
-    id: 'launch',
+    id: 'autonomous',
     number: 4,
+    title: 'Enable Autonomous Mode',
+    subtitle: 'Let AI manage your leads 24/7',
+    icon: Brain,
+    tip: 'The AI will make calls, send SMS, and book appointments automatically',
+  },
+  {
+    id: 'launch',
+    number: 5,
     title: 'Launch!',
     subtitle: 'Start your first campaign',
     icon: Rocket,
@@ -119,6 +127,48 @@ export const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ onComplete, 
         return (
           <div className="space-y-4">
             <LeadUpload />
+          </div>
+        );
+
+      case 'autonomous':
+        return (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-lg p-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-full bg-primary/20">
+                  <Brain className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg mb-2">Autonomous Agent</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    The autonomous agent will handle your leads 24/7:
+                  </p>
+                  <ul className="text-sm space-y-2">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Intelligent call timing based on lead behavior
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Automated SMS and email follow-ups
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Daily goal tracking and progress reports
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      Self-learning from call outcomes
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                💡 You can configure autonomy levels (Full Auto, Approval Required, Suggestions Only) in the Autonomous Agent dashboard after setup.
+              </p>
+            </div>
           </div>
         );
 

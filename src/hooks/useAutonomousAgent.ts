@@ -384,21 +384,60 @@ export const useAutonomousAgent = () => {
       return null;
     }
 
-    // Log the email action (actual sending would require email provider integration)
-    await supabase.from('agent_decisions').insert({
-      user_id: user.id,
-      lead_id: leadId,
-      lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
-      decision_type: 'email',
-      reasoning: 'Autonomous email action',
-      action_taken: message || 'Email sent',
-      executed_at: new Date().toISOString(),
-      approved_by: 'autonomous',
-      success: true,
-    });
+    // Personalize message
+    const personalizedMessage = (message || 'Hi {first_name}, following up on our conversation.')
+      .replace('{first_name}', lead.first_name || '')
+      .replace('{last_name}', lead.last_name || '');
 
-    console.log('Email action logged for lead:', leadId, lead.email);
-    return true;
+    try {
+      // Call the email-sender edge function
+      const { data, error } = await supabase.functions.invoke('email-sender', {
+        body: {
+          to: lead.email,
+          subject: 'Following up on our conversation',
+          html: `<p>${personalizedMessage}</p>`,
+          user_id: user.id,
+          lead_id: leadId,
+        },
+      });
+
+      if (error) {
+        console.error('Email send error:', error);
+        // Log the failed attempt
+        await supabase.from('agent_decisions').insert({
+          user_id: user.id,
+          lead_id: leadId,
+          lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+          decision_type: 'email',
+          reasoning: 'Autonomous email action',
+          action_taken: message || 'Email attempted',
+          executed_at: new Date().toISOString(),
+          approved_by: 'autonomous',
+          success: false,
+          outcome: error.message || 'Email send failed'
+        });
+        return null;
+      }
+
+      // Log successful email
+      await supabase.from('agent_decisions').insert({
+        user_id: user.id,
+        lead_id: leadId,
+        lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+        decision_type: 'email',
+        reasoning: 'Autonomous email action',
+        action_taken: message || 'Email sent',
+        executed_at: new Date().toISOString(),
+        approved_by: 'autonomous',
+        success: true,
+      });
+
+      console.log('Email sent successfully for lead:', leadId, lead.email);
+      return true;
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      return null;
+    }
   };
 
   const scheduleFollowUp = async (leadId: string, timing: string) => {
