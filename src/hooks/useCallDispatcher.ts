@@ -167,7 +167,7 @@ export const useCallDispatcher = () => {
     globalAutoDispatchActive = false;
   }, []);
 
-  // Force re-queue all leads for a campaign
+  // Force re-queue all leads for a campaign (fully resets their state)
   const forceRequeueLeads = useCallback(
     async (campaignId: string) => {
       try {
@@ -188,13 +188,38 @@ export const useCallDispatcher = () => {
           return;
         }
 
-        // Delete existing queue entries for this campaign
+        const leadIds = campaignLeadData.map((cl: any) => cl.lead_id);
+
+        // 1. Delete existing queue entries for this campaign
         await supabase
           .from('dialing_queues')
           .delete()
           .eq('campaign_id', campaignId);
 
-        // Re-add leads to queue with immediate scheduling
+        // 2. Delete workflow progress entries for these leads (so they can re-enroll)
+        const { error: workflowDeleteError } = await supabase
+          .from('lead_workflow_progress')
+          .delete()
+          .in('lead_id', leadIds);
+        
+        if (workflowDeleteError) {
+          console.warn('[Force Requeue] Failed to clear workflow progress:', workflowDeleteError);
+        }
+
+        // 3. Reset lead status to 'new' so they're eligible again
+        const { error: leadResetError } = await supabase
+          .from('leads')
+          .update({ 
+            status: 'new',
+            last_contacted_at: null,
+          })
+          .in('id', leadIds);
+        
+        if (leadResetError) {
+          console.warn('[Force Requeue] Failed to reset lead status:', leadResetError);
+        }
+
+        // 4. Re-add leads to queue with immediate scheduling
         const queueEntries = campaignLeadData
           .filter((cl: any) => cl.leads?.phone_number)
           .map((cl: any) => ({
@@ -217,8 +242,8 @@ export const useCallDispatcher = () => {
         }
 
         toast({
-          title: 'Leads Re-queued',
-          description: `${queueEntries.length} leads added to queue for immediate calling`,
+          title: 'Leads Fully Reset',
+          description: `${queueEntries.length} leads reset and re-queued for calling`,
         });
 
         // Trigger immediate dispatch
