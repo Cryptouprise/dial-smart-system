@@ -358,6 +358,44 @@ export const useGoHighLevel = () => {
     }
   };
 
+  const testCalendar = async (calendarId: string): Promise<{
+    success: boolean;
+    message?: string;
+    details?: {
+      calendarName: string;
+      calendarType?: string;
+      isActive?: boolean;
+      upcomingEvents: number;
+    };
+    error?: string;
+  } | null> => {
+    const credentials = await getGHLCredentials();
+    if (!credentials) return null;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'test_calendar',
+          calendarId,
+          ...credentials
+        }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to test calendar",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const updateContactAfterCall = async (contactId: string, callData: {
     outcome: string;
     notes?: string;
@@ -670,6 +708,7 @@ export const useGoHighLevel = () => {
     getCustomFields,
     createCustomField,
     getCalendars,
+    testCalendar,
     updateContactAfterCall,
     updatePipelineStage,
     syncWithFieldMapping,

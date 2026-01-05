@@ -359,6 +359,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     createCustomField,
     getPipelines,
     getCalendars,
+    testCalendar,
     getSyncSettings,
     saveSyncSettings
   } = useGoHighLevel();
@@ -387,6 +388,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     statsMetrics: false,
     appointmentData: false
   });
+  const [isTestingCalendar, setIsTestingCalendar] = useState(false);
 
   useEffect(() => {
     if (isConnected) {
@@ -727,6 +729,54 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
                   <AlertTriangle className="h-4 w-4" />
                   Please select a calendar to enable GHL appointment booking
                 </div>
+              )}
+
+              {/* Test GHL Calendar Button */}
+              {ghlCalendarId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    setIsTestingCalendar(true);
+                    try {
+                      const result = await testCalendar(ghlCalendarId);
+                      if (result?.success) {
+                        toast({
+                          title: "GHL Calendar Connected!",
+                          description: `Calendar: ${result.details?.calendarName || 'Unknown'} | ${result.details?.upcomingEvents || 0} upcoming events`,
+                        });
+                      } else {
+                        toast({
+                          title: "Calendar Test Failed",
+                          description: result?.error || "Could not connect to GHL calendar",
+                          variant: "destructive"
+                        });
+                      }
+                    } catch (error: any) {
+                      toast({
+                        title: "Test Failed",
+                        description: error.message || "Failed to test calendar connection",
+                        variant: "destructive"
+                      });
+                    } finally {
+                      setIsTestingCalendar(false);
+                    }
+                  }}
+                  disabled={isTestingCalendar || isLoading}
+                  className="mt-2"
+                >
+                  {isTestingCalendar ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Test GHL Calendar Connection
+                    </>
+                  )}
+                </Button>
               )}
             </div>
           )}

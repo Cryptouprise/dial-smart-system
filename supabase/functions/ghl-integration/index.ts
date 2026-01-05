@@ -19,7 +19,9 @@ interface GHLRequest {
     | 'create_custom_field'
     | 'update_pipeline_stage'
     | 'sync_with_field_mapping'
-    | 'get_calendars';
+    | 'get_calendars'
+    | 'get_calendar_events'
+    | 'test_calendar';
   apiKey: string;
   locationId: string;
   webhookKey?: string;
@@ -554,6 +556,108 @@ serve(async (req) => {
         const pipelineData = await response.json();
         result = { pipelines: pipelineData.pipelines || [] };
         break;
+
+      case 'get_calendar_events': {
+        // Fetch events/busy times from a specific GHL calendar
+        const { calendarId, startTime, endTime } = params as any;
+        
+        if (!calendarId) {
+          throw new Error('Calendar ID is required');
+        }
+
+        console.log('[GHL] Fetching calendar events for calendar:', calendarId);
+        
+        // Build URL with date range params
+        let eventsUrl = `${baseUrl}/calendars/${calendarId}/events?locationId=${locationId}`;
+        if (startTime) eventsUrl += `&startTime=${startTime}`;
+        if (endTime) eventsUrl += `&endTime=${endTime}`;
+        
+        response = await fetch(eventsUrl, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`GHL Calendar API error: ${response.status} - ${errorData}`);
+        }
+
+        const eventsData = await response.json();
+        const events = eventsData.events || [];
+        
+        console.log('[GHL] Found calendar events:', events.length);
+        
+        // Convert to busy times format (same as Google Calendar)
+        const busyTimes = events
+          .filter((event: any) => event.startTime && event.endTime)
+          .map((event: any) => ({
+            start: new Date(event.startTime).getTime(),
+            end: new Date(event.endTime).getTime(),
+            title: event.title || 'Busy',
+            status: event.status
+          }));
+
+        result = { 
+          success: true,
+          events: events.length,
+          busyTimes 
+        };
+        break;
+      }
+
+      case 'test_calendar': {
+        // Test GHL calendar connection by fetching upcoming events
+        const { calendarId: testCalId } = params as any;
+        
+        if (!testCalId) {
+          throw new Error('Calendar ID is required');
+        }
+
+        console.log('[GHL] Testing calendar connection:', testCalId);
+        
+        const now = new Date();
+        const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        
+        // Get calendar info
+        response = await fetch(`${baseUrl}/calendars/${testCalId}?locationId=${locationId}`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`Failed to access GHL calendar: ${response.status} - ${errorData}`);
+        }
+
+        const calendarInfo = await response.json();
+        
+        // Get upcoming events
+        const eventsUrl = `${baseUrl}/calendars/${testCalId}/events?locationId=${locationId}&startTime=${now.toISOString()}&endTime=${nextWeek.toISOString()}`;
+        const eventsResp = await fetch(eventsUrl, {
+          method: 'GET',
+          headers
+        });
+
+        let upcomingEvents = 0;
+        if (eventsResp.ok) {
+          const evData = await eventsResp.json();
+          upcomingEvents = evData.events?.length || 0;
+        }
+
+        console.log('[GHL] Calendar test successful - Events found:', upcomingEvents);
+
+        result = {
+          success: true,
+          message: 'GHL Calendar connection verified!',
+          details: {
+            calendarName: calendarInfo.calendar?.name || calendarInfo.name || 'GHL Calendar',
+            calendarType: calendarInfo.calendar?.calendarType || calendarInfo.calendarType,
+            isActive: calendarInfo.calendar?.isActive ?? calendarInfo.isActive ?? true,
+            upcomingEvents
+          }
+        };
+        break;
+      }
 
       default:
         throw new Error(`Unsupported action: ${action}`);
