@@ -1931,15 +1931,26 @@ serve(async (req) => {
           );
         }
 
-        // Try to sync with Google Calendar if connected
+        // Get user's calendar preference
+        const { data: syncSettings } = await supabase
+          .from('ghl_sync_settings')
+          .select('calendar_preference')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        const calendarPreference = syncSettings?.calendar_preference || 'both';
+        console.log('[Calendar] User calendar preference:', calendarPreference);
+
+        // Try to sync with Google Calendar if connected and preference allows
         let googleEventId: string | null = null;
 
-        const { data: integration } = await supabase
-          .from('calendar_integrations')
-          .select('*')
-          .eq('user_id', targetUserId)
-          .eq('provider', 'google')
-          .maybeSingle();
+        if (calendarPreference === 'google' || calendarPreference === 'both') {
+          const { data: integration } = await supabase
+            .from('calendar_integrations')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('provider', 'google')
+            .maybeSingle();
 
         if (integration?.access_token_encrypted) {
           try {
@@ -1980,17 +1991,19 @@ serve(async (req) => {
             console.error('[Calendar] Google Calendar error:', error);
           }
         }
+        }
 
-        // Try to sync with GHL Calendar if connected
+        // Try to sync with GHL Calendar if connected and preference allows
         let ghlAppointmentId: string | null = null;
 
-        const { data: ghlCreds } = await supabase
-          .from('user_credentials')
-          .select('credential_key, credential_value_encrypted')
-          .eq('user_id', targetUserId)
-          .eq('service_name', 'gohighlevel');
+        if (calendarPreference === 'ghl' || calendarPreference === 'both') {
+          const { data: ghlCreds } = await supabase
+            .from('user_credentials')
+            .select('credential_key, credential_value_encrypted')
+            .eq('user_id', targetUserId)
+            .eq('service_name', 'gohighlevel');
 
-        if (ghlCreds && ghlCreds.length > 0) {
+          if (ghlCreds && ghlCreds.length > 0) {
           try {
             const credentials: Record<string, string> = {};
             ghlCreds.forEach((c) => {
@@ -2047,6 +2060,7 @@ serve(async (req) => {
             }
           } catch (ghlError) {
             console.error('[Calendar] GHL Calendar error:', ghlError);
+          }
           }
         }
 

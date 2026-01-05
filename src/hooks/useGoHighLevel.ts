@@ -63,6 +63,7 @@ interface GHLSyncSettings {
   default_pipeline_id: string | null;
   remove_conflicting_tags: boolean;
   sync_enabled: boolean;
+  calendar_preference: 'google' | 'ghl' | 'both' | 'none';
 }
 
 export const useGoHighLevel = () => {
@@ -445,7 +446,8 @@ export const useGoHighLevel = () => {
           default_opportunity_value: 0,
           default_pipeline_id: null,
           remove_conflicting_tags: true,
-          sync_enabled: true
+          sync_enabled: true,
+          calendar_preference: 'both'
         };
       }
 
@@ -459,7 +461,8 @@ export const useGoHighLevel = () => {
         default_opportunity_value: data.default_opportunity_value || 0,
         default_pipeline_id: data.default_pipeline_id,
         remove_conflicting_tags: data.remove_conflicting_tags ?? true,
-        sync_enabled: data.sync_enabled ?? true
+        sync_enabled: data.sync_enabled ?? true,
+        calendar_preference: (data.calendar_preference as 'google' | 'ghl' | 'both' | 'none') || 'both'
       };
     } catch (error) {
       console.error('Failed to get sync settings:', error);
@@ -491,6 +494,7 @@ export const useGoHighLevel = () => {
           default_pipeline_id: settings.default_pipeline_id || null,
           remove_conflicting_tags: settings.remove_conflicting_tags ?? true,
           sync_enabled: settings.sync_enabled ?? true,
+          calendar_preference: settings.calendar_preference || 'both',
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
