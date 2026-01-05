@@ -1636,6 +1636,8 @@ export type Database = {
           default_opportunity_value: number | null
           default_pipeline_id: string | null
           field_mappings: Json | null
+          ghl_calendar_id: string | null
+          ghl_calendar_name: string | null
           id: string
           pipeline_stage_mappings: Json | null
           remove_conflicting_tags: boolean | null
@@ -1651,6 +1653,8 @@ export type Database = {
           default_opportunity_value?: number | null
           default_pipeline_id?: string | null
           field_mappings?: Json | null
+          ghl_calendar_id?: string | null
+          ghl_calendar_name?: string | null
           id?: string
           pipeline_stage_mappings?: Json | null
           remove_conflicting_tags?: boolean | null
@@ -1666,6 +1670,8 @@ export type Database = {
           default_opportunity_value?: number | null
           default_pipeline_id?: string | null
           field_mappings?: Json | null
+          ghl_calendar_id?: string | null
+          ghl_calendar_name?: string | null
           id?: string
           pipeline_stage_mappings?: Json | null
           remove_conflicting_tags?: boolean | null

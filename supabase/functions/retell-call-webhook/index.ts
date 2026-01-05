@@ -1038,24 +1038,49 @@ async function syncToGoHighLevel(
 
   console.log('[Retell Webhook] Triggering GHL sync for contact:', lead.ghl_contact_id);
 
-  // Call ghl-integration edge function
+  // Build comprehensive call data object with all 35+ fields
+  const comprehensiveCallData: Record<string, any> = {
+    // Call Analysis Fields
+    outcome,
+    notes: transcript?.substring(0, 5000) || '',
+    duration: durationSeconds,
+    date: new Date().toISOString(),
+    recordingUrl: callData.recording_url || '',
+    sentiment: callData.call_analysis?.user_sentiment || 'neutral',
+    summary: callData.call_analysis?.call_summary || '',
+    confidence: callData.call_analysis?.custom_analysis_data?.confidence || 0,
+    reasoning: callData.call_analysis?.custom_analysis_data?.reasoning || '',
+    keyPoints: callData.call_analysis?.custom_analysis_data?.key_points || [],
+    painPoints: callData.call_analysis?.custom_analysis_data?.pain_points || [],
+    objections: callData.call_analysis?.custom_analysis_data?.objections || [],
+    nextAction: callData.call_analysis?.custom_analysis_data?.next_action || '',
+    disposition: callData.call_analysis?.custom_analysis_data?.disposition || outcome,
+    callSuccessful: callData.call_analysis?.call_successful || false,
+    
+    // Lead Data Fields
+    firstName: lead.first_name || '',
+    lastName: lead.last_name || '',
+    fullName: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
+    phoneNumber: lead.phone_number || '',
+    
+    // Stats & Metrics
+    totalCalls: totalCalls || 1,
+    leadScore: lead.priority || 1,
+    
+    // Appointment Data (if available from analysis)
+    appointmentDate: callData.call_analysis?.custom_analysis_data?.appointment_date || '',
+    appointmentTime: callData.call_analysis?.custom_analysis_data?.appointment_time || '',
+    callbackDate: callData.call_analysis?.custom_analysis_data?.callback_date || '',
+  };
+
+  // Call ghl-integration edge function with comprehensive data
   const { error: ghlError } = await supabase.functions.invoke('ghl-integration', {
     body: {
       action: 'sync_with_field_mapping',
       apiKey,
       locationId,
       contactId: lead.ghl_contact_id,
-      callData: {
-        outcome,
-        notes: transcript?.substring(0, 1000) || '',
-        duration: durationSeconds,
-        date: new Date().toISOString(),
-        recordingUrl: callData.recording_url || '',
-        sentiment: callData.call_analysis?.user_sentiment || 'neutral',
-        summary: callData.call_analysis?.call_summary || '',
-        totalCalls: totalCalls || 1,
-        leadScore: lead.priority || 1
-      }
+      callData: comprehensiveCallData
     }
   });
 

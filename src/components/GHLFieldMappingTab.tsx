@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Database, RefreshCw, Plus, Tag, GitBranch, Zap, Check, X, Wand2, Search, Calendar } from 'lucide-react';
+import { Database, RefreshCw, Plus, Tag, GitBranch, Zap, Check, X, Wand2, Search, Calendar, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
 interface GHLCustomField {
@@ -28,22 +29,82 @@ interface GHLPipeline {
   stages: Array<{ id: string; name: string; position: number }>;
 }
 
+interface GHLCalendar {
+  id: string;
+  name: string;
+  calendarType?: string;
+  isActive?: boolean;
+}
+
 interface FieldMappingTabProps {
   isConnected: boolean;
 }
 
-// System fields available for sync
-const SYSTEM_FIELDS = [
-  { key: 'outcome', label: 'Call Outcome', description: 'The result of the call (interested, not_interested, etc.)', suggestedMatches: ['last_call_outcome', 'call_outcome', 'outcome', 'last_outcome', 'call_result'] },
-  { key: 'notes', label: 'Call Notes/Transcript', description: 'Call transcript or agent notes', suggestedMatches: ['last_call_notes', 'call_notes', 'notes', 'transcript', 'call_transcript'] },
-  { key: 'duration', label: 'Call Duration', description: 'Length of call in seconds', suggestedMatches: ['last_call_duration', 'call_duration', 'duration', 'call_length'] },
-  { key: 'date', label: 'Call Date', description: 'Date and time of the call', suggestedMatches: ['last_call_date', 'call_date', 'last_contacted', 'last_call'] },
-  { key: 'recordingUrl', label: 'Recording URL', description: 'Link to call recording', suggestedMatches: ['call_recording', 'recording_url', 'recording', 'call_recording_url'] },
-  { key: 'sentiment', label: 'AI Sentiment', description: 'Detected sentiment (positive/neutral/negative)', suggestedMatches: ['ai_sentiment', 'sentiment', 'call_sentiment', 'sentiment_score'] },
-  { key: 'summary', label: 'Call Summary', description: 'AI-generated call summary', suggestedMatches: ['call_summary', 'summary', 'ai_summary', 'call_notes'] },
-  { key: 'totalCalls', label: 'Total Calls Made', description: 'Total number of calls to this lead', suggestedMatches: ['total_calls', 'call_count', 'total_call_count', 'calls_made'] },
-  { key: 'leadScore', label: 'Lead Score', description: 'Calculated priority score', suggestedMatches: ['lead_score', 'priority', 'score', 'priority_score', 'lead_priority'] },
-];
+// EXPANDED SYSTEM_FIELDS - 35+ fields grouped by category
+const SYSTEM_FIELDS = {
+  callAnalysis: {
+    label: 'Call Analysis',
+    fields: [
+      { key: 'outcome', label: 'Call Outcome', description: 'The result of the call (interested, not_interested, etc.)', suggestedMatches: ['last_call_outcome', 'call_outcome', 'outcome', 'last_outcome', 'call_result'] },
+      { key: 'notes', label: 'Call Notes/Transcript', description: 'Call transcript or agent notes', suggestedMatches: ['last_call_notes', 'call_notes', 'notes', 'transcript', 'call_transcript'] },
+      { key: 'duration', label: 'Call Duration', description: 'Length of call in seconds', suggestedMatches: ['last_call_duration', 'call_duration', 'duration', 'call_length'] },
+      { key: 'date', label: 'Call Date', description: 'Date and time of the call', suggestedMatches: ['last_call_date', 'call_date', 'last_contacted', 'last_call'] },
+      { key: 'recordingUrl', label: 'Recording URL', description: 'Link to call recording', suggestedMatches: ['call_recording', 'recording_url', 'recording', 'call_recording_url'] },
+      { key: 'sentiment', label: 'AI Sentiment', description: 'Detected sentiment (positive/neutral/negative)', suggestedMatches: ['ai_sentiment', 'sentiment', 'call_sentiment', 'sentiment_score'] },
+      { key: 'summary', label: 'Call Summary', description: 'AI-generated call summary', suggestedMatches: ['call_summary', 'summary', 'ai_summary', 'call_notes'] },
+      { key: 'confidence', label: 'AI Confidence', description: 'AI confidence score (0-100)', suggestedMatches: ['ai_confidence', 'confidence', 'confidence_score'] },
+      { key: 'reasoning', label: 'AI Reasoning', description: 'AI reasoning for disposition', suggestedMatches: ['ai_reasoning', 'reasoning', 'disposition_reason'] },
+      { key: 'keyPoints', label: 'Key Points', description: 'Important points from the call', suggestedMatches: ['key_points', 'keypoints', 'highlights', 'important_points'] },
+      { key: 'painPoints', label: 'Pain Points', description: 'Customer pain points identified', suggestedMatches: ['pain_points', 'painpoints', 'problems', 'challenges'] },
+      { key: 'objections', label: 'Objections', description: 'Objections raised during call', suggestedMatches: ['objections', 'concerns', 'issues_raised'] },
+      { key: 'nextAction', label: 'Next Action', description: 'Recommended next action', suggestedMatches: ['next_action', 'nextaction', 'follow_up_action', 'next_step'] },
+      { key: 'disposition', label: 'Disposition', description: 'Final call disposition', suggestedMatches: ['disposition', 'call_disposition', 'final_status'] },
+      { key: 'callSuccessful', label: 'Call Successful', description: 'Whether the call was successful', suggestedMatches: ['call_successful', 'successful', 'was_successful'] },
+    ]
+  },
+  leadData: {
+    label: 'Lead Information',
+    fields: [
+      { key: 'firstName', label: 'First Name', description: 'Lead first name', suggestedMatches: ['first_name', 'firstname', 'name'] },
+      { key: 'lastName', label: 'Last Name', description: 'Lead last name', suggestedMatches: ['last_name', 'lastname', 'surname'] },
+      { key: 'fullName', label: 'Full Name', description: 'Lead full name', suggestedMatches: ['full_name', 'fullname', 'name', 'contact_name'] },
+      { key: 'email', label: 'Email', description: 'Lead email address', suggestedMatches: ['email', 'email_address', 'contact_email'] },
+      { key: 'phoneNumber', label: 'Phone Number', description: 'Lead phone number', suggestedMatches: ['phone', 'phone_number', 'mobile', 'contact_phone'] },
+      { key: 'company', label: 'Company', description: 'Lead company name', suggestedMatches: ['company', 'company_name', 'business', 'organization'] },
+      { key: 'address', label: 'Address', description: 'Street address', suggestedMatches: ['address', 'street_address', 'address1'] },
+      { key: 'city', label: 'City', description: 'City', suggestedMatches: ['city', 'town'] },
+      { key: 'state', label: 'State', description: 'State/Province', suggestedMatches: ['state', 'province', 'region'] },
+      { key: 'zipCode', label: 'Zip Code', description: 'Postal code', suggestedMatches: ['zip', 'zip_code', 'postal_code', 'zipcode'] },
+      { key: 'leadSource', label: 'Lead Source', description: 'Where the lead came from', suggestedMatches: ['lead_source', 'source', 'campaign_source'] },
+      { key: 'timezone', label: 'Timezone', description: 'Lead timezone', suggestedMatches: ['timezone', 'time_zone', 'tz'] },
+      { key: 'preferredContactTime', label: 'Preferred Contact Time', description: 'Best time to contact', suggestedMatches: ['preferred_time', 'best_time', 'contact_time', 'preferred_contact_time'] },
+      { key: 'tags', label: 'Tags', description: 'Lead tags (comma separated)', suggestedMatches: ['tags', 'labels', 'categories'] },
+    ]
+  },
+  statsMetrics: {
+    label: 'Stats & Metrics',
+    fields: [
+      { key: 'totalCalls', label: 'Total Calls Made', description: 'Total number of calls to this lead', suggestedMatches: ['total_calls', 'call_count', 'total_call_count', 'calls_made'] },
+      { key: 'leadScore', label: 'Lead Score', description: 'Calculated priority score', suggestedMatches: ['lead_score', 'priority', 'score', 'priority_score', 'lead_priority'] },
+      { key: 'campaignName', label: 'Campaign Name', description: 'Name of the campaign', suggestedMatches: ['campaign', 'campaign_name', 'marketing_campaign'] },
+      { key: 'agentName', label: 'Agent Name', description: 'AI agent name used', suggestedMatches: ['agent', 'agent_name', 'ai_agent', 'bot_name'] },
+      { key: 'reachabilityScore', label: 'Reachability Score', description: 'How reachable the lead is', suggestedMatches: ['reachability', 'reachability_score', 'reach_score'] },
+      { key: 'engagementScore', label: 'Engagement Score', description: 'Lead engagement level', suggestedMatches: ['engagement', 'engagement_score', 'engage_score'] },
+    ]
+  },
+  appointmentData: {
+    label: 'Appointment Data',
+    fields: [
+      { key: 'appointmentDate', label: 'Appointment Date', description: 'Scheduled appointment date', suggestedMatches: ['appointment_date', 'appt_date', 'meeting_date', 'booking_date'] },
+      { key: 'appointmentTime', label: 'Appointment Time', description: 'Scheduled appointment time', suggestedMatches: ['appointment_time', 'appt_time', 'meeting_time', 'booking_time'] },
+      { key: 'callbackDate', label: 'Callback Date', description: 'Scheduled callback date', suggestedMatches: ['callback_date', 'followup_date', 'next_call_date', 'callback'] },
+      { key: 'appointmentNotes', label: 'Appointment Notes', description: 'Notes for the appointment', suggestedMatches: ['appointment_notes', 'appt_notes', 'meeting_notes'] },
+    ]
+  }
+};
+
+// Flatten fields for easy iteration
+const ALL_SYSTEM_FIELDS = Object.values(SYSTEM_FIELDS).flatMap(category => category.fields);
 
 // Default call outcomes
 const CALL_OUTCOMES = [
@@ -220,6 +281,76 @@ const StageSelector: React.FC<{
   );
 };
 
+// Calendar Selector Component
+const CalendarSelector: React.FC<{
+  value: string;
+  onValueChange: (value: string) => void;
+  calendars: GHLCalendar[];
+  placeholder?: string;
+}> = ({ value, onValueChange, calendars, placeholder = "Select calendar..." }) => {
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredCalendars = useMemo(() => {
+    if (!searchQuery) return calendars;
+    const query = searchQuery.toLowerCase();
+    return calendars.filter(c => c.name.toLowerCase().includes(query));
+  }, [calendars, searchQuery]);
+
+  const selectedCalendar = calendars.find(c => c.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between text-left font-normal"
+        >
+          <span className="truncate">
+            {!value ? placeholder : selectedCalendar?.name || placeholder}
+          </span>
+          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0 bg-popover border shadow-lg z-50" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput 
+            placeholder="Search calendars..." 
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+          />
+          <CommandList>
+            <CommandEmpty>No calendar found.</CommandEmpty>
+            <CommandGroup>
+              {filteredCalendars.map((calendar) => (
+                <CommandItem
+                  key={calendar.id}
+                  value={calendar.id}
+                  onSelect={() => {
+                    onValueChange(calendar.id);
+                    setOpen(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === calendar.id ? "opacity-100" : "opacity-0")} />
+                  <div className="flex flex-col">
+                    <span>{calendar.name}</span>
+                    {calendar.calendarType && (
+                      <span className="text-xs text-muted-foreground capitalize">{calendar.calendarType.replace(/_/g, ' ')}</span>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
 const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => {
   const { toast } = useToast();
   const {
@@ -227,11 +358,13 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     getCustomFields,
     createCustomField,
     getPipelines,
+    getCalendars,
     getSyncSettings,
     saveSyncSettings
   } = useGoHighLevel();
 
   const [ghlCustomFields, setGhlCustomFields] = useState<GHLCustomField[]>([]);
+  const [ghlCalendars, setGhlCalendars] = useState<GHLCalendar[]>([]);
   const [pipelines, setPipelines] = useState<GHLPipeline[]>([]);
   const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({});
   const [tagRules, setTagRules] = useState<Record<string, string[]>>({});
@@ -245,7 +378,15 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState('TEXT');
   const [calendarPreference, setCalendarPreference] = useState<'google' | 'ghl' | 'both' | 'none'>('both');
+  const [ghlCalendarId, setGhlCalendarId] = useState<string>('');
+  const [ghlCalendarName, setGhlCalendarName] = useState<string>('');
   const [hasAutoMatched, setHasAutoMatched] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    callAnalysis: true,
+    leadData: false,
+    statsMetrics: false,
+    appointmentData: false
+  });
 
   useEffect(() => {
     if (isConnected) {
@@ -253,31 +394,32 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     }
   }, [isConnected]);
 
-  // Smart auto-matching function
+  // Smart auto-matching function with fuzzy matching
   const autoMatchFields = (ghlFields: GHLCustomField[], existingMappings: Record<string, string>) => {
     const newMappings: Record<string, string> = { ...existingMappings };
     let matchCount = 0;
 
-    SYSTEM_FIELDS.forEach(systemField => {
+    ALL_SYSTEM_FIELDS.forEach(systemField => {
       // Skip if already mapped
       if (existingMappings[systemField.key] && existingMappings[systemField.key] !== '_none_') {
         return;
       }
 
-      // Try to find a matching GHL field
+      // Try to find a matching GHL field with fuzzy matching
       const normalizedSuggestions = systemField.suggestedMatches.map(s => s.toLowerCase().replace(/[_\s-]/g, ''));
+      const systemKeyNormalized = systemField.key.toLowerCase().replace(/[_\s-]/g, '');
       
       for (const ghlField of ghlFields) {
         const normalizedFieldKey = (ghlField.fieldKey || '').toLowerCase().replace(/[_\s-]/g, '');
         const normalizedName = (ghlField.name || '').toLowerCase().replace(/[_\s-]/g, '');
         
-        // Check if any suggestion matches
+        // Check if any suggestion matches or if field key/name contains the system key
         const isMatch = normalizedSuggestions.some(suggestion => 
           normalizedFieldKey.includes(suggestion) || 
           normalizedName.includes(suggestion) ||
           suggestion.includes(normalizedFieldKey) ||
           suggestion.includes(normalizedName)
-        );
+        ) || normalizedFieldKey.includes(systemKeyNormalized) || normalizedName.includes(systemKeyNormalized);
 
         if (isMatch) {
           newMappings[systemField.key] = ghlField.fieldKey || ghlField.name || ghlField.id;
@@ -301,6 +443,12 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     const pipelineData = await getPipelines();
     if (pipelineData) {
       setPipelines(pipelineData);
+    }
+
+    // Load GHL calendars
+    const calendarData = await getCalendars();
+    if (calendarData) {
+      setGhlCalendars(calendarData);
     }
 
     // Load saved settings
@@ -330,21 +478,34 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
       setRemoveConflictingTags(settings.remove_conflicting_tags);
       setSyncEnabled(settings.sync_enabled);
       setCalendarPreference(settings.calendar_preference || 'both');
+      setGhlCalendarId(settings.ghl_calendar_id || '');
+      setGhlCalendarName(settings.ghl_calendar_name || '');
     }
   };
 
   const handleAutoMatch = () => {
     const { mappings, matchCount } = autoMatchFields(ghlCustomFields, {});
     setFieldMappings(mappings);
+    const unmappedCount = ALL_SYSTEM_FIELDS.length - matchCount;
     toast({
       title: "Smart Matching Complete",
       description: matchCount > 0 
-        ? `Auto-matched ${matchCount} fields. Review and adjust as needed.`
+        ? `Auto-matched ${matchCount} fields. ${unmappedCount} fields need manual mapping.`
         : "No matching fields found. You can map them manually.",
     });
   };
 
   const handleSaveSettings = async () => {
+    // Validate GHL calendar selection if GHL is enabled
+    if ((calendarPreference === 'ghl' || calendarPreference === 'both') && !ghlCalendarId) {
+      toast({
+        title: "Warning",
+        description: "Please select a GHL calendar for appointment booking",
+        variant: "destructive"
+      });
+      return;
+    }
+
     // Convert _none_ values back to empty strings for storage
     const cleanMappings: Record<string, string> = {};
     Object.entries(fieldMappings).forEach(([key, value]) => {
@@ -356,6 +517,9 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
       cleanPipelineMappings[key] = value === '_none_' ? '' : value;
     });
 
+    // Get calendar name from selected calendar
+    const selectedCalendar = ghlCalendars.find(c => c.id === ghlCalendarId);
+
     const success = await saveSyncSettings({
       field_mappings: cleanMappings,
       tag_rules: tagRules,
@@ -365,7 +529,9 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
       default_opportunity_value: defaultOpportunityValue,
       remove_conflicting_tags: removeConflictingTags,
       sync_enabled: syncEnabled,
-      calendar_preference: calendarPreference
+      calendar_preference: calendarPreference,
+      ghl_calendar_id: ghlCalendarId || null,
+      ghl_calendar_name: selectedCalendar?.name || null
     });
 
     if (success) {
@@ -419,6 +585,18 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
     }));
   };
 
+  const toggleCategory = (category: string) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  // Calculate mapping stats
+  const mappedFieldsCount = Object.values(fieldMappings).filter(v => v && v !== '_none_').length;
+  const totalFieldsCount = ALL_SYSTEM_FIELDS.length;
+  const mappingPercentage = Math.round((mappedFieldsCount / totalFieldsCount) * 100);
+
   const selectedPipeline = pipelines.find(p => p.id === defaultPipelineId);
 
   if (!isConnected) {
@@ -458,7 +636,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
         </CardHeader>
       </Card>
 
-      {/* Calendar Preference */}
+      {/* Calendar Preference with GHL Calendar Selection */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -469,7 +647,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
             Choose which calendar(s) to use when AI agents book appointments
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { value: 'google', label: 'Google Only', desc: 'Sync to Google Calendar only' },
@@ -495,6 +673,63 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
               </div>
             ))}
           </div>
+
+          {/* GHL Calendar Selection - show when GHL is selected */}
+          {(calendarPreference === 'ghl' || calendarPreference === 'both') && (
+            <div className="p-4 border rounded-lg bg-muted/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">GHL Calendar for Appointments</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Select which GHL calendar AI agents should book appointments to
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    const calendars = await getCalendars();
+                    if (calendars) {
+                      setGhlCalendars(calendars);
+                      toast({
+                        title: "Calendars Refreshed",
+                        description: `Found ${calendars.length} GHL calendars`
+                      });
+                    }
+                  }}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+              
+              {ghlCalendars.length > 0 ? (
+                <CalendarSelector
+                  value={ghlCalendarId}
+                  onValueChange={(id) => {
+                    setGhlCalendarId(id);
+                    const cal = ghlCalendars.find(c => c.id === id);
+                    setGhlCalendarName(cal?.name || '');
+                  }}
+                  calendars={ghlCalendars}
+                  placeholder="Select a GHL calendar..."
+                />
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <AlertTriangle className="h-4 w-4" />
+                  No GHL calendars found. Click Refresh to load calendars.
+                </div>
+              )}
+
+              {!ghlCalendarId && ghlCalendars.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  Please select a calendar to enable GHL appointment booking
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -533,6 +768,30 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Mapping Status */}
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                <div>
+                  <div className="font-medium text-sm">Mapping Status</div>
+                  <div className="text-xs text-muted-foreground">
+                    {mappedFieldsCount} of {totalFieldsCount} fields mapped ({mappingPercentage}%)
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all" 
+                      style={{ width: `${mappingPercentage}%` }}
+                    />
+                  </div>
+                  {hasAutoMatched && (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                      <Wand2 className="h-3 w-3 mr-1" />
+                      Auto-matched
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
               {/* Existing GHL Fields */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Your GHL Custom Fields</Label>
@@ -581,41 +840,63 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
                 </div>
               </div>
 
-              {/* Field Mappings */}
+              {/* Field Mappings by Category */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Field Mappings</Label>
-                  {hasAutoMatched && (
-                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-                      <Wand2 className="h-3 w-3 mr-1" />
-                      Auto-matched
-                    </Badge>
-                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Type to search and filter fields. Smart Match will auto-detect similar field names.
+                  Type to search and filter fields. Click a category to expand/collapse.
                 </p>
                 
-                <ScrollArea className="h-80">
+                <ScrollArea className="h-96">
                   <div className="space-y-3 pr-4">
-                    {SYSTEM_FIELDS.map(field => (
-                      <div key={field.key} className="flex items-center gap-3 p-3 border rounded-lg">
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{field.label}</div>
-                          <div className="text-xs text-muted-foreground">{field.description}</div>
-                        </div>
-                        <div className="w-64">
-                          <FieldSelector
-                            value={fieldMappings[field.key] || '_none_'}
-                            onValueChange={(value) => setFieldMappings(prev => ({
-                              ...prev,
-                              [field.key]: value
-                            }))}
-                            options={ghlCustomFields}
-                            placeholder="Search & select..."
-                          />
-                        </div>
-                      </div>
+                    {Object.entries(SYSTEM_FIELDS).map(([categoryKey, category]) => (
+                      <Collapsible
+                        key={categoryKey}
+                        open={expandedCategories[categoryKey]}
+                        onOpenChange={() => toggleCategory(categoryKey)}
+                      >
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              {expandedCategories[categoryKey] ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                              <span className="font-medium">{category.label}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {category.fields.length} fields
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {category.fields.filter(f => fieldMappings[f.key] && fieldMappings[f.key] !== '_none_').length} mapped
+                            </div>
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-2 pt-2 pl-6">
+                          {category.fields.map(field => (
+                            <div key={field.key} className="flex items-center gap-3 p-3 border rounded-lg">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{field.label}</div>
+                                <div className="text-xs text-muted-foreground">{field.description}</div>
+                              </div>
+                              <div className="w-64">
+                                <FieldSelector
+                                  value={fieldMappings[field.key] || '_none_'}
+                                  onValueChange={(value) => setFieldMappings(prev => ({
+                                    ...prev,
+                                    [field.key]: value
+                                  }))}
+                                  options={ghlCustomFields}
+                                  placeholder="Search & select..."
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
                     ))}
                   </div>
                 </ScrollArea>

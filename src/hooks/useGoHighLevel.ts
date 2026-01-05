@@ -52,6 +52,14 @@ interface GHLPipeline {
   }>;
 }
 
+interface GHLCalendar {
+  id: string;
+  name: string;
+  calendarType?: string;
+  isActive?: boolean;
+  teamMembers?: Array<{ id: string; name: string }>;
+}
+
 interface GHLSyncSettings {
   id?: string;
   user_id?: string;
@@ -64,6 +72,8 @@ interface GHLSyncSettings {
   remove_conflicting_tags: boolean;
   sync_enabled: boolean;
   calendar_preference: 'google' | 'ghl' | 'both' | 'none';
+  ghl_calendar_id?: string | null;
+  ghl_calendar_name?: string | null;
 }
 
 export const useGoHighLevel = () => {
@@ -321,6 +331,33 @@ export const useGoHighLevel = () => {
     }
   };
 
+  const getCalendars = async (): Promise<GHLCalendar[] | null> => {
+    const credentials = await getGHLCredentials();
+    if (!credentials) return null;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'get_calendars',
+          ...credentials
+        }
+      });
+
+      if (error) throw error;
+      return data.calendars || [];
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch calendars",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const updateContactAfterCall = async (contactId: string, callData: {
     outcome: string;
     notes?: string;
@@ -447,7 +484,9 @@ export const useGoHighLevel = () => {
           default_pipeline_id: null,
           remove_conflicting_tags: true,
           sync_enabled: true,
-          calendar_preference: 'both'
+          calendar_preference: 'both',
+          ghl_calendar_id: null,
+          ghl_calendar_name: null
         };
       }
 
@@ -462,7 +501,9 @@ export const useGoHighLevel = () => {
         default_pipeline_id: data.default_pipeline_id,
         remove_conflicting_tags: data.remove_conflicting_tags ?? true,
         sync_enabled: data.sync_enabled ?? true,
-        calendar_preference: (data.calendar_preference as 'google' | 'ghl' | 'both' | 'none') || 'both'
+        calendar_preference: (data.calendar_preference as 'google' | 'ghl' | 'both' | 'none') || 'both',
+        ghl_calendar_id: data.ghl_calendar_id || null,
+        ghl_calendar_name: data.ghl_calendar_name || null
       };
     } catch (error) {
       console.error('Failed to get sync settings:', error);
@@ -495,6 +536,8 @@ export const useGoHighLevel = () => {
           remove_conflicting_tags: settings.remove_conflicting_tags ?? true,
           sync_enabled: settings.sync_enabled ?? true,
           calendar_preference: settings.calendar_preference || 'both',
+          ghl_calendar_id: settings.ghl_calendar_id || null,
+          ghl_calendar_name: settings.ghl_calendar_name || null,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
@@ -626,6 +669,7 @@ export const useGoHighLevel = () => {
     syncContacts,
     getCustomFields,
     createCustomField,
+    getCalendars,
     updateContactAfterCall,
     updatePipelineStage,
     syncWithFieldMapping,
