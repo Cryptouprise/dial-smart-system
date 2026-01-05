@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,6 +20,21 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
     defaultAgentId: '',
     terminationUri: ''
   });
+
+  // Use refs to prevent loops and track state without triggering re-renders
+  const hasExecutedStartupRef = useRef(false);
+  const isExecutingRef = useRef(false);
+  const numbersRef = useRef(numbers);
+  const onRefreshNumbersRef = useRef(onRefreshNumbers);
+
+  // Keep refs updated
+  useEffect(() => {
+    numbersRef.current = numbers;
+  }, [numbers]);
+
+  useEffect(() => {
+    onRefreshNumbersRef.current = onRefreshNumbers;
+  }, [onRefreshNumbers]);
 
   useEffect(() => {
     loadSettingsFromDatabase();
@@ -61,13 +76,14 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
     }
   };
 
-  // Auto-import newly purchased numbers
+  // Auto-import newly purchased numbers - use refs to avoid loops
   useEffect(() => {
     if (!automationSettings.auto_import_enabled || !automationSettings.terminationUri) return;
 
     const checkForNewNumbers = async () => {
+      const currentNumbers = numbersRef.current;
       const importedNumbers = JSON.parse(localStorage.getItem('imported-numbers') || '[]');
-      const newNumbers = numbers.filter(n => 
+      const newNumbers = currentNumbers.filter(n => 
         n.status === 'active' && 
         !importedNumbers.includes(n.id) &&
         new Date(n.created_at) > new Date(Date.now() - 5 * 60 * 1000) // Created in last 5 minutes
@@ -109,14 +125,15 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
 
     const interval = setInterval(checkForNewNumbers, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
-  }, [numbers, automationSettings, importPhoneNumber, updatePhoneNumber, toast]);
+  }, [automationSettings.auto_import_enabled, automationSettings.terminationUri, automationSettings.defaultAgentId, importPhoneNumber, updatePhoneNumber, toast]);
 
-  // Auto-remove quarantined numbers from Retell
+  // Auto-remove quarantined numbers from Retell - use refs to avoid loops
   useEffect(() => {
     if (!automationSettings.auto_remove_quarantined) return;
 
     const checkQuarantinedNumbers = async () => {
-      const quarantinedNumbers = numbers.filter(n => n.status === 'quarantined');
+      const currentNumbers = numbersRef.current;
+      const quarantinedNumbers = currentNumbers.filter(n => n.status === 'quarantined');
       const removedNumbers = JSON.parse(localStorage.getItem('removed-quarantined') || '[]');
 
       for (const number of quarantinedNumbers) {
@@ -153,13 +170,19 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
 
     const interval = setInterval(checkQuarantinedNumbers, 60000); // Check every minute
     return () => clearInterval(interval);
-  }, [numbers, automationSettings, deletePhoneNumber, toast]);
+  }, [automationSettings.auto_remove_quarantined, deletePhoneNumber, toast]);
 
-  // Automatic rotation scheduler - Enhanced with database backend
+  // Automatic rotation scheduler - FIXED to prevent loops
   useEffect(() => {
     if (!automationSettings.enabled) return;
 
     const executeRotation = async () => {
+      // Prevent concurrent executions
+      if (isExecutingRef.current) {
+        return;
+      }
+      
+      isExecutingRef.current = true;
       console.log('Executing automatic rotation via backend...');
       
       try {
@@ -179,79 +202,38 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
               description: `Rotated ${rotatedCount} high-volume numbers`,
             });
 
-            // Refresh numbers to show updated status
-            onRefreshNumbers();
+            // Use ref to call refresh without causing re-render loop
+            onRefreshNumbersRef.current();
           }
         }
       } catch (error) {
         console.error('Backend rotation execution error:', error);
-        
-        // Fallback to original rotation logic
-        await executeFallbackRotation();
-      }
-    };
-
-    const executeFallbackRotation = async () => {
-      try {
-        const retellNumbers = await listPhoneNumbers();
-        if (!retellNumbers) return;
-
-        const activeNumbers = numbers.filter(n => n.status === 'active');
-        const highVolumeNumbers = activeNumbers.filter(n => n.daily_calls > automationSettings.high_volume_threshold);
-        
-        if (highVolumeNumbers.length > 0) {
-          let rotatedCount = 0;
-          
-          for (const number of highVolumeNumbers.slice(0, 2)) {
-            const isInRetell = retellNumbers.find(r => r.phone_number === number.number);
-            
-            if (isInRetell) {
-              await deletePhoneNumber(number.number);
-              rotatedCount++;
-              
-              const replacement = activeNumbers.find(n => 
-                n.daily_calls < 10 && 
-                !highVolumeNumbers.includes(n) &&
-                !retellNumbers.find(r => r.phone_number === n.number)
-              );
-              
-              if (replacement && automationSettings.terminationUri) {
-                await importPhoneNumber(replacement.number, automationSettings.terminationUri);
-                
-                if (automationSettings.defaultAgentId) {
-                  await updatePhoneNumber(replacement.number, automationSettings.defaultAgentId);
-                }
-                
-                console.log(`Rotated ${number.number} -> ${replacement.number}`);
-              }
-            }
-          }
-          
-          if (rotatedCount > 0) {
-            toast({
-              title: "Automatic Rotation Complete",
-              description: `Rotated ${rotatedCount} high-volume numbers`,
-            });
-
-            onRefreshNumbers();
-          }
-        }
-      } catch (error) {
-        console.error('Fallback rotation execution error:', error);
+        // Skip fallback to prevent loops - just log the error
+      } finally {
+        isExecutingRef.current = false;
       }
     };
 
     const intervalHours = automationSettings.rotation_interval_hours;
-    const interval = setInterval(executeRotation, intervalHours * 60 * 60 * 1000);
+    const intervalMs = intervalHours * 60 * 60 * 1000;
     
-    // Also run once on startup if enabled - track the timeout for cleanup
-    const startupTimeout = setTimeout(executeRotation, 5000);
+    // Only run startup execution ONCE
+    let startupTimeout: NodeJS.Timeout | null = null;
+    if (!hasExecutedStartupRef.current) {
+      hasExecutedStartupRef.current = true;
+      startupTimeout = setTimeout(executeRotation, 5000);
+    }
+    
+    // Set up the regular interval
+    const interval = setInterval(executeRotation, intervalMs);
     
     return () => {
       clearInterval(interval);
-      clearTimeout(startupTimeout);
+      if (startupTimeout) {
+        clearTimeout(startupTimeout);
+      }
     };
-  }, [automationSettings, numbers, importPhoneNumber, deletePhoneNumber, updatePhoneNumber, listPhoneNumbers, toast, onRefreshNumbers]);
+  }, [automationSettings.enabled, automationSettings.rotation_interval_hours, toast]);
 
   return null;
 };
