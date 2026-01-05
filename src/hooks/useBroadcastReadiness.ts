@@ -129,14 +129,19 @@ export const useBroadcastReadiness = () => {
       
       const quarantinedCount = phoneNumbers?.filter(p => p.quarantine_until && new Date(p.quarantine_until) > now).length || 0;
       
+      // Check for low phone count warning (high volume needs more numbers)
+      const hasLowPhoneCount = availableNumbers.length > 0 && availableNumbers.length < 3;
+      
       checks.push({
         id: 'phone_numbers',
         label: 'Phone numbers available',
-        status: availableNumbers.length > 0 ? 'pass' : 'fail',
-        message: availableNumbers.length > 0 
-          ? `${availableNumbers.length} number(s) ready${quarantinedCount > 0 ? ` (${quarantinedCount} quarantined)` : ''}`
-          : 'No phone numbers available for broadcasts',
-        critical: true
+        status: availableNumbers.length === 0 ? 'fail' : hasLowPhoneCount ? 'warning' : 'pass',
+        message: availableNumbers.length === 0 
+          ? 'No phone numbers available for broadcasts'
+          : hasLowPhoneCount
+            ? `Only ${availableNumbers.length} number(s) - add more for better pickup rates with high volume`
+            : `${availableNumbers.length} number(s) ready${quarantinedCount > 0 ? ` (${quarantinedCount} quarantined)` : ''}`,
+        critical: availableNumbers.length === 0
       });
       if (availableNumbers.length === 0) blockingReasons.push('No phone numbers available for broadcasts');
 

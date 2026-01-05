@@ -36,6 +36,7 @@ import {
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
 import BroadcastReadinessChecker from '@/components/BroadcastReadinessChecker';
 import BroadcastQueueManager from '@/components/BroadcastQueueManager';
+import LiveProgressDashboard from '@/components/LiveProgressDashboard';
 
 const ELEVENLABS_VOICES = [
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
@@ -118,6 +119,7 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [startingBroadcastId, setStartingBroadcastId] = useState<string | null>(null);
   const [emergencyStopId, setEmergencyStopId] = useState<string | null>(null);
   const [testingBroadcastId, setTestingBroadcastId] = useState<string | null>(null);
+  const [highVolumeConfirm, setHighVolumeConfirm] = useState<{ broadcastId: string; leadCount: number; phoneCount: number } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -406,6 +408,14 @@ export const VoiceBroadcastManager: React.FC = () => {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Live Progress Dashboard - Shows detailed stats for active high-volume campaigns */}
+      {activeBroadcast && (activeBroadcast.total_leads || 0) >= 100 && (
+        <LiveProgressDashboard 
+          broadcastId={activeBroadcast.id} 
+          onRefresh={loadBroadcasts}
+        />
       )}
 
       {/* Quick Test Section */}
@@ -1052,6 +1062,16 @@ export const VoiceBroadcastManager: React.FC = () => {
                               const result = await checkBroadcastReadiness(broadcast.id);
                               setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
                               if (result.isReady) {
+                                const leadCount = broadcast.total_leads || 0;
+                                // Check for high volume and low phone numbers
+                                if (leadCount >= 1000) {
+                                  const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
+                                  const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
+                                  const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
+                                  setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
+                                  setStartingBroadcastId(null);
+                                  return;
+                                }
                                 // Cleanup stuck calls first
                                 await cleanupStuckCalls(broadcast.id);
                                 await startBroadcast(broadcast.id);
@@ -1815,6 +1835,55 @@ export const VoiceBroadcastManager: React.FC = () => {
               className="bg-red-600 hover:bg-red-700"
             >
               Yes, Stop All Calls
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* High Volume Confirmation Dialog */}
+      <AlertDialog open={!!highVolumeConfirm} onOpenChange={(open) => !open && setHighVolumeConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              High Volume Broadcast
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                You're about to dial <strong>{highVolumeConfirm?.leadCount?.toLocaleString()}</strong> leads.
+              </p>
+              <div className="p-3 bg-muted rounded-lg space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Phone numbers available:</span>
+                  <span className={highVolumeConfirm?.phoneCount && highVolumeConfirm.phoneCount < 5 ? 'text-amber-600 font-medium' : ''}>
+                    {highVolumeConfirm?.phoneCount || 1}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Estimated time (at 60 CPM):</span>
+                  <span>{Math.ceil((highVolumeConfirm?.leadCount || 0) / 60)} minutes</span>
+                </div>
+              </div>
+              {highVolumeConfirm?.phoneCount && highVolumeConfirm.phoneCount < 5 && (
+                <p className="text-amber-600 text-sm">
+                  ⚠️ Low phone count may reduce pickup rates. Consider adding more numbers for high volume.
+                </p>
+              )}
+              <p>Are you sure you want to start this broadcast?</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (highVolumeConfirm?.broadcastId) {
+                  await cleanupStuckCalls(highVolumeConfirm.broadcastId);
+                  await startBroadcast(highVolumeConfirm.broadcastId);
+                }
+                setHighVolumeConfirm(null);
+              }}
+            >
+              Start Broadcast
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

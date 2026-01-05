@@ -343,12 +343,16 @@ export const useCampaignReadiness = () => {
               });
               blockingReasons.push('No phone numbers imported to Retell for outbound calls');
             } else if (retellImportedPhones.length > 0) {
+              // Check for low phone count warning (high volume needs more numbers)
+              const hasLowPhoneCount = retellImportedPhones.length < 3;
               checks.push({
                 id: 'caller_id_retell',
                 label: 'Caller ID in Retell',
-                status: 'pass',
-                message: `${retellImportedPhones.length} phone(s) ready for calls`,
-                critical: true
+                status: hasLowPhoneCount ? 'warning' : 'pass',
+                message: hasLowPhoneCount 
+                  ? `Only ${retellImportedPhones.length} phone(s) - add more for better pickup rates with high volume`
+                  : `${retellImportedPhones.length} phone(s) ready for calls`,
+                critical: false
               });
             } else {
               checks.push({
