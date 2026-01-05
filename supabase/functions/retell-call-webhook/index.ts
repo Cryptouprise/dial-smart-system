@@ -470,9 +470,9 @@ serve(async (req) => {
       console.log('[Retell Webhook] Triggering transcript analysis...');
       
       try {
-        // Use Retell's built-in analysis if available
+        // Use Retell's built-in analysis if available, pass transcript for callback detection
         if (call.call_analysis) {
-          dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis);
+          dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis, formattedTranscript);
           console.log('[Retell Webhook] Using Retell analysis:', dispositionResult);
         } else if (userId) {
           // Fall back to our AI analysis
@@ -561,9 +561,47 @@ serve(async (req) => {
         status: mapDispositionToLeadStatus(outcome),
       };
 
-      // If callback requested, set next callback
+      // If callback requested, extract time from transcript and schedule
       if (outcome === 'callback_requested' || outcome === 'callback') {
-        leadUpdate.next_callback_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const callbackMinutes = extractCallbackTimeFromTranscript(formattedTranscript);
+        const callbackTime = new Date(Date.now() + callbackMinutes * 60 * 1000);
+        leadUpdate.next_callback_at = callbackTime.toISOString();
+        console.log(`[Retell Webhook] Callback scheduled in ${callbackMinutes} minutes at ${callbackTime.toISOString()}`);
+        
+        // Store callback context in lead notes for the next call
+        const callSummary = dispositionResult?.summary || 'Callback requested';
+        const { data: currentLead } = await supabase
+          .from('leads')
+          .select('notes')
+          .eq('id', leadId)
+          .maybeSingle();
+        
+        const existingNotes = currentLead?.notes || '';
+        const callbackNote = `\n\n[Callback Requested - ${new Date().toLocaleString()}]\n${callSummary}`;
+        leadUpdate.notes = (existingNotes + callbackNote).trim();
+        
+        // Re-add to dialing queue for scheduled callback
+        if (campaignId) {
+          try {
+            await supabase
+              .from('dialing_queues')
+              .upsert({
+                campaign_id: campaignId,
+                lead_id: leadId,
+                phone_number: call.to_number || '',
+                status: 'pending',
+                scheduled_at: callbackTime.toISOString(),
+                priority: 2, // Higher priority for callbacks
+                max_attempts: 3,
+                attempts: 0,
+              }, {
+                onConflict: 'campaign_id,lead_id'
+              });
+            console.log(`[Retell Webhook] Added lead ${leadId} to dialing queue for callback at ${callbackTime.toISOString()}`);
+          } catch (queueError) {
+            console.error('[Retell Webhook] Failed to add callback to dialing queue:', queueError);
+          }
+        }
       }
 
       // If DNC, mark as do not call
@@ -721,12 +759,15 @@ function mapCallStatusToOutcome(
   }
 }
 
-function mapRetellAnalysisToDisposition(analysis: {
-  call_summary?: string;
-  user_sentiment?: string;
-  call_successful?: boolean;
-  custom_analysis_data?: Record<string, any>;
-}): { disposition: string; confidence: number; summary: string } {
+function mapRetellAnalysisToDisposition(
+  analysis: {
+    call_summary?: string;
+    user_sentiment?: string;
+    call_successful?: boolean;
+    custom_analysis_data?: Record<string, any>;
+  },
+  transcript?: string
+): { disposition: string; confidence: number; summary: string } {
   const sentiment = analysis.user_sentiment?.toLowerCase() || 'neutral';
   const successful = analysis.call_successful;
   const customData = analysis.custom_analysis_data || {};
@@ -737,6 +778,30 @@ function mapRetellAnalysisToDisposition(analysis: {
       disposition: customData.disposition,
       confidence: 0.9,
       summary: analysis.call_summary || '',
+    };
+  }
+
+  // NEW: Check transcript for callback patterns FIRST (before sentiment mapping)
+  const transcriptLower = (transcript || analysis.call_summary || '').toLowerCase();
+  const callbackPatterns = [
+    /call\s*(me\s*)?(back|later|again)/i,
+    /try\s*(me\s*)?(again|later|back)/i,
+    /not\s*a\s*good\s*time/i,
+    /busy\s*(right\s*now|at\s*the\s*moment)/i,
+    /can\s*you\s*(call|try)\s*(back|later|again)/i,
+    /in\s*(a\s*few|10|15|20|30|an?\s*hour|\d+)\s*(minute|min|hour)/i,
+    /give\s*me\s*(a\s*few|10|15|20|30|\d+)\s*(minute|min|hour)/i,
+    /tomorrow|next\s*week|morning|afternoon|evening/i,
+    /call\s*back\s*(in|at|around|later)/i,
+    /i('m|\s*am)\s*(busy|in\s*a\s*meeting)/i,
+  ];
+  
+  if (callbackPatterns.some(pattern => pattern.test(transcriptLower))) {
+    console.log('[Retell Webhook] Callback pattern detected in transcript');
+    return { 
+      disposition: 'callback_requested', 
+      confidence: 0.85, 
+      summary: analysis.call_summary || '' 
     };
   }
 
@@ -762,6 +827,38 @@ function mapRetellAnalysisToDisposition(analysis: {
   }
 
   return { disposition: 'contacted', confidence: 0.5, summary: analysis.call_summary || '' };
+}
+
+// Extract callback time from transcript (e.g. "call me back in 10 minutes")
+function extractCallbackTimeFromTranscript(transcript: string): number {
+  const text = transcript.toLowerCase();
+  
+  // Pattern matching for specific time mentions
+  const patterns: Array<{ regex: RegExp; unit?: number; value?: number }> = [
+    { regex: /(\d+)\s*minutes?/i, unit: 1 },
+    { regex: /(\d+)\s*hours?/i, unit: 60 },
+    { regex: /half\s*(an?\s*)?hour/i, value: 30 },
+    { regex: /an?\s*hour/i, value: 60 },
+    { regex: /couple\s*of?\s*hours?/i, value: 120 },
+    { regex: /few\s*hours?/i, value: 180 },
+    { regex: /tomorrow/i, value: 24 * 60 },
+    { regex: /later\s*today/i, value: 4 * 60 },
+    { regex: /this\s*afternoon/i, value: 4 * 60 },
+    { regex: /this\s*evening/i, value: 6 * 60 },
+    { regex: /this\s*morning/i, value: 2 * 60 },
+    { regex: /next\s*week/i, value: 7 * 24 * 60 },
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern.regex);
+    if (match) {
+      if (pattern.value !== undefined) return pattern.value;
+      if (match[1] && pattern.unit !== undefined) return parseInt(match[1]) * pattern.unit;
+    }
+  }
+  
+  // Default: 30 minutes if callback requested but no specific time mentioned
+  return 30;
 }
 
 async function analyzeTranscriptWithAI(
@@ -867,43 +964,103 @@ async function updatePipelinePosition(
   outcome: string
 ) {
   try {
-    // Map outcome to pipeline stage
-    const stageMapping: Record<string, string> = {
-      'appointment_set': 'Appointment Set',
-      'interested': 'Interested',
-      'callback_requested': 'Callback Scheduled',
-      'callback': 'Callback Scheduled',
-      'not_interested': 'Not Interested',
-      'dnc': 'DNC',
-      'contacted': 'Contacted',
+    // Map outcome to pipeline stage with colors and descriptions
+    const stageMapping: Record<string, { name: string; color: string; description: string }> = {
+      'appointment_set': { name: 'Appointment Set', color: '#22c55e', description: 'Lead has booked an appointment' },
+      'interested': { name: 'Interested', color: '#3b82f6', description: 'Lead expressed interest' },
+      'callback_requested': { name: 'Callback Scheduled', color: '#f59e0b', description: 'Lead requested a callback' },
+      'callback': { name: 'Callback Scheduled', color: '#f59e0b', description: 'Lead requested a callback' },
+      'not_interested': { name: 'Not Interested', color: '#ef4444', description: 'Lead declined' },
+      'dnc': { name: 'Do Not Call', color: '#991b1b', description: 'Lead requested no further contact' },
+      'contacted': { name: 'Contacted', color: '#6b7280', description: 'Lead was reached' },
     };
 
-    const stageName = stageMapping[outcome];
-    if (!stageName) return;
+    const stageInfo = stageMapping[outcome];
+    if (!stageInfo) return;
 
-    // Find the pipeline board for this stage
-    const { data: board } = await supabase
+    // Try to find existing board with flexible matching
+    let { data: board } = await supabase
       .from('pipeline_boards')
       .select('id')
       .eq('user_id', userId)
-      .ilike('name', `%${stageName}%`)
+      .ilike('name', `%${stageInfo.name}%`)
       .maybeSingle();
 
-    if (board) {
-      // Update or create pipeline position
-      await supabase
-        .from('lead_pipeline_positions')
-        .upsert({
-          lead_id: leadId,
-          user_id: userId,
-          pipeline_board_id: board.id,
-          moved_at: new Date().toISOString(),
-          moved_by_user: false,
-          notes: `Auto-moved after call: ${outcome}`,
-        }, {
-          onConflict: 'lead_id,pipeline_board_id',
-        });
+    // If no exact match, try keyword-based matching
+    if (!board) {
+      const keywords = stageInfo.name.toLowerCase().split(' ');
+      for (const keyword of keywords) {
+        if (keyword.length < 4) continue; // Skip short words
+        const { data: keywordBoard } = await supabase
+          .from('pipeline_boards')
+          .select('id')
+          .eq('user_id', userId)
+          .ilike('name', `%${keyword}%`)
+          .maybeSingle();
+        if (keywordBoard) {
+          board = keywordBoard;
+          break;
+        }
+      }
     }
+
+    // AUTO-CREATE BOARD if none found
+    if (!board) {
+      console.log(`[Pipeline] Auto-creating board: ${stageInfo.name}`);
+      
+      // Get max position for ordering
+      const { data: maxPosResult } = await supabase
+        .from('pipeline_boards')
+        .select('position')
+        .eq('user_id', userId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      const newPosition = (maxPosResult?.position || 0) + 1;
+      
+      // Create the board
+      const { data: newBoard, error: createError } = await supabase
+        .from('pipeline_boards')
+        .insert({
+          user_id: userId,
+          name: stageInfo.name,
+          description: stageInfo.description,
+          position: newPosition,
+          settings: {
+            auto_created: true,
+            created_at: new Date().toISOString(),
+            created_from: 'call_webhook',
+            color: stageInfo.color
+          }
+        })
+        .select('id')
+        .single();
+      
+      if (createError) {
+        console.error('[Pipeline] Failed to create board:', createError);
+        return;
+      }
+      
+      board = newBoard;
+      console.log(`[Pipeline] Created board "${stageInfo.name}" with ID ${board.id}`);
+    }
+
+    // Update or create pipeline position using the new unique constraint
+    await supabase
+      .from('lead_pipeline_positions')
+      .upsert({
+        lead_id: leadId,
+        user_id: userId,
+        pipeline_board_id: board.id,
+        moved_at: new Date().toISOString(),
+        moved_by_user: false,
+        notes: `Auto-moved after call: ${outcome}`,
+      }, {
+        onConflict: 'lead_id,user_id',
+      });
+    
+    console.log(`[Pipeline] Moved lead ${leadId} to board "${stageInfo.name}"`);
   } catch (error) {
     console.error('[Retell Webhook] Pipeline position update error:', error);
   }
