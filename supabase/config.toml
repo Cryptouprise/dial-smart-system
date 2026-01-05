@@ -203,3 +203,9 @@ verify_jwt = false
 
 [functions.ml-learning-engine]
 verify_jwt = true
+
+[functions.autonomous-prioritization]
+verify_jwt = true
+
+[functions.email-sender]
+verify_jwt = true

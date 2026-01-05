@@ -16,6 +16,8 @@ export interface AgentDecision {
   approved_by?: 'autonomous' | 'manual';
 }
 
+export type AutonomyLevel = 'full_auto' | 'approval_required' | 'suggestions_only';
+
 export interface AutonomousSettings {
   enabled: boolean;
   auto_execute_recommendations: boolean;
@@ -23,6 +25,13 @@ export interface AutonomousSettings {
   require_approval_for_high_priority: boolean;
   max_daily_autonomous_actions: number;
   decision_tracking_enabled: boolean;
+  autonomy_level: AutonomyLevel;
+  daily_goal_appointments: number;
+  daily_goal_calls: number;
+  daily_goal_conversations: number;
+  learning_enabled: boolean;
+  auto_optimize_campaigns: boolean;
+  auto_prioritize_leads: boolean;
 }
 
 const DEFAULT_SETTINGS: AutonomousSettings = {
@@ -31,7 +40,14 @@ const DEFAULT_SETTINGS: AutonomousSettings = {
   auto_approve_script_changes: false,
   require_approval_for_high_priority: true,
   max_daily_autonomous_actions: 50,
-  decision_tracking_enabled: true
+  decision_tracking_enabled: true,
+  autonomy_level: 'suggestions_only',
+  daily_goal_appointments: 5,
+  daily_goal_calls: 100,
+  daily_goal_conversations: 20,
+  learning_enabled: true,
+  auto_optimize_campaigns: false,
+  auto_prioritize_leads: true
 };
 
 export const useAutonomousAgent = () => {
@@ -62,7 +78,14 @@ export const useAutonomousAgent = () => {
           auto_approve_script_changes: data.auto_approve_script_changes || false,
           require_approval_for_high_priority: data.require_approval_for_high_priority ?? true,
           max_daily_autonomous_actions: data.max_daily_autonomous_actions || 50,
-          decision_tracking_enabled: data.decision_tracking_enabled ?? true
+          decision_tracking_enabled: data.decision_tracking_enabled ?? true,
+          autonomy_level: (data.autonomy_level as AutonomyLevel) || 'suggestions_only',
+          daily_goal_appointments: data.daily_goal_appointments || 5,
+          daily_goal_calls: data.daily_goal_calls || 100,
+          daily_goal_conversations: data.daily_goal_conversations || 20,
+          learning_enabled: data.learning_enabled ?? true,
+          auto_optimize_campaigns: data.auto_optimize_campaigns || false,
+          auto_prioritize_leads: data.auto_prioritize_leads ?? true
         });
       }
     } catch (error) {
@@ -95,6 +118,13 @@ export const useAutonomousAgent = () => {
           require_approval_for_high_priority: updatedSettings.require_approval_for_high_priority,
           max_daily_autonomous_actions: updatedSettings.max_daily_autonomous_actions,
           decision_tracking_enabled: updatedSettings.decision_tracking_enabled,
+          autonomy_level: updatedSettings.autonomy_level,
+          daily_goal_appointments: updatedSettings.daily_goal_appointments,
+          daily_goal_calls: updatedSettings.daily_goal_calls,
+          daily_goal_conversations: updatedSettings.daily_goal_conversations,
+          learning_enabled: updatedSettings.learning_enabled,
+          auto_optimize_campaigns: updatedSettings.auto_optimize_campaigns,
+          auto_prioritize_leads: updatedSettings.auto_prioritize_leads,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'

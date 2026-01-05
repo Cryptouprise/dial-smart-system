@@ -106,6 +106,7 @@ const navigationGroups: NavGroup[] = [
     label: 'AI & Automation',
     defaultOpen: false,
     items: [
+      { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
       { title: 'Retell AI', value: 'retell', icon: Settings },
       { title: 'Workflows', value: 'workflows', icon: Zap },
       { title: 'AI Engine', value: 'ai-engine', icon: Brain },

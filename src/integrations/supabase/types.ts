@@ -495,14 +495,72 @@ export type Database = {
           },
         ]
       }
+      autonomous_goals: {
+        Row: {
+          appointments_achieved: number | null
+          appointments_target: number | null
+          calls_achieved: number | null
+          calls_target: number | null
+          conversations_achieved: number | null
+          conversations_target: number | null
+          created_at: string | null
+          goal_date: string
+          goal_met: boolean | null
+          goal_type: string
+          id: string
+          notes: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          appointments_achieved?: number | null
+          appointments_target?: number | null
+          calls_achieved?: number | null
+          calls_target?: number | null
+          conversations_achieved?: number | null
+          conversations_target?: number | null
+          created_at?: string | null
+          goal_date: string
+          goal_met?: boolean | null
+          goal_type: string
+          id?: string
+          notes?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          appointments_achieved?: number | null
+          appointments_target?: number | null
+          calls_achieved?: number | null
+          calls_target?: number | null
+          conversations_achieved?: number | null
+          conversations_target?: number | null
+          created_at?: string | null
+          goal_date?: string
+          goal_met?: boolean | null
+          goal_type?: string
+          id?: string
+          notes?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       autonomous_settings: {
         Row: {
           auto_approve_script_changes: boolean | null
           auto_execute_recommendations: boolean | null
+          auto_optimize_campaigns: boolean | null
+          auto_prioritize_leads: boolean | null
+          autonomy_level: string | null
           created_at: string | null
+          daily_goal_appointments: number | null
+          daily_goal_calls: number | null
+          daily_goal_conversations: number | null
           decision_tracking_enabled: boolean | null
           enabled: boolean | null
           id: string
+          learning_enabled: boolean | null
           max_daily_autonomous_actions: number | null
           require_approval_for_high_priority: boolean | null
           updated_at: string | null
@@ -511,10 +569,17 @@ export type Database = {
         Insert: {
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
+          auto_optimize_campaigns?: boolean | null
+          auto_prioritize_leads?: boolean | null
+          autonomy_level?: string | null
           created_at?: string | null
+          daily_goal_appointments?: number | null
+          daily_goal_calls?: number | null
+          daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
           enabled?: boolean | null
           id?: string
+          learning_enabled?: boolean | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
           updated_at?: string | null
@@ -523,10 +588,17 @@ export type Database = {
         Update: {
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
+          auto_optimize_campaigns?: boolean | null
+          auto_prioritize_leads?: boolean | null
+          autonomy_level?: string | null
           created_at?: string | null
+          daily_goal_appointments?: number | null
+          daily_goal_calls?: number | null
+          daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
           enabled?: boolean | null
           id?: string
+          learning_enabled?: boolean | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
           updated_at?: string | null
@@ -1663,6 +1735,62 @@ export type Database = {
           },
         ]
       }
+      lead_priority_scores: {
+        Row: {
+          best_contact_day: string | null
+          best_contact_time: string | null
+          created_at: string | null
+          engagement_score: number | null
+          factors: Json | null
+          id: string
+          last_calculated_at: string | null
+          lead_id: string
+          priority_score: number | null
+          recency_score: number | null
+          sentiment_score: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          best_contact_day?: string | null
+          best_contact_time?: string | null
+          created_at?: string | null
+          engagement_score?: number | null
+          factors?: Json | null
+          id?: string
+          last_calculated_at?: string | null
+          lead_id: string
+          priority_score?: number | null
+          recency_score?: number | null
+          sentiment_score?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          best_contact_day?: string | null
+          best_contact_time?: string | null
+          created_at?: string | null
+          engagement_score?: number | null
+          factors?: Json | null
+          id?: string
+          last_calculated_at?: string | null
+          lead_id?: string
+          priority_score?: number | null
+          recency_score?: number | null
+          sentiment_score?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_priority_scores_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_reachability_scores: {
         Row: {
           ai_notes: string | null
@@ -1990,6 +2118,60 @@ export type Database = {
           zip_code?: string | null
         }
         Relationships: []
+      }
+      learning_outcomes: {
+        Row: {
+          conversion_happened: boolean | null
+          created_at: string | null
+          decision_id: string | null
+          id: string
+          lead_id: string | null
+          learned_adjustment: Json | null
+          outcome_details: Json | null
+          outcome_type: string
+          response_time_seconds: number | null
+          user_id: string
+        }
+        Insert: {
+          conversion_happened?: boolean | null
+          created_at?: string | null
+          decision_id?: string | null
+          id?: string
+          lead_id?: string | null
+          learned_adjustment?: Json | null
+          outcome_details?: Json | null
+          outcome_type: string
+          response_time_seconds?: number | null
+          user_id: string
+        }
+        Update: {
+          conversion_happened?: boolean | null
+          created_at?: string | null
+          decision_id?: string | null
+          id?: string
+          lead_id?: string | null
+          learned_adjustment?: Json | null
+          outcome_details?: Json | null
+          outcome_type?: string
+          response_time_seconds?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "learning_outcomes_decision_id_fkey"
+            columns: ["decision_id"]
+            isOneToOne: false
+            referencedRelation: "agent_decisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learning_outcomes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       number_orders: {
         Row: {

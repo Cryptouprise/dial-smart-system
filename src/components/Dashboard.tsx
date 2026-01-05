@@ -43,6 +43,7 @@ import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard
 import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
 import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import AutonomousAgentDashboard from '@/components/AutonomousAgentDashboard';
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
@@ -403,6 +404,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="AI Setup"><AISetupAssistant /></TabErrorBoundary>;
       case 'calendar':
         return <TabErrorBoundary tabName="Calendar"><CalendarIntegrationManager /></TabErrorBoundary>;
+      case 'autonomous-agent':
+        return <TabErrorBoundary tabName="Autonomous Agent"><AutonomousAgentDashboard /></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
