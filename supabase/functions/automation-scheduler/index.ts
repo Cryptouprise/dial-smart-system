@@ -181,6 +181,76 @@ serve(async (req) => {
 
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 
+    // CALLBACK PICKUP: Find leads with past-due next_callback_at and ensure they're queued
+    console.log('[Scheduler] Checking for past-due callbacks...');
+    let callbacksQueued = 0;
+    
+    try {
+      const { data: pastDueCallbacks, error: callbackError } = await supabase
+        .from('leads')
+        .select('id, phone_number, next_callback_at, user_id')
+        .lte('next_callback_at', new Date().toISOString())
+        .eq('do_not_call', false)
+        .not('next_callback_at', 'is', null)
+        .limit(50);
+      
+      if (callbackError) {
+        console.error('[Scheduler] Error fetching past-due callbacks:', callbackError);
+      } else if (pastDueCallbacks && pastDueCallbacks.length > 0) {
+        console.log(`[Scheduler] Found ${pastDueCallbacks.length} leads with past-due callbacks`);
+        
+        for (const lead of pastDueCallbacks) {
+          // Find active campaign for this user
+          const { data: campaign } = await supabase
+            .from('campaigns')
+            .select('id')
+            .eq('user_id', lead.user_id)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          
+          if (campaign) {
+            // Check if already in queue
+            const { data: existing } = await supabase
+              .from('dialing_queues')
+              .select('id')
+              .eq('lead_id', lead.id)
+              .in('status', ['pending', 'calling'])
+              .maybeSingle();
+            
+            if (!existing) {
+              // Add to queue with HIGH priority (5 = callback priority)
+              const { error: insertError } = await supabase.from('dialing_queues').insert({
+                campaign_id: campaign.id,
+                lead_id: lead.id,
+                phone_number: lead.phone_number,
+                status: 'pending',
+                scheduled_at: new Date().toISOString(),
+                priority: 5, // Higher than normal (1) to prioritize callbacks
+                max_attempts: 3,
+                attempts: 0
+              });
+              
+              if (!insertError) {
+                callbacksQueued++;
+                console.log(`[Scheduler] Queued past-due callback for lead ${lead.id}`);
+              } else {
+                console.error(`[Scheduler] Failed to queue callback for lead ${lead.id}:`, insertError);
+              }
+            } else {
+              console.log(`[Scheduler] Lead ${lead.id} already in queue`);
+            }
+          } else {
+            console.log(`[Scheduler] No active campaign for user ${lead.user_id}`);
+          }
+        }
+      } else {
+        console.log('[Scheduler] No past-due callbacks found');
+      }
+    } catch (callbackPickupError: any) {
+      console.error('[Scheduler] Error in callback pickup:', callbackPickupError.message);
+    }
+
     // FIRST: Execute any pending workflow steps
     console.log('[Scheduler] Executing pending workflow steps...');
     let workflowResults = { processed: 0, results: [] as any[] };
@@ -266,6 +336,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
+      callbacks_queued: callbacksQueued,
       workflow_steps_processed: workflowResults.processed || 0,
       nudges_sent: nudgeResults.nudges_sent || 0,
       rules_processed: rules.length,
