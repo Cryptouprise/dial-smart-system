@@ -12,10 +12,11 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink, AlertCircle, RefreshCw, Voicemail, Bot, ChevronDown, ChevronRight } from 'lucide-react';
 import { VoicemailDetectionSettings } from './VoicemailDetectionSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface AgentEditDialogProps {
   open: boolean;
@@ -121,6 +122,9 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [editablePrompt, setEditablePrompt] = useState('');
   const [editableBeginMessage, setEditableBeginMessage] = useState('');
   const [isSavingLlm, setIsSavingLlm] = useState(false);
+  const [hasUnsavedPromptChanges, setHasUnsavedPromptChanges] = useState(false);
+  const [snippetsExpanded, setSnippetsExpanded] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
   // Load user ID and check calendar function status
   useEffect(() => {
@@ -208,6 +212,17 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     fetchLlmData();
   }, [agent?.response_engine?.llm_id, open]);
 
+  // Track unsaved prompt changes
+  useEffect(() => {
+    if (llmData) {
+      const originalPrompt = llmData.general_prompt || llmData.system_prompt || '';
+      const originalBegin = llmData.begin_message || '';
+      setHasUnsavedPromptChanges(
+        editablePrompt !== originalPrompt || editableBeginMessage !== originalBegin
+      );
+    }
+  }, [editablePrompt, editableBeginMessage, llmData]);
+
   // Save LLM/prompt changes
   const saveLlmChanges = async () => {
     const llmId = agent?.response_engine?.llm_id;
@@ -230,6 +245,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       if (error) throw error;
 
       setLlmData(data);
+      setHasUnsavedPromptChanges(false);
       toast({ title: 'Success', description: 'Agent prompt updated successfully' });
     } catch (error: any) {
       console.error('Failed to save LLM changes:', error);
@@ -237,6 +253,143 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     } finally {
       setIsSavingLlm(false);
     }
+  };
+
+  // Prompt snippets for quick insert
+  const PROMPT_SNIPPETS = [
+    {
+      id: 'callback_capability',
+      label: 'Callback Capability',
+      icon: Phone,
+      color: 'text-green-500',
+      content: `## CALLBACK CAPABILITY
+You CAN schedule callbacks. This is one of your core capabilities.
+
+When someone asks to be called back later:
+1. Confirm the exact time: "I'll call you back in [X] minutes"
+2. Be specific and confident about scheduling
+3. Thank them warmly and end the call positively
+
+Example responses:
+- "Absolutely! I'll give you a call back in 10 minutes. Talk soon!"
+- "No problem at all! I'll reach out again in about an hour. Have a great day!"
+
+IMPORTANT: Never say "I can't schedule callbacks" or "I don't have that capability."`,
+    },
+    {
+      id: 'callback_handling',
+      label: 'Callback Handling',
+      icon: MessageSquare,
+      color: 'text-amber-500',
+      content: `## CALLBACK HANDLING
+If {{is_callback}} is "true", this is a follow-up call:
+
+1. OPENING: Acknowledge this is a follow-up
+   - "Hi {{first_name}}, this is [Your Name] calling you back as we discussed!"
+   - "Hey {{first_name}}, giving you that callback as promised!"
+
+2. CONTEXT: Reference the previous conversation
+   - Use {{previous_conversation}} to pick up where you left off
+   - "Last time we talked about [topic from previous call]..."
+
+3. CONTINUE: Don't restart from scratch
+   - The lead already knows who you are
+   - Skip long introductions`,
+    },
+    {
+      id: 'disposition',
+      label: 'Disposition Rules',
+      icon: Bot,
+      color: 'text-purple-500',
+      content: `## CALL OUTCOMES
+At the end of each call, clearly indicate the outcome:
+
+POSITIVE OUTCOMES:
+- Appointment booked: Confirm date, time, and meeting details
+- Callback requested: Confirm when you'll call back
+- Interested: They want more info, note their specific interests
+
+NEUTRAL OUTCOMES:
+- Left voicemail: Mention you left a message and will try again
+- Call back later: Specific time to try again
+
+NEGATIVE OUTCOMES:
+- Not interested: Thank them for their time and move on
+- Do not call: Acknowledge and confirm removal from list
+- Wrong number: Apologize and end call promptly`,
+    },
+    {
+      id: 'voicemail_detection',
+      label: 'Voicemail Detection',
+      icon: PhoneOff,
+      color: 'text-red-500',
+      content: `## VOICEMAIL DETECTION
+
+If you detect any of these patterns, IMMEDIATELY use the end_call function:
+
+BEEP/TONE PATTERNS:
+- Any beeping sound
+- "Please leave a message after the tone"
+- "After the beep, please record your message"
+
+IVR/MENU PATTERNS:
+- "Press 1 for...", "Press 2 to..."
+- "If you know your party's extension..."
+- "Please hold while we transfer your call"
+
+VOICEMAIL GREETINGS:
+- "You've reached the voicemail of..."
+- "I'm not available right now"
+- "Sorry I missed your call"
+- "Leave your name and number"
+- "The person you're trying to reach..."
+
+CARRIER MESSAGES:
+- "The number you have dialed..."
+- "This call cannot be completed as dialed"
+
+When you detect ANY of these patterns:
+1. Stop talking immediately
+2. Call the end_call function with reason "voicemail_detected"
+3. Do NOT leave a message unless configured to do so`,
+    },
+    {
+      id: 'voicemail_message',
+      label: 'Voicemail Message',
+      icon: Voicemail,
+      color: 'text-blue-500',
+      content: `## LEAVING VOICEMAIL MESSAGES
+
+When voicemail is detected AND you should leave a message:
+
+1. WAIT FOR THE BEEP before speaking
+2. Keep the message under 20 seconds
+3. Speak clearly and at a steady pace
+
+MESSAGE STRUCTURE:
+- Greeting: "Hi {{first_name}},"
+- Identity: "this is [Agent Name] from [Company]"
+- Purpose: "I'm calling about [brief reason]"
+- Action: "Please call us back at [phone number]"
+- Close: "Thanks, have a great day!"
+
+AFTER LEAVING THE MESSAGE:
+- Wait 1-2 seconds of silence
+- Call the end_call function`,
+    },
+  ];
+
+  const insertSnippet = async (content: string, snippetId: string) => {
+    setEditablePrompt(prev => {
+      const separator = prev.trim() ? '\n\n' : '';
+      return prev + separator + content;
+    });
+    setCopiedSnippet(snippetId);
+    toast({
+      title: 'Snippet Added',
+      description: 'Snippet inserted at the end of your prompt. Remember to save!',
+    });
+    setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
   // Fetch available slots to prove calendar is working
@@ -889,12 +1042,57 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
                 </div>
               )}
 
+              {/* Quick Insert Snippets */}
+              <Collapsible open={snippetsExpanded} onOpenChange={setSnippetsExpanded}>
+                <Card className="border-dashed">
+                  <CollapsibleTrigger className="w-full">
+                    <CardHeader className="py-3 cursor-pointer hover:bg-accent/50 transition-colors">
+                      <CardTitle className="text-sm flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Wand2 className="h-4 w-4" />
+                          Quick Insert Snippets
+                        </span>
+                        {snippetsExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </CardTitle>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="pt-0">
+                      <p className="text-xs text-muted-foreground mb-3">Click a snippet to add it to your prompt</p>
+                      <div className="flex flex-wrap gap-2">
+                        {PROMPT_SNIPPETS.map((snippet) => {
+                          const Icon = snippet.icon;
+                          return (
+                            <Button
+                              key={snippet.id}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => insertSnippet(snippet.content, snippet.id)}
+                              className="gap-2"
+                            >
+                              <Icon className={`h-4 w-4 ${snippet.color}`} />
+                              {snippet.label}
+                              {copiedSnippet === snippet.id && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+
               {/* Script/Prompt Display */}
               <Card className="border-primary/20">
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
                     <FileText className="h-4 w-4" />
                     Agent Script / System Prompt
+                    {hasUnsavedPromptChanges && (
+                      <Badge variant="outline" className="ml-2 bg-amber-500/10 text-amber-600 border-amber-500/30">
+                        Unsaved changes
+                      </Badge>
+                    )}
                   </CardTitle>
                   <CardDescription>
                     The instructions and personality that define how this agent responds

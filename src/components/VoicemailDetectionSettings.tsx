@@ -4,10 +4,11 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { PhoneOff, Zap, Clock, DollarSign, Loader2, Info } from 'lucide-react';
+import { PhoneOff, Zap, DollarSign, Loader2, Info, MessageSquare, PhoneForwarded } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface VoicemailDetectionSettingsProps {
@@ -18,7 +19,8 @@ interface VoicemailDetectionSettingsProps {
 
 interface VoicemailSettings {
   enabled: boolean;
-  provider: 'twilio' | 'retell';
+  behavior: 'hangup' | 'leave_message';
+  voicemail_message: string;
   detection_timeout_ms: number;
 }
 
@@ -31,7 +33,8 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
   const [isSaving, setIsSaving] = useState(false);
   const [settings, setSettings] = useState<VoicemailSettings>({
     enabled: false,
-    provider: 'twilio',
+    behavior: 'hangup',
+    voicemail_message: '',
     detection_timeout_ms: 30000,
   });
   const { toast } = useToast();
@@ -50,15 +53,18 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
       if (error) throw error;
 
       if (data?.voicemail_detection) {
+        const vm = data.voicemail_detection;
         setSettings({
           enabled: true,
-          provider: data.voicemail_detection.provider || 'twilio',
-          detection_timeout_ms: data.voicemail_detection.voicemail_detection_timeout_ms || 30000,
+          behavior: vm.voicemail_message ? 'leave_message' : 'hangup',
+          voicemail_message: vm.voicemail_message || '',
+          detection_timeout_ms: vm.voicemail_detection_timeout_ms || 30000,
         });
       } else {
         setSettings({
           enabled: false,
-          provider: 'twilio',
+          behavior: 'hangup',
+          voicemail_message: '',
           detection_timeout_ms: 30000,
         });
       }
@@ -82,11 +88,13 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
 
       if (error) throw error;
 
+      const behaviorMsg = settings.behavior === 'leave_message' 
+        ? 'Agent will leave a message when voicemail is detected.'
+        : 'Calls will hang up within 3-5 seconds when voicemail is detected.';
+
       toast({
-        title: settings.enabled ? 'Swift Hang-Up Enabled' : 'Voicemail Detection Disabled',
-        description: settings.enabled
-          ? 'Calls will now hang up within 3-5 seconds when voicemail is detected, saving you money.'
-          : 'Voicemail detection has been turned off.',
+        title: settings.enabled ? 'Voicemail Detection Enabled' : 'Voicemail Detection Disabled',
+        description: settings.enabled ? behaviorMsg : 'Voicemail detection has been turned off.',
       });
 
       onSettingsChanged?.();
@@ -118,10 +126,10 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
               <PhoneOff className="h-5 w-5" />
-              Swift Voicemail Hang-Up
+              Voicemail Detection
             </CardTitle>
             <CardDescription>
-              Automatically detect and hang up on voicemails in 3-5 seconds
+              Automatically detect voicemails and take action
             </CardDescription>
           </div>
           <Badge variant={settings.enabled ? 'default' : 'outline'}>
@@ -147,14 +155,14 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
         <div className="flex items-center justify-between py-2">
           <div className="flex items-center gap-2">
             <Zap className="h-4 w-4 text-amber-500" />
-            <Label htmlFor="vm-enabled" className="font-medium">Enable Swift Detection</Label>
+            <Label htmlFor="vm-enabled" className="font-medium">Enable Voicemail Detection</Label>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  Uses Twilio's Answering Machine Detection (AMD) to detect voicemail within 3-5 seconds and immediately hang up, saving call minutes.
+                  Retell's built-in voicemail detection analyzes audio in real-time with sub-100ms latency. When voicemail is detected, it can hang up or leave a message.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -168,42 +176,77 @@ export const VoicemailDetectionSettings: React.FC<VoicemailDetectionSettingsProp
 
         {settings.enabled && (
           <>
-            {/* Detection Provider */}
+            {/* Behavior Selection */}
             <div className="space-y-2">
-              <Label>Detection Provider</Label>
+              <Label>When Voicemail is Detected</Label>
               <Select
-                value={settings.provider}
-                onValueChange={(value: 'twilio' | 'retell') => setSettings(s => ({ ...s, provider: value }))}
+                value={settings.behavior}
+                onValueChange={(value: 'hangup' | 'leave_message') => setSettings(s => ({ ...s, behavior: value }))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="twilio">
+                  <SelectItem value="hangup">
                     <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Twilio AMD (Recommended - 3-5s detection)
+                      <PhoneOff className="h-4 w-4" />
+                      Hang up immediately (recommended)
                     </div>
                   </SelectItem>
-                  <SelectItem value="retell">
+                  <SelectItem value="leave_message">
                     <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Retell Built-in
+                      <MessageSquare className="h-4 w-4" />
+                      Leave a voicemail message
                     </div>
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Voicemail Message (only if leaving a message) */}
+            {settings.behavior === 'leave_message' && (
+              <div className="space-y-2">
+                <Label>Voicemail Message</Label>
+                <Textarea
+                  value={settings.voicemail_message}
+                  onChange={(e) => setSettings(s => ({ ...s, voicemail_message: e.target.value }))}
+                  placeholder="Hi {{first_name}}, this is [Your Name] from [Company]. I'm calling about [reason]. Please call us back at [phone number]. Thanks!"
+                  rows={4}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use dynamic variables like {'{{first_name}}'}, {'{{company}}'}, etc. The agent will wait for the beep and leave this message.
+                </p>
+              </div>
+            )}
+
             {/* How it works */}
             <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3 space-y-1">
-              <p className="font-medium">How it works:</p>
+              <p className="font-medium">How Retell Voicemail Detection Works:</p>
               <ol className="list-decimal list-inside space-y-1 text-xs">
-                <li>Call connects to recipient</li>
-                <li>AMD listens for voicemail greeting patterns (&lt;100ms latency)</li>
-                <li>If voicemail detected, call hangs up immediately (~3-5s total)</li>
-                <li>Lead stays in workflow for retry</li>
+                <li>Real-time audio analysis runs for the first 3 minutes of each call</li>
+                <li>Detection latency is under 100ms when voicemail is identified</li>
+                <li>
+                  {settings.behavior === 'hangup' 
+                    ? 'Call hangs up immediately (~3-5 seconds total), saving call minutes'
+                    : 'Agent waits for the beep and leaves your configured message'
+                  }
+                </li>
+                <li>Call outcome is recorded as "voicemail_reached" for tracking</li>
               </ol>
+            </div>
+
+            {/* Pro Tip for prompt-based detection */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <PhoneForwarded className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800 dark:text-amber-300">Pro Tip: Boost Detection with Prompt Instructions</p>
+                  <p className="text-amber-700 dark:text-amber-400 text-xs mt-1">
+                    For best results, also add voicemail detection instructions to your agent's prompt. Go to the LLM tab and use the "Quick Insert Snippets" to add the Voicemail Detection prompt.
+                  </p>
+                </div>
+              </div>
             </div>
           </>
         )}
