@@ -1403,13 +1403,6 @@ ${processedKnowledge}`;
                         }
                       }
                     }
-                        .ilike('notes', `%${From}%`)
-                        .order('start_time', { ascending: true })
-                        .limit(1)
-                        .maybeSingle();
-                      existingAppt = apptByPhone;
-                      console.log('[Twilio SMS Webhook] Searched by phone in notes, found:', existingAppt?.id);
-                    }
                     
                     if (existingAppt) {
                       await supabaseAdmin
