@@ -14,7 +14,7 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine, Download, Database } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useNumberSync } from '@/hooks/useNumberSync';
 
@@ -75,7 +75,7 @@ const RetellAIManager = () => {
   } = useRetellAI();
   
   const { listLLMs, getLLM, deleteLLM, isLoading: llmLoading } = useRetellLLM();
-  const { syncNumberStatus, isSyncing } = useNumberSync();
+  const { syncNumberStatus, fullSync, importAllFromRetell, isSyncing, isImporting, getLastSyncInfo } = useNumberSync();
 
   useEffect(() => {
     loadRetellData();
@@ -583,29 +583,80 @@ const RetellAIManager = () => {
                 <div className="flex items-center gap-2">
                   <Button 
                     onClick={async () => {
-                      await syncNumberStatus();
+                      await importAllFromRetell();
+                      loadRetellData();
+                    }} 
+                    size="sm" 
+                    variant="default"
+                    disabled={isImporting || isSyncing}
+                    title="Import all Retell numbers into local database for rotation"
+                  >
+                    {isImporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    {isImporting ? 'Importing...' : 'Import All from Retell'}
+                  </Button>
+                  <Button 
+                    onClick={async () => {
+                      await fullSync();
                       loadRetellData();
                     }} 
                     size="sm" 
                     variant="outline"
-                    disabled={isSyncing}
-                    title="Sync Retell numbers to local database so they can be used for outbound calls"
+                    disabled={isSyncing || isImporting}
+                    title="Two-way sync: Import new numbers AND update existing ones"
                   >
                     {isSyncing ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
-                      <ArrowDownToLine className="h-4 w-4 mr-2" />
+                      <Database className="h-4 w-4 mr-2" />
                     )}
-                    {isSyncing ? 'Syncing...' : 'Sync to Local DB'}
+                    {isSyncing ? 'Syncing...' : 'Full Sync'}
                   </Button>
-                  <Button onClick={() => setShowImportDialog(true)} size="sm">
+                  <Button onClick={() => setShowImportDialog(true)} size="sm" variant="outline">
                     <Plus className="h-4 w-4 mr-2" />
-                    Import Number
+                    Manual Import
                   </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
+              {/* Sync Status Banner */}
+              {(() => {
+                const syncInfo = getLastSyncInfo();
+                const results = syncInfo.results;
+                if (results) {
+                  const timeSince = syncInfo.lastSync ? Math.round((Date.now() - syncInfo.lastSync.getTime()) / 60000) : null;
+                  return (
+                    <div className="mb-4 p-3 border rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-4">
+                          <span className="text-muted-foreground">
+                            Last sync: {timeSince !== null ? (timeSince < 1 ? 'Just now' : `${timeSince}m ago`) : 'Never'}
+                          </span>
+                          <span>
+                            <strong>{results.retellNumbers}</strong> in Retell → <strong>{results.localNumbers}</strong> in DB
+                          </span>
+                          {results.importedNumbers > 0 && (
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              +{results.importedNumbers} imported
+                            </Badge>
+                          )}
+                          {results.discrepancies > 0 && (
+                            <Badge variant="destructive">
+                              {results.discrepancies} need attention
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {retellNumbers.some(n => !n.outbound_agent_id) && (
                 <div className="mb-4 p-4 border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 rounded-lg">
                   <div className="flex items-start gap-3">
