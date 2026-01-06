@@ -735,9 +735,24 @@ serve(async (req) => {
     // Determine initial outcome from call status
     let outcome = mapCallStatusToOutcome(call.call_status, call.disconnection_reason, durationSeconds);
     
-    // Override with voicemail detection if confident
-    if (vmDetection.isVoicemail && vmDetection.confidence >= 40) {
-      console.log(`[Retell Webhook] Voicemail detected with ${vmDetection.confidence.toFixed(1)}% confidence, overriding outcome from "${outcome}" to "voicemail"`);
+    // ============= SWIFT VOICEMAIL DETECTION =============
+    // Check for Retell's real-time AMD detection first (fastest, ~3-5 second detection)
+    const disconnectionReason = (call.disconnection_reason || '').toLowerCase();
+    const wasVoicemailDetectedByRetell = 
+      disconnectionReason === 'voicemail_reached' ||
+      disconnectionReason === 'machine_detected' ||
+      disconnectionReason.includes('voicemail') ||
+      disconnectionReason.includes('answering_machine');
+    
+    if (wasVoicemailDetectedByRetell) {
+      console.log(`[Retell Webhook] SWIFT VM DETECTION: Retell AMD detected voicemail (reason: ${call.disconnection_reason}), call hung up automatically`);
+      outcome = 'voicemail';
+      // Log the time savings - Retell AMD typically detects in 3-5 seconds vs 30-60 seconds of talking to VM
+      console.log(`[Retell Webhook] Estimated time saved: ~${Math.max(0, 45 - durationSeconds)} seconds by early detection`);
+    }
+    // Fall back to our transcript-based detection for non-AMD calls
+    else if (vmDetection.isVoicemail && vmDetection.confidence >= 40) {
+      console.log(`[Retell Webhook] Voicemail detected via transcript analysis with ${vmDetection.confidence.toFixed(1)}% confidence, overriding outcome from "${outcome}" to "voicemail"`);
       outcome = 'voicemail';
     }
 
