@@ -801,14 +801,44 @@ async function generateAIResponse(
 
   // Add calendar/booking capabilities if enabled
   let calendarInfo = '';
-  if (settings?.workflow_calendar_enabled || settings?.calendar_enabled) {
-    const bookingLink = settings?.workflow_booking_link || settings?.booking_link || '';
+  let availableSlots: string[] = [];
+  
+  if (settings?.workflow_calendar_enabled || settings?.calendar_enabled || settings?.enable_calendar_integration) {
+    // Fetch real availability from calendar-integration function
+    try {
+      console.log('[AI SMS] Fetching calendar availability for user:', userId);
+      
+      const calendarResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get_available_slots',
+          user_id: userId,
+          duration_minutes: 30,
+        }),
+      });
+      
+      if (calendarResponse.ok) {
+        const calendarData = await calendarResponse.json();
+        if (calendarData.available_slots && calendarData.available_slots.length > 0) {
+          availableSlots = calendarData.available_slots.slice(0, 5);
+          console.log('[AI SMS] Got available slots:', availableSlots);
+        }
+      }
+    } catch (calErr) {
+      console.error('[AI SMS] Calendar fetch error:', calErr);
+    }
+    
     calendarInfo = `\n\nIMPORTANT CALENDAR/APPOINTMENT CAPABILITIES:
-- You can help schedule appointments
-- If the user asks about availability, scheduling, or booking, be proactive
-- When they want to book, ask for their preferred date and time${bookingLink ? `\n- Share this booking link when appropriate: ${bookingLink}` : ''}
-- If they mention times like "tomorrow at 2pm" or "next Monday", acknowledge and offer to schedule`;
-    console.log('[AI SMS] Calendar booking enabled');
+- You CAN schedule appointments directly - do NOT share any booking links
+- If the user asks about availability, tell them: "${availableSlots.length > 0 ? `I have openings at: ${availableSlots.join(', ')}` : 'Let me check the calendar for you.'}"
+- When they want to book a specific time, confirm it and say you'll schedule it
+- If they mention times like "tomorrow at 2pm" or "next Monday", acknowledge and confirm the booking
+- NEVER mention Cal.com or any external booking system - you book directly`;
+    console.log('[AI SMS] Calendar booking enabled with real availability');
   }
 
   const systemPrompt = `You are an AI SMS assistant with the following personality: ${customInstructions}${knowledgeBase}${calendarInfo}
@@ -818,35 +848,92 @@ If the user sends an image, acknowledge it and respond appropriately based on th
 DO NOT include any special characters or formatting that may not work well in SMS.`;
 
   // Check if message is about appointments/scheduling
-  const appointmentKeywords = ['appointment', 'schedule', 'book', 'available', 'meet', 'calendar', 'time slot', 'when can'];
+  const appointmentKeywords = ['appointment', 'schedule', 'book', 'available', 'meet', 'calendar', 'time slot', 'when can', 'what time', 'set up', 'come by'];
   const isAppointmentRelated = appointmentKeywords.some(kw => 
     currentContent.toLowerCase().includes(kw)
   );
 
-  // If appointment-related, try to invoke calendar function
+  // If appointment-related, try to actually book or check calendar
   if (isAppointmentRelated && settings?.enabled) {
     try {
-      // Try to parse date/time from message
-      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b)/i);
+      // Try to parse date/time from message for booking
+      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
 
-      if (dateMatch || timeMatch) {
-        // Add calendar context to system prompt
+      if (dateMatch && timeMatch) {
+        // User provided both date and time - attempt to book!
+        console.log('[AI SMS] User wants to book:', dateMatch[0], timeMatch[0]);
+        
+        // Get lead info for booking
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('first_name, last_name, email, phone_number')
+          .eq('id', leadId)
+          .maybeSingle();
+        
+        if (lead) {
+          const bookingResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'book_appointment',
+              user_id: userId,
+              date: dateMatch[0],
+              time: timeMatch[0],
+              attendee_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+              attendee_email: lead.email,
+              attendee_phone: lead.phone_number,
+              duration_minutes: 30,
+            }),
+          });
+          
+          if (bookingResponse.ok) {
+            const bookingData = await bookingResponse.json();
+            if (bookingData.success) {
+              console.log('[AI SMS] Successfully booked appointment:', bookingData);
+              // Add booking confirmation to context
+              conversationHistory.unshift({
+                role: 'system',
+                content: `IMPORTANT: You just successfully booked an appointment for ${bookingData.message || `${dateMatch[0]} at ${timeMatch[0]}`}. Confirm this to the user in a friendly way.`
+              });
+            }
+          }
+        }
+      } else if (dateMatch || timeMatch) {
+        // Partial info - ask for the missing piece
         const calendarContext = `
-The user is asking about appointments. Based on their message, they may want to:
-- Check available times
-- Book a specific slot
-If they provide a date/time, confirm you'll book it for them.`;
+The user is asking about appointments. They mentioned ${dateMatch ? `date: ${dateMatch[0]}` : ''}${timeMatch ? ` time: ${timeMatch[0]}` : ''}.
+${!dateMatch ? 'Ask what day works for them.' : ''}${!timeMatch ? 'Ask what time works for them.' : ''}
+Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'flexible'}`;
         
         conversationHistory.unshift({
           role: 'system',
           content: calendarContext
         });
+      } else {
+        // General scheduling inquiry - share available slots
+        conversationHistory.unshift({
+          role: 'system',
+          content: `The user is asking about scheduling. Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'Ask them for their preferred date and time.'}`
+        });
       }
     } catch (e) {
-      console.log('[AI SMS] Calendar parsing skipped:', e);
+      console.error('[AI SMS] Calendar booking error:', e);
     }
   }
+
+  // Get lead info for context
+  let leadId: string | null = null;
+  const { data: leadData } = await supabase
+    .from('leads')
+    .select('id, first_name, last_name')
+    .eq('user_id', userId)
+    .eq('phone_number', incomingMessage.From)
+    .maybeSingle();
+  leadId = leadData?.id || null;
 
   try {
     const aiProvider = settings?.ai_provider || 'lovable';
