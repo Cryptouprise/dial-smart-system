@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
+import { VoicemailDetectionSettings } from './VoicemailDetectionSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -1414,15 +1415,26 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
             {/* Call Settings Tab */}
             <TabsContent value="call" className="space-y-4">
+              {/* Swift Voicemail Hang-Up - Uses real-time AMD for 3-5 second detection */}
+              {agent?.agent_id && (
+                <VoicemailDetectionSettings
+                  agentId={agent.agent_id}
+                  agentName={agent.agent_name || 'Agent'}
+                />
+              )}
+
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm">Voicemail Detection</CardTitle>
+                  <CardTitle className="text-sm">Fallback Voicemail Options</CardTitle>
+                  <CardDescription className="text-xs">
+                    Legacy settings - use Swift Hang-Up above for best results
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Enable Voicemail Detection</Label>
-                      <p className="text-xs text-muted-foreground">Detect when call goes to voicemail</p>
+                      <Label>Enable Legacy VM Detection</Label>
+                      <p className="text-xs text-muted-foreground">Retell's built-in voicemail detection</p>
                     </div>
                     <Switch
                       checked={config.voicemail_detection}

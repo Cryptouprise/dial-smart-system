@@ -13,7 +13,7 @@ const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/
 const CALENDAR_FUNCTION_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration';
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
@@ -23,6 +23,14 @@ interface RetellAgentRequest {
   message?: string; // For test chat
   webhookUrl?: string; // Optional custom webhook URL
   userId?: string; // User ID for calendar configuration
+  voicemailDetection?: {
+    enabled: boolean;
+    provider?: 'twilio' | 'retell';
+    detection_timeout_ms?: number;
+    machine_detection_speech_threshold?: number;
+    machine_detection_speech_end_threshold?: number;
+    machine_detection_silence_timeout?: number;
+  };
 }
 
 serve(async (req) => {
@@ -487,6 +495,98 @@ serve(async (req) => {
         console.log(`[Retell Agent] LLM fetched successfully`);
         
         return new Response(JSON.stringify(llmData), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      // ============= VOICEMAIL DETECTION SETTINGS =============
+      case 'get_voicemail_settings':
+        if (!agentId) {
+          throw new Error('Agent ID is required');
+        }
+        
+        console.log(`[Retell Agent] Getting voicemail settings for agent ${agentId}`);
+        
+        const getVmAgentResp = await fetch(`${baseUrl}/get-agent/${agentId}`, {
+          method: 'GET',
+          headers,
+        });
+        
+        if (!getVmAgentResp.ok) {
+          const errorText = await getVmAgentResp.text();
+          throw new Error(`Failed to get agent: ${errorText}`);
+        }
+        
+        const vmAgent = await getVmAgentResp.json();
+        
+        return new Response(JSON.stringify({
+          success: true,
+          agentId,
+          voicemail_detection: vmAgent.voicemail_detection || null,
+          ambient_sound_volume: vmAgent.ambient_sound_volume,
+          end_call_after_silence_ms: vmAgent.end_call_after_silence_ms,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      case 'update_voicemail_settings':
+        if (!agentId) {
+          throw new Error('Agent ID is required');
+        }
+        
+        const { voicemailDetection } = await req.clone().json();
+        
+        console.log(`[Retell Agent] Updating voicemail settings for agent ${agentId}:`, JSON.stringify(voicemailDetection));
+        
+        // Build the update payload
+        // Retell's voicemail_detection config:
+        // - provider: 'twilio' (uses Twilio AMD) or 'retell' (uses Retell's built-in)
+        // - voicemail_detection_timeout_ms: How long to wait for detection (default 30000)
+        // - voicemail_message: Message to leave if detected (only if not hanging up)
+        // The behavior depends on whether voicemail_message is set:
+        // - No message = hang up immediately when VM detected
+        // - Message set = leave the message after beep
+        
+        const vmUpdatePayload: any = {};
+        
+        if (voicemailDetection?.enabled) {
+          vmUpdatePayload.voicemail_detection = {
+            provider: voicemailDetection.provider || 'twilio',
+            voicemail_detection_timeout_ms: voicemailDetection.detection_timeout_ms || 30000,
+            // Twilio AMD specific settings for faster detection
+            machine_detection_speech_threshold: voicemailDetection.machine_detection_speech_threshold || 2400,
+            machine_detection_speech_end_threshold: voicemailDetection.machine_detection_speech_end_threshold || 1200,
+            machine_detection_silence_timeout: voicemailDetection.machine_detection_silence_timeout || 5000,
+          };
+        } else {
+          // Disable voicemail detection by setting to null
+          vmUpdatePayload.voicemail_detection = null;
+        }
+        
+        console.log(`[Retell Agent] Sending voicemail update:`, JSON.stringify(vmUpdatePayload));
+        
+        const vmUpdateResp = await fetch(`${baseUrl}/update-agent/${agentId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(vmUpdatePayload),
+        });
+        
+        if (!vmUpdateResp.ok) {
+          const errorText = await vmUpdateResp.text();
+          console.error(`[Retell Agent] Voicemail settings update failed: ${errorText}`);
+          throw new Error(`Failed to update voicemail settings: ${errorText}`);
+        }
+        
+        const updatedVmAgent = await vmUpdateResp.json();
+        console.log(`[Retell Agent] Voicemail settings updated successfully for agent ${agentId}`);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          agentId,
+          voicemail_detection: updatedVmAgent.voicemail_detection,
+          message: voicemailDetection?.enabled 
+            ? 'Voicemail detection enabled - calls will hang up within 3-5 seconds when voicemail is detected'
+            : 'Voicemail detection disabled',
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
 
