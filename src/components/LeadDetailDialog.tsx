@@ -356,23 +356,37 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   const getDispositionColor = (disposition: string): string => {
     const colors: Record<string, string> = {
+      // Positive outcomes (green shades)
       'appointment_set': '#22c55e',
       'appointment_booked': '#22c55e',
+      'hot_lead': '#16a34a',
       'interested': '#3b82f6',
       'qualified': '#22c55e',
       'converted': '#16a34a',
+      
+      // Callbacks/Follow-up (amber shades)
       'callback_requested': '#f59e0b',
       'callback': '#f59e0b',
-      'contacted': '#6b7280',
       'follow_up': '#f59e0b',
-      'not_interested': '#ef4444',
-      'dnc': '#991b1b',
-      'do_not_call': '#991b1b',
-      'wrong_number': '#dc2626',
+      'potential_prospect': '#fbbf24',
+      
+      // Neutral/Contact attempts (gray/purple shades)
+      'contacted': '#6b7280',
       'voicemail': '#8b5cf6',
+      'not_connected': '#6b7280',
+      'dropped_call': '#6b7280',
+      'dial_tree_workflow': '#a855f7',
       'no_answer': '#6b7280',
       'busy': '#6b7280',
       'completed': '#22c55e',
+      
+      // Negative/Disqualified (red shades)
+      'not_interested': '#ef4444',
+      'already_has_solar': '#dc2626',
+      'renter': '#dc2626',
+      'wrong_number': '#dc2626',
+      'dnc': '#991b1b',
+      'do_not_call': '#991b1b',
     };
     return colors[disposition] || '#6b7280';
   };

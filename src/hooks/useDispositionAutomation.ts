@@ -47,17 +47,25 @@ export interface ScheduledFollowUp {
 }
 
 const STANDARD_DISPOSITIONS = [
+  // Negative outcomes - stop calling
   { name: 'Wrong Number', sentiment: 'negative', pipeline_stage: 'invalid_leads', follow_up: 'none' },
   { name: 'Not Interested', sentiment: 'negative', pipeline_stage: 'cold_leads', follow_up: 'none' },
-  { name: 'Already Has Solar', sentiment: 'negative', pipeline_stage: 'not_qualified', follow_up: 'none' },
+  { name: 'Already Has Solar', sentiment: 'negative', pipeline_stage: 'disqualified', follow_up: 'none' },
+  { name: 'Renter', sentiment: 'negative', pipeline_stage: 'disqualified', follow_up: 'none' },
+  { name: 'Do Not Call', sentiment: 'negative', pipeline_stage: 'dnc', follow_up: 'none' },
+  
+  // Neutral outcomes - follow up later
   { name: 'Potential Prospect', sentiment: 'neutral', pipeline_stage: 'prospects', follow_up: 'callback' },
-  { name: 'Hot Lead', sentiment: 'positive', pipeline_stage: 'hot_leads', follow_up: 'sequence' },
   { name: 'Follow Up', sentiment: 'neutral', pipeline_stage: 'follow_up', follow_up: 'callback' },
   { name: 'Not Connected', sentiment: 'neutral', pipeline_stage: 'callbacks', follow_up: 'callback' },
   { name: 'Voicemail', sentiment: 'neutral', pipeline_stage: 'follow_up', follow_up: 'callback' },
   { name: 'Dropped Call', sentiment: 'neutral', pipeline_stage: 'callbacks', follow_up: 'callback' },
   { name: 'Dial Tree Workflow', sentiment: 'neutral', pipeline_stage: 'in_progress', follow_up: 'sequence' },
-  { name: 'Interested', sentiment: 'positive', pipeline_stage: 'hot_leads', follow_up: 'sequence' },
+  
+  // Positive outcomes - actively engaged
+  { name: 'Hot Lead', sentiment: 'positive', pipeline_stage: 'hot_leads', follow_up: 'sequence' },
+  { name: 'Interested', sentiment: 'positive', pipeline_stage: 'interested', follow_up: 'sequence' },
+  { name: 'Callback Requested', sentiment: 'positive', pipeline_stage: 'callbacks', follow_up: 'callback' },
   { name: 'Appointment Booked', sentiment: 'positive', pipeline_stage: 'appointments', follow_up: 'sequence' },
 ] as const;
 
