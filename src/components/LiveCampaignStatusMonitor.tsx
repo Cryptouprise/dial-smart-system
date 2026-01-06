@@ -189,6 +189,60 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
     }
   };
 
+  // Format wait step config into human-readable string
+  const formatWaitStepDetails = (stepConfig: any) => {
+    if (!stepConfig) return '';
+    
+    const parts: string[] = [];
+    
+    if (stepConfig.delay_days && stepConfig.delay_days > 0) {
+      parts.push(`${stepConfig.delay_days} day${stepConfig.delay_days > 1 ? 's' : ''}`);
+    }
+    if (stepConfig.delay_hours && stepConfig.delay_hours > 0) {
+      parts.push(`${stepConfig.delay_hours} hour${stepConfig.delay_hours > 1 ? 's' : ''}`);
+    }
+    if (stepConfig.delay_minutes && stepConfig.delay_minutes > 0) {
+      parts.push(`${stepConfig.delay_minutes} min${stepConfig.delay_minutes > 1 ? 's' : ''}`);
+    }
+    
+    if (parts.length === 0) {
+      // Check for other formats
+      if (stepConfig.wait_until) {
+        return `until ${stepConfig.wait_until}`;
+      }
+      if (stepConfig.delay) {
+        return `${stepConfig.delay}`;
+      }
+      return 'configured delay';
+    }
+    
+    return parts.join(', ');
+  };
+
+  // Format step info with type-specific details
+  const formatStepInfo = (step: any) => {
+    if (!step) return 'Unknown step';
+    
+    const stepType = step.step_type;
+    const stepNumber = step.step_number;
+    const config = step.step_config;
+    
+    switch (stepType) {
+      case 'wait':
+        const waitDetails = formatWaitStepDetails(config);
+        return `Step ${stepNumber}: Wait (${waitDetails})`;
+      case 'call':
+        return `Step ${stepNumber}: Call`;
+      case 'sms':
+        const smsPreview = config?.message?.substring(0, 30);
+        return `Step ${stepNumber}: SMS${smsPreview ? ` - "${smsPreview}..."` : ''}`;
+      case 'ai_sms':
+        return `Step ${stepNumber}: AI SMS`;
+      default:
+        return `Step ${stepNumber}: ${stepType}`;
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
@@ -332,11 +386,12 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
                       {getStatusBadge(progress.status)}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Step {progress.workflow_step?.step_number}: {progress.workflow_step?.step_type}
+                      {formatStepInfo(progress.workflow_step)}
                     </p>
                     {progress.next_action_at && progress.status === 'active' && (
-                      <p className="text-xs text-yellow-500 mt-1">
-                        Next: {formatTimeUntil(progress.next_action_at)}
+                      <p className="text-xs text-yellow-500 mt-1 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Next action in: {formatTimeUntil(progress.next_action_at)}
                       </p>
                     )}
                   </div>

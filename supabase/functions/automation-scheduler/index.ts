@@ -181,6 +181,52 @@ serve(async (req) => {
 
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 
+    // GLOBAL STUCK CALL CLEANUP: Clean up calls stuck in ringing/initiated status for more than 5 minutes
+    console.log('[Scheduler] Checking for stuck calls...');
+    let stuckCallsCleaned = 0;
+    
+    try {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      // Find all calls stuck in ringing/initiated/in_progress for more than 5 minutes
+      const { data: stuckCalls, error: stuckError } = await supabase
+        .from('call_logs')
+        .select('id, phone_number, status, created_at, retell_call_id')
+        .in('status', ['ringing', 'initiated', 'in_progress'])
+        .lt('created_at', fiveMinutesAgo);
+      
+      if (stuckError) {
+        console.error('[Scheduler] Error finding stuck calls:', stuckError);
+      } else if (stuckCalls && stuckCalls.length > 0) {
+        console.log(`[Scheduler] Found ${stuckCalls.length} stuck calls to clean up`);
+        
+        for (const call of stuckCalls) {
+          const { error: updateError } = await supabase
+            .from('call_logs')
+            .update({
+              status: 'no_answer',
+              outcome: 'no_answer',
+              notes: `Auto-cleaned: stuck in ${call.status} status for >5 minutes`,
+              ended_at: new Date().toISOString()
+            })
+            .eq('id', call.id);
+          
+          if (!updateError) {
+            stuckCallsCleaned++;
+            console.log(`[Scheduler] Cleaned stuck call ${call.id} (${call.phone_number}) - was ${call.status} since ${call.created_at}`);
+          } else {
+            console.error(`[Scheduler] Failed to clean stuck call ${call.id}:`, updateError);
+          }
+        }
+        
+        console.log(`[Scheduler] Cleaned ${stuckCallsCleaned} stuck calls`);
+      } else {
+        console.log('[Scheduler] No stuck calls found');
+      }
+    } catch (stuckError) {
+      console.error('[Scheduler] Error in stuck call cleanup:', stuckError);
+    }
+
     // CALLBACK PICKUP: Find leads with past-due next_callback_at and ensure they're queued
     // Uses UPSERT logic to handle duplicate entries (completed callbacks that need re-queuing)
     console.log('[Scheduler] Checking for past-due callbacks...');
@@ -416,6 +462,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
+      stuck_calls_cleaned: stuckCallsCleaned,
       callbacks_queued: callbacksQueued,
       callbacks_reset: callbacksReset,
       workflow_steps_processed: workflowResults.processed || 0,
