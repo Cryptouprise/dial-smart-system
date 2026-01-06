@@ -64,14 +64,32 @@ serve(async (req) => {
             role: 'system',
             content: `You are an expert call analyzer for sales and lead qualification calls. Analyze the conversation transcript and determine the most appropriate disposition.
 
-Available dispositions:
-- Interested: Lead showed genuine interest and wants to proceed
-- Not Interested: Lead explicitly stated they're not interested
+Available dispositions (choose the most accurate one):
+
+POSITIVE OUTCOMES:
 - Appointment Booked: Successfully scheduled an appointment or meeting
-- Wrong Number: Incorrect contact info or wrong person reached
+- Hot Lead: Extremely interested, wants to move forward immediately, high urgency
+- Interested: Showed genuine interest, wants more information
+
+CALLBACK/FOLLOW-UP:
 - Callback Requested: Lead asked to be called back at a specific time
-- Voicemail: Left voicemail message (no conversation)
-- Do Not Call: Lead requested to be removed from calling list
+- Follow Up: Needs more time to think, research, or discuss with family - but not a firm callback request
+- Potential Prospect: Lukewarm interest, may be worth nurturing over time
+
+NEUTRAL/NO CONTACT:
+- Voicemail: Left voicemail or reached answering machine
+- Not Connected: Line rang but no answer, busy signal, or call failed
+- Dropped Call: Call connected but dropped/disconnected unexpectedly
+
+NEGATIVE/DISQUALIFIED:
+- Not Interested: Explicitly stated not interested
+- Wrong Number: Incorrect contact info or wrong person reached
+- Already Has Solar: Lead already has solar panels installed (or already has the service being offered)
+- Renter: Lead is renting, not the homeowner - cannot make installation decisions
+- Do Not Call: Lead requested to be removed from calling list (DNC)
+
+SPECIAL:
+- Dial Tree Workflow: Reached an IVR/automated system, transferred, or in process
 
 Respond with a JSON object containing:
 {
@@ -82,7 +100,8 @@ Respond with a JSON object containing:
   "next_action": "recommended follow-up action",
   "sentiment": "positive/neutral/negative",
   "pain_points": ["identified", "pain", "points"],
-  "objections": ["any", "objections", "raised"]
+  "objections": ["any", "objections", "raised"],
+  "disqualification_reason": "only if disqualified - e.g., 'renter', 'already_has_solar', 'wrong_number'"
 }`
           },
           {

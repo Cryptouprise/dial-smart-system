@@ -1442,17 +1442,35 @@ async function updatePipelinePosition(
   userId: string,
   outcome: string
 ) {
-  // Map outcomes to pipeline stages
+  // Map outcomes to pipeline stages - comprehensive disposition coverage
   const stageMapping: Record<string, string> = {
+    // Positive outcomes (green)
     'appointment_set': 'Appointment Set',
     'appointment_booked': 'Appointment Set',
+    'hot_lead': 'Hot Leads',
+    'interested': 'Interested',
+    'converted': 'Converted',
+    
+    // Callbacks/Follow-up (amber)
     'callback_requested': 'Follow Up',
     'callback': 'Follow Up',
-    'interested': 'Interested',
+    'follow_up': 'Follow Up',
+    'potential_prospect': 'Prospects',
+    
+    // Neutral/Contact attempts (gray)
     'contacted': 'Contacted',
     'voicemail': 'Contacted',
+    'not_connected': 'Not Contacted',
+    'dropped_call': 'Not Contacted',
+    'dial_tree_workflow': 'In Progress',
+    
+    // Negative/Disqualified (red)
     'not_interested': 'Not Interested',
+    'already_has_solar': 'Disqualified',
+    'renter': 'Disqualified',
+    'wrong_number': 'Invalid',
     'dnc': 'DNC',
+    'do_not_call': 'DNC',
   };
 
   const stageName = stageMapping[outcome];

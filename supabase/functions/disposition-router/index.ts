@@ -18,6 +18,8 @@ const REMOVE_ALL_DISPOSITIONS = [
   // Negative outcomes - stop calling, they're not interested
   'not_interested', 'wrong_number', 'already_has_solar', 'already_has_service',
   'deceased', 'business_closed', 'invalid_number', 'disconnected',
+  // Renters/non-homeowners - can't make installation decisions
+  'renter', 'tenant', 'not_homeowner', 'not_the_homeowner',
   
   // Positive terminal outcomes - lead is handled, stop the sequence!
   'appointment_set', 'appointment_booked', 'appointment_scheduled', 'appointment',
@@ -29,7 +31,7 @@ const REMOVE_ALL_DISPOSITIONS = [
 // Dispositions that should PAUSE (not remove) the workflow - lead needs more nurturing later
 const PAUSE_WORKFLOW_DISPOSITIONS = [
   'follow_up', 'potential_prospect', 'needs_more_info', 'timing_not_right',
-  'send_info', 'left_voicemail', 'nurture'
+  'send_info', 'left_voicemail', 'nurture', 'voicemail', 'dropped_call', 'not_connected'
 ];
 
 serve(async (req) => {
@@ -186,6 +188,23 @@ serve(async (req) => {
           .eq('id', leadId);
 
         actions.push('Removed from workflow (callbacks preserved)');
+      }
+      
+      // 3b. Check for PAUSE workflow trigger (continue nurturing later)
+      if (PAUSE_WORKFLOW_DISPOSITIONS.some(d => normalizedDisposition.includes(d)) && 
+          !REMOVE_ALL_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+        // Pause (not remove) active workflows for later follow-up
+        await supabase
+          .from('lead_workflow_progress')
+          .update({
+            status: 'paused',
+            removal_reason: `Paused: ${dispositionName}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('lead_id', leadId)
+          .eq('status', 'active');
+        
+        actions.push('Workflow paused for later follow-up');
       }
 
       // 4. Detect negative sentiment from transcript (if provided)
