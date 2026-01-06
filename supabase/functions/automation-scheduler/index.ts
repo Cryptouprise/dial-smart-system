@@ -182,8 +182,10 @@ serve(async (req) => {
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 
     // CALLBACK PICKUP: Find leads with past-due next_callback_at and ensure they're queued
+    // Uses UPSERT logic to handle duplicate entries (completed callbacks that need re-queuing)
     console.log('[Scheduler] Checking for past-due callbacks...');
     let callbacksQueued = 0;
+    let callbacksReset = 0;
     
     try {
       const { data: pastDueCallbacks, error: callbackError } = await supabase
@@ -210,16 +212,39 @@ serve(async (req) => {
             .maybeSingle();
           
           if (campaign) {
-            // Check if already in queue
-            const { data: existing } = await supabase
+            // Check for ANY existing queue entry (including completed)
+            const { data: existingEntry } = await supabase
               .from('dialing_queues')
-              .select('id')
+              .select('id, status')
               .eq('lead_id', lead.id)
-              .in('status', ['pending', 'calling'])
+              .eq('campaign_id', campaign.id)
               .maybeSingle();
             
-            if (!existing) {
-              // Add to queue with HIGH priority (5 = callback priority)
+            if (existingEntry) {
+              if (existingEntry.status === 'completed' || existingEntry.status === 'failed') {
+                // Reset the completed entry to pending for callback
+                const { error: updateError } = await supabase
+                  .from('dialing_queues')
+                  .update({
+                    status: 'pending',
+                    scheduled_at: new Date().toISOString(),
+                    priority: 5, // Callback priority
+                    attempts: 0,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', existingEntry.id);
+                
+                if (!updateError) {
+                  callbacksReset++;
+                  console.log(`[Scheduler] Reset completed queue entry for callback - lead ${lead.id}`);
+                } else {
+                  console.error(`[Scheduler] Failed to reset queue entry for lead ${lead.id}:`, updateError);
+                }
+              } else {
+                console.log(`[Scheduler] Lead ${lead.id} already in queue with status: ${existingEntry.status}`);
+              }
+            } else {
+              // No existing entry - insert new one
               const { error: insertError } = await supabase.from('dialing_queues').insert({
                 campaign_id: campaign.id,
                 lead_id: lead.id,
@@ -237,12 +262,14 @@ serve(async (req) => {
               } else {
                 console.error(`[Scheduler] Failed to queue callback for lead ${lead.id}:`, insertError);
               }
-            } else {
-              console.log(`[Scheduler] Lead ${lead.id} already in queue`);
             }
           } else {
             console.log(`[Scheduler] No active campaign for user ${lead.user_id}`);
           }
+        }
+        
+        if (callbacksReset > 0) {
+          console.log(`[Scheduler] Reset ${callbacksReset} completed entries to pending for callbacks`);
         }
       } else {
         console.log('[Scheduler] No past-due callbacks found');
@@ -390,10 +417,12 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
       callbacks_queued: callbacksQueued,
+      callbacks_reset: callbacksReset,
       workflow_steps_processed: workflowResults.processed || 0,
       nudges_sent: nudgeResults.nudges_sent || 0,
       rules_processed: rules.length,
       leads_queued: totalProcessed,
+      dispatch_summary: dispatchSummary,
       results
     }), { 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
