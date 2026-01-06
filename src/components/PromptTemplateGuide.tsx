@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { 
   Copy, 
   Check, 
@@ -12,32 +13,106 @@ import {
   Phone, 
   MessageSquare,
   Bot,
-  Clipboard
+  Clipboard,
+  ChevronDown,
+  ChevronRight,
+  User,
+  Building,
+  MapPin,
+  Clock,
+  FileText,
+  History
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-const CONTEXT_VARIABLES_TEMPLATE = `## CONTEXT VARIABLES (Always Available)
-- {{first_name}} - Lead's first name
-- {{last_name}} - Lead's last name
-- {{full_name}} - Lead's full name
-- {{company}} - Lead's company
-- {{email}} - Lead's email address
-- {{phone}} - Lead's phone number
-- {{notes}} - Previous call notes and history
-- {{current_time}} - Current date/time in lead's timezone
-- {{current_day_of_week}} - Current day (Monday, Tuesday, etc.)
-- {{timezone}} - Lead's timezone
-- {{lead_source}} - How the lead was acquired
-- {{address}} - Lead's street address
-- {{city}} - Lead's city
-- {{state}} - Lead's state
-- {{zip_code}} - Lead's ZIP code
-
-## CALLBACK DETECTION VARIABLES
-- {{is_callback}} - "true" or "false" - indicates if this is a callback
-- {{callback_context}} - Context message if this is a callback
-- {{previous_conversation}} - Summary of the last call
-- {{last_call_date}} - When the last call occurred
-- {{previous_outcome}} - What happened on the last call`;
+// Clickable variable categories
+const VARIABLE_CATEGORIES = [
+  {
+    id: 'lead',
+    label: 'Lead Information',
+    icon: User,
+    variables: [
+      { key: 'first_name', label: 'First Name', description: "Lead's first name" },
+      { key: 'last_name', label: 'Last Name', description: "Lead's last name" },
+      { key: 'full_name', label: 'Full Name', description: 'First + last name combined' },
+      { key: 'email', label: 'Email', description: "Lead's email address" },
+      { key: 'phone', label: 'Phone', description: "Lead's phone number" },
+      { key: 'company', label: 'Company', description: "Lead's company name" },
+      { key: 'lead_source', label: 'Lead Source', description: 'How the lead was acquired' },
+      { key: 'tags', label: 'Tags', description: 'Lead tags (comma separated)' },
+      { key: 'notes', label: 'Notes', description: 'Previous call notes and history' },
+    ]
+  },
+  {
+    id: 'address',
+    label: 'Address Fields',
+    icon: MapPin,
+    variables: [
+      { key: 'address', label: 'Street Address', description: "Lead's street address" },
+      { key: 'address1', label: 'Address Line 1', description: 'Street address' },
+      { key: 'address2', label: 'Address Line 2', description: 'Apt/Suite/Unit' },
+      { key: 'city', label: 'City', description: 'City name' },
+      { key: 'state', label: 'State', description: 'State/Province' },
+      { key: 'zip_code', label: 'ZIP Code', description: 'Postal/ZIP code' },
+      { key: 'postal_code', label: 'Postal Code', description: 'Postal/ZIP code (alias)' },
+      { key: 'country', label: 'Country', description: 'Country' },
+      { key: 'full_address', label: 'Full Address', description: 'Complete formatted address' },
+    ]
+  },
+  {
+    id: 'time',
+    label: 'Time & Date',
+    icon: Clock,
+    variables: [
+      { key: 'current_time', label: 'Current Time', description: "Current date/time in lead's timezone" },
+      { key: 'current_day_of_week', label: 'Current Day', description: 'Current day (Monday, Tuesday, etc.)' },
+      { key: 'timezone', label: 'Timezone', description: "Lead's timezone" },
+      { key: 'preferred_contact_time', label: 'Preferred Contact Time', description: 'Best time to call' },
+    ]
+  },
+  {
+    id: 'callback',
+    label: 'Callback Detection',
+    icon: History,
+    variables: [
+      { key: 'is_callback', label: 'Is Callback', description: '"true" or "false" - indicates if this is a callback' },
+      { key: 'callback_context', label: 'Callback Context', description: 'Context message if this is a callback' },
+      { key: 'previous_conversation', label: 'Previous Conversation', description: 'Summary of the last call' },
+      { key: 'last_call_date', label: 'Last Call Date', description: 'When the last call occurred' },
+      { key: 'previous_outcome', label: 'Previous Outcome', description: 'What happened on the last call' },
+    ]
+  },
+  {
+    id: 'custom',
+    label: 'Custom Fields',
+    icon: FileText,
+    variables: [
+      { key: 'renter', label: 'Renter', description: 'If the lead is a renter' },
+      { key: 'utility_provider', label: 'Utility Provider', description: 'Current utility provider' },
+      { key: 'monthly_bill', label: 'Monthly Bill', description: 'Average monthly utility bill' },
+      { key: 'homeowner', label: 'Homeowner', description: 'If the lead is a homeowner' },
+      { key: 'credit_score_range', label: 'Credit Score Range', description: 'Approximate credit score range' },
+      { key: 'property_type', label: 'Property Type', description: 'Type of property' },
+      { key: 'roof_age', label: 'Roof Age', description: 'Age of the roof' },
+      { key: 'interest_level', label: 'Interest Level', description: 'Lead interest level' },
+    ]
+  },
+  {
+    id: 'ghl',
+    label: 'GHL Contact Fields',
+    icon: Building,
+    variables: [
+      { key: 'contact.first_name', label: 'Contact First Name', description: "Contact's first name (GHL)" },
+      { key: 'contact.last_name', label: 'Contact Last Name', description: "Contact's last name (GHL)" },
+      { key: 'contact.email', label: 'Contact Email', description: "Contact's email (GHL)" },
+      { key: 'contact.company', label: 'Contact Company', description: "Contact's company (GHL)" },
+      { key: 'contact.address1', label: 'Contact Address 1', description: "Contact's street address (GHL)" },
+      { key: 'contact.city', label: 'Contact City', description: "Contact's city (GHL)" },
+      { key: 'contact.state', label: 'Contact State', description: "Contact's state (GHL)" },
+      { key: 'contact.zip', label: 'Contact ZIP', description: "Contact's ZIP code (GHL)" },
+    ]
+  },
+];
 
 const CALLBACK_CAPABILITY_TEMPLATE = `## CALLBACK CAPABILITY
 You CAN schedule callbacks. This is one of your core capabilities.
@@ -91,11 +166,68 @@ NEGATIVE OUTCOMES:
 
 Always be clear about the outcome so the system can properly categorize the call.`;
 
+// Clickable Variable Chip component
+const VariableChip: React.FC<{
+  variableKey: string;
+  label: string;
+  description: string;
+  onCopy: (key: string) => void;
+  copied: boolean;
+}> = ({ variableKey, label, description, onCopy, copied }) => (
+  <button
+    onClick={() => onCopy(variableKey)}
+    className={cn(
+      "group relative flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left w-full",
+      copied 
+        ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400" 
+        : "bg-background border-border hover:bg-accent hover:border-primary/30"
+    )}
+  >
+    <code className="text-xs px-1.5 py-0.5 bg-primary/10 rounded font-mono shrink-0">
+      {`{{${variableKey}}}`}
+    </code>
+    <div className="flex-1 min-w-0">
+      <span className="text-sm font-medium block truncate">{label}</span>
+      <span className="text-xs text-muted-foreground block truncate">{description}</span>
+    </div>
+    <div className={cn(
+      "shrink-0 transition-opacity",
+      copied ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+    )}>
+      {copied ? (
+        <Check className="h-4 w-4 text-green-500" />
+      ) : (
+        <Copy className="h-4 w-4 text-muted-foreground" />
+      )}
+    </div>
+  </button>
+);
+
 export const PromptTemplateGuide: React.FC = () => {
+  const [copiedVariable, setCopiedVariable] = useState<string | null>(null);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['lead', 'callback']);
   const { toast } = useToast();
 
-  const handleCopy = async (text: string, section: string) => {
+  const handleCopyVariable = async (variableKey: string) => {
+    try {
+      await navigator.clipboard.writeText(`{{${variableKey}}}`);
+      setCopiedVariable(variableKey);
+      toast({
+        title: "Copied!",
+        description: `{{${variableKey}}} copied to clipboard`,
+      });
+      setTimeout(() => setCopiedVariable(null), 2000);
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Please copy manually",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCopySection = async (text: string, section: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedSection(section);
@@ -113,32 +245,33 @@ export const PromptTemplateGuide: React.FC = () => {
     }
   };
 
-  const handleCopyAll = async () => {
-    const allTemplates = [
-      CONTEXT_VARIABLES_TEMPLATE,
-      '',
-      CALLBACK_CAPABILITY_TEMPLATE,
-      '',
-      CALLBACK_HANDLING_TEMPLATE,
-      '',
-      DISPOSITION_TEMPLATE
-    ].join('\n\n');
-
+  const handleCopyAllVariables = async () => {
+    const allVars = VARIABLE_CATEGORIES.flatMap(cat => cat.variables)
+      .map(v => `- {{${v.key}}} - ${v.description}`)
+      .join('\n');
+    
     try {
-      await navigator.clipboard.writeText(allTemplates);
-      setCopiedSection('all');
+      await navigator.clipboard.writeText(`## CONTEXT VARIABLES\n${allVars}`);
+      setCopiedSection('all-vars');
       toast({
-        title: "All templates copied",
-        description: "Complete prompt guide copied to clipboard",
+        title: "All variables copied",
+        description: "Complete variable list copied to clipboard",
       });
       setTimeout(() => setCopiedSection(null), 2000);
     } catch (error) {
       toast({
         title: "Copy failed",
-        description: "Please copy sections individually",
         variant: "destructive"
       });
     }
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories(prev => 
+      prev.includes(categoryId) 
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
   };
 
   const TemplateSection: React.FC<{
@@ -158,7 +291,7 @@ export const PromptTemplateGuide: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleCopy(content, sectionKey)}
+            onClick={() => handleCopySection(content, sectionKey)}
           >
             {copiedSection === sectionKey ? (
               <>
@@ -176,7 +309,7 @@ export const PromptTemplateGuide: React.FC = () => {
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-48">
+        <ScrollArea className="h-40">
           <pre className="text-xs bg-muted p-3 rounded-md whitespace-pre-wrap font-mono">
             {content}
           </pre>
@@ -187,28 +320,74 @@ export const PromptTemplateGuide: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold">Prompt Template Guide</h2>
-          <p className="text-muted-foreground">
-            Copy these sections into your Retell AI agent prompt to enable callback scheduling and context awareness
+          <h2 className="text-xl font-bold">Prompt Variables & Templates</h2>
+          <p className="text-sm text-muted-foreground">
+            Click any variable to copy it. Use these in your Retell AI prompts.
           </p>
         </div>
-        <Button onClick={handleCopyAll} variant="default">
+        <Button onClick={handleCopyAllVariables} variant="outline" size="sm">
           <Clipboard className="h-4 w-4 mr-2" />
-          {copiedSection === 'all' ? 'Copied All!' : 'Copy All Sections'}
+          {copiedSection === 'all-vars' ? 'Copied!' : 'Copy All Variables'}
         </Button>
       </div>
 
+      {/* Clickable Variables Section */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Variable className="h-5 w-5 text-primary" />
+            Dynamic Variables
+          </CardTitle>
+          <CardDescription>
+            Click any variable to copy it to your clipboard, then paste into your prompt
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {VARIABLE_CATEGORIES.map((category) => {
+            const IconComponent = category.icon;
+            const isExpanded = expandedCategories.includes(category.id);
+            
+            return (
+              <Collapsible key={category.id} open={isExpanded} onOpenChange={() => toggleCategory(category.id)}>
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded-lg hover:bg-accent transition-colors">
+                  <div className="flex items-center gap-2">
+                    <IconComponent className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium text-sm">{category.label}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {category.variables.length}
+                    </Badge>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 pt-1">
+                    {category.variables.map((variable) => (
+                      <VariableChip
+                        key={variable.key}
+                        variableKey={variable.key}
+                        label={variable.label}
+                        description={variable.description}
+                        onCopy={handleCopyVariable}
+                        copied={copiedVariable === variable.key}
+                      />
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* Template Sections */}
       <div className="grid gap-4 md:grid-cols-2">
-        <TemplateSection
-          title="Context Variables"
-          description="All dynamic variables available to your agent"
-          content={CONTEXT_VARIABLES_TEMPLATE}
-          sectionKey="context"
-          icon={<Variable className="h-5 w-5 text-blue-500" />}
-        />
-        
         <TemplateSection
           title="Callback Capability"
           description="Enable your agent to confidently schedule callbacks"
@@ -234,15 +413,15 @@ export const PromptTemplateGuide: React.FC = () => {
         />
       </div>
 
+      {/* Quick Tips */}
       <Card className="bg-muted/50">
-        <CardHeader>
+        <CardHeader className="pb-2">
           <CardTitle className="text-sm">How to Use</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm space-y-2">
-          <p>1. Go to your <strong>Retell AI Dashboard</strong> → Agent Settings → LLM Prompt</p>
-          <p>2. Copy the sections above that you need</p>
-          <p>3. Paste them into your agent's system prompt</p>
-          <p>4. The variables like <code className="bg-background px-1 rounded">{'{{first_name}}'}</code> will be automatically replaced with real data</p>
+        <CardContent className="text-sm space-y-1">
+          <p>1. <strong>Click</strong> any variable above to copy it</p>
+          <p>2. <strong>Paste</strong> into your Retell AI agent prompt</p>
+          <p>3. Variables like <code className="bg-background px-1 rounded">{'{{first_name}}'}</code> auto-fill with real lead data</p>
         </CardContent>
       </Card>
     </div>
