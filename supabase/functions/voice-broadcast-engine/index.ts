@@ -210,7 +210,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-// Make a call using Twilio
+// Make a call using Twilio with optional AMD
 async function callWithTwilio(
   accountSid: string,
   authToken: string,
@@ -220,10 +220,12 @@ async function callWithTwilio(
   metadata: Record<string, unknown>,
   statusCallbackUrl: string,
   dtmfHandlerUrl: string,
-  transferNumber?: string
+  transferNumber?: string,
+  amdEnabled: boolean = false,
+  amdCallbackUrl?: string
 ): Promise<CallResult> {
   try {
-    console.log(`Making Twilio call from ${fromNumber} to ${toNumber}`);
+    console.log(`Making Twilio call from ${fromNumber} to ${toNumber}${amdEnabled ? ' with AMD enabled' : ''}`);
     console.log(`Audio URL: ${audioUrl}`);
     
     // Build DTMF action URL with transfer number if available
@@ -250,6 +252,27 @@ async function callWithTwilio(
     
     console.log('TwiML Response:', twimlResponse);
 
+    // Build request body
+    const requestBody: Record<string, string> = {
+      To: toNumber,
+      From: fromNumber,
+      Twiml: twimlResponse,
+      StatusCallback: statusCallbackUrl,
+      StatusCallbackEvent: 'initiated ringing answered completed',
+    };
+    
+    // Add AMD parameters if enabled
+    if (amdEnabled && amdCallbackUrl) {
+      requestBody.MachineDetection = 'DetectMessageEnd';
+      requestBody.AsyncAmd = 'true';
+      requestBody.AsyncAmdStatusCallback = amdCallbackUrl;
+      requestBody.MachineDetectionTimeout = '30';
+      requestBody.MachineDetectionSpeechThreshold = '2500';
+      requestBody.MachineDetectionSpeechEndThreshold = '1200';
+      requestBody.MachineDetectionSilenceTimeout = '5000';
+      console.log('AMD enabled with callback:', amdCallbackUrl);
+    }
+
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
       {
@@ -258,13 +281,7 @@ async function callWithTwilio(
           'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          To: toNumber,
-          From: fromNumber,
-          Twiml: twimlResponse,
-          StatusCallback: statusCallbackUrl,
-          StatusCallbackEvent: 'initiated ringing answered completed',
-        }),
+        body: new URLSearchParams(requestBody),
       }
     );
 
@@ -325,7 +342,7 @@ async function callWithTelnyx(
   }
 }
 
-// Make a call using Twilio Elastic SIP Trunk
+// Make a call using Twilio Elastic SIP Trunk with optional AMD
 async function callWithTwilioSipTrunk(
   accountSid: string,
   authToken: string,
@@ -337,10 +354,12 @@ async function callWithTwilioSipTrunk(
   metadata: Record<string, unknown>,
   statusCallbackUrl: string,
   dtmfHandlerUrl: string,
-  transferNumber?: string
+  transferNumber?: string,
+  amdEnabled: boolean = false,
+  amdCallbackUrl?: string
 ): Promise<CallResult> {
   try {
-    console.log(`Making Twilio SIP trunk call from ${fromNumber} to ${toNumber} via trunk ${trunkSid}`);
+    console.log(`Making Twilio SIP trunk call from ${fromNumber} to ${toNumber} via trunk ${trunkSid}${amdEnabled ? ' with AMD enabled' : ''}`);
     
     // Build DTMF action URL with transfer number if available
     const dtmfActionUrl = transferNumber 
@@ -367,6 +386,27 @@ async function callWithTwilioSipTrunk(
     
     console.log(`SIP To address: ${sipTo}`);
 
+    // Build request body
+    const requestBody: Record<string, string> = {
+      To: sipTo,
+      From: fromNumber,
+      Twiml: twimlResponse,
+      StatusCallback: statusCallbackUrl,
+      StatusCallbackEvent: 'initiated ringing answered completed',
+    };
+    
+    // Add AMD parameters if enabled
+    if (amdEnabled && amdCallbackUrl) {
+      requestBody.MachineDetection = 'DetectMessageEnd';
+      requestBody.AsyncAmd = 'true';
+      requestBody.AsyncAmdStatusCallback = amdCallbackUrl;
+      requestBody.MachineDetectionTimeout = '30';
+      requestBody.MachineDetectionSpeechThreshold = '2500';
+      requestBody.MachineDetectionSpeechEndThreshold = '1200';
+      requestBody.MachineDetectionSilenceTimeout = '5000';
+      console.log('AMD enabled with callback:', amdCallbackUrl);
+    }
+
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
       {
@@ -375,13 +415,7 @@ async function callWithTwilioSipTrunk(
           'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          To: sipTo,
-          From: fromNumber,
-          Twiml: twimlResponse,
-          StatusCallback: statusCallbackUrl,
-          StatusCallbackEvent: 'initiated ringing answered completed',
-        }),
+        body: new URLSearchParams(requestBody),
       }
     );
 

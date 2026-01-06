@@ -537,22 +537,37 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Updating voicemail settings for agent ${agentId}:`, JSON.stringify(voicemailDetection));
         
-        // Build the update payload using Retell's actual API format
-        // Retell voicemail_detection accepts:
-        // - voicemail_detection_timeout_ms: How long to wait (default 30000, max 60000)
-        // - voicemail_message: If set, agent leaves this message after beep. If NOT set, agent hangs up.
+        // Build the update payload
+        // Retell supports two providers:
+        // 1. Retell built-in: Uses voicemail_detection_timeout_ms and optionally voicemail_message
+        // 2. Twilio AMD: Uses provider: 'twilio' with machine detection parameters
         
         const vmUpdatePayload: any = {};
         
         if (voicemailDetection?.enabled) {
-          const vmConfig: any = {
-            voicemail_detection_timeout_ms: voicemailDetection.detection_timeout_ms || 30000,
-          };
+          const vmConfig: any = {};
           
-          // If behavior is 'leave_message' and a message is provided, include it
-          // If no voicemail_message is set, Retell hangs up by default
-          if (voicemailDetection.behavior === 'leave_message' && voicemailDetection.voicemail_message) {
-            vmConfig.voicemail_message = voicemailDetection.voicemail_message;
+          if (voicemailDetection.provider === 'twilio_amd') {
+            // Twilio AMD configuration
+            // Note: This configures Retell to use Twilio's AMD when calls come through Twilio SIP
+            vmConfig.provider = 'twilio';
+            vmConfig.voicemail_detection_timeout_ms = voicemailDetection.detection_timeout_ms || 30000;
+            vmConfig.machine_detection_speech_threshold = voicemailDetection.machine_detection_speech_threshold || 2500;
+            vmConfig.machine_detection_speech_end_threshold = voicemailDetection.machine_detection_speech_end_threshold || 1200;
+            vmConfig.machine_detection_silence_timeout = voicemailDetection.machine_detection_silence_timeout || 5000;
+            
+            console.log(`[Retell Agent] Configuring Twilio AMD with thresholds:`, vmConfig);
+          } else {
+            // Retell built-in detection
+            vmConfig.voicemail_detection_timeout_ms = voicemailDetection.detection_timeout_ms || 30000;
+            
+            // If behavior is 'leave_message' and a message is provided, include it
+            // If no voicemail_message is set, Retell hangs up by default
+            if (voicemailDetection.behavior === 'leave_message' && voicemailDetection.voicemail_message) {
+              vmConfig.voicemail_message = voicemailDetection.voicemail_message;
+            }
+            
+            console.log(`[Retell Agent] Configuring Retell built-in detection:`, vmConfig);
           }
           
           vmUpdatePayload.voicemail_detection = vmConfig;
@@ -578,9 +593,14 @@ serve(async (req) => {
         const updatedVmAgent = await vmUpdateResp.json();
         console.log(`[Retell Agent] Voicemail settings updated successfully for agent ${agentId}`);
         
-        const behaviorDescription = voicemailDetection?.behavior === 'leave_message' 
-          ? 'Agent will leave a voicemail message when detected'
-          : 'Calls will hang up within 3-5 seconds when voicemail is detected';
+        let behaviorDescription = '';
+        if (voicemailDetection?.provider === 'twilio_amd') {
+          behaviorDescription = 'Using Twilio AMD for fast voicemail detection (2-3 seconds)';
+        } else if (voicemailDetection?.behavior === 'leave_message') {
+          behaviorDescription = 'Agent will leave a voicemail message when detected';
+        } else {
+          behaviorDescription = 'Calls will hang up within 3-5 seconds when voicemail is detected';
+        }
         
         return new Response(JSON.stringify({
           success: true,
