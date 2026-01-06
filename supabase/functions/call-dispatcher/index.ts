@@ -166,7 +166,9 @@ serve(async (req) => {
       console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
     }
 
-    // CALLBACK PRIORITY: Ensure past-due callbacks are in the dialing queue (idempotent)
+    // CALLBACK PRIORITY: Ensure past-due callbacks trigger workflow appropriately
+    // If the campaign's workflow first step is SMS, we should NOT add to dialing_queues
+    // Instead, we should enroll them in the workflow via workflow-executor
     console.log('[Dispatcher] Checking for past-due callbacks...');
     const nowIso = new Date().toISOString();
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
@@ -181,14 +183,16 @@ serve(async (req) => {
       .limit(20);
 
     let callbacksQueued = 0;
+    let callbacksEnrolledInWorkflow = 0;
+
     if (pastDueCallbacks && pastDueCallbacks.length > 0) {
       console.log(`[Dispatcher] Found ${pastDueCallbacks.length} past-due callbacks to evaluate`);
 
       for (const lead of pastDueCallbacks) {
-        // Find an ACTIVE campaign for this lead
+        // Find an ACTIVE campaign for this lead with workflow info
         const { data: campaignLead } = await supabase
           .from('campaign_leads')
-          .select('campaign_id, campaigns!inner(status)')
+          .select('campaign_id, campaigns!inner(status, workflow_id)')
           .eq('lead_id', lead.id)
           .eq('campaigns.status', 'active')
           .limit(1)
@@ -196,7 +200,73 @@ serve(async (req) => {
 
         if (!campaignLead) continue;
 
-        // If there's already a queue entry for this lead/campaign, don't churn it.
+        const workflowId = (campaignLead.campaigns as any)?.workflow_id;
+
+        // Check if workflow first step is SMS
+        let firstStepIsSms = false;
+        if (workflowId) {
+          const { data: firstStep } = await supabase
+            .from('workflow_steps')
+            .select('step_type')
+            .eq('workflow_id', workflowId)
+            .eq('step_number', 1)
+            .maybeSingle();
+          
+          firstStepIsSms = firstStep?.step_type === 'sms' || firstStep?.step_type === 'ai_sms';
+        }
+
+        // Check existing workflow enrollment
+        const { data: existingWorkflow } = await supabase
+          .from('lead_workflow_progress')
+          .select('id, status')
+          .eq('lead_id', lead.id)
+          .eq('workflow_id', workflowId)
+          .gte('created_at', twoMinutesAgo)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingWorkflow) continue;
+
+        // If first step is SMS, enroll in workflow instead of dialing queue
+        if (firstStepIsSms && workflowId) {
+          console.log(`[Dispatcher] Callback for lead ${lead.id} - workflow first step is SMS, enrolling in workflow`);
+          
+          // Get the first step ID
+          const { data: firstStepData } = await supabase
+            .from('workflow_steps')
+            .select('id')
+            .eq('workflow_id', workflowId)
+            .eq('step_number', 1)
+            .maybeSingle();
+
+          if (firstStepData) {
+            const { error: progressError } = await supabase
+              .from('lead_workflow_progress')
+              .insert({
+                lead_id: lead.id,
+                workflow_id: workflowId,
+                campaign_id: campaignLead.campaign_id,
+                user_id: user.id,
+                current_step_id: firstStepData.id,
+                status: 'active',
+                started_at: nowIso,
+                next_action_at: nowIso,
+              });
+
+            if (!progressError) {
+              callbacksEnrolledInWorkflow++;
+              console.log(`[Dispatcher] Enrolled callback lead ${lead.id} in SMS workflow`);
+              
+              // Trigger workflow-executor to send SMS
+              await supabase.functions.invoke('workflow-executor', {
+                body: { action: 'execute_pending', userId: user.id },
+              });
+            }
+          }
+          continue;
+        }
+
+        // For call-first workflows, add to dialing queue as before
         const { data: existingQueueEntry } = await supabase
           .from('dialing_queues')
           .select('id, status, scheduled_at')
@@ -239,6 +309,8 @@ serve(async (req) => {
         }
       }
     }
+
+    console.log(`[Dispatcher] Callbacks: ${callbacksQueued} queued for call, ${callbacksEnrolledInWorkflow} enrolled in SMS workflow`);
 
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
