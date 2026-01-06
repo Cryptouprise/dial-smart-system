@@ -1182,12 +1182,15 @@ ${processedKnowledge}`;
                         .from('calendar_appointments')
                         .select('*')
                         .eq('lead_id', lead.id)
-                        .eq('status', 'scheduled')
+                        .in('status', ['scheduled', 'confirmed']) // Accept both statuses
                         .gte('start_time', now)
                         .order('start_time', { ascending: true })
                         .limit(1)
                         .maybeSingle();
                       existingAppt = apptByLead;
+                      if (existingAppt) {
+                        console.log('[Twilio SMS Webhook] Found appointment by lead_id:', existingAppt.id);
+                      }
                     }
                     
                     // If not found by lead_id, try to find by phone number in notes
@@ -1196,15 +1199,64 @@ ${processedKnowledge}`;
                         .from('calendar_appointments')
                         .select('*')
                         .eq('user_id', userId)
-                        .eq('status', 'scheduled')
+                        .in('status', ['scheduled', 'confirmed']) // Accept both statuses
                         .gte('start_time', now)
                         .ilike('notes', `%${From}%`)
                         .order('start_time', { ascending: true })
                         .limit(1)
                         .maybeSingle();
                       existingAppt = apptByPhone;
-                      console.log('[Twilio SMS Webhook] Searched reschedule by phone in notes, found:', existingAppt?.id);
+                      if (existingAppt) {
+                        console.log('[Twilio SMS Webhook] Found appointment by phone in notes:', existingAppt.id);
+                      }
                     }
+                    
+                    // If still not found, try to find by phone in metadata
+                    if (!existingAppt) {
+                      // Search for any upcoming appointment with matching caller_phone or attendee_phone in metadata
+                      const { data: allUpcoming } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('*')
+                        .eq('user_id', userId)
+                        .in('status', ['scheduled', 'confirmed'])
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(10);
+                      
+                      if (allUpcoming) {
+                        // Check metadata for matching phone
+                        const cleanFrom = From.replace(/\D/g, '').slice(-10);
+                        existingAppt = allUpcoming.find((apt: any) => {
+                          const metadata = apt.metadata || {};
+                          const callerPhone = (metadata.caller_phone || '').replace(/\D/g, '').slice(-10);
+                          const attendeePhone = (metadata.attendee_phone || '').replace(/\D/g, '').slice(-10);
+                          return callerPhone === cleanFrom || attendeePhone === cleanFrom;
+                        });
+                        
+                        if (existingAppt) {
+                          console.log('[Twilio SMS Webhook] Found appointment by phone in metadata:', existingAppt.id);
+                        }
+                      }
+                    }
+                    
+                    // Last resort: find most recent upcoming appointment for this user
+                    if (!existingAppt) {
+                      const { data: mostRecent } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('*')
+                        .eq('user_id', userId)
+                        .in('status', ['scheduled', 'confirmed'])
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      existingAppt = mostRecent;
+                      if (existingAppt) {
+                        console.log('[Twilio SMS Webhook] Found most recent upcoming appointment as fallback:', existingAppt.id);
+                      }
+                    }
+                    
+                    console.log('[Twilio SMS Webhook] Searched for appointment to reschedule, found:', existingAppt?.id || 'none');
                       
                       if (existingAppt) {
                         const newDateStr = functionArgs.new_date;
@@ -1302,7 +1354,7 @@ ${processedKnowledge}`;
                         .from('calendar_appointments')
                         .select('id, google_event_id, title, start_time')
                         .eq('lead_id', lead.id)
-                        .eq('status', 'scheduled')
+                        .in('status', ['scheduled', 'confirmed']) // Accept both statuses
                         .gte('start_time', now)
                         .order('start_time', { ascending: true })
                         .limit(1)
@@ -1314,10 +1366,43 @@ ${processedKnowledge}`;
                     if (!existingAppt) {
                       const { data: apptByPhone } = await supabaseAdmin
                         .from('calendar_appointments')
-                        .select('id, google_event_id, title, start_time')
+                        .select('id, google_event_id, title, start_time, metadata')
                         .eq('user_id', userId)
-                        .eq('status', 'scheduled')
+                        .in('status', ['scheduled', 'confirmed']) // Accept both statuses
                         .gte('start_time', now)
+                        .ilike('notes', `%${From}%`)
+                        .order('start_time', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+                      existingAppt = apptByPhone;
+                    }
+                    
+                    // If still not found, try to find by phone in metadata or as fallback
+                    if (!existingAppt) {
+                      const { data: allUpcoming } = await supabaseAdmin
+                        .from('calendar_appointments')
+                        .select('id, google_event_id, title, start_time, metadata')
+                        .eq('user_id', userId)
+                        .in('status', ['scheduled', 'confirmed'])
+                        .gte('start_time', now)
+                        .order('start_time', { ascending: true })
+                        .limit(10);
+                      
+                      if (allUpcoming) {
+                        const cleanFrom = From.replace(/\D/g, '').slice(-10);
+                        existingAppt = allUpcoming.find((apt: any) => {
+                          const metadata = apt.metadata || {};
+                          const callerPhone = (metadata.caller_phone || '').replace(/\D/g, '').slice(-10);
+                          const attendeePhone = (metadata.attendee_phone || '').replace(/\D/g, '').slice(-10);
+                          return callerPhone === cleanFrom || attendeePhone === cleanFrom;
+                        });
+                        
+                        // Last resort: use first upcoming
+                        if (!existingAppt && allUpcoming.length > 0) {
+                          existingAppt = allUpcoming[0];
+                        }
+                      }
+                    }
                         .ilike('notes', `%${From}%`)
                         .order('start_time', { ascending: true })
                         .limit(1)
