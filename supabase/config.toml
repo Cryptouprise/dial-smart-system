@@ -201,6 +201,9 @@ verify_jwt = true
 [functions.inbound-transfer-webhook]
 verify_jwt = false
 
+[functions.twilio-amd-webhook]
+verify_jwt = false
+
 [functions.ml-learning-engine]
 verify_jwt = true
 
