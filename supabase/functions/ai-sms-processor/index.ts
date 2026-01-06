@@ -853,8 +853,83 @@ DO NOT include any special characters or formatting that may not work well in SM
     currentContent.toLowerCase().includes(kw)
   );
 
-  // If appointment-related, try to actually book or check calendar
-  if (isAppointmentRelated && settings?.enabled) {
+  // Check if message is about RESCHEDULING (change existing appointment)
+  const rescheduleKeywords = ['reschedule', 'change time', 'move it', 'switch it', 'different time', 'different day', 'change the time', 'change the day', 'move my', 'can you change', 'can we change', 'make it'];
+  const isRescheduleRequest = rescheduleKeywords.some(kw => 
+    currentContent.toLowerCase().includes(kw)
+  );
+
+  // Handle RESCHEDULE requests - actually update the calendar
+  if (isRescheduleRequest && settings?.enabled) {
+    try {
+      console.log('[AI SMS] Detected reschedule request:', currentContent);
+      
+      // Parse new date/time from message
+      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
+      const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+
+      // Get lead info and find their upcoming appointment
+      const { data: leadForReschedule } = await supabase
+        .from('leads')
+        .select('id, first_name, last_name, phone_number')
+        .eq('user_id', userId)
+        .eq('phone_number', incomingMessage.From)
+        .maybeSingle();
+
+      if (leadForReschedule && (dateMatch || timeMatch)) {
+        console.log('[AI SMS] Attempting reschedule for lead:', leadForReschedule.id, 'to:', dateMatch?.[0], timeMatch?.[0]);
+        
+        const rescheduleResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'reschedule_appointment',
+            user_id: userId,
+            caller_phone: incomingMessage.From,
+            lead_id: leadForReschedule.id,
+            date: dateMatch?.[0],
+            time: timeMatch?.[0],
+            new_date: dateMatch?.[0],
+            new_time: timeMatch?.[0],
+          }),
+        });
+
+        if (rescheduleResponse.ok) {
+          const rescheduleData = await rescheduleResponse.json();
+          console.log('[AI SMS] Reschedule response:', rescheduleData);
+          
+          if (rescheduleData.success) {
+            // Add confirmation to context so AI confirms the reschedule
+            conversationHistory.unshift({
+              role: 'system',
+              content: `IMPORTANT: You just successfully RESCHEDULED the appointment. ${rescheduleData.message || 'The appointment has been moved to the new time.'}. Confirm this to the user in a friendly way and mention you've sent an updated calendar invite.`
+            });
+          } else if (rescheduleData.message) {
+            // Calendar function returned a message (like asking for more info)
+            conversationHistory.unshift({
+              role: 'system',
+              content: `Calendar system response: ${rescheduleData.message}. Relay this to the user naturally.`
+            });
+          }
+        } else {
+          console.error('[AI SMS] Reschedule API failed:', await rescheduleResponse.text());
+        }
+      } else if (!dateMatch && !timeMatch) {
+        // User wants to reschedule but didn't provide new time
+        conversationHistory.unshift({
+          role: 'system',
+          content: `The user wants to reschedule their appointment but hasn't specified when. Ask them what day and time would work better. Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'flexible'}`
+        });
+      }
+    } catch (e) {
+      console.error('[AI SMS] Reschedule error:', e);
+    }
+  }
+  // Handle NEW appointment booking
+  else if (isAppointmentRelated && settings?.enabled) {
     try {
       // Try to parse date/time from message for booking
       const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
