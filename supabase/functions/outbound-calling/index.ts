@@ -474,36 +474,59 @@ serve(async (req) => {
           console.log('[Outbound Calling] No lead found, using empty dynamic variables');
         }
 
-        response = await retryWithBackoff(
-          async () => {
-            const res = await fetch(`${baseUrl}/create-phone-call`, {
-              method: 'POST',
-              headers: retellHeaders,
-              body: JSON.stringify({
-                from_number: callerId,
-                to_number: finalPhone,
-                agent_id: agentId,
-                retell_llm_dynamic_variables: dynamicVariables,
-                metadata: {
-                  campaign_id: campaignId,
-                  lead_id: leadId,
-                  call_log_id: callLog.id,
-                  user_id: userId
-                }
-              }),
-            });
-            
-            if (!res.ok) {
-              const errorText = await res.text();
-              throw new Error(`Retell API error ${res.status}: ${errorText}`);
-            }
-            
-            return res;
-          },
-          'Retell create-phone-call',
-          3,  // 3 retries
-          2000 // 2 second base delay
-        );
+        try {
+          response = await retryWithBackoff(
+            async () => {
+              const res = await fetch(`${baseUrl}/create-phone-call`, {
+                method: 'POST',
+                headers: retellHeaders,
+                body: JSON.stringify({
+                  from_number: callerId,
+                  to_number: finalPhone,
+                  agent_id: agentId,
+                  retell_llm_dynamic_variables: dynamicVariables,
+                  metadata: {
+                    campaign_id: campaignId,
+                    lead_id: leadId,
+                    call_log_id: callLog.id,
+                    user_id: userId
+                  }
+                }),
+              });
+
+              if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Retell API error ${res.status}: ${errorText}`);
+              }
+
+              return res;
+            },
+            'Retell create-phone-call',
+            3,  // 3 retries
+            2000 // 2 second base delay
+          );
+        } catch (err: any) {
+          const message = err?.message ? String(err.message) : String(err);
+          console.error('[Outbound Calling] Retell create-phone-call failed:', message);
+
+          // IMPORTANT: ensure we don't leave call_logs stuck in "queued" when Retell rejects the call.
+          await supabaseAdmin
+            .from('call_logs')
+            .update({
+              status: 'failed',
+              ended_at: new Date().toISOString(),
+              notes: `Retell API error: ${message}`,
+            })
+            .eq('id', callLog.id);
+
+          await logError(supabaseAdmin, 'outbound-calling', 'create_call', userId,
+            new Error(message),
+            { leadId, campaignId, severity: 'error' }
+          );
+
+          throw err;
+        }
+
 
         if (!response.ok) {
           const errorData = await response.text();
