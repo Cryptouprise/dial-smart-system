@@ -589,26 +589,36 @@ serve(async (req) => {
         const callbackMinutes = extractCallbackTimeFromTranscript(formattedTranscript);
         const callbackTime = new Date(Date.now() + callbackMinutes * 60 * 1000);
         leadUpdate.next_callback_at = callbackTime.toISOString();
+        leadUpdate.status = 'callback'; // Mark lead status as callback for visibility
         console.log(`[Retell Webhook] Callback scheduled in ${callbackMinutes} minutes at ${callbackTime.toISOString()}`);
         
-        // Re-add to dialing queue for scheduled callback
+        // Queue callback in dialing queue if we have a campaign
         if (campaignId) {
           try {
+            // First delete any existing pending/failed entry for this lead to avoid conflicts
             await supabase
               .from('dialing_queues')
-              .upsert({
-                campaign_id: campaignId,
-                lead_id: leadId,
-                phone_number: call.to_number || '',
-                status: 'pending',
-                scheduled_at: callbackTime.toISOString(),
-                priority: 2, // Higher priority for callbacks
-                max_attempts: 3,
-                attempts: 0,
-              }, {
-                onConflict: 'campaign_id,lead_id'
-              });
-            console.log(`[Retell Webhook] Added lead ${leadId} to dialing queue for callback at ${callbackTime.toISOString()}`);
+              .delete()
+              .eq('lead_id', leadId)
+              .in('status', ['pending', 'failed']);
+            
+            // Then insert fresh with high priority
+            const { error: queueInsertError } = await supabase.from('dialing_queues').insert({
+              campaign_id: campaignId,
+              lead_id: leadId,
+              phone_number: call.to_number || '',
+              status: 'pending',
+              scheduled_at: callbackTime.toISOString(),
+              priority: 5, // High priority for callbacks (higher = more urgent)
+              max_attempts: 3,
+              attempts: 0,
+            });
+            
+            if (queueInsertError) {
+              console.error('[Retell Webhook] Failed to insert callback to queue:', queueInsertError);
+            } else {
+              console.log(`[Retell Webhook] Successfully queued callback for ${leadId} at ${callbackTime.toISOString()}`);
+            }
           } catch (queueError) {
             console.error('[Retell Webhook] Failed to add callback to dialing queue:', queueError);
           }

@@ -582,15 +582,78 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     </div>
                   )}
                   
-                  {/* Next Callback - Prominent */}
+                  {/* Next Callback - Show Past Due Warning */}
                   {currentLead.next_callback_at && (
-                    <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                      <Clock className="h-5 w-5 text-amber-600" />
-                      <div>
-                        <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Callback Scheduled</p>
-                        <p className="text-sm">{format(new Date(currentLead.next_callback_at), 'PPPp')}</p>
-                      </div>
-                    </div>
+                    (() => {
+                      const callbackDate = new Date(currentLead.next_callback_at);
+                      const isOverdue = callbackDate < new Date();
+                      return (
+                        <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                          isOverdue 
+                            ? 'bg-destructive/10 border-destructive/30' 
+                            : 'bg-amber-500/10 border-amber-500/30'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            {isOverdue ? (
+                              <AlertTriangle className="h-5 w-5 text-destructive" />
+                            ) : (
+                              <Clock className="h-5 w-5 text-amber-600" />
+                            )}
+                            <div>
+                              <p className={`text-sm font-medium ${isOverdue ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}`}>
+                                {isOverdue ? 'Callback Overdue!' : 'Callback Scheduled'}
+                              </p>
+                              <p className="text-sm">{format(callbackDate, 'PPPp')}</p>
+                            </div>
+                          </div>
+                          {isOverdue && (
+                            <Button 
+                              size="sm" 
+                              variant="destructive"
+                              onClick={async () => {
+                                try {
+                                  const { data: { user } } = await supabase.auth.getUser();
+                                  if (!user) return;
+                                  
+                                  const { data: campaign } = await supabase
+                                    .from('campaigns')
+                                    .select('id')
+                                    .eq('user_id', user.id)
+                                    .eq('status', 'active')
+                                    .limit(1)
+                                    .maybeSingle();
+                                  
+                                  if (!campaign) {
+                                    toast({ title: "No Active Campaign", description: "Please start a campaign first.", variant: "destructive" });
+                                    return;
+                                  }
+                                  
+                                  await supabase.from('dialing_queues').delete().eq('lead_id', lead.id).in('status', ['pending', 'failed']);
+                                  await supabase.from('dialing_queues').insert({
+                                    campaign_id: campaign.id,
+                                    lead_id: lead.id,
+                                    phone_number: currentLead.phone_number,
+                                    status: 'pending',
+                                    scheduled_at: new Date().toISOString(),
+                                    priority: 10,
+                                    max_attempts: 3,
+                                    attempts: 0
+                                  });
+                                  
+                                  await supabase.functions.invoke('call-dispatcher', { body: { immediate: true } });
+                                  toast({ title: "Call Initiated", description: `Calling ${currentLead.first_name || 'lead'} now...` });
+                                } catch (err: any) {
+                                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                                }
+                              }}
+                            >
+                              <Phone className="h-3 w-3 mr-1" />
+                              Call Now
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })()
                   )}
                   
                   {/* Workflow Status */}

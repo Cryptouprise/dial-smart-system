@@ -49,6 +49,7 @@ import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
+import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
 
 interface PhoneNumber {
   id: string;
@@ -198,6 +199,9 @@ const Dashboard = () => {
               
               {/* Quick Start Cards - AI Guided Setup */}
               <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
+              
+              {/* Pending Callbacks - Prominent alerts for overdue callbacks */}
+              <PendingCallbacksWidget />
               
               {/* System Health - Only on Overview */}
               <SystemHealthDashboard />
