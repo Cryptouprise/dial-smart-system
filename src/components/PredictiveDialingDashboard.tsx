@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Users, Target, BarChart3, Brain, Settings, Activity, Gauge, RotateCcw, Radio } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Phone, Users, Target, BarChart3, Brain, Settings, Activity, Gauge, RotateCcw, Radio, PhoneCall, AlertTriangle } from 'lucide-react';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
 import LeadManager from '@/components/LeadManager';
@@ -15,6 +16,7 @@ import QuickTestCampaign from '@/components/QuickTestCampaign';
 import IntelligentPacingPanel from '@/components/IntelligentPacingPanel';
 import SmartRetryPanel from '@/components/SmartRetryPanel';
 import LiveCallMonitor from '@/components/LiveCallMonitor';
+import CallbackMonitorWidget from '@/components/CallbackMonitorWidget';
 import { useDemoData } from '@/hooks/useDemoData';
 
 // Throttle helper to prevent rapid successive calls
@@ -45,6 +47,7 @@ const PredictiveDialingDashboard = () => {
   const { isDemoMode, campaigns: demoCampaigns, callLogs: demoCallLogs, todayStats, leadCount } = useDemoData();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [callLogs, setCallLogs] = useState<any[]>([]);
+  const [overdueCallbackCount, setOverdueCallbackCount] = useState(0);
   const [stats, setStats] = useState({
     totalLeads: 0,
     activeCampaigns: 0,
@@ -221,6 +224,16 @@ const PredictiveDialingDashboard = () => {
               <Users className="h-4 w-4 mr-2" />
               Leads
             </TabsTrigger>
+            <TabsTrigger value="callbacks" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap relative">
+              <PhoneCall className="h-4 w-4 mr-2" />
+              Callbacks
+              {overdueCallbackCount > 0 && (
+                <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs animate-pulse">
+                  <AlertTriangle className="h-3 w-3 mr-0.5" />
+                  {overdueCallbackCount}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="performance" className="text-xs sm:text-sm px-2 sm:px-3 py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 whitespace-nowrap">
               <Activity className="h-4 w-4 mr-2" />
               Performance
@@ -258,6 +271,10 @@ const PredictiveDialingDashboard = () => {
 
         <TabsContent value="leads">
           <LeadManager onStatsUpdate={(count) => setStats(prev => ({ ...prev, totalLeads: count }))} />
+        </TabsContent>
+
+        <TabsContent value="callbacks">
+          <CallbackMonitorWidget onOverdueCountChange={setOverdueCallbackCount} />
         </TabsContent>
 
         <TabsContent value="performance">

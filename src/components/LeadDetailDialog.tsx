@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,15 +28,14 @@ import {
   CheckCircle2,
   XCircle,
   ArrowRight,
-  Edit3,
-  Save,
-  X,
   FileText,
   Tag,
   Star,
   RotateCcw,
   Ban,
-  MapPin
+  MapPin,
+  Workflow,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Lead {
@@ -73,6 +72,12 @@ interface ActivityItem {
   metadata?: any;
 }
 
+interface WorkflowStatus {
+  status: string;
+  removal_reason?: string;
+  workflow_name?: string;
+}
+
 interface LeadDetailDialogProps {
   lead: Lead | null;
   open: boolean;
@@ -86,12 +91,12 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   onOpenChange,
   onLeadUpdated
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
   const [editedLead, setEditedLead] = useState<Partial<Lead>>({});
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [smsMessages, setSmsMessages] = useState<any[]>([]);
   const [currentDisposition, setCurrentDisposition] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingHistory, setIsResettingHistory] = useState(false);
@@ -99,7 +104,6 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   useEffect(() => {
     if (lead && open) {
-      setEditedLead(lead);
       loadLeadActivity(lead.id);
     }
   }, [lead, open]);
@@ -110,8 +114,13 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Fetch all activity in parallel
-      const [callLogsRes, smsRes, decisionsRes, pipelineRes, followUpsRes] = await Promise.all([
+      // Fetch FRESH lead data, all activity, and workflow status in parallel
+      const [freshLeadRes, callLogsRes, smsRes, decisionsRes, pipelineRes, followUpsRes, workflowRes] = await Promise.all([
+        supabase
+          .from('leads')
+          .select('*')
+          .eq('id', leadId)
+          .maybeSingle(),
         supabase
           .from('call_logs')
           .select('*')
@@ -141,8 +150,31 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           .select('*')
           .eq('lead_id', leadId)
           .order('scheduled_at', { ascending: false })
-          .limit(20)
+          .limit(20),
+        supabase
+          .from('lead_workflow_progress')
+          .select('status, removal_reason, campaign_workflows(name)')
+          .eq('lead_id', leadId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
       ]);
+
+      // Update lead with fresh data
+      if (freshLeadRes.data) {
+        setEditedLead(freshLeadRes.data);
+      }
+
+      // Set workflow status
+      if (workflowRes.data) {
+        setWorkflowStatus({
+          status: workflowRes.data.status,
+          removal_reason: workflowRes.data.removal_reason,
+          workflow_name: (workflowRes.data.campaign_workflows as any)?.name
+        });
+      } else {
+        setWorkflowStatus(null);
+      }
 
       setCallLogs(callLogsRes.data || []);
       setSmsMessages(smsRes.data || []);
@@ -158,7 +190,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
       // Combine all activities into a single timeline
       const allActivities: ActivityItem[] = [];
 
-      // Add call logs
+      // Add call logs with notes inline
       (callLogsRes.data || []).forEach(call => {
         allActivities.push({
           id: `call-${call.id}`,
@@ -167,7 +199,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           description: call.outcome || `Duration: ${call.duration_seconds || 0}s`,
           timestamp: call.created_at,
           status: call.status,
-          metadata: call
+          metadata: { ...call, callNotes: call.notes }
         });
       });
 
@@ -233,47 +265,26 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     }
   };
 
-  const handleSave = async () => {
+  // Auto-save function for individual fields
+  const handleAutoSave = async (field: string, value: any) => {
     if (!lead) return;
     setIsSaving(true);
     
     try {
       const { error } = await supabase
         .from('leads')
-        .update({
-          first_name: editedLead.first_name,
-          last_name: editedLead.last_name,
-          email: editedLead.email,
-          company: editedLead.company,
-          address: editedLead.address,
-          city: editedLead.city,
-          state: editedLead.state,
-          zip_code: editedLead.zip_code,
-          phone_number: editedLead.phone_number,
-          notes: editedLead.notes,
-          status: editedLead.status,
-          timezone: editedLead.timezone,
-          lead_source: editedLead.lead_source,
-          priority: editedLead.priority,
-          do_not_call: editedLead.do_not_call,
-          updated_at: new Date().toISOString()
-        })
+        .update({ [field]: value, updated_at: new Date().toISOString() })
         .eq('id', lead.id);
 
       if (error) throw error;
-
-      toast({
-        title: "Lead Updated",
-        description: "Lead information has been saved successfully",
-      });
-
-      setIsEditing(false);
+      
+      setEditedLead(prev => ({ ...prev, [field]: value }));
       onLeadUpdated?.();
     } catch (error) {
-      console.error('Error updating lead:', error);
+      console.error('Error auto-saving:', error);
       toast({
-        title: "Error",
-        description: "Failed to update lead",
+        title: "Save Failed",
+        description: `Failed to save ${field}`,
         variant: "destructive"
       });
     } finally {
@@ -305,6 +316,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
         description: "This phone number can now be enrolled in campaigns again.",
       });
 
+      setWorkflowStatus(null);
       onLeadUpdated?.();
     } catch (error) {
       console.error('Error clearing dialing history:', error);
@@ -320,26 +332,19 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   const getDispositionColor = (disposition: string): string => {
     const colors: Record<string, string> = {
-      // Positive outcomes - green shades
       'appointment_set': '#22c55e',
       'appointment_booked': '#22c55e',
       'interested': '#3b82f6',
       'qualified': '#22c55e',
       'converted': '#16a34a',
-      
-      // Neutral/Callback - amber shades
       'callback_requested': '#f59e0b',
       'callback': '#f59e0b',
       'contacted': '#6b7280',
       'follow_up': '#f59e0b',
-      
-      // Negative outcomes - red shades
       'not_interested': '#ef4444',
       'dnc': '#991b1b',
       'do_not_call': '#991b1b',
       'wrong_number': '#dc2626',
-      
-      // Status outcomes
       'voicemail': '#8b5cf6',
       'no_answer': '#6b7280',
       'busy': '#6b7280',
@@ -383,9 +388,37 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     );
   };
 
+  const getWorkflowStatusBadge = () => {
+    if (!workflowStatus) return null;
+    
+    const { status, removal_reason } = workflowStatus;
+    
+    if (status === 'active') {
+      return (
+        <Badge variant="default" className="text-xs">
+          <Workflow className="h-3 w-3 mr-1" />
+          In Workflow
+        </Badge>
+      );
+    }
+    
+    if (status === 'removed' || status === 'completed') {
+      return (
+        <Badge variant="secondary" className="text-xs">
+          <CheckCircle2 className="h-3 w-3 mr-1" />
+          {status === 'removed' ? 'Removed' : 'Completed'}
+          {removal_reason && ` (${removal_reason.replace('Disposition: ', '')})`}
+        </Badge>
+      );
+    }
+    
+    return null;
+  };
+
   if (!lead) return null;
 
-  const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown';
+  const fullName = [editedLead.first_name || lead.first_name, editedLead.last_name || lead.last_name].filter(Boolean).join(' ') || 'Unknown';
+  const currentLead = { ...lead, ...editedLead };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -402,10 +435,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
               <div className="min-w-0">
                 <span className="text-lg md:text-xl block truncate">{fullName}</span>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  <Badge variant={lead.status === 'new' ? 'default' : 'secondary'} className="text-xs">
-                    {lead.status}
+                  <Badge variant={currentLead.status === 'new' ? 'default' : 'secondary'} className="text-xs">
+                    {currentLead.status}
                   </Badge>
-                  {currentDisposition && currentDisposition !== lead.status && (
+                  {currentDisposition && currentDisposition !== currentLead.status && (
                     <Badge 
                       variant="outline" 
                       className="text-xs"
@@ -418,41 +451,26 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                       {formatDispositionName(currentDisposition)}
                     </Badge>
                   )}
-                  {lead.do_not_call && (
+                  {currentLead.do_not_call && (
                     <Badge variant="destructive" className="text-xs">DNC</Badge>
                   )}
-                  <LeadScoreIndicator priority={lead.priority} size="sm" />
+                  {getWorkflowStatusBadge()}
+                  <LeadScoreIndicator priority={currentLead.priority} size="sm" />
                 </div>
               </div>
             </DialogTitle>
             <div className="flex items-center gap-2 shrink-0">
-              {isEditing ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>
-                    <X className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Cancel</span>
-                  </Button>
-                  <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                    <Save className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save'}</span>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleResetDialingHistory}
-                    disabled={isResettingHistory}
-                  >
-                    <RotateCcw className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{isResettingHistory ? 'Resetting...' : 'Reset Dialing'}</span>
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                    <Edit3 className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Edit</span>
-                  </Button>
-                </>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetDialingHistory}
+                disabled={isResettingHistory}
+              >
+                <RotateCcw className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">{isResettingHistory ? 'Resetting...' : 'Reset Dialing'}</span>
+              </Button>
+              {isSaving && (
+                <span className="text-xs text-muted-foreground">Saving...</span>
               )}
             </div>
           </div>
@@ -483,11 +501,11 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
           <ScrollArea className="flex-1 mt-3 md:mt-4">
             <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4">
-              {/* Lead Score Card - Prominent on mobile */}
-              <LeadScoreIndicator priority={lead.priority} showDetails />
+              {/* Lead Score Card */}
+              <LeadScoreIndicator priority={currentLead.priority} showDetails />
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                {/* Contact Info */}
+                {/* Contact Info - Inline Editable */}
                 <Card>
                   <CardHeader className="pb-2 md:pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -499,25 +517,23 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-xs text-muted-foreground">First Name</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editedLead.first_name || ''}
-                            onChange={(e) => setEditedLead(prev => ({ ...prev, first_name: e.target.value }))}
-                          />
-                        ) : (
-                          <p className="font-medium">{lead.first_name || '—'}</p>
-                        )}
+                        <Input
+                          value={editedLead.first_name ?? lead.first_name ?? ''}
+                          onChange={(e) => setEditedLead(prev => ({ ...prev, first_name: e.target.value }))}
+                          onBlur={(e) => handleAutoSave('first_name', e.target.value)}
+                          className="border-transparent hover:border-input focus:border-primary transition-colors"
+                          placeholder="First name"
+                        />
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Last Name</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editedLead.last_name || ''}
-                            onChange={(e) => setEditedLead(prev => ({ ...prev, last_name: e.target.value }))}
-                          />
-                        ) : (
-                          <p className="font-medium">{lead.last_name || '—'}</p>
-                        )}
+                        <Input
+                          value={editedLead.last_name ?? lead.last_name ?? ''}
+                          onChange={(e) => setEditedLead(prev => ({ ...prev, last_name: e.target.value }))}
+                          onBlur={(e) => handleAutoSave('last_name', e.target.value)}
+                          className="border-transparent hover:border-input focus:border-primary transition-colors"
+                          placeholder="Last name"
+                        />
                       </div>
                     </div>
                     <div>
@@ -525,43 +541,39 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         <Phone className="h-3 w-3" />
                         Phone Number
                       </Label>
-                      {isEditing ? (
-                        <Input
-                          value={editedLead.phone_number || ''}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, phone_number: e.target.value }))}
-                        />
-                      ) : (
-                        <p className="font-medium">{lead.phone_number}</p>
-                      )}
+                      <Input
+                        value={editedLead.phone_number ?? lead.phone_number ?? ''}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, phone_number: e.target.value }))}
+                        onBlur={(e) => handleAutoSave('phone_number', e.target.value)}
+                        className="border-transparent hover:border-input focus:border-primary transition-colors"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground flex items-center gap-1">
                         <Mail className="h-3 w-3" />
                         Email
                       </Label>
-                      {isEditing ? (
-                        <Input
-                          type="email"
-                          value={editedLead.email || ''}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, email: e.target.value }))}
-                        />
-                      ) : (
-                        <p className="font-medium">{lead.email || '—'}</p>
-                      )}
+                      <Input
+                        type="email"
+                        value={editedLead.email ?? lead.email ?? ''}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, email: e.target.value }))}
+                        onBlur={(e) => handleAutoSave('email', e.target.value)}
+                        className="border-transparent hover:border-input focus:border-primary transition-colors"
+                        placeholder="email@example.com"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground flex items-center gap-1">
                         <Building className="h-3 w-3" />
                         Company
                       </Label>
-                      {isEditing ? (
-                        <Input
-                          value={editedLead.company || ''}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, company: e.target.value }))}
-                        />
-                      ) : (
-                        <p className="font-medium">{lead.company || '—'}</p>
-                      )}
+                      <Input
+                        value={editedLead.company ?? lead.company ?? ''}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, company: e.target.value }))}
+                        onBlur={(e) => handleAutoSave('company', e.target.value)}
+                        className="border-transparent hover:border-input focus:border-primary transition-colors"
+                        placeholder="Company name"
+                      />
                     </div>
                     
                     {/* Address Section */}
@@ -571,50 +583,43 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         <MapPin className="h-3 w-3" />
                         Address
                       </Label>
-                      {isEditing ? (
-                        <div className="space-y-2">
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Street Address"
+                          value={editedLead.address ?? lead.address ?? ''}
+                          onChange={(e) => setEditedLead(prev => ({ ...prev, address: e.target.value }))}
+                          onBlur={(e) => handleAutoSave('address', e.target.value)}
+                          className="border-transparent hover:border-input focus:border-primary transition-colors"
+                        />
+                        <div className="grid grid-cols-3 gap-2">
                           <Input
-                            placeholder="Street Address"
-                            value={editedLead.address || ''}
-                            onChange={(e) => setEditedLead(prev => ({ ...prev, address: e.target.value }))}
+                            placeholder="City"
+                            value={editedLead.city ?? lead.city ?? ''}
+                            onChange={(e) => setEditedLead(prev => ({ ...prev, city: e.target.value }))}
+                            onBlur={(e) => handleAutoSave('city', e.target.value)}
+                            className="border-transparent hover:border-input focus:border-primary transition-colors"
                           />
-                          <div className="grid grid-cols-3 gap-2">
-                            <Input
-                              placeholder="City"
-                              value={editedLead.city || ''}
-                              onChange={(e) => setEditedLead(prev => ({ ...prev, city: e.target.value }))}
-                            />
-                            <Input
-                              placeholder="State"
-                              value={editedLead.state || ''}
-                              onChange={(e) => setEditedLead(prev => ({ ...prev, state: e.target.value }))}
-                            />
-                            <Input
-                              placeholder="ZIP"
-                              value={editedLead.zip_code || ''}
-                              onChange={(e) => setEditedLead(prev => ({ ...prev, zip_code: e.target.value }))}
-                            />
-                          </div>
+                          <Input
+                            placeholder="State"
+                            value={editedLead.state ?? lead.state ?? ''}
+                            onChange={(e) => setEditedLead(prev => ({ ...prev, state: e.target.value }))}
+                            onBlur={(e) => handleAutoSave('state', e.target.value)}
+                            className="border-transparent hover:border-input focus:border-primary transition-colors"
+                          />
+                          <Input
+                            placeholder="ZIP"
+                            value={editedLead.zip_code ?? lead.zip_code ?? ''}
+                            onChange={(e) => setEditedLead(prev => ({ ...prev, zip_code: e.target.value }))}
+                            onBlur={(e) => handleAutoSave('zip_code', e.target.value)}
+                            className="border-transparent hover:border-input focus:border-primary transition-colors"
+                          />
                         </div>
-                      ) : (
-                        <div className="text-sm">
-                          {lead.address || lead.city || lead.state || lead.zip_code ? (
-                            <>
-                              {lead.address && <p className="font-medium">{lead.address}</p>}
-                              <p className="text-muted-foreground">
-                                {[lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—'}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-muted-foreground">No address on file</p>
-                          )}
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Lead Info */}
+                {/* Lead Info - Quick Actions Always Visible */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -623,25 +628,17 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {/* Quick Actions - Always Editable */}
+                    {/* Quick Actions */}
                     <div className="p-3 rounded-lg border-2 border-primary/20 bg-primary/5 space-y-3">
                       <p className="text-xs font-semibold text-primary uppercase tracking-wide">Quick Actions</p>
                       
                       <div>
                         <Label className="text-xs text-muted-foreground">Status</Label>
                         <Select
-                          value={editedLead.status || lead.status || 'new'}
-                          onValueChange={async (value) => {
+                          value={editedLead.status ?? lead.status ?? 'new'}
+                          onValueChange={(value) => {
                             setEditedLead(prev => ({ ...prev, status: value }));
-                            // Auto-save status change
-                            const { error } = await supabase
-                              .from('leads')
-                              .update({ status: value, updated_at: new Date().toISOString() })
-                              .eq('id', lead.id);
-                            if (!error) {
-                              toast({ title: "Status Updated", description: `Lead status changed to ${value}` });
-                              onLeadUpdated?.();
-                            }
+                            handleAutoSave('status', value);
                           }}
                         >
                           <SelectTrigger className="mt-1">
@@ -659,7 +656,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         </Select>
                       </div>
 
-                      {/* Do Not Call Toggle - Always Visible */}
+                      {/* Do Not Call Toggle */}
                       <div className="flex items-center justify-between p-2 rounded-md border bg-background">
                         <div className="flex items-center gap-2">
                           <Ban className="h-4 w-4 text-destructive" />
@@ -670,20 +667,9 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         </div>
                         <Switch
                           checked={editedLead.do_not_call ?? lead.do_not_call ?? false}
-                          onCheckedChange={async (checked) => {
+                          onCheckedChange={(checked) => {
                             setEditedLead(prev => ({ ...prev, do_not_call: checked }));
-                            // Auto-save DNC change
-                            const { error } = await supabase
-                              .from('leads')
-                              .update({ do_not_call: checked, updated_at: new Date().toISOString() })
-                              .eq('id', lead.id);
-                            if (!error) {
-                              toast({ 
-                                title: checked ? "Added to DNC" : "Removed from DNC", 
-                                description: checked ? "Lead will not be called" : "Lead can now be called" 
-                              });
-                              onLeadUpdated?.();
-                            }
+                            handleAutoSave('do_not_call', checked);
                           }}
                         />
                       </div>
@@ -692,46 +678,41 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-xs text-muted-foreground">Priority</Label>
-                        {isEditing ? (
-                          <Input
-                            type="number"
-                            min="1"
-                            max="10"
-                            value={editedLead.priority || 1}
-                            onChange={(e) => setEditedLead(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
-                            className="mt-1"
-                          />
-                        ) : (
-                          <p className="font-medium">{lead.priority || 1}</p>
-                        )}
+                        <Input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={editedLead.priority ?? lead.priority ?? 1}
+                          onChange={(e) => setEditedLead(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
+                          onBlur={(e) => handleAutoSave('priority', parseInt(e.target.value))}
+                          className="mt-1 border-transparent hover:border-input focus:border-primary transition-colors"
+                        />
                       </div>
                     </div>
                     
                     <div>
                       <Label className="text-xs text-muted-foreground">Lead Source</Label>
-                      {isEditing ? (
-                        <Input
-                          value={editedLead.lead_source || ''}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, lead_source: e.target.value }))}
-                        />
-                      ) : (
-                        <p className="font-medium">{lead.lead_source || '—'}</p>
-                      )}
+                      <Input
+                        value={editedLead.lead_source ?? lead.lead_source ?? ''}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, lead_source: e.target.value }))}
+                        onBlur={(e) => handleAutoSave('lead_source', e.target.value)}
+                        className="border-transparent hover:border-input focus:border-primary transition-colors"
+                        placeholder="e.g., Website, Referral"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Timezone</Label>
-                      {isEditing ? (
-                        <Input
-                          value={editedLead.timezone || ''}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, timezone: e.target.value }))}
-                        />
-                      ) : (
-                        <p className="font-medium">{lead.timezone || 'America/New_York'}</p>
-                      )}
+                      <Input
+                        value={editedLead.timezone ?? lead.timezone ?? ''}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, timezone: e.target.value }))}
+                        onBlur={(e) => handleAutoSave('timezone', e.target.value)}
+                        className="border-transparent hover:border-input focus:border-primary transition-colors"
+                        placeholder="America/New_York"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Created</Label>
-                      <p className="font-medium">{format(new Date(lead.created_at), 'PPp')}</p>
+                      <p className="font-medium text-sm">{format(new Date(lead.created_at), 'PPp')}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -749,7 +730,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label className="text-xs text-muted-foreground">Last Contacted</Label>
-                      <p className="font-medium">
+                      <p className="font-medium text-sm">
                         {lead.last_contacted_at 
                           ? format(new Date(lead.last_contacted_at), 'PPp')
                           : 'Never'}
@@ -757,7 +738,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Next Callback</Label>
-                      <p className="font-medium">
+                      <p className="font-medium text-sm">
                         {lead.next_callback_at 
                           ? format(new Date(lead.next_callback_at), 'PPp')
                           : 'Not scheduled'}
@@ -765,33 +746,53 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Last Updated</Label>
-                      <p className="font-medium">{format(new Date(lead.updated_at), 'PPp')}</p>
+                      <p className="font-medium text-sm">{format(new Date(lead.updated_at), 'PPp')}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Notes */}
+              {/* Call History Notes - New Section */}
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <FileText className="h-4 w-4" />
-                    Notes
+                    Call History Notes
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {isEditing ? (
-                    <Textarea
-                      value={editedLead.notes || ''}
-                      onChange={(e) => setEditedLead(prev => ({ ...prev, notes: e.target.value }))}
-                      rows={4}
-                      placeholder="Add notes about this lead..."
-                    />
+                  {currentLead.notes ? (
+                    <ScrollArea className="h-48">
+                      <pre className="whitespace-pre-wrap text-sm font-sans text-muted-foreground">
+                        {currentLead.notes}
+                      </pre>
+                    </ScrollArea>
                   ) : (
-                    <p className="text-sm whitespace-pre-wrap">
-                      {lead.notes || 'No notes yet'}
+                    <p className="text-muted-foreground text-sm">
+                      No call notes yet. Notes will be automatically added after each call.
                     </p>
                   )}
+                </CardContent>
+              </Card>
+
+              {/* Editable Notes */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Manual Notes
+                    <span className="text-xs text-muted-foreground font-normal">(click to edit)</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Textarea
+                    value={editedLead.notes ?? lead.notes ?? ''}
+                    onChange={(e) => setEditedLead(prev => ({ ...prev, notes: e.target.value }))}
+                    onBlur={(e) => handleAutoSave('notes', e.target.value)}
+                    rows={4}
+                    placeholder="Add notes about this lead..."
+                    className="border-transparent hover:border-input focus:border-primary transition-colors"
+                  />
                 </CardContent>
               </Card>
 
@@ -826,29 +827,52 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   <p>No activity recorded yet</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {activities.map((activity) => (
-                    <div 
-                      key={activity.id} 
-                      className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                        {getActivityIcon(activity.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{activity.title}</span>
-                          {getStatusBadge(activity.status)}
+                <div className="relative">
+                  {/* Timeline line */}
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+                  
+                  <div className="space-y-3">
+                    {activities.map((activity) => (
+                      <div 
+                        key={activity.id} 
+                        className="relative pl-10"
+                      >
+                        {/* Timeline dot */}
+                        <div className="absolute left-2.5 w-3 h-3 rounded-full bg-primary border-2 border-background" />
+                        
+                        <div className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              {getActivityIcon(activity.type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{activity.title}</span>
+                                {getStatusBadge(activity.status)}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(activity.timestamp), 'PPp')}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <p className="text-sm text-muted-foreground mt-2">
+                            {activity.description}
+                          </p>
+                          
+                          {/* Show call notes inline */}
+                          {activity.type === 'call' && activity.metadata?.callNotes && (
+                            <div className="mt-2 p-2 rounded bg-muted/50 text-sm">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">Call Notes:</p>
+                              <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground max-h-32 overflow-y-auto">
+                                {activity.metadata.callNotes.slice(-500)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {activity.description}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {format(new Date(activity.timestamp), 'PPp')}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </TabsContent>
@@ -867,16 +891,36 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         <div className="flex items-center gap-2">
                           <Phone className="h-4 w-4" />
                           <span className="font-medium">{call.status}</span>
-                          <Badge variant="outline">{call.outcome || 'No outcome'}</Badge>
+                          {call.outcome && (
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs"
+                              style={{ 
+                                backgroundColor: getDispositionColor(call.outcome) + '20',
+                                borderColor: getDispositionColor(call.outcome),
+                                color: getDispositionColor(call.outcome)
+                              }}
+                            >
+                              {formatDispositionName(call.outcome)}
+                            </Badge>
+                          )}
                         </div>
                         <span className="text-xs text-muted-foreground">
                           {format(new Date(call.created_at), 'PPp')}
                         </span>
                       </div>
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        <span>Duration: {call.duration_seconds || 0}s</span>
-                        {call.notes && <p className="mt-1">{call.notes}</p>}
-                      </div>
+                      {call.duration_seconds > 0 && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Duration: {Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s
+                        </p>
+                      )}
+                      {call.notes && (
+                        <div className="mt-2 p-2 rounded bg-muted/50">
+                          <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground max-h-40 overflow-y-auto">
+                            {call.notes}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -887,36 +931,26 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
               {smsMessages.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>No messages</p>
+                  <p>No SMS messages</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {smsMessages.map((msg) => (
+                  {smsMessages.map((sms) => (
                     <div 
-                      key={msg.id} 
+                      key={sms.id} 
                       className={`p-3 rounded-lg border ${
-                        msg.direction === 'outbound' 
-                          ? 'bg-primary/5 ml-8' 
-                          : 'bg-card mr-8'
+                        sms.direction === 'outbound' ? 'bg-primary/5 ml-8' : 'bg-card mr-8'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={msg.direction === 'outbound' ? 'default' : 'secondary'}>
-                            {msg.direction === 'outbound' ? 'Sent' : 'Received'}
-                          </Badge>
-                          {msg.is_ai_generated && (
-                            <Badge variant="outline" className="text-xs">
-                              <Bot className="h-3 w-3 mr-1" />
-                              AI
-                            </Badge>
-                          )}
-                        </div>
+                        <Badge variant={sms.direction === 'outbound' ? 'default' : 'secondary'} className="text-xs">
+                          {sms.direction === 'outbound' ? 'Sent' : 'Received'}
+                        </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {format(new Date(msg.created_at), 'PPp')}
+                          {format(new Date(sms.created_at), 'PPp')}
                         </span>
                       </div>
-                      <p className="text-sm">{msg.body}</p>
+                      <p className="text-sm">{sms.body}</p>
                     </div>
                   ))}
                 </div>

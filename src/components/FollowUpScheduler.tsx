@@ -500,7 +500,7 @@ const FollowUpScheduler = () => {
                       {sequence.steps
                         .sort((a, b) => a.step_number - b.step_number)
                         .map((step, index) => (
-                          <React.Fragment key={step.id}>
+                          <span key={step.id} className="contents">
                             {index > 0 && (
                               <div className="text-muted-foreground">→</div>
                             )}
@@ -513,7 +513,7 @@ const FollowUpScheduler = () => {
                                 </Badge>
                               )}
                             </div>
-                          </React.Fragment>
+                          </span>
                         ))}
                     </div>
                   </CardContent>

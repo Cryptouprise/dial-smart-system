@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS: AIErrorSettings = {
   logErrors: true,
 };
 
-// Patterns to ignore (Supabase auth errors, etc.)
+// Patterns to ignore (Supabase auth errors, React warnings, etc.)
 const IGNORED_ERROR_PATTERNS = [
   'Failed to fetch',
   '_getUser',
@@ -40,6 +40,14 @@ const IGNORED_ERROR_PATTERNS = [
   'TypeError: Load failed',
   'NetworkError',
   'net::ERR_',
+  // React warnings that aren't actionable
+  'Invalid prop',
+  'data-lov-id',
+  'React.Fragment',
+  'validateDOMNesting',
+  // Common non-critical warnings
+  'ResizeObserver loop',
+  'Non-passive event listener',
 ];
 
 export const useAIErrorHandler = () => {
@@ -51,8 +59,9 @@ export const useAIErrorHandler = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   
-  // Deduplication: track recent errors to prevent loops
-  const recentErrorsRef = useRef<Set<string>>(new Set());
+  // Deduplication: track recent errors to prevent loops (30 second window)
+  const recentErrorsRef = useRef<Map<string, number>>(new Map());
+  const DEDUPE_WINDOW_MS = 30000;
 
   useEffect(() => {
     localStorage.setItem('ai-error-settings', JSON.stringify(settings));
@@ -76,18 +85,32 @@ export const useAIErrorHandler = () => {
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
-    // Skip ignored patterns (Supabase auth, network errors)
+    // Skip ignored patterns (Supabase auth, network errors, React warnings)
     if (shouldIgnoreError(errorMessage)) {
       return null;
     }
 
-    // Deduplication: skip if we've seen this error recently
+    // Deduplication: skip if we've seen this error recently (within 30 seconds)
     const errorKey = `${type}:${errorMessage.substring(0, 100)}`;
-    if (recentErrorsRef.current.has(errorKey)) {
+    const now = Date.now();
+    const lastSeen = recentErrorsRef.current.get(errorKey);
+    
+    if (lastSeen && (now - lastSeen) < DEDUPE_WINDOW_MS) {
       return null;
     }
-    recentErrorsRef.current.add(errorKey);
-    setTimeout(() => recentErrorsRef.current.delete(errorKey), 5000);
+    
+    // Record this error with current timestamp
+    recentErrorsRef.current.set(errorKey, now);
+    
+    // Clean up old entries periodically
+    if (recentErrorsRef.current.size > 100) {
+      const cutoff = now - DEDUPE_WINDOW_MS;
+      for (const [key, timestamp] of recentErrorsRef.current.entries()) {
+        if (timestamp < cutoff) {
+          recentErrorsRef.current.delete(key);
+        }
+      }
+    }
 
     const record: ErrorRecord = {
       id: crypto.randomUUID(),
@@ -306,7 +329,7 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
     ).join(' ');
     
-    // Don't capture our own logs OR Supabase auth/network errors
+    // Don't capture our own logs OR Supabase auth/network errors OR React warnings
     const shouldIgnore = [
       '[AI Error Handler]',
       'Failed to fetch',
@@ -318,6 +341,13 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       'TypeError: Load failed',
       'NetworkError',
       'net::ERR_',
+      // React warnings
+      'Invalid prop',
+      'data-lov-id',
+      'React.Fragment',
+      'validateDOMNesting',
+      'ResizeObserver loop',
+      'Non-passive event listener',
     ].some(pattern => message.includes(pattern));
     
     if (!shouldIgnore) {

@@ -12,7 +12,9 @@ import {
   User, 
   Calendar,
   X,
-  Play
+  Play,
+  AlertTriangle,
+  ExternalLink
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 
@@ -33,7 +35,13 @@ interface CallbackEntry {
   };
 }
 
-export const CallbackMonitorWidget = () => {
+interface CallbackMonitorWidgetProps {
+  onOverdueCountChange?: (count: number) => void;
+}
+
+export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({ 
+  onOverdueCountChange 
+}) => {
   const [callbacks, setCallbacks] = useState<CallbackEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -121,12 +129,17 @@ export const CallbackMonitorWidget = () => {
       );
 
       setCallbacks(combined);
+      
+      // Calculate and report overdue count
+      const overdueCount = combined.filter(cb => isPast(new Date(cb.scheduled_at))).length;
+      onOverdueCountChange?.(overdueCount);
+      
     } catch (error) {
       console.error('Error loading callbacks:', error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [onOverdueCountChange]);
 
   useEffect(() => {
     loadCallbacks();
@@ -194,20 +207,24 @@ export const CallbackMonitorWidget = () => {
     }
   };
 
+  const isOverdue = (scheduledAt: string) => {
+    return isPast(new Date(scheduledAt));
+  };
+
   const getTimeDisplay = (scheduledAt: string) => {
     const date = new Date(scheduledAt);
-    const isOverdue = isPast(date);
+    const overdue = isOverdue(scheduledAt);
     
-    if (isOverdue) {
+    if (overdue) {
       return {
-        text: 'Overdue',
+        text: formatDistanceToNow(date, { addSuffix: false }) + ' overdue',
         color: 'text-destructive',
         subtext: format(date, 'h:mm a')
       };
     }
     
     return {
-      text: formatDistanceToNow(date, { addSuffix: false }),
+      text: 'in ' + formatDistanceToNow(date, { addSuffix: false }),
       color: 'text-primary',
       subtext: format(date, 'h:mm a')
     };
@@ -217,6 +234,26 @@ export const CallbackMonitorWidget = () => {
     if (!lead) return 'Unknown';
     const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ');
     return name || 'Unknown';
+  };
+
+  // Extract last call note from notes (look for the most recent call log entry)
+  const getLastCallNote = (notes: string | null): string | null => {
+    if (!notes) return null;
+    
+    // Look for call log entries - they start with the separator
+    const callLogMatch = notes.match(/━━━━━━━━━━━━━━━━━━━━━━━━━━[\s\S]*?(?=━━━━━━━━━━━━━━━━━━━━━━━━━━|$)/g);
+    if (callLogMatch && callLogMatch.length > 0) {
+      // Get the last (most recent) call log
+      const lastLog = callLogMatch[callLogMatch.length - 1];
+      // Extract summary line
+      const summaryMatch = lastLog.match(/Summary: (.+)/);
+      if (summaryMatch) {
+        return summaryMatch[1].slice(0, 100);
+      }
+    }
+    
+    // Fallback: just return last 100 chars
+    return notes.slice(-100);
   };
 
   if (callbacks.length === 0 && !isLoading) {
@@ -233,6 +270,9 @@ export const CallbackMonitorWidget = () => {
     );
   }
 
+  const overdueCallbacks = callbacks.filter(cb => isOverdue(cb.scheduled_at));
+  const upcomingCallbacks = callbacks.filter(cb => !isOverdue(cb.scheduled_at));
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -241,6 +281,12 @@ export const CallbackMonitorWidget = () => {
             <Phone className="h-5 w-5" />
             Scheduled Callbacks
             <Badge variant="secondary">{callbacks.length}</Badge>
+            {overdueCallbacks.length > 0 && (
+              <Badge variant="destructive" className="animate-pulse">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {overdueCallbacks.length} Overdue
+              </Badge>
+            )}
           </CardTitle>
           <Button variant="ghost" size="sm" onClick={loadCallbacks} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -253,16 +299,26 @@ export const CallbackMonitorWidget = () => {
             {callbacks.map(callback => {
               const timeDisplay = getTimeDisplay(callback.scheduled_at);
               const leadName = getLeadName(callback.lead);
+              const overdue = isOverdue(callback.scheduled_at);
+              const lastNote = getLastCallNote(callback.lead?.notes || null);
               
               return (
                 <div 
                   key={callback.id} 
-                  className="p-4 hover:bg-muted/50 transition-colors"
+                  className={`p-4 hover:bg-muted/50 transition-colors ${
+                    overdue ? 'bg-destructive/5 border-l-4 border-l-destructive' : ''
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                        <User className="h-5 w-5 text-primary" />
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${
+                        overdue ? 'bg-destructive/10' : 'bg-primary/10'
+                      }`}>
+                        {overdue ? (
+                          <AlertTriangle className="h-5 w-5 text-destructive" />
+                        ) : (
+                          <User className="h-5 w-5 text-primary" />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -273,6 +329,11 @@ export const CallbackMonitorWidget = () => {
                           >
                             {callback.source === 'dialing_queue' ? 'Requested' : 'Scheduled'}
                           </Badge>
+                          {overdue && (
+                            <Badge variant="destructive" className="text-xs">
+                              OVERDUE
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Phone className="h-3 w-3" />
@@ -292,16 +353,19 @@ export const CallbackMonitorWidget = () => {
                     </div>
                   </div>
                   
-                  {callback.lead?.notes && (
-                    <p className="mt-2 text-sm text-muted-foreground line-clamp-2 ml-13">
-                      {callback.lead.notes.slice(-200)}
-                    </p>
+                  {lastNote && (
+                    <div className="mt-2 ml-13 p-2 rounded bg-muted/50">
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium">Last call: </span>
+                        {lastNote}
+                      </p>
+                    </div>
                   )}
                   
                   <div className="flex items-center gap-2 mt-3 ml-13">
                     <Button 
                       size="sm" 
-                      variant="default"
+                      variant={overdue ? "destructive" : "default"}
                       onClick={() => handleCallNow(callback)}
                     >
                       <Play className="h-3 w-3 mr-1" />

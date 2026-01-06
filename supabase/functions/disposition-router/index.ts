@@ -167,12 +167,14 @@ serve(async (req) => {
           .eq('lead_id', leadId)
           .eq('status', 'active');
 
-        // Remove from dialing queues
+        // Remove from dialing queues EXCEPT callbacks (priority >= 2)
+        // Callbacks are preserved so they can still fire at the scheduled time
         await supabase
           .from('dialing_queues')
           .update({ status: 'removed' })
           .eq('lead_id', leadId)
-          .in('status', ['pending', 'scheduled']);
+          .in('status', ['pending', 'scheduled', 'calling'])
+          .lt('priority', 2); // Only remove non-callback entries
 
         // Update lead status so they won't be re-queued by automations
         await supabase
@@ -183,7 +185,7 @@ serve(async (req) => {
           })
           .eq('id', leadId);
 
-        actions.push('Removed from all active campaigns and workflows');
+        actions.push('Removed from workflow (callbacks preserved)');
       }
 
       // 4. Detect negative sentiment from transcript (if provided)

@@ -566,10 +566,23 @@ serve(async (req) => {
     // 3. Update lead status based on disposition
     if (leadId) {
       console.log('[Retell Webhook] Updating lead status...');
+      
+      // Always fetch current lead for notes
+      const { data: currentLead } = await supabase
+        .from('leads')
+        .select('notes, first_name')
+        .eq('id', leadId)
+        .maybeSingle();
+      
       const leadUpdate: Record<string, any> = {
         last_contacted_at: new Date().toISOString(),
         status: mapDispositionToLeadStatus(outcome),
       };
+
+      // Build structured call note for EVERY call (not just callbacks)
+      const callNote = buildCallNote(outcome, dispositionResult, durationSeconds, currentLead?.first_name);
+      const existingNotes = currentLead?.notes || '';
+      leadUpdate.notes = (existingNotes + '\n\n' + callNote).trim();
 
       // If callback requested, extract time from transcript and schedule
       if (outcome === 'callback_requested' || outcome === 'callback') {
@@ -577,18 +590,6 @@ serve(async (req) => {
         const callbackTime = new Date(Date.now() + callbackMinutes * 60 * 1000);
         leadUpdate.next_callback_at = callbackTime.toISOString();
         console.log(`[Retell Webhook] Callback scheduled in ${callbackMinutes} minutes at ${callbackTime.toISOString()}`);
-        
-        // Store callback context in lead notes for the next call
-        const callSummary = dispositionResult?.summary || 'Callback requested';
-        const { data: currentLead } = await supabase
-          .from('leads')
-          .select('notes, first_name')
-          .eq('id', leadId)
-          .maybeSingle();
-        
-        const existingNotes = currentLead?.notes || '';
-        const callbackNote = `\n\n[Callback Requested - ${new Date().toLocaleString()}]\n${callSummary}`;
-        leadUpdate.notes = (existingNotes + callbackNote).trim();
         
         // Re-add to dialing queue for scheduled callback
         if (campaignId) {
@@ -611,6 +612,21 @@ serve(async (req) => {
           } catch (queueError) {
             console.error('[Retell Webhook] Failed to add callback to dialing queue:', queueError);
           }
+        }
+        
+        // Also add to scheduled_follow_ups for UI visibility
+        try {
+          await supabase.from('scheduled_follow_ups').insert({
+            user_id: userId,
+            lead_id: leadId,
+            action_type: 'callback',
+            scheduled_at: callbackTime.toISOString(),
+            status: 'pending',
+            notes: `Callback requested during call - ${dispositionResult?.summary || 'No details'}`,
+          });
+          console.log(`[Retell Webhook] Added callback to scheduled_follow_ups for lead ${leadId}`);
+        } catch (followUpError) {
+          console.error('[Retell Webhook] Failed to add to scheduled_follow_ups:', followUpError);
         }
         
         // Send auto-confirmation SMS to the lead
@@ -705,15 +721,25 @@ serve(async (req) => {
         }
 
         // 7. CRITICAL: Advance workflow to next step after call ends
-        try {
-          await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
-        } catch (workflowError: any) {
-          console.error('[Retell Webhook] Workflow advance error:', workflowError);
-          await logFailedOperation(supabase, userId, 'workflow_advance', {
-            leadId,
-            outcome,
-            error: workflowError.message,
-          });
+        // BUT: Skip workflow advancement for terminal dispositions (they're already removed by disposition-router)
+        const TERMINAL_DISPOSITIONS = [
+          'callback_requested', 'callback', 'appointment_set', 'appointment_booked', 
+          'converted', 'not_interested', 'dnc', 'wrong_number', 'do_not_call'
+        ];
+        
+        if (!TERMINAL_DISPOSITIONS.includes(outcome)) {
+          try {
+            await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
+          } catch (workflowError: any) {
+            console.error('[Retell Webhook] Workflow advance error:', workflowError);
+            await logFailedOperation(supabase, userId, 'workflow_advance', {
+              leadId,
+              outcome,
+              error: workflowError.message,
+            });
+          }
+        } else {
+          console.log(`[Retell Webhook] Skipping workflow advancement for terminal disposition: ${outcome}`);
         }
 
         // 8. Sync to Go High Level if configured
@@ -941,6 +967,56 @@ function extractCallbackTimeFromTranscript(transcript: string): number {
   // Default: 30 minutes if callback requested but no specific time mentioned
   console.log('[extractCallbackTime] No specific time found, defaulting to 30 minutes');
   return 30;
+}
+
+// Build structured call note for every call
+function buildCallNote(
+  outcome: string,
+  dispositionResult: { summary?: string; key_points?: string[] } | null,
+  durationSeconds: number,
+  leadFirstName?: string | null
+): string {
+  const timestamp = new Date().toLocaleString('en-US', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  });
+  
+  const duration = durationSeconds > 0 
+    ? `${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s`
+    : 'N/A';
+  
+  const formattedOutcome = outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const summary = dispositionResult?.summary || 'Call completed';
+  
+  const lines = [
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `📞 CALL LOG - ${timestamp}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Outcome: ${formattedOutcome}`,
+    `Duration: ${duration}`,
+    ``,
+    `Summary: ${summary}`,
+  ];
+  
+  // Add key points if available
+  if (dispositionResult?.key_points?.length) {
+    lines.push('');
+    lines.push('Key Points:');
+    dispositionResult.key_points.forEach((point: string) => {
+      lines.push(`  • ${point}`);
+    });
+  }
+  
+  // Add next action indicator
+  if (outcome === 'callback_requested' || outcome === 'callback') {
+    lines.push('');
+    lines.push('⏰ Next: Callback scheduled');
+  } else if (outcome === 'appointment_set' || outcome === 'appointment_booked') {
+    lines.push('');
+    lines.push('📅 Next: Appointment confirmed');
+  }
+  
+  return lines.join('\n');
 }
 
 async function analyzeTranscriptWithAI(
