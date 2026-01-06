@@ -605,6 +605,35 @@ serve(async (req) => {
       });
     }
 
+    // ============= FETCH AVAILABLE PHONE NUMBERS WITH ROTATION =============
+    console.log('[Dispatcher] Loading available phone numbers for rotation...');
+    
+    const { data: availableNumbers } = await supabase
+      .from('phone_numbers')
+      .select('id, number, retell_phone_id, daily_usage, is_spam, quarantine_until')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .not('retell_phone_id', 'is', null);
+    
+    if (!availableNumbers || availableNumbers.length === 0) {
+      console.error('[Dispatcher] No phone numbers with Retell IDs available for calling');
+      return new Response(
+        JSON.stringify({ 
+          error: 'No phone numbers available for calling. Import numbers to Retell first.',
+          dispatched: 0,
+          workflowEnrolled,
+          dialingQueued,
+          callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log(`[Dispatcher] Found ${availableNumbers.length} phone numbers for rotation`);
+    
+    // Track usage for rotation within this batch
+    const numberUsageInBatch: Record<string, number> = {};
+
     // Now process the dialing queue
     const { data: queuedCalls, error: queueError } = await supabase
       .from('dialing_queues')
@@ -629,6 +658,68 @@ serve(async (req) => {
 
     for (const queueItem of queuedCalls || []) {
       try {
+        const lead = queueItem.leads as any;
+        const campaign = queueItem.campaigns as any;
+        
+        if (!campaign?.agent_id) {
+          console.error(`[Dispatcher] Campaign ${queueItem.campaign_id} has no agent_id`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'failed', updated_at: nowIso })
+            .eq('id', queueItem.id);
+          continue;
+        }
+        
+        // ============= NUMBER ROTATION LOGIC =============
+        // Select best caller ID based on rotation, spam status, and local presence
+        const toPhone = lead?.phone_number || queueItem.phone_number;
+        const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
+        
+        // Score each number
+        const scoredNumbers = availableNumbers
+          .filter(n => {
+            // Skip quarantined numbers
+            if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
+            // Skip spam-flagged numbers
+            if (n.is_spam) return false;
+            return true;
+          })
+          .map(n => {
+            let score = 100;
+            const numAreaCode = n.number.replace(/\D/g, '').slice(1, 4);
+            
+            // Local presence bonus (+50 points)
+            if (numAreaCode === toAreaCode) score += 50;
+            
+            // Penalize high daily usage (-1 per call)
+            score -= (n.daily_usage || 0);
+            
+            // Penalize usage in this batch (-20 per call)
+            score -= (numberUsageInBatch[n.id] || 0) * 20;
+            
+            return { number: n, score };
+          });
+        
+        // Sort by score descending
+        scoredNumbers.sort((a, b) => b.score - a.score);
+        
+        if (scoredNumbers.length === 0) {
+          console.error(`[Dispatcher] No valid phone numbers available after filtering`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'failed', updated_at: nowIso })
+            .eq('id', queueItem.id);
+          continue;
+        }
+        
+        const selectedNumber = scoredNumbers[0].number;
+        const callerId = selectedNumber.number;
+        
+        // Track usage in this batch
+        numberUsageInBatch[selectedNumber.id] = (numberUsageInBatch[selectedNumber.id] || 0) + 1;
+        
+        console.log(`[Dispatcher] Selected caller ID: ${callerId} for lead ${queueItem.lead_id} (score: ${scoredNumbers[0].score})`);
+        
         // Mark as calling
         await supabase
           .from('dialing_queues')
@@ -639,12 +730,16 @@ serve(async (req) => {
           })
           .eq('id', queueItem.id);
 
-        // Initiate the call
+        // Initiate the call with ALL required parameters
         const callResponse = await supabase.functions.invoke('outbound-calling', {
           body: {
+            action: 'create_call',
             leadId: queueItem.lead_id,
             campaignId: queueItem.campaign_id,
             userId: user.id,
+            phoneNumber: toPhone,
+            callerId: callerId,
+            agentId: campaign.agent_id,
           },
         });
 
@@ -656,10 +751,17 @@ serve(async (req) => {
         dispatchResults.push({
           leadId: queueItem.lead_id,
           success: true,
-          callId: callResponse.data?.callId,
+          callId: callResponse.data?.call_id,
+          callerId: callerId,
         });
 
-        console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id}`);
+        console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
+        
+        // Update daily_usage on the phone number
+        await supabase
+          .from('phone_numbers')
+          .update({ daily_usage: (selectedNumber.daily_usage || 0) + 1 })
+          .eq('id', selectedNumber.id);
 
       } catch (callError: any) {
         console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);
