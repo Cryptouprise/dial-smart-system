@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
   Rocket, CheckCircle2, XCircle, AlertTriangle, Loader2, 
-  Calendar, Phone, Shield, Bot, Workflow, DollarSign, RefreshCw
+  Calendar, Phone, Shield, Bot, Workflow, DollarSign, RefreshCw, Users
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -26,8 +26,10 @@ interface CampaignLauncherProps {
 
 export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps) {
   const [checks, setChecks] = useState<PreflightCheck[]>([
+    { id: 'leads', label: 'Leads Assigned', icon: Users, status: 'pending', required: true },
     { id: 'calendar', label: 'Calendar Availability', icon: Calendar, status: 'pending', required: false },
     { id: 'numbers', label: 'Phone Numbers Assigned', icon: Phone, status: 'pending', required: true },
+    { id: 'retell', label: 'Retell Numbers Ready', icon: Phone, status: 'pending', required: true },
     { id: 'spam', label: 'Spam Check Passed', icon: Shield, status: 'pending', required: true },
     { id: 'agent', label: 'AI Agent Configured', icon: Bot, status: 'pending', required: true },
     { id: 'workflow', label: 'Workflow Attached', icon: Workflow, status: 'pending', required: false },
@@ -61,6 +63,19 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
 
       setCampaign(campaignData);
 
+      // Check 0: Leads Assigned
+      updateCheck('leads', { status: 'checking' });
+      const { count: leadCount } = await supabase
+        .from('campaign_leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', campaignId);
+
+      if (leadCount && leadCount > 0) {
+        updateCheck('leads', { status: 'pass', message: `${leadCount} leads ready` });
+      } else {
+        updateCheck('leads', { status: 'fail', message: 'No leads assigned to campaign' });
+      }
+
       // Check 1: Calendar Availability
       updateCheck('calendar', { status: 'checking' });
       const { data: calendarAvail } = await supabase
@@ -93,6 +108,38 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
         updateCheck('numbers', { status: 'fail', message: 'No numbers assigned to campaign' });
       }
 
+      // Check 2.5: Retell Numbers Ready (NEW - Critical for voice calls)
+      updateCheck('retell', { status: 'checking' });
+      const retellNumbers = phonePool?.filter((p: any) => 
+        p.phone_numbers?.retell_phone_id && 
+        p.phone_numbers?.status === 'active'
+      ) || [];
+
+      if (retellNumbers.length > 0) {
+        updateCheck('retell', { status: 'pass', message: `${retellNumbers.length} Retell numbers ready` });
+      } else {
+        // Check if user has ANY retell numbers
+        const { data: userRetellNumbers } = await supabase
+          .from('phone_numbers')
+          .select('id, number, retell_phone_id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .not('retell_phone_id', 'is', null)
+          .limit(5);
+
+        if (userRetellNumbers && userRetellNumbers.length > 0) {
+          updateCheck('retell', { 
+            status: 'warning', 
+            message: `You have ${userRetellNumbers.length} Retell numbers, but none assigned to this campaign. Voice calls may fail.` 
+          });
+        } else {
+          updateCheck('retell', { 
+            status: 'fail', 
+            message: 'No Retell-imported numbers. Voice calls will fail. Import numbers in Phone Numbers tab.' 
+          });
+        }
+      }
+
       // Check 3: Spam Check
       updateCheck('spam', { status: 'checking' });
       const spamNumbers = phonePool?.filter((p: any) => p.phone_numbers?.is_spam) || [];
@@ -113,7 +160,36 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
       // Check 5: Workflow Attached
       updateCheck('workflow', { status: 'checking' });
       if (campaignData?.workflow_id) {
-        updateCheck('workflow', { status: 'pass', message: 'Workflow attached' });
+        // Validate workflow has steps
+        const { data: workflowSteps, error: stepsError } = await supabase
+          .from('workflow_steps')
+          .select('id, step_type, step_config')
+          .eq('workflow_id', campaignData.workflow_id)
+          .order('step_number', { ascending: true });
+
+        if (stepsError || !workflowSteps || workflowSteps.length === 0) {
+          updateCheck('workflow', { status: 'warning', message: 'Workflow has no steps configured' });
+        } else {
+          // Check for misconfigured steps
+          const issues: string[] = [];
+          for (const step of workflowSteps) {
+            const config = (step.step_config && typeof step.step_config === 'object' && !Array.isArray(step.step_config)) 
+              ? step.step_config as Record<string, unknown>
+              : {};
+            if (step.step_type === 'sms' && !config.sms_content && !config.content && !config.message) {
+              issues.push('SMS step missing content');
+            }
+            if (step.step_type === 'call' && !campaignData.agent_id && !config.agent_id) {
+              issues.push('Call step has no agent');
+            }
+          }
+
+          if (issues.length > 0) {
+            updateCheck('workflow', { status: 'warning', message: issues.join(', ') });
+          } else {
+            updateCheck('workflow', { status: 'pass', message: `${workflowSteps.length} steps configured` });
+          }
+        }
       } else {
         updateCheck('workflow', { status: 'warning', message: 'No follow-up workflow' });
       }

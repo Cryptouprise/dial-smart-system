@@ -39,6 +39,74 @@ serve(async (req) => {
     const { action, userId, leadId, workflowId, campaignId } = await req.json();
 
     if (action === 'start_workflow') {
+      // ============= DUPLICATE CHECK - PREVENT MULTIPLE ENROLLMENTS =============
+      console.log(`[Workflow] Checking for existing enrollment: lead=${leadId}, workflow=${workflowId}, campaign=${campaignId}`);
+      
+      // Check for existing active/paused workflow for this lead+workflow+campaign combo
+      const { data: existingProgress, error: checkError } = await supabase
+        .from('lead_workflow_progress')
+        .select('id, status, current_step_id, created_at')
+        .eq('lead_id', leadId)
+        .eq('workflow_id', workflowId)
+        .in('status', ['active', 'paused'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (checkError) {
+        console.error('[Workflow] Error checking existing progress:', checkError);
+      }
+      
+      if (existingProgress) {
+        console.log(`[Workflow] Lead ${leadId} already has ${existingProgress.status} progress (id: ${existingProgress.id}), skipping enrollment`);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          action: 'already_enrolled',
+          progressId: existingProgress.id,
+          status: existingProgress.status,
+          message: `Lead already enrolled in workflow (${existingProgress.status})`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Also check by phone number to prevent duplicate leads with same phone
+      const { data: leadData } = await supabase
+        .from('leads')
+        .select('phone_number')
+        .eq('id', leadId)
+        .maybeSingle();
+      
+      if (leadData?.phone_number) {
+        const normalizedPhone = leadData.phone_number.replace(/\D/g, '').slice(-10);
+        
+        // Check if any lead with this phone number is already in workflow
+        const { data: phoneMatch } = await supabase
+          .from('lead_workflow_progress')
+          .select('id, lead_id, status, leads!inner(phone_number)')
+          .eq('workflow_id', workflowId)
+          .in('status', ['active', 'paused'])
+          .limit(10);
+        
+        const duplicateByPhone = phoneMatch?.find((p: any) => {
+          const pPhone = p.leads?.phone_number?.replace(/\D/g, '').slice(-10);
+          return pPhone === normalizedPhone && p.lead_id !== leadId;
+        });
+        
+        if (duplicateByPhone) {
+          console.log(`[Workflow] Phone ${normalizedPhone} already in workflow via lead ${duplicateByPhone.lead_id}, skipping`);
+          return new Response(JSON.stringify({ 
+            success: true, 
+            action: 'duplicate_phone_enrolled',
+            existingLeadId: duplicateByPhone.lead_id,
+            message: 'Another lead with this phone number is already in the workflow'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      // ============= END DUPLICATE CHECK =============
+
       // Start a lead on a workflow
       const { data: workflow, error: workflowError } = await supabase
         .from('campaign_workflows')
@@ -112,7 +180,7 @@ serve(async (req) => {
           if (!campaign?.agent_id && !config.agent_id) {
             validationErrors.push(`Step ${step.step_number} (call): No AI agent configured. ${!campaignId ? 'Campaign ID is required for call steps, or configure agent_id in step config.' : 'Configure agent_id in campaign or step.'}`);
           }
-          // Warn if no campaign (calls might fail due to missing phone numbers)
+          // Warn if no campaign
           if (!campaignId) {
             console.warn(`[Workflow] Warning: Step ${step.step_number} (call) has no campaign - may fail if no phone numbers available`);
           }
@@ -273,7 +341,11 @@ serve(async (req) => {
     if (action === 'resume_workflow') {
       await supabase
         .from('lead_workflow_progress')
-        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .update({ 
+          status: 'active', 
+          next_action_at: new Date().toISOString(), // Resume immediately
+          updated_at: new Date().toISOString() 
+        })
         .eq('lead_id', leadId)
         .eq('workflow_id', workflowId);
 
@@ -334,7 +406,7 @@ async function executeStep(supabase: any, progress: any) {
   const campaign = progress.campaign_workflows;
   const config = step?.step_config || {};
 
-  // Guard: if the campaign's workflow was turned off/changed, pause this progress so it stops sending SMS.
+  // Guard: if the campaign's workflow was turned off/changed, pause this progress
   if (progress.campaign_id) {
     const { data: campaignRow, error: campaignRowError } = await supabase
       .from('campaigns')
@@ -377,7 +449,6 @@ async function executeStep(supabase: any, progress: any) {
   if (!step || !step.step_type) {
     console.warn(`[Workflow] Skipping invalid step - missing step data or step_type for lead ${lead?.id}`);
     stepResult = { success: false, error: 'Invalid step configuration', action: 'skipped' };
-    // Still move to next step to avoid getting stuck
     await moveToNextStep(supabase, progress, step);
     return stepResult;
   }
@@ -392,17 +463,15 @@ async function executeStep(supabase: any, progress: any) {
       break;
 
     case 'ai_sms':
-    case 'ai_auto_reply':  // Handle both naming conventions
+    case 'ai_auto_reply':
       stepResult = await executeAiSmsStep(supabase, lead, progress, config);
       break;
 
     case 'wait':
-      // Wait step completed, just move to next
       stepResult = { success: true, action: 'wait_completed' };
       break;
 
     case 'email':
-      // Email step - placeholder for future implementation
       console.log(`[Workflow] Email step not yet implemented for lead ${lead?.id}`);
       stepResult = { success: true, action: 'email_skipped' };
       break;
@@ -413,14 +482,12 @@ async function executeStep(supabase: any, progress: any) {
 
     case 'condition':
     case 'branch':
-      // Condition/branching steps - evaluate and continue
       console.log(`[Workflow] Condition step for lead ${lead?.id} - evaluating...`);
       stepResult = { success: true, action: 'condition_evaluated' };
       break;
 
     case 'tag':
     case 'update_status':
-      // Tag or status update step
       if (config.new_status) {
         await supabase
           .from('leads')
@@ -440,7 +507,6 @@ async function executeStep(supabase: any, progress: any) {
 
     case 'end':
     case 'stop':
-      // Explicit end step - mark workflow as completed
       await supabase
         .from('lead_workflow_progress')
         .update({
@@ -498,165 +564,115 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
 
     // Check if there's an active/recent call that hasn't completed
     const pendingCall = recentCalls?.find((c: any) => 
-      c.status === 'ringing' || c.status === 'in-progress' || c.status === 'initiated'
+      ['queued', 'ringing', 'initiated', 'in_progress'].includes(c.status)
     );
-    
+
     if (pendingCall) {
-      console.log(`[Workflow] Skipping - call already in progress for lead ${lead.id}`);
-      return { success: true, action: 'call_already_in_progress', callId: pendingCall.id };
+      console.log(`[Workflow] Lead ${lead.id} has pending call ${pendingCall.id}, skipping duplicate`);
+      return { success: true, action: 'call_already_pending', callId: pendingCall.id };
     }
 
-    // Check if lead was already successfully connected
-    const successfulCall = recentCalls?.find((c: any) => 
-      c.outcome === 'connected' || 
-      c.outcome === 'answered' || 
-      c.outcome === 'appointment_set' ||
-      c.outcome === 'callback_scheduled' ||
-      (c.status === 'completed' && c.duration_seconds > 30)
+    // Check if lead was recently contacted successfully
+    const recentSuccess = recentCalls?.find((c: any) => 
+      c.outcome && ['connected', 'answered', 'appointment_set', 'callback_requested'].includes(c.outcome)
     );
 
-    if (successfulCall) {
-      console.log(`[Workflow] Skipping - lead ${lead.id} already had successful call`);
-      return { success: true, action: 'already_connected', skipRemaining: true };
+    if (recentSuccess) {
+      console.log(`[Workflow] Lead ${lead.id} was recently contacted successfully, skipping`);
+      return { success: true, action: 'recently_contacted', callId: recentSuccess.id };
     }
 
-    // Count failed attempts in this workflow run
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const { data: todaysCalls } = await supabase
-      .from('call_logs')
-      .select('id, outcome, status')
-      .eq('lead_id', lead.id)
-      .eq('campaign_id', progress.campaign_id)
-      .gte('created_at', todayStart.toISOString());
-
-    const failedAttempts = todaysCalls?.filter((c: any) => 
-      c.outcome === 'no_answer' || 
-      c.outcome === 'voicemail' || 
-      c.outcome === 'busy' ||
-      c.status === 'failed' ||
-      c.status === 'no-answer'
-    ).length || 0;
-
-    if (failedAttempts >= maxAttempts) {
-      console.log(`[Workflow] Max attempts (${maxAttempts}) reached for lead ${lead.id}, skipping call`);
-      return { success: true, action: 'max_attempts_reached', attempts: failedAttempts };
-    }
-
-    // Get a caller ID from campaign phone pool - MUST BE RETELL IMPORTED
-    const callerId = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'voice');
-
-    if (!callerId) {
-      console.error('[Workflow] No Retell-imported caller ID available for campaign - CANNOT MAKE CALL');
-      return { 
-        success: false, 
-        error: 'No Retell-imported phone number available. Import a phone number to Retell first.',
-        action: 'call_blocked_no_retell_phone'
-      };
-    }
-
-    // Get the campaign's agent ID
-    const { data: campaignData } = await supabase
-      .from('campaigns')
-      .select('agent_id')
-      .eq('id', progress.campaign_id)
-      .maybeSingle();
-
-    const agentId = config.agent_id || campaignData?.agent_id;
-
-    if (!agentId) {
-      console.error('[Workflow] No agent ID configured');
-      return { success: false, error: 'No agent ID configured' };
-    }
-
-    // Call the outbound-calling function
-    const response = await supabase.functions.invoke('outbound-calling', {
+    // Trigger outbound call
+    const callResponse = await supabase.functions.invoke('outbound-calling', {
       body: {
-        action: 'create_call',
-        campaignId: progress.campaign_id,
         leadId: lead.id,
-        phoneNumber: lead.phone_number,
-        callerId: callerId,
-        agentId: agentId,
+        campaignId: progress.campaign_id,
         userId: progress.user_id,
+        workflowStepId: progress.current_step_id,
       },
     });
 
-    if (response.error) {
-      console.error('[Workflow] Call creation failed:', response.error);
-      return { success: false, error: response.error.message };
+    if (callResponse.error) {
+      throw new Error(callResponse.error.message || 'Call initiation failed');
     }
 
-    console.log('[Workflow] Call initiated:', response.data);
-    return { success: true, callId: response.data?.retell_call_id, action: 'call_initiated', attempt: failedAttempts + 1 };
+    console.log(`[Workflow] Call initiated for lead ${lead.id}:`, callResponse.data);
+    return { success: true, action: 'call_initiated', data: callResponse.data };
 
   } catch (error: any) {
-    console.error('[Workflow] Call step error:', error);
-    return { success: false, error: error.message };
+    console.error(`[Workflow] Call step error for lead ${lead.id}:`, error);
+    return { success: false, action: 'call_failed', error: error.message };
   }
 }
 
 async function executeSmsStep(supabase: any, lead: any, progress: any, config: any) {
-  const rawTemplate = config.sms_content || config.content || config.message || '';
-  const messageBody = replaceTemplateVariables(rawTemplate, lead);
-
-  console.log(`[Workflow] Sending SMS to ${lead?.phone_number} with template:`, rawTemplate);
+  console.log(`[Workflow] Sending SMS to ${lead?.phone_number}`);
 
   try {
-    // SMS DEDUPLICATION: Check if an SMS was sent to this phone in the last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const normalizedPhone = lead.phone_number?.replace(/\D/g, '').slice(-10) || '';
-    
-    const { data: recentSms } = await supabase
-      .from('sms_messages')
-      .select('id, created_at, to_number')
-      .eq('user_id', progress.user_id)
-      .gte('created_at', fiveMinutesAgo)
-      .eq('direction', 'outbound');
-    
-    // Check if any recent SMS was sent to a matching phone number
-    const duplicateSms = recentSms?.find((sms: any) => {
-      const smsPhone = sms.to_number?.replace(/\D/g, '').slice(-10) || '';
-      return smsPhone === normalizedPhone;
-    });
-    
-    if (duplicateSms) {
-      console.log(`[Workflow] Skipping SMS - message already sent to ${normalizedPhone} at ${duplicateSms.created_at}`);
-      return { success: true, action: 'sms_skipped_duplicate', reason: 'SMS sent to this number in last 5 minutes' };
+    const message = config.sms_content || config.content || config.message;
+    if (!message) {
+      throw new Error('No SMS content configured');
     }
 
-    // Get sender number from campaign phone pool (prefer stationary)
-    const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
+    // Get from number
+    let fromNumber = config.from_number;
+    if (!fromNumber) {
+      // Try to get from campaign phone pool
+      if (progress.campaign_id) {
+        const { data: poolNumber } = await supabase
+          .from('campaign_phone_pools')
+          .select('phone_numbers(number)')
+          .eq('campaign_id', progress.campaign_id)
+          .eq('role', 'outbound')
+          .limit(1)
+          .maybeSingle();
+        
+        fromNumber = poolNumber?.phone_numbers?.number;
+      }
+      
+      // Fall back to user's first active number
+      if (!fromNumber) {
+        const { data: userNumber } = await supabase
+          .from('phone_numbers')
+          .select('number')
+          .eq('user_id', progress.user_id)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        
+        fromNumber = userNumber?.number;
+      }
+    }
 
     if (!fromNumber) {
-      console.error('[Workflow] No SMS number available');
-      return { success: false, error: 'No SMS number available' };
+      throw new Error('No from number available for SMS');
     }
 
-    // Call the sms-messaging function
-    const response = await supabase.functions.invoke('sms-messaging', {
+    // Replace dynamic variables in message
+    const personalizedMessage = replaceDynamicVariables(message, lead);
+
+    // Send via sms-messaging function
+    const smsResponse = await supabase.functions.invoke('sms-messaging', {
       body: {
         action: 'send_sms',
         to: lead.phone_number,
         from: fromNumber,
-        body: messageBody,
+        body: personalizedMessage,
         lead_id: lead.id,
-        user_id: progress.user_id,
+        workflow_step_id: progress.current_step_id,
       },
     });
 
-    if (response.error) {
-      console.error('[Workflow] SMS send failed:', response.error);
-      return { success: false, error: response.error.message };
+    if (smsResponse.error) {
+      throw new Error(smsResponse.error.message || 'SMS sending failed');
     }
 
-    console.log('[Workflow] SMS sent:', response.data);
-    return { success: true, messageId: response.data?.message_id, action: 'sms_sent' };
+    console.log(`[Workflow] SMS sent to lead ${lead.id}`);
+    return { success: true, action: 'sms_sent', data: smsResponse.data };
 
   } catch (error: any) {
-    console.error('[Workflow] SMS step error:', error);
-    return { success: false, error: error.message };
+    console.error(`[Workflow] SMS step error for lead ${lead.id}:`, error);
+    return { success: false, action: 'sms_failed', error: error.message };
   }
 }
 
@@ -664,99 +680,91 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
   console.log(`[Workflow] Sending AI SMS to ${lead?.phone_number}`);
 
   try {
-    // AI SMS DEDUPLICATION: Check if an SMS was sent to this phone in the last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const normalizedPhone = lead.phone_number?.replace(/\D/g, '').slice(-10) || '';
-    
-    const { data: recentSms } = await supabase
-      .from('sms_messages')
-      .select('id, created_at, to_number')
-      .eq('user_id', progress.user_id)
-      .gte('created_at', fiveMinutesAgo)
-      .eq('direction', 'outbound');
-    
-    // Check if any recent SMS was sent to a matching phone number
-    const duplicateSms = recentSms?.find((sms: any) => {
-      const smsPhone = sms.to_number?.replace(/\D/g, '').slice(-10) || '';
-      return smsPhone === normalizedPhone;
-    });
-    
-    if (duplicateSms) {
-      console.log(`[Workflow] Skipping AI SMS - message already sent to ${normalizedPhone} at ${duplicateSms.created_at}`);
-      return { success: true, action: 'ai_sms_skipped_duplicate', reason: 'SMS sent to this number in last 5 minutes' };
+    // Get from number
+    let fromNumber = config.from_number;
+    if (!fromNumber) {
+      if (progress.campaign_id) {
+        const { data: poolNumber } = await supabase
+          .from('campaign_phone_pools')
+          .select('phone_numbers(number)')
+          .eq('campaign_id', progress.campaign_id)
+          .eq('role', 'outbound')
+          .limit(1)
+          .maybeSingle();
+        
+        fromNumber = poolNumber?.phone_numbers?.number;
+      }
+      
+      if (!fromNumber) {
+        const { data: userNumber } = await supabase
+          .from('phone_numbers')
+          .select('number')
+          .eq('user_id', progress.user_id)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        
+        fromNumber = userNumber?.number;
+      }
     }
-
-    // Get sender number from campaign phone pool
-    const fromNumber = await selectCallerIdForCampaign(supabase, progress.campaign_id, progress.user_id, true, 'sms');
 
     if (!fromNumber) {
-      console.error('[Workflow] No SMS number available for AI SMS');
-      return { success: false, error: 'No SMS number available' };
+      throw new Error('No from number available for AI SMS');
     }
 
-    // Call the ai-sms-processor function with service role key for internal auth
-    // Using direct fetch to pass the service role key properly
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
-    const response = await fetch(`${supabaseUrl}/functions/v1/ai-sms-processor`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    // Call AI SMS processor
+    const aiResponse = await supabase.functions.invoke('ai-sms-processor', {
+      body: {
         action: 'generate_and_send',
         leadId: lead.id,
         userId: progress.user_id,
-        fromNumber: fromNumber,
-        context: config.context || 'follow_up',
-        prompt: config.ai_prompt || config.sms_content || config.prompt || null,
-      }),
+        fromNumber,
+        toNumber: lead.phone_number,
+        prompt: config.ai_prompt || 'Send a friendly follow-up message',
+        context: {
+          workflowStep: progress.current_step_id,
+          campaignId: progress.campaign_id,
+        },
+      },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Workflow] AI SMS failed:', response.status, errorText);
-      return { success: false, error: `AI SMS failed: ${response.status}` };
+    if (aiResponse.error) {
+      throw new Error(aiResponse.error.message || 'AI SMS failed');
     }
 
-    const data = await response.json();
-    console.log('[Workflow] AI SMS sent:', data);
-    return { success: true, action: 'ai_sms_sent' };
+    console.log(`[Workflow] AI SMS sent to lead ${lead.id}`);
+    return { success: true, action: 'ai_sms_sent', data: aiResponse.data };
 
   } catch (error: any) {
-    console.error('[Workflow] AI SMS step error:', error);
-    return { success: false, error: error.message };
+    console.error(`[Workflow] AI SMS step error for lead ${lead.id}:`, error);
+    return { success: false, action: 'ai_sms_failed', error: error.message };
   }
 }
 
 async function executeWebhookStep(supabase: any, lead: any, progress: any, config: any) {
   console.log(`[Workflow] Executing webhook for lead ${lead?.id}`);
 
-  if (!config.webhook_url) {
-    return { success: false, error: 'No webhook URL configured' };
-  }
-
   try {
+    const webhookUrl = config.webhook_url || config.url;
+    if (!webhookUrl) {
+      throw new Error('No webhook URL configured');
+    }
+
     const payload = {
-      event: 'workflow_step',
-      lead: {
-        id: lead.id,
-        phone_number: lead.phone_number,
-        first_name: lead.first_name,
-        last_name: lead.last_name,
-        email: lead.email,
-        status: lead.status,
-      },
+      lead_id: lead.id,
+      lead_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+      lead_phone: lead.phone_number,
+      lead_email: lead.email,
+      lead_status: lead.status,
       workflow_id: progress.workflow_id,
       campaign_id: progress.campaign_id,
-      step_config: config,
+      step_id: progress.current_step_id,
       timestamp: new Date().toISOString(),
+      custom_data: config.custom_data || {},
     };
 
-    const response = await fetch(config.webhook_url, {
-      method: 'POST',
+    const response = await fetch(webhookUrl, {
+      method: config.method || 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(config.headers || {}),
@@ -765,182 +773,21 @@ async function executeWebhookStep(supabase: any, lead: any, progress: any, confi
     });
 
     if (!response.ok) {
-      return { success: false, error: `Webhook returned ${response.status}` };
+      throw new Error(`Webhook returned ${response.status}`);
     }
 
-    return { success: true, action: 'webhook_sent' };
+    console.log(`[Workflow] Webhook executed for lead ${lead.id}`);
+    return { success: true, action: 'webhook_sent', status: response.status };
+
   } catch (error: any) {
-    console.error('[Workflow] Webhook error:', error);
-    return { success: false, error: error.message };
+    console.error(`[Workflow] Webhook step error for lead ${lead.id}:`, error);
+    return { success: false, action: 'webhook_failed', error: error.message };
   }
-}
-
-async function selectCallerIdForCampaign(
-  supabase: any,
-  campaignId: string | null,
-  userId: string,
-  preferStationary: boolean = false,
-  type: 'voice' | 'sms' = 'voice'
-): Promise<string | null> {
-  try {
-    // For SMS, first check if campaign has a specific sms_from_number configured
-    if (campaignId && type === 'sms') {
-      const { data: campaign } = await supabase
-        .from('campaigns')
-        .select('sms_from_number')
-        .eq('id', campaignId)
-        .maybeSingle();
-
-      if (campaign?.sms_from_number) {
-        console.log('[Workflow] Using campaign sms_from_number:', campaign.sms_from_number);
-        return campaign.sms_from_number;
-      }
-    }
-
-    // Then try to get from campaign phone pool
-    if (campaignId) {
-      const roleFilter = type === 'sms' ? ['sms_only', 'outbound'] : ['outbound', 'caller_id_only'];
-      
-      let query = supabase
-        .from('campaign_phone_pools')
-        .select(`
-          phone_number_id,
-          is_primary,
-          priority,
-          phone_numbers(number, is_stationary, purpose, status, retell_phone_id)
-        `)
-        .eq('campaign_id', campaignId)
-        .in('role', roleFilter)
-        .order('is_primary', { ascending: false })
-        .order('priority', { ascending: false });
-
-      const { data: poolNumbers } = await query;
-
-      if (poolNumbers && poolNumbers.length > 0) {
-        // Filter for active numbers
-        let activeNumbers = poolNumbers.filter(
-          (p: any) => p.phone_numbers?.status === 'active'
-        );
-
-        // FOR VOICE CALLS: Must have retell_phone_id (imported to Retell)
-        if (type === 'voice') {
-          activeNumbers = activeNumbers.filter(
-            (p: any) => p.phone_numbers?.retell_phone_id
-          );
-          console.log(`[Workflow] Found ${activeNumbers.length} Retell-imported numbers in campaign pool`);
-        }
-
-        if (activeNumbers.length > 0) {
-          // If preferring stationary, try to find one
-          if (preferStationary) {
-            const stationary = activeNumbers.find((p: any) => p.phone_numbers?.is_stationary);
-            if (stationary) {
-              return stationary.phone_numbers.number;
-            }
-          }
-
-          // Return the highest priority active number
-          return activeNumbers[0].phone_numbers.number;
-        }
-      }
-    }
-
-    // Fallback: get any active number for this user
-    const purposeFilter = type === 'sms' 
-      ? ['sms_only', 'general_rotation'] 
-      : ['retell_agent', 'follow_up_dedicated', 'general_rotation'];
-
-    // Build query - for voice, require retell_phone_id
-    let fallbackQuery = supabase
-      .from('phone_numbers')
-      .select('number, retell_phone_id')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .eq('is_spam', false)
-      .in('purpose', purposeFilter);
-
-    // For voice calls, must be imported to Retell
-    if (type === 'voice') {
-      fallbackQuery = fallbackQuery.not('retell_phone_id', 'is', null);
-    }
-
-    const { data: userNumbers } = await fallbackQuery.limit(1);
-
-    if (userNumbers && userNumbers.length > 0) {
-      console.log(`[Workflow] Using fallback number: ${userNumbers[0].number} (retell: ${!!userNumbers[0].retell_phone_id})`);
-      return userNumbers[0].number;
-    }
-
-    // Last resort for voice: any number with retell_phone_id
-    if (type === 'voice') {
-      const { data: anyRetellNumber } = await supabase
-        .from('phone_numbers')
-        .select('number')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .not('retell_phone_id', 'is', null)
-        .limit(1);
-
-      if (anyRetellNumber?.[0]?.number) {
-        console.log(`[Workflow] Using last resort Retell number: ${anyRetellNumber[0].number}`);
-        return anyRetellNumber[0].number;
-      }
-      
-      console.error('[Workflow] NO RETELL-IMPORTED PHONE NUMBERS AVAILABLE FOR CALLS');
-      return null;
-    }
-
-    // Last resort for SMS: any active number
-    const { data: anyNumber } = await supabase
-      .from('phone_numbers')
-      .select('number')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .limit(1);
-
-    return anyNumber?.[0]?.number || null;
-
-  } catch (error) {
-    console.error('[Workflow] Error selecting caller ID:', error);
-    return null;
-  }
-}
-
-function replaceTemplateVariables(template: string, lead: any): string {
-  return template
-    .replace(/\{\{first_name\}\}/gi, lead.first_name || '')
-    .replace(/\{\{last_name\}\}/gi, lead.last_name || '')
-    .replace(/\{\{name\}\}/gi, `${lead.first_name || ''} ${lead.last_name || ''}`.trim())
-    .replace(/\{\{company\}\}/gi, lead.company || '')
-    .replace(/\{\{email\}\}/gi, lead.email || '')
-    .replace(/\{\{phone\}\}/gi, lead.phone_number || '');
 }
 
 async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
-  // Get all steps in order
-  const { data: allSteps } = await supabase
-    .from('workflow_steps')
-    .select('*')
-    .eq('workflow_id', progress.workflow_id)
-    .order('step_number', { ascending: true });
-
-  const currentIndex = allSteps?.findIndex((s: any) => s.id === currentStep?.id) ?? -1;
-  const nextStep = allSteps?.[currentIndex + 1];
-
-  if (nextStep) {
-    const nextActionAt = calculateNextActionTime(nextStep);
-    await supabase
-      .from('lead_workflow_progress')
-      .update({
-        current_step_id: nextStep.id,
-        next_action_at: nextActionAt,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', progress.id);
-
-    console.log(`[Workflow] Moved to step ${nextStep.step_number} for lead ${progress.lead_id}`);
-  } else {
-    // Workflow complete
+  if (!currentStep) {
+    // No current step, mark as completed
     await supabase
       .from('lead_workflow_progress')
       .update({
@@ -949,7 +796,63 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', progress.id);
-
-    console.log(`[Workflow] Workflow completed for lead ${progress.lead_id}`);
+    return;
   }
+
+  // Get the next step
+  const { data: nextStep } = await supabase
+    .from('workflow_steps')
+    .select('id, step_type, step_config')
+    .eq('workflow_id', currentStep.workflow_id || progress.workflow_id)
+    .eq('step_number', (currentStep.step_number || 0) + 1)
+    .maybeSingle();
+
+  if (nextStep) {
+    const nextActionAt = calculateNextActionTime(nextStep);
+    
+    await supabase
+      .from('lead_workflow_progress')
+      .update({
+        current_step_id: nextStep.id,
+        next_action_at: nextActionAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', progress.id);
+    
+    console.log(`[Workflow] Moved to step ${nextStep.id} for progress ${progress.id}`);
+  } else {
+    // No more steps, complete the workflow
+    await supabase
+      .from('lead_workflow_progress')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', progress.id);
+    
+    console.log(`[Workflow] Completed workflow for progress ${progress.id}`);
+  }
+}
+
+function replaceDynamicVariables(template: string, lead: any): string {
+  if (!template) return '';
+  
+  const variables: Record<string, string> = {
+    '{{first_name}}': lead?.first_name || '',
+    '{{last_name}}': lead?.last_name || '',
+    '{{full_name}}': `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim() || 'there',
+    '{{phone}}': lead?.phone_number || '',
+    '{{email}}': lead?.email || '',
+    '{{company}}': lead?.company || '',
+    '{{city}}': lead?.city || '',
+    '{{state}}': lead?.state || '',
+  };
+
+  let result = template;
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(key, 'gi'), value);
+  }
+  
+  return result;
 }

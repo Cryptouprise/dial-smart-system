@@ -31,8 +31,7 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
 
   const cleanedRingingCount = stuckCalls?.length || 0;
 
-  // If a call log stays "queued" without a Retell call id for a couple minutes, it's almost certainly failed.
-  // This prevents the UI from showing "queued" forever when the provider rejects the call.
+  // Cleanup stuck queued calls
   const queuedCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   const { data: stuckQueuedCalls, error: queuedCleanupError } = await supabase
     .from('call_logs')
@@ -122,12 +121,11 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Check for special actions in request body (also used to detect internal scheduler calls)
+    // Check for special actions in request body
     let requestBody: Record<string, any> = {};
     try {
       requestBody = await req.json();
     } catch (parseError) {
-      // No body or invalid JSON - expected for GET requests
       if (req.method !== 'GET') {
         console.warn('Request body parse failed for', req.method, 'request:', parseError);
       }
@@ -136,7 +134,6 @@ serve(async (req) => {
     const action = requestBody.action;
 
     // Allow internal scheduler to run dispatcher for a specific user.
-    // This call is authenticated by requiring the service role key in Authorization.
     const internalUserId = typeof requestBody.userId === 'string' ? requestBody.userId : null;
     const isInternalCall = requestBody.internal === true && internalUserId && token === supabaseKey;
 
@@ -174,16 +171,14 @@ serve(async (req) => {
 
     console.log('Call Dispatcher running for user:', user.id);
 
-    // Automatic cleanup (so you don't need to press the "unstuck" button)
+    // Automatic cleanup
     try {
       await cleanupStuckCallsAndQueues(supabase, user.id);
     } catch (cleanupError) {
       console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
     }
 
-    // CALLBACK PRIORITY: Ensure past-due callbacks trigger workflow appropriately
-    // If the campaign's workflow first step is SMS, we should NOT add to dialing_queues
-    // Instead, we should enroll them in the workflow via workflow-executor
+    // ============= CALLBACK HANDLING WITH WORKFLOW RESUME =============
     console.log('[Dispatcher] Checking for past-due callbacks...');
     const nowIso = new Date().toISOString();
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
@@ -199,11 +194,48 @@ serve(async (req) => {
 
     let callbacksQueued = 0;
     let callbacksEnrolledInWorkflow = 0;
+    let callbacksResumed = 0;
 
     if (pastDueCallbacks && pastDueCallbacks.length > 0) {
       console.log(`[Dispatcher] Found ${pastDueCallbacks.length} past-due callbacks to evaluate`);
 
       for (const lead of pastDueCallbacks) {
+        // ============= CHECK FOR PAUSED WORKFLOW TO RESUME =============
+        const { data: pausedWorkflow } = await supabase
+          .from('lead_workflow_progress')
+          .select('id, current_step_id, workflow_id, campaign_id')
+          .eq('lead_id', lead.id)
+          .eq('status', 'paused')
+          .eq('removal_reason', 'Callback scheduled')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (pausedWorkflow) {
+          console.log(`[Dispatcher] Resuming paused workflow for callback lead ${lead.id}`);
+          
+          // Resume the workflow at current step
+          await supabase
+            .from('lead_workflow_progress')
+            .update({ 
+              status: 'active', 
+              next_action_at: nowIso,
+              removal_reason: null,
+              updated_at: nowIso
+            })
+            .eq('id', pausedWorkflow.id);
+          
+          // Clear callback time
+          await supabase
+            .from('leads')
+            .update({ next_callback_at: null })
+            .eq('id', lead.id);
+          
+          callbacksResumed++;
+          console.log(`[Dispatcher] Resumed workflow ${pausedWorkflow.id} for lead ${lead.id}`);
+          continue;
+        }
+
         // Find an ACTIVE campaign for this lead with workflow info
         const { data: campaignLead } = await supabase
           .from('campaign_leads')
@@ -230,23 +262,30 @@ serve(async (req) => {
           firstStepIsSms = firstStep?.step_type === 'sms' || firstStep?.step_type === 'ai_sms';
         }
 
-        // Check existing workflow enrollment
+        // Check existing workflow enrollment (active or paused)
         const { data: existingWorkflow } = await supabase
           .from('lead_workflow_progress')
           .select('id, status')
           .eq('lead_id', lead.id)
           .eq('workflow_id', workflowId)
-          .gte('created_at', twoMinutesAgo)
+          .in('status', ['active', 'paused'])
           .limit(1)
           .maybeSingle();
 
-        if (existingWorkflow) continue;
+        if (existingWorkflow) {
+          console.log(`[Dispatcher] Lead ${lead.id} already in workflow (${existingWorkflow.status}), skipping`);
+          // Clear the callback since they're already in workflow
+          await supabase
+            .from('leads')
+            .update({ next_callback_at: null })
+            .eq('id', lead.id);
+          continue;
+        }
 
         // If first step is SMS, enroll in workflow instead of dialing queue
         if (firstStepIsSms && workflowId) {
           console.log(`[Dispatcher] Callback for lead ${lead.id} - workflow first step is SMS, enrolling in workflow`);
           
-          // Get the first step ID
           const { data: firstStepData } = await supabase
             .from('workflow_steps')
             .select('id')
@@ -272,6 +311,12 @@ serve(async (req) => {
               callbacksEnrolledInWorkflow++;
               console.log(`[Dispatcher] Enrolled callback lead ${lead.id} in SMS workflow`);
               
+              // Clear callback time
+              await supabase
+                .from('leads')
+                .update({ next_callback_at: null })
+                .eq('id', lead.id);
+
               // Trigger workflow-executor to send SMS
               await supabase.functions.invoke('workflow-executor', {
                 body: { action: 'execute_pending', userId: user.id },
@@ -281,7 +326,7 @@ serve(async (req) => {
           continue;
         }
 
-        // For call-first workflows, add to dialing queue as before
+        // For call-first workflows, add to dialing queue
         const { data: existingQueueEntry } = await supabase
           .from('dialing_queues')
           .select('id, status, scheduled_at')
@@ -290,9 +335,25 @@ serve(async (req) => {
           .limit(1)
           .maybeSingle();
 
-        if (existingQueueEntry) continue;
+        if (existingQueueEntry) {
+          // Reset existing entry to pending for callback
+          if (existingQueueEntry.status === 'completed' || existingQueueEntry.status === 'failed') {
+            await supabase
+              .from('dialing_queues')
+              .update({
+                status: 'pending',
+                scheduled_at: nowIso,
+                priority: 10,
+                attempts: 0,
+                updated_at: nowIso,
+              })
+              .eq('id', existingQueueEntry.id);
+            callbacksQueued++;
+          }
+          continue;
+        }
 
-        // If we already attempted very recently, avoid spamming call logs.
+        // Check for recent call attempts
         const { data: recentAttempt } = await supabase
           .from('call_logs')
           .select('id, status')
@@ -319,13 +380,19 @@ serve(async (req) => {
         if (!insertError) {
           callbacksQueued++;
           console.log(`[Dispatcher] Queued past-due callback for lead ${lead.id}`);
+          
+          // Clear callback time after queuing
+          await supabase
+            .from('leads')
+            .update({ next_callback_at: null })
+            .eq('id', lead.id);
         } else {
           console.error(`[Dispatcher] Failed to queue callback for lead ${lead.id}:`, insertError);
         }
       }
     }
 
-    console.log(`[Dispatcher] Callbacks: ${callbacksQueued} queued for call, ${callbacksEnrolledInWorkflow} enrolled in SMS workflow`);
+    console.log(`[Dispatcher] Callbacks: ${callbacksQueued} queued, ${callbacksEnrolledInWorkflow} enrolled in workflow, ${callbacksResumed} resumed`);
 
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
@@ -337,7 +404,11 @@ serve(async (req) => {
 
     if (!activeCampaigns || activeCampaigns.length === 0) {
       return new Response(
-        JSON.stringify({ message: 'No active campaigns', dispatched: 0 }),
+        JSON.stringify({ 
+          message: 'No active campaigns', 
+          dispatched: 0,
+          callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed }
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -373,32 +444,28 @@ serve(async (req) => {
 
     const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
 
-    // Check existing workflow progress entries - include ALL statuses including completed
-    // to prevent re-enrollment of leads that already went through a workflow
-    // CRITICAL FIX: Also check by PHONE NUMBER to prevent duplicate leads with same phone
+    // Check existing workflow progress entries
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: existingWorkflowProgress } = await supabase
       .from('lead_workflow_progress')
       .select('lead_id, status, workflow_id, leads!lead_workflow_progress_lead_id_fkey(phone_number)')
       .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
-      .gte('created_at', oneDayAgo); // Check last 24 hours regardless of status
+      .gte('created_at', oneDayAgo);
 
     const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
     
-    // Build a set of phone numbers that have been enrolled in workflows (normalized)
+    // Build a set of phone numbers that have been enrolled in workflows
     const existingWorkflowPhones = new Set<string>();
     for (const p of existingWorkflowProgress || []) {
       const phone = (p as any).leads?.phone_number;
       if (phone) {
-        // Normalize phone: remove +1 prefix and any non-digits
         const normalized = phone.replace(/\D/g, '').slice(-10);
         existingWorkflowPhones.add(normalized);
       }
     }
     console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
 
-    // **CRITICAL FIX**: Check for RECENT call_logs to prevent re-calling leads
-    // Reduced from 30 minutes to 5 minutes to allow faster re-testing
+    // Check for RECENT call_logs to prevent re-calling leads
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: recentCallLogs } = await supabase
       .from('call_logs')
@@ -406,23 +473,20 @@ serve(async (req) => {
       .in('campaign_id', campaignIds)
       .gte('created_at', fiveMinutesAgo);
 
-    // Build set of leads that were called recently (any status except failed)
+    // Build set of leads that were called recently
     const recentlyCalledLeadIds = new Set(
       (recentCallLogs || [])
         .filter((cl: any) => cl.status !== 'failed')
         .map((cl: any) => cl.lead_id)
     );
     
-    // Build set of leads that had successful/connected calls (should NOT be called again)
-    // CRITICAL FIX: Exclude callback_requested outcomes - those should be allowed to re-call!
+    // Build set of leads that had successful/connected calls
     const successfullyContactedLeadIds = new Set(
       (recentCallLogs || [])
         .filter((cl: any) => {
-          // Skip callback outcomes - they need to be re-called!
           if (cl.outcome === 'callback_requested' || cl.outcome === 'callback' || cl.outcome === 'callback_scheduled') {
             return false;
           }
-          // Only block if truly successfully contacted (not callback)
           return cl.outcome === 'connected' || 
                  cl.outcome === 'answered' || 
                  cl.outcome === 'appointment_set' ||
@@ -458,587 +522,197 @@ serve(async (req) => {
       if (existingLeadIds.has(cl.lead_id)) return false;
       if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
       
-      // CRITICAL FIX: Also check by normalized phone number to catch duplicate lead records
+      // Check by normalized phone number
       const normalizedPhone = lead.phone_number.replace(/\D/g, '').slice(-10);
       if (existingWorkflowPhones.has(normalizedPhone)) {
-        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - phone ${normalizedPhone} already enrolled in workflow`);
+        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - phone ${normalizedPhone} already in workflow`);
         return false;
       }
       
-      // **NEW**: Skip leads that were called recently
       if (recentlyCalledLeadIds.has(cl.lead_id)) return false;
-      // **NEW**: Skip leads that were successfully contacted
       if (successfullyContactedLeadIds.has(cl.lead_id)) return false;
-      // Only queue leads with eligible statuses (including retry-eligible statuses)
-      if (!['new', 'contacted', 'callback', 'no_answer', 'voicemail', 'failed'].includes(lead.status)) return false;
       return true;
     });
 
-    console.log(`Found ${leadsToQueue.length} leads to add to queue (raw campaign leads: ${(campaignLeads || []).length})`);
+    console.log(`[Dispatcher] ${leadsToQueue.length} leads eligible for queuing after filters`);
 
-    // REMOVED: The fallback that was adding leads even when they should be skipped
-
-    // Separate leads by workflow type - SMS-first vs Call-first
-    const smsFirstLeads: any[] = [];
-    const callFirstLeads: any[] = [];
+    // Process leads - either enroll in workflow or add to dialing queue
+    let workflowEnrolled = 0;
+    let dialingQueued = 0;
 
     for (const cl of leadsToQueue) {
+      const lead = cl.leads as any;
       const campaign = activeCampaigns.find(c => c.id === cl.campaign_id);
-      const firstStep = campaign?.workflow_id ? workflowFirstSteps[campaign.workflow_id] : null;
       
-      if (firstStep && (firstStep.step_type === 'sms' || firstStep.step_type === 'ai_sms')) {
-        smsFirstLeads.push({ ...cl, campaign, firstStep });
-      } else {
-        callFirstLeads.push({ ...cl, campaign });
+      if (!campaign) continue;
+
+      // Check if campaign has a workflow with SMS first step
+      if (campaign.workflow_id && workflowFirstSteps[campaign.workflow_id]) {
+        const firstStep = workflowFirstSteps[campaign.workflow_id];
+        const isSmsFirst = firstStep.step_type === 'sms' || firstStep.step_type === 'ai_sms';
+
+        if (isSmsFirst) {
+          // Enroll in workflow
+          const { error: workflowError } = await supabase
+            .from('lead_workflow_progress')
+            .insert({
+              lead_id: cl.lead_id,
+              workflow_id: campaign.workflow_id,
+              campaign_id: campaign.id,
+              user_id: user.id,
+              current_step_id: firstStep.id || null,
+              status: 'active',
+              started_at: nowIso,
+              next_action_at: nowIso,
+            });
+
+          if (!workflowError) {
+            workflowEnrolled++;
+          } else {
+            console.error(`[Dispatcher] Workflow enrollment error for ${cl.lead_id}:`, workflowError);
+          }
+          continue;
+        }
       }
-    }
 
-    console.log(`SMS-first leads: ${smsFirstLeads.length}, Call-first leads: ${callFirstLeads.length}`);
-
-    // Process SMS-first leads via workflow-executor
-    for (const leadData of smsFirstLeads) {
-      const campaign = leadData.campaign;
-      const firstStep = leadData.firstStep;
-      
-      console.log(`[Workflow] Starting SMS workflow for lead ${leadData.lead_id} in campaign ${campaign.id}`);
-      
-      // Create workflow progress entry
-      const { data: progressEntry, error: progressError } = await supabase
-        .from('lead_workflow_progress')
+      // Add to dialing queue for call-first or no-workflow campaigns
+      const { error: queueError } = await supabase
+        .from('dialing_queues')
         .insert({
-          lead_id: leadData.lead_id,
-          workflow_id: campaign.workflow_id,
           campaign_id: campaign.id,
-          user_id: user.id,
-          current_step_id: firstStep.id,
-          status: 'active',
-          started_at: new Date().toISOString(),
-          next_action_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (progressError) {
-        console.error('[Workflow] Failed to create progress entry:', progressError);
-        continue;
-      }
-
-      // Invoke workflow-executor to execute the first step
-      const { error: execError } = await supabase.functions.invoke('workflow-executor', {
-        body: {
-          action: 'execute_pending',
-          userId: user.id,
-        },
-      });
-
-      if (execError) {
-        console.error('[Workflow] Failed to invoke workflow-executor:', execError);
-      } else {
-        console.log(`[Workflow] Started workflow for lead ${leadData.lead_id}`);
-      }
-    }
-
-    // Add call-first leads to dialing queue AND enroll in workflow for subsequent steps
-    if (callFirstLeads.length > 0) {
-      const queueEntries: any[] = [];
-      
-      for (const cl of callFirstLeads) {
-        const lead = cl.leads as any;
-        const campaign = activeCampaigns.find(c => c.id === cl.campaign_id);
-        
-        queueEntries.push({
-          campaign_id: cl.campaign_id,
           lead_id: cl.lead_id,
           phone_number: lead.phone_number,
           status: 'pending',
+          scheduled_at: nowIso,
           priority: 1,
-          max_attempts: campaign?.max_attempts || 3,
+          max_attempts: campaign.max_attempts || 3,
           attempts: 0,
-          scheduled_at: new Date().toISOString()
         });
 
-        // **FIX**: Also enroll in workflow if campaign has one, so SMS step fires after call
-        if (campaign?.workflow_id) {
-          const firstStep = workflowFirstSteps[campaign.workflow_id];
-          if (firstStep) {
-            // Get the second step (SMS) which should fire after call
-            const { data: allSteps } = await supabase
-              .from('workflow_steps')
-              .select('id, step_number, step_type, step_config')
-              .eq('workflow_id', campaign.workflow_id)
-              .order('step_number', { ascending: true });
-
-            if (!allSteps || allSteps.length === 0) {
-              console.warn(`[Dispatcher] No workflow steps found for workflow ${campaign.workflow_id}`);
-              continue;
-            }
-
-            const firstStepInWorkflow = allSteps.find((s: any) => s.id === firstStep.id) || allSteps[0];
-            const nextStep = allSteps.find((s: any) => s.step_number > firstStepInWorkflow.step_number) || firstStepInWorkflow;
-            const targetStep = nextStep;
-            const nextActionAt = calculateNextActionTime(targetStep);
-
-            const { error: progressError } = await supabase
-              .from('lead_workflow_progress')
-              .insert({
-                lead_id: cl.lead_id,
-                workflow_id: campaign.workflow_id,
-                campaign_id: campaign.id,
-                user_id: user.id,
-                current_step_id: targetStep.id,
-                status: 'active',
-                started_at: new Date().toISOString(),
-                last_action_at: new Date().toISOString(),
-                next_action_at: nextActionAt,
-              });
-
-            if (progressError) {
-              console.error(`[Dispatcher] Failed to create workflow progress for lead ${cl.lead_id}:`, progressError);
-            } else {
-              console.log(`[Dispatcher] Enrolled lead ${cl.lead_id} in workflow ${campaign.workflow_id}, SMS scheduled in 2 min`);
-            }
-          }
-        }
-      }
-
-      if (queueEntries.length > 0) {
-        const { error: queueError } = await supabase
-          .from('dialing_queues')
-          .insert(queueEntries);
-
-        if (queueError) {
-          console.error('Error adding to queue:', queueError);
-        } else {
-          console.log(`Added ${queueEntries.length} leads to dialing queue`);
-        }
+      if (!queueError) {
+        dialingQueued++;
+      } else {
+        console.error(`[Dispatcher] Queue insert error for ${cl.lead_id}:`, queueError);
       }
     }
 
-    // Now get pending calls from queue
-    const { data: pendingCalls, error: queueError } = await supabase
+    console.log(`[Dispatcher] Enrolled ${workflowEnrolled} in workflows, queued ${dialingQueued} for dialing`);
+
+    // Execute workflow steps if any were enrolled
+    if (workflowEnrolled > 0) {
+      await supabase.functions.invoke('workflow-executor', {
+        body: { action: 'execute_pending', userId: user.id },
+      });
+    }
+
+    // Now process the dialing queue
+    const { data: queuedCalls, error: queueError } = await supabase
       .from('dialing_queues')
       .select(`
         *,
-        campaigns (
-          id,
-          name,
-          status,
-          calls_per_minute,
-          agent_id,
-          user_id
-        ),
-        leads (
-          id,
-          first_name,
-          last_name,
-          phone_number
-        )
+        leads (id, phone_number, first_name, last_name),
+        campaigns (id, agent_id, name)
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending')
-      .lte('scheduled_at', new Date().toISOString())
+      .lte('scheduled_at', nowIso)
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
-      .limit(10);
+      .limit(5);
 
     if (queueError) throw queueError;
 
-    const userCalls = pendingCalls || [];
+    console.log(`[Dispatcher] Processing ${queuedCalls?.length || 0} queued calls`);
 
-    if (userCalls.length === 0) {
-      return new Response(
-        JSON.stringify({ 
-          message: 'No pending calls to dispatch - all leads may have been contacted or are ineligible',
-          dispatched: 0,
-          queued: leadsToQueue.length
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`Found ${userCalls.length} pending calls to dispatch`);
-
-    // Get available phone numbers - PRIORITIZE numbers with retell_phone_id
-    const { data: availableNumbers, error: numbersError } = await supabase
-      .from('phone_numbers')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .is('quarantine_until', null)
-      .order('retell_phone_id', { ascending: false, nullsFirst: false }); // Prioritize numbers WITH retell_phone_id
-
-    if (numbersError) throw numbersError;
-
-    // Filter to only include numbers registered with Retell (have retell_phone_id)
-    const retellNumbers = (availableNumbers || []).filter(n => n.retell_phone_id);
-    
-    // If no Retell-registered numbers, use all available but warn
-    const numbersToUse = retellNumbers.length > 0 ? retellNumbers : availableNumbers;
-    const usingUnregisteredNumbers = retellNumbers.length === 0 && (availableNumbers?.length || 0) > 0;
-
-    if (!numbersToUse || numbersToUse.length === 0) {
-      console.log('No available numbers in pool');
-      return new Response(
-        JSON.stringify({ 
-          error: 'No available phone numbers in pool. Please add active phone numbers first.',
-          dispatched: 0 
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (usingUnregisteredNumbers) {
-      console.warn('WARNING: No numbers with retell_phone_id found. Using unregistered numbers - calls may fail!');
-    }
-
-    console.log(`Found ${numbersToUse.length} available numbers (${retellNumbers.length} registered with Retell)`);
-
-    // Get Retell AI key from environment
-    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-
-    if (!retellApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'RETELL_AI_API_KEY not configured in Supabase secrets' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    let dispatchedCount = 0;
+    let dispatched = 0;
     const dispatchResults: any[] = [];
-    const numberPool = [...numbersToUse];
 
-    // Process each pending call
-    for (const call of userCalls.slice(0, 5)) {
+    for (const queueItem of queuedCalls || []) {
       try {
-        const lead = call.leads as any;
-        const campaign = call.campaigns as any;
-        
-        if (!lead?.phone_number || !campaign?.agent_id) {
-          console.log('Skipping call - missing lead phone or agent:', call.id);
-          continue;
-        }
-
-        // Select best number
-        const selectedNumber = selectBestNumber(numberPool, lead.phone_number);
-
-        if (!selectedNumber) {
-          console.log('No suitable number found for call:', call.id);
-          continue;
-        }
-
-        console.log(`Selected number ${selectedNumber.number} for call to ${lead.phone_number}`);
-
-        // Mark queue entry as calling
+        // Mark as calling
         await supabase
           .from('dialing_queues')
-          .update({ status: 'calling', updated_at: new Date().toISOString() })
-          .eq('id', call.id);
+          .update({ 
+            status: 'calling', 
+            attempts: (queueItem.attempts || 0) + 1,
+            updated_at: nowIso 
+          })
+          .eq('id', queueItem.id);
 
-        // Initiate the call via outbound-calling function with service role auth
-        const callResponse = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseKey}`,
-          },
-          body: JSON.stringify({
-            action: 'create_call',
+        // Initiate the call
+        const callResponse = await supabase.functions.invoke('outbound-calling', {
+          body: {
+            leadId: queueItem.lead_id,
+            campaignId: queueItem.campaign_id,
             userId: user.id,
-            campaignId: call.campaign_id,
-            leadId: call.lead_id,
-            phoneNumber: lead.phone_number,
-            callerId: selectedNumber.number,
-            agentId: campaign.agent_id,
-          })
+          },
         });
 
-        const callData = await callResponse.json();
-
-        if (!callResponse.ok || callData.error) {
-          const errorText = String(callData?.error || `HTTP ${callResponse.status}`);
-          console.error('Call creation failed:', errorText);
-
-          const maxAttempts = call.max_attempts || 3;
-          const newAttempts = (call.attempts || 0) + 1;
-
-          // Non-retryable configuration error (caller id not registered with Retell)
-          // This would otherwise spam call_logs with "queued" entries and never place a call.
-          const isRetellNumberNotFound = /not found from phone-number/i.test(errorText) || /retell api error\s*404/i.test(errorText);
-          if (isRetellNumberNotFound) {
-            await supabase
-              .from('dialing_queues')
-              .update({
-                status: 'failed',
-                attempts: maxAttempts,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', call.id);
-
-            await advanceWorkflowPastFailedCallStep(supabase, call.lead_id, call.campaign_id);
-            continue;
-          }
-
-          if (newAttempts < maxAttempts) {
-            // Re-queue for retry with 30 minute delay
-            await supabase
-              .from('dialing_queues')
-              .update({ 
-                status: 'pending',
-                attempts: newAttempts,
-                scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', call.id);
-            console.log(`[Dispatcher] Call failed, scheduled retry ${newAttempts}/${maxAttempts} in 30 minutes`);
-          } else {
-            // Max attempts reached - mark as failed
-            await supabase
-              .from('dialing_queues')
-              .update({ 
-                status: 'failed',
-                attempts: newAttempts,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', call.id);
-            console.log(`[Dispatcher] Call failed, max attempts (${maxAttempts}) reached`);
-
-            // CRITICAL: Advance workflow to next step when max_attempts exhausted
-            // This ensures the workflow continues (e.g., SMS step) even if calls don't connect
-            await advanceWorkflowPastFailedCallStep(supabase, call.lead_id, call.campaign_id);
-          }
-
-          continue;
+        if (callResponse.error) {
+          throw new Error(callResponse.error.message || 'Call failed');
         }
 
-        console.log('Call created successfully:', callData);
-
-        // Update number usage statistics
-        await supabase
-          .from('phone_numbers')
-          .update({
-            daily_calls: selectedNumber.daily_calls + 1,
-            last_used: new Date().toISOString()
-          })
-          .eq('id', selectedNumber.id);
-
-        // Update queue entry - keep as calling until webhook closes the loop
-        const newAttempts = (call.attempts || 0) + 1;
-        await supabase
-          .from('dialing_queues')
-          .update({
-            status: 'calling',
-            attempts: newAttempts,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', call.id);
-
-        dispatchedCount++;
+        dispatched++;
         dispatchResults.push({
-          queue_id: call.id,
-          lead: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unknown',
-          phone: lead.phone_number,
-          number_used: selectedNumber.number,
-          call_id: callData?.call_id
+          leadId: queueItem.lead_id,
+          success: true,
+          callId: callResponse.data?.callId,
         });
 
-        console.log(`Successfully dispatched call ${call.id}`);
+        console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id}`);
 
-        // Remove number from pool to prevent reuse in this batch
-        const idx = numberPool.findIndex(n => n.id === selectedNumber.id);
-        if (idx !== -1) numberPool.splice(idx, 1);
-
-      } catch (err: unknown) {
-        const error = err as any;
-        console.error('Error dispatching call:', call.id, error?.message || error);
-
-        // CRITICAL: If the fetch/json parsing fails, the queue entry would otherwise remain stuck in "calling".
-        try {
-          const newAttempts = (call.attempts || 0) + 1;
-          const maxAttempts = call.max_attempts || 3;
-          const shouldRetry = newAttempts < maxAttempts;
-
-          const update: Record<string, any> = {
-            status: shouldRetry ? 'pending' : 'failed',
-            attempts: newAttempts,
-            updated_at: new Date().toISOString(),
-          };
-
-          if (shouldRetry) {
-            update.scheduled_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-          }
-
+      } catch (callError: any) {
+        console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);
+        
+        // Check if should retry
+        const attempts = (queueItem.attempts || 0) + 1;
+        const maxAttempts = queueItem.max_attempts || 3;
+        
+        if (attempts < maxAttempts) {
           await supabase
             .from('dialing_queues')
-            .update(update)
-            .eq('id', call.id);
-
-          console.log(
-            `[Dispatcher] Queue entry recovered after dispatch error: ${call.id} -> ${update.status} (${newAttempts}/${maxAttempts})`
-          );
-        } catch (queueFixError) {
-          console.error('[Dispatcher] Failed to recover queue entry after dispatch error:', call.id, queueFixError);
+            .update({ 
+              status: 'pending', 
+              scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              updated_at: nowIso 
+            })
+            .eq('id', queueItem.id);
+        } else {
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'failed', updated_at: nowIso })
+            .eq('id', queueItem.id);
         }
+
+        dispatchResults.push({
+          leadId: queueItem.lead_id,
+          success: false,
+          error: callError.message,
+        });
       }
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        dispatched: dispatchedCount,
+        dispatched,
+        workflowEnrolled,
+        dialingQueued,
+        callbacks: { 
+          queued: callbacksQueued, 
+          enrolled: callbacksEnrolledInWorkflow, 
+          resumed: callbacksResumed 
+        },
         results: dispatchResults,
-        warning: usingUnregisteredNumbers ? 'Using phone numbers not registered with Retell - some calls may fail' : undefined,
-        message: dispatchedCount > 0 
-          ? `Successfully dispatched ${dispatchedCount} calls` 
-          : 'No calls dispatched - check logs for details'
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (err: unknown) {
-    const error = err as Error;
-    console.error('Error in call-dispatcher:', error);
+  } catch (error: any) {
+    console.error('[Dispatcher] Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
+      JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
-
-// Advance workflow to next step when a call step fails after max_attempts
-async function advanceWorkflowPastFailedCallStep(supabase: any, leadId: string, campaignId: string) {
-  try {
-    // Find active workflow progress for this lead/campaign
-    const { data: progress, error: progressError } = await supabase
-      .from('lead_workflow_progress')
-      .select(`
-        id, workflow_id, current_step_id,
-        workflow_steps!lead_workflow_progress_current_step_id_fkey(id, step_order, step_type, workflow_id)
-      `)
-      .eq('lead_id', leadId)
-      .eq('campaign_id', campaignId)
-      .eq('status', 'active')
-      .maybeSingle();
-    
-    if (progressError || !progress) {
-      console.log(`[Dispatcher] No active workflow found for lead ${leadId} in campaign ${campaignId}`);
-      return;
-    }
-    
-    const currentStep = progress.workflow_steps;
-    if (!currentStep) {
-      console.log(`[Dispatcher] No current step found for workflow progress ${progress.id}`);
-      return;
-    }
-    
-    // Get the next step in the workflow
-    const { data: nextStep } = await supabase
-      .from('workflow_steps')
-      .select('id, step_order, step_type, step_config')
-      .eq('workflow_id', progress.workflow_id)
-      .gt('step_order', currentStep.step_order)
-      .order('step_order', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    
-    if (nextStep) {
-      // Move to next step
-      const nextActionAt = calculateNextActionTime(nextStep);
-      await supabase
-        .from('lead_workflow_progress')
-        .update({
-          current_step_id: nextStep.id,
-          next_action_at: nextActionAt,
-          last_action_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', progress.id);
-      
-      console.log(`[Dispatcher] Advanced workflow for lead ${leadId} to step ${nextStep.step_order} (${nextStep.step_type})`);
-    } else {
-      // No more steps - complete the workflow
-      await supabase
-        .from('lead_workflow_progress')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', progress.id);
-      
-      console.log(`[Dispatcher] Workflow completed for lead ${leadId} (no more steps after failed call)`);
-    }
-  } catch (error) {
-    console.error(`[Dispatcher] Error advancing workflow for lead ${leadId}:`, error);
-  }
-}
-
-function calculateNextActionTime(step: any): string {
-  const config = step?.step_config || {};
-  const now = new Date();
-
-  if (step.step_type === 'wait') {
-    const delayMs =
-      (config.delay_minutes || 0) * 60 * 1000 +
-      (config.delay_hours || 0) * 60 * 60 * 1000 +
-      (config.delay_days || 0) * 24 * 60 * 60 * 1000;
-
-    let nextTime = new Date(now.getTime() + delayMs);
-
-    if (config.time_of_day) {
-      const [hours, minutes] = String(config.time_of_day).split(':').map(Number);
-      if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
-        nextTime.setHours(hours, minutes, 0, 0);
-        if (nextTime <= now) {
-          nextTime.setDate(nextTime.getDate() + 1);
-        }
-      }
-    }
-
-    return nextTime.toISOString();
-  }
-
-  return now.toISOString();
-}
-
-function selectBestNumber(availableNumbers: any[], targetPhone: string): any | null {
-  if (availableNumbers.length === 0) return null;
-
-  // Extract area code from target phone
-  const targetAreaCode = targetPhone.replace(/\D/g, '').slice(-10, -7);
-
-  // Score each number
-  const scored = availableNumbers.map(n => {
-    let score = 100;
-    
-    // HEAVILY prefer numbers registered with Retell
-    if (n.retell_phone_id) {
-      score += 100;
-    }
-    
-    // Prefer matching area code
-    if (n.area_code === targetAreaCode) {
-      score += 20;
-    }
-    
-    // Penalize high daily usage
-    score -= Math.min(n.daily_calls * 2, 50);
-    
-    // Penalize recently used numbers
-    if (n.last_used) {
-      const minutesSinceUse = (Date.now() - new Date(n.last_used).getTime()) / 60000;
-      if (minutesSinceUse < 5) score -= 30;
-      else if (minutesSinceUse < 30) score -= 10;
-    }
-    
-    // Penalize spam-flagged numbers
-    if (n.is_spam) score -= 50;
-    
-    return { number: n, score };
-  });
-
-  // Sort by score descending and return best
-  scored.sort((a, b) => b.score - a.score);
-  
-  console.log(`Best number: ${scored[0].number.number} (score: ${scored[0].score}, retell_id: ${scored[0].number.retell_phone_id || 'none'})`);
-  return scored[0].number;
-}

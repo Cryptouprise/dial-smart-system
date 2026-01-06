@@ -50,6 +50,301 @@ interface RetellWebhookPayload {
   };
 }
 
+// ============= ADVANCED VOICEMAIL DETECTION SYSTEM =============
+const VOICEMAIL_DETECTION = {
+  // Greeting patterns (what VM systems say when answering)
+  greetingPatterns: [
+    /hi,?\s*(this\s+is|you[''']ve?\s+reached)/i,
+    /hello,?\s*(this\s+is|you[''']ve?\s+reached)/i,
+    /you[''']ve?\s+reached\s+(the\s+)?(voicemail|mailbox|phone|number)/i,
+    /leave\s+(me\s+)?(a\s+)?your\s+(name|number|message)/i,
+    /please\s+leave\s+(a\s+)?message/i,
+    /sorry\s+(i\s+)?(missed|can[''']t\s+take|couldn[''']t\s+get)/i,
+    /not\s+available\s+(right\s+now|to\s+take|at\s+(the\s+)?this\s+time)/i,
+    /at\s+the\s+(tone|beep),?\s+(please\s+)?(leave|record)/i,
+    /after\s+the\s+(tone|beep)/i,
+    /record\s+(your\s+)?message/i,
+    /i('m|\s+am)\s+not\s+here/i,
+    /can('t|not)\s+come\s+to\s+the\s+phone/i,
+    /leave\s+your\s+name\s+and\s+number/i,
+    /i('ll)?\s+get\s+back\s+to\s+you/i,
+  ],
+  
+  // Carrier/System voicemail patterns
+  carrierPatterns: [
+    /the\s+(person|party|number)\s+(you\s+)?(are\s+)?(trying\s+to\s+)?(call|reach|dial)/i,
+    /the\s+(subscriber|customer|caller)\s+(you\s+)?(have\s+)?dialed/i,
+    /is\s+not\s+available/i,
+    /mailbox\s+is\s+full/i,
+    /cannot\s+be\s+completed\s+as\s+dialed/i,
+    /has\s+not\s+set\s+up\s+(their\s+)?voicemail/i,
+    /press\s+\d+\s+to\s+leave\s+(a\s+)?message/i,
+    /this\s+is\s+the\s+t-?mobile/i,
+    /this\s+is\s+the\s+verizon/i,
+    /this\s+is\s+the\s+at&?t/i,
+    /google\s+voice/i,
+    /vonage/i,
+    /comcast/i,
+    /spectrum/i,
+    /xfinity/i,
+    /your\s+call\s+has\s+been\s+forwarded/i,
+    /the\s+mailbox\s+belonging\s+to/i,
+    /the\s+google\s+subscriber/i,
+    /please\s+record\s+your\s+message/i,
+    /when\s+you('re|\s+are)\s+finished\s+(recording|speaking)/i,
+    /hang\s+up\s+or\s+press\s+(pound|#|\d)/i,
+  ],
+  
+  // Personal voicemail indicators
+  personalPatterns: [
+    /i[''']m\s+(currently\s+)?(not\s+available|unavailable|away|busy|out)/i,
+    /i\s+will\s+(get\s+back|return\s+your\s+call|call\s+you\s+back)/i,
+    /please\s+leave\s+(your\s+)?name/i,
+    /leave\s+(your\s+)?name,?\s+(and\s+)?(phone\s+)?number/i,
+    /and\s+(a\s+)?brief\s+message/i,
+    /reason\s+(for\s+)?(your\s+)?call/i,
+    /call\s+you\s+(right\s+)?back/i,
+    /as\s+soon\s+as\s+(i\s+can|possible|i('m|\s+am)\s+able)/i,
+    /thank\s+you\s+(for\s+)?calling/i,
+    /god\s+bless/i,
+    /have\s+a\s+(blessed|great|good|wonderful)\s+day/i,
+    /thanks\s+for\s+calling/i,
+    /leave\s+a\s+detailed\s+message/i,
+    /i('ll)?\s+return\s+your\s+call/i,
+    /speak(ing)?\s+to\s+a\s+live\s+person/i,
+    /this\s+is\s+\w+,?\s+leave\s+a\s+message/i,
+    /hey\s+(this\s+is|it('s|s))\s+\w+/i,
+  ],
+  
+  // Beep/tone indicators (often transcribed or described)
+  beepPatterns: [
+    /\bbeep\b/i,
+    /\btone\b/i,
+    /\bbleep\b/i,
+    /\[beep\]/i,
+    /\[tone\]/i,
+    /\*beep\*/i,
+  ],
+  
+  // Phrases that indicate NOT a voicemail (real person talking)
+  antiVoicemailPatterns: [
+    /who\s+is\s+this/i,
+    /who('s|s)\s+calling/i,
+    /what\s+do\s+you\s+want/i,
+    /can\s+i\s+help\s+you/i,
+    /how\s+can\s+i\s+help/i,
+    /yeah\s+speaking/i,
+    /this\s+is\s+(he|she|him|her|them)/i,
+    /hold\s+on/i,
+    /one\s+(second|moment|sec)/i,
+    /let\s+me\s+(check|see|think)/i,
+    /i('m|\s+am)\s+listening/i,
+    /go\s+ahead/i,
+    /what('s|s)\s+up/i,
+    /yeah\s+what('s|s)\s+going\s+on/i,
+  ],
+
+  // Duration thresholds
+  durationThresholds: {
+    definitelyNoAnswer: { max: 8 },
+    likelyVoicemail: { min: 12, max: 45 },
+    shortCall: { max: 15 },
+    normalCall: { min: 30 },
+  },
+
+  // Scoring weights
+  weights: {
+    greetingPattern: 30,
+    carrierPattern: 45,
+    personalPattern: 25,
+    beepPattern: 35,
+    durationMatch: 20,
+    noLeadResponse: 40,
+    disconnectionReason: 35,
+    antiPattern: -50,
+    shortDuration: 15,
+    onlyAgentSpeaking: 30,
+    structuredGreeting: 20,
+  }
+};
+
+interface VoicemailDetectionResult {
+  isVoicemail: boolean;
+  confidence: number;
+  score: number;
+  matchedPatterns: string[];
+  factors: {
+    greetingPatterns: number;
+    carrierPatterns: number;
+    personalPatterns: number;
+    beepPatterns: number;
+    durationScore: number;
+    conversationStructure: number;
+    disconnectionScore: number;
+    antiPatternPenalty: number;
+  };
+}
+
+function detectVoicemail(params: {
+  transcript: string;
+  durationSeconds: number;
+  disconnectionReason?: string;
+  transcriptObject?: Array<{ role: string; content: string }>;
+}): VoicemailDetectionResult {
+  const { transcript, durationSeconds, disconnectionReason, transcriptObject } = params;
+  const transcriptLower = (transcript || '').toLowerCase();
+  const matchedPatterns: string[] = [];
+  
+  let score = 0;
+  const factors = {
+    greetingPatterns: 0,
+    carrierPatterns: 0,
+    personalPatterns: 0,
+    beepPatterns: 0,
+    durationScore: 0,
+    conversationStructure: 0,
+    disconnectionScore: 0,
+    antiPatternPenalty: 0,
+  };
+
+  // 1. Check greeting patterns
+  for (const pattern of VOICEMAIL_DETECTION.greetingPatterns) {
+    if (pattern.test(transcriptLower)) {
+      factors.greetingPatterns += VOICEMAIL_DETECTION.weights.greetingPattern;
+      matchedPatterns.push(`greeting: ${pattern.source.substring(0, 30)}`);
+      break; // Only count once per category
+    }
+  }
+  
+  // 2. Check carrier patterns (highest weight)
+  for (const pattern of VOICEMAIL_DETECTION.carrierPatterns) {
+    if (pattern.test(transcriptLower)) {
+      factors.carrierPatterns += VOICEMAIL_DETECTION.weights.carrierPattern;
+      matchedPatterns.push(`carrier: ${pattern.source.substring(0, 30)}`);
+      break;
+    }
+  }
+  
+  // 3. Check personal VM patterns
+  for (const pattern of VOICEMAIL_DETECTION.personalPatterns) {
+    if (pattern.test(transcriptLower)) {
+      factors.personalPatterns += VOICEMAIL_DETECTION.weights.personalPattern;
+      matchedPatterns.push(`personal: ${pattern.source.substring(0, 30)}`);
+      break;
+    }
+  }
+  
+  // 4. Check for beep/tone indicators
+  for (const pattern of VOICEMAIL_DETECTION.beepPatterns) {
+    if (pattern.test(transcriptLower)) {
+      factors.beepPatterns += VOICEMAIL_DETECTION.weights.beepPattern;
+      matchedPatterns.push(`beep: ${pattern.source}`);
+      break;
+    }
+  }
+  
+  // 5. Check anti-voicemail patterns (real person indicators)
+  for (const pattern of VOICEMAIL_DETECTION.antiVoicemailPatterns) {
+    if (pattern.test(transcriptLower)) {
+      factors.antiPatternPenalty += VOICEMAIL_DETECTION.weights.antiPattern;
+      matchedPatterns.push(`anti: ${pattern.source.substring(0, 30)}`);
+      break;
+    }
+  }
+  
+  // 6. Duration-based scoring
+  const { definitelyNoAnswer, likelyVoicemail, shortCall } = VOICEMAIL_DETECTION.durationThresholds;
+  
+  if (durationSeconds <= definitelyNoAnswer.max) {
+    // Very short = likely no answer, not voicemail
+    factors.durationScore -= 10;
+    matchedPatterns.push('duration: very_short');
+  } else if (durationSeconds >= likelyVoicemail.min && durationSeconds <= likelyVoicemail.max) {
+    // Sweet spot for voicemail greetings
+    factors.durationScore += VOICEMAIL_DETECTION.weights.durationMatch;
+    matchedPatterns.push('duration: vm_range');
+  } else if (durationSeconds <= shortCall.max && durationSeconds > definitelyNoAnswer.max) {
+    // Short call could be VM
+    factors.durationScore += VOICEMAIL_DETECTION.weights.shortDuration;
+    matchedPatterns.push('duration: short_possible_vm');
+  }
+  
+  // 7. Conversation structure analysis
+  if (transcriptObject && transcriptObject.length > 0) {
+    const agentTurns = transcriptObject.filter(t => t.role === 'agent').length;
+    const leadTurns = transcriptObject.filter(t => t.role === 'user' || t.role === 'lead' || t.role === 'customer').length;
+    
+    // If only agent spoke (no lead responses), likely voicemail
+    if (leadTurns === 0 && agentTurns > 0) {
+      factors.conversationStructure += VOICEMAIL_DETECTION.weights.onlyAgentSpeaking;
+      matchedPatterns.push('structure: no_lead_response');
+    }
+    
+    // If lead only said very short things, could be VM prompt
+    if (leadTurns === 1 && agentTurns > 0) {
+      const leadContent = transcriptObject.find(t => t.role !== 'agent')?.content || '';
+      if (leadContent.length < 100) {
+        // Check if lead content matches VM greeting patterns
+        const leadLower = leadContent.toLowerCase();
+        const looksLikeVMGreeting = VOICEMAIL_DETECTION.greetingPatterns.some(p => p.test(leadLower)) ||
+                                    VOICEMAIL_DETECTION.personalPatterns.some(p => p.test(leadLower));
+        if (looksLikeVMGreeting) {
+          factors.conversationStructure += VOICEMAIL_DETECTION.weights.structuredGreeting;
+          matchedPatterns.push('structure: vm_greeting_detected');
+        }
+      }
+    }
+  } else if (transcript) {
+    // Fallback: Check if transcript seems one-sided
+    const lines = transcript.split('\n').filter(l => l.trim());
+    const aiLines = lines.filter(l => l.toLowerCase().startsWith('ai:') || l.toLowerCase().startsWith('agent:'));
+    const leadLines = lines.filter(l => l.toLowerCase().startsWith('lead:') || l.toLowerCase().startsWith('user:'));
+    
+    if (leadLines.length === 0 && aiLines.length > 0) {
+      factors.conversationStructure += VOICEMAIL_DETECTION.weights.noLeadResponse;
+      matchedPatterns.push('structure: one_sided_transcript');
+    }
+  }
+  
+  // 8. Disconnection reason analysis
+  if (disconnectionReason) {
+    const reason = disconnectionReason.toLowerCase();
+    if (reason.includes('machine') || reason.includes('voicemail') || reason.includes('answering')) {
+      factors.disconnectionScore += VOICEMAIL_DETECTION.weights.disconnectionReason;
+      matchedPatterns.push(`disconnection: ${reason}`);
+    }
+  }
+  
+  // Calculate total score
+  score = factors.greetingPatterns +
+          factors.carrierPatterns +
+          factors.personalPatterns +
+          factors.beepPatterns +
+          factors.durationScore +
+          factors.conversationStructure +
+          factors.disconnectionScore +
+          factors.antiPatternPenalty;
+  
+  // Normalize confidence to 0-100
+  const maxPossibleScore = 200; // Approximate max
+  const confidence = Math.min(100, Math.max(0, (score / maxPossibleScore) * 100));
+  
+  // Determine if it's voicemail (threshold of 40%)
+  const isVoicemail = confidence >= 40;
+  
+  console.log('[Voicemail Detection] Score:', score, 'Confidence:', confidence.toFixed(1) + '%', 'Is VM:', isVoicemail);
+  console.log('[Voicemail Detection] Factors:', JSON.stringify(factors));
+  console.log('[Voicemail Detection] Matched:', matchedPatterns.join(', '));
+  
+  return {
+    isVoicemail,
+    confidence,
+    score,
+    matchedPatterns,
+    factors,
+  };
+}
+
 // Normalize phone number for matching - returns multiple formats to try
 function normalizePhoneFormats(phone: string): string[] {
   if (!phone) return [];
@@ -166,7 +461,6 @@ serve(async (req) => {
       }
       
       // Create a call log entry at call_started so we have context for later events
-      // NOTE: call_logs.status is constrained in Postgres; use an allowed value.
       if (userId) {
         const callLogEntry: any = {
           retell_call_id: call.call_id,
@@ -192,9 +486,7 @@ serve(async (req) => {
         }
       }
 
-      // If we found a lead, we *attempt* to inject dynamic variables.
-      // For reliable "name on greeting" behavior, configure Retell's Inbound Webhook
-      // (retell-inbound-webhook) which provides dynamic variables before call connects.
+      // If we found a lead, inject dynamic variables
       if (lead) {
         console.log('[Retell Webhook] Found lead for inbound caller:', lead.first_name, lead.last_name);
 
@@ -273,7 +565,6 @@ serve(async (req) => {
           'contact.zip': zipCode,
           'contact.full_address': fullAddress,
           'contact.fullAddress': fullAddress,
-          // GoHighLevel-specific address aliases
           'contact.address1': address,
           'contact.address_1': address,
           'contact.address_line_1': address,
@@ -284,7 +575,7 @@ serve(async (req) => {
           'contact.postal_code': zipCode,
           'contact.postalCode': zipCode,
 
-          // Alternative formats some systems use
+          // Alternative formats
           'customer.first_name': firstName,
           'customer.last_name': lastName,
           'customer.name': fullName,
@@ -349,8 +640,7 @@ serve(async (req) => {
 
         console.log('[Retell Webhook] Prepared dynamic variables:', Object.keys(dynamicVariables));
 
-        // Best-effort: Update the call with dynamic variables via Retell API.
-        // If Retell rejects this (schema validation), inbound webhook is the supported way.
+        // Update the call with dynamic variables via Retell API
         const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
         if (retellApiKey) {
           try {
@@ -434,8 +724,22 @@ serve(async (req) => {
     // Format transcript for storage
     const formattedTranscript = formatTranscript(call.transcript_object || [], call.transcript);
 
+    // ============= ADVANCED VOICEMAIL DETECTION =============
+    const vmDetection = detectVoicemail({
+      transcript: formattedTranscript,
+      durationSeconds,
+      disconnectionReason: call.disconnection_reason,
+      transcriptObject: call.transcript_object,
+    });
+
     // Determine initial outcome from call status
     let outcome = mapCallStatusToOutcome(call.call_status, call.disconnection_reason, durationSeconds);
+    
+    // Override with voicemail detection if confident
+    if (vmDetection.isVoicemail && vmDetection.confidence >= 40) {
+      console.log(`[Retell Webhook] Voicemail detected with ${vmDetection.confidence.toFixed(1)}% confidence, overriding outcome from "${outcome}" to "voicemail"`);
+      outcome = 'voicemail';
+    }
 
     // 1. Update or create call log
     console.log('[Retell Webhook] Updating call log...');
@@ -470,7 +774,7 @@ serve(async (req) => {
       console.log('[Retell Webhook] Triggering transcript analysis...');
       
       try {
-        // Use Retell's built-in analysis if available, pass transcript for callback detection
+        // Use Retell's built-in analysis if available
         if (call.call_analysis) {
           dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis, formattedTranscript);
           console.log('[Retell Webhook] Using Retell analysis:', dispositionResult);
@@ -484,14 +788,15 @@ serve(async (req) => {
         }
 
         // Update call log with disposition
-        // IMPORTANT: Do NOT let transcript analysis override hard "non-connection" outcomes (voicemail/no_answer/etc)
-        // unless it detected a *stronger* intent (callback_requested, appointment_set, etc).
+        // IMPORTANT: Do NOT let transcript analysis override voicemail outcome
         if (dispositionResult && callLog?.id) {
           const nonConnectionOutcomes = ['voicemail', 'no_answer', 'busy', 'failed', 'unknown'];
           const analyzedDisposition = dispositionResult.disposition;
 
+          // If we detected voicemail via our advanced system, keep it
           const shouldKeepStatusOutcome =
-            nonConnectionOutcomes.includes(outcome) && analyzedDisposition === 'contacted';
+            (outcome === 'voicemail' && vmDetection.isVoicemail) ||
+            (nonConnectionOutcomes.includes(outcome) && analyzedDisposition === 'contacted');
 
           const finalOutcome = shouldKeepStatusOutcome ? outcome : analyzedDisposition;
 
@@ -514,7 +819,7 @@ serve(async (req) => {
       }
     }
 
-    // 2.5 Update dialing queue status / schedule retries (if this call was dispatched from dialing_queues)
+    // 2.5 Update dialing queue status / schedule retries
     if (leadId && campaignId) {
       try {
         const { data: queueEntry, error: queueLookupError } = await supabase
@@ -579,8 +884,8 @@ serve(async (req) => {
         status: mapDispositionToLeadStatus(outcome),
       };
 
-      // Build structured call note for EVERY call (not just callbacks)
-      const callNote = buildCallNote(outcome, dispositionResult, durationSeconds, currentLead?.first_name);
+      // Build structured call note for EVERY call
+      const callNote = buildCallNote(outcome, dispositionResult, durationSeconds, currentLead?.first_name, vmDetection);
       const existingNotes = currentLead?.notes || '';
       leadUpdate.notes = (existingNotes + '\n\n' + callNote).trim();
 
@@ -589,13 +894,13 @@ serve(async (req) => {
         const callbackMinutes = extractCallbackTimeFromTranscript(formattedTranscript);
         const callbackTime = new Date(Date.now() + callbackMinutes * 60 * 1000);
         leadUpdate.next_callback_at = callbackTime.toISOString();
-        leadUpdate.status = 'callback'; // Mark lead status as callback for visibility
+        leadUpdate.status = 'callback';
         console.log(`[Retell Webhook] Callback scheduled in ${callbackMinutes} minutes at ${callbackTime.toISOString()}`);
         
         // Queue callback in dialing queue if we have a campaign
         if (campaignId) {
           try {
-            // First delete any existing pending/failed entry for this lead to avoid conflicts
+            // First delete any existing pending/failed entry for this lead
             await supabase
               .from('dialing_queues')
               .delete()
@@ -609,7 +914,7 @@ serve(async (req) => {
               phone_number: call.to_number || '',
               status: 'pending',
               scheduled_at: callbackTime.toISOString(),
-              priority: 5, // High priority for callbacks (higher = more urgent)
+              priority: 5,
               max_attempts: 3,
               attempts: 0,
             });
@@ -692,7 +997,6 @@ serve(async (req) => {
           }
         } catch (smsError) {
           console.error('[Retell Webhook] Failed to send confirmation SMS:', smsError);
-          // Don't fail the main flow for SMS errors
         }
       }
 
@@ -722,7 +1026,6 @@ serve(async (req) => {
         console.log('[Retell Webhook] Disposition router response:', dispositionResponse.data);
       } catch (routerError: any) {
         console.error('[Retell Webhook] Disposition router error:', routerError);
-        // Queue for retry
         await logFailedOperation(supabase, userId, 'disposition_routing', {
           leadId,
           outcome,
@@ -731,7 +1034,7 @@ serve(async (req) => {
         });
       }
 
-      // 5. Update nudge tracking (only if userId is available)
+      // 5. Update nudge tracking
       if (userId) {
         try {
           await updateNudgeTracking(supabase, leadId, userId, outcome);
@@ -747,7 +1050,7 @@ serve(async (req) => {
         }
 
         // 7. CRITICAL: Advance workflow to next step after call ends
-        // BUT: Skip workflow advancement for terminal dispositions (they're already removed by disposition-router)
+        // Skip for terminal dispositions
         const TERMINAL_DISPOSITIONS = [
           'callback_requested', 'callback', 'appointment_set', 'appointment_booked', 
           'converted', 'not_interested', 'dnc', 'wrong_number', 'do_not_call'
@@ -784,12 +1087,11 @@ serve(async (req) => {
 
     // 7. Update phone number usage stats
     if (call.from_number) {
-    // First get current daily_calls count
-    const { data: phoneData } = await supabase
-      .from('phone_numbers')
-      .select('daily_calls')
-      .eq('number', call.from_number)
-      .maybeSingle();
+      const { data: phoneData } = await supabase
+        .from('phone_numbers')
+        .select('daily_calls')
+        .eq('number', call.from_number)
+        .maybeSingle();
 
       await supabase
         .from('phone_numbers')
@@ -808,6 +1110,11 @@ serve(async (req) => {
       callId: call.call_id,
       disposition: outcome,
       leadId,
+      voicemailDetection: {
+        isVoicemail: vmDetection.isVoicemail,
+        confidence: vmDetection.confidence,
+        matchedPatterns: vmDetection.matchedPatterns.length,
+      },
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -883,7 +1190,7 @@ function mapRetellAnalysisToDisposition(
     };
   }
 
-  // NEW: Check transcript for callback patterns FIRST (before sentiment mapping)
+  // Check transcript for callback patterns FIRST
   const transcriptLower = (transcript || analysis.call_summary || '').toLowerCase();
   const callbackPatterns = [
     /call\s*(me\s*)?(back|later|again)/i,
@@ -897,152 +1204,176 @@ function mapRetellAnalysisToDisposition(
     /call\s*back\s*(in|at|around|later)/i,
     /i('m|\s*am)\s*(busy|in\s*a\s*meeting)/i,
   ];
-  
-  if (callbackPatterns.some(pattern => pattern.test(transcriptLower))) {
-    console.log('[Retell Webhook] Callback pattern detected in transcript');
-    return { 
-      disposition: 'callback_requested', 
-      confidence: 0.85, 
-      summary: analysis.call_summary || '' 
+
+  for (const pattern of callbackPatterns) {
+    if (pattern.test(transcriptLower)) {
+      return {
+        disposition: 'callback_requested',
+        confidence: 0.85,
+        summary: analysis.call_summary || 'Lead requested callback',
+      };
+    }
+  }
+
+  // Check for appointment set
+  const appointmentPatterns = [
+    /appointment\s*(set|booked|scheduled|confirmed)/i,
+    /see\s+you\s+(on|at|tomorrow)/i,
+    /looking\s+forward\s+to\s+(meeting|seeing|speaking)/i,
+    /confirmed\s+for/i,
+    /scheduled\s+(for|at)/i,
+  ];
+
+  for (const pattern of appointmentPatterns) {
+    if (pattern.test(transcriptLower)) {
+      return {
+        disposition: 'appointment_set',
+        confidence: 0.9,
+        summary: analysis.call_summary || 'Appointment scheduled',
+      };
+    }
+  }
+
+  // Map sentiment to disposition
+  if (sentiment === 'positive' && successful) {
+    return {
+      disposition: 'interested',
+      confidence: 0.8,
+      summary: analysis.call_summary || 'Positive call outcome',
     };
   }
 
-  // Map sentiment and success to disposition
-  if (sentiment === 'negative' || customData.not_interested) {
-    return { disposition: 'not_interested', confidence: 0.8, summary: analysis.call_summary || '' };
-  }
-  
-  if (customData.appointment_set || customData.booked) {
-    return { disposition: 'appointment_set', confidence: 0.95, summary: analysis.call_summary || '' };
-  }
-  
-  if (customData.callback_requested || customData.call_back) {
-    return { disposition: 'callback_requested', confidence: 0.85, summary: analysis.call_summary || '' };
-  }
-  
-  if (customData.dnc || customData.do_not_call) {
-    return { disposition: 'dnc', confidence: 0.95, summary: analysis.call_summary || '' };
+  if (sentiment === 'negative') {
+    // Check for DNC phrases
+    const dncPatterns = [
+      /don('t|t)\s*call\s*(me\s*)?(again|back|anymore)/i,
+      /stop\s*calling/i,
+      /remove\s*me/i,
+      /do\s*not\s*call/i,
+      /leave\s*me\s*alone/i,
+    ];
+
+    for (const pattern of dncPatterns) {
+      if (pattern.test(transcriptLower)) {
+        return {
+          disposition: 'dnc',
+          confidence: 0.95,
+          summary: analysis.call_summary || 'Lead requested DNC',
+        };
+      }
+    }
+
+    return {
+      disposition: 'not_interested',
+      confidence: 0.75,
+      summary: analysis.call_summary || 'Negative sentiment detected',
+    };
   }
 
-  if (successful && sentiment === 'positive') {
-    return { disposition: 'interested', confidence: 0.7, summary: analysis.call_summary || '' };
-  }
-
-  return { disposition: 'contacted', confidence: 0.5, summary: analysis.call_summary || '' };
+  // Default to contacted if we got through
+  return {
+    disposition: successful ? 'contacted' : 'no_answer',
+    confidence: 0.6,
+    summary: analysis.call_summary || '',
+  };
 }
 
-// Extract callback time from transcript (e.g. "call me back in 10 minutes" or "four minutes")
-function extractCallbackTimeFromTranscript(transcript: string): number {
-  const text = transcript.toLowerCase();
-  
-  // Map spoken numbers to digits - must check BEFORE digit patterns
-  const numberWords: Record<string, number> = {
-    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
-    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
-    'twenty-five': 25, 'thirty': 30, 'forty': 40, 'forty-five': 45, 'fifty': 50
+function mapDispositionToLeadStatus(disposition: string): string {
+  const statusMap: Record<string, string> = {
+    'appointment_set': 'appointment',
+    'appointment_booked': 'appointment',
+    'callback_requested': 'callback',
+    'callback': 'callback',
+    'interested': 'qualified',
+    'not_interested': 'not_interested',
+    'dnc': 'dnc',
+    'do_not_call': 'dnc',
+    'wrong_number': 'invalid',
+    'voicemail': 'contacted',
+    'no_answer': 'contacted',
+    'busy': 'contacted',
+    'contacted': 'contacted',
+    'converted': 'won',
   };
   
-  // Check for spoken number + time unit patterns FIRST (e.g., "four minutes", "ten hours")
-  for (const [word, num] of Object.entries(numberWords)) {
-    const minutePattern = new RegExp(`${word}\\s*(minute|min)`, 'i');
-    const hourPattern = new RegExp(`${word}\\s*hour`, 'i');
-    
-    if (minutePattern.test(text)) {
-      console.log(`[extractCallbackTime] Matched spoken number: "${word}" minutes = ${num}`);
-      return num;
-    }
-    if (hourPattern.test(text)) {
-      console.log(`[extractCallbackTime] Matched spoken number: "${word}" hours = ${num * 60} minutes`);
-      return num * 60;
-    }
-  }
-  
-  // Pattern matching for digit-based time mentions
-  const patterns: Array<{ regex: RegExp; unit?: number; value?: number }> = [
-    { regex: /(\d+)\s*minutes?/i, unit: 1 },
-    { regex: /(\d+)\s*hours?/i, unit: 60 },
-    { regex: /half\s*(an?\s*)?hour/i, value: 30 },
-    { regex: /an?\s*hour/i, value: 60 },
-    { regex: /couple\s*of?\s*hours?/i, value: 120 },
-    { regex: /few\s*hours?/i, value: 180 },
-    { regex: /tomorrow/i, value: 24 * 60 },
-    { regex: /later\s*today/i, value: 4 * 60 },
-    { regex: /this\s*afternoon/i, value: 4 * 60 },
-    { regex: /this\s*evening/i, value: 6 * 60 },
-    { regex: /this\s*morning/i, value: 2 * 60 },
-    { regex: /next\s*week/i, value: 7 * 24 * 60 },
-  ];
-  
-  for (const pattern of patterns) {
-    const match = text.match(pattern.regex);
-    if (match) {
-      if (pattern.value !== undefined) {
-        console.log(`[extractCallbackTime] Matched pattern with value: ${pattern.value} minutes`);
-        return pattern.value;
-      }
-      if (match[1] && pattern.unit !== undefined) {
-        const result = parseInt(match[1]) * pattern.unit;
-        console.log(`[extractCallbackTime] Matched pattern with digits: ${match[1]} * ${pattern.unit} = ${result} minutes`);
-        return result;
-      }
-    }
-  }
-  
-  // Default: 30 minutes if callback requested but no specific time mentioned
-  console.log('[extractCallbackTime] No specific time found, defaulting to 30 minutes');
-  return 30;
+  return statusMap[disposition] || 'contacted';
 }
 
-// Build structured call note for every call
 function buildCallNote(
   outcome: string,
-  dispositionResult: { summary?: string; key_points?: string[] } | null,
+  dispositionResult: any,
   durationSeconds: number,
-  leadFirstName?: string | null
+  firstName?: string,
+  vmDetection?: VoicemailDetectionResult
 ): string {
   const timestamp = new Date().toLocaleString('en-US', {
-    dateStyle: 'short',
-    timeStyle: 'short'
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
   });
   
-  const duration = durationSeconds > 0 
-    ? `${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s`
-    : 'N/A';
+  let note = `📞 Call at ${timestamp} (${Math.round(durationSeconds / 60)}m ${durationSeconds % 60}s)\n`;
+  note += `Outcome: ${outcome.replace(/_/g, ' ').toUpperCase()}`;
   
-  const formattedOutcome = outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  const summary = dispositionResult?.summary || 'Call completed';
+  if (vmDetection?.isVoicemail) {
+    note += ` (VM detected: ${vmDetection.confidence.toFixed(0)}% confidence)`;
+  }
   
-  const lines = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📞 CALL LOG - ${timestamp}`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `Outcome: ${formattedOutcome}`,
-    `Duration: ${duration}`,
-    ``,
-    `Summary: ${summary}`,
+  if (dispositionResult?.summary) {
+    note += `\nSummary: ${dispositionResult.summary}`;
+  }
+  
+  return note;
+}
+
+function extractCallbackTimeFromTranscript(transcript: string): number {
+  const transcriptLower = transcript.toLowerCase();
+  
+  // Look for specific time mentions
+  const timePatterns: { pattern: RegExp; minutes: number }[] = [
+    { pattern: /(\d+)\s*minutes?/i, minutes: 0 }, // Will extract from match
+    { pattern: /(\d+)\s*hours?/i, minutes: 0 }, // Will extract from match
+    { pattern: /half\s*an?\s*hour/i, minutes: 30 },
+    { pattern: /an?\s*hour/i, minutes: 60 },
+    { pattern: /a\s*few\s*minutes/i, minutes: 15 },
+    { pattern: /couple\s*(of\s*)?minutes/i, minutes: 5 },
+    { pattern: /5\s*minutes/i, minutes: 5 },
+    { pattern: /10\s*minutes/i, minutes: 10 },
+    { pattern: /15\s*minutes/i, minutes: 15 },
+    { pattern: /20\s*minutes/i, minutes: 20 },
+    { pattern: /30\s*minutes/i, minutes: 30 },
+    { pattern: /tomorrow/i, minutes: 24 * 60 },
+    { pattern: /next\s*week/i, minutes: 7 * 24 * 60 },
+    { pattern: /this\s*afternoon/i, minutes: 4 * 60 },
+    { pattern: /this\s*evening/i, minutes: 6 * 60 },
+    { pattern: /tonight/i, minutes: 6 * 60 },
+    { pattern: /in\s*the\s*morning/i, minutes: 18 * 60 }, // Next morning
   ];
-  
-  // Add key points if available
-  if (dispositionResult?.key_points?.length) {
-    lines.push('');
-    lines.push('Key Points:');
-    dispositionResult.key_points.forEach((point: string) => {
-      lines.push(`  • ${point}`);
-    });
+
+  // Check for numeric extractions
+  const numericMinutes = transcriptLower.match(/(\d+)\s*minutes?/i);
+  if (numericMinutes && numericMinutes[1]) {
+    const mins = parseInt(numericMinutes[1], 10);
+    if (mins > 0 && mins < 1000) return mins;
   }
-  
-  // Add next action indicator
-  if (outcome === 'callback_requested' || outcome === 'callback') {
-    lines.push('');
-    lines.push('⏰ Next: Callback scheduled');
-  } else if (outcome === 'appointment_set' || outcome === 'appointment_booked') {
-    lines.push('');
-    lines.push('📅 Next: Appointment confirmed');
+
+  const numericHours = transcriptLower.match(/(\d+)\s*hours?/i);
+  if (numericHours && numericHours[1]) {
+    const hours = parseInt(numericHours[1], 10);
+    if (hours > 0 && hours < 48) return hours * 60;
   }
-  
-  return lines.join('\n');
+
+  // Check patterns
+  for (const { pattern, minutes } of timePatterns) {
+    if (pattern.test(transcriptLower) && minutes > 0) {
+      return minutes;
+    }
+  }
+
+  // Default to 2 hours if no specific time mentioned
+  return 120;
 }
 
 async function analyzeTranscriptWithAI(
@@ -1052,50 +1383,21 @@ async function analyzeTranscriptWithAI(
   try {
     const response = await supabase.functions.invoke('analyze-call-transcript', {
       body: {
-        callId: params.callId,
         transcript: params.transcript,
+        callId: params.callId,
         userId: params.userId,
       },
     });
-    
-    if (response.data?.analysis) {
-      return {
-        disposition: response.data.analysis.disposition || 'contacted',
-        confidence: response.data.analysis.confidence || 0.5,
-        summary: response.data.analysis.summary || '',
-      };
+
+    if (response.error) {
+      throw new Error(response.error.message || 'AI analysis failed');
     }
-    return null;
+
+    return response.data;
   } catch (error) {
-    console.error('[Retell Webhook] AI analysis failed:', error);
+    console.error('[Retell Webhook] AI analysis error:', error);
     return null;
   }
-}
-
-function mapDispositionToLeadStatus(disposition: string): string {
-  // IMPORTANT: For non-connecting outcomes (voicemail, no_answer, busy, failed),
-  // keep the lead status as 'new' so they remain eligible for retry attempts.
-  // Only change status to definitive values when a real conversation happens.
-  const mapping: Record<string, string> = {
-    'appointment_set': 'appointment_set',
-    'interested': 'interested',
-    'callback_requested': 'callback',
-    'callback': 'callback',
-    'not_interested': 'not_interested',
-    'dnc': 'dnc',
-    'do_not_call': 'dnc',
-    // Non-connecting outcomes - keep as 'new' to allow retries
-    'voicemail': 'new',
-    'no_answer': 'new',
-    'busy': 'new',
-    'failed': 'new',
-    'unknown': 'new',
-    // Only mark as 'contacted' when a real conversation happened
-    'completed': 'contacted',
-    'contacted': 'contacted',
-  };
-  
-  return mapping[disposition] || 'contacted';
 }
 
 async function updateNudgeTracking(
@@ -1104,41 +1406,19 @@ async function updateNudgeTracking(
   userId: string,
   outcome: string
 ) {
-  try {
-    // Check if tracking exists
-    const { data: existing } = await supabase
-      .from('lead_nudge_tracking')
-      .select('id, nudge_count')
-      .eq('lead_id', leadId)
-      .maybeSingle();
-
-    const positiveOutcomes = ['appointment_set', 'interested', 'callback_requested', 'callback'];
-    const isEngaged = positiveOutcomes.includes(outcome);
-
-    if (existing) {
-      await supabase
-        .from('lead_nudge_tracking')
-        .update({
-          last_ai_contact_at: new Date().toISOString(),
-          is_engaged: isEngaged,
-          sequence_paused: isEngaged || outcome === 'dnc' || outcome === 'not_interested',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id);
-    } else {
-      await supabase
-        .from('lead_nudge_tracking')
-        .insert({
-          lead_id: leadId,
-          user_id: userId,
-          last_ai_contact_at: new Date().toISOString(),
-          is_engaged: isEngaged,
-          nudge_count: 0,
-        });
-    }
-  } catch (error) {
-    console.error('[Retell Webhook] Nudge tracking update error:', error);
-  }
+  const engaged = ['appointment_set', 'callback_requested', 'interested', 'contacted'].includes(outcome);
+  
+  await supabase.from('lead_nudge_tracking').upsert({
+    lead_id: leadId,
+    user_id: userId,
+    last_ai_contact_at: new Date().toISOString(),
+    is_engaged: engaged,
+    sequence_paused: outcome === 'callback_requested' || outcome === 'appointment_set',
+    pause_reason: outcome === 'callback_requested' ? 'callback_scheduled' : 
+                  outcome === 'appointment_set' ? 'appointment_booked' : null,
+  }, {
+    onConflict: 'lead_id',
+  });
 }
 
 async function updatePipelinePosition(
@@ -1147,106 +1427,41 @@ async function updatePipelinePosition(
   userId: string,
   outcome: string
 ) {
-  try {
-    // Map outcome to pipeline stage with colors and descriptions
-    const stageMapping: Record<string, { name: string; color: string; description: string }> = {
-      'appointment_set': { name: 'Appointment Set', color: '#22c55e', description: 'Lead has booked an appointment' },
-      'interested': { name: 'Interested', color: '#3b82f6', description: 'Lead expressed interest' },
-      'callback_requested': { name: 'Callback Scheduled', color: '#f59e0b', description: 'Lead requested a callback' },
-      'callback': { name: 'Callback Scheduled', color: '#f59e0b', description: 'Lead requested a callback' },
-      'not_interested': { name: 'Not Interested', color: '#ef4444', description: 'Lead declined' },
-      'dnc': { name: 'Do Not Call', color: '#991b1b', description: 'Lead requested no further contact' },
-      'contacted': { name: 'Contacted', color: '#6b7280', description: 'Lead was reached' },
-    };
+  // Map outcomes to pipeline stages
+  const stageMapping: Record<string, string> = {
+    'appointment_set': 'Appointment Set',
+    'appointment_booked': 'Appointment Set',
+    'callback_requested': 'Follow Up',
+    'callback': 'Follow Up',
+    'interested': 'Interested',
+    'contacted': 'Contacted',
+    'voicemail': 'Contacted',
+    'not_interested': 'Not Interested',
+    'dnc': 'DNC',
+  };
 
-    const stageInfo = stageMapping[outcome];
-    if (!stageInfo) return;
+  const stageName = stageMapping[outcome];
+  if (!stageName) return;
 
-    // Try to find existing board with flexible matching
-    let { data: board } = await supabase
-      .from('pipeline_boards')
-      .select('id')
-      .eq('user_id', userId)
-      .ilike('name', `%${stageInfo.name}%`)
-      .maybeSingle();
+  // Find the pipeline board for this stage
+  const { data: pipelineBoard } = await supabase
+    .from('pipeline_boards')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('name', stageName)
+    .maybeSingle();
 
-    // If no exact match, try keyword-based matching
-    if (!board) {
-      const keywords = stageInfo.name.toLowerCase().split(' ');
-      for (const keyword of keywords) {
-        if (keyword.length < 4) continue; // Skip short words
-        const { data: keywordBoard } = await supabase
-          .from('pipeline_boards')
-          .select('id')
-          .eq('user_id', userId)
-          .ilike('name', `%${keyword}%`)
-          .maybeSingle();
-        if (keywordBoard) {
-          board = keywordBoard;
-          break;
-        }
-      }
-    }
-
-    // AUTO-CREATE BOARD if none found
-    if (!board) {
-      console.log(`[Pipeline] Auto-creating board: ${stageInfo.name}`);
-      
-      // Get max position for ordering
-      const { data: maxPosResult } = await supabase
-        .from('pipeline_boards')
-        .select('position')
-        .eq('user_id', userId)
-        .order('position', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      const newPosition = (maxPosResult?.position || 0) + 1;
-      
-      // Create the board
-      const { data: newBoard, error: createError } = await supabase
-        .from('pipeline_boards')
-        .insert({
-          user_id: userId,
-          name: stageInfo.name,
-          description: stageInfo.description,
-          position: newPosition,
-          settings: {
-            auto_created: true,
-            created_at: new Date().toISOString(),
-            created_from: 'call_webhook',
-            color: stageInfo.color
-          }
-        })
-        .select('id')
-        .single();
-      
-      if (createError) {
-        console.error('[Pipeline] Failed to create board:', createError);
-        return;
-      }
-      
-      board = newBoard;
-      console.log(`[Pipeline] Created board "${stageInfo.name}" with ID ${board.id}`);
-    }
-
-    // Update or create pipeline position using the new unique constraint
-    await supabase
-      .from('lead_pipeline_positions')
-      .upsert({
-        lead_id: leadId,
-        user_id: userId,
-        pipeline_board_id: board.id,
-        moved_at: new Date().toISOString(),
-        moved_by_user: false,
-        notes: `Auto-moved after call: ${outcome}`,
-      }, {
-        onConflict: 'lead_id,user_id',
-      });
-    
-    console.log(`[Pipeline] Moved lead ${leadId} to board "${stageInfo.name}"`);
-  } catch (error) {
-    console.error('[Retell Webhook] Pipeline position update error:', error);
+  if (pipelineBoard) {
+    await supabase.from('lead_pipeline_positions').upsert({
+      user_id: userId,
+      lead_id: leadId,
+      pipeline_board_id: pipelineBoard.id,
+      moved_at: new Date().toISOString(),
+      moved_by_user: false,
+      notes: `Auto-moved by call outcome: ${outcome}`,
+    }, {
+      onConflict: 'user_id,lead_id,pipeline_board_id',
+    });
   }
 }
 
@@ -1256,110 +1471,66 @@ async function advanceWorkflowAfterCall(
   userId: string,
   outcome: string
 ) {
-  try {
-    // Find active workflow progress for this lead
-    const { data: progress } = await supabase
+  // Find active workflow progress for this lead
+  const { data: activeProgress } = await supabase
+    .from('lead_workflow_progress')
+    .select('id, current_step_id, workflow_id')
+    .eq('lead_id', leadId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!activeProgress) {
+    console.log('[Retell Webhook] No active workflow to advance for lead:', leadId);
+    return;
+  }
+
+  // Get the next step in the workflow
+  const { data: currentStep } = await supabase
+    .from('workflow_steps')
+    .select('step_number, workflow_id')
+    .eq('id', activeProgress.current_step_id)
+    .maybeSingle();
+
+  if (!currentStep) return;
+
+  const { data: nextStep } = await supabase
+    .from('workflow_steps')
+    .select('id')
+    .eq('workflow_id', currentStep.workflow_id)
+    .eq('step_number', currentStep.step_number + 1)
+    .maybeSingle();
+
+  if (nextStep) {
+    // Move to next step
+    const nextActionAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min delay
+    await supabase
       .from('lead_workflow_progress')
-      .select('*, current_step:workflow_steps(*)')
-      .eq('lead_id', leadId)
-      .eq('status', 'active')
-      .maybeSingle();
-
-    if (!progress || !progress.current_step) {
-      return;
-    }
-
-    // Get the next step in the workflow
-    const { data: nextStep } = await supabase
-      .from('workflow_steps')
-      .select('*')
-      .eq('workflow_id', progress.workflow_id)
-      .gt('step_order', progress.current_step.step_order)
-      .order('step_order', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (nextStep) {
-      // Advance to next step
-      const nextActionAt = calculateNextActionTimeForWebhook(nextStep);
-      
-      await supabase
-        .from('lead_workflow_progress')
-        .update({
-          current_step_id: nextStep.id,
-          last_action_at: new Date().toISOString(),
-          next_action_at: nextActionAt,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', progress.id);
-
-      console.log('[Retell Webhook] Advanced workflow to step:', nextStep.step_order);
-    } else {
-      // No more steps - complete the workflow
-      await supabase
-        .from('lead_workflow_progress')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', progress.id);
-
-      console.log('[Retell Webhook] Workflow completed');
-    }
-  } catch (error) {
-    console.error('[Retell Webhook] Workflow advancement error:', error);
+      .update({
+        current_step_id: nextStep.id,
+        next_action_at: nextActionAt,
+        last_action_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', activeProgress.id);
+    
+    console.log(`[Retell Webhook] Advanced workflow for lead ${leadId} to next step`);
+  } else {
+    // No more steps - complete the workflow
+    await supabase
+      .from('lead_workflow_progress')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', activeProgress.id);
+    
+    console.log(`[Retell Webhook] Workflow completed for lead ${leadId}`);
   }
 }
 
-function calculateNextActionTimeForWebhook(step: any): string {
-  const now = new Date();
-  const config = step.config || {};
-  
-  // Default delays based on step type
-  const defaultDelays: Record<string, number> = {
-    'call': 60,          // 1 hour
-    'sms': 30,           // 30 minutes
-    'email': 60,         // 1 hour
-    'wait': 1440,        // 24 hours
-  };
-
-  const delayMinutes = config.delay_minutes || defaultDelays[step.step_type] || 60;
-  now.setMinutes(now.getMinutes() + delayMinutes);
-  
-  return now.toISOString();
-}
-
-// Helper function to log failed operations for retry
-async function logFailedOperation(
-  supabase: any,
-  userId: string | null,
-  operationType: string,
-  details: Record<string, any>
-): Promise<void> {
-  if (!userId) return;
-  
-  try {
-    await supabase.from('system_alerts').insert({
-      user_id: userId,
-      alert_type: 'failed_operation',
-      severity: 'warning',
-      title: `Failed Operation: ${operationType}`,
-      message: `A ${operationType} operation failed and may need manual review.`,
-      metadata: {
-        operationType,
-        ...details,
-        timestamp: new Date().toISOString(),
-        requiresRetry: true,
-      },
-    });
-    console.log(`[Retell Webhook] Logged failed ${operationType} operation for retry`);
-  } catch (logError) {
-    console.error('[Retell Webhook] Failed to log operation for retry:', logError);
-  }
-}
-
-// Go High Level Sync after call completion
 async function syncToGoHighLevel(
   supabase: any,
   leadId: string,
@@ -1367,123 +1538,47 @@ async function syncToGoHighLevel(
   outcome: string,
   transcript: string,
   durationSeconds: number,
-  callData: any
-): Promise<void> {
-  console.log('[Retell Webhook] Checking GHL sync settings for user:', userId);
-
-  // Check if user has GHL credentials
-  const { data: ghlCredentials } = await supabase
-    .from('user_credentials')
-    .select('credential_key, credential_value_encrypted')
-    .eq('user_id', userId)
-    .eq('service_name', 'gohighlevel');
-
-  if (!ghlCredentials || ghlCredentials.length === 0) {
-    console.log('[Retell Webhook] No GHL credentials found, skipping sync');
-    return;
-  }
-
-  // Get GHL sync settings
-  const { data: syncSettings } = await supabase
+  call: any
+) {
+  // Check if GHL sync is enabled
+  const { data: ghlSettings } = await supabase
     .from('ghl_sync_settings')
-    .select('*')
+    .select('sync_enabled')
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (!syncSettings?.sync_enabled) {
-    console.log('[Retell Webhook] GHL sync disabled, skipping');
-    return;
-  }
+  if (!ghlSettings?.sync_enabled) return;
 
-  // Get lead info including GHL contact ID
-  const { data: lead } = await supabase
-    .from('leads')
-    .select('ghl_contact_id, first_name, last_name, priority, phone_number')
-    .eq('id', leadId)
-    .maybeSingle();
-
-  if (!lead?.ghl_contact_id) {
-    console.log('[Retell Webhook] Lead has no GHL contact ID, skipping sync');
-    return;
-  }
-
-  // Get call count for this lead
-  const { count: totalCalls } = await supabase
-    .from('call_logs')
-    .select('*', { count: 'exact', head: true })
-    .eq('lead_id', leadId);
-
-  // Decode credentials
-  let apiKey = '';
-  let locationId = '';
-  
-  for (const cred of ghlCredentials) {
-    try {
-      const value = atob(cred.credential_value_encrypted);
-      if (cred.credential_key === 'apiKey') apiKey = value;
-      if (cred.credential_key === 'locationId') locationId = value;
-    } catch (e) {
-      console.error('[Retell Webhook] Failed to decode GHL credential');
-    }
-  }
-
-  if (!apiKey || !locationId) {
-    console.log('[Retell Webhook] GHL credentials incomplete');
-    return;
-  }
-
-  console.log('[Retell Webhook] Triggering GHL sync for contact:', lead.ghl_contact_id);
-
-  // Build comprehensive call data object with all 35+ fields
-  const comprehensiveCallData: Record<string, any> = {
-    // Call Analysis Fields
-    outcome,
-    notes: transcript?.substring(0, 5000) || '',
-    duration: durationSeconds,
-    date: new Date().toISOString(),
-    recordingUrl: callData.recording_url || '',
-    sentiment: callData.call_analysis?.user_sentiment || 'neutral',
-    summary: callData.call_analysis?.call_summary || '',
-    confidence: callData.call_analysis?.custom_analysis_data?.confidence || 0,
-    reasoning: callData.call_analysis?.custom_analysis_data?.reasoning || '',
-    keyPoints: callData.call_analysis?.custom_analysis_data?.key_points || [],
-    painPoints: callData.call_analysis?.custom_analysis_data?.pain_points || [],
-    objections: callData.call_analysis?.custom_analysis_data?.objections || [],
-    nextAction: callData.call_analysis?.custom_analysis_data?.next_action || '',
-    disposition: callData.call_analysis?.custom_analysis_data?.disposition || outcome,
-    callSuccessful: callData.call_analysis?.call_successful || false,
-    
-    // Lead Data Fields
-    firstName: lead.first_name || '',
-    lastName: lead.last_name || '',
-    fullName: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '',
-    phoneNumber: lead.phone_number || '',
-    
-    // Stats & Metrics
-    totalCalls: totalCalls || 1,
-    leadScore: lead.priority || 1,
-    
-    // Appointment Data (if available from analysis)
-    appointmentDate: callData.call_analysis?.custom_analysis_data?.appointment_date || '',
-    appointmentTime: callData.call_analysis?.custom_analysis_data?.appointment_time || '',
-    callbackDate: callData.call_analysis?.custom_analysis_data?.callback_date || '',
-  };
-
-  // Call ghl-integration edge function with comprehensive data
-  const { error: ghlError } = await supabase.functions.invoke('ghl-integration', {
+  // Invoke GHL integration
+  await supabase.functions.invoke('ghl-integration', {
     body: {
-      action: 'sync_with_field_mapping',
-      apiKey,
-      locationId,
-      contactId: lead.ghl_contact_id,
-      callData: comprehensiveCallData
-    }
+      action: 'log_call',
+      leadId,
+      userId,
+      outcome,
+      transcript,
+      durationSeconds,
+      callId: call.call_id,
+    },
   });
+}
 
-  if (ghlError) {
-    console.error('[Retell Webhook] GHL sync failed:', ghlError);
-    throw new Error(`GHL sync failed: ${ghlError.message}`);
+async function logFailedOperation(
+  supabase: any,
+  userId: string,
+  operationType: string,
+  details: Record<string, any>
+) {
+  try {
+    await supabase.from('system_alerts').insert({
+      user_id: userId,
+      alert_type: 'failed_operation',
+      severity: 'warning',
+      message: `Failed ${operationType}`,
+      metadata: details,
+      acknowledged: false,
+    });
+  } catch (e) {
+    console.error('[Retell Webhook] Failed to log failed operation:', e);
   }
-
-  console.log('[Retell Webhook] GHL sync completed successfully');
 }
