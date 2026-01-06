@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Upload, Trash2, Phone, User, Building, Mail, RotateCcw, Bot } from 'lucide-react';
+import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw, Bot } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
@@ -768,26 +768,34 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                     <TableCell className="text-sm text-slate-500">
                       {new Date(lead.created_at).toLocaleDateString()}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => setDetailLead(lead)}
-                          aria-label="View and edit lead details"
-                        >
-                          <User className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setLeadToDelete(lead)}
-                          aria-label="Delete lead"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => setDetailLead(lead)}
+                            aria-label="View lead details"
+                          >
+                            <User className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => setDetailLead(lead)}
+                            aria-label="Edit lead details"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setLeadToDelete(lead)}
+                            aria-label="Delete lead"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
