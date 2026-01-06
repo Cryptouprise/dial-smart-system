@@ -48,6 +48,21 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 
 ## 📚 Documentation
 
+### For Lovable AI Agent / Developers
+
+**⭐ START HERE:** See [LOVABLE_AGENT_README.md](./LOVABLE_AGENT_README.md) for comprehensive coding instructions including:
+- Quick start guide for making safe code changes
+- Critical rules and patterns to follow
+- Testing and verification requirements
+- Links to detailed instruction documents
+
+**Key Resources for Developers:**
+- [LOVABLE_CODING_INSTRUCTIONS.md](./LOVABLE_CODING_INSTRUCTIONS.md) - Complete coding guidelines and best practices
+- [CODING_CHECKLIST.md](./CODING_CHECKLIST.md) - Pre-change checklist (use before every code change)
+- [BUG_PREVENTION_PROTOCOL.md](./BUG_PREVENTION_PROTOCOL.md) - Critical patterns that prevent 250+ bugs
+
+### For Users and Integrators
+
 See [INBOUND_TRANSFER_INTEGRATION.md](./INBOUND_TRANSFER_INTEGRATION.md) for inbound transfer webhook guide including:
 - Setup instructions and configuration
 - VICIdial integration examples
