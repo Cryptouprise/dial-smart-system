@@ -445,8 +445,8 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   const currentLead = { ...lead, ...editedLead };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden min-h-0 flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
         <DialogDescription id="lead-detail-description" className="sr-only">
           View and edit lead details including contact information, status, and activity history.
         </DialogDescription>
@@ -500,7 +500,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="flex-1 overflow-hidden flex flex-col">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <TabsList className="grid w-full grid-cols-6 h-auto">
             <TabsTrigger value="details" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
               <User className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
@@ -531,7 +531,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 mt-3 md:mt-4 pr-4">
+          <ScrollArea className="flex-1 min-h-0 mt-3 md:mt-4 pr-4">
             <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4 pb-4">
               {/* Quick Actions - ALWAYS AT TOP for easy access */}
               <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
