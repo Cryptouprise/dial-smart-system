@@ -297,6 +297,59 @@ serve(async (req) => {
       console.error('[Scheduler] Failed to call nudge-scheduler:', nudgeError.message);
     }
 
+    // THIRD: Trigger call dispatcher for users who have DUE queue items (incl. callbacks)
+    // This is what actually places the calls; otherwise entries can sit as "overdue".
+    console.log('[Scheduler] Checking for due dialing queue items to dispatch...');
+    const nowIso = new Date().toISOString();
+    const dispatchSummary = { users: 0, ok: 0, failed: 0 };
+
+    try {
+      const { data: dueQueue, error: dueQueueError } = await supabase
+        .from('dialing_queues')
+        .select('campaign_id, campaigns(user_id)')
+        .eq('status', 'pending')
+        .lte('scheduled_at', nowIso)
+        .limit(100);
+
+      if (dueQueueError) {
+        console.error('[Scheduler] Error checking due queue:', dueQueueError);
+      } else {
+        const userIds = Array.from(
+          new Set(
+            (dueQueue || [])
+              .map((row: any) => row?.campaigns?.user_id)
+              .filter(Boolean)
+          )
+        );
+
+        dispatchSummary.users = userIds.length;
+
+        for (const userId of userIds) {
+          const resp = await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ internal: true, userId }),
+          });
+
+          if (resp.ok) {
+            dispatchSummary.ok++;
+          } else {
+            dispatchSummary.failed++;
+            console.error('[Scheduler] call-dispatcher failed:', resp.status, await resp.text());
+          }
+        }
+
+        if (dispatchSummary.users > 0) {
+          console.log(`[Scheduler] call-dispatcher invoked for ${dispatchSummary.users} users (ok=${dispatchSummary.ok}, failed=${dispatchSummary.failed})`);
+        }
+      }
+    } catch (dispatchError: any) {
+      console.error('[Scheduler] Error triggering call-dispatcher:', dispatchError.message);
+    }
+
     // THEN: Fetch all enabled automation rules
     const { data: rules, error: rulesError } = await supabase
       .from('campaign_automation_rules')

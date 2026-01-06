@@ -121,17 +121,9 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check for special actions in request body
-    let requestBody = {};
+    // Check for special actions in request body (also used to detect internal scheduler calls)
+    let requestBody: Record<string, any> = {};
     try {
       requestBody = await req.json();
     } catch (parseError) {
@@ -141,7 +133,30 @@ serve(async (req) => {
       }
     }
 
-    const action = (requestBody as any).action;
+    const action = requestBody.action;
+
+    // Allow internal scheduler to run dispatcher for a specific user.
+    // This call is authenticated by requiring the service role key in Authorization.
+    const internalUserId = typeof requestBody.userId === 'string' ? requestBody.userId : null;
+    const isInternalCall = requestBody.internal === true && internalUserId && token === supabaseKey;
+
+    let user: { id: string } | null = null;
+
+    if (isInternalCall) {
+      user = { id: internalUserId };
+      console.log('[Dispatcher] Internal scheduler call for user:', internalUserId);
+    } else {
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+
+      if (authError || !authUser) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      user = { id: authUser.id };
+    }
 
     // Handle cleanup action
     if (action === 'cleanup_stuck_calls') {
