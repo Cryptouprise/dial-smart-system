@@ -531,8 +531,75 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 mt-3 md:mt-4">
-            <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4">
+          <ScrollArea className="flex-1 mt-3 md:mt-4 pr-4">
+            <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4 pb-4">
+              {/* Quick Actions - ALWAYS AT TOP for easy access */}
+              <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Tag className="h-4 w-4 text-primary" />
+                    Quick Actions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Status</Label>
+                      <Select
+                        value={editedLead.status ?? lead.status ?? 'new'}
+                        onValueChange={(value) => {
+                          setEditedLead(prev => ({ ...prev, status: value }));
+                          handleAutoSave('status', value);
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="new">New</SelectItem>
+                          <SelectItem value="contacted">Contacted</SelectItem>
+                          <SelectItem value="interested">Interested</SelectItem>
+                          <SelectItem value="not_interested">Not Interested</SelectItem>
+                          <SelectItem value="callback">Callback</SelectItem>
+                          <SelectItem value="converted">Converted</SelectItem>
+                          <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Priority (1-10)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={editedLead.priority ?? lead.priority ?? 1}
+                        onChange={(e) => setEditedLead(prev => ({ ...prev, priority: parseInt(e.target.value) || 1 }))}
+                        onBlur={(e) => handleAutoSave('priority', parseInt(e.target.value) || 1)}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Do Not Call Toggle - Prominent */}
+                  <div className="flex items-center justify-between p-3 rounded-md border bg-background">
+                    <div className="flex items-center gap-2">
+                      <Ban className="h-4 w-4 text-destructive" />
+                      <div>
+                        <Label className="text-sm font-medium">Do Not Call</Label>
+                        <p className="text-xs text-muted-foreground">Block from all campaigns</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={editedLead.do_not_call ?? lead.do_not_call ?? false}
+                      onCheckedChange={(checked) => {
+                        setEditedLead(prev => ({ ...prev, do_not_call: checked }));
+                        handleAutoSave('do_not_call', checked);
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Lead Score Card */}
               <LeadScoreIndicator priority={currentLead.priority} showDetails />
 
@@ -806,77 +873,15 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   </CardContent>
                 </Card>
 
-                {/* Lead Info - Quick Actions Always Visible */}
+                {/* Lead Info - Additional Details */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Tag className="h-4 w-4" />
-                      Lead Information
+                      Additional Info
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {/* Quick Actions */}
-                    <div className="p-3 rounded-lg border-2 border-primary/20 bg-primary/5 space-y-3">
-                      <p className="text-xs font-semibold text-primary uppercase tracking-wide">Quick Actions</p>
-                      
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Status</Label>
-                        <Select
-                          value={editedLead.status ?? lead.status ?? 'new'}
-                          onValueChange={(value) => {
-                            setEditedLead(prev => ({ ...prev, status: value }));
-                            handleAutoSave('status', value);
-                          }}
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="new">New</SelectItem>
-                            <SelectItem value="contacted">Contacted</SelectItem>
-                            <SelectItem value="interested">Interested</SelectItem>
-                            <SelectItem value="not_interested">Not Interested</SelectItem>
-                            <SelectItem value="callback">Callback</SelectItem>
-                            <SelectItem value="converted">Converted</SelectItem>
-                            <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Do Not Call Toggle */}
-                      <div className="flex items-center justify-between p-2 rounded-md border bg-background">
-                        <div className="flex items-center gap-2">
-                          <Ban className="h-4 w-4 text-destructive" />
-                          <div>
-                            <Label className="text-sm font-medium">Do Not Call</Label>
-                            <p className="text-xs text-muted-foreground">Block from dialing</p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={editedLead.do_not_call ?? lead.do_not_call ?? false}
-                          onCheckedChange={(checked) => {
-                            setEditedLead(prev => ({ ...prev, do_not_call: checked }));
-                            handleAutoSave('do_not_call', checked);
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Priority</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="10"
-                          value={editedLead.priority ?? lead.priority ?? 1}
-                          onChange={(e) => setEditedLead(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
-                          onBlur={(e) => handleAutoSave('priority', parseInt(e.target.value))}
-                          className="mt-1 border-transparent hover:border-input focus:border-primary transition-colors"
-                        />
-                      </div>
-                    </div>
-                    
                     <div>
                       <Label className="text-xs text-muted-foreground">Lead Source</Label>
                       <Input
