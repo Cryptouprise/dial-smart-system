@@ -537,26 +537,25 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Updating voicemail settings for agent ${agentId}:`, JSON.stringify(voicemailDetection));
         
-        // Build the update payload
-        // Retell's voicemail_detection config:
-        // - provider: 'twilio' (uses Twilio AMD) or 'retell' (uses Retell's built-in)
-        // - voicemail_detection_timeout_ms: How long to wait for detection (default 30000)
-        // - voicemail_message: Message to leave if detected (only if not hanging up)
-        // The behavior depends on whether voicemail_message is set:
-        // - No message = hang up immediately when VM detected
-        // - Message set = leave the message after beep
+        // Build the update payload using Retell's actual API format
+        // Retell voicemail_detection accepts:
+        // - voicemail_detection_timeout_ms: How long to wait (default 30000, max 60000)
+        // - voicemail_message: If set, agent leaves this message after beep. If NOT set, agent hangs up.
         
         const vmUpdatePayload: any = {};
         
         if (voicemailDetection?.enabled) {
-          vmUpdatePayload.voicemail_detection = {
-            provider: voicemailDetection.provider || 'twilio',
+          const vmConfig: any = {
             voicemail_detection_timeout_ms: voicemailDetection.detection_timeout_ms || 30000,
-            // Twilio AMD specific settings for faster detection
-            machine_detection_speech_threshold: voicemailDetection.machine_detection_speech_threshold || 2400,
-            machine_detection_speech_end_threshold: voicemailDetection.machine_detection_speech_end_threshold || 1200,
-            machine_detection_silence_timeout: voicemailDetection.machine_detection_silence_timeout || 5000,
           };
+          
+          // If behavior is 'leave_message' and a message is provided, include it
+          // If no voicemail_message is set, Retell hangs up by default
+          if (voicemailDetection.behavior === 'leave_message' && voicemailDetection.voicemail_message) {
+            vmConfig.voicemail_message = voicemailDetection.voicemail_message;
+          }
+          
+          vmUpdatePayload.voicemail_detection = vmConfig;
         } else {
           // Disable voicemail detection by setting to null
           vmUpdatePayload.voicemail_detection = null;
@@ -579,12 +578,16 @@ serve(async (req) => {
         const updatedVmAgent = await vmUpdateResp.json();
         console.log(`[Retell Agent] Voicemail settings updated successfully for agent ${agentId}`);
         
+        const behaviorDescription = voicemailDetection?.behavior === 'leave_message' 
+          ? 'Agent will leave a voicemail message when detected'
+          : 'Calls will hang up within 3-5 seconds when voicemail is detected';
+        
         return new Response(JSON.stringify({
           success: true,
           agentId,
           voicemail_detection: updatedVmAgent.voicemail_detection,
           message: voicemailDetection?.enabled 
-            ? 'Voicemail detection enabled - calls will hang up within 3-5 seconds when voicemail is detected'
+            ? behaviorDescription
             : 'Voicemail detection disabled',
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

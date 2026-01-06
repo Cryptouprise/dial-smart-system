@@ -21,7 +21,9 @@ import {
   MapPin,
   Clock,
   FileText,
-  History
+  History,
+  PhoneOff,
+  Voicemail
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -165,6 +167,77 @@ NEGATIVE OUTCOMES:
 - Wrong number: Apologize and end call promptly
 
 Always be clear about the outcome so the system can properly categorize the call.`;
+
+const VOICEMAIL_DETECTION_TEMPLATE = `## VOICEMAIL DETECTION
+
+If you detect any of these patterns, IMMEDIATELY use the end_call function:
+
+BEEP/TONE PATTERNS:
+- Any beeping sound
+- "Please leave a message after the tone"
+- "After the beep, please record your message"
+- Long silence followed by a beep
+
+IVR/MENU PATTERNS:
+- "Press 1 for..."
+- "Press 2 to..."
+- "For sales, press..."
+- "If you know your party's extension..."
+- "Please hold while we transfer your call"
+- "Your call is being forwarded"
+
+VOICEMAIL GREETINGS:
+- "You've reached the voicemail of..."
+- "I'm not available right now"
+- "Sorry I missed your call"
+- "Leave your name and number"
+- "No one is available to take your call"
+- "The person you're trying to reach..."
+- "This mailbox is full"
+- "Hi, you've reached [name], I can't come to the phone..."
+- Generic voicemail music or jingles
+
+CARRIER/SYSTEM MESSAGES:
+- "The number you have dialed..."
+- "This call cannot be completed as dialed"
+- "The subscriber you have called..."
+- "This number is no longer in service"
+- "The wireless customer you are calling is not available"
+
+When you detect ANY of these patterns:
+1. Stop talking immediately - do NOT continue your pitch
+2. Call the end_call function with reason "voicemail_detected"
+3. Do NOT leave a message unless specifically configured to do so
+
+IMPORTANT: It's better to hang up quickly on a voicemail than to waste 45+ seconds talking to a machine.`;
+
+const VOICEMAIL_MESSAGE_TEMPLATE = `## LEAVING VOICEMAIL MESSAGES
+
+When voicemail is detected AND you should leave a message:
+
+1. WAIT FOR THE BEEP before speaking
+2. Keep the message under 20 seconds
+3. Speak clearly and at a steady pace
+
+MESSAGE STRUCTURE:
+- Greeting: "Hi {{first_name}},"
+- Identity: "this is [Agent Name] from [Company]"
+- Purpose: "I'm calling about [brief reason]"
+- Action: "Please call us back at [phone number]"
+- Close: "Thanks, have a great day!"
+
+EXAMPLE MESSAGE:
+"Hi {{first_name}}, this is Sarah from ABC Solar. I'm following up on your interest in reducing your electricity bill. Please give us a call back at 555-123-4567 when you have a moment. Thanks, and have a great day!"
+
+AFTER LEAVING THE MESSAGE:
+- Wait 1-2 seconds of silence
+- Call the end_call function
+- Do NOT wait for the system to hang up on you
+
+TIPS:
+- Never leave multiple voicemails in one call
+- Don't ramble or repeat yourself
+- Sound natural and conversational, not robotic`;
 
 // Clickable Variable Chip component
 const VariableChip: React.FC<{
@@ -410,6 +483,22 @@ export const PromptTemplateGuide: React.FC = () => {
           content={DISPOSITION_TEMPLATE}
           sectionKey="disposition"
           icon={<Bot className="h-5 w-5 text-purple-500" />}
+        />
+
+        <TemplateSection
+          title="Voicemail Detection"
+          description="Recognize voicemail patterns and hang up immediately"
+          content={VOICEMAIL_DETECTION_TEMPLATE}
+          sectionKey="voicemail_detection"
+          icon={<PhoneOff className="h-5 w-5 text-red-500" />}
+        />
+
+        <TemplateSection
+          title="Voicemail Message"
+          description="What to say when leaving a voicemail"
+          content={VOICEMAIL_MESSAGE_TEMPLATE}
+          sectionKey="voicemail_message"
+          icon={<Voicemail className="h-5 w-5 text-blue-500" />}
         />
       </div>
 
