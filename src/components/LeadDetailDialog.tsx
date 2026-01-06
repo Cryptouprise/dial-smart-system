@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import LeadActivityTimeline from './LeadActivityTimeline';
+import { PromptTemplateGuide } from '@/components/PromptTemplateGuide';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -36,7 +37,8 @@ import {
   Ban,
   MapPin,
   Workflow,
-  AlertTriangle
+  AlertTriangle,
+  Variable
 } from 'lucide-react';
 
 interface Lead {
@@ -79,12 +81,20 @@ interface WorkflowStatus {
   workflow_name?: string;
 }
 
+interface CallWithDisposition {
+  id: string;
+  outcome: string;
+  notes: string | null;
+  created_at: string;
+  duration_seconds: number | null;
+}
+
 interface LeadDetailDialogProps {
   lead: Lead | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onLeadUpdated?: () => void;
-  initialTab?: 'details' | 'activity' | 'calls' | 'messages' | 'ai';
+  initialTab?: 'details' | 'activity' | 'calls' | 'messages' | 'ai' | 'prompts';
 }
 
 export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
@@ -100,6 +110,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [smsMessages, setSmsMessages] = useState<any[]>([]);
   const [currentDisposition, setCurrentDisposition] = useState<string | null>(null);
+  const [lastCallWithDisposition, setLastCallWithDisposition] = useState<CallWithDisposition | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -184,12 +195,20 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
       setCallLogs(callLogsRes.data || []);
       setSmsMessages(smsRes.data || []);
       
-      // Get the most recent disposition from call logs
+      // Get the most recent disposition from call logs - store full call record
       const recentCallWithOutcome = (callLogsRes.data || []).find((call: any) => call.outcome);
       if (recentCallWithOutcome?.outcome) {
         setCurrentDisposition(recentCallWithOutcome.outcome);
+        setLastCallWithDisposition({
+          id: recentCallWithOutcome.id,
+          outcome: recentCallWithOutcome.outcome,
+          notes: recentCallWithOutcome.notes,
+          created_at: recentCallWithOutcome.created_at,
+          duration_seconds: recentCallWithOutcome.duration_seconds
+        });
       } else {
         setCurrentDisposition(null);
+        setLastCallWithDisposition(null);
       }
 
       // Combine all activities into a single timeline
@@ -482,7 +501,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-5 h-auto">
+          <TabsList className="grid w-full grid-cols-6 h-auto">
             <TabsTrigger value="details" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
               <User className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
               <span className="hidden sm:inline">Details</span>
@@ -506,12 +525,108 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
               <Bot className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
               <span className="hidden sm:inline">AI</span>
             </TabsTrigger>
+            <TabsTrigger value="prompts" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <Variable className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Prompts</span>
+            </TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1 mt-3 md:mt-4">
             <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4">
               {/* Lead Score Card */}
               <LeadScoreIndicator priority={currentLead.priority} showDetails />
+
+              {/* Current Status Summary - Prominent Section */}
+              <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-primary" />
+                    Current Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Last Disposition with full details */}
+                  {currentDisposition && lastCallWithDisposition && (
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-background border">
+                      <Badge 
+                        className="shrink-0"
+                        style={{ 
+                          backgroundColor: getDispositionColor(currentDisposition),
+                          color: 'white'
+                        }}
+                      >
+                        {formatDispositionName(currentDisposition)}
+                      </Badge>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">
+                          {formatDispositionName(currentDisposition)} at {format(new Date(lastCallWithDisposition.created_at), 'PPp')}
+                        </p>
+                        {lastCallWithDisposition.duration_seconds && lastCallWithDisposition.duration_seconds > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Call duration: {Math.floor(lastCallWithDisposition.duration_seconds / 60)}m {lastCallWithDisposition.duration_seconds % 60}s
+                          </p>
+                        )}
+                        {lastCallWithDisposition.notes && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                            {lastCallWithDisposition.notes.substring(0, 150)}...
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {!currentDisposition && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-dashed">
+                      <Phone className="h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">No calls recorded yet</p>
+                    </div>
+                  )}
+                  
+                  {/* Next Callback - Prominent */}
+                  {currentLead.next_callback_at && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                      <Clock className="h-5 w-5 text-amber-600" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Callback Scheduled</p>
+                        <p className="text-sm">{format(new Date(currentLead.next_callback_at), 'PPPp')}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Workflow Status */}
+                  {workflowStatus && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
+                      <Workflow className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">Workflow: {workflowStatus.workflow_name || 'Unknown'}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {workflowStatus.status}
+                        {workflowStatus.removal_reason && ` - ${workflowStatus.removal_reason}`}
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Editable Notes - Moved UP for visibility */}
+              <Card className="border-2 border-blue-500/20">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-blue-500" />
+                    Notes
+                    <span className="text-xs text-muted-foreground font-normal">(click to edit)</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Textarea
+                    value={editedLead.notes ?? lead.notes ?? ''}
+                    onChange={(e) => setEditedLead(prev => ({ ...prev, notes: e.target.value }))}
+                    onBlur={(e) => handleAutoSave('notes', e.target.value)}
+                    rows={4}
+                    placeholder="Add notes about this lead..."
+                    className="border-transparent hover:border-input focus:border-primary transition-colors"
+                  />
+                </CardContent>
+              </Card>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 {/* Contact Info - Inline Editable */}
@@ -761,50 +876,6 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Call History Notes - New Section */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Call History Notes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {currentLead.notes ? (
-                    <ScrollArea className="h-48">
-                      <pre className="whitespace-pre-wrap text-sm font-sans text-muted-foreground">
-                        {currentLead.notes}
-                      </pre>
-                    </ScrollArea>
-                  ) : (
-                    <p className="text-muted-foreground text-sm">
-                      No call notes yet. Notes will be automatically added after each call.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Editable Notes */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Manual Notes
-                    <span className="text-xs text-muted-foreground font-normal">(click to edit)</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    value={editedLead.notes ?? lead.notes ?? ''}
-                    onChange={(e) => setEditedLead(prev => ({ ...prev, notes: e.target.value }))}
-                    onBlur={(e) => handleAutoSave('notes', e.target.value)}
-                    rows={4}
-                    placeholder="Add notes about this lead..."
-                    className="border-transparent hover:border-input focus:border-primary transition-colors"
-                  />
-                </CardContent>
-              </Card>
-
               {/* Tags */}
               {lead.tags && lead.tags.length > 0 && (
                 <Card>
@@ -978,6 +1049,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   <LeadActivityTimeline leadId={lead.id} />
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="prompts" className="mt-0">
+              <PromptTemplateGuide />
             </TabsContent>
           </ScrollArea>
         </Tabs>
