@@ -773,16 +773,16 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => setDetailLead(lead)}
-                            aria-label="View lead details"
+                            onClick={() => startEdit(lead)}
+                            aria-label="View lead"
                           >
                             <User className="h-3 w-3" />
                           </Button>
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => setDetailLead(lead)}
-                            aria-label="Edit lead details"
+                            onClick={() => startEdit(lead)}
+                            aria-label="Edit lead"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
