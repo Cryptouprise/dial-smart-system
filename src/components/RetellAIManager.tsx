@@ -14,8 +14,9 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2 } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
+import { useNumberSync } from '@/hooks/useNumberSync';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -74,6 +75,7 @@ const RetellAIManager = () => {
   } = useRetellAI();
   
   const { listLLMs, getLLM, deleteLLM, isLoading: llmLoading } = useRetellLLM();
+  const { syncNumberStatus, isSyncing } = useNumberSync();
 
   useEffect(() => {
     loadRetellData();
@@ -578,10 +580,29 @@ const RetellAIManager = () => {
                     Manage phone numbers in your Retell AI account. <strong className="text-primary">Assign an agent to enable outbound calling.</strong>
                   </CardDescription>
                 </div>
-                <Button onClick={() => setShowImportDialog(true)} size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Import Number
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    onClick={async () => {
+                      await syncNumberStatus();
+                      loadRetellData();
+                    }} 
+                    size="sm" 
+                    variant="outline"
+                    disabled={isSyncing}
+                    title="Sync Retell numbers to local database so they can be used for outbound calls"
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ArrowDownToLine className="h-4 w-4 mr-2" />
+                    )}
+                    {isSyncing ? 'Syncing...' : 'Sync to Local DB'}
+                  </Button>
+                  <Button onClick={() => setShowImportDialog(true)} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Import Number
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
