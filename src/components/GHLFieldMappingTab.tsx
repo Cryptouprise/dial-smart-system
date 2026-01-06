@@ -376,6 +376,7 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
   const [removeConflictingTags, setRemoveConflictingTags] = useState(true);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [newTagInput, setNewTagInput] = useState<Record<string, string>>({});
+  const [expandedTagOutcomes, setExpandedTagOutcomes] = useState<Record<string, boolean>>({});
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState('TEXT');
   const [calendarPreference, setCalendarPreference] = useState<'google' | 'ghl' | 'both' | 'none'>('both');
@@ -980,52 +981,119 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
 
               <ScrollArea className="h-96">
                 <div className="space-y-4 pr-4">
-                  {CALL_OUTCOMES.map(outcome => (
-                    <div key={outcome} className="p-4 border rounded-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <Label className="font-medium capitalize">{outcome.replace(/_/g, ' ')}</Label>
-                          <p className="text-xs text-muted-foreground">
-                            Tags to add when call outcome is "{outcome}"
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {(tagRules[outcome] || []).map((tag, index) => (
-                          <Badge key={index} variant="secondary" className="gap-1">
-                            {tag}
+                  {CALL_OUTCOMES.map((outcome) => {
+                    const isOpen = expandedTagOutcomes[outcome] ?? false;
+                    const tags = tagRules[outcome] || [];
+
+                    return (
+                      <Collapsible
+                        key={outcome}
+                        open={isOpen}
+                        onOpenChange={(open) =>
+                          setExpandedTagOutcomes((prev) => ({ ...prev, [outcome]: open }))
+                        }
+                      >
+                        <div className="border rounded-lg bg-card">
+                          <CollapsibleTrigger asChild>
                             <button
-                              onClick={() => handleRemoveTag(outcome, index)}
-                              className="ml-1 hover:text-destructive"
+                              type="button"
+                              className="w-full p-4 flex items-start justify-between gap-4 text-left hover:bg-accent/40 transition-colors"
                             >
-                              <X className="h-3 w-3" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium capitalize">
+                                    {outcome.replace(/_/g, ' ')}
+                                  </span>
+                                  <Badge variant="secondary" className="text-xs">
+                                    {tags.length}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Tags to add when call outcome is "{outcome}"
+                                </p>
+
+                                {!isOpen && tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {tags.slice(0, 4).map((tag, index) => (
+                                      <Badge key={index} variant="secondary" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {tags.length > 4 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        +{tags.length - 4} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {!isOpen && tags.length === 0 && (
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    No tags configured
+                                  </p>
+                                )}
+                              </div>
+
+                              {isOpen ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground mt-0.5" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground mt-0.5" />
+                              )}
                             </button>
-                          </Badge>
-                        ))}
-                        {(!tagRules[outcome] || tagRules[outcome].length === 0) && (
-                          <span className="text-xs text-muted-foreground">No tags configured</span>
-                        )}
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Add tag..."
-                          value={newTagInput[outcome] || ''}
-                          onChange={(e) => setNewTagInput(prev => ({ ...prev, [outcome]: e.target.value }))}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddTag(outcome)}
-                          className="flex-1"
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAddTag(outcome)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                          </CollapsibleTrigger>
+
+                          <CollapsibleContent className="border-t px-4 pb-4 pt-4">
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              {tags.map((tag, index) => (
+                                <Badge key={index} variant="secondary" className="gap-1">
+                                  {tag}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTag(outcome, index)}
+                                    className="ml-1 hover:text-destructive"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </Badge>
+                              ))}
+                              {tags.length === 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  No tags configured
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Add tag..."
+                                value={newTagInput[outcome] || ''}
+                                onChange={(e) =>
+                                  setNewTagInput((prev) => ({
+                                    ...prev,
+                                    [outcome]: e.target.value
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleAddTag(outcome);
+                                  }
+                                }}
+                                className="flex-1"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleAddTag(outcome)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </CollapsibleContent>
+                        </div>
+                      </Collapsible>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </CardContent>
