@@ -624,6 +624,22 @@ serve(async (req) => {
           }
         }
         
+        // CRITICAL: Remove lead from active workflow so they don't get called again before callback
+        try {
+          await supabase
+            .from('lead_workflow_progress')
+            .update({ 
+              status: 'paused', 
+              removal_reason: 'Callback scheduled',
+              updated_at: new Date().toISOString()
+            })
+            .eq('lead_id', leadId)
+            .eq('status', 'active');
+          console.log(`[Retell Webhook] Paused workflow for lead ${leadId} due to callback`);
+        } catch (workflowPauseError) {
+          console.error('[Retell Webhook] Failed to pause workflow:', workflowPauseError);
+        }
+        
         // Also add to scheduled_follow_ups for UI visibility
         try {
           await supabase.from('scheduled_follow_ups').insert({
