@@ -143,7 +143,59 @@ serve(async (req) => {
       console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
     }
 
-    // Get user's active campaigns with their workflows
+    // CALLBACK PRIORITY: Check for leads with past-due next_callback_at
+    console.log('[Dispatcher] Checking for past-due callbacks...');
+    const { data: pastDueCallbacks } = await supabase
+      .from('leads')
+      .select('id, phone_number')
+      .eq('user_id', user.id)
+      .eq('do_not_call', false)
+      .lte('next_callback_at', new Date().toISOString())
+      .not('next_callback_at', 'is', null)
+      .limit(20);
+
+    let callbacksQueued = 0;
+    if (pastDueCallbacks && pastDueCallbacks.length > 0) {
+      console.log(`[Dispatcher] Found ${pastDueCallbacks.length} past-due callbacks to queue`);
+      for (const lead of pastDueCallbacks) {
+        // Find campaign for this lead
+        const { data: campaignLead } = await supabase
+          .from('campaign_leads')
+          .select('campaign_id, campaigns!inner(status)')
+          .eq('lead_id', lead.id)
+          .eq('campaigns.status', 'active')
+          .limit(1)
+          .maybeSingle();
+
+        if (campaignLead) {
+          // Delete any existing queue entry (unique constraint workaround)
+          await supabase
+            .from('dialing_queues')
+            .delete()
+            .eq('lead_id', lead.id);
+
+          // Insert fresh with highest priority
+          const { error: insertError } = await supabase.from('dialing_queues').insert({
+            campaign_id: campaignLead.campaign_id,
+            lead_id: lead.id,
+            phone_number: lead.phone_number,
+            status: 'pending',
+            scheduled_at: new Date().toISOString(),
+            priority: 10, // Highest priority for callbacks
+            max_attempts: 3,
+            attempts: 0
+          });
+
+          if (!insertError) {
+            callbacksQueued++;
+            console.log(`[Dispatcher] Queued past-due callback for lead ${lead.id}`);
+          } else {
+            console.error(`[Dispatcher] Failed to queue callback for lead ${lead.id}:`, insertError);
+          }
+        }
+      }
+    }
+
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
       .select('id, name, agent_id, max_attempts, workflow_id')
@@ -231,16 +283,20 @@ serve(async (req) => {
     );
     
     // Build set of leads that had successful/connected calls (should NOT be called again)
+    // CRITICAL FIX: Exclude callback_requested outcomes - those should be allowed to re-call!
     const successfullyContactedLeadIds = new Set(
       (recentCallLogs || [])
-        .filter((cl: any) => 
-          cl.outcome === 'connected' || 
-          cl.outcome === 'answered' || 
-          cl.outcome === 'appointment_set' ||
-          cl.outcome === 'callback_scheduled' ||
-          cl.outcome === 'interested' ||
-          cl.status === 'completed'
-        )
+        .filter((cl: any) => {
+          // Skip callback outcomes - they need to be re-called!
+          if (cl.outcome === 'callback_requested' || cl.outcome === 'callback' || cl.outcome === 'callback_scheduled') {
+            return false;
+          }
+          // Only block if truly successfully contacted (not callback)
+          return cl.outcome === 'connected' || 
+                 cl.outcome === 'answered' || 
+                 cl.outcome === 'appointment_set' ||
+                 cl.outcome === 'interested';
+        })
         .map((cl: any) => cl.lead_id)
     );
 
