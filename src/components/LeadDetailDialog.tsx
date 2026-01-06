@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import LeadActivityTimeline from './LeadActivityTimeline';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -83,14 +84,17 @@ interface LeadDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onLeadUpdated?: () => void;
+  initialTab?: 'details' | 'activity' | 'calls' | 'messages' | 'ai';
 }
 
 export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   lead,
   open,
   onOpenChange,
-  onLeadUpdated
+  onLeadUpdated,
+  initialTab = 'details'
 }) => {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [editedLead, setEditedLead] = useState<Partial<Lead>>({});
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [callLogs, setCallLogs] = useState<any[]>([]);
@@ -105,8 +109,9 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   useEffect(() => {
     if (lead && open) {
       loadLeadActivity(lead.id);
+      setActiveTab(initialTab);
     }
-  }, [lead, open]);
+  }, [lead, open, initialTab]);
 
   const loadLeadActivity = async (leadId: string) => {
     setIsLoading(true);
@@ -476,8 +481,8 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-4 h-auto">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="flex-1 overflow-hidden flex flex-col">
+          <TabsList className="grid w-full grid-cols-5 h-auto">
             <TabsTrigger value="details" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
               <User className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
               <span className="hidden sm:inline">Details</span>
@@ -496,6 +501,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
               <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
               <span className="hidden sm:inline">SMS</span>
               <span className="ml-1 text-xs">({smsMessages.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="text-xs sm:text-sm px-1 sm:px-3 py-2">
+              <Bot className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">AI</span>
             </TabsTrigger>
           </TabsList>
 
@@ -955,6 +964,20 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="ai" className="mt-0">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Bot className="h-4 w-4" />
+                    AI Activity Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <LeadActivityTimeline leadId={lead.id} />
+                </CardContent>
+              </Card>
             </TabsContent>
           </ScrollArea>
         </Tabs>

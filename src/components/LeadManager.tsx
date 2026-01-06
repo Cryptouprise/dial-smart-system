@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialog,
@@ -26,7 +25,6 @@ import { Plus, Upload, Edit, Trash2, Phone, User, Building, Mail, RotateCcw, Bot
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
-import LeadActivityTimeline from './LeadActivityTimeline';
 import { LeadDetailDialog } from './LeadDetailDialog';
 import { useDemoData } from '@/hooks/useDemoData';
 
@@ -42,11 +40,11 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
   const [leadsWithActivity, setLeadsWithActivity] = useState<Set<string>>(new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [editingLead, setEditingLead] = useState<any>(null);
   const [importText, setImportText] = useState('');
   const [filters, setFilters] = useState({ status: 'all', search: '' });
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<any | null>(null);
+  const [detailInitialTab, setDetailInitialTab] = useState<'details' | 'activity' | 'calls' | 'messages' | 'ai'>('details');
   const [leadToDelete, setLeadToDelete] = useState<any | null>(null);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -147,17 +145,6 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
     }
   };
 
-  const handleUpdateLead = async () => {
-    if (editingLead) {
-      const result = await updateLead(editingLead.id, formData);
-      if (result) {
-        setEditingLead(null);
-        resetForm();
-        loadLeads();
-      }
-    }
-  };
-
   const handleImportLeads = async () => {
     try {
       const lines = importText.trim().split('\n');
@@ -196,11 +183,6 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
       status: 'new',
       priority: 1
     });
-  };
-
-  const startEdit = (lead: any) => {
-    setEditingLead(lead);
-    setFormData({ ...lead });
   };
 
   const getStatusColor = (status: string) => {
@@ -401,10 +383,9 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={isCreateDialogOpen || !!editingLead} onOpenChange={(open) => {
+          <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
             if (!open) {
               setIsCreateDialogOpen(false);
-              setEditingLead(null);
               resetForm();
             }
           }}>
@@ -414,257 +395,126 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                 Add Lead
               </Button>
             </DialogTrigger>
-            <DialogContent className={editingLead ? "sm:max-w-2xl" : "sm:max-w-md"}>
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
+                <DialogTitle>Add New Lead</DialogTitle>
                 <DialogDescription>
-                  {editingLead ? 'Update lead information and view AI activity' : 'Enter the lead details below'}
+                  Enter the lead details below
                 </DialogDescription>
               </DialogHeader>
               
-              {editingLead ? (
-                <Tabs defaultValue="details" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="details">Lead Details</TabsTrigger>
-                    <TabsTrigger value="activity" className="flex items-center gap-1">
-                      <Bot className="h-3 w-3" />
-                      AI Activity
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="details" className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="first-name">First Name</Label>
-                        <Input
-                          id="first-name"
-                          value={formData.first_name}
-                          onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="last-name">Last Name</Label>
-                        <Input
-                          id="last-name"
-                          value={formData.last_name}
-                          onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="phone">Phone Number *</Label>
-                      <Input
-                        id="phone"
-                        value={formData.phone_number}
-                        onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
-                        placeholder="+1 555 123 4567"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="company">Company</Label>
-                      <Input
-                        id="company"
-                        value={formData.company}
-                        onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="status">Status</Label>
-                        <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="new">New</SelectItem>
-                            <SelectItem value="contacted">Contacted</SelectItem>
-                            <SelectItem value="interested">Interested</SelectItem>
-                            <SelectItem value="not_interested">Not Interested</SelectItem>
-                            <SelectItem value="callback">Callback</SelectItem>
-                            <SelectItem value="converted">Converted</SelectItem>
-                            <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="priority">Priority</Label>
-                        <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1 - Low</SelectItem>
-                            <SelectItem value="2">2 - Normal</SelectItem>
-                            <SelectItem value="3">3 - Medium</SelectItem>
-                            <SelectItem value="4">4 - High</SelectItem>
-                            <SelectItem value="5">5 - Urgent</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="notes">Notes</Label>
-                      <Textarea
-                        id="notes"
-                        value={formData.notes}
-                        onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => {
-                          setIsCreateDialogOpen(false);
-                          setEditingLead(null);
-                          resetForm();
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleUpdateLead}
-                        disabled={!formData.phone_number || isLoading}
-                      >
-                        Update Lead
-                      </Button>
-                    </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="activity" className="mt-4">
-                    <LeadActivityTimeline leadId={editingLead.id} />
-                  </TabsContent>
-                </Tabs>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="first-name">First Name</Label>
-                      <Input
-                        id="first-name"
-                        value={formData.first_name}
-                        onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="last-name">Last Name</Label>
-                      <Input
-                        id="last-name"
-                        value={formData.last_name}
-                        onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="phone">Phone Number *</Label>
+                    <Label htmlFor="first-name">First Name</Label>
                     <Input
-                      id="phone"
-                      value={formData.phone_number}
-                      onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
-                      placeholder="+1 555 123 4567"
+                      id="first-name"
+                      value={formData.first_name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
                     />
                   </div>
-
                   <div>
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="last-name">Last Name</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                      id="last-name"
+                      value={formData.last_name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
                     />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="company">Company</Label>
-                    <Input
-                      id="company"
-                      value={formData.company}
-                      onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="new">New</SelectItem>
-                          <SelectItem value="contacted">Contacted</SelectItem>
-                          <SelectItem value="interested">Interested</SelectItem>
-                          <SelectItem value="not_interested">Not Interested</SelectItem>
-                          <SelectItem value="callback">Callback</SelectItem>
-                          <SelectItem value="converted">Converted</SelectItem>
-                          <SelectItem value="do_not_call">Do Not Call</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="priority">Priority</Label>
-                      <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 - Low</SelectItem>
-                          <SelectItem value="2">2 - Normal</SelectItem>
-                          <SelectItem value="3">3 - Medium</SelectItem>
-                          <SelectItem value="4">4 - High</SelectItem>
-                          <SelectItem value="5">5 - Urgent</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="notes">Notes</Label>
-                    <Textarea
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        setIsCreateDialogOpen(false);
-                        setEditingLead(null);
-                        resetForm();
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleCreateLead}
-                      disabled={!formData.phone_number || isLoading}
-                    >
-                      Create Lead
-                    </Button>
                   </div>
                 </div>
-              )}
+
+                <div>
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    value={formData.phone_number}
+                    onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
+                    placeholder="+1 555 123 4567"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="company">Company</Label>
+                  <Input
+                    id="company"
+                    value={formData.company}
+                    onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="new">New</SelectItem>
+                        <SelectItem value="contacted">Contacted</SelectItem>
+                        <SelectItem value="interested">Interested</SelectItem>
+                        <SelectItem value="not_interested">Not Interested</SelectItem>
+                        <SelectItem value="callback">Callback</SelectItem>
+                        <SelectItem value="converted">Converted</SelectItem>
+                        <SelectItem value="do_not_call">Do Not Call</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select value={formData.priority.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: parseInt(value) }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 - Low</SelectItem>
+                        <SelectItem value="2">2 - Normal</SelectItem>
+                        <SelectItem value="3">3 - Medium</SelectItem>
+                        <SelectItem value="4">4 - High</SelectItem>
+                        <SelectItem value="5">5 - Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setIsCreateDialogOpen(false);
+                      resetForm();
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleCreateLead}
+                    disabled={!formData.phone_number || isLoading}
+                  >
+                    Create Lead
+                  </Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
@@ -773,16 +623,22 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => startEdit(lead)}
-                            aria-label="View lead"
+                            onClick={() => {
+                              setDetailInitialTab('activity');
+                              setDetailLead(lead);
+                            }}
+                            aria-label="View lead activity"
                           >
                             <User className="h-3 w-3" />
                           </Button>
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => startEdit(lead)}
-                            aria-label="Edit lead"
+                            onClick={() => {
+                              setDetailInitialTab('details');
+                              setDetailLead(lead);
+                            }}
+                            aria-label="Edit lead details"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
@@ -819,6 +675,7 @@ const LeadManager = ({ onStatsUpdate }: LeadManagerProps) => {
         onLeadUpdated={() => {
           loadLeads();
         }}
+        initialTab={detailInitialTab}
       />
 
       <AlertDialog open={!!leadToDelete} onOpenChange={(open) => {
