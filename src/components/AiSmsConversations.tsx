@@ -378,6 +378,21 @@ const AiSmsConversations: React.FC = () => {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Local state for text fields to prevent losing focus on every keystroke
+  const [localAiPersonality, setLocalAiPersonality] = useState('');
+  const [localCustomInstructions, setLocalCustomInstructions] = useState('');
+  const [localKnowledgeBase, setLocalKnowledgeBase] = useState('');
+  
+  // Sync local state with settings when settings load
+  useEffect(() => {
+    if (settings) {
+      setLocalAiPersonality(settings.ai_personality || '');
+      setLocalCustomInstructions(settings.custom_instructions || '');
+      setLocalKnowledgeBase(settings.knowledge_base || '');
+    }
+  }, [settings?.id]); // Only re-sync when settings ID changes (initial load)
+  
   const debouncedSearchQuery = useDebounce(searchQuery, 300); // Debounce search input
   const [availableTwilioNumbers, setAvailableTwilioNumbers] = useState<Array<{number: string, friendly_name?: string}>>([]);
   const [selectedFromNumber, setSelectedFromNumber] = useState('');
@@ -826,8 +841,13 @@ const AiSmsConversations: React.FC = () => {
                     <Label htmlFor="ai-personality">AI Personality</Label>
                     <Textarea
                       id="ai-personality"
-                      value={settings?.ai_personality || ''}
-                      onChange={(e) => updateSettings({ ai_personality: e.target.value })}
+                      value={localAiPersonality}
+                      onChange={(e) => setLocalAiPersonality(e.target.value)}
+                      onBlur={() => {
+                        if (localAiPersonality !== (settings?.ai_personality || '')) {
+                          updateSettings({ ai_personality: localAiPersonality });
+                        }
+                      }}
                       placeholder="e.g., professional and helpful, friendly and casual, warm and empathetic..."
                       rows={3}
                     />
@@ -875,8 +895,13 @@ const AiSmsConversations: React.FC = () => {
                     </Label>
                     <Textarea
                       id="custom-instructions"
-                      value={settings?.custom_instructions || ''}
-                      onChange={(e) => updateSettings({ custom_instructions: e.target.value })}
+                      value={localCustomInstructions}
+                      onChange={(e) => setLocalCustomInstructions(e.target.value)}
+                      onBlur={() => {
+                        if (localCustomInstructions !== (settings?.custom_instructions || '')) {
+                          updateSettings({ custom_instructions: localCustomInstructions });
+                        }
+                      }}
                       placeholder={`Enter rules and guidelines for the AI to follow:
 
 - Always greet the customer by name
@@ -917,8 +942,13 @@ const AiSmsConversations: React.FC = () => {
                     </Label>
                     <Textarea
                       id="knowledge-base"
-                      value={settings?.knowledge_base || ''}
-                      onChange={(e) => updateSettings({ knowledge_base: e.target.value })}
+                      value={localKnowledgeBase}
+                      onChange={(e) => setLocalKnowledgeBase(e.target.value)}
+                      onBlur={() => {
+                        if (localKnowledgeBase !== (settings?.knowledge_base || '')) {
+                          updateSettings({ knowledge_base: localKnowledgeBase });
+                        }
+                      }}
                       placeholder={`Enter information the AI should know:
 
 COMPANY INFO:
