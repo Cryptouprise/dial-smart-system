@@ -695,7 +695,8 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                                     return;
                                   }
                                   
-                                  await supabase.from('dialing_queues').delete().eq('lead_id', lead.id).in('status', ['pending', 'failed']);
+                                                  // Delete ANY existing queue entry to avoid unique constraint violation
+                                                  await supabase.from('dialing_queues').delete().eq('lead_id', lead.id);
                                   await supabase.from('dialing_queues').insert({
                                     campaign_id: campaign.id,
                                     lead_id: lead.id,

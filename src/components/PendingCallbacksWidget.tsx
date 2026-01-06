@@ -82,12 +82,12 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
         return;
       }
 
-      // Delete any existing queue entry
+      // Delete ANY existing queue entry for this lead (regardless of status)
+      // to avoid unique constraint violation on (campaign_id, lead_id)
       await supabase
         .from('dialing_queues')
         .delete()
-        .eq('lead_id', lead.id)
-        .in('status', ['pending', 'failed']);
+        .eq('lead_id', lead.id);
 
       // Add to queue with immediate scheduling and high priority
       const { error: insertError } = await supabase
