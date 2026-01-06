@@ -29,7 +29,30 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
     throw cleanupError;
   }
 
-  const cleanedCount = stuckCalls?.length || 0;
+  const cleanedRingingCount = stuckCalls?.length || 0;
+
+  // If a call log stays "queued" without a Retell call id for a couple minutes, it's almost certainly failed.
+  // This prevents the UI from showing "queued" forever when the provider rejects the call.
+  const queuedCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: stuckQueuedCalls, error: queuedCleanupError } = await supabase
+    .from('call_logs')
+    .update({
+      status: 'failed',
+      ended_at: new Date().toISOString(),
+      notes: 'Auto-cleaned: queued without Retell call id',
+    })
+    .eq('user_id', userId)
+    .eq('status', 'queued')
+    .is('retell_call_id', null)
+    .lt('created_at', queuedCutoff)
+    .select('id');
+
+  if (queuedCleanupError) {
+    console.error('[Dispatcher Cleanup] Queued call cleanup error:', queuedCleanupError);
+  }
+
+  const cleanedQueuedCount = stuckQueuedCalls?.length || 0;
+  const cleanedCount = cleanedRingingCount + cleanedQueuedCount;
 
   // Reset dialing queue entries that got stuck in 'calling'
   const { data: userCampaigns, error: userCampaignsError } = await supabase
@@ -143,22 +166,26 @@ serve(async (req) => {
       console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
     }
 
-    // CALLBACK PRIORITY: Check for leads with past-due next_callback_at
+    // CALLBACK PRIORITY: Ensure past-due callbacks are in the dialing queue (idempotent)
     console.log('[Dispatcher] Checking for past-due callbacks...');
+    const nowIso = new Date().toISOString();
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
     const { data: pastDueCallbacks } = await supabase
       .from('leads')
       .select('id, phone_number')
       .eq('user_id', user.id)
       .eq('do_not_call', false)
-      .lte('next_callback_at', new Date().toISOString())
+      .lte('next_callback_at', nowIso)
       .not('next_callback_at', 'is', null)
       .limit(20);
 
     let callbacksQueued = 0;
     if (pastDueCallbacks && pastDueCallbacks.length > 0) {
-      console.log(`[Dispatcher] Found ${pastDueCallbacks.length} past-due callbacks to queue`);
+      console.log(`[Dispatcher] Found ${pastDueCallbacks.length} past-due callbacks to evaluate`);
+
       for (const lead of pastDueCallbacks) {
-        // Find campaign for this lead
+        // Find an ACTIVE campaign for this lead
         const { data: campaignLead } = await supabase
           .from('campaign_leads')
           .select('campaign_id, campaigns!inner(status)')
@@ -167,31 +194,48 @@ serve(async (req) => {
           .limit(1)
           .maybeSingle();
 
-        if (campaignLead) {
-          // Delete any existing queue entry (unique constraint workaround)
-          await supabase
-            .from('dialing_queues')
-            .delete()
-            .eq('lead_id', lead.id);
+        if (!campaignLead) continue;
 
-          // Insert fresh with highest priority
-          const { error: insertError } = await supabase.from('dialing_queues').insert({
-            campaign_id: campaignLead.campaign_id,
-            lead_id: lead.id,
-            phone_number: lead.phone_number,
-            status: 'pending',
-            scheduled_at: new Date().toISOString(),
-            priority: 10, // Highest priority for callbacks
-            max_attempts: 3,
-            attempts: 0
-          });
+        // If there's already a queue entry for this lead/campaign, don't churn it.
+        const { data: existingQueueEntry } = await supabase
+          .from('dialing_queues')
+          .select('id, status, scheduled_at')
+          .eq('campaign_id', campaignLead.campaign_id)
+          .eq('lead_id', lead.id)
+          .limit(1)
+          .maybeSingle();
 
-          if (!insertError) {
-            callbacksQueued++;
-            console.log(`[Dispatcher] Queued past-due callback for lead ${lead.id}`);
-          } else {
-            console.error(`[Dispatcher] Failed to queue callback for lead ${lead.id}:`, insertError);
-          }
+        if (existingQueueEntry) continue;
+
+        // If we already attempted very recently, avoid spamming call logs.
+        const { data: recentAttempt } = await supabase
+          .from('call_logs')
+          .select('id, status')
+          .eq('campaign_id', campaignLead.campaign_id)
+          .eq('lead_id', lead.id)
+          .gte('created_at', twoMinutesAgo)
+          .in('status', ['queued', 'ringing', 'initiated', 'in_progress'])
+          .limit(1)
+          .maybeSingle();
+
+        if (recentAttempt) continue;
+
+        const { error: insertError } = await supabase.from('dialing_queues').insert({
+          campaign_id: campaignLead.campaign_id,
+          lead_id: lead.id,
+          phone_number: lead.phone_number,
+          status: 'pending',
+          scheduled_at: nowIso,
+          priority: 10, // Highest priority for callbacks
+          max_attempts: 3,
+          attempts: 0,
+        });
+
+        if (!insertError) {
+          callbacksQueued++;
+          console.log(`[Dispatcher] Queued past-due callback for lead ${lead.id}`);
+        } else {
+          console.error(`[Dispatcher] Failed to queue callback for lead ${lead.id}:`, insertError);
         }
       }
     }
@@ -624,11 +668,29 @@ serve(async (req) => {
         const callData = await callResponse.json();
 
         if (!callResponse.ok || callData.error) {
-          console.error('Call creation failed:', callData.error || `HTTP ${callResponse.status}`);
-          
-          const newAttempts = (call.attempts || 0) + 1;
+          const errorText = String(callData?.error || `HTTP ${callResponse.status}`);
+          console.error('Call creation failed:', errorText);
+
           const maxAttempts = call.max_attempts || 3;
-          
+          const newAttempts = (call.attempts || 0) + 1;
+
+          // Non-retryable configuration error (caller id not registered with Retell)
+          // This would otherwise spam call_logs with "queued" entries and never place a call.
+          const isRetellNumberNotFound = /not found from phone-number/i.test(errorText) || /retell api error\s*404/i.test(errorText);
+          if (isRetellNumberNotFound) {
+            await supabase
+              .from('dialing_queues')
+              .update({
+                status: 'failed',
+                attempts: maxAttempts,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', call.id);
+
+            await advanceWorkflowPastFailedCallStep(supabase, call.lead_id, call.campaign_id);
+            continue;
+          }
+
           if (newAttempts < maxAttempts) {
             // Re-queue for retry with 30 minute delay
             await supabase
@@ -652,12 +714,12 @@ serve(async (req) => {
               })
               .eq('id', call.id);
             console.log(`[Dispatcher] Call failed, max attempts (${maxAttempts}) reached`);
-            
+
             // CRITICAL: Advance workflow to next step when max_attempts exhausted
             // This ensures the workflow continues (e.g., SMS step) even if calls don't connect
             await advanceWorkflowPastFailedCallStep(supabase, call.lead_id, call.campaign_id);
           }
-          
+
           continue;
         }
 
