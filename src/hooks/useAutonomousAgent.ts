@@ -244,20 +244,32 @@ export const useAutonomousAgent = () => {
       const actionType = recommendation.nextBestAction.type;
       let actionResult = null;
 
+      console.log(`[Autonomous] Executing ${actionType} action for lead ${leadId} (${leadName})`);
+
       switch (actionType) {
         case 'call':
+          console.log('[Autonomous] Queueing call...');
           actionResult = await queueCall(leadId);
+          console.log('[Autonomous] Call queue result:', actionResult);
           break;
         case 'sms':
+          console.log('[Autonomous] Sending SMS...');
           actionResult = await sendSMS(leadId, recommendation.nextBestAction.message);
+          console.log('[Autonomous] SMS result:', actionResult);
           break;
         case 'email':
+          console.log('[Autonomous] Sending email...');
           actionResult = await sendEmail(leadId, recommendation.nextBestAction.message);
+          console.log('[Autonomous] Email result:', actionResult);
           break;
         case 'wait':
+          console.log('[Autonomous] Scheduling follow-up...');
           actionResult = await scheduleFollowUp(leadId, recommendation.nextBestAction.timing);
+          console.log('[Autonomous] Follow-up result:', actionResult);
           break;
       }
+      
+      console.log(`[Autonomous] Action ${actionType} completed:`, actionResult ? 'SUCCESS' : 'FAILED');
 
       // Log the decision
       await logDecision({

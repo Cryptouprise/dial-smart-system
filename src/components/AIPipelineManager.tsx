@@ -56,6 +56,7 @@ const AIPipelineManager: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState('recommendations');
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
+  const [executingId, setExecutingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadLeads();
@@ -220,15 +221,38 @@ const AIPipelineManager: React.FC = () => {
   };
 
   const handleExecuteAction = async (recommendation: any, leadId: string, leadName: string) => {
-    await executeRecommendation({
-      recommendation,
-      leadId,
-      leadName,
-      isAutonomous: false
-    });
-    
-    // Reload data
-    await loadDecisionHistory();
+    setExecutingId(leadId);
+    try {
+      const success = await executeRecommendation({
+        recommendation,
+        leadId,
+        leadName,
+        isAutonomous: false
+      });
+      
+      if (success) {
+        toast({
+          title: "Action Executed",
+          description: `${recommendation.nextBestAction.type} action completed for ${leadName}`,
+        });
+      } else {
+        toast({
+          title: "Action Failed",
+          description: `Could not complete ${recommendation.nextBestAction.type} for ${leadName}`,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Execute action error:', error);
+      toast({
+        title: "Execution Error",
+        description: "Something went wrong. Check console for details.",
+        variant: "destructive"
+      });
+    } finally {
+      setExecutingId(null);
+      await loadDecisionHistory();
+    }
   };
 
   return (
@@ -494,10 +518,15 @@ const AIPipelineManager: React.FC = () => {
                 <div className="flex gap-2 mt-4">
                   <Button 
                     onClick={() => handleExecuteAction(rec, rec.leadId, rec.leadName)}
-                    disabled={isExecuting}
+                    disabled={isExecuting || executingId === rec.leadId}
                     className="flex-1"
                   >
-                    {settings.auto_execute_recommendations && settings.enabled ? (
+                    {executingId === rec.leadId ? (
+                      <>
+                        <Brain className="h-4 w-4 mr-2 animate-spin" />
+                        Executing...
+                      </>
+                    ) : settings.auto_execute_recommendations && settings.enabled ? (
                       <>
                         <Zap className="h-4 w-4 mr-2" />
                         Execute (Auto)
