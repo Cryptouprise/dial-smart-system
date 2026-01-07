@@ -70,7 +70,7 @@ serve(async (req) => {
     const arrayBuffer = await response.arrayBuffer();
     const base64Audio = base64Encode(arrayBuffer);
 
-    console.log(`[ElevenLabs TTS] Audio generated successfully (${uint8Array.length} bytes)`);
+    console.log(`[ElevenLabs TTS] Audio generated successfully (${arrayBuffer.byteLength} bytes)`);
 
     return new Response(
       JSON.stringify({ audioContent: base64Audio }),
