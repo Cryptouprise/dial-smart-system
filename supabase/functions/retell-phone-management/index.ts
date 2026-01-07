@@ -193,7 +193,7 @@ serve(async (req) => {
                 user_id: userId,
                 number: formattedNum,
                 area_code: areaCode,
-                provider: 'retell',
+                provider: 'retell_native',
                 status: 'active',
                 purpose: 'general_rotation',
                 retell_phone_id: retellPhoneId,
