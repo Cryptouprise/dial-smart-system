@@ -169,6 +169,42 @@ export type Database = {
           },
         ]
       }
+      agent_improvement_history: {
+        Row: {
+          agent_id: string
+          agent_name: string | null
+          created_at: string | null
+          created_by: string | null
+          details: Json
+          id: string
+          improvement_type: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          agent_name?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          details?: Json
+          id?: string
+          improvement_type: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          agent_name?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          details?: Json
+          id?: string
+          improvement_type?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_chatbot_settings: {
         Row: {
           ai_actions_enabled: boolean | null
@@ -552,6 +588,7 @@ export type Database = {
           auto_execute_recommendations: boolean | null
           auto_optimize_campaigns: boolean | null
           auto_prioritize_leads: boolean | null
+          auto_script_optimization: boolean | null
           autonomy_level: string | null
           created_at: string | null
           daily_goal_appointments: number | null
@@ -561,8 +598,11 @@ export type Database = {
           enabled: boolean | null
           id: string
           learning_enabled: boolean | null
+          max_auto_script_changes_per_day: number | null
           max_daily_autonomous_actions: number | null
           require_approval_for_high_priority: boolean | null
+          require_approval_for_script_changes: boolean | null
+          script_optimization_threshold: number | null
           updated_at: string | null
           user_id: string
         }
@@ -571,6 +611,7 @@ export type Database = {
           auto_execute_recommendations?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
+          auto_script_optimization?: boolean | null
           autonomy_level?: string | null
           created_at?: string | null
           daily_goal_appointments?: number | null
@@ -580,8 +621,11 @@ export type Database = {
           enabled?: boolean | null
           id?: string
           learning_enabled?: boolean | null
+          max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
+          require_approval_for_script_changes?: boolean | null
+          script_optimization_threshold?: number | null
           updated_at?: string | null
           user_id: string
         }
@@ -590,6 +634,7 @@ export type Database = {
           auto_execute_recommendations?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
+          auto_script_optimization?: boolean | null
           autonomy_level?: string | null
           created_at?: string | null
           daily_goal_appointments?: number | null
@@ -599,8 +644,11 @@ export type Database = {
           enabled?: boolean | null
           id?: string
           learning_enabled?: boolean | null
+          max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
+          require_approval_for_script_changes?: boolean | null
+          script_optimization_threshold?: number | null
           updated_at?: string | null
           user_id?: string
         }
@@ -2262,6 +2310,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      lj_memory: {
+        Row: {
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          memory_key: string
+          memory_type: string
+          memory_value: Json
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          memory_key: string
+          memory_type: string
+          memory_value: Json
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          memory_key?: string
+          memory_type?: string
+          memory_value?: Json
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       number_orders: {
         Row: {
