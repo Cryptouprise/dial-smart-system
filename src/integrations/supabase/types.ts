@@ -1572,6 +1572,107 @@ export type Database = {
           },
         ]
       }
+      disposition_metrics: {
+        Row: {
+          actions_triggered: Json | null
+          ai_confidence_score: number | null
+          call_ended_at: string | null
+          call_id: string | null
+          campaign_id: string | null
+          created_at: string
+          disposition_id: string | null
+          disposition_name: string
+          disposition_set_at: string
+          id: string
+          lead_id: string | null
+          metadata: Json | null
+          new_pipeline_stage: string | null
+          new_status: string | null
+          previous_pipeline_stage: string | null
+          previous_status: string | null
+          set_by: string
+          set_by_user_id: string | null
+          time_to_disposition_seconds: number | null
+          user_id: string
+          workflow_id: string | null
+        }
+        Insert: {
+          actions_triggered?: Json | null
+          ai_confidence_score?: number | null
+          call_ended_at?: string | null
+          call_id?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          disposition_id?: string | null
+          disposition_name: string
+          disposition_set_at?: string
+          id?: string
+          lead_id?: string | null
+          metadata?: Json | null
+          new_pipeline_stage?: string | null
+          new_status?: string | null
+          previous_pipeline_stage?: string | null
+          previous_status?: string | null
+          set_by?: string
+          set_by_user_id?: string | null
+          time_to_disposition_seconds?: number | null
+          user_id: string
+          workflow_id?: string | null
+        }
+        Update: {
+          actions_triggered?: Json | null
+          ai_confidence_score?: number | null
+          call_ended_at?: string | null
+          call_id?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          disposition_id?: string | null
+          disposition_name?: string
+          disposition_set_at?: string
+          id?: string
+          lead_id?: string | null
+          metadata?: Json | null
+          new_pipeline_stage?: string | null
+          new_status?: string | null
+          previous_pipeline_stage?: string | null
+          previous_status?: string | null
+          set_by?: string
+          set_by_user_id?: string | null
+          time_to_disposition_seconds?: number | null
+          user_id?: string
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disposition_metrics_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "disposition_metrics_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "disposition_metrics_disposition_id_fkey"
+            columns: ["disposition_id"]
+            isOneToOne: false
+            referencedRelation: "dispositions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "disposition_metrics_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispositions: {
         Row: {
           auto_actions: Json | null
