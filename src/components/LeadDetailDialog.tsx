@@ -1079,11 +1079,40 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                       )}
                       {call.recording_url && (
                         <div className="mt-2">
-                          <audio controls className="w-full max-w-md" preload="metadata">
-                            <source src={call.recording_url} type="audio/mpeg" />
-                            <source src={call.recording_url} type="audio/wav" />
-                            Your browser does not support the audio element.
-                          </audio>
+                          {(() => {
+                            try {
+                              // Validate URL format and ensure it's a safe protocol
+                              const url = new URL(call.recording_url);
+                              const safeProtocols = ['https:', 'http:'];
+                              
+                              if (!safeProtocols.includes(url.protocol)) {
+                                return (
+                                  <p className="text-xs text-muted-foreground">
+                                    Recording available but uses unsupported protocol. Please contact support.
+                                  </p>
+                                );
+                              }
+                              
+                              return (
+                                <>
+                                  <audio controls className="w-full max-w-md" preload="metadata">
+                                    <source src={call.recording_url} type="audio/mpeg" />
+                                    <source src={call.recording_url} type="audio/wav" />
+                                    Your browser does not support audio playback. 
+                                    <a href={call.recording_url} target="_blank" rel="noopener noreferrer" className="text-primary underline ml-1">
+                                      Download recording
+                                    </a>
+                                  </audio>
+                                </>
+                              );
+                            } catch (error) {
+                              return (
+                                <p className="text-xs text-muted-foreground">
+                                  Invalid recording URL. Please contact support.
+                                </p>
+                              );
+                            }
+                          })()}
                         </div>
                       )}
                       {call.notes && (

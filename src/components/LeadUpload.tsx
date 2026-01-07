@@ -99,7 +99,7 @@ export const LeadUpload: React.FC = () => {
     const lines = text.trim().split('\n');
     if (lines.length < 2) return { headers: [], rows: [] };
 
-    // Helper function to parse CSV line properly (handles quoted values with commas)
+    // Helper function to parse CSV line properly (handles quoted values with commas and escaped quotes)
     const parseCSVLine = (line: string): string[] => {
       const result: string[] = [];
       let current = '';
@@ -107,9 +107,16 @@ export const LeadUpload: React.FC = () => {
       
       for (let i = 0; i < line.length; i++) {
         const char = line[i];
+        const nextChar = i + 1 < line.length ? line[i + 1] : null;
         
         if (char === '"') {
-          inQuotes = !inQuotes;
+          // Handle escaped quotes ("" inside quoted field)
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            i++; // Skip the next quote
+          } else {
+            inQuotes = !inQuotes;
+          }
         } else if (char === ',' && !inQuotes) {
           result.push(current.trim());
           current = '';
