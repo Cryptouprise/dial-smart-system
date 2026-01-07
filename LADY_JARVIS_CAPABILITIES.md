@@ -1,5 +1,7 @@
 # Lady Jarvis (LJ) - Complete Capabilities Guide
 
+*Last Updated: January 2026*
+
 ## Overview
 
 Lady Jarvis is the all-powerful AI assistant for Dial Smart. Inspired by JARVIS from Iron Man - calm, confident, competent, and conversational. She manages all aspects of your sales dialer system.
@@ -46,6 +48,14 @@ LJ supports voice interaction:
 | `get_agent_history` | View all script changes and notes for an agent |
 | `add_agent_note` | Add notes to track optimization experiments |
 
+### Call Analysis
+
+| Tool | Description |
+|------|-------------|
+| `analyze_call_patterns` | Analyze recent calls for objection patterns and outcomes |
+| `compare_daily_performance` | Compare today's performance vs historical averages |
+| `suggest_script_improvements` | Generate AI-powered script improvement suggestions |
+
 ### Memory & Learning
 
 | Tool | Description |
@@ -69,10 +79,13 @@ LJ supports voice interaction:
 | Tool | Description |
 |------|-------------|
 | `list_leads` | List leads with optional filters |
+| `search_leads_advanced` | Advanced search with status, tags, date range, score filters |
+| `tag_leads` | Add or remove tags from multiple leads at once |
 | `update_lead` | Update lead information |
 | `delete_lead` | Delete a lead |
 | `move_lead_to_stage` | Move lead to a pipeline stage |
 | `add_leads_to_campaign` | Add leads to a campaign |
+| `get_lead_stats` | Get lead statistics grouped by status, tags, or source |
 
 ### Phone Numbers
 
@@ -140,6 +153,8 @@ LJ supports voice interaction:
 | `get_system_status` | Get overall system status |
 | `diagnose_issue` | Diagnose why something isn't working |
 | `undo_last_action` | Undo the last action |
+| `record_session_action` | Record an action to session memory (internal) |
+| `run_e2e_test` | Get instructions for running end-to-end tests |
 
 ## Wizard Flows
 
