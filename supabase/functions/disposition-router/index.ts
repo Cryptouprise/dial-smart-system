@@ -312,7 +312,7 @@ serve(async (req) => {
           call_id: callId || null,
           disposition_id: dispositionId || null,
           disposition_name: dispositionName,
-          set_by: setBy || 'manual', // 'ai', 'manual', or 'automation'
+          set_by: setBy || 'manual', // 'ai', 'manual', 'automation', or 'ai_sms'
           set_by_user_id: setBy === 'manual' ? userId : null,
           ai_confidence_score: aiConfidence || null,
           call_ended_at: callEndedAt,
@@ -333,6 +333,7 @@ serve(async (req) => {
             call_outcome: callOutcome,
             had_transcript: !!transcript,
             auto_actions_count: autoActions?.length || 0,
+            source: setBy === 'ai_sms' ? 'sms' : 'voice', // Track SMS vs voice source
           },
         });
       
@@ -340,7 +341,7 @@ serve(async (req) => {
         console.error('[Disposition Metrics] Failed to insert metrics:', metricsInsertResult.error);
         // Don't fail the whole request, just log the error
       } else {
-        console.log('[Disposition Metrics] Recorded metrics for disposition:', dispositionName);
+        console.log('[Disposition Metrics] Recorded metrics for disposition:', dispositionName, 'via:', setBy);
       }
 
       return new Response(JSON.stringify({ success: true, actions }), {

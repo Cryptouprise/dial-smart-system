@@ -15,6 +15,201 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= SMS DISPOSITION CATEGORIES =============
+
+// OPT-OUT / DNC (highest priority - immediate removal)
+const OPT_OUT_KEYWORDS = [
+  'stop', 'unsubscribe', 'remove me', 'take me off',
+  'do not contact', 'stop texting', 'stop messaging',
+  'stop calling', 'leave me alone', 'remove my number',
+  'quit texting', 'opt out', 'dnc', 'cancel'
+];
+
+// DISQUALIFICATION patterns (industry-specific)
+const DISQUALIFICATION_PATTERNS: Record<string, string[]> = {
+  'already_has_solar': [
+    'i already have solar', 'already got solar', 'have solar panels',
+    'already have panels', 'we have solar', 'got solar last year',
+    'just got solar', 'already installed', 'already have it',
+    'already got it', 'solar already', 'panels already'
+  ],
+  'renter': [
+    "i'm a renter", 'im a renter', 'i rent', "don't own",
+    'not a homeowner', 'i lease', 'renting', 'tenant',
+    'apartment', 'not my house', "landlord's decision",
+    'dont own', 'not the owner', 'not the homeowner'
+  ],
+  'wrong_number': [
+    'wrong number', 'wrong person', 'you have the wrong',
+    "that's not me", 'never called', 'who is this',
+    'dont know you', "don't know you", 'never signed up'
+  ],
+  'deceased': [
+    'passed away', 'no longer with us', 'deceased', 'died'
+  ],
+  'business_closed': [
+    'out of business', 'closed down', 'no longer in business',
+    'company closed', 'business closed'
+  ]
+};
+
+// NOT INTERESTED (explicit rejection)
+const NOT_INTERESTED_KEYWORDS = [
+  'not interested', 'no thanks', 'no thank you',
+  'pass', "i'm good", 'im good', "don't need",
+  'not right now', 'maybe later', 'not for me',
+  'no way', 'absolutely not', 'hard pass', 'no',
+  'nope', 'never', 'go away', 'dont want', "don't want"
+];
+
+// POSITIVE SIGNALS (engagement & interest)
+const POSITIVE_PATTERNS: Record<string, string[]> = {
+  'appointment_booked': [
+    'booked', 'scheduled', 'see you then', 'appointment set',
+    'looking forward', 'confirmed', 'on the calendar',
+    'appointment confirmed', 'i booked', "i've booked"
+  ],
+  'interested': [
+    "i'm interested", 'im interested', 'tell me more',
+    'sounds good', 'sounds great', "let's do it",
+    'sign me up', 'yes please', 'absolutely', 'definitely',
+    'count me in', "i'd like to", 'more info', 'more information'
+  ],
+  'hot_lead': [
+    'asap', 'immediately', 'right away', 'urgent',
+    'today if possible', 'call me now', 'ready to go',
+    'where do i sign', 'take my money', 'ready to start'
+  ],
+  'callback_requested': [
+    'call me back', 'call me later', 'busy right now',
+    'call tomorrow', 'call next week', 'not a good time',
+    'in a meeting', 'call after', 'give me a call',
+    'call me at', 'try me later'
+  ]
+};
+
+// SMS Disposition Result interface
+interface SmsDispositionResult {
+  disposition: string | null;
+  category: 'opt_out' | 'disqualified' | 'not_interested' | 'positive' | null;
+  subcategory: string | null;
+  confidence: number;
+  reason: string | null;
+  shouldStopAutoReply: boolean;
+  shouldRemoveFromWorkflows: boolean;
+  shouldAddToDnc: boolean;
+  suggestedStatus: string | null;
+}
+
+// Analyze SMS for disposition
+function analyzeSmsForDisposition(messageBody: string): SmsDispositionResult {
+  const lowerBody = messageBody.toLowerCase().trim();
+  
+  // Check OPT-OUT first (highest priority)
+  for (const keyword of OPT_OUT_KEYWORDS) {
+    if (lowerBody.includes(keyword) || lowerBody === keyword) {
+      return {
+        disposition: 'Do Not Call',
+        category: 'opt_out',
+        subcategory: 'opt_out',
+        confidence: 0.95,
+        reason: `Opt-out keyword detected: "${keyword}"`,
+        shouldStopAutoReply: true,
+        shouldRemoveFromWorkflows: true,
+        shouldAddToDnc: true,
+        suggestedStatus: 'dnc'
+      };
+    }
+  }
+  
+  // Check DISQUALIFICATIONS
+  for (const [disqType, patterns] of Object.entries(DISQUALIFICATION_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (lowerBody.includes(pattern)) {
+        const dispositionMap: Record<string, string> = {
+          'already_has_solar': 'Already Has Solar',
+          'renter': 'Renter',
+          'wrong_number': 'Wrong Number',
+          'deceased': 'Deceased',
+          'business_closed': 'Business Closed'
+        };
+        return {
+          disposition: dispositionMap[disqType] || 'Disqualified',
+          category: 'disqualified',
+          subcategory: disqType,
+          confidence: 0.9,
+          reason: `Disqualification detected: ${disqType} - "${pattern}"`,
+          shouldStopAutoReply: false,
+          shouldRemoveFromWorkflows: true,
+          shouldAddToDnc: disqType === 'wrong_number' || disqType === 'deceased',
+          suggestedStatus: 'closed_lost'
+        };
+      }
+    }
+  }
+  
+  // Check NOT INTERESTED
+  for (const keyword of NOT_INTERESTED_KEYWORDS) {
+    if (lowerBody.includes(keyword) || lowerBody === keyword) {
+      return {
+        disposition: 'Not Interested',
+        category: 'not_interested',
+        subcategory: 'not_interested',
+        confidence: 0.85,
+        reason: `Not interested keyword: "${keyword}"`,
+        shouldStopAutoReply: false,
+        shouldRemoveFromWorkflows: true,
+        shouldAddToDnc: false,
+        suggestedStatus: 'closed_lost'
+      };
+    }
+  }
+  
+  // Check POSITIVE signals
+  for (const [positiveType, patterns] of Object.entries(POSITIVE_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (lowerBody.includes(pattern)) {
+        const dispositionMap: Record<string, string> = {
+          'appointment_booked': 'Appointment Set',
+          'interested': 'Interested',
+          'hot_lead': 'Hot Lead',
+          'callback_requested': 'Callback Requested'
+        };
+        const statusMap: Record<string, string> = {
+          'appointment_booked': 'appointment_scheduled',
+          'interested': 'qualified',
+          'hot_lead': 'qualified',
+          'callback_requested': 'callback_requested'
+        };
+        return {
+          disposition: dispositionMap[positiveType] || 'Interested',
+          category: 'positive',
+          subcategory: positiveType,
+          confidence: 0.8,
+          reason: `Positive signal: ${positiveType} - "${pattern}"`,
+          shouldStopAutoReply: false,
+          shouldRemoveFromWorkflows: positiveType === 'appointment_booked', // Remove when appointment is set
+          shouldAddToDnc: false,
+          suggestedStatus: statusMap[positiveType] || 'qualified'
+        };
+      }
+    }
+  }
+  
+  // No disposition detected
+  return {
+    disposition: null,
+    category: null,
+    subcategory: null,
+    confidence: 0,
+    reason: null,
+    shouldStopAutoReply: false,
+    shouldRemoveFromWorkflows: false,
+    shouldAddToDnc: false,
+    suggestedStatus: null
+  };
+}
+
 // Input validation schema for Twilio webhook data
 interface TwilioWebhookData {
   MessageSid?: string;
@@ -377,6 +572,10 @@ serve(async (req) => {
       console.log('[Twilio SMS Webhook] Message stored successfully:', message.id);
     }
 
+    // ============= SMS DISPOSITION DETECTION =============
+    // Analyze the incoming message for disposition signals BEFORE any other processing
+    const smsDisposition = analyzeSmsForDisposition(messageBody);
+    
     // Check AI SMS settings for auto-response
     const { data: globalSettings } = await supabaseAdmin
       .from('ai_sms_settings')
@@ -400,10 +599,112 @@ serve(async (req) => {
 
     const { data: lead } = await supabaseAdmin
       .from('leads')
-      .select('id')
+      .select('id, notes, status, name')
       .eq('user_id', userId)
       .eq('phone_number', From)
       .maybeSingle();
+    
+    // ============= PROCESS SMS DISPOSITION =============
+    if (smsDisposition.disposition && lead?.id) {
+      console.log('[Twilio SMS Webhook] SMS Disposition detected:', JSON.stringify(smsDisposition));
+      
+      // 1. Call disposition-router to handle workflow removal & metrics
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        const dispositionResponse = await fetch(`${supabaseUrl}/functions/v1/disposition-router`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            action: 'process_disposition',
+            leadId: lead.id,
+            userId: userId,
+            dispositionName: smsDisposition.disposition,
+            setBy: 'ai_sms',
+            transcript: messageBody,
+            metadata: {
+              source: 'sms',
+              message_id: message?.id,
+              confidence: smsDisposition.confidence,
+              category: smsDisposition.category,
+              subcategory: smsDisposition.subcategory
+            }
+          }),
+        });
+        
+        if (dispositionResponse.ok) {
+          console.log('[Twilio SMS Webhook] Disposition processed via router successfully');
+        } else {
+          console.error('[Twilio SMS Webhook] Disposition router error:', await dispositionResponse.text());
+        }
+      } catch (dispError) {
+        console.error('[Twilio SMS Webhook] Disposition routing error:', dispError);
+      }
+      
+      // 2. Update lead status & add notes to contact card
+      const existingNotes = lead.notes || '';
+      const timestamp = new Date().toISOString();
+      const truncatedMessage = messageBody.length > 100 ? messageBody.substring(0, 100) + '...' : messageBody;
+      const newNote = `[${timestamp}] SMS Disposition: ${smsDisposition.disposition} (${smsDisposition.category}) - "${truncatedMessage}"`;
+      
+      const updateData: Record<string, any> = {
+        notes: existingNotes ? `${existingNotes}\n${newNote}` : newNote,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Update status based on disposition
+      if (smsDisposition.suggestedStatus) {
+        updateData.status = smsDisposition.suggestedStatus;
+      }
+      
+      // Add to DNC if needed
+      if (smsDisposition.shouldAddToDnc) {
+        updateData.do_not_call = true;
+      }
+      
+      await supabaseAdmin
+        .from('leads')
+        .update(updateData)
+        .eq('id', lead.id);
+      
+      console.log('[Twilio SMS Webhook] Lead updated with SMS disposition:', {
+        leadId: lead.id,
+        disposition: smsDisposition.disposition,
+        newStatus: smsDisposition.suggestedStatus
+      });
+      
+      // 3. Log to agent_decisions for dashboard visibility
+      await supabaseAdmin
+        .from('agent_decisions')
+        .insert({
+          user_id: userId,
+          lead_id: lead.id,
+          lead_name: lead.name || 'Unknown',
+          decision_type: 'sms_disposition',
+          reasoning: smsDisposition.reason,
+          action_taken: `Applied "${smsDisposition.disposition}" from SMS. ${smsDisposition.shouldRemoveFromWorkflows ? 'Removed from workflows.' : ''} ${smsDisposition.shouldAddToDnc ? 'Added to DNC.' : ''}`,
+          success: true,
+          executed_at: new Date().toISOString(),
+        });
+      
+      console.log('[Twilio SMS Webhook] Agent decision logged for SMS disposition');
+      
+      // 4. If opt-out, skip AI auto-reply entirely
+      if (smsDisposition.shouldStopAutoReply) {
+        console.log('[Twilio SMS Webhook] Opt-out detected, skipping auto-reply');
+        return new Response(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { headers: { ...corsHeaders, 'Content-Type': 'text/xml' } }
+        );
+      }
+    } else if (smsDisposition.disposition && !lead?.id) {
+      // Log disposition detected but no lead found
+      console.log('[Twilio SMS Webhook] SMS Disposition detected but no lead found for phone:', From, 'Disposition:', smsDisposition.disposition);
+    }
 
     // UPDATE NUDGE TRACKING: Mark that lead has responded (THIS IS KEY FOR FOLLOW-UP LOGIC)
     if (lead?.id) {
