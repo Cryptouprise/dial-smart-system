@@ -1682,6 +1682,42 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_list_memberships: {
+        Row: {
+          added_at: string | null
+          id: string
+          lead_id: string | null
+          smart_list_id: string | null
+        }
+        Insert: {
+          added_at?: string | null
+          id?: string
+          lead_id?: string | null
+          smart_list_id?: string | null
+        }
+        Update: {
+          added_at?: string | null
+          id?: string
+          lead_id?: string | null
+          smart_list_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_list_memberships_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_list_memberships_smart_list_id_fkey"
+            columns: ["smart_list_id"]
+            isOneToOne: false
+            referencedRelation: "smart_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_nudge_tracking: {
         Row: {
           created_at: string | null
@@ -2984,6 +3020,42 @@ export type Database = {
           updated_at?: string
           user_id?: string
           username?: string | null
+        }
+        Relationships: []
+      }
+      smart_lists: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          filters: Json
+          id: string
+          is_dynamic: boolean | null
+          lead_count: number | null
+          name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          filters?: Json
+          id?: string
+          is_dynamic?: boolean | null
+          lead_count?: number | null
+          name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          filters?: Json
+          id?: string
+          is_dynamic?: boolean | null
+          lead_count?: number | null
+          name?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
