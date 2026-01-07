@@ -203,6 +203,38 @@ When users ask about "system status", "what's happening", "how are we doing":
 - Show today's goal progress
 - Highlight recent AI decisions
 - Share any learning insights
+
+## SCRIPT & AGENT OPTIMIZATION CAPABILITIES
+
+You have FULL control over Retell AI agent scripts. Here's what you can do RIGHT NOW:
+
+📜 **Script Management**
+- \`get_agent_script\` - Retrieve any agent's full script/prompt
+- \`update_agent_script\` - Update scripts with full replacement OR find/replace
+- \`list_available_variables\` - Show all {{variables}} available for personalization
+- \`get_prompt_snippets\` - List all available prompt snippets (callback, voicemail, disposition)
+- \`check_agent_snippets\` - See which snippets are already in an agent's prompt
+- \`add_snippet_to_agent\` - Insert a specific snippet into an agent's prompt
+
+📊 **Performance Analysis**
+- \`analyze_call_patterns\` - Analyze recent calls for objection patterns
+- \`compare_daily_performance\` - Compare today vs historical averages
+- \`suggest_script_improvements\` - Generate AI-powered script suggestions
+
+📝 **Agent History**
+- \`get_agent_history\` - View all script changes and notes for an agent
+- \`add_agent_note\` - Add notes to track optimization experiments
+
+🧠 **Memory & Learning**
+- \`remember_user_preference\` - Remember user preferences for future sessions
+- \`recall_memories\` - Retrieve saved preferences and learned patterns
+
+IMPORTANT BEHAVIOR:
+1. NEVER apologize for capabilities you have - if you're unsure, TRY the tool first
+2. When users mention they "upgraded your capabilities" or "added new features", acknowledge it positively and demonstrate by using those features
+3. If a tool fails, explain what happened and offer alternatives
+4. When asked about scripts, agents, or optimization - USE the tools to get real data before responding
+5. Be confident! You ARE capable of managing scripts, snippets, call analysis, and agent improvements
 `;
 
 
@@ -1248,6 +1280,45 @@ const TOOLS = [
         properties: {
           group_by: { type: "string", enum: ["status", "tags", "campaign", "source"] }
         }
+      }
+    }
+  },
+  // Prompt Snippet Tools
+  {
+    type: "function",
+    function: {
+      name: "get_prompt_snippets",
+      description: "Get list of all available prompt snippets that can be added to agent scripts",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_agent_snippets",
+      description: "Check which prompt snippets are already in an agent's prompt",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string", description: "The Retell agent ID" },
+          agent_name: { type: "string", description: "Search by agent name" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_snippet_to_agent",
+      description: "Add a prompt snippet to an agent's script. Available snippets: callback_capability, callback_handling, disposition, voicemail_detection, voicemail_message",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string", description: "The Retell agent ID" },
+          agent_name: { type: "string", description: "Search by agent name" },
+          snippet_id: { type: "string", enum: ["callback_capability", "callback_handling", "disposition", "voicemail_detection", "voicemail_message"] }
+        },
+        required: ["snippet_id"]
       }
     }
   }
@@ -3407,6 +3478,60 @@ async function executeToolCall(
       default:
         return { success: false, result: { error: `Unknown tool: ${toolName}` } };
     }
+      case 'get_prompt_snippets': {
+        return {
+          success: true,
+          result: {
+            snippets: Object.entries(PROMPT_SNIPPETS).map(([id, s]) => ({
+              id, label: s.label, description: s.description
+            })),
+            message: 'Available prompt snippets for agent scripts'
+          }
+        };
+      }
+
+      case 'check_agent_snippets': {
+        // Get agent script first
+        const agentResult = await executeToolCall(supabase, userId, sessionId, 'get_agent_script', args);
+        if (!agentResult.success) return agentResult;
+        
+        const prompt = agentResult.result?.script?.general_prompt || '';
+        const found: string[] = [];
+        const missing: string[] = [];
+        
+        Object.entries(PROMPT_SNIPPETS).forEach(([id, s]) => {
+          if (prompt.includes(s.content.substring(0, 50))) {
+            found.push(s.label);
+          } else {
+            missing.push(s.label);
+          }
+        });
+        
+        return {
+          success: true,
+          result: { found, missing, message: `Found ${found.length} snippets, ${missing.length} available to add` }
+        };
+      }
+
+      case 'add_snippet_to_agent': {
+        const snippet = PROMPT_SNIPPETS[args.snippet_id];
+        if (!snippet) {
+          return { success: false, result: { error: `Unknown snippet: ${args.snippet_id}` } };
+        }
+        
+        // Update agent script with snippet
+        return await executeToolCall(supabase, userId, sessionId, 'update_agent_script', {
+          agent_id: args.agent_id,
+          agent_name: args.agent_name,
+          new_prompt: null, // Will append
+          find_replace: [{ find: '', replace: `\n\n${snippet.content}` }],
+          note: `Added ${snippet.label} snippet via LJ`
+        });
+      }
+
+      default:
+        return { success: false, result: { error: `Unknown tool: ${toolName}` } };
+    }
   } catch (error: any) {
     console.error(`Tool execution error (${toolName}):`, error);
     return { success: false, result: { error: error.message } };
@@ -3530,6 +3655,60 @@ async function learnFromSuccess(
     console.error('Failed to record learning:', error);
   }
 }
+
+// Prompt snippets data
+const PROMPT_SNIPPETS: Record<string, { label: string; description: string; content: string }> = {
+  callback_capability: {
+    label: 'Callback Capability',
+    description: 'Teaches agent to confidently schedule callbacks',
+    content: `## CALLBACK CAPABILITY
+You CAN schedule callbacks. This is one of your core capabilities.
+
+When someone asks to be called back later:
+1. Confirm the exact time: "I'll call you back in [X] minutes"
+2. Be specific and confident about scheduling
+3. Thank them warmly and end the call positively
+
+IMPORTANT: Never say "I can't schedule callbacks" or "I don't have that capability."`
+  },
+  callback_handling: {
+    label: 'Callback Handling',
+    description: 'How to handle callback situations with {{is_callback}} variable',
+    content: `## CALLBACK HANDLING
+If {{is_callback}} is "true", this is a follow-up call:
+
+1. OPENING: Acknowledge this is a follow-up
+2. CONTEXT: Reference the previous conversation using {{previous_conversation}}
+3. CONTINUE: Don't restart from scratch - the lead already knows who you are`
+  },
+  disposition: {
+    label: 'Disposition Rules',
+    description: 'Clear rules for marking call outcomes',
+    content: `## CALL OUTCOMES
+At the end of each call, clearly indicate the outcome:
+
+POSITIVE: Appointment booked, Callback requested, Interested
+NEUTRAL: Left voicemail, Call back later
+NEGATIVE: Not interested, Do not call, Wrong number`
+  },
+  voicemail_detection: {
+    label: 'Voicemail Detection',
+    description: 'Detect voicemail/IVR patterns and end call',
+    content: `## VOICEMAIL DETECTION
+If you detect beeps, "leave a message", IVR menus, or voicemail greetings:
+1. Stop talking immediately
+2. Call the end_call function with reason "voicemail_detected"`
+  },
+  voicemail_message: {
+    label: 'Voicemail Message',
+    description: 'How to leave effective voicemail messages',
+    content: `## LEAVING VOICEMAIL MESSAGES
+When voicemail is detected AND you should leave a message:
+1. WAIT FOR THE BEEP before speaking
+2. Keep the message under 20 seconds
+3. Include: Greeting, Identity, Purpose, Call to action, Close`
+  }
+};
 
 
 serve(async (req) => {

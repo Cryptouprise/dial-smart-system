@@ -23,7 +23,52 @@ interface NavigationLink {
 
 interface UseAIBrainOptions {
   onNavigate?: (route: string) => void;
-  persistConversation?: boolean; // New option to enable/disable persistence
+  persistConversation?: boolean;
+}
+
+// Tool to Manager mapping for visual indicator
+const TOOL_TO_MANAGER: Record<string, string> = {
+  'get_agent_script': 'Agent Manager',
+  'update_agent_script': 'Agent Manager',
+  'suggest_script_improvements': 'Agent Manager',
+  'list_retell_agents': 'Agent Manager',
+  'get_agent_history': 'Agent Manager',
+  'add_agent_note': 'Agent Manager',
+  'get_prompt_snippets': 'Script Manager',
+  'check_agent_snippets': 'Script Manager',
+  'add_snippet_to_agent': 'Script Manager',
+  'purchase_retell_numbers': 'Number Pool Manager',
+  'list_phone_numbers': 'Number Pool Manager',
+  'search_available_numbers': 'Number Pool Manager',
+  'assign_numbers_to_agent': 'Number Pool Manager',
+  'toggle_number_rotation': 'Number Pool Manager',
+  'delete_phone_numbers': 'Number Pool Manager',
+  'list_leads': 'Lead Manager',
+  'update_lead': 'Lead Manager',
+  'delete_lead': 'Lead Manager',
+  'search_leads_advanced': 'Lead Manager',
+  'tag_leads': 'Lead Manager',
+  'create_campaign': 'Campaign Manager',
+  'update_campaign': 'Campaign Manager',
+  'pause_campaign': 'Campaign Manager',
+  'resume_campaign': 'Campaign Manager',
+  'get_campaign_stats': 'Campaign Manager',
+  'book_appointment': 'Calendar Manager',
+  'check_calendar_availability': 'Calendar Manager',
+  'list_appointments': 'Calendar Manager',
+  'cancel_appointment': 'Calendar Manager',
+  'create_workflow': 'Workflow Manager',
+  'list_workflows': 'Workflow Manager',
+  'send_sms_blast': 'SMS Manager',
+  'create_voice_broadcast': 'Broadcast Manager',
+  'get_autonomous_status': 'Autonomous Agent',
+  'get_learning_insights': 'Learning Engine',
+};
+
+export interface ToolStatus {
+  isExecuting: boolean;
+  managerName: string | null;
+  toolName: string | null;
 }
 
 export const useAIBrain = (options?: UseAIBrainOptions) => {
@@ -31,6 +76,7 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [toolStatus, setToolStatus] = useState<ToolStatus>({ isExecuting: false, managerName: null, toolName: null });
   const sessionIdRef = useRef(crypto.randomUUID());
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -96,6 +142,9 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
         content: m.content
       }));
 
+      // Show "Contacting..." indicator while waiting
+      setToolStatus({ isExecuting: true, managerName: 'AI Brain', toolName: 'processing' });
+
       const { data, error } = await supabase.functions.invoke('ai-brain', {
         body: {
           message: userMessage,
@@ -105,6 +154,13 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
           action: 'chat'
         }
       });
+
+      // Update tool status based on tools executed
+      if (data?.toolResults?.length > 0) {
+        const toolName = data.toolResults[0]?.tool || 'unknown';
+        const manager = TOOL_TO_MANAGER[toolName] || 'System';
+        setToolStatus({ isExecuting: true, managerName: manager, toolName });
+      }
 
       if (error) throw error;
 
@@ -168,6 +224,7 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     } finally {
       setIsLoading(false);
       setIsTyping(false);
+      setToolStatus({ isExecuting: false, managerName: null, toolName: null });
     }
   }, [isLoading, messages, location, parseNavigationLinks, toast, saveMessageToDb]);
 
@@ -274,6 +331,7 @@ export const useAIBrain = (options?: UseAIBrainOptions) => {
     messages,
     isLoading,
     isTyping,
+    toolStatus,
     sendMessage,
     submitFeedback,
     clearMessages,

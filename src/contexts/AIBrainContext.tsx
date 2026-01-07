@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { useAIBrain, AIMessage } from '@/hooks/useAIBrain';
+import { useAIBrain, AIMessage, ToolStatus } from '@/hooks/useAIBrain';
 
 interface AIBrainContextType {
   // Chat state
@@ -8,6 +8,7 @@ interface AIBrainContextType {
   isTyping: boolean;
   isOpen: boolean;
   conversationId: string | null;
+  toolStatus: ToolStatus;
   
   // Actions
   sendMessage: (message: string) => Promise<void>;
