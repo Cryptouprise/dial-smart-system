@@ -613,7 +613,7 @@ serve(async (req) => {
     // First query: Get all phone numbers with Retell IDs and rotation enabled
     const { data: retellNumbers, error: retellError } = await supabase
       .from('phone_numbers')
-      .select('id, number, retell_phone_id, daily_usage, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+      .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
       .eq('user_id', user.id)
       .eq('status', 'active')
       .eq('rotation_enabled', true)
@@ -662,7 +662,7 @@ serve(async (req) => {
           // Re-query after sync
           const { data: syncedNumbers } = await supabase
             .from('phone_numbers')
-            .select('id, number, retell_phone_id, daily_usage, is_spam, quarantine_until')
+            .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until')
             .eq('user_id', user.id)
             .eq('status', 'active')
             .not('retell_phone_id', 'is', null);
@@ -754,7 +754,7 @@ serve(async (req) => {
             if (numAreaCode === toAreaCode) score += 50;
             
             // Penalize high daily usage (-1 per call)
-            score -= (n.daily_usage || 0);
+            score -= (n.daily_calls || 0);
             
             // Penalize usage in this batch (-20 per call)
             score -= (numberUsageInBatch[n.id] || 0) * 20;
@@ -819,10 +819,10 @@ serve(async (req) => {
 
         console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
         
-        // Update daily_usage on the phone number
+        // Update daily_calls on the phone number
         await supabase
           .from('phone_numbers')
-          .update({ daily_usage: (selectedNumber.daily_usage || 0) + 1 })
+          .update({ daily_calls: (selectedNumber.daily_calls || 0) + 1 })
           .eq('id', selectedNumber.id);
 
       } catch (callError: any) {
