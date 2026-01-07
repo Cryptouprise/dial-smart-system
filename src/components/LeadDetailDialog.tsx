@@ -460,7 +460,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-y-auto min-h-0 flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
+        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden min-h-0 flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
         <DialogDescription id="lead-detail-description" className="sr-only">
           View and edit lead details including contact information, status, and activity history.
         </DialogDescription>
@@ -1076,6 +1076,15 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                         <p className="text-sm text-muted-foreground mt-1">
                           Duration: {Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s
                         </p>
+                      )}
+                      {call.recording_url && (
+                        <div className="mt-2">
+                          <audio controls className="w-full max-w-md" preload="metadata">
+                            <source src={call.recording_url} type="audio/mpeg" />
+                            <source src={call.recording_url} type="audio/wav" />
+                            Your browser does not support the audio element.
+                          </audio>
+                        </div>
                       )}
                       {call.notes && (
                         <div className="mt-2 p-2 rounded bg-muted/50">
