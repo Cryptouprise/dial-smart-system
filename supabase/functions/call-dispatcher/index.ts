@@ -497,7 +497,7 @@ serve(async (req) => {
 
     console.log(`[Dispatcher] Recently called leads: ${recentlyCalledLeadIds.size}, Successfully contacted: ${successfullyContactedLeadIds.size}`);
 
-    // Get leads from campaign_leads that need to be queued
+    // Get leads from campaign_leads that need to be queued - include callback fields for filtering
     const { data: campaignLeads, error: leadsError } = await supabase
       .from('campaign_leads')
       .select(`
@@ -507,7 +507,8 @@ serve(async (req) => {
           id,
           phone_number,
           status,
-          do_not_call
+          do_not_call,
+          next_callback_at
         )
       `)
       .in('campaign_id', campaignIds);
@@ -515,12 +516,28 @@ serve(async (req) => {
     if (leadsError) throw leadsError;
 
     // Filter leads that need to be added to queue
+    const nowTime = new Date();
     let leadsToQueue = (campaignLeads || []).filter(cl => {
       const lead = cl.leads as any;
       if (!lead || !lead.phone_number) return false;
       if (lead.do_not_call) return false;
       if (existingLeadIds.has(cl.lead_id)) return false;
       if (existingWorkflowLeadIds.has(cl.lead_id)) return false;
+      
+      // CRITICAL: Protect callback leads from being called early
+      if (lead.status === 'callback') {
+        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - status is 'callback'`);
+        return false;
+      }
+      
+      // Also check if next_callback_at is in the future
+      if (lead.next_callback_at) {
+        const callbackTime = new Date(lead.next_callback_at);
+        if (callbackTime > nowTime) {
+          console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - has future callback at ${lead.next_callback_at}`);
+          return false;
+        }
+      }
       
       // Check by normalized phone number
       const normalizedPhone = lead.phone_number.replace(/\D/g, '').slice(-10);

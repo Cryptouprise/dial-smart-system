@@ -835,11 +835,12 @@ serve(async (req) => {
     }
 
     // 2.5 Update dialing queue status / schedule retries
+    // ALSO: Handle missed callback policy with backoff retries
     if (leadId && campaignId) {
       try {
         const { data: queueEntry, error: queueLookupError } = await supabase
           .from('dialing_queues')
-          .select('id, attempts, max_attempts, status')
+          .select('id, attempts, max_attempts, status, priority')
           .eq('lead_id', leadId)
           .eq('campaign_id', campaignId)
           .in('status', ['calling'])
@@ -849,33 +850,117 @@ serve(async (req) => {
 
         if (queueLookupError) throw queueLookupError;
 
+        // Fetch current lead to check if this was a callback attempt
+        const { data: currentLeadStatus } = await supabase
+          .from('leads')
+          .select('status, next_callback_at, notes')
+          .eq('id', leadId)
+          .maybeSingle();
+        
+        // Determine if this was a callback attempt (priority >= 10 or lead status is callback)
+        const wasCallbackAttempt = (queueEntry?.priority && queueEntry.priority >= 10) || 
+                                    currentLeadStatus?.status === 'callback';
+
         if (queueEntry) {
-          const attempts = queueEntry.attempts || 1;
+          const attempts = (queueEntry.attempts || 0) + 1; // Increment because this call just finished
           const maxAttempts = queueEntry.max_attempts || 3;
           const retryEligibleOutcomes = ['no_answer', 'voicemail', 'busy', 'failed', 'unknown'];
-          const shouldRetry = retryEligibleOutcomes.includes(outcome) && attempts < maxAttempts;
-
-          if (shouldRetry) {
-            await supabase
-              .from('dialing_queues')
-              .update({
-                status: 'pending',
-                scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', queueEntry.id);
-
-            console.log(`[Retell Webhook] Scheduled retry for lead ${leadId}: ${attempts}/${maxAttempts} in 30 minutes`);
+          
+          // Special handling for callback attempts
+          if (wasCallbackAttempt && retryEligibleOutcomes.includes(outcome)) {
+            console.log(`[Retell Webhook] Missed callback attempt ${attempts}/${maxAttempts} for lead ${leadId}`);
+            
+            if (attempts >= maxAttempts) {
+              // Callback attempts exhausted - resume campaign
+              console.log(`[Retell Webhook] Callback attempts exhausted for lead ${leadId} - resuming campaign`);
+              
+              // Clear callback state on lead
+              const existingNotes = currentLeadStatus?.notes || '';
+              const exhaustedNote = `\n\n[CALLBACK EXHAUSTED] ${new Date().toLocaleString()}: ${maxAttempts} callback attempts, no answer. Returned to campaign.`;
+              
+              await supabase
+                .from('leads')
+                .update({
+                  next_callback_at: null,
+                  status: 'no_answer',
+                  notes: existingNotes + exhaustedNote,
+                })
+                .eq('id', leadId);
+              
+              // Resume any paused workflow
+              await supabase
+                .from('lead_workflow_progress')
+                .update({
+                  status: 'active',
+                  next_action_at: new Date().toISOString(),
+                  removal_reason: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('lead_id', leadId)
+                .eq('status', 'paused');
+              
+              // Mark queue as failed
+              await supabase
+                .from('dialing_queues')
+                .update({
+                  status: 'failed',
+                  attempts: attempts,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', queueEntry.id);
+              
+              console.log(`[Retell Webhook] Lead ${leadId} returned to campaign after callback exhaustion`);
+            } else {
+              // Retry callback with backoff: attempt 1 = +5 min, attempt 2 = +15 min
+              const backoffMinutes = attempts === 1 ? 5 : 15;
+              const nextAttempt = new Date(Date.now() + backoffMinutes * 60 * 1000);
+              
+              await supabase
+                .from('dialing_queues')
+                .update({
+                  status: 'pending',
+                  scheduled_at: nextAttempt.toISOString(),
+                  attempts: attempts,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', queueEntry.id);
+              
+              // Also update the lead's next_callback_at for visibility
+              await supabase
+                .from('leads')
+                .update({ next_callback_at: nextAttempt.toISOString() })
+                .eq('id', leadId);
+              
+              console.log(`[Retell Webhook] Callback retry ${attempts}/${maxAttempts} scheduled in ${backoffMinutes} minutes for lead ${leadId}`);
+            }
           } else {
-            await supabase
-              .from('dialing_queues')
-              .update({
-                status: retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed',
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', queueEntry.id);
+            // Standard (non-callback) retry logic
+            const shouldRetry = retryEligibleOutcomes.includes(outcome) && attempts < maxAttempts;
 
-            console.log(`[Retell Webhook] Dialing queue marked ${retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed'} for lead ${leadId}`);
+            if (shouldRetry) {
+              await supabase
+                .from('dialing_queues')
+                .update({
+                  status: 'pending',
+                  scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                  attempts: attempts,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', queueEntry.id);
+
+              console.log(`[Retell Webhook] Scheduled retry for lead ${leadId}: ${attempts}/${maxAttempts} in 30 minutes`);
+            } else {
+              await supabase
+                .from('dialing_queues')
+                .update({
+                  status: retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed',
+                  attempts: attempts,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', queueEntry.id);
+
+              console.log(`[Retell Webhook] Dialing queue marked ${retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed'} for lead ${leadId}`);
+            }
           }
         }
       } catch (queueError: any) {
@@ -912,32 +997,31 @@ serve(async (req) => {
         leadUpdate.status = 'callback';
         console.log(`[Retell Webhook] Callback scheduled in ${callbackMinutes} minutes at ${callbackTime.toISOString()}`);
         
-        // Queue callback in dialing queue if we have a campaign
+        // Queue callback in dialing queue if we have a campaign - use UPSERT to handle duplicates
         if (campaignId) {
           try {
-            // First delete any existing pending/failed entry for this lead
-            await supabase
+            // Use upsert to update existing entry or create new one - avoids duplicate key errors
+            const { error: queueUpsertError } = await supabase
               .from('dialing_queues')
-              .delete()
-              .eq('lead_id', leadId)
-              .in('status', ['pending', 'failed']);
+              .upsert({
+                campaign_id: campaignId,
+                lead_id: leadId,
+                phone_number: call.to_number || '',
+                status: 'pending',
+                scheduled_at: callbackTime.toISOString(),
+                priority: 10, // High priority for callbacks
+                max_attempts: 3,
+                attempts: 0,
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'campaign_id,lead_id',
+                ignoreDuplicates: false, // We want to update existing
+              });
             
-            // Then insert fresh with high priority
-            const { error: queueInsertError } = await supabase.from('dialing_queues').insert({
-              campaign_id: campaignId,
-              lead_id: leadId,
-              phone_number: call.to_number || '',
-              status: 'pending',
-              scheduled_at: callbackTime.toISOString(),
-              priority: 5,
-              max_attempts: 3,
-              attempts: 0,
-            });
-            
-            if (queueInsertError) {
-              console.error('[Retell Webhook] Failed to insert callback to queue:', queueInsertError);
+            if (queueUpsertError) {
+              console.error('[Retell Webhook] Failed to upsert callback to queue:', queueUpsertError);
             } else {
-              console.log(`[Retell Webhook] Successfully queued callback for ${leadId} at ${callbackTime.toISOString()}`);
+              console.log(`[Retell Webhook] Successfully upserted callback for ${leadId} at ${callbackTime.toISOString()}`);
             }
           } catch (queueError) {
             console.error('[Retell Webhook] Failed to add callback to dialing queue:', queueError);
@@ -1343,51 +1427,84 @@ function buildCallNote(
   return note;
 }
 
-function extractCallbackTimeFromTranscript(transcript: string): number {
-  const transcriptLower = transcript.toLowerCase();
+// Convert spelled-out numbers to digits for callback time extraction
+function wordToNumber(text: string): string {
+  const wordNumbers: Record<string, string> = {
+    'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+    'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+    'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14',
+    'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18',
+    'nineteen': '19', 'twenty': '20', 'thirty': '30', 'forty': '40',
+    'forty-five': '45', 'forty five': '45', 'fifty': '50', 'sixty': '60'
+  };
   
-  // Look for specific time mentions
-  const timePatterns: { pattern: RegExp; minutes: number }[] = [
-    { pattern: /(\d+)\s*minutes?/i, minutes: 0 }, // Will extract from match
-    { pattern: /(\d+)\s*hours?/i, minutes: 0 }, // Will extract from match
-    { pattern: /half\s*an?\s*hour/i, minutes: 30 },
-    { pattern: /an?\s*hour/i, minutes: 60 },
-    { pattern: /a\s*few\s*minutes/i, minutes: 15 },
-    { pattern: /couple\s*(of\s*)?minutes/i, minutes: 5 },
-    { pattern: /5\s*minutes/i, minutes: 5 },
-    { pattern: /10\s*minutes/i, minutes: 10 },
-    { pattern: /15\s*minutes/i, minutes: 15 },
-    { pattern: /20\s*minutes/i, minutes: 20 },
-    { pattern: /30\s*minutes/i, minutes: 30 },
-    { pattern: /tomorrow/i, minutes: 24 * 60 },
-    { pattern: /next\s*week/i, minutes: 7 * 24 * 60 },
-    { pattern: /this\s*afternoon/i, minutes: 4 * 60 },
-    { pattern: /this\s*evening/i, minutes: 6 * 60 },
-    { pattern: /tonight/i, minutes: 6 * 60 },
-    { pattern: /in\s*the\s*morning/i, minutes: 18 * 60 }, // Next morning
-  ];
+  let result = text.toLowerCase();
+  
+  // Replace word numbers with digits
+  for (const [word, num] of Object.entries(wordNumbers)) {
+    result = result.replace(new RegExp(`\\b${word}\\b`, 'gi'), num);
+  }
+  
+  // Handle compound numbers like "twenty five" -> "25"
+  result = result.replace(/(\d{2})\s+(\d)(?!\d)/g, (_, tens, ones) => {
+    return String(parseInt(tens) + parseInt(ones));
+  });
+  
+  return result;
+}
 
-  // Check for numeric extractions
+function extractCallbackTimeFromTranscript(transcript: string): number {
+  // CRITICAL: Convert word numbers to digits first (e.g., "four minutes" -> "4 minutes")
+  const normalizedTranscript = wordToNumber(transcript);
+  const transcriptLower = normalizedTranscript.toLowerCase();
+  
+  // Log the normalized transcript for debugging
+  const lastChunk = transcriptLower.substring(Math.max(0, transcriptLower.length - 300));
+  console.log('[Retell Webhook] Normalized transcript for callback time extraction:', lastChunk);
+  
+  // Check for numeric extractions FIRST (now catches both "4 minutes" and converted "four minutes")
   const numericMinutes = transcriptLower.match(/(\d+)\s*minutes?/i);
   if (numericMinutes && numericMinutes[1]) {
     const mins = parseInt(numericMinutes[1], 10);
-    if (mins > 0 && mins < 1000) return mins;
+    if (mins > 0 && mins < 1000) {
+      console.log(`[Retell Webhook] Extracted callback time: ${mins} minutes from numeric pattern`);
+      return mins;
+    }
   }
 
   const numericHours = transcriptLower.match(/(\d+)\s*hours?/i);
   if (numericHours && numericHours[1]) {
     const hours = parseInt(numericHours[1], 10);
-    if (hours > 0 && hours < 48) return hours * 60;
+    if (hours > 0 && hours < 48) {
+      console.log(`[Retell Webhook] Extracted callback time: ${hours} hours = ${hours * 60} minutes`);
+      return hours * 60;
+    }
   }
 
-  // Check patterns
+  // Check fuzzy patterns
+  const timePatterns: { pattern: RegExp; minutes: number }[] = [
+    { pattern: /half\s*an?\s*hour/i, minutes: 30 },
+    { pattern: /an?\s*hour/i, minutes: 60 },
+    { pattern: /a\s*few\s*minutes/i, minutes: 15 },
+    { pattern: /couple\s*(of\s*)?minutes/i, minutes: 5 },
+    { pattern: /tomorrow/i, minutes: 24 * 60 },
+    { pattern: /next\s*week/i, minutes: 7 * 24 * 60 },
+    { pattern: /this\s*afternoon/i, minutes: 4 * 60 },
+    { pattern: /this\s*evening/i, minutes: 6 * 60 },
+    { pattern: /tonight/i, minutes: 6 * 60 },
+    { pattern: /in\s*the\s*morning/i, minutes: 18 * 60 },
+    { pattern: /later\s*today/i, minutes: 120 },
+  ];
+
   for (const { pattern, minutes } of timePatterns) {
-    if (pattern.test(transcriptLower) && minutes > 0) {
+    if (pattern.test(transcriptLower)) {
+      console.log(`[Retell Webhook] Matched fuzzy pattern, callback time: ${minutes} minutes`);
       return minutes;
     }
   }
 
   // Default to 2 hours if no specific time mentioned
+  console.log('[Retell Webhook] No callback time found in transcript, defaulting to 120 minutes');
   return 120;
 }
 
