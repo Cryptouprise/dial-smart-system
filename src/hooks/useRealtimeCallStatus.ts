@@ -224,21 +224,34 @@ export const useRealtimeCallStatus = () => {
       if (user) calculateStats(user.id);
     }, 30000);
 
-    // Update call durations every second
+    // Update call durations every second AND auto-cleanup stuck calls
     const durationInterval = setInterval(() => {
-      setLiveCalls(prev => 
-        prev.map(call => {
-          if (['ringing', 'in_progress'].includes(call.status)) {
-            const startTime = new Date(call.startedAt);
-            const now = new Date();
-            return {
-              ...call,
-              duration: Math.round((now.getTime() - startTime.getTime()) / 1000)
-            };
-          }
-          return call;
-        })
-      );
+      setLiveCalls(prev => {
+        const now = new Date();
+        return prev
+          .filter(call => {
+            // Auto-cleanup: Remove calls stuck in ringing/initiated for more than 3 minutes
+            if (['ringing', 'initiated', 'queued'].includes(call.status)) {
+              const startTime = new Date(call.startedAt);
+              const age = now.getTime() - startTime.getTime();
+              if (age > 3 * 60 * 1000) {
+                console.log('[Cleanup] Auto-removing stuck call:', call.id, call.status, 'age:', Math.round(age / 1000), 's');
+                return false;
+              }
+            }
+            return true;
+          })
+          .map(call => {
+            if (['ringing', 'in_progress'].includes(call.status)) {
+              const startTime = new Date(call.startedAt);
+              return {
+                ...call,
+                duration: Math.round((now.getTime() - startTime.getTime()) / 1000)
+              };
+            }
+            return call;
+          });
+      });
     }, 1000);
 
     return () => {

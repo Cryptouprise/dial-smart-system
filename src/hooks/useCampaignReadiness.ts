@@ -72,8 +72,52 @@ export const useCampaignReadiness = () => {
       const hasWaitSteps = workflowSteps.some(s => s.step_type === 'wait');
 
       // =====================================================
-      // 3. VALIDATE WAIT STEPS
+      // 2.5 CHECK PHONE NUMBERS WITH RETELL IDs (NEW)
       // =====================================================
+      if (user) {
+        const { data: retellPhones } = await supabase
+          .from('phone_numbers')
+          .select('id, number, retell_phone_id, is_spam, quarantine_until')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .not('retell_phone_id', 'is', null);
+
+        const usableNumbers = (retellPhones || []).filter((n: any) => {
+          if (n.is_spam) return false;
+          if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
+          return true;
+        });
+
+        if (usableNumbers.length === 0) {
+          checks.push({
+            id: 'retell_phone_numbers',
+            label: 'Phone numbers with Retell IDs',
+            status: 'fail',
+            message: 'No phone numbers imported to Retell - calls will fail',
+            critical: true,
+            fixRoute: '/?tab=retell'
+          });
+          blockingReasons.push('No phone numbers with Retell IDs available for calling');
+        } else if (usableNumbers.length < 3) {
+          checks.push({
+            id: 'retell_phone_numbers',
+            label: 'Phone numbers with Retell IDs',
+            status: 'warning',
+            message: `Only ${usableNumbers.length} number(s) available - add more for better rotation`,
+            critical: false,
+            fixRoute: '/?tab=retell'
+          });
+        } else {
+          checks.push({
+            id: 'retell_phone_numbers',
+            label: 'Phone numbers with Retell IDs',
+            status: 'pass',
+            message: `${usableNumbers.length} number(s) ready for rotation`,
+            critical: false
+          });
+        }
+      }
+
       if (hasWaitSteps) {
         const waitSteps = workflowSteps.filter(s => s.step_type === 'wait');
         const invalidWaitSteps: number[] = [];
