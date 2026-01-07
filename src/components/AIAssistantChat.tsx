@@ -22,10 +22,12 @@ import {
   Mic,
   MicOff,
   Volume2,
-  VolumeX
+  VolumeX,
+  Headphones
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { Switch } from '@/components/ui/switch';
 
 // Parse markdown-style navigation links: [text](nav:/route)
 const parseContent = (content: string, onNavigate: (route: string) => void) => {
@@ -114,26 +116,46 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   const [showHistory, setShowHistory] = useState(false);
   const [archivedConversations, setArchivedConversations] = useState<any[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [handsFreeMode, setHandsFreeMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const lastSpokenMessageRef = useRef<string | null>(null);
+  const pendingTranscriptRef = useRef<string | null>(null);
+
+  // Handle auto-send in hands-free mode
+  const handleAutoSend = useCallback(async (text: string) => {
+    if (isLoading || !text.trim()) return;
+    
+    console.log('[HandsFree] Auto-sending:', text);
+    setInput('');
+    await sendMessage(text);
+  }, [isLoading, sendMessage]);
+
+  // Handle voice transcript (for displaying in input)
+  const handleVoiceTranscript = useCallback((text: string) => {
+    if (!handsFreeMode) {
+      // In manual mode, just put it in the input
+      setInput(text);
+    }
+    // In hands-free mode, handleAutoSend handles it
+  }, [handsFreeMode]);
 
   // Voice chat integration
-  const handleVoiceTranscript = useCallback((text: string) => {
-    setInput(text);
-  }, []);
-
   const { 
     isListening, 
     isSpeaking, 
     isProcessing: isVoiceProcessing,
+    isSupported: isVoiceSupported,
     startListening, 
     stopListening,
+    restartListening,
     speak,
     stopSpeaking 
   } = useVoiceChat({
-    onTranscript: handleVoiceTranscript
+    onTranscript: handleVoiceTranscript,
+    autoSend: handsFreeMode,
+    onAutoSend: handleAutoSend
   });
 
   // Auto-scroll to bottom
@@ -143,12 +165,12 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     }
   }, [messages, isTyping]);
 
-  // Focus input when opened
+  // Focus input when opened (only if not in hands-free mode)
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen && inputRef.current && !handsFreeMode) {
       inputRef.current.focus();
     }
-  }, [isOpen]);
+  }, [isOpen, handsFreeMode]);
 
   // Keyboard shortcut: Cmd+K to open
   useEffect(() => {
@@ -180,10 +202,55 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
         lastSpokenMessageRef.current = lastMessage.id;
         // Strip markdown navigation links for cleaner speech
         const cleanContent = lastMessage.content.replace(/\[([^\]]+)\]\(nav:[^)]+\)/g, '$1');
-        speak(cleanContent);
+        
+        // In hands-free mode, restart listening after speaking finishes
+        if (handsFreeMode) {
+          speak(cleanContent, () => {
+            // Small delay before restarting to prevent audio feedback
+            setTimeout(() => {
+              if (handsFreeMode && !isLoading) {
+                startListening(true);
+              }
+            }, 300);
+          });
+        } else {
+          speak(cleanContent);
+        }
       }
     }
-  }, [messages, voiceEnabled, speak]);
+  }, [messages, voiceEnabled, speak, handsFreeMode, startListening, isLoading]);
+
+  // Start listening when hands-free mode is enabled
+  useEffect(() => {
+    if (handsFreeMode && isOpen && !isListening && !isSpeaking && !isLoading) {
+      startListening(true);
+    }
+    
+    // Stop listening when hands-free is disabled or chat closes
+    if (!handsFreeMode || !isOpen) {
+      if (isListening) {
+        stopListening();
+      }
+    }
+  }, [handsFreeMode, isOpen, isListening, isSpeaking, isLoading, startListening, stopListening]);
+
+  // Toggle hands-free mode
+  const toggleHandsFree = useCallback(() => {
+    const newState = !handsFreeMode;
+    setHandsFreeMode(newState);
+    
+    if (newState) {
+      // Enable voice output too when going hands-free
+      setVoiceEnabled(true);
+      // Start listening immediately
+      if (!isListening && !isSpeaking) {
+        startListening(true);
+      }
+    } else {
+      // Stop listening when disabling hands-free
+      stopListening();
+    }
+  }, [handsFreeMode, isListening, isSpeaking, startListening, stopListening]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,6 +283,15 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   const handleLoadConversation = async (convId: string) => {
     await loadConversation(convId);
     setShowHistory(false);
+  };
+
+  // Manual mic toggle (for non-hands-free mode)
+  const handleMicToggle = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening(false);
+    }
   };
 
   // Render chat content (shared between embedded and floating modes)
@@ -358,39 +434,74 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
                 </div>
               )
             )}
+
+            {/* Hands-free listening indicator */}
+            {handsFreeMode && isListening && (
+              <div className="flex justify-center">
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-green-600 font-medium">
+                    Listening... Just speak
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </ScrollArea>
 
         <div className="p-3 md:p-4 border-t flex-shrink-0">
+          {/* Hands-free toggle row */}
+          {isVoiceSupported && (
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <Headphones className={cn("h-4 w-4", handsFreeMode ? "text-green-500" : "text-muted-foreground")} />
+                <span className="text-xs text-muted-foreground">Hands-Free</span>
+              </div>
+              <Switch
+                checked={handsFreeMode}
+                onCheckedChange={toggleHandsFree}
+                className="scale-75"
+              />
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={isListening ? "Listening..." : "Ask LJ anything..."}
-              disabled={isLoading || isListening}
+              placeholder={
+                handsFreeMode && isListening 
+                  ? "🎤 Listening..." 
+                  : isListening 
+                    ? "Listening..." 
+                    : "Ask LJ anything..."
+              }
+              disabled={isLoading || (handsFreeMode && isListening)}
               className="flex-1 text-sm h-9 md:h-10"
             />
-            {/* Microphone Button */}
-            <Button
-              type="button"
-              size="icon"
-              variant={isListening ? "destructive" : "outline"}
-              onClick={isListening ? stopListening : startListening}
-              disabled={isLoading || isSpeaking}
-              className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
-              title={isListening ? "Stop listening" : "Voice input"}
-            >
-              {isListening ? (
-                <MicOff className="h-4 w-4 animate-pulse" />
-              ) : (
-                <Mic className="h-4 w-4" />
-              )}
-            </Button>
+            {/* Microphone Button (only in non-hands-free mode) */}
+            {!handsFreeMode && (
+              <Button
+                type="button"
+                size="icon"
+                variant={isListening ? "destructive" : "outline"}
+                onClick={handleMicToggle}
+                disabled={isLoading || isSpeaking}
+                className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
+                title={isListening ? "Stop listening" : "Voice input"}
+              >
+                {isListening ? (
+                  <MicOff className="h-4 w-4 animate-pulse" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </Button>
+            )}
             <Button 
               type="submit" 
               size="icon" 
-              disabled={isLoading || !input.trim() || isListening} 
+              disabled={isLoading || !input.trim() || (handsFreeMode && isListening)} 
               className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
             >
               {isLoading ? (

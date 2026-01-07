@@ -1330,6 +1330,23 @@ const TOOLS = [
       description: "Get Guardian error system status including errors caught, fixes applied, and current settings",
       parameters: { type: "object", properties: {} }
     }
+  },
+  // Agent Phone Number Count Tool
+  {
+    type: "function",
+    function: {
+      name: "get_agent_phone_numbers",
+      description: "Get count and list of phone numbers assigned to a specific Retell AI agent or campaign. Use this when user asks 'how many numbers are attached to my agent'.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string", description: "Name of the Retell agent (partial match supported)" },
+          agent_id: { type: "string", description: "Retell agent ID if known" },
+          campaign_name: { type: "string", description: "Campaign name to check phone pool (alternative to agent)" },
+          campaign_id: { type: "string", description: "Campaign ID if known" }
+        }
+      }
+    }
   }
 ];
 
@@ -2924,6 +2941,150 @@ async function executeToolCall(
           };
         } catch (err) {
           return { success: false, result: { error: 'Failed to list agents' } };
+        }
+      }
+
+      case 'get_agent_phone_numbers': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        // If campaign requested, check campaign phone pool instead
+        if (args.campaign_name || args.campaign_id) {
+          let campaignId = args.campaign_id;
+          let campaignName = args.campaign_name;
+          
+          if (!campaignId && campaignName) {
+            const { data: campaign } = await supabase
+              .from('campaigns')
+              .select('id, name')
+              .eq('user_id', userId)
+              .ilike('name', `%${campaignName}%`)
+              .maybeSingle();
+            
+            if (campaign) {
+              campaignId = campaign.id;
+              campaignName = campaign.name;
+            }
+          }
+          
+          if (!campaignId) {
+            return { success: false, result: { error: `Campaign "${args.campaign_name}" not found` } };
+          }
+          
+          // Get phone pool count
+          const { data: phonePool, error } = await supabase
+            .from('campaign_phone_pools')
+            .select(`
+              id,
+              phone_numbers:phone_number_id (number, friendly_name)
+            `)
+            .eq('campaign_id', campaignId);
+          
+          if (error) throw error;
+          
+          const numbers = phonePool?.map(p => p.phone_numbers?.number).filter(Boolean) || [];
+          
+          return {
+            success: true,
+            result: {
+              type: 'campaign',
+              campaign_name: campaignName,
+              campaign_id: campaignId,
+              phone_count: numbers.length,
+              phone_numbers: numbers.slice(0, 10),
+              has_more: numbers.length > 10,
+              message: numbers.length > 0 
+                ? `📞 Campaign "${campaignName}" has ${numbers.length} phone number${numbers.length === 1 ? '' : 's'} in its pool.`
+                : `⚠️ Campaign "${campaignName}" has no phone numbers assigned. Would you like me to add some?`
+            },
+            location: LOCATION_MAP.campaigns.route
+          };
+        }
+        
+        // Otherwise check Retell agent
+        let agentId = args.agent_id;
+        let agentName = args.agent_name;
+        
+        // First get agent list to find matching agent
+        try {
+          const listResponse = await fetch(`${supabaseUrl}/functions/v1/retell-agent-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({ action: 'list', user_id: userId }),
+          });
+          const listResult = await listResponse.json();
+          
+          if (!agentId && agentName) {
+            const matchingAgent = listResult.agents?.find((a: any) => 
+              a.agent_name?.toLowerCase().includes(agentName.toLowerCase())
+            );
+            
+            if (matchingAgent) {
+              agentId = matchingAgent.agent_id;
+              agentName = matchingAgent.agent_name;
+            }
+          } else if (agentId && !agentName) {
+            const agent = listResult.agents?.find((a: any) => a.agent_id === agentId);
+            agentName = agent?.agent_name || 'Unknown Agent';
+          }
+
+          if (!agentId) {
+            // List all agents for user
+            const agentNames = listResult.agents?.map((a: any) => a.agent_name).filter(Boolean) || [];
+            return { 
+              success: false, 
+              result: { 
+                error: `Agent "${args.agent_name || args.agent_id}" not found.`,
+                available_agents: agentNames,
+                suggestion: agentNames.length > 0 
+                  ? `Available agents: ${agentNames.join(', ')}. Try asking about one of these.`
+                  : 'No agents found. Create an agent first in the Retell AI Manager.'
+              } 
+            };
+          }
+
+          // Now get phone numbers from Retell that are assigned to this agent
+          const phoneResponse = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({ action: 'list', user_id: userId }),
+          });
+          const phoneResult = await phoneResponse.json();
+          
+          // Filter numbers assigned to this agent (either inbound or outbound)
+          const agentNumbers = (phoneResult.numbers || []).filter((n: any) => 
+            n.inbound_agent_id === agentId || n.outbound_agent_id === agentId
+          );
+          
+          const inboundNumbers = agentNumbers.filter((n: any) => n.inbound_agent_id === agentId);
+          const outboundNumbers = agentNumbers.filter((n: any) => n.outbound_agent_id === agentId);
+          
+          return {
+            success: true,
+            result: {
+              type: 'agent',
+              agent_name: agentName,
+              agent_id: agentId,
+              phone_count: agentNumbers.length,
+              inbound_count: inboundNumbers.length,
+              outbound_count: outboundNumbers.length,
+              phone_numbers: agentNumbers.slice(0, 10).map((n: any) => n.phone_number),
+              has_more: agentNumbers.length > 10,
+              message: agentNumbers.length > 0 
+                ? `📞 Agent "${agentName}" has ${agentNumbers.length} phone number${agentNumbers.length === 1 ? '' : 's'} attached (${inboundNumbers.length} inbound, ${outboundNumbers.length} outbound).`
+                : `⚠️ Agent "${agentName}" has no phone numbers attached yet. Would you like me to buy some and assign them?`
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        } catch (err) {
+          console.error('[ai-brain] get_agent_phone_numbers error:', err);
+          return { success: false, result: { error: 'Failed to get agent phone numbers' } };
         }
       }
 
