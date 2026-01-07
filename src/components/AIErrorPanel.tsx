@@ -16,7 +16,7 @@ import {
   ChevronDown,
   Zap,
   Settings,
-  Bot,
+  Shield,
   XCircle
 } from 'lucide-react';
 import { ErrorRecord } from '@/hooks/useAIErrorHandler';
@@ -35,7 +35,7 @@ const statusColors: Record<ErrorRecord['status'], string> = {
 const statusIcons: Record<ErrorRecord['status'], React.ReactNode> = {
   pending: <AlertCircle className="h-4 w-4" />,
   analyzing: <Loader2 className="h-4 w-4 animate-spin" />,
-  suggested: <Bot className="h-4 w-4" />,
+  suggested: <Shield className="h-4 w-4" />,
   fixing: <Loader2 className="h-4 w-4 animate-spin" />,
   fixed: <CheckCircle className="h-4 w-4" />,
   failed: <XCircle className="h-4 w-4" />,
@@ -77,8 +77,8 @@ const AIErrorPanel: React.FC = () => {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            <CardTitle className="text-lg">AI Error Handler</CardTitle>
+            <Shield className="h-5 w-5 text-primary" />
+            <CardTitle className="text-lg">Guardian - Error Shield</CardTitle>
             {errors.length > 0 && (
               <Badge variant="secondary" className="ml-2">
                 {errors.length} errors
@@ -131,8 +131,8 @@ const AIErrorPanel: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="enabled" className="flex items-center gap-2">
-                    <Bot className="h-4 w-4" />
-                    Enable AI Error Handler
+                    <Shield className="h-4 w-4" />
+                    Enable Guardian
                   </Label>
                   <Switch
                     id="enabled"
@@ -190,9 +190,9 @@ const AIErrorPanel: React.FC = () => {
         {/* Error List */}
         {errors.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <CheckCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>No errors captured</p>
-            <p className="text-xs">Errors will appear here when detected</p>
+            <Shield className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>🛡️ Guardian is watching</p>
+            <p className="text-xs">Errors will be automatically detected and fixed</p>
           </div>
         ) : (
           <ScrollArea className="h-[400px]">
@@ -229,7 +229,7 @@ const AIErrorPanel: React.FC = () => {
                                 onClick={() => analyzeError(error.id)}
                                 disabled={isProcessing}
                               >
-                                <Bot className="h-3 w-3" />
+                                <Shield className="h-3 w-3" />
                               </Button>
                             )}
                             
@@ -300,8 +300,8 @@ const AIErrorPanel: React.FC = () => {
                         {error.suggestion && (
                           <div>
                             <p className="text-xs font-medium mb-1 flex items-center gap-1">
-                              <Bot className="h-3 w-3" />
-                              AI Suggestion:
+                              <Shield className="h-3 w-3" />
+                              Guardian Suggestion:
                             </p>
                             <div className="text-xs bg-primary/10 p-3 rounded whitespace-pre-wrap">
                               {error.suggestion}

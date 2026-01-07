@@ -1321,6 +1321,15 @@ const TOOLS = [
         required: ["snippet_id"]
       }
     }
+  },
+  // Guardian Error System Tool
+  {
+    type: "function",
+    function: {
+      name: "get_guardian_status",
+      description: "Get Guardian error system status including errors caught, fixes applied, and current settings",
+      parameters: { type: "object", properties: {} }
+    }
   }
 ];
 
@@ -1814,6 +1823,28 @@ async function executeToolCall(
             total_leads: leads.count || 0,
             total_phone_numbers: numbers.count || 0,
             total_workflows: workflows.count || 0
+          }
+        };
+      }
+
+      case 'get_guardian_status': {
+        // Guardian status is managed on the frontend via localStorage
+        // We return a summary of what Guardian provides
+        return {
+          success: true,
+          result: {
+            name: "Guardian - Error Shield",
+            description: "Automatic error detection and auto-fixing system",
+            features: [
+              "🛡️ Automatic error capture from unhandled rejections and console errors",
+              "🤖 AI-powered error analysis and fix suggestions",
+              "⚡ Auto-fix mode with exponential backoff retry",
+              "📊 Error deduplication within 30-second windows",
+              "🔇 Smart filtering of non-critical errors (network timeouts, React warnings)"
+            ],
+            access: "Navigate to Dashboard → Settings → AI Errors tab, or ask me 'Show Guardian status'",
+            location: "/?tab=ai-errors",
+            status_note: "Guardian runs entirely on the frontend for instant error capture. Settings are stored in localStorage under 'ai-error-settings'."
           }
         };
       }

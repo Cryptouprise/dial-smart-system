@@ -129,20 +129,23 @@ export const useAIErrorHandler = () => {
     if (settings.logErrors && navigator.onLine) {
       try {
         // Don't call supabase.auth.getUser() - it causes the loop!
-        // Just log locally for now
-        console.log('[AI Error Handler] Captured:', type, errorMessage.substring(0, 100));
+        console.log('[🛡️ Guardian] Captured:', type, errorMessage.substring(0, 100));
       } catch (logError) {
         // Silently fail - don't log errors about logging errors
       }
     }
 
-    // Auto-analyze if enabled
+    // Show toast when auto-fix activates
     if (settings.autoFixMode) {
+      toast({
+        title: "🛡️ Guardian detected an issue",
+        description: "Investigating and attempting to fix...",
+      });
       await analyzeAndFix(record.id);
     }
 
     return record.id;
-  }, [settings, shouldIgnoreError]);
+  }, [settings, shouldIgnoreError, toast]);
 
   const analyzeError = useCallback(async (errorId: string): Promise<string | null> => {
     const error = errors.find(e => e.id === errorId);
@@ -213,8 +216,8 @@ export const useAIErrorHandler = () => {
         ));
 
         toast({
-          title: "Auto-Fix Applied",
-          description: data.message || "The error has been addressed",
+          title: "🛡️ Guardian resolved the issue",
+          description: data.message || "The error has been automatically fixed",
         });
 
         return true;
@@ -238,8 +241,8 @@ export const useAIErrorHandler = () => {
         ));
 
         toast({
-          title: "Auto-Fix Failed",
-          description: "Manual intervention may be required",
+          title: "🛡️ Guardian needs help",
+          description: "Auto-fix failed. Manual intervention may be required.",
           variant: "destructive",
         });
       }
