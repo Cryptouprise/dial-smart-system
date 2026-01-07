@@ -64,6 +64,24 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Pre-check: Verify phone numbers with Retell IDs are available
+      const { data: phoneNumbers, error: phoneError } = await supabase
+        .from('phone_numbers')
+        .select('number, retell_phone_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .not('retell_phone_id', 'is', null)
+        .limit(1);
+
+      if (phoneError || !phoneNumbers?.length) {
+        toast({
+          title: "No Phone Numbers Ready",
+          description: "No phone numbers with Retell IDs available. Import numbers to Retell first.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       // Find an active campaign
       const { data: campaign } = await supabase
         .from('campaigns')
@@ -106,9 +124,18 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
       if (insertError) throw insertError;
 
       // Trigger immediate dispatch
-      await supabase.functions.invoke('call-dispatcher', {
+      const dispatchResponse = await supabase.functions.invoke('call-dispatcher', {
         body: { immediate: true }
       });
+
+      if (dispatchResponse.error) {
+        throw new Error(dispatchResponse.error.message || 'Dispatch failed');
+      }
+
+      // Check if dispatch had issues
+      if (dispatchResponse.data?.error) {
+        throw new Error(dispatchResponse.data.error);
+      }
 
       toast({
         title: "Call Initiated",

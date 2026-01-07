@@ -608,15 +608,68 @@ serve(async (req) => {
     // ============= FETCH AVAILABLE PHONE NUMBERS WITH ROTATION =============
     console.log('[Dispatcher] Loading available phone numbers for rotation...');
     
-    const { data: availableNumbers } = await supabase
+    let availableNumbers: any[] = [];
+    
+    // First query: Get all phone numbers with Retell IDs
+    const { data: retellNumbers, error: retellError } = await supabase
       .from('phone_numbers')
       .select('id, number, retell_phone_id, daily_usage, is_spam, quarantine_until')
       .eq('user_id', user.id)
       .eq('status', 'active')
       .not('retell_phone_id', 'is', null);
     
-    if (!availableNumbers || availableNumbers.length === 0) {
-      console.error('[Dispatcher] No phone numbers with Retell IDs available for calling');
+    if (retellError) {
+      console.error('[Dispatcher] Error fetching phone numbers:', retellError);
+    } else {
+      availableNumbers = retellNumbers || [];
+    }
+    
+    console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers with Retell IDs`);
+    
+    // DEBUG: If empty, check what numbers exist for this user
+    if (availableNumbers.length === 0) {
+      const { data: allUserNumbers } = await supabase
+        .from('phone_numbers')
+        .select('id, number, retell_phone_id, status, user_id')
+        .eq('user_id', user.id);
+      
+      console.log(`[Dispatcher] DEBUG - All user phone numbers (${allUserNumbers?.length || 0}):`, 
+        JSON.stringify(allUserNumbers?.map(n => ({ 
+          number: n.number, 
+          retell_phone_id: n.retell_phone_id, 
+          status: n.status 
+        })) || []));
+      
+      // Fallback: Try to sync from Retell if no numbers have Retell IDs
+      try {
+        console.log('[Dispatcher] No local Retell numbers found, attempting Retell sync...');
+        const syncResponse = await supabase.functions.invoke('retell-phone-management', {
+          body: { action: 'sync', userId: user.id }
+        });
+        
+        if (syncResponse.data?.synced > 0) {
+          console.log(`[Dispatcher] Synced ${syncResponse.data.synced} numbers from Retell`);
+          
+          // Re-query after sync
+          const { data: syncedNumbers } = await supabase
+            .from('phone_numbers')
+            .select('id, number, retell_phone_id, daily_usage, is_spam, quarantine_until')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .not('retell_phone_id', 'is', null);
+          
+          if (syncedNumbers?.length) {
+            availableNumbers = syncedNumbers;
+            console.log(`[Dispatcher] After sync: ${availableNumbers.length} numbers available`);
+          }
+        }
+      } catch (syncError) {
+        console.error('[Dispatcher] Retell sync failed:', syncError);
+      }
+    }
+    
+    if (availableNumbers.length === 0) {
+      console.error('[Dispatcher] ERROR: No phone numbers with Retell IDs available for calling after all attempts');
       return new Response(
         JSON.stringify({ 
           error: 'No phone numbers available for calling. Import numbers to Retell first.',

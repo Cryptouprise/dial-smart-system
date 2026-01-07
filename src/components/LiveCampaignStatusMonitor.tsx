@@ -4,10 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Phone, MessageSquare, Clock, AlertTriangle, CheckCircle, 
   XCircle, RefreshCw, Play, Pause, Eye, ChevronRight,
-  Bot, Loader2, ArrowRight
+  Bot, Loader2, ArrowRight, Trash2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -41,6 +42,7 @@ interface ExecutionLog {
   status: 'success' | 'failed' | 'pending';
   timestamp: string;
   details?: any;
+  isStuck?: boolean;
 }
 
 interface LiveCampaignStatusMonitorProps {
@@ -53,6 +55,7 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
   const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [clearingStuck, setClearingStuck] = useState(false);
 
   const loadCampaignStatus = async () => {
     try {
@@ -119,17 +122,23 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
 
         callData?.forEach((call: any) => {
           const isFailed = call.status === 'failed' || !call.retell_call_id;
+          const isPending = ['queued', 'ringing', 'initiated', 'in_progress'].includes(call.status);
+          const age = Date.now() - new Date(call.created_at).getTime();
+          const isStuck = isPending && age > 2 * 60 * 1000; // More than 2 minutes old
+          
           logs.push({
             id: call.id,
             type: 'call',
-            message: `Call to ${call.phone_number} - ${call.status}${!call.retell_call_id ? ' (Retell API failed)' : ''}`,
+            message: `Call to ${call.phone_number} - ${call.status}${!call.retell_call_id ? ' (Retell API failed)' : ''}${isStuck ? ' (STUCK)' : ''}`,
             status: isFailed ? 'failed' : call.status === 'completed' ? 'success' : 'pending',
             timestamp: call.created_at,
+            isStuck,
             details: { 
               outcome: call.outcome, 
               duration: call.duration_seconds,
               retell_call_id: call.retell_call_id,
-              error: !call.retell_call_id ? 'Retell API call failed - check agent/phone config' : null
+              error: !call.retell_call_id ? 'Retell API call failed - check agent/phone config' : null,
+              callLogId: call.id
             }
           });
         });
@@ -177,6 +186,25 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
   const handleRefresh = () => {
     setRefreshing(true);
     loadCampaignStatus();
+  };
+
+  const handleClearStuckCalls = async () => {
+    setClearingStuck(true);
+    try {
+      const response = await supabase.functions.invoke('call-dispatcher', {
+        body: { action: 'cleanup_stuck_calls' }
+      });
+      
+      if (response.error) throw response.error;
+      
+      toast.success(`Cleaned ${response.data?.cleaned || 0} stuck calls`);
+      await loadCampaignStatus();
+    } catch (error) {
+      console.error('Error clearing stuck calls:', error);
+      toast.error('Failed to clear stuck calls');
+    } finally {
+      setClearingStuck(false);
+    }
   };
 
   const getStepIcon = (stepType: string) => {
@@ -294,6 +322,7 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
 
   const activeCount = workflowProgress.filter(p => p.status === 'active').length;
   const failedLogs = executionLogs.filter(l => l.status === 'failed').length;
+  const stuckCalls = executionLogs.filter(l => l.isStuck).length;
 
   return (
     <div className="space-y-4">
@@ -334,6 +363,28 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
           </div>
         </CardContent>
       </Card>
+
+      {/* Stuck Calls Alert */}
+      {stuckCalls > 0 && (
+        <Alert className="border-yellow-500/50 bg-yellow-500/5">
+          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-yellow-600">
+              {stuckCalls} call(s) stuck in ringing/initiated state for over 2 minutes
+            </span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleClearStuckCalls}
+              disabled={clearingStuck}
+              className="ml-4"
+            >
+              <Trash2 className={`h-4 w-4 mr-1 ${clearingStuck ? 'animate-spin' : ''}`} />
+              {clearingStuck ? 'Clearing...' : 'Clear Stuck'}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Failed Operations Alert */}
       {failedLogs > 0 && (
