@@ -3526,6 +3526,177 @@ async function executeToolCall(
         });
       }
 
+      case 'update_agent_script': {
+        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        if (!retellApiKey) {
+          return { success: false, result: { error: 'Retell API key not configured' } };
+        }
+
+        // Get agent's LLM ID
+        const agentResponse = await fetch(`https://api.retellai.com/get-agent/${args.agent_id}`, {
+          headers: { 'Authorization': `Bearer ${retellApiKey}` }
+        });
+        
+        if (!agentResponse.ok) {
+          return { success: false, result: { error: 'Failed to fetch agent details' } };
+        }
+        
+        const agent = await agentResponse.json();
+        const llmId = agent.llm_websocket_url?.split('/').pop()?.split('?')[0];
+        
+        if (!llmId) {
+          return { success: false, result: { error: 'Could not find LLM ID for agent' } };
+        }
+
+        // Get current LLM config
+        const llmResponse = await fetch(`https://api.retellai.com/get-retell-llm/${llmId}`, {
+          headers: { 'Authorization': `Bearer ${retellApiKey}` }
+        });
+        
+        if (!llmResponse.ok) {
+          return { success: false, result: { error: 'Failed to fetch LLM details' } };
+        }
+        
+        const llm = await llmResponse.json();
+        let newPrompt = args.new_prompt || llm.general_prompt || '';
+
+        // Apply find/replace operations if provided
+        if (args.find_replace && Array.isArray(args.find_replace)) {
+          for (const op of args.find_replace) {
+            if (op.find === '' && op.replace) {
+              // Append mode
+              newPrompt = newPrompt + op.replace;
+            } else if (op.find) {
+              newPrompt = newPrompt.replace(op.find, op.replace || '');
+            }
+          }
+        }
+
+        // Update the LLM
+        const updateResponse = await fetch(`https://api.retellai.com/update-retell-llm/${llmId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${retellApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ general_prompt: newPrompt })
+        });
+
+        if (!updateResponse.ok) {
+          const errText = await updateResponse.text();
+          return { success: false, result: { error: `Failed to update LLM: ${errText}` } };
+        }
+
+        // Log the change to agent_improvement_history
+        await supabase.from('agent_improvement_history').insert({
+          user_id: userId,
+          agent_id: args.agent_id,
+          agent_name: args.agent_name || agent.agent_name,
+          improvement_type: 'script_update',
+          title: args.note || 'Script updated via LJ',
+          details: {
+            change_type: args.find_replace ? 'find_replace' : 'full_replacement',
+            timestamp: new Date().toISOString()
+          }
+        });
+
+        return {
+          success: true,
+          result: {
+            message: `Script updated for agent ${args.agent_name || args.agent_id}`,
+            llm_id: llmId,
+            change_logged: true
+          }
+        };
+      }
+
+      case 'suggest_script_improvements': {
+        // Fetch recent calls with transcripts for analysis
+        const { data: calls } = await supabase
+          .from('call_logs')
+          .select('id, outcome, duration_seconds, notes, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (!calls?.length) {
+          return {
+            success: true,
+            result: { message: 'No call data found to analyze', suggestions: [] }
+          };
+        }
+
+        // Aggregate objections and patterns from call outcomes
+        const objections: Record<string, number> = {};
+        const outcomes: Record<string, number> = {};
+        let successfulCalls = 0;
+        let failedCalls = 0;
+
+        calls.forEach((call: any) => {
+          // Track outcomes
+          const outcome = call.outcome || 'unknown';
+          outcomes[outcome] = (outcomes[outcome] || 0) + 1;
+          
+          // Categorize success/failure
+          const isSuccess = ['Appointment Booked', 'Interested', 'Hot Lead', 'Qualified'].includes(outcome);
+          if (isSuccess) successfulCalls++;
+          else failedCalls++;
+
+          // Extract objections from notes if available
+          if (call.notes) {
+            const commonObjections = [
+              'not interested', 'too expensive', 'bad timing', 'already have',
+              'call back later', 'no budget', 'need to think', 'send info'
+            ];
+            commonObjections.forEach(obj => {
+              if (call.notes.toLowerCase().includes(obj)) {
+                objections[obj] = (objections[obj] || 0) + 1;
+              }
+            });
+          }
+        });
+
+        // Generate suggestions based on patterns
+        const suggestions = [];
+        const topObjections = Object.entries(objections)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+
+        for (const [objection, count] of topObjections) {
+          suggestions.push({
+            type: 'objection_handling',
+            issue: `"${objection}" detected in ${count} calls`,
+            suggestion: `Add a response to handle the "${objection}" objection in your script`,
+            priority: count > 10 ? 'high' : count > 5 ? 'medium' : 'low'
+          });
+        }
+
+        // Add outcome-based suggestions
+        const successRate = calls.length > 0 ? (successfulCalls / calls.length * 100).toFixed(1) : 0;
+        if (parseFloat(successRate as string) < 20) {
+          suggestions.push({
+            type: 'general',
+            issue: `Low success rate (${successRate}%)`,
+            suggestion: 'Consider revising your opening pitch and value proposition',
+            priority: 'high'
+          });
+        }
+
+        return {
+          success: true,
+          result: {
+            total_calls_analyzed: calls.length,
+            success_rate: `${successRate}%`,
+            successful_calls: successfulCalls,
+            failed_calls: failedCalls,
+            top_objections: topObjections.map(([o, c]) => ({ objection: o, count: c })),
+            outcome_breakdown: outcomes,
+            suggestions,
+            message: `Analyzed ${calls.length} calls. Success rate: ${successRate}%. Found ${topObjections.length} common objections.`
+          }
+        };
+      }
+
       default:
         return { success: false, result: { error: `Unknown tool: ${toolName}` } };
     }
