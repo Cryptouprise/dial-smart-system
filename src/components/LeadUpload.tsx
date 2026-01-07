@@ -99,9 +99,32 @@ export const LeadUpload: React.FC = () => {
     const lines = text.trim().split('\n');
     if (lines.length < 2) return { headers: [], rows: [] };
 
+    // Helper function to parse CSV line properly (handles quoted values with commas)
+    const parseCSVLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      
+      result.push(current.trim());
+      return result;
+    };
+
     // Parse headers
     const headerLine = lines[0];
-    const headers = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const headers = parseCSVLine(headerLine).map(h => h.replace(/^"|"$/g, ''));
 
     // Parse rows
     const rows: ParsedRow[] = [];
@@ -109,8 +132,7 @@ export const LeadUpload: React.FC = () => {
       const line = lines[i];
       if (!line.trim()) continue;
 
-      // Simple CSV parsing (handles basic cases)
-      const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const values = parseCSVLine(line).map(v => v.replace(/^"|"$/g, ''));
       const row: ParsedRow = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
