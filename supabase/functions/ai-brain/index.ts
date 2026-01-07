@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Complete location mapping - AI always knows where things are
+// Complete location mapping - LJ always knows where things are
 const LOCATION_MAP: Record<string, { route: string; description: string }> = {
   workflow: { route: '/?tab=workflows', description: 'Workflow Builder tab' },
   workflows: { route: '/?tab=workflows', description: 'Workflow Builder tab' },
@@ -20,6 +20,7 @@ const LOCATION_MAP: Record<string, { route: string; description: string }> = {
   voice_broadcast: { route: '/?tab=broadcast', description: 'Voice Broadcast tab' },
   phone_numbers: { route: '/?tab=numbers', description: 'Phone Numbers tab' },
   numbers: { route: '/?tab=numbers', description: 'Phone Numbers tab' },
+  retell: { route: '/?tab=retell', description: 'Retell AI Manager tab' },
   agents: { route: '/?tab=agents', description: 'AI Agents tab' },
   agent: { route: '/?tab=agents', description: 'AI Agents tab' },
   analytics: { route: '/analytics', description: 'Analytics page' },
@@ -39,233 +40,171 @@ const LOCATION_MAP: Record<string, { route: string; description: string }> = {
   priorities: { route: '/?tab=autonomous-agent', description: 'Lead Priority Scores' },
 };
 
-// Complete system knowledge with GUIDED WIZARD FLOWS
-const SYSTEM_KNOWLEDGE = `You are the AI Brain for a powerful sales dialer system. You are NOT just an assistant - you are an EXPERT GUIDE that proactively leads users through complex setups.
+// Complete system knowledge with LADY JARVIS personality and GUIDED WIZARD FLOWS
+const SYSTEM_KNOWLEDGE = `You are Lady Jarvis (LJ for short) - the all-powerful AI assistant for Dial Smart, a sophisticated sales dialer system.
 
-## YOUR CORE PERSONALITY
-- You are PROACTIVE, not reactive
-- You ASK the questions users don't know to ask
-- You GUIDE users step-by-step through setup wizards
-- You NEVER skip important steps
-- You EXPLAIN why each step matters
-- You make users feel like "Wow, this AI really does everything!"
+## YOUR IDENTITY & PERSONALITY
+You are inspired by JARVIS from Iron Man - calm, confident, competent, and conversational.
+- Speak in plain, simple English - smooth and natural like talking to a trusted friend
+- You're proactive, not reactive - anticipate what users need
+- You never make users feel stupid for asking basic questions
+- When users call you "LJ" or "Lady Jarvis", respond warmly
+- Be helpful but efficient - don't over-explain unless asked
+- Use emojis sparingly but effectively (✅ ⚠️ 📞 🎯 🤖)
+- Always confirm before taking significant actions
+
+## YOUR INTERNAL TEAM (Manager Hierarchy)
+When handling complex requests, you coordinate specialized internal systems:
+
+📞 **Number Pool Manager**: Handles all phone number operations
+   - Purchasing numbers, deleting, rotation toggles, spam detection
+   - Area code management, assignment to agents
+   
+👥 **Lead Manager**: Handles all lead operations
+   - Status updates, pipeline movement, disposition tracking
+   - Follow-up scheduling, priority scoring
+   
+📊 **Campaign Manager**: Handles campaign operations
+   - Starting, pausing, stats monitoring
+   - Performance optimization, compliance
+   
+🤖 **Agent Manager**: Handles Retell AI agents
+   - Agent configuration, voice settings, script updates
+   - Calendar integration, inbound/outbound setup
+   
+📅 **Calendar Manager**: Handles scheduling
+   - Appointment booking, availability checking
+   - Reminders, rescheduling
+
+When executing complex tasks, you coordinate these managers seamlessly.
+For example: "Buy 25 numbers and assign to Solar agent" involves:
+1. Number Pool Manager → search and purchase
+2. Agent Manager → get agent ID
+3. Number Pool Manager → assign to agent, enable rotation
+
+Users don't need to know the complexity - you handle it all.
+
+## PHONE NUMBER WIZARD
+When user wants to buy/setup phone numbers, guide them step by step:
+
+**Step 1: Requirements**
+"Let me help you set up phone numbers! Quick questions:
+1. **How many numbers?** (I recommend 10-25 for good rotation)
+2. **Which area code?** (Match your target market - improves answer rates 20-30%)
+3. **What's the purpose?** (Outbound AI calls, inbound calls, or both)"
+
+**Step 2: Agent Assignment**
+"Perfect! Now let's connect these to your AI agent:
+- Which agent should handle these calls? [I'll list your agents]
+- Enable for **inbound** calls? (People can call back)
+- Enable for **outbound** calls? (For dialing out)"
+
+**Step 3: Rotation Setup**
+"Almost done! Rotation settings:
+- **Add to rotation pool?** (Cycles through numbers to prevent spam)
+- **Max calls per day per number?** (I recommend 50-100)
+
+This gives you [X * 50] calls/day capacity."
+
+**Step 4: Confirmation**
+"✅ Here's what I'll set up:
+- **Purchase**: [X] numbers in area code [Y]
+- **Agent**: [Agent Name] (inbound + outbound)
+- **Rotation**: Enabled, max [Z] calls/day each
+- **Total daily capacity**: [X * Z] calls
+
+Should I proceed? This will cost approximately $X/month."
 
 ## CRITICAL: GUIDED SETUP WIZARDS
 
-When a user wants to set up any of these features, you MUST follow the wizard flow and ask ALL required questions before taking action:
+When a user wants to set up any of these features, follow the wizard flow and ask ALL required questions before taking action:
 
 ### 🎙️ VOICE BROADCAST WIZARD
 When user wants to create a voice broadcast, ask these IN ORDER:
 
 **Step 1: Purpose & Audience**
-"Let's set up your voice broadcast! First, I need to understand your goals:
+"Let's set up your voice broadcast! First:
 1. **What's the purpose?** (appointment reminder, promotional offer, urgent notification, survey)
 2. **Who are you calling?** (all leads, specific status, specific campaign, custom list)
-3. **How many people approximately?** (I'll check your lead count)"
+3. **How many people approximately?**"
 
 **Step 2: Message Content**
-"Great! Now let's craft your message:
-1. **Do you want to use AI text-to-speech or upload a recording?**
+"Now let's craft your message:
+1. **Use AI text-to-speech or upload a recording?**
 2. If TTS: **What voice style?** (professional male, friendly female, etc.)
-3. **What should the message say?** (I can help you write it - keep it under 30 seconds)"
+3. **What should the message say?** (Keep it under 30 seconds)"
 
-**Step 3: Timing & Schedule**
-"Perfect! Now let's plan when to send:
-1. **When should this go out?** (immediately, scheduled time, best time AI-optimized)
-2. **What timezone are your recipients in?** (I'll respect calling hours 8AM-9PM)
-3. **Should we pace this?** (all at once, spread over hours, spread over days)"
+**Step 3: AMD Settings**
+"Quick voicemail detection settings:
+1. **Enable answering machine detection?** (Highly recommended)
+2. **If voicemail detected**: Hang up or leave the message?"
 
 **Step 4: Phone Number Selection**
-"Let me check your available numbers... [list numbers]
-1. **Which number should calls come from?** (I recommend [X] because...)
-2. **Any numbers to avoid?** (e.g., connected to other services)"
+"Which number should calls come from? [list available numbers]"
 
 **Step 5: Confirmation**
-"Here's your voice broadcast summary:
-- Name: [X]
-- Message: [preview]
-- Recipients: [count] leads
-- From Number: [X]
-- Schedule: [X]
-
-Should I create this broadcast? You can always edit it before launching."
+"Here's your broadcast summary - should I create it?"
 
 ### 📱 SMS BLAST WIZARD
-When user wants to send an SMS blast:
-
-**Step 1: Purpose & Audience**
-"Let's set up your SMS blast! Quick questions:
-1. **What's this message for?** (follow-up, promotion, appointment reminder, survey)
-2. **Who should receive it?** (all leads, specific status, specific campaign)
-3. **Is this time-sensitive?** (affects urgency in message)"
-
-**Step 2: Message Content**
-"Now let's craft your message (keep it under 160 chars for best delivery):
-1. **What's the main message?** (I'll help optimize it)
-2. **Should I personalize it?** (use {first_name}, {company}, etc.)
-3. **Include a call-to-action?** (reply YES, call this number, click link)"
-
-**Step 3: Compliance Check**
-"Important compliance questions:
-1. **Have all recipients opted in?** (required for SMS)
-2. **Include opt-out language?** (Reply STOP to unsubscribe - required by law)"
-
-**Step 4: Phone Number Selection**
-"Let me check your SMS-capable numbers...
-- **Which number to send from?** [list options with recommendations]"
-
-**Step 5: Confirmation**
-"Ready to send! Summary:
-- Message: [preview]
-- Recipients: [count]
-- From: [number]
-- Personalization: [yes/no]
-
-⚠️ This will send immediately to [X] people. Confirm?"
+Similar flow - purpose, audience, message, compliance, confirmation.
 
 ### 🤖 AI VOICE CAMPAIGN WIZARD
-When user wants to set up an AI calling campaign:
-
-**Step 1: Campaign Goals**
-"Let's set up your AI calling campaign! First:
-1. **What's the goal?** (lead qualification, appointment setting, follow-up, survey)
-2. **What industry/use case?** (solar, insurance, real estate, etc.)
-3. **What should the AI say?** (I can generate a script based on your goal)"
-
-**Step 2: AI Agent Configuration**
-"Now let's configure your AI agent:
-1. **What personality?** (professional, friendly, urgent, consultative)
-2. **What voice?** (male/female, accent preference)
-3. **What should AI do on success?** (book appointment, transfer to human, schedule callback)"
-
-**Step 3: Lead Selection**
-"Who should the AI call?
-1. **Which leads?** (all, by status, by campaign, by tag)
-2. **Any exclusions?** (already contacted today, DNC list - I auto-check this)
-3. **Priority order?** (newest first, highest score, scheduled callbacks first)"
-
-**Step 4: Calling Parameters**
-"Let's set the calling rules:
-1. **Calling hours?** (default 9AM-5PM in each lead's timezone)
-2. **Max attempts per lead?** (recommend 3)
-3. **Calls per minute?** (recommend 5-10 to start)
-4. **What to do on no answer?** (leave voicemail, send SMS, retry later)"
-
-**Step 5: Phone Numbers**
-"Checking your available numbers...
-- **Which number(s) for outbound calls?** [list with recommendations]
-- **Enable local presence?** (use area-code matching - improves answer rates 20-30%)"
-
-**Step 6: Review & Launch**
-"Campaign Summary:
-- Name: [X]
-- Goal: [X]
-- AI Agent: [X]
-- Leads: [X] selected
-- Calling Hours: [X]
-- From Numbers: [X]
-- On No Answer: [X]
-
-Ready to launch? (You can pause anytime)"
+Similar flow - goals, agent config, lead selection, calling parameters, phone numbers, launch.
 
 ## YOUR CAPABILITIES
-You can create, read, update, and delete:
-- Workflows (multi-step sequences with calls, SMS, waits, conditions)
-- Campaigns (calling campaigns with settings)
-- Leads (contact records)
-- SMS Blasts (bulk SMS to multiple leads)
-- Voice Broadcasts (automated voice messages)
+You can create, read, update, delete, and manage:
+- Phone Numbers (purchase, delete, assign to agents, toggle rotation)
+- Retell AI Agents (list, configure, assign numbers)
+- Campaigns (create, pause, resume, get stats)
+- Leads (list, update, move to pipeline stages)
+- SMS Blasts (send to multiple leads)
+- Voice Broadcasts (create, launch, stop)
+- Workflows (multi-step sequences)
+- Appointments (book, cancel, reschedule)
 - Automation Rules (trigger-based actions)
-- Phone Numbers (manage caller IDs)
-- Agents (AI voice agents)
-- Appointments (calendar scheduling)
-- Calendar Integrations (Google Calendar, Cal.com)
-- Dispositions (call outcomes)
-- Pipeline Stages (lead progression)
+- System Diagnostics (health checks, troubleshooting)
 
 ## CRITICAL RULES
 
 ### 1. ALWAYS USE WIZARD FLOWS
-When user mentions: "voice broadcast", "sms blast", "ai campaign", "quick start", "set up", "create" - START THE APPROPRIATE WIZARD. Don't skip steps!
+When user mentions: "buy numbers", "set up", "create campaign", "voice broadcast" - START THE APPROPRIATE WIZARD.
 
-### 2. ASK BEFORE ASSUMING
-NEVER pick defaults without explaining WHY. Say "I recommend X because..." and ask for confirmation.
+### 2. CONFIRMATION FOR PURCHASES/DELETES
+Before purchasing or deleting anything, show summary and ask "Should I proceed?"
 
-### 3. CHECK PREREQUISITES FIRST
-Before starting any wizard, verify:
-- Phone numbers are configured
-- Leads exist in the system
-- Required integrations are connected
-
-### 4. ALWAYS TELL THE USER WHERE THINGS ARE
+### 3. ALWAYS TELL THE USER WHERE THINGS ARE
 When you create, update, or reference anything, include a navigation link:
 [[Display Text|/route]]
 
 Examples:
-- "You can find it here: [[Voice Broadcasts|/?tab=broadcast]]"
+- "You can manage them here: [[Retell AI Manager|/?tab=retell]]"
 - "Your campaign is ready at [[Campaigns|/?tab=campaigns]]"
 
-### 5. PROVIDE CONTEXT & EDUCATION
-Explain terms users might not know:
-- "Local presence means using phone numbers that match the recipient's area code"
-- "AMD detects answering machines so we can leave voicemails automatically"
-- "A 3% abandonment rate is the FCC limit - we'll monitor this for you"
-
-### 6. CONFIRMATION FOR ALL ACTIONS
-Before executing any tool that creates/sends/modifies, show a summary and ask for confirmation.
-
-### 7. SMART RECOMMENDATIONS
-Based on their setup, proactively suggest:
-- "I notice you have 100 leads but no campaign - want to set one up?"
-- "Your answer rate could improve with local presence - should I enable it?"
-- "You haven't set up voicemail drops - this could increase callbacks"
-
-### 8. HANDLE "JUST DO IT" RESPONSES
+### 4. HANDLE "JUST DO IT" RESPONSES
 If user says "just pick" or "you decide", pick the BEST option and explain:
 "I'll use [X] because [reason]. Here's what I'm setting up: [summary]. Sound good?"
+
+### 5. SMART RECOMMENDATIONS
+Based on their setup, proactively suggest improvements.
 
 ## RESPONSE FORMAT
 - Be conversational but efficient
 - Use numbered lists for multi-part questions
 - Bold important terms
-- Include relevant emojis sparingly (🎙️📱🤖✅⚠️)
+- Include relevant emojis sparingly
 - Always end wizard steps with a clear question
 - Include navigation links for created items
 
-## SLASH COMMANDS
-- /create [type] - Start appropriate wizard
-- /list [type] - List items
-- /status - System status
-- /help [topic] - Get help
-
-## CONTEXT AWARENESS
-The user's current page is provided. Offer relevant help:
-- On broadcast tab? "I see you're on Voice Broadcasts - would you like to create one?"
-- On campaigns tab? "Looking at campaigns - need help setting one up or optimizing?"
-
 ## AUTONOMOUS AGENT SYSTEM
+You have full control over the Autonomous Agent system for AI-powered decisions and goal tracking.
 
-You have full control over the Autonomous Agent system. This system:
-- Makes AI-powered decisions about when to call, SMS, or email leads
-- Sets and tracks daily goals (appointments, calls, conversations)
-- Learns from outcomes to improve future decisions
-- Prioritizes leads using ML-based scoring
-- Auto-optimizes campaigns based on performance
-
-When users ask about "system status", "what's happening", "how are we doing", or similar:
+When users ask about "system status", "what's happening", "how are we doing":
 - Include autonomous agent metrics
 - Show today's goal progress
 - Highlight recent AI decisions
 - Share any learning insights
-
-Available autonomous commands:
-- "What's happening with the system?" → Run get_autonomous_status
-- "How are we doing on goals?" → Run get_autonomous_goals  
-- "What has the AI learned?" → Run get_learning_insights
-- "Show me autonomous decisions" → Run list_autonomous_decisions
-- "Prioritize my leads" → Run force_reprioritize_leads
-- "Enable/disable autonomous mode" → Run toggle_autonomous_mode
 `;
+
 
 // Tool definitions
 const TOOLS = [
@@ -956,6 +895,146 @@ const TOOLS = [
         type: "object",
         properties: {
           campaign_id: { type: "string" }
+        }
+      }
+    }
+  },
+  // PHONE NUMBER MANAGEMENT TOOLS
+  {
+    type: "function",
+    function: {
+      name: "search_available_numbers",
+      description: "Search for available phone numbers to purchase from Retell by area code",
+      parameters: {
+        type: "object",
+        properties: {
+          area_code: { type: "string", description: "3-digit area code (e.g., '475', '970')" },
+          limit: { type: "number", description: "Max numbers to return (default 10)" }
+        },
+        required: ["area_code"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "purchase_retell_numbers",
+      description: "Purchase phone numbers from Retell. Always confirm with user before purchasing.",
+      parameters: {
+        type: "object",
+        properties: {
+          area_code: { type: "string", description: "Area code to purchase from" },
+          quantity: { type: "number", description: "Number of phone numbers to purchase (max 25 per call)" },
+          enable_rotation: { type: "boolean", description: "Enable number rotation (default true)" },
+          max_daily_calls: { type: "number", description: "Max calls per day per number (default 100)" }
+        },
+        required: ["area_code", "quantity"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_retell_agents",
+      description: "List all Retell AI agents in the account",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "assign_numbers_to_agent",
+      description: "Assign phone numbers to a Retell AI agent for inbound and/or outbound calls",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string", description: "Name of the Retell agent (will search by name)" },
+          agent_id: { type: "string", description: "Retell agent ID if known" },
+          phone_numbers: { type: "array", items: { type: "string" }, description: "Specific phone numbers to assign" },
+          area_code: { type: "string", description: "Assign all numbers from this area code instead" },
+          assign_inbound: { type: "boolean", description: "Assign for inbound calls (default true)" },
+          assign_outbound: { type: "boolean", description: "Assign for outbound calls (default true)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "sync_retell_numbers",
+      description: "Sync phone numbers from Retell to local database",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "toggle_number_rotation",
+      description: "Enable or disable rotation for specific phone numbers or by area code",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_numbers: { type: "array", items: { type: "string" }, description: "Specific numbers to toggle" },
+          area_code: { type: "string", description: "Toggle all numbers in this area code" },
+          enabled: { type: "boolean", description: "True to enable rotation, false to disable" },
+          max_daily_calls: { type: "number", description: "Max calls per day if enabling (default 100)" }
+        },
+        required: ["enabled"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_campaign_stats",
+      description: "Get detailed real-time stats for a campaign: calls made, answered, voicemails, dispositions",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" },
+          campaign_name: { type: "string", description: "Search by name if ID not known" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_phone_numbers",
+      description: "Delete phone numbers from the system. Always confirm with user first.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_numbers: { type: "array", items: { type: "string" }, description: "Specific numbers to delete" },
+          area_code: { type: "string", description: "Delete all numbers in this area code" },
+          spam_only: { type: "boolean", description: "Only delete numbers flagged as spam" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_followup_stats",
+      description: "Get follow-up statistics: leads by disposition, follow-up status, pending callbacks",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" },
+          days: { type: "number", description: "Look back period in days (default 7)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_number_health",
+      description: "Check health status of phone numbers: spam scores, daily usage, rotation status",
+      parameters: {
+        type: "object",
+        properties: {
+          area_code: { type: "string", description: "Filter by area code" }
         }
       }
     }
@@ -2350,6 +2429,612 @@ async function executeToolCall(
             auto_optimization_available: true
           },
           location: LOCATION_MAP.campaigns.route
+        };
+      }
+
+      // PHONE NUMBER MANAGEMENT TOOL HANDLERS
+      case 'search_available_numbers': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: 'list_available',
+              area_code: args.area_code,
+              limit: args.limit || 10,
+              user_id: userId
+            }),
+          });
+
+          const result = await response.json();
+          
+          if (!response.ok || result.error) {
+            return { success: false, result: { error: result.error || 'Failed to search numbers' } };
+          }
+
+          return {
+            success: true,
+            result: {
+              area_code: args.area_code,
+              available_numbers: result.numbers || [],
+              count: result.numbers?.length || 0,
+              message: `Found ${result.numbers?.length || 0} available numbers in area code ${args.area_code}`
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        } catch (err) {
+          return { success: false, result: { error: 'Failed to search for available numbers' } };
+        }
+      }
+
+      case 'purchase_retell_numbers': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        // Validate quantity
+        const quantity = Math.min(args.quantity || 1, 25);
+        
+        try {
+          // First search for available numbers
+          const searchResponse = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: 'list_available',
+              area_code: args.area_code,
+              limit: quantity,
+              user_id: userId
+            }),
+          });
+
+          const searchResult = await searchResponse.json();
+          
+          if (!searchResult.numbers?.length) {
+            return { success: false, result: { error: `No available numbers found in area code ${args.area_code}` } };
+          }
+
+          const numbersToPurchase = searchResult.numbers.slice(0, quantity);
+          const purchasedNumbers: string[] = [];
+          const errors: string[] = [];
+
+          // Purchase each number
+          for (const phoneNumber of numbersToPurchase) {
+            try {
+              const purchaseResponse = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                },
+                body: JSON.stringify({
+                  action: 'purchase',
+                  phone_number: phoneNumber,
+                  user_id: userId
+                }),
+              });
+
+              const purchaseResult = await purchaseResponse.json();
+              
+              if (purchaseResponse.ok && purchaseResult.success) {
+                purchasedNumbers.push(phoneNumber);
+                
+                // Insert into phone_numbers table with rotation enabled
+                await supabase.from('phone_numbers').insert({
+                  user_id: userId,
+                  number: phoneNumber,
+                  friendly_name: `Retell ${args.area_code}`,
+                  provider: 'retell',
+                  status: 'active',
+                  purpose: 'outbound',
+                  rotation_enabled: args.enable_rotation !== false,
+                  max_daily_calls: args.max_daily_calls || 100
+                });
+              } else {
+                errors.push(`${phoneNumber}: ${purchaseResult.error || 'Purchase failed'}`);
+              }
+            } catch (err) {
+              errors.push(`${phoneNumber}: Purchase error`);
+            }
+          }
+
+          // Record session action
+          await supabase.from('ai_session_memory').insert({
+            user_id: userId,
+            session_id: sessionId,
+            action_type: 'purchase_numbers',
+            resource_type: 'phone_numbers',
+            resource_name: `${purchasedNumbers.length} numbers in ${args.area_code}`,
+            action_data: { purchased: purchasedNumbers, area_code: args.area_code },
+            can_undo: false
+          });
+
+          return {
+            success: purchasedNumbers.length > 0,
+            result: {
+              purchased_count: purchasedNumbers.length,
+              requested_count: quantity,
+              area_code: args.area_code,
+              purchased_numbers: purchasedNumbers,
+              rotation_enabled: args.enable_rotation !== false,
+              max_daily_calls: args.max_daily_calls || 100,
+              errors: errors.length > 0 ? errors : undefined,
+              message: `✅ Purchased ${purchasedNumbers.length} numbers in area code ${args.area_code}`
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        } catch (err) {
+          return { success: false, result: { error: 'Failed to purchase numbers' } };
+        }
+      }
+
+      case 'list_retell_agents': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/retell-agent-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: 'list',
+              user_id: userId
+            }),
+          });
+
+          const result = await response.json();
+          
+          return {
+            success: true,
+            result: {
+              agents: result.agents?.map((a: any) => ({
+                id: a.agent_id,
+                name: a.agent_name || 'Unnamed Agent',
+                voice: a.voice_id,
+                created: a.created_at
+              })) || [],
+              count: result.agents?.length || 0
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        } catch (err) {
+          return { success: false, result: { error: 'Failed to list agents' } };
+        }
+      }
+
+      case 'assign_numbers_to_agent': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        // Get agent ID if only name provided
+        let agentId = args.agent_id;
+        let agentName = args.agent_name;
+        
+        if (!agentId && agentName) {
+          const listResponse = await fetch(`${supabaseUrl}/functions/v1/retell-agent-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({ action: 'list', user_id: userId }),
+          });
+          const listResult = await listResponse.json();
+          
+          const matchingAgent = listResult.agents?.find((a: any) => 
+            a.agent_name?.toLowerCase().includes(agentName.toLowerCase())
+          );
+          
+          if (matchingAgent) {
+            agentId = matchingAgent.agent_id;
+            agentName = matchingAgent.agent_name;
+          }
+        }
+
+        if (!agentId) {
+          return { success: false, result: { error: 'Agent not found. Please provide a valid agent name or ID.' } };
+        }
+
+        // Get phone numbers to assign
+        let numbersToAssign = args.phone_numbers || [];
+        
+        if (args.area_code && numbersToAssign.length === 0) {
+          const { data: areaNumbers } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('user_id', userId)
+            .eq('provider', 'retell')
+            .like('number', `%${args.area_code}%`);
+          
+          numbersToAssign = areaNumbers?.map((n: any) => n.number) || [];
+        }
+
+        if (numbersToAssign.length === 0) {
+          return { success: false, result: { error: 'No phone numbers to assign. Provide specific numbers or an area code.' } };
+        }
+
+        const assignedNumbers: string[] = [];
+        const errors: string[] = [];
+
+        for (const phoneNumber of numbersToAssign) {
+          try {
+            const response = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                action: 'update',
+                phone_number: phoneNumber,
+                agent_id: agentId,
+                inbound_agent_id: args.assign_inbound !== false ? agentId : undefined,
+                outbound_agent_id: args.assign_outbound !== false ? agentId : undefined,
+                user_id: userId
+              }),
+            });
+
+            if (response.ok) {
+              assignedNumbers.push(phoneNumber);
+            } else {
+              const result = await response.json();
+              errors.push(`${phoneNumber}: ${result.error || 'Assignment failed'}`);
+            }
+          } catch (err) {
+            errors.push(`${phoneNumber}: Assignment error`);
+          }
+        }
+
+        return {
+          success: assignedNumbers.length > 0,
+          result: {
+            agent_id: agentId,
+            agent_name: agentName,
+            assigned_count: assignedNumbers.length,
+            assigned_numbers: assignedNumbers,
+            inbound_enabled: args.assign_inbound !== false,
+            outbound_enabled: args.assign_outbound !== false,
+            errors: errors.length > 0 ? errors : undefined,
+            message: `✅ Assigned ${assignedNumbers.length} numbers to ${agentName || 'agent'}`
+          },
+          location: LOCATION_MAP.retell.route
+        };
+      }
+
+      case 'sync_retell_numbers': {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/retell-phone-management`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: 'sync',
+              user_id: userId
+            }),
+          });
+
+          const result = await response.json();
+          
+          return {
+            success: true,
+            result: {
+              synced: result.synced || 0,
+              imported: result.imported || 0,
+              updated: result.updated || 0,
+              message: `✅ Sync complete: ${result.imported || 0} imported, ${result.updated || 0} updated`
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        } catch (err) {
+          return { success: false, result: { error: 'Failed to sync numbers' } };
+        }
+      }
+
+      case 'toggle_number_rotation': {
+        let numbersToUpdate: string[] = args.phone_numbers || [];
+        
+        // If area code provided, get all numbers in that area code
+        if (args.area_code && numbersToUpdate.length === 0) {
+          const { data: areaNumbers } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('user_id', userId)
+            .like('number', `%${args.area_code}%`);
+          
+          numbersToUpdate = areaNumbers?.map((n: any) => n.number) || [];
+        }
+
+        if (numbersToUpdate.length === 0) {
+          // Update all numbers if none specified
+          const { error } = await supabase
+            .from('phone_numbers')
+            .update({
+              rotation_enabled: args.enabled,
+              max_daily_calls: args.enabled ? (args.max_daily_calls || 100) : null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', userId);
+
+          if (error) throw error;
+
+          const { count } = await supabase
+            .from('phone_numbers')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
+
+          return {
+            success: true,
+            result: {
+              updated_count: count || 0,
+              rotation_enabled: args.enabled,
+              max_daily_calls: args.enabled ? (args.max_daily_calls || 100) : null,
+              message: `✅ Rotation ${args.enabled ? 'enabled' : 'disabled'} for all ${count || 0} numbers`
+            },
+            location: LOCATION_MAP.retell.route
+          };
+        }
+
+        // Update specific numbers
+        const { error } = await supabase
+          .from('phone_numbers')
+          .update({
+            rotation_enabled: args.enabled,
+            max_daily_calls: args.enabled ? (args.max_daily_calls || 100) : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId)
+          .in('number', numbersToUpdate);
+
+        if (error) throw error;
+
+        return {
+          success: true,
+          result: {
+            updated_count: numbersToUpdate.length,
+            rotation_enabled: args.enabled,
+            max_daily_calls: args.enabled ? (args.max_daily_calls || 100) : null,
+            area_code: args.area_code,
+            message: `✅ Rotation ${args.enabled ? 'enabled' : 'disabled'} for ${numbersToUpdate.length} numbers${args.area_code ? ` in area code ${args.area_code}` : ''}`
+          },
+          location: LOCATION_MAP.retell.route
+        };
+      }
+
+      case 'get_campaign_stats': {
+        let campaignId = args.campaign_id;
+        let campaignName = '';
+        
+        if (!campaignId && args.campaign_name) {
+          const { data } = await supabase
+            .from('campaigns')
+            .select('id, name')
+            .eq('user_id', userId)
+            .ilike('name', `%${args.campaign_name}%`)
+            .maybeSingle();
+          campaignId = data?.id;
+          campaignName = data?.name || args.campaign_name;
+        }
+
+        if (!campaignId) {
+          // Get most recent active campaign
+          const { data } = await supabase
+            .from('campaigns')
+            .select('id, name')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          campaignId = data?.id;
+          campaignName = data?.name || 'Unknown';
+        }
+
+        if (!campaignId) {
+          return { success: false, result: { error: 'No campaigns found' } };
+        }
+
+        // Get call stats
+        const { data: calls } = await supabase
+          .from('call_logs')
+          .select('status, outcome, duration_seconds, amd_result')
+          .eq('campaign_id', campaignId);
+
+        const totalCalls = calls?.length || 0;
+        const connected = calls?.filter((c: any) => c.status === 'completed').length || 0;
+        const voicemails = calls?.filter((c: any) => c.amd_result === 'machine').length || 0;
+        const noAnswer = calls?.filter((c: any) => c.status === 'no-answer').length || 0;
+
+        // Get disposition counts
+        const outcomes: Record<string, number> = {};
+        calls?.forEach((c: any) => {
+          if (c.outcome) {
+            outcomes[c.outcome] = (outcomes[c.outcome] || 0) + 1;
+          }
+        });
+
+        return {
+          success: true,
+          result: {
+            campaign_name: campaignName,
+            total_calls: totalCalls,
+            connected: connected,
+            connected_rate: totalCalls > 0 ? `${Math.round((connected / totalCalls) * 100)}%` : '0%',
+            voicemails: voicemails,
+            no_answer: noAnswer,
+            outcomes: outcomes,
+            message: `📊 ${campaignName}: ${totalCalls} calls, ${connected} connected (${totalCalls > 0 ? Math.round((connected / totalCalls) * 100) : 0}% answer rate)`
+          },
+          location: LOCATION_MAP.campaigns.route
+        };
+      }
+
+      case 'delete_phone_numbers': {
+        let numbersToDelete: string[] = args.phone_numbers || [];
+        
+        // If area code provided
+        if (args.area_code && numbersToDelete.length === 0) {
+          let query = supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('user_id', userId)
+            .like('number', `%${args.area_code}%`);
+          
+          if (args.spam_only) {
+            query = query.eq('status', 'quarantined');
+          }
+          
+          const { data } = await query;
+          numbersToDelete = data?.map((n: any) => n.number) || [];
+        }
+
+        // If spam_only without area code
+        if (args.spam_only && numbersToDelete.length === 0 && !args.area_code) {
+          const { data } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('user_id', userId)
+            .eq('status', 'quarantined');
+          numbersToDelete = data?.map((n: any) => n.number) || [];
+        }
+
+        if (numbersToDelete.length === 0) {
+          return { success: false, result: { error: 'No numbers to delete matching criteria' } };
+        }
+
+        // Delete from database
+        const { error } = await supabase
+          .from('phone_numbers')
+          .delete()
+          .eq('user_id', userId)
+          .in('number', numbersToDelete);
+
+        if (error) throw error;
+
+        // Record session action
+        await supabase.from('ai_session_memory').insert({
+          user_id: userId,
+          session_id: sessionId,
+          action_type: 'delete_numbers',
+          resource_type: 'phone_numbers',
+          resource_name: `${numbersToDelete.length} numbers`,
+          action_data: { deleted: numbersToDelete },
+          can_undo: false
+        });
+
+        return {
+          success: true,
+          result: {
+            deleted_count: numbersToDelete.length,
+            deleted_numbers: numbersToDelete,
+            message: `🗑️ Deleted ${numbersToDelete.length} phone numbers`
+          },
+          location: LOCATION_MAP.retell.route
+        };
+      }
+
+      case 'get_followup_stats': {
+        const daysBack = args.days || 7;
+        const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+        // Get leads by status
+        const { data: leads } = await supabase
+          .from('leads')
+          .select('status')
+          .eq('user_id', userId);
+
+        const statusCounts: Record<string, number> = {};
+        leads?.forEach((l: any) => {
+          statusCounts[l.status || 'unknown'] = (statusCounts[l.status || 'unknown'] || 0) + 1;
+        });
+
+        // Get pending callbacks
+        const { data: callbacks } = await supabase
+          .from('calendar_appointments')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'scheduled')
+          .gte('start_time', new Date().toISOString());
+
+        // Get recent dispositions
+        const { data: recentCalls } = await supabase
+          .from('call_logs')
+          .select('outcome')
+          .eq('user_id', userId)
+          .gte('created_at', since);
+
+        const dispositions: Record<string, number> = {};
+        recentCalls?.forEach((c: any) => {
+          if (c.outcome) {
+            dispositions[c.outcome] = (dispositions[c.outcome] || 0) + 1;
+          }
+        });
+
+        return {
+          success: true,
+          result: {
+            leads_by_status: statusCounts,
+            pending_callbacks: callbacks?.length || 0,
+            recent_dispositions: dispositions,
+            period: `Last ${daysBack} days`,
+            message: `📈 ${leads?.length || 0} total leads, ${callbacks?.length || 0} pending callbacks`
+          },
+          location: LOCATION_MAP.pipeline.route
+        };
+      }
+
+      case 'get_number_health': {
+        let query = supabase
+          .from('phone_numbers')
+          .select('number, status, provider, rotation_enabled, max_daily_calls, daily_calls, spam_score')
+          .eq('user_id', userId);
+
+        if (args.area_code) {
+          query = query.like('number', `%${args.area_code}%`);
+        }
+
+        const { data: numbers } = await query;
+
+        const healthy = numbers?.filter((n: any) => n.status === 'active' && (!n.spam_score || n.spam_score < 50)).length || 0;
+        const quarantined = numbers?.filter((n: any) => n.status === 'quarantined').length || 0;
+        const atRisk = numbers?.filter((n: any) => n.spam_score && n.spam_score >= 50 && n.spam_score < 80).length || 0;
+        const spammed = numbers?.filter((n: any) => n.spam_score && n.spam_score >= 80).length || 0;
+        const rotationEnabled = numbers?.filter((n: any) => n.rotation_enabled).length || 0;
+
+        return {
+          success: true,
+          result: {
+            total_numbers: numbers?.length || 0,
+            healthy: healthy,
+            at_risk: atRisk,
+            quarantined: quarantined,
+            spammed: spammed,
+            rotation_enabled: rotationEnabled,
+            area_code: args.area_code || 'all',
+            numbers: numbers?.slice(0, 10).map((n: any) => ({
+              number: n.number,
+              status: n.status,
+              rotation: n.rotation_enabled,
+              usage: `${n.daily_calls || 0}/${n.max_daily_calls || 100}`,
+              spam_score: n.spam_score || 0
+            })),
+            message: `📞 ${numbers?.length || 0} numbers: ${healthy} healthy, ${atRisk} at risk, ${quarantined} quarantined`
+          },
+          location: LOCATION_MAP.retell.route
         };
       }
 

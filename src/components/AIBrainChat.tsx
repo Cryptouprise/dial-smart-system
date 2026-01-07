@@ -20,7 +20,9 @@ import {
   Archive,
   Activity,
   Target,
-  Brain
+  Brain,
+  Phone,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -172,21 +174,28 @@ export const AIBrainChat: React.FC = () => {
     return (
       <Button
         onClick={openChat}
-        className="fixed bottom-[5.5rem] md:bottom-4 right-3 md:right-4 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40"
+        className="fixed bottom-[5.5rem] md:bottom-4 right-3 md:right-4 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40 bg-gradient-to-br from-primary to-primary/80"
         size="icon"
+        title="Ask Lady Jarvis (⌘K)"
       >
-        <MessageSquare className="h-5 w-5 md:h-6 md:w-6" />
+        <Bot className="h-5 w-5 md:h-6 md:w-6" />
       </Button>
     );
   }
 
   return (
     <Card className="fixed bottom-20 md:bottom-4 right-2 left-2 md:left-auto md:right-4 md:w-96 h-[60vh] md:h-[500px] max-h-[calc(100vh-8rem)] shadow-2xl z-40 flex flex-col overflow-hidden">
-      <CardHeader className="pb-2 flex-shrink-0">
+      <CardHeader className="pb-2 flex-shrink-0 bg-gradient-to-r from-primary/5 to-transparent">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <CardTitle className="text-lg">AI Assistant</CardTitle>
+            <div className="relative">
+              <Bot className="h-5 w-5 text-primary" />
+              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Lady Jarvis</CardTitle>
+              <p className="text-[10px] text-muted-foreground -mt-0.5">Your AI Assistant • LJ</p>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {!showHistory && (
@@ -278,29 +287,33 @@ export const AIBrainChat: React.FC = () => {
               <div className="space-y-3 py-3">
                 {messages.length === 0 && (
                   <div className="text-center py-4 md:py-8">
-                    <Sparkles className="h-10 w-10 md:h-12 md:w-12 mx-auto text-muted-foreground/50 mb-3" />
+                    <div className="relative inline-block mb-3">
+                      <Bot className="h-10 w-10 md:h-12 md:w-12 mx-auto text-primary/70" />
+                      <Sparkles className="h-4 w-4 absolute -top-1 -right-1 text-yellow-500" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground mb-1">Hey there! I'm LJ.</p>
                     <p className="text-xs md:text-sm text-muted-foreground mb-3">
-                      I can help manage your dialer. Try:
+                      I can handle everything. Just ask me:
                     </p>
                     <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center">
                       <QuickActionButton
                         label="System Status"
-                        onClick={() => sendMessage("What's going on with the system today?")}
+                        onClick={() => sendMessage("Hey LJ, what's going on with the system today?")}
                         icon={<Activity className="h-3 w-3" />}
                       />
                       <QuickActionButton
-                        label="Goals"
-                        onClick={() => sendMessage("How are we doing on our goals?")}
+                        label="Buy Numbers"
+                        onClick={() => sendMessage("LJ, I want to buy some phone numbers")}
+                        icon={<Phone className="h-3 w-3" />}
+                      />
+                      <QuickActionButton
+                        label="Campaign Stats"
+                        onClick={() => sendMessage("How are my campaigns doing?")}
                         icon={<Target className="h-3 w-3" />}
                       />
                       <QuickActionButton
-                        label="AI Insights"
-                        onClick={() => sendMessage("What has the AI learned recently?")}
-                        icon={<Brain className="h-3 w-3" />}
-                      />
-                      <QuickActionButton
-                        label="Workflow"
-                        onClick={() => sendMessage('Help me create a workflow')}
+                        label="Setup Wizard"
+                        onClick={() => sendMessage("Help me set up a new AI calling campaign")}
                         icon={<Zap className="h-3 w-3" />}
                       />
                     </div>
@@ -381,7 +394,7 @@ export const AIBrainChat: React.FC = () => {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask anything..."
+                placeholder="Ask LJ anything..."
                 disabled={isLoading}
                 className="flex-1 text-sm h-9 md:h-10"
               />
