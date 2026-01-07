@@ -3475,9 +3475,6 @@ async function executeToolCall(
         return { success: true, result: { total: leads?.length || 0, breakdown: stats, grouped_by: args.group_by || 'status' } };
       }
 
-      default:
-        return { success: false, result: { error: `Unknown tool: ${toolName}` } };
-    }
       case 'get_prompt_snippets': {
         return {
           success: true,
