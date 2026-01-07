@@ -221,7 +221,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
               <div className="text-center py-4 md:py-8">
                 <Sparkles className="h-10 w-10 md:h-12 md:w-12 mx-auto text-muted-foreground/50 mb-3" />
                 <p className="text-xs md:text-sm text-muted-foreground mb-3">
-                  I can help manage your dialer. Try:
+                  Hey! I'm LJ. What can I help you with?
                 </p>
                 <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center">
                   <QuickActionButton
@@ -312,7 +312,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything..."
+              placeholder="Ask LJ anything..."
               disabled={isLoading}
               className="flex-1 text-sm h-9 md:h-10"
             />
@@ -354,7 +354,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">AI Assistant</CardTitle>
+              <div>
+                <CardTitle className="text-lg">Lady Jarvis</CardTitle>
+                <p className="text-[10px] text-muted-foreground -mt-0.5">Your AI Assistant • LJ</p>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -392,9 +395,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
         onClick={openChat}
         className="fixed bottom-[5.5rem] md:bottom-6 right-3 md:right-6 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-40 bg-primary hover:bg-primary/90"
         size="icon"
+        title="Ask Lady Jarvis (⌘K)"
       >
         <Bot className="h-5 w-5 md:h-6 md:w-6" />
-        <span className="sr-only">Open AI Assistant</span>
+        <span className="sr-only">Ask Lady Jarvis</span>
       </Button>
     );
   }
@@ -406,7 +410,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
-            <CardTitle className="text-lg">AI Assistant</CardTitle>
+            <div>
+              <CardTitle className="text-lg">Lady Jarvis</CardTitle>
+              <p className="text-[10px] text-primary-foreground/70 -mt-0.5">Your AI Assistant • LJ</p>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {!showHistory && (
