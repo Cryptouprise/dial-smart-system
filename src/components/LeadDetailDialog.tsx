@@ -460,7 +460,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
   return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-hidden min-h-0 flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
+        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] md:w-full overflow-y-auto min-h-0 flex flex-col p-4 md:p-6" aria-describedby="lead-detail-description">
         <DialogDescription id="lead-detail-description" className="sr-only">
           View and edit lead details including contact information, status, and activity history.
         </DialogDescription>
