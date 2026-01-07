@@ -261,20 +261,26 @@ serve(async (req) => {
             // Check for ANY existing queue entry (including completed)
             const { data: existingEntry } = await supabase
               .from('dialing_queues')
-              .select('id, status')
+              .select('id, status, updated_at')
               .eq('lead_id', lead.id)
               .eq('campaign_id', campaign.id)
               .maybeSingle();
             
             if (existingEntry) {
-              if (existingEntry.status === 'completed' || existingEntry.status === 'failed') {
-                // Reset the completed entry to pending for callback
+              // Reset completed, failed, OR stuck calling entries for callback
+              // "calling" entries stuck for > 2 minutes are likely abandoned
+              const isStuckCalling = existingEntry.status === 'calling' && 
+                existingEntry.updated_at && 
+                (Date.now() - new Date(existingEntry.updated_at).getTime()) > 2 * 60 * 1000;
+              
+              if (existingEntry.status === 'completed' || existingEntry.status === 'failed' || isStuckCalling) {
+                // Reset the entry to pending for callback
                 const { error: updateError } = await supabase
                   .from('dialing_queues')
                   .update({
                     status: 'pending',
                     scheduled_at: new Date().toISOString(),
-                    priority: 5, // Callback priority
+                    priority: 10, // High callback priority
                     attempts: 0,
                     updated_at: new Date().toISOString()
                   })
@@ -282,12 +288,14 @@ serve(async (req) => {
                 
                 if (!updateError) {
                   callbacksReset++;
-                  console.log(`[Scheduler] Reset completed queue entry for callback - lead ${lead.id}`);
+                  console.log(`[Scheduler] Reset ${existingEntry.status} queue entry for callback - lead ${lead.id}`);
                 } else {
                   console.error(`[Scheduler] Failed to reset queue entry for lead ${lead.id}:`, updateError);
                 }
+              } else if (existingEntry.status === 'pending') {
+                console.log(`[Scheduler] Lead ${lead.id} already pending in queue`);
               } else {
-                console.log(`[Scheduler] Lead ${lead.id} already in queue with status: ${existingEntry.status}`);
+                console.log(`[Scheduler] Lead ${lead.id} in active status: ${existingEntry.status}, skipping`);
               }
             } else {
               // No existing entry - insert new one
