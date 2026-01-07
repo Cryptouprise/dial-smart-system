@@ -12,70 +12,57 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SYSTEM_KNOWLEDGE = `You are the Smart Dialer AI Assistant. Be EXTREMELY BRIEF and ALWAYS confirm what you did.
+const SYSTEM_KNOWLEDGE = `You are LJ (Lady Jarvis), the Smart Dialer AI assistant. Talk like a helpful human coworker, not a robot.
+
+## PERSONALITY
+- Casual, friendly, to the point
+- Use "I" and "you" naturally
+- No corporate speak, no bullet point lists unless asked
+- Just tell them what you did or what you need
 
 ## GOLDEN RULES
-1. MAX 3-4 sentences per response
-2. ALWAYS tell user what you actually did (use tool results)
-3. PICK the best option and suggest it, don't list everything
-4. Ask ONE question, get ONE answer, move on
-5. When user asks about settings, ALWAYS call get_all_settings first
-6. ALWAYS tell user WHERE to find what you created (specific tab name)
+1. **Do it, then confirm** - Don't ask permission, just do what they ask and tell them you did it
+2. **One sentence answers** when possible. Two max.
+3. **Natural language** - Say "Done! Bought 5 numbers in 214" not "I have successfully completed your request for phone numbers"
+4. **Ask naturally** - "Which area code?" not "Please specify the area code parameter"
+5. **Be specific** - "Check the Campaign Manager tab" not "navigate to the appropriate section"
 
-## SYSTEM LOCATIONS - CRITICAL!
-When you create something, ALWAYS tell user the exact tab:
-- SMS Blasts → "SMS Messaging" tab (sidebar)
-- Voice Broadcasts → "Voice Broadcast" tab (sidebar)
-- Campaigns → "Campaign Manager" tab (sidebar)
-- Workflows → "Workflow Builder" tab (sidebar)
-- Automation Rules → "Automation Engine" tab (sidebar)
-- Leads → "Lead Manager" tab (sidebar)
-- Phone Numbers → "Number Pool" tab (sidebar)
+## EXAMPLES OF GOOD RESPONSES
+User: "buy me 5 phone numbers in dallas"
+You: "Done! Got you 5 numbers in area code 214. They're ready to use - want me to add them to a campaign?"
 
-## SMS BLAST vs AUTOMATION vs WORKFLOW
-- "SMS blast" = send_sms_blast tool → creates bulk SMS to multiple leads NOW
-- "Automation rule" = create_automation_rule → triggers on conditions (NOT for sending blasts)
-- "Workflow" = create_workflow → multi-step sequences over time
+User: "add those to the solar campaign"  
+You: "Added! The Solar Campaign now has 5 numbers for caller ID rotation."
 
-IMPORTANT: When user says "SMS blast" or "text blast", use send_sms_blast, NOT create_automation_rule!
+User: "how many leads do I have?"
+You: "You've got 847 leads total - 234 new, 412 contacted, 89 qualified."
 
-## READING SETTINGS
-When user asks "what are my settings?" or "show me my config":
-1. Call get_all_settings tool
-2. Show them the formatted results
-3. Ask if they want to change anything
+User: "send a text blast"
+You: "Sure! What's the message?"
 
-## AFTER ACTIONS - BE SPECIFIC
-✅ GOOD: "Done! Sent SMS blast to 25 leads. Check 'SMS Messaging' tab to see delivery status."
-❌ BAD: "I've processed your request."
+User: "call me back in 5"
+You: "Can't call you directly, but I can schedule callbacks for leads. Who needs a callback?"
 
-✅ GOOD: "Created voice broadcast 'Solar Pitch'. Go to 'Voice Broadcast' tab → add leads → click Start."
-❌ BAD: "Broadcast created."
+## WHAT YOU CAN DO
+- Buy phone numbers: "buy 5 numbers in 214"
+- Add to campaigns: "add those to the solar campaign"
+- Send SMS blasts: "text all new leads: Hey, quick question about your home"
+- Create campaigns: "create a campaign called Solar Outreach"
+- Check stats: "how'd we do today?"
+- Manage settings: "turn on AMD detection"
+- Cancel callbacks: "cancel the callback for 214-555-1234"
+- Search leads: "find John Smith"
+- And way more...
 
-✅ GOOD: "Your AMD is now ON. Also enabled: local presence, DNC check. Disabled: timezone compliance."
-❌ BAD: "Settings updated."
+## LOCATIONS (tell users where to find things)
+- Phone numbers → "Number Pool" tab
+- Campaigns → "Campaign Manager" tab  
+- Leads → "Lead Manager" tab
+- SMS → "SMS Messaging" tab
+- Voice broadcasts → "Voice Broadcast" tab
+- Workflows → "Workflow Builder" tab
 
-## VOICE BROADCAST SETUP
-After discover_phone_setup returns:
-"Got 46 numbers. I'll use +1234567890. What's your message? (I'll convert text to audio)"
-
-## AFTER GETTING MESSAGE
-"Done! Created 'My Broadcast'. Go to Voice Broadcast tab to add leads and launch."
-
-## TOOLS (use immediately, explain nothing)
-- get_all_settings: Call when user asks about settings/config
-- discover_phone_setup: ALWAYS call first for phone/campaign setup
-- send_sms_blast: For "SMS blast", "text blast", "bulk SMS" - sends to leads NOW
-- send_test_sms: For testing SMS to a single number
-- quick_voice_broadcast: Create broadcast
-- All others: just use them
-
-## DEFAULTS (use without asking)
-- Voice: Liam
-- Hours: 9 AM - 5 PM  
-- Pace: 50/min
-
-SHORT. CONFIRM ACTIONS. BE SPECIFIC. ALWAYS TELL WHERE TO FIND IT.`;
+Just be helpful and natural. You're their assistant, not a chatbot.`;
 
 
 const TOOLS = [
@@ -611,6 +598,65 @@ const TOOLS = [
           lead_filter: { type: "string", description: "Filter: all, new, contacted, or tag:tagname" },
           lead_ids: { type: "array", items: { type: "string" }, description: "Specific lead IDs to add" },
           limit: { type: "number", description: "Max leads to add (default: 100)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "buy_phone_numbers",
+      description: "Purchase new phone numbers from Retell. Use when user says 'buy phone numbers', 'get new numbers', 'purchase numbers'. Numbers cost $2.99/month each.",
+      parameters: {
+        type: "object",
+        properties: {
+          area_code: { type: "string", description: "3-digit area code (e.g., '214' for Dallas, '512' for Austin)" },
+          quantity: { type: "number", description: "Number of phone numbers to purchase (1-10 recommended)" }
+        },
+        required: ["area_code", "quantity"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_numbers_to_campaign",
+      description: "Add phone numbers to a campaign's phone pool for caller ID rotation",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string", description: "Campaign ID" },
+          campaign_name: { type: "string", description: "Campaign name (alternative to ID)" },
+          phone_numbers: { type: "array", items: { type: "string" }, description: "Phone numbers to add (E.164 format)" },
+          area_code: { type: "string", description: "Add all numbers with this area code" },
+          add_all: { type: "boolean", description: "Add all available numbers to the campaign" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_campaigns",
+      description: "List all campaigns with their status, leads count, and phone pool",
+      parameters: {
+        type: "object",
+        properties: {
+          status_filter: { type: "string", description: "Filter by status: active, paused, draft, completed" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_callback",
+      description: "Cancel a pending callback for a lead. Clears callback time and resumes their workflow.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number: { type: "string", description: "Lead's phone number" },
+          lead_id: { type: "string", description: "Lead ID (alternative to phone)" }
         }
       }
     }
@@ -2485,6 +2531,241 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         success: true,
         message: `✅ Added ${leads.length} leads to workflow "${workflow.name}"!\n\nThe sequence will now run for these leads. Monitor progress in "Workflow Builder" tab.`,
         data: { workflow_id: workflow.id, leads_added: leads.length }
+      };
+    }
+
+    case 'buy_phone_numbers': {
+      const { area_code, quantity } = args;
+      
+      if (!area_code || !quantity) {
+        return { success: false, message: '❌ Need area code and quantity. Example: "Buy 5 phone numbers in area code 214"' };
+      }
+      
+      if (quantity > 10) {
+        return { success: false, message: '❌ Max 10 numbers at a time. Want to buy 10?' };
+      }
+      
+      // Call the phone-number-purchasing function
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/phone-number-purchasing`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            areaCode: area_code, 
+            quantity: quantity,
+            provider: 'retell'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+          return { 
+            success: false, 
+            message: `❌ ${result.error || 'Failed to purchase numbers. Try a different area code.'}` 
+          };
+        }
+        
+        const numbersText = result.numbers?.map((n: any) => n.number).join(', ') || '';
+        
+        return {
+          success: true,
+          message: `✅ Purchased ${result.numbers_provisioned} phone numbers!\n\n**Numbers:** ${numbersText}\n\n**Cost:** $${(result.numbers_provisioned * 2.99).toFixed(2)}/month\n\nThey're ready for calling. Add them to a campaign with "add these numbers to [campaign name]".`,
+          data: result
+        };
+      } catch (error: any) {
+        console.error('[AI Assistant] Phone purchase error:', error);
+        return { success: false, message: `❌ Error purchasing numbers: ${error.message}` };
+      }
+    }
+
+    case 'add_numbers_to_campaign': {
+      const { campaign_id, campaign_name, phone_numbers, area_code, add_all } = args;
+      
+      // Find campaign
+      let campaignQuery = supabase.from('campaigns').select('id, name').eq('user_id', userId);
+      if (campaign_id) campaignQuery = campaignQuery.eq('id', campaign_id);
+      else if (campaign_name) campaignQuery = campaignQuery.ilike('name', `%${campaign_name}%`);
+      
+      const { data: campaign, error: campaignError } = await campaignQuery.maybeSingle();
+      
+      if (campaignError || !campaign) {
+        // List available campaigns
+        const { data: campaigns } = await supabase
+          .from('campaigns')
+          .select('name, status')
+          .eq('user_id', userId)
+          .limit(5);
+        
+        const campaignList = campaigns?.map(c => `• ${c.name} (${c.status})`).join('\n') || 'No campaigns';
+        return { 
+          success: false, 
+          message: `❌ Campaign not found. Your campaigns:\n${campaignList}\n\nTry: "add numbers to [campaign name]"` 
+        };
+      }
+      
+      // Get phone numbers to add
+      let numbersToAdd: any[] = [];
+      
+      if (phone_numbers && phone_numbers.length > 0) {
+        const { data } = await supabase
+          .from('phone_numbers')
+          .select('id, number')
+          .eq('user_id', userId)
+          .in('number', phone_numbers);
+        numbersToAdd = data || [];
+      } else if (area_code) {
+        const { data } = await supabase
+          .from('phone_numbers')
+          .select('id, number')
+          .eq('user_id', userId)
+          .eq('area_code', area_code);
+        numbersToAdd = data || [];
+      } else if (add_all) {
+        const { data } = await supabase
+          .from('phone_numbers')
+          .select('id, number')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+        numbersToAdd = data || [];
+      }
+      
+      if (numbersToAdd.length === 0) {
+        return { success: false, message: '❌ No phone numbers found. Buy some first with "buy 5 phone numbers in 214"' };
+      }
+      
+      // Add to campaign phone pool
+      const poolEntries = numbersToAdd.map((num: any, index: number) => ({
+        user_id: userId,
+        campaign_id: campaign.id,
+        phone_number_id: num.id,
+        priority: index + 1,
+        role: 'outbound',
+        is_primary: index === 0
+      }));
+      
+      // Upsert to handle duplicates
+      const { error: poolError } = await supabase
+        .from('campaign_phone_pools')
+        .upsert(poolEntries, { 
+          onConflict: 'campaign_id,phone_number_id',
+          ignoreDuplicates: true 
+        });
+      
+      if (poolError) {
+        console.error('[AI Assistant] Pool error:', poolError);
+        return { success: false, message: '❌ Failed to add numbers to campaign pool.' };
+      }
+      
+      return {
+        success: true,
+        message: `✅ Added ${numbersToAdd.length} numbers to campaign "${campaign.name}"!\n\nThey'll rotate for caller ID. Check "Campaign Manager" tab to see the pool.`,
+        data: { campaign_id: campaign.id, numbers_added: numbersToAdd.length }
+      };
+    }
+
+    case 'list_campaigns': {
+      const { status_filter } = args;
+      
+      let query = supabase
+        .from('campaigns')
+        .select(`
+          id, name, status, created_at,
+          campaign_leads(count),
+          campaign_phone_pools(count)
+        `)
+        .eq('user_id', userId);
+      
+      if (status_filter) {
+        query = query.eq('status', status_filter);
+      }
+      
+      const { data: campaigns, error } = await query.order('created_at', { ascending: false }).limit(10);
+      
+      if (error) {
+        console.error('[AI Assistant] List campaigns error:', error);
+        return { success: false, message: '❌ Failed to fetch campaigns.' };
+      }
+      
+      if (!campaigns || campaigns.length === 0) {
+        return { success: true, message: '📋 No campaigns found. Create one with "create a campaign called [name]"' };
+      }
+      
+      const campaignList = campaigns.map((c: any) => {
+        const leadsCount = c.campaign_leads?.[0]?.count || 0;
+        const numbersCount = c.campaign_phone_pools?.[0]?.count || 0;
+        const statusEmoji = c.status === 'active' ? '🟢' : c.status === 'paused' ? '🟡' : '⚪';
+        return `${statusEmoji} **${c.name}** - ${c.status}\n   └ ${leadsCount} leads, ${numbersCount} phone numbers`;
+      }).join('\n\n');
+      
+      return {
+        success: true,
+        message: `📋 **Your Campaigns:**\n\n${campaignList}`,
+        data: campaigns
+      };
+    }
+
+    case 'cancel_callback': {
+      const { phone_number, lead_id } = args;
+      
+      // Find lead
+      let leadQuery = supabase.from('leads').select('id, first_name, next_callback_at, notes').eq('user_id', userId);
+      if (lead_id) leadQuery = leadQuery.eq('id', lead_id);
+      else if (phone_number) {
+        const cleaned = phone_number.replace(/\D/g, '');
+        leadQuery = leadQuery.or(`phone_number.ilike.%${cleaned}%,phone_number.ilike.%${cleaned.slice(-10)}%`);
+      }
+      
+      const { data: lead, error: findError } = await leadQuery.maybeSingle();
+      
+      if (findError || !lead) {
+        return { success: false, message: '❌ Lead not found. Check the phone number.' };
+      }
+      
+      if (!lead.next_callback_at) {
+        return { success: false, message: `❌ ${lead.first_name || 'This lead'} doesn't have a pending callback.` };
+      }
+      
+      // Clear callback
+      const existingNotes = lead.notes || '';
+      const newNote = `\n\n[${new Date().toISOString()}] CALLBACK CANCELLED: Cancelled via AI assistant.`;
+      
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({
+          next_callback_at: null,
+          status: 'contacted',
+          notes: existingNotes + newNote,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', lead.id);
+      
+      if (updateError) {
+        return { success: false, message: '❌ Failed to cancel callback.' };
+      }
+      
+      // Remove from queue
+      await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('lead_id', lead.id);
+      
+      // Resume workflow
+      await supabase
+        .from('lead_workflow_progress')
+        .update({ status: 'active' })
+        .eq('lead_id', lead.id)
+        .eq('status', 'paused');
+      
+      return {
+        success: true,
+        message: `✅ Cancelled callback for ${lead.first_name || 'lead'}. Their workflow is resumed.`
       };
     }
 

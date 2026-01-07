@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
-import { Phone, Clock, AlertTriangle, RefreshCw, User } from 'lucide-react';
+import { Phone, Clock, AlertTriangle, RefreshCw, User, X } from 'lucide-react';
 
 interface PendingCallback {
   id: string;
@@ -25,6 +25,7 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
   const [callbacks, setCallbacks] = useState<PendingCallback[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCallingLead, setIsCallingLead] = useState<string | null>(null);
+  const [isCancellingLead, setIsCancellingLead] = useState<string | null>(null);
   const { toast } = useToast();
 
   const loadCallbacks = useCallback(async () => {
@@ -160,6 +161,71 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
     }
   };
 
+  const handleCancelCallback = async (lead: PendingCallback) => {
+    setIsCancellingLead(lead.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // 1. Clear the callback on the lead
+      const { error: leadError } = await supabase
+        .from('leads')
+        .update({
+          next_callback_at: null,
+          status: 'contacted', // Move back to contacted
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', lead.id);
+
+      if (leadError) throw leadError;
+
+      // 2. Remove from dialing queue
+      await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      // 3. Resume any paused workflow for this lead
+      await supabase
+        .from('lead_workflow_progress')
+        .update({ status: 'active' })
+        .eq('lead_id', lead.id)
+        .eq('status', 'paused');
+
+      // 4. Add a note to the lead
+      const { data: currentLead } = await supabase
+        .from('leads')
+        .select('notes')
+        .eq('id', lead.id)
+        .maybeSingle();
+
+      const existingNotes = currentLead?.notes || '';
+      const newNote = `\n\n[${new Date().toISOString()}] CALLBACK CANCELLED: Manually cancelled by user. Workflow resumed.`;
+      
+      await supabase
+        .from('leads')
+        .update({ notes: existingNotes + newNote })
+        .eq('id', lead.id);
+
+      toast({
+        title: "Callback Cancelled",
+        description: `${lead.first_name || lead.phone_number} removed from callbacks. Workflow resumed.`,
+      });
+
+      // Refresh list
+      loadCallbacks();
+    } catch (error: any) {
+      console.error('Error cancelling callback:', error);
+      toast({
+        title: "Cancel Failed",
+        description: error.message || "Failed to cancel callback",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCancellingLead(null);
+    }
+  };
+
   const overdueCount = callbacks.filter(c => isPast(new Date(c.next_callback_at))).length;
   const upcomingCount = callbacks.length - overdueCount;
 
@@ -236,16 +302,27 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
                       </div>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={isOverdue ? "destructive" : "default"}
-                    onClick={() => handleCallNow(callback)}
-                    disabled={isCallingLead === callback.id}
-                    className="shrink-0"
-                  >
-                    <Phone className="h-3 w-3 mr-1" />
-                    {isCallingLead === callback.id ? 'Calling...' : 'Call Now'}
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleCancelCallback(callback)}
+                      disabled={isCancellingLead === callback.id}
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Cancel callback"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={isOverdue ? "destructive" : "default"}
+                      onClick={() => handleCallNow(callback)}
+                      disabled={isCallingLead === callback.id}
+                    >
+                      <Phone className="h-3 w-3 mr-1" />
+                      {isCallingLead === callback.id ? 'Calling...' : 'Call Now'}
+                    </Button>
+                  </div>
                 </div>
               );
             })}
