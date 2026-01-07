@@ -50,6 +50,7 @@ import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
 import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
+import GuardianStatusWidget from '@/components/GuardianStatusWidget';
 
 interface PhoneNumber {
   id: string;
@@ -274,7 +275,10 @@ const Dashboard = () => {
                 </Card>
               </div>
 
-              <AgentActivityWidget />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AgentActivityWidget />
+                <GuardianStatusWidget />
+              </div>
               <PhoneNumberPurchasing />
 
               {/* Numbers Table */}
@@ -399,7 +403,7 @@ const Dashboard = () => {
       case 'broadcast':
         return <TabErrorBoundary tabName="Voice Broadcasting"><VoiceBroadcastManager /></TabErrorBoundary>;
       case 'ai-errors':
-        return <TabErrorBoundary tabName="AI Error Handler"><AIErrorPanel /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Guardian"><AIErrorPanel /></TabErrorBoundary>;
       case 'budget':
         return <TabErrorBoundary tabName="Budget Manager"><BudgetManager /></TabErrorBoundary>;
       case 'onboarding':

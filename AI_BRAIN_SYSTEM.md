@@ -54,6 +54,10 @@ The AI can execute the following actions:
 | **Broadcasts** | create_voice_broadcast, list_broadcasts, launch_broadcast, stop_broadcast |
 | **Alerts** | list_alerts, acknowledge_alert, acknowledge_all_alerts |
 | **Autonomous** | get_autonomous_status, list_autonomous_decisions, get_autonomous_goals, set_autonomous_goal, get_learning_insights, toggle_autonomous_mode, set_autonomy_level, get_lead_priorities, force_reprioritize_leads, get_campaign_optimization_status |
+| **Scripts & Agents** | get_agent_script, update_agent_script, list_available_variables, get_prompt_snippets, check_agent_snippets, add_snippet_to_agent, suggest_script_improvements |
+| **Agent History** | get_agent_history, add_agent_note |
+| **Memory** | remember_user_preference, recall_memories, compare_daily_performance |
+| **Guardian** | get_guardian_status |
 | **System** | get_system_status, diagnose_issue, undo_last_action |
 
 ### 4. Navigation Intelligence
