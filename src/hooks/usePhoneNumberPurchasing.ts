@@ -29,11 +29,28 @@ export const usePhoneNumberPurchasing = () => {
       });
 
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Purchase error:', error);
+      
+      // Parse error message for user-friendly display
+      let errorMessage = error.message || "Failed to purchase phone numbers";
+      let errorTitle = "Purchase Failed";
+      
+      // Check for specific error patterns
+      if (errorMessage.includes('No phone numbers available') || errorMessage.includes('no available')) {
+        errorTitle = "No Numbers Available";
+        errorMessage = `No phone numbers are available in area code ${areaCode}. Please try a different area code (e.g., 415, 212, 310, 702).`;
+      } else if (errorMessage.includes('Invalid area code')) {
+        errorTitle = "Invalid Area Code";
+        errorMessage = "The area code you entered is invalid. Please enter a valid 3-digit US area code.";
+      } else if (errorMessage.includes('authentication') || errorMessage.includes('API key')) {
+        errorTitle = "Authentication Error";
+        errorMessage = "Unable to connect to the phone provider. Please check your API settings.";
+      }
+      
       toast({
-        title: "Purchase Failed",
-        description: error.message || "Failed to purchase phone numbers",
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive"
       });
       throw error;
