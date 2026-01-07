@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Upload, FileSpreadsheet, Check, X, AlertTriangle, 
-  Loader2, Download, RefreshCw, Users, Zap
+  Loader2, Download, RefreshCw, Users, Zap, Tag
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -52,6 +52,9 @@ export const LeadUpload: React.FC = () => {
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
   const [launchIntoWorkflow, setLaunchIntoWorkflow] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [batchTags, setBatchTags] = useState('');
+  const [createSmartList, setCreateSmartList] = useState(false);
+  const [smartListName, setSmartListName] = useState('');
   const { toast } = useToast();
 
   // Load available workflows and campaigns
@@ -243,11 +246,18 @@ export const LeadUpload: React.FC = () => {
           continue;
         }
 
+        // Parse batch tags
+        const tagsArray = batchTags
+          .split(',')
+          .map(t => t.trim())
+          .filter(Boolean);
+
         const lead: any = {
           user_id: user.id,
           phone_number: formattedPhone,
           status: 'new',
-          lead_source: defaultSource
+          lead_source: defaultSource,
+          tags: tagsArray.length > 0 ? tagsArray : null
         };
 
         // Map other fields
@@ -339,6 +349,24 @@ export const LeadUpload: React.FC = () => {
         }
       }
       
+      // Create smart list if enabled
+      if (createSmartList && success > 0) {
+        const listName = smartListName || `Import - ${file?.name || 'leads'} - ${new Date().toLocaleDateString()}`;
+        const tagsArray = batchTags.split(',').map(t => t.trim()).filter(Boolean);
+        
+        await supabase.from('smart_lists').insert({
+          user_id: user.id,
+          name: listName,
+          filters: {
+            tags: tagsArray.length > 0 ? tagsArray : undefined,
+            lead_source: defaultSource,
+            created_after: new Date(Date.now() - 60000).toISOString() // Last minute
+          },
+          is_dynamic: true,
+          lead_count: success
+        });
+      }
+
       setUploadResults({ success, duplicates, errors, launchedInWorkflow: launchedCount });
       
       const message = launchedCount > 0
@@ -502,6 +530,35 @@ export const LeadUpload: React.FC = () => {
                   placeholder="e.g., CSV Import, Marketing List"
                 />
               </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Tag className="h-4 w-4" />
+                  Apply Tags to All Leads
+                </Label>
+                <Input 
+                  value={batchTags} 
+                  onChange={(e) => setBatchTags(e.target.value)}
+                  placeholder="e.g., 10-cent-leads, jan-2025, solar"
+                />
+                <p className="text-xs text-muted-foreground">Comma-separated tags for tracking & filtering</p>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div>
+                  <Label>Create Smart List from Import</Label>
+                  <p className="text-sm text-muted-foreground">Save as a trackable list</p>
+                </div>
+                <Switch checked={createSmartList} onCheckedChange={setCreateSmartList} />
+              </div>
+              {createSmartList && (
+                <div className="space-y-2">
+                  <Label>Smart List Name</Label>
+                  <Input 
+                    value={smartListName} 
+                    onChange={(e) => setSmartListName(e.target.value)}
+                    placeholder={`Import - ${file?.name || 'leads'} - ${new Date().toLocaleDateString()}`}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
