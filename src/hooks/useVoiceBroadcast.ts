@@ -123,6 +123,9 @@ export const useVoiceBroadcast = () => {
     timezone?: string;
     calls_per_minute?: number;
     caller_id?: string | null;
+    enable_amd?: boolean;
+    voicemail_action?: 'hangup' | 'leave_message';
+    voicemail_audio_url?: string | null;
   }) => {
     setIsLoading(true);
     try {
@@ -150,6 +153,9 @@ export const useVoiceBroadcast = () => {
           timezone: broadcast.timezone || 'America/New_York',
           calls_per_minute: broadcast.calls_per_minute || 50,
           caller_id: broadcast.caller_id || null,
+          enable_amd: broadcast.enable_amd ?? true,
+          voicemail_action: broadcast.voicemail_action || 'hangup',
+          voicemail_audio_url: broadcast.voicemail_audio_url || null,
         })
         .select()
         .maybeSingle();

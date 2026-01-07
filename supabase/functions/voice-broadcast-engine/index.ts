@@ -586,19 +586,37 @@ serve(async (req) => {
 
         if (updateStatusError) throw updateStatusError;
 
-        // Get available phone numbers with provider info
+        // Get available phone numbers with provider info - filter by rotation_enabled
         const { data: phoneNumbers, error: numbersError } = await supabase
           .from('phone_numbers')
           .select('*')
           .eq('user_id', user.id)
           .eq('status', 'active')
-          .eq('is_spam', false);
+          .eq('is_spam', false)
+          .eq('rotation_enabled', true);
 
         if (numbersError) throw numbersError;
 
         if (!phoneNumbers || phoneNumbers.length === 0) {
-          throw new Error('No active phone numbers available. Please add phone numbers first.');
+          throw new Error('No active phone numbers available for rotation. Enable rotation on your phone numbers or add new ones.');
         }
+        
+        // Apply max_daily_calls hard cap - filter out numbers that hit their limit
+        const maxDailyDefault = 100;
+        const availablePhoneNumbers = phoneNumbers.filter(n => {
+          const maxCalls = n.max_daily_calls || maxDailyDefault;
+          const currentCalls = n.daily_calls || 0;
+          return currentCalls < maxCalls;
+        });
+        
+        if (availablePhoneNumbers.length === 0) {
+          throw new Error('All phone numbers have reached their daily call limit. Try again tomorrow or increase limits.');
+        }
+        
+        console.log(`[Broadcast] ${availablePhoneNumbers.length}/${phoneNumbers.length} numbers available (within daily limits)`);
+        
+        // Replace phoneNumbers with filtered list for the rest of the function
+        const rotationNumbers = availablePhoneNumbers;
 
         // Determine which provider to use - pass hasAudioUrl to prefer Twilio for audio playback
         const hasAudioUrl = !!broadcast.audio_url;
@@ -737,15 +755,18 @@ serve(async (req) => {
         const transferAction = dtmfActions.find((a: any) => a.digit === '1' && a.action === 'transfer');
         const transferNumber = transferAction?.transfer_to || '';
         
-        // Track number usage for smart rotation
+        // Track number usage for smart rotation - use rotationNumbers (filtered list)
         const numberUsageCount = new Map<string, number>();
-        phoneNumbers.forEach(n => numberUsageCount.set(n.id, n.daily_usage || 0));
+        rotationNumbers.forEach(n => numberUsageCount.set(n.id, n.daily_usage || 0));
         
         // Check if dialer features are enabled (from broadcast settings or default to true)
         const enableLocalPresence = broadcast.enable_local_presence !== false;
         const enableNumberRotation = broadcast.enable_number_rotation !== false;
         
-        console.log(`Dialer features - Local Presence: ${enableLocalPresence}, Number Rotation: ${enableNumberRotation}`);
+        // Check AMD settings (default to enabled with hangup action)
+        const amdEnabled = broadcast.enable_amd !== false;
+        
+        console.log(`Dialer features - Local Presence: ${enableLocalPresence}, Number Rotation: ${enableNumberRotation}, AMD: ${amdEnabled}`);
 
         for (const item of queueItems || []) {
           try {
@@ -753,16 +774,16 @@ serve(async (req) => {
             
             // If a specific caller_id is set on the broadcast, use that
             if (broadcast.caller_id) {
-              callerNumber = phoneNumbers.find(n => n.number === broadcast.caller_id);
+              callerNumber = rotationNumbers.find(n => n.number === broadcast.caller_id);
               if (!callerNumber) {
-                console.log(`Specified caller_id ${broadcast.caller_id} not found, falling back to auto-selection`);
+                console.log(`Specified caller_id ${broadcast.caller_id} not found in rotation pool, falling back to auto-selection`);
               }
             }
             
-            // If no specific caller_id or it wasn't found, use smart selection
+            // If no specific caller_id or it wasn't found, use smart selection from rotation pool
             if (!callerNumber) {
               callerNumber = selectBestNumber(
-                phoneNumbers,
+                rotationNumbers,
                 item.phone_number,
                 numberUsageCount,
                 enableLocalPresence,
@@ -833,6 +854,11 @@ serve(async (req) => {
                 );
                 break;
               case 'twilio':
+                // Build AMD callback URL if AMD is enabled
+                const amdCallbackUrl = amdEnabled 
+                  ? `${supabaseUrl}/functions/v1/twilio-amd-webhook?queue_item_id=${item.id}&broadcast_id=${broadcastId}`
+                  : undefined;
+                
                 // Use SIP trunk if configured
                 if (useSipTrunk && sipConfig.provider_type === 'twilio') {
                   callResult = await callWithTwilioSipTrunk(
@@ -846,7 +872,9 @@ serve(async (req) => {
                     callMetadata,
                     statusCallbackUrl,
                     dtmfHandlerUrl,
-                    transferNumber
+                    transferNumber,
+                    amdEnabled,
+                    amdCallbackUrl
                   );
                 } else {
                   callResult = await callWithTwilio(
@@ -858,7 +886,9 @@ serve(async (req) => {
                     callMetadata,
                     statusCallbackUrl,
                     dtmfHandlerUrl,
-                    transferNumber
+                    transferNumber,
+                    amdEnabled,
+                    amdCallbackUrl
                   );
                 }
                 break;

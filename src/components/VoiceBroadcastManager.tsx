@@ -141,6 +141,10 @@ export const VoiceBroadcastManager: React.FC = () => {
     enable_local_presence: true,
     enable_number_rotation: true,
     caller_id: '', // Specific phone number to use as caller ID
+    // AMD settings
+    enable_amd: true,
+    voicemail_action: 'hangup' as 'hangup' | 'leave_message',
+    voicemail_audio_url: '',
   });
 
   useEffect(() => {
@@ -277,6 +281,9 @@ export const VoiceBroadcastManager: React.FC = () => {
         calling_hours_start: formData.calling_hours_start,
         calling_hours_end: formData.calling_hours_end,
         caller_id: formData.caller_id || null,
+        enable_amd: formData.enable_amd,
+        voicemail_action: formData.voicemail_action,
+        voicemail_audio_url: formData.voicemail_audio_url || null,
       });
       setShowCreateDialog(false);
       resetForm();
@@ -305,6 +312,9 @@ export const VoiceBroadcastManager: React.FC = () => {
       enable_local_presence: true,
       enable_number_rotation: true,
       caller_id: '',
+      enable_amd: true,
+      voicemail_action: 'hangup',
+      voicemail_audio_url: '',
     });
   };
 
@@ -917,6 +927,104 @@ export const VoiceBroadcastManager: React.FC = () => {
                         </p>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Voicemail Detection (AMD) Settings */}
+                <Card className="border-dashed">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <PhoneOff className="h-4 w-4" />
+                      Voicemail Detection (AMD)
+                    </CardTitle>
+                    <CardDescription>
+                      Automatically detect if a human or machine answers
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Enable Voicemail Detection</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Uses Twilio's Answering Machine Detection
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.enable_amd}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, enable_amd: checked })
+                        }
+                      />
+                    </div>
+
+                    {formData.enable_amd && (
+                      <>
+                        <div className="space-y-2">
+                          <Label>When Voicemail Detected</Label>
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                id="amd-hangup"
+                                name="voicemail_action"
+                                value="hangup"
+                                checked={formData.voicemail_action === 'hangup'}
+                                onChange={() => setFormData({ ...formData, voicemail_action: 'hangup' })}
+                                className="h-4 w-4"
+                              />
+                              <Label htmlFor="amd-hangup" className="font-normal cursor-pointer">
+                                Hang up immediately
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  Save calling time, skip voicemail machines
+                                </span>
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                id="amd-leave"
+                                name="voicemail_action"
+                                value="leave_message"
+                                checked={formData.voicemail_action === 'leave_message'}
+                                onChange={() => setFormData({ ...formData, voicemail_action: 'leave_message' })}
+                                className="h-4 w-4"
+                              />
+                              <Label htmlFor="amd-leave" className="font-normal cursor-pointer">
+                                Leave voicemail message
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  Play your message to answering machines
+                                </span>
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {formData.voicemail_action === 'leave_message' && (
+                          <div className="space-y-2">
+                            <Label>Voicemail Audio (Optional)</Label>
+                            <Select
+                              value={formData.voicemail_audio_url || 'main'}
+                              onValueChange={(value) =>
+                                setFormData({
+                                  ...formData,
+                                  voicemail_audio_url: value === 'main' ? '' : value,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select voicemail audio" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="main">Use main broadcast audio</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Leave blank to use the same audio as your main broadcast message
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>

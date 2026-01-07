@@ -2282,11 +2282,13 @@ export type Database = {
           last_lookup_at: string | null
           last_used: string | null
           line_type: string | null
+          max_daily_calls: number | null
           number: string
           provider: string | null
           purpose: string | null
           quarantine_until: string | null
           retell_phone_id: string | null
+          rotation_enabled: boolean | null
           sip_trunk_config: Json | null
           sip_trunk_provider: string | null
           status: string
@@ -2309,11 +2311,13 @@ export type Database = {
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
+          max_daily_calls?: number | null
           number: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
           retell_phone_id?: string | null
+          rotation_enabled?: boolean | null
           sip_trunk_config?: Json | null
           sip_trunk_provider?: string | null
           status?: string
@@ -2336,11 +2340,13 @@ export type Database = {
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
+          max_daily_calls?: number | null
           number?: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
           retell_phone_id?: string | null
+          rotation_enabled?: boolean | null
           sip_trunk_config?: Json | null
           sip_trunk_provider?: string | null
           status?: string
@@ -3468,6 +3474,7 @@ export type Database = {
           description: string | null
           dnc_requests: number | null
           dtmf_actions: Json | null
+          enable_amd: boolean | null
           id: string
           ivr_enabled: boolean | null
           ivr_mode: string | null
@@ -3487,6 +3494,8 @@ export type Database = {
           voice_id: string | null
           voice_model: string | null
           voice_speed: number | null
+          voicemail_action: string | null
+          voicemail_audio_url: string | null
         }
         Insert: {
           ai_system_prompt?: string | null
@@ -3504,6 +3513,7 @@ export type Database = {
           description?: string | null
           dnc_requests?: number | null
           dtmf_actions?: Json | null
+          enable_amd?: boolean | null
           id?: string
           ivr_enabled?: boolean | null
           ivr_mode?: string | null
@@ -3523,6 +3533,8 @@ export type Database = {
           voice_id?: string | null
           voice_model?: string | null
           voice_speed?: number | null
+          voicemail_action?: string | null
+          voicemail_audio_url?: string | null
         }
         Update: {
           ai_system_prompt?: string | null
@@ -3540,6 +3552,7 @@ export type Database = {
           description?: string | null
           dnc_requests?: number | null
           dtmf_actions?: Json | null
+          enable_amd?: boolean | null
           id?: string
           ivr_enabled?: boolean | null
           ivr_mode?: string | null
@@ -3559,6 +3572,8 @@ export type Database = {
           voice_id?: string | null
           voice_model?: string | null
           voice_speed?: number | null
+          voicemail_action?: string | null
+          voicemail_audio_url?: string | null
         }
         Relationships: []
       }

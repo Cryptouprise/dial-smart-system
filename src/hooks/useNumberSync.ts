@@ -98,7 +98,9 @@ export const useNumberSync = () => {
             retell_phone_id: retellPhoneId,
             daily_calls: 0,
             external_spam_score: 0,
-            is_spam: false
+            is_spam: false,
+            rotation_enabled: true,
+            max_daily_calls: 100
           });
 
         if (!insertError) {
@@ -241,7 +243,9 @@ export const useNumberSync = () => {
               retell_phone_id: retellPhoneId,
               daily_calls: 0,
               external_spam_score: 0,
-              is_spam: false
+              is_spam: false,
+              rotation_enabled: true,
+              max_daily_calls: 100
             });
 
           if (!insertError) {

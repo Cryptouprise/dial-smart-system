@@ -10,7 +10,7 @@ const corsHeaders = {
  * Twilio AMD (Answering Machine Detection) Webhook Handler
  * 
  * This edge function receives async AMD callbacks from Twilio and handles them:
- * - If voicemail/machine detected: Update queue status to 'voicemail', optionally hang up
+ * - If voicemail/machine detected: Update queue status to 'voicemail', optionally leave a message or hang up
  * - If human detected: Let the call continue normally
  * 
  * Twilio AMD AnsweredBy values:
@@ -58,7 +58,7 @@ serve(async (req) => {
     ].includes(answeredBy);
 
     if (isMachine) {
-      console.log(`[AMD Webhook] Machine detected (${answeredBy}), updating queue item and hanging up`);
+      console.log(`[AMD Webhook] Machine detected (${answeredBy}), processing voicemail action`);
       
       // Update queue item status to 'voicemail'
       if (queueItemId) {
@@ -77,22 +77,43 @@ serve(async (req) => {
         }
       }
 
-      // Update broadcast voicemail count if we have broadcastId
+      // Fetch broadcast settings to determine voicemail action
+      let voicemailAction = 'hangup';
+      let voicemailAudioUrl = '';
+      
       if (broadcastId) {
-        // Get current broadcast stats
         const { data: broadcast } = await supabase
           .from('voice_broadcasts')
-          .select('calls_made')
+          .select('voicemail_action, voicemail_audio_url, audio_url')
           .eq('id', broadcastId)
-          .single();
+          .maybeSingle();
         
         if (broadcast) {
-          // Note: We could add a voicemails_detected column to track this
-          console.log(`[AMD Webhook] Broadcast ${broadcastId} voicemail detected`);
+          voicemailAction = broadcast.voicemail_action || 'hangup';
+          voicemailAudioUrl = broadcast.voicemail_audio_url || broadcast.audio_url || '';
+          console.log(`[AMD Webhook] Broadcast ${broadcastId} voicemail_action: ${voicemailAction}`);
         }
       }
 
-      // Return TwiML to hang up the call
+      // If configured to leave voicemail message, play audio then hang up
+      if (voicemailAction === 'leave_message' && voicemailAudioUrl) {
+        console.log(`[AMD Webhook] Leaving voicemail message: ${voicemailAudioUrl}`);
+        const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Play>${voicemailAudioUrl}</Play>
+  <Hangup/>
+</Response>`;
+
+        return new Response(twimlResponse, {
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/xml' 
+          },
+        });
+      }
+
+      // Default: just hang up
+      console.log(`[AMD Webhook] Hanging up (voicemail_action: ${voicemailAction})`);
       const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Hangup/>
