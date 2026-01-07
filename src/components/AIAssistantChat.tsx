@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
+import { useVoiceChat } from '@/hooks/useVoiceChat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -17,7 +18,11 @@ import {
   Zap,
   History,
   Archive,
-  Bot
+  Bot,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -53,6 +58,18 @@ const parseContent = (content: string, onNavigate: (route: string) => void) => {
   return elements.length > 0 ? elements : content;
 };
 
+// Tool Status Indicator component
+const ToolStatusIndicator: React.FC<{ managerName: string }> = ({ managerName }) => (
+  <div className="flex justify-start">
+    <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg border border-primary/20">
+      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+      <span className="text-xs text-primary font-medium">
+        Contacting {managerName}...
+      </span>
+    </div>
+  </div>
+);
+
 const QuickActionButton: React.FC<{
   label: string;
   onClick: () => void;
@@ -79,6 +96,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     isLoading,
     isTyping,
     isOpen,
+    toolStatus,
     sendMessage,
     submitFeedback,
     clearMessages,
@@ -95,9 +113,28 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   const [feedbackGiven, setFeedbackGiven] = useState<Set<string>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
   const [archivedConversations, setArchivedConversations] = useState<any[]>([]);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const lastSpokenMessageRef = useRef<string | null>(null);
+
+  // Voice chat integration
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
+  const { 
+    isListening, 
+    isSpeaking, 
+    isProcessing: isVoiceProcessing,
+    startListening, 
+    stopListening,
+    speak,
+    stopSpeaking 
+  } = useVoiceChat({
+    onTranscript: handleVoiceTranscript
+  });
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -134,6 +171,19 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, openChat, closeChat, embedded]);
+
+  // Auto-speak LJ's responses when voice is enabled
+  useEffect(() => {
+    if (voiceEnabled && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'assistant' && !lastMessage.isStreaming && lastMessage.id !== lastSpokenMessageRef.current) {
+        lastSpokenMessageRef.current = lastMessage.id;
+        // Strip markdown navigation links for cleaner speech
+        const cleanContent = lastMessage.content.replace(/\[([^\]]+)\]\(nav:[^)]+\)/g, '$1');
+        speak(cleanContent);
+      }
+    }
+  }, [messages, voiceEnabled, speak]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,16 +342,21 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
               </div>
             ))}
 
+            {/* Tool Status Indicator OR Typing dots */}
             {isTyping && (
-              <div className="flex justify-start">
-                <div className="bg-muted rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              toolStatus.isExecuting && toolStatus.managerName ? (
+                <ToolStatusIndicator managerName={toolStatus.managerName} />
+              ) : (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         </ScrollArea>
@@ -312,14 +367,30 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask LJ anything..."
-              disabled={isLoading}
+              placeholder={isListening ? "Listening..." : "Ask LJ anything..."}
+              disabled={isLoading || isListening}
               className="flex-1 text-sm h-9 md:h-10"
             />
+            {/* Microphone Button */}
+            <Button
+              type="button"
+              size="icon"
+              variant={isListening ? "destructive" : "outline"}
+              onClick={isListening ? stopListening : startListening}
+              disabled={isLoading || isSpeaking}
+              className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
+              title={isListening ? "Stop listening" : "Voice input"}
+            >
+              {isListening ? (
+                <MicOff className="h-4 w-4 animate-pulse" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
+            </Button>
             <Button 
               type="submit" 
               size="icon" 
-              disabled={isLoading || !input.trim()} 
+              disabled={isLoading || !input.trim() || isListening} 
               className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
             >
               {isLoading ? (
@@ -360,6 +431,19 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Voice Toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (isSpeaking) stopSpeaking();
+                  setVoiceEnabled(!voiceEnabled);
+                }}
+                className="h-8 w-8"
+                title={voiceEnabled ? "Disable voice responses" : "Enable voice responses"}
+              >
+                {voiceEnabled ? <Volume2 className="h-4 w-4 text-primary" /> : <VolumeX className="h-4 w-4" />}
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -418,6 +502,19 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
           <div className="flex items-center gap-1">
             {!showHistory && (
               <>
+                {/* Voice Toggle */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    if (isSpeaking) stopSpeaking();
+                    setVoiceEnabled(!voiceEnabled);
+                  }}
+                  className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20"
+                  title={voiceEnabled ? "Disable voice responses" : "Enable voice responses"}
+                >
+                  {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
