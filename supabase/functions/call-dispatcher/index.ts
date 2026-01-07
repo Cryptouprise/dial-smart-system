@@ -610,18 +610,27 @@ serve(async (req) => {
     
     let availableNumbers: any[] = [];
     
-    // First query: Get all phone numbers with Retell IDs
+    // First query: Get all phone numbers with Retell IDs and rotation enabled
     const { data: retellNumbers, error: retellError } = await supabase
       .from('phone_numbers')
-      .select('id, number, retell_phone_id, daily_usage, is_spam, quarantine_until')
+      .select('id, number, retell_phone_id, daily_usage, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
       .eq('user_id', user.id)
       .eq('status', 'active')
+      .eq('rotation_enabled', true)
       .not('retell_phone_id', 'is', null);
     
     if (retellError) {
       console.error('[Dispatcher] Error fetching phone numbers:', retellError);
     } else {
-      availableNumbers = retellNumbers || [];
+      // Apply max_daily_calls hard cap - filter out numbers that hit their limit
+      const maxDailyDefault = 100;
+      const filteredNumbers = (retellNumbers || []).filter(n => {
+        const maxCalls = n.max_daily_calls || maxDailyDefault;
+        const currentCalls = n.daily_calls || 0;
+        return currentCalls < maxCalls;
+      });
+      availableNumbers = filteredNumbers;
+      console.log(`[Dispatcher] ${availableNumbers.length}/${retellNumbers?.length || 0} numbers available (within daily limits)`);
     }
     
     console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers with Retell IDs`);
