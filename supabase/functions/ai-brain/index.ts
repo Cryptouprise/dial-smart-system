@@ -3728,6 +3728,172 @@ async function executeToolCall(
         };
       }
 
+      case 'analyze_call_patterns': {
+        const daysBack = args.days || 7;
+        const limit = args.limit || 50;
+        const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+        
+        let query = supabase
+          .from('call_logs')
+          .select('outcome, notes, duration_seconds, created_at')
+          .eq('user_id', userId)
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+          
+        if (args.disposition) query = query.eq('outcome', args.disposition);
+        
+        const { data: calls } = await query;
+        
+        const patterns = {
+          totalCalls: calls?.length || 0,
+          outcomeBreakdown: {} as Record<string, number>,
+          commonObjections: [] as string[],
+          avgDuration: 0
+        };
+        
+        if (calls?.length) {
+          calls.forEach((call: any) => {
+            patterns.outcomeBreakdown[call.outcome || 'unknown'] = 
+              (patterns.outcomeBreakdown[call.outcome || 'unknown'] || 0) + 1;
+          });
+          patterns.avgDuration = Math.round(calls.reduce((sum: number, c: any) => sum + (c.duration_seconds || 0), 0) / calls.length);
+          
+          // Extract objections from notes
+          const objectionCounts: Record<string, number> = {};
+          const commonPhrases = ['not interested', 'too expensive', 'bad timing', 'already have', 'call back', 'no budget', 'need to think'];
+          calls.forEach((call: any) => {
+            if (call.notes) {
+              commonPhrases.forEach(phrase => {
+                if (call.notes.toLowerCase().includes(phrase)) {
+                  objectionCounts[phrase] = (objectionCounts[phrase] || 0) + 1;
+                }
+              });
+            }
+          });
+          patterns.commonObjections = Object.entries(objectionCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([obj]) => obj);
+        }
+        
+        return { 
+          success: true, 
+          result: { 
+            ...patterns,
+            period: `Last ${daysBack} days`,
+            message: `📊 Analyzed ${patterns.totalCalls} calls. Avg duration: ${patterns.avgDuration}s. Top objections: ${patterns.commonObjections.join(', ') || 'None detected'}`
+          } 
+        };
+      }
+
+      case 'search_leads_advanced': {
+        let query = supabase.from('leads').select('*').eq('user_id', userId);
+        
+        if (args.status) query = query.eq('status', args.status);
+        if (args.campaign_id) query = query.eq('campaign_id', args.campaign_id);
+        if (args.min_score) query = query.gte('priority', args.min_score);
+        if (args.date_from) query = query.gte('created_at', args.date_from);
+        if (args.date_to) query = query.lte('created_at', args.date_to);
+        if (args.tags?.length) query = query.overlaps('tags', args.tags);
+        if (args.search) {
+          query = query.or(`first_name.ilike.%${args.search}%,last_name.ilike.%${args.search}%,phone_number.ilike.%${args.search}%,email.ilike.%${args.search}%`);
+        }
+        
+        query = query.order('created_at', { ascending: false }).limit(args.limit || 50);
+        
+        const { data, error } = await query;
+        if (error) return { success: false, result: { error: error.message } };
+        
+        return { 
+          success: true, 
+          result: { 
+            count: data?.length || 0, 
+            leads: data?.map((l: any) => ({
+              id: l.id,
+              name: `${l.first_name || ''} ${l.last_name || ''}`.trim(),
+              phone: l.phone_number,
+              status: l.status,
+              tags: l.tags
+            })),
+            message: `Found ${data?.length || 0} leads matching your criteria`
+          },
+          location: LOCATION_MAP.leads.route
+        };
+      }
+
+      case 'tag_leads': {
+        let leadIds = args.lead_ids || [];
+        
+        // If filter provided instead of IDs, get matching lead IDs
+        if (!leadIds.length && args.filter) {
+          let query = supabase.from('leads').select('id').eq('user_id', userId);
+          if (args.filter.status) query = query.eq('status', args.filter.status);
+          if (args.filter.campaign_id) query = query.eq('campaign_id', args.filter.campaign_id);
+          const { data } = await query.limit(100);
+          leadIds = data?.map((l: any) => l.id) || [];
+        }
+        
+        if (!leadIds.length) {
+          return { success: false, result: { error: 'No leads found to tag' } };
+        }
+        
+        let updatedCount = 0;
+        for (const leadId of leadIds) {
+          const { data: lead } = await supabase.from('leads').select('tags').eq('id', leadId).maybeSingle();
+          let tags = lead?.tags || [];
+          
+          if (args.add_tags) tags = [...new Set([...tags, ...args.add_tags])];
+          if (args.remove_tags) tags = tags.filter((t: string) => !args.remove_tags.includes(t));
+          
+          const { error } = await supabase.from('leads').update({ tags }).eq('id', leadId);
+          if (!error) updatedCount++;
+        }
+        
+        return { 
+          success: true, 
+          result: { 
+            updated: updatedCount,
+            message: `🏷️ Updated tags for ${updatedCount} leads`
+          },
+          location: LOCATION_MAP.leads.route
+        };
+      }
+
+      case 'run_e2e_test': {
+        return {
+          success: true,
+          result: {
+            message: 'E2E test functionality is available via the Retell AI Manager tab. Click "Test Agent" to run a live test call.',
+            link: '/?tab=retell',
+            instructions: [
+              '1. Go to Retell AI Manager',
+              '2. Select an agent',
+              '3. Click "Test Call" button',
+              '4. Monitor the call in real-time'
+            ]
+          },
+          location: LOCATION_MAP.retell.route
+        };
+      }
+
+      case 'record_session_action': {
+        const { error } = await supabase.from('ai_session_memory').insert({
+          user_id: userId,
+          session_id: sessionId,
+          action_type: args.action_type,
+          resource_type: args.resource_type,
+          resource_id: args.resource_id,
+          resource_name: args.resource_name,
+          action_data: args.action_data || {},
+          can_undo: args.can_undo ?? true,
+          created_at: new Date().toISOString()
+        });
+        
+        if (error) return { success: false, result: { error: error.message } };
+        return { success: true, result: { recorded: true, message: '📝 Action recorded to session memory' } };
+      }
+
       default:
         return { success: false, result: { error: `Unknown tool: ${toolName}` } };
     }
