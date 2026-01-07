@@ -1038,6 +1038,218 @@ const TOOLS = [
         }
       }
     }
+  },
+  // === NEW LADY JARVIS POWER TOOLS ===
+  // Script Management Tools
+  {
+    type: "function",
+    function: {
+      name: "get_agent_script",
+      description: "Get the full script/prompt for a Retell AI agent. Shows greeting, custom variables used, and validates them.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string", description: "Search by agent name (partial match)" },
+          agent_id: { type: "string", description: "Retell agent ID" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_agent_script",
+      description: "Update a Retell agent's script. Supports full replacement or find/replace operations. Saves previous version to history.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string" },
+          agent_id: { type: "string" },
+          new_prompt: { type: "string", description: "Full new prompt (replaces entire script)" },
+          new_greeting: { type: "string", description: "New greeting/begin message" },
+          find_replace: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                find: { type: "string" },
+                replace: { type: "string" }
+              }
+            },
+            description: "Find and replace operations within the prompt"
+          },
+          note: { type: "string", description: "Note explaining the change" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_available_variables",
+      description: "List all custom variables available for agent scripts ({{first_name}}, {{address1}}, etc.)",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  // Performance Analysis Tools
+  {
+    type: "function",
+    function: {
+      name: "analyze_call_patterns",
+      description: "Analyze recent calls to find objection patterns, success factors, and improvement opportunities",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: { type: "string" },
+          campaign_id: { type: "string" },
+          disposition: { type: "string", description: "Focus on specific outcome (e.g., 'not_interested')" },
+          days: { type: "number", description: "Look back days (default 7)" },
+          limit: { type: "number", description: "Max calls to analyze (default 50)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "compare_daily_performance",
+      description: "Compare today's call metrics against historical averages",
+      parameters: {
+        type: "object",
+        properties: {
+          campaign_id: { type: "string" },
+          agent_id: { type: "string" },
+          compare_days: { type: "number", description: "Days to compare (default 7)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "suggest_script_improvements",
+      description: "Get AI-powered script improvement suggestions based on call performance",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string" },
+          agent_id: { type: "string" },
+          focus_area: { type: "string", enum: ["objections", "engagement", "closing", "greeting", "general"] }
+        }
+      }
+    }
+  },
+  // Agent History Tools
+  {
+    type: "function",
+    function: {
+      name: "get_agent_history",
+      description: "View all script changes, analyses, and notes for an agent",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string" },
+          agent_id: { type: "string" },
+          type: { type: "string", enum: ["all", "script_update", "analysis_insight", "manual_note", "auto_optimization"] },
+          limit: { type: "number", description: "Max entries (default 20)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_agent_note",
+      description: "Add a note to an agent's improvement history",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_name: { type: "string" },
+          agent_id: { type: "string" },
+          note: { type: "string", description: "The note to add" }
+        },
+        required: ["note"]
+      }
+    }
+  },
+  // Memory Tools
+  {
+    type: "function",
+    function: {
+      name: "remember_user_preference",
+      description: "Remember a user preference for future sessions (e.g., preferred agent, timezone, common settings)",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "Preference key (e.g., 'preferred_agent', 'timezone')" },
+          value: { type: "string", description: "Preference value" }
+        },
+        required: ["key", "value"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "recall_memories",
+      description: "Get relevant memories and preferences for the current context",
+      parameters: {
+        type: "object",
+        properties: {
+          context: { type: "string", description: "Context to filter memories (optional)" },
+          type: { type: "string", enum: ["preference", "fact", "recent_action", "learned_pattern"] }
+        }
+      }
+    }
+  },
+  // Lead Management Tools
+  {
+    type: "function",
+    function: {
+      name: "search_leads_advanced",
+      description: "Advanced lead search with tags, status, campaign, date ranges, and scoring",
+      parameters: {
+        type: "object",
+        properties: {
+          tags: { type: "array", items: { type: "string" }, description: "Filter by tags" },
+          status: { type: "string" },
+          campaign_id: { type: "string" },
+          min_score: { type: "number", description: "Minimum priority score" },
+          date_from: { type: "string", description: "Created after date (YYYY-MM-DD)" },
+          date_to: { type: "string", description: "Created before date" },
+          limit: { type: "number" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "tag_leads",
+      description: "Bulk add or remove tags from leads",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_ids: { type: "array", items: { type: "string" } },
+          filter: { type: "object", description: "Filter to select leads instead of IDs" },
+          add_tags: { type: "array", items: { type: "string" } },
+          remove_tags: { type: "array", items: { type: "string" } }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_lead_stats",
+      description: "Get statistics about leads by tag, campaign, or status",
+      parameters: {
+        type: "object",
+        properties: {
+          group_by: { type: "string", enum: ["status", "tags", "campaign", "source"] }
+        }
+      }
+    }
   }
 ];
 
@@ -3036,6 +3248,160 @@ async function executeToolCall(
           },
           location: LOCATION_MAP.retell.route
         };
+      }
+
+      // === NEW LADY JARVIS TOOL HANDLERS ===
+      case 'get_agent_script': {
+        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        if (!retellApiKey) return { success: false, result: { error: 'RETELL_AI_API_KEY not configured' } };
+
+        // List agents to find matching one
+        const agentsRes = await fetch('https://api.retellai.com/list-agents', {
+          headers: { 'Authorization': `Bearer ${retellApiKey}` }
+        });
+        const agents = await agentsRes.json();
+        
+        let agent = args.agent_id 
+          ? agents.find((a: any) => a.agent_id === args.agent_id)
+          : agents.find((a: any) => a.agent_name?.toLowerCase().includes(args.agent_name?.toLowerCase() || ''));
+
+        if (!agent) return { success: false, result: { error: 'Agent not found' } };
+
+        // Get LLM details
+        const llmId = agent.response_engine?.llm_id;
+        if (!llmId) return { success: false, result: { error: 'Agent has no LLM configured' } };
+
+        const llmRes = await fetch(`https://api.retellai.com/get-retell-llm/${llmId}`, {
+          headers: { 'Authorization': `Bearer ${retellApiKey}` }
+        });
+        const llm = await llmRes.json();
+
+        // Extract variables from prompt
+        const variableRegex = /\{\{([^}]+)\}\}/g;
+        const variables: string[] = [];
+        let match;
+        while ((match = variableRegex.exec(llm.general_prompt || '')) !== null) {
+          if (!variables.includes(match[1])) variables.push(match[1]);
+        }
+
+        return {
+          success: true,
+          result: {
+            agent_id: agent.agent_id,
+            agent_name: agent.agent_name,
+            llm_id: llmId,
+            greeting: llm.begin_message,
+            prompt_preview: (llm.general_prompt || '').substring(0, 500) + '...',
+            full_prompt: llm.general_prompt,
+            variables_used: variables,
+            model: llm.model
+          },
+          location: LOCATION_MAP.retell.route
+        };
+      }
+
+      case 'list_available_variables': {
+        const DYNAMIC_VARIABLES = [
+          { key: 'first_name', label: 'First Name', description: "Lead's first name" },
+          { key: 'last_name', label: 'Last Name', description: "Lead's last name" },
+          { key: 'full_name', label: 'Full Name', description: 'First + last combined' },
+          { key: 'email', label: 'Email', description: 'Email address' },
+          { key: 'company', label: 'Company', description: 'Company name' },
+          { key: 'address1', label: 'Street Address', description: 'Street address' },
+          { key: 'city', label: 'City', description: 'City name' },
+          { key: 'state', label: 'State', description: 'State' },
+          { key: 'zip', label: 'ZIP', description: 'ZIP code' },
+          { key: 'phone_number', label: 'Phone', description: "Lead's phone number" }
+        ];
+        return { success: true, result: { variables: DYNAMIC_VARIABLES, usage: 'Use {{variable_name}} in your script' } };
+      }
+
+      case 'get_agent_history': {
+        let query = supabase
+          .from('agent_improvement_history')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(args.limit || 20);
+
+        if (args.agent_id) query = query.eq('agent_id', args.agent_id);
+        if (args.type && args.type !== 'all') query = query.eq('improvement_type', args.type);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return { success: true, result: { history: data, count: data?.length || 0 }, location: LOCATION_MAP.retell.route };
+      }
+
+      case 'add_agent_note': {
+        const { error } = await supabase.from('agent_improvement_history').insert({
+          user_id: userId,
+          agent_id: args.agent_id || 'unknown',
+          agent_name: args.agent_name,
+          improvement_type: 'manual_note',
+          title: args.note.substring(0, 100),
+          details: { note: args.note },
+          created_by: 'lady_jarvis'
+        });
+        if (error) throw error;
+        return { success: true, result: { message: '📝 Note added to agent history' }, location: LOCATION_MAP.retell.route };
+      }
+
+      case 'remember_user_preference': {
+        const { error } = await supabase.from('lj_memory').upsert({
+          user_id: userId,
+          memory_key: args.key,
+          memory_type: 'preference',
+          memory_value: { value: args.value },
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,memory_key' });
+        if (error) throw error;
+        return { success: true, result: { message: `🧠 I'll remember that: ${args.key} = ${args.value}` } };
+      }
+
+      case 'recall_memories': {
+        let query = supabase.from('lj_memory').select('*').eq('user_id', userId);
+        if (args.type) query = query.eq('memory_type', args.type);
+        const { data } = await query.limit(20);
+        return { success: true, result: { memories: data || [], count: data?.length || 0 } };
+      }
+
+      case 'compare_daily_performance': {
+        const today = new Date().toISOString().split('T')[0];
+        const compareDays = args.compare_days || 7;
+        const since = new Date(Date.now() - compareDays * 24 * 60 * 60 * 1000).toISOString();
+
+        let query = supabase.from('call_logs').select('*').eq('user_id', userId);
+        if (args.campaign_id) query = query.eq('campaign_id', args.campaign_id);
+
+        const { data: todayCalls } = await query.gte('created_at', today);
+        const { data: historicalCalls } = await query.gte('created_at', since).lt('created_at', today);
+
+        const todayAnswered = todayCalls?.filter((c: any) => c.status === 'completed').length || 0;
+        const historicalAnswered = historicalCalls?.filter((c: any) => c.status === 'completed').length || 0;
+        const avgDaily = historicalCalls ? historicalCalls.length / compareDays : 0;
+
+        return {
+          success: true,
+          result: {
+            today: { calls: todayCalls?.length || 0, answered: todayAnswered },
+            historical_avg: { calls: Math.round(avgDaily), days: compareDays },
+            trend: (todayCalls?.length || 0) > avgDaily ? 'up' : 'down',
+            message: `📊 Today: ${todayCalls?.length || 0} calls (${todayAnswered} answered). Avg: ${Math.round(avgDaily)}/day`
+          }
+        };
+      }
+
+      case 'get_lead_stats': {
+        const { data: leads } = await supabase.from('leads').select('status, tags, source').eq('user_id', userId);
+        const stats: Record<string, number> = {};
+        
+        leads?.forEach((l: any) => {
+          const key = args.group_by === 'tags' ? (l.tags?.[0] || 'untagged') : (l[args.group_by || 'status'] || 'unknown');
+          stats[key] = (stats[key] || 0) + 1;
+        });
+
+        return { success: true, result: { total: leads?.length || 0, breakdown: stats, grouped_by: args.group_by || 'status' } };
       }
 
       default:

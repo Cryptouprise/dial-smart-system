@@ -14,9 +14,10 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine, Download, Database } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine, Download, Database, History } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useNumberSync } from '@/hooks/useNumberSync';
+import { AgentImprovementHistory } from './AgentImprovementHistory';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -59,6 +60,7 @@ const RetellAIManager = () => {
   const [showAgentEditDialog, setShowAgentEditDialog] = useState(false);
   const [isConfiguringWebhooks, setIsConfiguringWebhooks] = useState(false);
   const [calendarStatusLoaded, setCalendarStatusLoaded] = useState(false);
+  const [selectedAgentForHistory, setSelectedAgentForHistory] = useState<Agent | null>(null);
   const { toast } = useToast();
   const { isDemoMode, agents: demoAgents, phoneNumbers: demoPhoneNumbers, showDemoActionToast } = useDemoData();
   const { 
@@ -392,7 +394,7 @@ const RetellAIManager = () => {
           setCalendarStatusLoaded(true);
         }
       }}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="wizard">
             <Sparkles className="h-4 w-4 mr-2" />
             Setup Wizard
@@ -400,6 +402,10 @@ const RetellAIManager = () => {
           <TabsTrigger value="llms">LLMs ({llms.length})</TabsTrigger>
           <TabsTrigger value="agents">Agents ({agents.length})</TabsTrigger>
           <TabsTrigger value="numbers">Phone Numbers ({retellNumbers.length})</TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="h-4 w-4 mr-2" />
+            History
+          </TabsTrigger>
           <TabsTrigger value="calendar">
             <Calendar className="h-4 w-4 mr-2" />
             Calendar
@@ -567,6 +573,52 @@ const RetellAIManager = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Improvement History Tab */}
+        <TabsContent value="history">
+          <div className="space-y-4">
+            {/* Agent Selector */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Select Agent</CardTitle>
+                <CardDescription>Choose an agent to view improvement history</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {agents.length === 0 ? (
+                  <p className="text-muted-foreground">No agents available. Create an agent first.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {agents.map((agent) => (
+                      <Button
+                        key={agent.agent_id}
+                        variant={selectedAgentForHistory?.agent_id === agent.agent_id ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedAgentForHistory(agent)}
+                      >
+                        {agent.agent_name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* History Component */}
+            {selectedAgentForHistory ? (
+              <AgentImprovementHistory
+                agentId={selectedAgentForHistory.agent_id}
+                agentName={selectedAgentForHistory.agent_name}
+              />
+            ) : agents.length > 0 && (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>Select an agent above to view improvement history</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
 
         {/* Phone Numbers Tab */}
