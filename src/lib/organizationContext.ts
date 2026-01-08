@@ -5,6 +5,7 @@
  * Phase 2 Multi-Tenancy Support.
  */
 
+import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface Organization {
@@ -64,10 +65,13 @@ export async function getUserOrganizations(): Promise<OrganizationWithRole[]> {
     return [];
   }
 
-  return data?.map(item => ({
-    ...item.organization,
-    user_role: item.role
-  })) || [];
+  return data?.map(item => {
+    if (!item.organization) return null;
+    return {
+      ...item.organization,
+      user_role: item.role
+    };
+  }).filter(Boolean) || [];
 }
 
 /**
@@ -303,10 +307,10 @@ export async function updateOrganization(
  * Usage: const { organization, loading } = useOrganization();
  */
 export function useOrganization() {
-  const [organization, setOrganization] = React.useState<OrganizationWithRole | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [organization, setOrganization] = useState<OrganizationWithRole | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     getCurrentOrganization().then(org => {
       setOrganization(org);
       setLoading(false);

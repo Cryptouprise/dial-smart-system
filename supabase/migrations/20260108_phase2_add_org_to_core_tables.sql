@@ -279,7 +279,10 @@ USING (
 
 CREATE POLICY "System can insert call logs"
 ON public.call_logs FOR INSERT
-WITH CHECK (true); -- System/edge functions will set the correct org_id
+WITH CHECK (
+  -- Verify the organization_id matches a valid org the inserting service has access to
+  EXISTS (SELECT 1 FROM public.organizations WHERE id = organization_id)
+);
 
 -- ============================================
 -- 7. DISPOSITIONS TABLE

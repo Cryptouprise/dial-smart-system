@@ -28,7 +28,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [currentOrganization, setCurrentOrganization] = useState<OrganizationWithRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadOrganizations = async () => {
+  const loadOrganizations = React.useCallback(async () => {
     try {
       setLoading(true);
       const orgs = await getUserOrganizations();
@@ -46,7 +46,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentOrganization]);
 
   useEffect(() => {
     // Load organizations on mount
@@ -65,7 +65,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadOrganizations]);
 
   // Save current organization to localStorage when it changes
   useEffect(() => {

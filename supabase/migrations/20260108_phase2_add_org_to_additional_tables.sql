@@ -227,7 +227,10 @@ USING (organization_id IN (SELECT public.get_user_organizations(auth.uid())));
 
 CREATE POLICY "System can insert disposition metrics"
 ON public.disposition_metrics FOR INSERT
-WITH CHECK (true);
+WITH CHECK (
+  -- Verify the organization_id matches a valid org
+  EXISTS (SELECT 1 FROM public.organizations WHERE id = organization_id)
+);
 
 -- ============================================
 -- PIPELINE_BOARDS TABLE
