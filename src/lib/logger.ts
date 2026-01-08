@@ -53,7 +53,7 @@ class Logger {
    * Log debug message
    */
   debug(message: string, context?: LogContext) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.debug(this.formatMessage(LogLevel.DEBUG, message, context));
     }
     
@@ -76,7 +76,7 @@ class Logger {
     addBreadcrumb(message, { level: 'warning', ...context });
     
     // Send warnings to Sentry in production
-    if (process.env.NODE_ENV === 'production') {
+    if (import.meta.env.PROD) {
       captureMessage(message, 'warning');
     }
   }
