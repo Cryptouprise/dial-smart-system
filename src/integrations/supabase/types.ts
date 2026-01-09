@@ -1736,6 +1736,42 @@ export type Database = {
         }
         Relationships: []
       }
+      edge_function_errors: {
+        Row: {
+          created_at: string
+          error_message: string
+          function_name: string
+          id: string
+          request_context: Json | null
+          resolved_at: string | null
+          severity: string
+          stack_trace: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_message: string
+          function_name: string
+          id?: string
+          request_context?: Json | null
+          resolved_at?: string | null
+          severity?: string
+          stack_trace?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string
+          function_name?: string
+          id?: string
+          request_context?: Json | null
+          resolved_at?: string | null
+          severity?: string
+          stack_trace?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       follow_up_sequences: {
         Row: {
           active: boolean | null
