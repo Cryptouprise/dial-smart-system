@@ -380,7 +380,30 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const payload: RetellWebhookPayload = await req.json();
+    // Clone the request to read body twice if needed
+    const bodyText = await req.text();
+    
+    // Handle health check requests (from System Testing)
+    try {
+      const testBody = JSON.parse(bodyText);
+      if (testBody.action === 'health_check') {
+        console.log('[Retell Webhook] Health check requested');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            healthy: true,
+            timestamp: new Date().toISOString(),
+            function: 'retell-call-webhook',
+            capabilities: ['call_started', 'call_ended', 'call_analyzed', 'voicemail_detection'],
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } catch (e) {
+      // Not a JSON body or not a health check, continue with normal processing
+    }
+
+    const payload: RetellWebhookPayload = JSON.parse(bodyText);
     console.log('[Retell Webhook] Received event:', payload.event);
     console.log('[Retell Webhook] Call ID:', payload.call?.call_id);
 
