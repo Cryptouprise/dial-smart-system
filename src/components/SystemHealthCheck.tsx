@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,19 +31,23 @@ interface HealthCheckResult {
 export const SystemHealthCheck = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<HealthCheckResult[]>([]);
+  const resultsRef = useRef<HealthCheckResult[]>([]);
   const { toast } = useToast();
 
   const updateResult = (index: number, status: HealthCheckResult['status'], message: string, details?: string) => {
     setResults(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], status, message, details };
+      // Keep a non-react ref in sync so we can safely compute summary/toasts
+      // without triggering side-effects inside React state updater functions.
+      resultsRef.current = updated;
       return updated;
     });
   };
 
   const runHealthCheck = async () => {
     setIsRunning(true);
-    
+
     const checks: HealthCheckResult[] = [
       { name: 'Authentication', status: 'pending', message: 'Checking...', category: 'auth' },
       { name: 'Retell AI - API Connection', status: 'pending', message: 'Checking...', category: 'retell' },
@@ -61,7 +65,8 @@ export const SystemHealthCheck = () => {
       { name: 'Database - Campaigns Table', status: 'pending', message: 'Checking...', category: 'database' },
       { name: 'Edge Functions - Health', status: 'pending', message: 'Checking...', category: 'database' },
     ];
-    
+
+    resultsRef.current = checks;
     setResults(checks);
 
     // Check 0: Authentication
@@ -176,7 +181,7 @@ export const SystemHealthCheck = () => {
         .from('user_credentials')
         .select('credential_key')
         .eq('service_name', 'ghl');
-      
+
       if (ghlCreds && ghlCreds.length > 0) {
         const hasApiKey = ghlCreds.some(c => c.credential_key === 'api_key');
         if (hasApiKey) {
@@ -203,7 +208,7 @@ export const SystemHealthCheck = () => {
         .from('user_credentials')
         .select('credential_key')
         .eq('service_name', 'ghl');
-      
+
       if (ghlCreds && ghlCreds.length > 0) {
         const hasApiKey = ghlCreds.some(c => c.credential_key === 'api_key');
         const hasLocationId = ghlCreds.some(c => c.credential_key === 'location_id');
@@ -226,7 +231,7 @@ export const SystemHealthCheck = () => {
       const { error, count } = await supabase
         .from('leads')
         .select('*', { count: 'exact', head: true });
-      
+
       if (error) throw error;
       updateResult(10, 'success', `Leads table accessible`, `${count || 0} leads in database`);
     } catch (error: any) {
@@ -238,7 +243,7 @@ export const SystemHealthCheck = () => {
       const { error, count } = await supabase
         .from('phone_numbers')
         .select('*', { count: 'exact', head: true });
-      
+
       if (error) throw error;
       updateResult(11, 'success', `Phone numbers table accessible`, `${count || 0} numbers in database`);
     } catch (error: any) {
@@ -250,7 +255,7 @@ export const SystemHealthCheck = () => {
       const { error, count } = await supabase
         .from('sms_messages')
         .select('*', { count: 'exact', head: true });
-      
+
       if (error) throw error;
       updateResult(12, 'success', `SMS messages table accessible`, `${count || 0} messages in database`);
     } catch (error: any) {
@@ -262,7 +267,7 @@ export const SystemHealthCheck = () => {
       const { error, count } = await supabase
         .from('campaigns')
         .select('*', { count: 'exact', head: true });
-      
+
       if (error) throw error;
       updateResult(13, 'success', `Campaigns table accessible`, `${count || 0} campaigns in database`);
     } catch (error: any) {
@@ -281,28 +286,27 @@ export const SystemHealthCheck = () => {
     }
 
     setIsRunning(false);
-    
-    // Use setTimeout to ensure state is updated before counting
+
+    // Summarize + toast OUTSIDE any React state updater to avoid
+    // "Cannot update a component while rendering a different component" warnings.
     setTimeout(() => {
-      setResults(currentResults => {
-        const errorCount = currentResults.filter(c => c.status === 'error').length;
-        const warningCount = currentResults.filter(c => c.status === 'warning').length;
-        const successCount = currentResults.filter(c => c.status === 'success').length;
-        
-        if (errorCount === 0 && warningCount === 0) {
-          toast({
-            title: "✅ All Systems Operational",
-            description: `All ${checks.length} checks passed successfully!`,
-          });
-        } else {
-          toast({
-            title: `System Health Report`,
-            description: `${successCount} passed, ${warningCount} warning(s), ${errorCount} error(s)`,
-            variant: errorCount > 0 ? "destructive" : "default"
-          });
-        }
-        return currentResults;
-      });
+      const currentResults = resultsRef.current;
+      const errorCount = currentResults.filter(c => c.status === 'error').length;
+      const warningCount = currentResults.filter(c => c.status === 'warning').length;
+      const successCount = currentResults.filter(c => c.status === 'success').length;
+
+      if (errorCount === 0 && warningCount === 0) {
+        toast({
+          title: "✅ All Systems Operational",
+          description: `All ${currentResults.length} checks passed successfully!`,
+        });
+      } else {
+        toast({
+          title: `System Health Report`,
+          description: `${successCount} passed, ${warningCount} warning(s), ${errorCount} error(s)`,
+          variant: errorCount > 0 ? "destructive" : "default"
+        });
+      }
     }, 100);
   };
 
