@@ -24,12 +24,13 @@ CREATE TABLE IF NOT EXISTS public.organizations (
   metadata JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  deleted_at TIMESTAMPTZ
+  deleted_at TIMESTAMPTZ,
+  CONSTRAINT valid_slug CHECK (slug ~ '^[a-z0-9-]+$')
 );
 
 -- Create indexes if not exist
 CREATE INDEX IF NOT EXISTS idx_organizations_slug ON public.organizations(slug);
-CREATE INDEX IF NOT EXISTS idx_organizations_status ON public.organizations(subscription_status);
+CREATE INDEX IF NOT EXISTS idx_organizations_status ON public.organizations(subscription_status) WHERE deleted_at IS NULL;
 
 -- Enable RLS
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS public.edge_function_errors (
   resolved_at TIMESTAMPTZ,
   resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   resolution_notes TEXT,
-  organization_id UUID,
+  organization_id UUID REFERENCES public.organizations(id) ON DELETE SET NULL,
   context JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -80,7 +81,6 @@ CREATE INDEX IF NOT EXISTS idx_edge_errors_function ON public.edge_function_erro
 CREATE INDEX IF NOT EXISTS idx_edge_errors_unresolved ON public.edge_function_errors(resolved, severity, created_at DESC) WHERE resolved = false;
 CREATE INDEX IF NOT EXISTS idx_edge_errors_user ON public.edge_function_errors(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_edge_errors_lead ON public.edge_function_errors(lead_id);
-CREATE INDEX IF NOT EXISTS idx_edge_errors_severity ON public.edge_function_errors(severity);
 
 ALTER TABLE public.edge_function_errors ENABLE ROW LEVEL SECURITY;
 
@@ -182,26 +182,28 @@ CREATE POLICY "Users can view their organizations" ON public.organizations
     id IN (SELECT public.get_user_organizations(auth.uid()))
   );
 
-DROP POLICY IF EXISTS "Admins can update organizations" ON public.organizations;
-CREATE POLICY "Admins can update organizations" ON public.organizations
-  FOR UPDATE USING (is_org_admin(id));
+DROP POLICY IF EXISTS "Org admins can update their organization" ON public.organizations;
+CREATE POLICY "Org admins can update their organization" ON public.organizations
+  FOR UPDATE USING (public.is_org_admin(auth.uid(), id));
 
-DROP POLICY IF EXISTS "Authenticated can create organizations" ON public.organizations;
-CREATE POLICY "Authenticated can create organizations" ON public.organizations
-  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Service role can manage organizations" ON public.organizations;
+CREATE POLICY "Service role can manage organizations" ON public.organizations
+  FOR ALL USING (auth.jwt()->>'role' = 'service_role');
 
 -- Organization users policies
-DROP POLICY IF EXISTS "Users can view org members" ON public.organization_users;
-CREATE POLICY "Users can view org members" ON public.organization_users
-  FOR SELECT USING (user_in_organization(organization_id));
+DROP POLICY IF EXISTS "Users can view their org members" ON public.organization_users;
+CREATE POLICY "Users can view their org members" ON public.organization_users
+  FOR SELECT USING (
+    organization_id IN (SELECT public.get_user_organizations(auth.uid()))
+  );
 
-DROP POLICY IF EXISTS "Admins can manage members" ON public.organization_users;
-CREATE POLICY "Admins can manage members" ON public.organization_users
-  FOR ALL USING (is_org_admin(organization_id));
+DROP POLICY IF EXISTS "Org admins can manage members" ON public.organization_users;
+CREATE POLICY "Org admins can manage members" ON public.organization_users
+  FOR ALL USING (public.is_org_admin(auth.uid(), organization_id));
 
-DROP POLICY IF EXISTS "Users can join via invite" ON public.organization_users;
-CREATE POLICY "Users can join via invite" ON public.organization_users
-  FOR INSERT WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "Service role can manage org users" ON public.organization_users;
+CREATE POLICY "Service role can manage org users" ON public.organization_users
+  FOR ALL USING (auth.jwt()->>'role' = 'service_role');
 
 -- Edge function errors policies
 DROP POLICY IF EXISTS "Users can view own errors" ON public.edge_function_errors;
