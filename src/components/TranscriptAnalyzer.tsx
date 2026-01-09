@@ -17,7 +17,7 @@ import {
   Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle, 
   Filter, History, Lightbulb, Play, ChevronDown, ChevronUp, Calendar,
   Bot, Download, FileText, Clock, Mic, ExternalLink, BarChart3, Wand2,
-  Plus, Save, CheckCircle2, AlertCircle, Info
+  Plus, Save, CheckCircle2, AlertCircle, Info, RefreshCw, Database
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -52,6 +52,8 @@ const TranscriptAnalyzer = () => {
   const [scriptComparison, setScriptComparison] = useState<any>(null);
   const [isSavingToAgent, setIsSavingToAgent] = useState(false);
   const [selectedAgentLlmId, setSelectedAgentLlmId] = useState<string>(''); // Store LLM ID for saving
+  const [isSyncingAgentData, setIsSyncingAgentData] = useState(false);
+  const [showSyncBanner, setShowSyncBanner] = useState(false);
   
   const { analyzeTranscript, bulkAnalyzeTranscripts, isAnalyzing, analysis } = useTranscriptAnalysis();
   const { 
@@ -98,6 +100,48 @@ const TranscriptAnalyzer = () => {
       minDuration: minDuration ? parseInt(minDuration) : undefined,
       maxDuration: maxDuration ? parseInt(maxDuration) : undefined,
     });
+  };
+
+  // Sync agent data from Retell for historical calls
+  const handleSyncAgentData = async () => {
+    setIsSyncingAgentData(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-call-agent-data', {
+        body: { limit: 50 }
+      });
+
+      if (error) throw error;
+
+      if (data.updated > 0) {
+        toast({
+          title: "Agent Data Synced",
+          description: `Updated ${data.updated} calls with agent information. ${data.skipped} skipped, ${data.errors} errors.`
+        });
+        // Refresh the call list
+        handleApplyFilters();
+        setShowSyncBanner(false);
+      } else if (data.processed === 0) {
+        toast({
+          title: "Already Synced",
+          description: "All calls already have agent data"
+        });
+        setShowSyncBanner(false);
+      } else {
+        toast({
+          title: "Sync Complete",
+          description: `Processed ${data.processed} calls. ${data.skipped} skipped (no agent found).`
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing agent data:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Failed to sync agent data. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSyncingAgentData(false);
+    }
   };
 
   const handleAnalyze = async () => {
@@ -383,6 +427,7 @@ const TranscriptAnalyzer = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Agents</SelectItem>
+                        <SelectItem value="unassigned">⚠️ Unassigned (No Agent ID)</SelectItem>
                         {[...new Map(retellAgents.map(a => [a.agent_id, a])).values()].map(agent => (
                           <SelectItem key={agent.agent_id} value={agent.agent_id}>
                             {agent.agent_name}
@@ -390,6 +435,9 @@ const TranscriptAnalyzer = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Agent filtering works best with newer calls
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -463,7 +511,7 @@ const TranscriptAnalyzer = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-2 mt-4">
+                <div className="flex flex-wrap gap-2 mt-4">
                   <Button onClick={handleApplyFilters} disabled={isLoading}>
                     Apply Filters
                   </Button>
@@ -474,7 +522,30 @@ const TranscriptAnalyzer = () => {
                   >
                     {isAnalyzing ? 'Analyzing...' : 'Bulk Analyze Unanalyzed'}
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleSyncAgentData}
+                    disabled={isSyncingAgentData}
+                    className="border-dashed"
+                  >
+                    <Database className="h-4 w-4 mr-2" />
+                    {isSyncingAgentData ? 'Syncing...' : 'Sync Agent Data'}
+                  </Button>
                 </div>
+                
+                {showSyncBanner && (
+                  <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
+                      <div className="text-sm">
+                        <p className="font-medium text-amber-800 dark:text-amber-200">Agent data missing for some calls</p>
+                        <p className="text-amber-700 dark:text-amber-300">
+                          Click "Sync Agent Data" to backfill agent IDs from Retell for older calls. This improves filtering accuracy.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -381,14 +381,23 @@ async function handleRetellWebhook(supabase: any, payload: RetellCallEvent) {
 async function handleCallStarted(supabase: any, call: any, existingCall: any) {
   console.log('Handling call_started event');
   
+  // Prepare update data with agent info
+  const updateData: Record<string, unknown> = {
+    status: 'in-progress',
+    answered_at: new Date().toISOString()
+  };
+  
+  // Store agent_id from Retell payload
+  if (call.agent_id) {
+    updateData.agent_id = call.agent_id;
+    console.log(`Storing agent_id: ${call.agent_id}`);
+  }
+  
   if (existingCall) {
     // Update existing call log
     const { error } = await supabase
       .from('call_logs')
-      .update({
-        status: 'in-progress',
-        answered_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', existingCall.id);
 
     if (error) console.error('Error updating call status:', error);
@@ -408,16 +417,18 @@ async function handleCallEnded(supabase: any, call: any, existingCall: any) {
   const duration = call.duration_ms ? Math.floor(call.duration_ms / 1000) : 0;
   const transcript = formatTranscript(call.transcript_object || [], call.transcript);
   
-  // Determine outcome based on call status and duration
+  // Determine outcome based on call status and duration - must match call_logs_outcome_check constraint
+  // Valid outcomes: interested, not_interested, callback, callback_requested, converted, do_not_call, 
+  //                 contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
   let outcome = 'completed';
   if (call.disconnection_reason === 'no_answer' || call.call_status === 'no-answer') {
-    outcome = 'no-answer';
+    outcome = 'no_answer'; // Fixed: no hyphen
   } else if (call.disconnection_reason === 'busy' || call.call_status === 'busy') {
     outcome = 'busy';
   } else if (call.disconnection_reason === 'failed' || call.call_status === 'failed') {
     outcome = 'failed';
   } else if (duration < 10) {
-    outcome = 'short-call';
+    outcome = 'completed'; // Fixed: short-call not valid, use completed
   }
 
   const updateData: Record<string, unknown> = {
@@ -426,6 +437,12 @@ async function handleCallEnded(supabase: any, call: any, existingCall: any) {
     duration_seconds: duration,
     outcome: outcome
   };
+
+  // Store agent_id from Retell payload
+  if (call.agent_id) {
+    updateData.agent_id = call.agent_id;
+    console.log(`Storing agent_id on call_ended: ${call.agent_id}`);
+  }
 
   if (transcript) {
     updateData.notes = transcript;
