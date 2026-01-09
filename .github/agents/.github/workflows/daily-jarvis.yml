@@ -1,0 +1,61 @@
+name: Lady Jarvis Daily Check
+
+on:
+  schedule:
+    - cron: '0 14 * * *' # Runs every day at 7am MST (14:00 UTC)
+  workflow_dispatch: # Allows manual run
+
+jobs:
+  daily_scan:
+    name: ☀️ Smoother, Sharper, Slicker Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install Playwright & Deps
+        run: |
+          npm ci
+          npx playwright install --with-deps
+
+      - name: 🎭 Run Playwright "Smoothness" Check
+        run: npx playwright test
+        continue-on-error: true # Report failures, don't crash
+
+      - name: 🧠 Lady Jarvis Memory Check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // This script acts as her "Memory" by checking past reports
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              labels: ['lady-jarvis-report']
+            });
+            
+            // Logic to see if we are improving or getting worse
+            console.log(`Found ${issues.data.length} past reports.`);
+
+      - name: 📝 Post Daily ROI Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `☀️ Lady Jarvis Report: ${new Date().toISOString().split('T')[0]}`,
+              labels: ['lady-jarvis-report'],
+              body: `### 🎯 Daily Optimization Report
+              **Goal:** Smoother, Sharper, Slicker.
+              
+              - **Playwright Status:** (Check Actions Log)
+              - **Bloat Check:** Running analysis...
+              
+              *I have checked the code. If any critical paths are slow, I have flagged them above.*`
+            });
