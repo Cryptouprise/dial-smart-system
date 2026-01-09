@@ -65,15 +65,36 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-
-    if (!user) {
-      throw new Error('Unauthorized')
-    }
-
+    
     const body = await req.json();
-    const { action, callId, transcript, script, transcripts } = body;
+    const { action, callId, transcript, script, transcripts, userId: bodyUserId } = body;
+    
+    // Support both JWT auth (user calls) and service role auth (internal calls)
+    const token = authHeader.replace('Bearer ', '');
+    let userId: string;
+    
+    if (token === serviceRoleKey) {
+      // Service role call from another edge function
+      if (!bodyUserId) {
+        return new Response(
+          JSON.stringify({ error: 'userId required for service role calls' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      userId = bodyUserId;
+      console.log('[Analyze Transcript] Service role auth - userId from body:', userId);
+    } else {
+      // User JWT call
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+      if (!user) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized - invalid token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      userId = user.id;
+      console.log('[Analyze Transcript] JWT auth - userId:', userId);
+    }
 
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured')
@@ -290,7 +311,7 @@ Respond with a JSON object containing:
       await supabaseAdmin.from('edge_function_errors').insert({
         function_name: 'analyze-call-transcript',
         action: 'ai_analysis',
-        user_id: user.id,
+        user_id: userId,
         error_message: `AI API error ${analysisResponse.status}`,
         error_stack: errorText,
         request_payload: { callId, transcriptLength: transcript?.length },
@@ -335,7 +356,7 @@ Respond with a JSON object containing:
         outcome: mapDispositionToOutcome(aiAnalysis.disposition)
       })
       .eq('id', callId)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
 
     if (updateError) {
       throw updateError
@@ -346,7 +367,7 @@ Respond with a JSON object containing:
       .from('call_logs')
       .select('lead_id')
       .eq('id', callId)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle()
 
     if (callData?.lead_id) {
@@ -355,7 +376,7 @@ Respond with a JSON object containing:
         .from('dispositions')
         .select('id, pipeline_stage')
         .eq('name', aiAnalysis.disposition)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle()
 
       if (dispositionData) {
@@ -363,7 +384,7 @@ Respond with a JSON object containing:
           .from('pipeline_boards')
           .select('id')
           .eq('disposition_id', dispositionData.id)
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .maybeSingle()
 
         if (pipelineBoard) {
@@ -372,7 +393,7 @@ Respond with a JSON object containing:
           const { error: pipelineError } = await supabaseAdmin
             .from('lead_pipeline_positions')
             .upsert({
-              user_id: user.id,
+              user_id: userId,
               lead_id: callData.lead_id,
               pipeline_board_id: pipelineBoard.id,
               position: 0,
@@ -408,14 +429,14 @@ Respond with a JSON object containing:
         .from('leads')
         .update(leadUpdate)
         .eq('id', callData.lead_id)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
 
       // Record learning data for continuous improvement
       try {
         await supabaseAdmin
           .from('ml_learning_data')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             call_id: callId,
             lead_id: callData.lead_id,
             call_outcome: aiAnalysis.disposition,
@@ -437,7 +458,7 @@ Respond with a JSON object containing:
         body: {
           action: 'process_disposition',
           leadId: callData.lead_id,
-          userId: user.id,
+          userId: userId,
           dispositionName: aiAnalysis.disposition,
           dispositionId: dispositionData?.id || null,
           callOutcome: aiAnalysis.disposition,

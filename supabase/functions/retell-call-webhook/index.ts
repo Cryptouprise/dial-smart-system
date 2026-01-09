@@ -1244,16 +1244,19 @@ serve(async (req) => {
 
         // 7. CRITICAL: Handle workflow based on disposition type
         // Terminal dispositions should STOP workflow, not advance
+        // IMPORTANT: These must be valid DB outcomes (from call_logs outcome constraint):
+        // interested, not_interested, callback, callback_requested, converted, do_not_call, 
+        // contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
         const TERMINAL_DISPOSITIONS = [
-          'callback_requested', 'callback', 'appointment_set', 'appointment_booked', 
-          'converted', 'not_interested', 'dnc', 'wrong_number', 'do_not_call',
-          'already_has_solar', 'renter'
+          'callback_requested', 'callback', 'appointment_set', 
+          'converted', 'not_interested', 'dnc', 'do_not_call', 'failed'
         ];
         
         // Dispositions that should remove lead from campaigns
+        // Using valid DB outcome values only
         const CAMPAIGN_REMOVAL_DISPOSITIONS = [
-          'not_interested', 'dnc', 'do_not_call', 'wrong_number',
-          'already_has_solar', 'renter', 'appointment_set', 'appointment_booked', 'converted'
+          'not_interested', 'dnc', 'do_not_call', 'failed',
+          'appointment_set', 'converted'
         ];
         
         if (TERMINAL_DISPOSITIONS.includes(outcome)) {

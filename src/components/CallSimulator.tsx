@@ -499,7 +499,7 @@ export const CallSimulator: React.FC = () => {
       
       // Check lead status and call logs for disposition
       const [leadRes, callLogRes] = await Promise.all([
-        supabase.from('leads').select('status, notes').eq('id', testLeadId).single(),
+        supabase.from('leads').select('status, notes').eq('id', testLeadId).maybeSingle(),
         supabase.from('call_logs').select('outcome, notes').eq('lead_id', testLeadId).order('created_at', { ascending: false }).limit(1),
       ]);
 
