@@ -19,12 +19,20 @@ export const computeHealthScore = (issues: MonitoringIssue[]): number => {
   let score = 100;
 
   for (const issue of issues) {
-    if (issue.type === 'critical') {
-      score -= CRITICAL_DEDUCTION;
-    } else if (issue.type === 'warning') {
-      score -= WARNING_DEDUCTION;
-    } else {
-      score -= INFO_DEDUCTION;
+    switch (issue.type) {
+      case 'critical':
+        score -= CRITICAL_DEDUCTION;
+        break;
+      case 'warning':
+        score -= WARNING_DEDUCTION;
+        break;
+      case 'info':
+        score -= INFO_DEDUCTION;
+        break;
+      default:
+        // Unknown severities are treated as informational to avoid over-penalizing
+        score -= INFO_DEDUCTION;
+        break;
     }
   }
 

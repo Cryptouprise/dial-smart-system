@@ -174,6 +174,7 @@ export const useProactiveHealthMonitor = (enabled: boolean = true, intervalMs: n
           ? 'degraded' 
           : 'healthy';
 
+      // Cadence scoring only depends on severity, not full issue payload
       const healthScore = computeHealthScore(issues.map(issue => ({ type: issue.type })));
       const nextCheckAt = getNextCheckDate(healthScore, now);
 
