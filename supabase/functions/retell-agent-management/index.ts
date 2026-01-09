@@ -13,7 +13,7 @@ const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/
 const CALENDAR_FUNCTION_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration';
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'get_agent' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings';
   agentName?: string;
   agentId?: string;
   voiceId?: string;
@@ -101,6 +101,7 @@ serve(async (req) => {
         break;
 
       case 'get':
+      case 'get_agent':
         if (!agentId) {
           throw new Error('Agent ID is required for get');
         }
