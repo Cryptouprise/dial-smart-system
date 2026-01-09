@@ -30,6 +30,7 @@ const statusColors: Record<ErrorRecord['status'], string> = {
   fixing: 'bg-orange-500',
   fixed: 'bg-green-500',
   failed: 'bg-red-500',
+  needs_manual: 'bg-amber-500',
 };
 
 const statusIcons: Record<ErrorRecord['status'], React.ReactNode> = {
@@ -39,6 +40,7 @@ const statusIcons: Record<ErrorRecord['status'], React.ReactNode> = {
   fixing: <Loader2 className="h-4 w-4 animate-spin" />,
   fixed: <CheckCircle className="h-4 w-4" />,
   failed: <XCircle className="h-4 w-4" />,
+  needs_manual: <AlertCircle className="h-4 w-4" />,
 };
 
 const AIErrorPanel: React.FC = () => {
@@ -71,6 +73,7 @@ const AIErrorPanel: React.FC = () => {
 
   const pendingCount = errors.filter(e => e.status === 'pending').length;
   const fixedCount = errors.filter(e => e.status === 'fixed').length;
+  const needsManualCount = errors.filter(e => e.status === 'needs_manual').length;
 
   return (
     <Card className="border-border">
@@ -107,7 +110,7 @@ const AIErrorPanel: React.FC = () => {
         </div>
 
         {/* Stats */}
-        <div className="flex gap-4 text-sm text-muted-foreground mt-2">
+        <div className="flex gap-4 text-sm text-muted-foreground mt-2 flex-wrap">
           <span className="flex items-center gap-1">
             <AlertCircle className="h-3 w-3 text-yellow-500" />
             {pendingCount} pending
@@ -116,6 +119,12 @@ const AIErrorPanel: React.FC = () => {
             <CheckCircle className="h-3 w-3 text-green-500" />
             {fixedCount} fixed
           </span>
+          {needsManualCount > 0 && (
+            <span className="flex items-center gap-1">
+              <AlertCircle className="h-3 w-3 text-amber-500" />
+              {needsManualCount} needs manual
+            </span>
+          )}
           <span className="flex items-center gap-1">
             <Zap className="h-3 w-3 text-primary" />
             {settings.autoFixMode ? 'Auto-fix ON' : 'Manual mode'}
@@ -245,13 +254,14 @@ const AIErrorPanel: React.FC = () => {
                               </Button>
                             )}
                             
-                            {error.status === 'failed' && (
+                            {(error.status === 'failed' || error.status === 'needs_manual') && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7"
                                 onClick={() => retryError(error.id)}
                                 disabled={isProcessing}
+                                title={error.status === 'needs_manual' ? 'Reset and retry' : 'Retry'}
                               >
                                 <RefreshCw className="h-3 w-3" />
                               </Button>
@@ -318,6 +328,19 @@ const AIErrorPanel: React.FC = () => {
                                 Execute Fix
                               </Button>
                             )}
+                          </div>
+                        )}
+
+                        {/* NEW: Manual steps for needs_manual status */}
+                        {error.status === 'needs_manual' && error.manualSteps && (
+                          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded">
+                            <p className="text-xs font-medium mb-2 flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                              <AlertCircle className="h-3 w-3" />
+                              Manual Action Required:
+                            </p>
+                            <div className="text-xs text-amber-600 dark:text-amber-500 whitespace-pre-wrap">
+                              {error.manualSteps}
+                            </div>
                           </div>
                         )}
                         

@@ -279,7 +279,7 @@ async function executeAutoFix(
   userId: string,
   error: ErrorPayload,
   suggestion: string
-): Promise<{ success: boolean; message: string; action: string; actualChange?: boolean; details?: any }> {
+): Promise<{ success: boolean; message: string; action: string; actualChange?: boolean; details?: any; retryable?: boolean }> {
   const message = error.message.toLowerCase();
   
   try {
@@ -439,6 +439,7 @@ async function executeAutoFix(
         message: 'Row Level Security policy violation. Check user permissions and data ownership.',
         action: 'rls_check_needed',
         actualChange: false,
+        retryable: false, // RLS issues require manual DB changes
         details: generateActionableGuidance(error)
       };
     }
@@ -493,6 +494,7 @@ async function executeAutoFix(
             message: 'Provider authentication failed. Please verify your API keys in settings.',
             action: 'provider_auth_check_needed',
             actualChange: false,
+            retryable: false, // Auth issues require manual API key fix
             details: generateActionableGuidance(error)
           };
         }
@@ -534,7 +536,8 @@ async function executeAutoFix(
       success: false,
       message: `Analysis complete. Manual fix recommended:\n\n${suggestion}\n\n${generateActionableGuidance(error)}`,
       action: 'manual_fix_suggested',
-      actualChange: false
+      actualChange: false,
+      retryable: false // Generic fallback means we can't auto-fix, don't retry
     };
 
   } catch (fixError: unknown) {
