@@ -1253,7 +1253,7 @@ serve(async (req) => {
           .eq('user_id', userId)
           .eq('service_name', 'calcom')
           .eq('credential_key', 'calcom_api_key')
-          .single();
+          .maybeSingle();
 
         if (!creds?.credential_value_encrypted) {
           return new Response(
@@ -1458,7 +1458,7 @@ serve(async (req) => {
           timezone: 'America/Chicago',
           notes,
           metadata: { attendee_email: email, attendee_phone: phone }
-        }).select().single();
+        }).select().maybeSingle();
 
         if (error) {
           throw new Error('Failed to book appointment');
@@ -2172,7 +2172,7 @@ serve(async (req) => {
             },
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.error('[Calendar] Error saving appointment:', error);
@@ -3205,7 +3205,7 @@ async function getCalApiKey(supabase: any, userId: string | null): Promise<strin
     .eq('user_id', userId)
     .eq('service_name', 'calcom')
     .eq('credential_key', 'calcom_api_key')
-    .single();
+    .maybeSingle();
   return data?.credential_value_encrypted || null;
 }
 
@@ -3217,7 +3217,7 @@ async function getCalEventTypeId(supabase: any, userId: string | null): Promise<
     .eq('user_id', userId)
     .eq('service_name', 'calcom')
     .eq('credential_key', 'calcom_event_type_id')
-    .single();
+    .maybeSingle();
   return data?.credential_value_encrypted || null;
 }
 

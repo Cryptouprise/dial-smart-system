@@ -184,18 +184,24 @@ export const LowScoreAutomation = () => {
             .eq('lead_id', leadId);
           processed++;
         } else if (rule.action === 'move_to_pipeline' && rule.targetPipelineId) {
-          // Move to specified pipeline stage
-          await supabase
+          // Move to specified pipeline stage - use correct onConflict for unique constraint
+          const { error: pipelineError } = await supabase
             .from('lead_pipeline_positions')
             .upsert({
               user_id: user.id,
               lead_id: leadId,
               pipeline_board_id: rule.targetPipelineId,
-              position: 999,
+              position: 0,
+              moved_at: new Date().toISOString(),
               moved_by_user: false,
               notes: 'Auto-moved due to low reachability score',
-            }, { onConflict: 'lead_id,pipeline_board_id' });
-          processed++;
+            }, { onConflict: 'lead_id,user_id' });
+          
+          if (pipelineError) {
+            console.error('[LowScoreAutomation] Pipeline update failed:', pipelineError);
+          } else {
+            processed++;
+          }
         } else if (rule.action === 'tag_for_review') {
           // Add tag to lead
           const { data: lead } = await supabase

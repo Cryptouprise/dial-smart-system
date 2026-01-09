@@ -1692,23 +1692,40 @@ async function stopWorkflowForTerminalDisposition(
   }
 }
 
-// Remove lead from all campaigns when terminal disposition reached
+// Remove lead from all campaigns AND dialing queues when terminal disposition reached
 async function removeFromCampaignsOnTerminal(
   supabase: any,
   leadId: string,
   outcome: string
 ) {
-  const { error, count } = await supabase
+  // 1. Remove from campaign_leads
+  const { error: campaignError, count: campaignCount } = await supabase
     .from('campaign_leads')
     .delete()
     .eq('lead_id', leadId);
 
-  if (error) {
-    console.error('[Retell Webhook] Failed to remove lead from campaigns:', error);
-  } else if (count && count > 0) {
-    console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${count} campaign(s) due to: ${outcome}`);
-  } else {
-    console.log(`[Retell Webhook] Lead ${leadId} was not in any campaigns`);
+  if (campaignError) {
+    console.error('[Retell Webhook] Failed to remove lead from campaigns:', campaignError);
+  } else if (campaignCount && campaignCount > 0) {
+    console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${campaignCount} campaign(s) due to: ${outcome}`);
+  }
+
+  // 2. CRITICAL: Also remove from dialing_queues to prevent future call attempts
+  const { error: queueError, count: queueCount } = await supabase
+    .from('dialing_queues')
+    .delete()
+    .eq('lead_id', leadId)
+    .in('status', ['pending', 'calling', 'failed']); // Remove all non-completed queue entries
+
+  if (queueError) {
+    console.error('[Retell Webhook] Failed to remove lead from dialing queues:', queueError);
+  } else if (queueCount && queueCount > 0) {
+    console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${queueCount} dialing queue(s) due to: ${outcome}`);
+  }
+  
+  // Log if lead wasn't in any campaigns or queues
+  if ((!campaignCount || campaignCount === 0) && (!queueCount || queueCount === 0)) {
+    console.log(`[Retell Webhook] Lead ${leadId} was not in any campaigns or queues`);
   }
 }
 
