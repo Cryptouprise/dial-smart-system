@@ -36,6 +36,8 @@ export interface CallFilters {
   dateFrom?: string;
   dateTo?: string;
   hasTranscript?: boolean;
+  minDuration?: number;
+  maxDuration?: number;
 }
 
 export interface RetellAgent {
@@ -146,6 +148,12 @@ export const useCallHistory = () => {
       }
       if (filters.hasTranscript) {
         query = query.not('transcript', 'is', null);
+      }
+      if (filters.minDuration !== undefined) {
+        query = query.gte('duration_seconds', filters.minDuration);
+      }
+      if (filters.maxDuration !== undefined) {
+        query = query.lte('duration_seconds', filters.maxDuration);
       }
 
       const { data, error } = await query;
