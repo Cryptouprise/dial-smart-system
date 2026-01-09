@@ -133,8 +133,17 @@ Respond with a JSON object:
       
       let comparison;
       try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        comparison = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(content);
+        // Strip markdown code blocks first if present
+        let cleanContent = content || '';
+        if (cleanContent.includes('```json')) {
+          cleanContent = cleanContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        } else if (cleanContent.includes('```')) {
+          cleanContent = cleanContent.replace(/```\s*/g, '');
+        }
+        
+        // Try to extract JSON object
+        const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+        comparison = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(cleanContent);
       } catch (parseError) {
         console.error('[Script Comparison] Failed to parse AI response:', content);
         throw new Error('Failed to parse AI comparison response');
