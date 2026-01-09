@@ -35,6 +35,21 @@ serve(async (req) => {
 
     const { action, broadcastId, leadIds, phoneNumbers, itemIds } = await req.json();
 
+    // Handle health_check BEFORE any validation that requires broadcastId
+    if (action === 'health_check') {
+      console.log('[Voice Broadcast Queue] Health check requested');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          healthy: true,
+          timestamp: new Date().toISOString(),
+          function: 'voice-broadcast-queue',
+          capabilities: ['add_leads', 'add_numbers', 'clear_queue', 'reset_queue', 'get_stats', 'remove_items', 'cleanup_stuck_calls', 'retry_failed'],
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // E.164 phone number normalization helper
     const normalizePhone = (phone: string): string => {
       const cleaned = phone.replace(/\D/g, '');
@@ -43,7 +58,7 @@ serve(async (req) => {
 
     console.log(`Voice broadcast queue action: ${action} for broadcast ${broadcastId}`);
 
-    // Verify broadcast ownership
+    // Verify broadcast ownership (only needed for non-health_check actions)
     const { data: broadcast, error: broadcastError } = await supabase
       .from('voice_broadcasts')
       .select('*')
@@ -56,20 +71,6 @@ serve(async (req) => {
     }
 
     switch (action) {
-      case 'health_check': {
-        console.log('[Voice Broadcast Queue] Health check requested');
-        return new Response(
-          JSON.stringify({
-            success: true,
-            healthy: true,
-            timestamp: new Date().toISOString(),
-            function: 'voice-broadcast-queue',
-            capabilities: ['add_leads', 'add_numbers', 'clear_queue', 'reset_queue', 'get_stats', 'remove_items', 'cleanup_stuck_calls', 'retry_failed'],
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
       case 'add_leads': {
         if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
           throw new Error('No leads provided');

@@ -59,8 +59,32 @@ serve(async (req) => {
       });
     }
 
-    const body: RequestBody = await req.json();
+    const body = await req.json();
     const { error: errorPayload, action, suggestion } = body;
+
+    // Handle health_check FIRST before accessing errorPayload properties
+    if (action === 'health_check') {
+      console.log('[AI Error Analyzer] Health check requested');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          healthy: true,
+          timestamp: new Date().toISOString(),
+          function: 'ai-error-analyzer',
+          capabilities: ['analyze', 'execute', 'log_backend_error'],
+          ai_configured: !!lovableApiKey,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate errorPayload exists for non-health_check actions
+    if (!errorPayload || !errorPayload.type) {
+      return new Response(JSON.stringify({ error: 'Missing error payload' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     console.log(`[AI Error Analyzer] Processing ${action} for error type: ${errorPayload.type}`);
     console.log(`[AI Error Analyzer] Error message: ${errorPayload.message}`);
