@@ -50,7 +50,8 @@ export async function getUserOrganizations(): Promise<OrganizationWithRole[]> {
     if (!user) return [];
 
     // Try to query organizations - will fail gracefully if table doesn't exist
-    const { data, error } = await supabase
+    // NOTE: Using any type to avoid TypeScript errors until tables are created via migration
+    const { data, error } = await (supabase as any)
       .from('organization_users')
       .select(`
         role,
