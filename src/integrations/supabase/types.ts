@@ -1058,10 +1058,16 @@ export type Database = {
       }
       call_logs: {
         Row: {
+          agent_id: string | null
+          agent_name: string | null
+          ai_analysis: Json | null
           amd_result: string | null
           answered_at: string | null
+          auto_disposition: string | null
+          call_summary: string | null
           caller_id: string
           campaign_id: string | null
+          confidence_score: number | null
           created_at: string
           duration_seconds: number | null
           ended_at: string | null
@@ -1070,15 +1076,24 @@ export type Database = {
           notes: string | null
           outcome: string | null
           phone_number: string
+          recording_url: string | null
           retell_call_id: string | null
+          sentiment: string | null
           status: string
+          transcript: string | null
           user_id: string
         }
         Insert: {
+          agent_id?: string | null
+          agent_name?: string | null
+          ai_analysis?: Json | null
           amd_result?: string | null
           answered_at?: string | null
+          auto_disposition?: string | null
+          call_summary?: string | null
           caller_id: string
           campaign_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           duration_seconds?: number | null
           ended_at?: string | null
@@ -1087,15 +1102,24 @@ export type Database = {
           notes?: string | null
           outcome?: string | null
           phone_number: string
+          recording_url?: string | null
           retell_call_id?: string | null
+          sentiment?: string | null
           status: string
+          transcript?: string | null
           user_id: string
         }
         Update: {
+          agent_id?: string | null
+          agent_name?: string | null
+          ai_analysis?: Json | null
           amd_result?: string | null
           answered_at?: string | null
+          auto_disposition?: string | null
+          call_summary?: string | null
           caller_id?: string
           campaign_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           duration_seconds?: number | null
           ended_at?: string | null
@@ -1104,8 +1128,11 @@ export type Database = {
           notes?: string | null
           outcome?: string | null
           phone_number?: string
+          recording_url?: string | null
           retell_call_id?: string | null
+          sentiment?: string | null
           status?: string
+          transcript?: string | null
           user_id?: string
         }
         Relationships: [
@@ -2480,6 +2507,81 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      ml_learning_data: {
+        Row: {
+          agent_id: string | null
+          agent_name: string | null
+          call_duration_seconds: number | null
+          call_id: string | null
+          call_outcome: string | null
+          confidence_score: number | null
+          created_at: string | null
+          disposition: string | null
+          id: string
+          key_points: string[] | null
+          lead_id: string | null
+          next_action: string | null
+          objections: string[] | null
+          pain_points: string[] | null
+          sentiment: string | null
+          sentiment_score: number | null
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          agent_name?: string | null
+          call_duration_seconds?: number | null
+          call_id?: string | null
+          call_outcome?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          disposition?: string | null
+          id?: string
+          key_points?: string[] | null
+          lead_id?: string | null
+          next_action?: string | null
+          objections?: string[] | null
+          pain_points?: string[] | null
+          sentiment?: string | null
+          sentiment_score?: number | null
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          agent_name?: string | null
+          call_duration_seconds?: number | null
+          call_id?: string | null
+          call_outcome?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          disposition?: string | null
+          id?: string
+          key_points?: string[] | null
+          lead_id?: string | null
+          next_action?: string | null
+          objections?: string[] | null
+          pain_points?: string[] | null
+          sentiment?: string | null
+          sentiment_score?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_learning_data_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_learning_data_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       number_orders: {
         Row: {

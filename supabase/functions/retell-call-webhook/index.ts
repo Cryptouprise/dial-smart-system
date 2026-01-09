@@ -756,8 +756,8 @@ serve(async (req) => {
       outcome = 'voicemail';
     }
 
-    // 1. Update or create call log
-    console.log('[Retell Webhook] Updating call log...');
+    // 1. Update or create call log with ALL available data including new columns
+    console.log('[Retell Webhook] Updating call log with extended fields...');
     const { data: callLog, error: callLogError } = await supabase
       .from('call_logs')
       .upsert({
@@ -771,6 +771,12 @@ serve(async (req) => {
         outcome: outcome,
         duration_seconds: durationSeconds,
         notes: formattedTranscript,
+        // NEW COLUMNS - save transcript, agent info, recording, and analysis data
+        transcript: formattedTranscript,
+        agent_id: call.agent_id || null,
+        recording_url: call.recording_url || null,
+        call_summary: call.call_analysis?.call_summary || null,
+        sentiment: call.call_analysis?.user_sentiment || null,
         answered_at: call.start_timestamp ? new Date(call.start_timestamp).toISOString() : null,
         ended_at: call.end_timestamp ? new Date(call.end_timestamp).toISOString() : null,
       }, {
