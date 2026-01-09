@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Phone,
   Target,
@@ -59,6 +59,7 @@ interface NavItem {
   value: string;
   icon: React.ElementType;
   simpleMode?: boolean; // If true, show in simple mode
+  route?: string; // If set, navigates to this route instead of setting tab
 }
 
 interface NavGroup {
@@ -131,6 +132,15 @@ const navigationGroups: NavGroup[] = [
       { title: 'Budget Manager', value: 'budget', icon: DollarSign },
     ],
   },
+  {
+    label: 'System & Settings',
+    defaultOpen: false,
+    items: [
+      { title: 'System Testing', value: 'system-testing', icon: Beaker, simpleMode: true, route: '/system-testing' },
+      { title: 'System Health', value: 'health', icon: Activity },
+      { title: 'Settings', value: 'settings', icon: Settings },
+    ],
+  },
 ];
 
 // Filter navigation for simple mode
@@ -154,8 +164,16 @@ interface DashboardSidebarProps {
 const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => {
   const { toggleSidebar } = useSidebar();
   const { isSimpleMode, toggleMode } = useSimpleMode();
+  const navigate = useNavigate();
   
   const filteredNavigation = getFilteredNavigation(isSimpleMode);
+
+  const handleNavigate = (route: string) => {
+    navigate(route);
+    if (window.innerWidth < 768) {
+      toggleSidebar();
+    }
+  };
 
   return (
     <Sidebar collapsible="offcanvas" className="border-r border-sidebar-border">
@@ -209,7 +227,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
                 toggleSidebar();
               }
             }}
-            
+            onNavigate={handleNavigate}
           />
         ))}
       </SidebarContent>
@@ -234,12 +252,14 @@ interface NavGroupCollapsibleProps {
   group: NavGroup;
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onNavigate: (route: string) => void;
 }
 
 const NavGroupCollapsible = ({
   group,
   activeTab,
   onTabChange,
+  onNavigate,
 }: NavGroupCollapsibleProps) => {
   const hasActiveItem = group.items.some((item) => item.value === activeTab);
   const [isOpen, setIsOpen] = React.useState(group.defaultOpen || hasActiveItem);
@@ -247,6 +267,14 @@ const NavGroupCollapsible = ({
   React.useEffect(() => {
     if (hasActiveItem) setIsOpen(true);
   }, [hasActiveItem]);
+
+  const handleItemClick = (item: NavItem) => {
+    if (item.route) {
+      onNavigate(item.route);
+    } else {
+      onTabChange(item.value);
+    }
+  };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="group/collapsible">
@@ -268,7 +296,7 @@ const NavGroupCollapsible = ({
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.value}>
                   <SidebarMenuButton
-                    onClick={() => onTabChange(item.value)}
+                    onClick={() => handleItemClick(item)}
                     isActive={activeTab === item.value}
                     className={cn(
                       'touch-manipulation',
