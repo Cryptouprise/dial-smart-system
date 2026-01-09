@@ -4,6 +4,12 @@ import { useAIBrain } from '../useAIBrain';
 
 vi.mock('@/integrations/supabase/client');
 
+// Mock React Router hooks
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+  useLocation: () => ({ pathname: '/test', search: '', hash: '', state: null, key: 'test' }),
+}));
+
 describe('useAIBrain - AI Chat Agent Quality', () => {
   beforeEach(() => {
     vi.clearAllMocks();

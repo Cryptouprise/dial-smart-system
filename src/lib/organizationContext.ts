@@ -40,12 +40,41 @@ export interface OrganizationWithRole extends Organization {
 
 /**
  * Get all organizations the current user belongs to
- * NOTE: Stubbed until organizations table is created
  */
 export async function getUserOrganizations(): Promise<OrganizationWithRole[]> {
-  // TODO: Implement when organizations table is created via migration
-  console.log('[OrganizationContext] organizations table not yet created');
-  return [];
+  try {
+    // Dynamic import to avoid circular dependency
+    const { supabase } = await import('@/integrations/supabase/client');
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    // Try to query organizations - will fail gracefully if table doesn't exist
+    const { data, error } = await supabase
+      .from('organization_users')
+      .select(`
+        role,
+        organizations (
+          id, name, slug, subscription_tier, subscription_status,
+          settings, created_at, updated_at
+        )
+      `)
+      .eq('user_id', user.id);
+
+    if (error) {
+      // Table doesn't exist yet - return empty (migration not run)
+      console.log('[OrganizationContext] organizations table not yet created or error:', error.message);
+      return [];
+    }
+
+    return (data || []).map((item: any) => ({
+      ...item.organizations,
+      user_role: item.role
+    }));
+  } catch (err) {
+    console.error('[OrganizationContext] Error loading organizations:', err);
+    return [];
+  }
 }
 
 /**

@@ -23,8 +23,8 @@ describe('CampaignWizard - Ease of Use', () => {
     it('should render wizard with clear starting point', () => {
       renderWizard();
       
-      // Should have welcome/intro
-      expect(screen.getByText(/campaign/i)).toBeInTheDocument();
+      // Should have welcome/intro - look for the specific heading
+      expect(screen.getByRole('heading', { name: /campaign wizard/i })).toBeInTheDocument();
     });
 
     it('should show progress indicator', () => {
@@ -168,7 +168,9 @@ describe('CampaignWizard - Ease of Use', () => {
       const onClose = vi.fn();
       renderWizard({ onClose });
       
-      const closeButton = screen.queryByRole('button', { name: /close|cancel|x/i });
+      // Look for all buttons and find the close button specifically
+      const allButtons = screen.queryAllByRole('button');
+      const closeButton = allButtons.find(button => button.textContent?.includes('Close') || button.querySelector('svg.lucide-x'));
       if (closeButton) {
         fireEvent.click(closeButton);
         expect(onClose).toHaveBeenCalled();

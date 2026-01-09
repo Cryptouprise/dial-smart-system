@@ -1,8 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DailyReports } from '../DailyReports';
+import { DemoModeProvider } from '@/contexts/DemoModeContext';
 
 vi.mock('@/integrations/supabase/client');
+
+// Helper to render with required providers
+const renderWithProviders = (component: React.ReactElement) => {
+  return render(
+    <DemoModeProvider>
+      {component}
+    </DemoModeProvider>
+  );
+};
 
 describe('DailyReports - Reporting Functions', () => {
   beforeEach(() => {
@@ -11,13 +21,13 @@ describe('DailyReports - Reporting Functions', () => {
 
   describe('Report Generation', () => {
     it('should render daily reports dashboard', () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       expect(screen.getByText(/report|daily|analytics/i)).toBeInTheDocument();
     });
 
     it('should display key metrics', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         // Should show metrics like calls, conversions, etc.
@@ -26,7 +36,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should allow date range selection', () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const dateInputs = screen.queryAllByRole('textbox', { name: /date|from|to/i });
       
@@ -34,7 +44,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should generate report on demand', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const generateButton = screen.queryByRole('button', { name: /generate|create|refresh/i });
       
@@ -48,7 +58,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should export reports in multiple formats', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const exportButton = screen.queryByRole('button', { name: /export|download/i });
       
@@ -58,7 +68,7 @@ describe('DailyReports - Reporting Functions', () => {
 
   describe('Data Accuracy', () => {
     it('should display accurate call counts', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         const metrics = screen.queryAllByText(/\d+/);
@@ -67,7 +77,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should calculate conversion rates correctly', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         // Look for percentage values
@@ -82,7 +92,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should show real-time data updates', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       // Should have last updated timestamp
       await waitFor(() => {
@@ -93,7 +103,7 @@ describe('DailyReports - Reporting Functions', () => {
 
   describe('Visual Representation', () => {
     it('should display charts for data visualization', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         // Check for chart elements
@@ -103,7 +113,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should use appropriate colors for metrics', () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       // Positive metrics should be green, negative red
       const elements = screen.queryAllByText(/increase|decrease|up|down/i);
@@ -119,7 +129,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should format numbers for readability', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         // Large numbers should be formatted (1,000 or 1K)
@@ -131,7 +141,7 @@ describe('DailyReports - Reporting Functions', () => {
 
   describe('Report Filtering & Customization', () => {
     it('should filter by campaign', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const filterButton = screen.queryByRole('button', { name: /filter|campaign/i });
       
@@ -145,7 +155,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should filter by agent', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const agentFilter = screen.queryByLabelText(/agent|user|assign/i);
       
@@ -153,7 +163,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should save custom report configurations', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       const saveButton = screen.queryByRole('button', { name: /save|preset|template/i });
       
@@ -163,7 +173,7 @@ describe('DailyReports - Reporting Functions', () => {
 
   describe('Performance & Loading', () => {
     it('should show loading state while fetching data', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       // Initially should show loading
       expect(screen.queryByText(/loading|fetching/i) || 
@@ -171,7 +181,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should handle large datasets efficiently', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         // Should render without crashing
@@ -180,7 +190,7 @@ describe('DailyReports - Reporting Functions', () => {
     });
 
     it('should paginate long reports', async () => {
-      render(<DailyReports />);
+      renderWithProviders(<DailyReports />);
       
       await waitFor(() => {
         const pagination = screen.queryByRole('navigation', { name: /pagination/i });
