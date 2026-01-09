@@ -2,14 +2,17 @@
  * Production Health Dashboard
  * 
  * Displays real-time system health metrics and monitoring data
- * for production environments.
+ * for production environments, including dialing system monitoring.
  */
 
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, Phone } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DialingSystemMonitor } from './DialingSystemMonitor';
+import { CampaignLaunchVerification } from './CampaignLaunchVerification';
 
 interface HealthMetric {
   name: string;
@@ -171,82 +174,110 @@ export const ProductionHealthDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Health Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {healthMetrics.map((metric) => (
-          <Card key={metric.name}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{metric.name}</CardTitle>
-              {getStatusIcon(metric.status)}
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metric.value}</div>
-              {metric.description && (
-                <p className="text-xs text-muted-foreground mt-1">{metric.description}</p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Tabbed Content */}
+      <Tabs defaultValue="system" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="system" className="gap-2">
+            <Activity className="h-4 w-4" />
+            System Health
+          </TabsTrigger>
+          <TabsTrigger value="dialing" className="gap-2">
+            <Phone className="h-4 w-4" />
+            Dialing System
+          </TabsTrigger>
+          <TabsTrigger value="verification" className="gap-2">
+            <CheckCircle className="h-4 w-4" />
+            Pre-Launch
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Performance Metrics */}
-      {performanceMetrics.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              <CardTitle>Performance Metrics</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {performanceMetrics.map((metric) => {
-              const percentage = Math.min((metric.value / metric.threshold) * 100, 100);
-              const isGood = metric.value < metric.threshold;
+        <TabsContent value="system" className="space-y-6 mt-6">
+          {/* Health Metrics */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {healthMetrics.map((metric) => (
+              <Card key={metric.name}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{metric.name}</CardTitle>
+                  {getStatusIcon(metric.status)}
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metric.value}</div>
+                  {metric.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{metric.description}</p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
-              return (
-                <div key={metric.name} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{metric.name}</span>
-                    <span className={`text-sm ${isGood ? 'text-green-600' : 'text-red-600'}`}>
-                      {metric.value.toFixed(0)}{metric.unit} / {metric.threshold}{metric.unit}
-                    </span>
-                  </div>
-                  <Progress 
-                    value={percentage} 
-                    className={isGood ? '' : 'bg-red-200'}
-                  />
+          {/* Performance Metrics */}
+          {performanceMetrics.length > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  <CardTitle>Performance Metrics</CardTitle>
                 </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {performanceMetrics.map((metric) => {
+                  const percentage = Math.min((metric.value / metric.threshold) * 100, 100);
+                  const isGood = metric.value < metric.threshold;
 
-      {/* Memory Usage Chart */}
-      {memoryUsage > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Memory Usage</CardTitle>
-            <CardDescription>JavaScript heap memory consumption</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Progress 
-                value={memoryUsage} 
-                className={memoryUsage > 90 ? 'bg-red-200' : memoryUsage > 70 ? 'bg-yellow-200' : ''}
-              />
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Usage: {memoryUsage.toFixed(1)}%</span>
-                {memoryUsage > 70 && (
-                  <span className="text-yellow-600 font-medium">
-                    {memoryUsage > 90 ? 'Critical' : 'High Usage'}
-                  </span>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  return (
+                    <div key={metric.name} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{metric.name}</span>
+                        <span className={`text-sm ${isGood ? 'text-green-600' : 'text-red-600'}`}>
+                          {metric.value.toFixed(0)}{metric.unit} / {metric.threshold}{metric.unit}
+                        </span>
+                      </div>
+                      <Progress 
+                        value={percentage} 
+                        className={isGood ? '' : 'bg-red-200'}
+                      />
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Memory Usage Chart */}
+          {memoryUsage > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Memory Usage</CardTitle>
+                <CardDescription>JavaScript heap memory consumption</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Progress 
+                    value={memoryUsage} 
+                    className={memoryUsage > 90 ? 'bg-red-200' : memoryUsage > 70 ? 'bg-yellow-200' : ''}
+                  />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Usage: {memoryUsage.toFixed(1)}%</span>
+                    {memoryUsage > 70 && (
+                      <span className="text-yellow-600 font-medium">
+                        {memoryUsage > 90 ? 'Critical' : 'High Usage'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="dialing" className="mt-6">
+          <DialingSystemMonitor />
+        </TabsContent>
+
+        <TabsContent value="verification" className="mt-6">
+          <CampaignLaunchVerification />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
