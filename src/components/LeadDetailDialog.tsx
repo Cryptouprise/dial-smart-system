@@ -545,7 +545,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 min-h-0 mt-3 md:mt-4 pr-4">
+          <ScrollArea className="flex-1 mt-3 md:mt-4" style={{ height: 'calc(90vh - 200px)' }}>
             <TabsContent value="details" className="mt-0 space-y-3 md:space-y-4 pb-4">
               {/* Quick Actions - ALWAYS AT TOP for easy access */}
               <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
