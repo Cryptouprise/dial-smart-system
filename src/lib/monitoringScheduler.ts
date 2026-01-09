@@ -2,7 +2,16 @@ export type MonitoringIssueType = 'critical' | 'warning' | 'info';
 
 export interface MonitoringIssue {
   type: MonitoringIssueType;
+  // Allow richer issue objects (e.g., HealthIssue) while focusing on severity
+  [key: string]: unknown;
 }
+
+const CRITICAL_DEDUCTION = 30;
+const WARNING_DEDUCTION = 15;
+const INFO_DEDUCTION = 5;
+const LOW_SCORE_THRESHOLD = 40;
+const MEDIUM_SCORE_THRESHOLD = 70;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const clampScore = (score: number) => Math.min(100, Math.max(0, score));
 
@@ -11,11 +20,11 @@ export const computeHealthScore = (issues: MonitoringIssue[]): number => {
 
   for (const issue of issues) {
     if (issue.type === 'critical') {
-      score -= 30;
+      score -= CRITICAL_DEDUCTION;
     } else if (issue.type === 'warning') {
-      score -= 15;
+      score -= WARNING_DEDUCTION;
     } else {
-      score -= 5;
+      score -= INFO_DEDUCTION;
     }
   }
 
@@ -25,13 +34,13 @@ export const computeHealthScore = (issues: MonitoringIssue[]): number => {
 export const determineMonitoringIntervalDays = (healthScore: number): number => {
   const score = Number.isFinite(healthScore) ? healthScore : 0;
 
-  if (score < 40) return 1; // Daily for poor health, but never more than once per day
-  if (score < 70) return 2; // Every other day for medium health
+  if (score < LOW_SCORE_THRESHOLD) return 1; // Daily for poor health, but never more than once per day
+  if (score < MEDIUM_SCORE_THRESHOLD) return 2; // Every other day for medium health
   return 3; // Healthy systems can be checked less frequently
 };
 
 export const getNextCheckDate = (healthScore: number, from: Date = new Date()): Date => {
   const intervalDays = determineMonitoringIntervalDays(healthScore);
-  const nextTime = from.getTime() + intervalDays * 24 * 60 * 60 * 1000;
+  const nextTime = from.getTime() + intervalDays * DAY_IN_MS;
   return new Date(nextTime);
 };

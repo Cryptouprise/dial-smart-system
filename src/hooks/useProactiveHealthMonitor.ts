@@ -174,7 +174,7 @@ export const useProactiveHealthMonitor = (enabled: boolean = true, intervalMs: n
           ? 'degraded' 
           : 'healthy';
 
-      const healthScore = computeHealthScore(issues);
+      const healthScore = computeHealthScore(issues.map(issue => ({ type: issue.type })));
       const nextCheckAt = getNextCheckDate(healthScore, now);
 
       const newStatus: HealthStatus = {
