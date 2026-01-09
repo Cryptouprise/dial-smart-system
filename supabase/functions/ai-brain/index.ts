@@ -2247,14 +2247,21 @@ async function executeToolCall(
         }
 
         // Upsert lead pipeline position
-        await supabase.from('lead_pipeline_positions').upsert({
+        console.log(`[AI Brain] Moving lead ${leadId} to pipeline stage: ${stageId}`);
+        const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
           user_id: userId,
           lead_id: leadId,
           pipeline_board_id: stageId,
+          position: 0,
           moved_at: new Date().toISOString(),
           moved_by_user: false
-        }, { onConflict: 'lead_id,pipeline_board_id' });
-
+        }, { onConflict: 'lead_id,user_id' });
+        
+        if (pipelineError) {
+          console.error(`[AI Brain] Pipeline update FAILED:`, pipelineError);
+          return { success: false, result: { error: 'Failed to move lead to pipeline stage' } };
+        }
+        console.log(`[AI Brain] ✅ Pipeline updated successfully`);
         return { success: true, result: { message: 'Lead moved to new stage' }, location: LOCATION_MAP.pipeline.route };
       }
 

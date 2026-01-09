@@ -263,16 +263,23 @@ serve(async (req) => {
           .maybeSingle();
 
         if (pipelineBoard) {
-          await supabase.from('lead_pipeline_positions').upsert({
+          console.log(`[Disposition Router] Moving lead ${leadId} to pipeline: ${disposition.pipeline_stage} (board: ${pipelineBoard.id})`);
+          const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
             user_id: userId,
             lead_id: leadId,
             pipeline_board_id: pipelineBoard.id,
+            position: 0,
             moved_at: new Date().toISOString(),
             moved_by_user: false,
             notes: `Auto-moved by disposition: ${dispositionName}`,
-          }, { onConflict: 'user_id,lead_id,pipeline_board_id' });
+          }, { onConflict: 'lead_id,user_id' });
 
-          actions.push(`Moved to pipeline stage: ${disposition.pipeline_stage}`);
+          if (pipelineError) {
+            console.error(`[Disposition Router] Pipeline update FAILED:`, pipelineError);
+          } else {
+            console.log(`[Disposition Router] ✅ Pipeline updated successfully`);
+            actions.push(`Moved to pipeline stage: ${disposition.pipeline_stage}`);
+          }
         }
       }
 
@@ -389,13 +396,20 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
 
       case 'move_to_stage':
       if (config.target_stage_id) {
-        await supabase.from('lead_pipeline_positions').upsert({
+        console.log(`[Disposition Router] Moving lead ${leadId} to stage: ${config.target_stage_id}`);
+        const { error: moveError } = await supabase.from('lead_pipeline_positions').upsert({
           user_id: userId,
           lead_id: leadId,
           pipeline_board_id: config.target_stage_id,
+          position: 0,
           moved_at: new Date().toISOString(),
           moved_by_user: false,
-        }, { onConflict: 'user_id,lead_id,pipeline_board_id' });
+        }, { onConflict: 'lead_id,user_id' });
+        if (moveError) {
+          console.error(`[Disposition Router] move_to_stage FAILED:`, moveError);
+        } else {
+          console.log(`[Disposition Router] ✅ move_to_stage successful`);
+        }
       }
       break;
 
