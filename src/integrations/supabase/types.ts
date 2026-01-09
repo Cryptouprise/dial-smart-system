@@ -2520,6 +2520,86 @@ export type Database = {
         }
         Relationships: []
       }
+      organization_users: {
+        Row: {
+          id: string
+          joined_at: string
+          organization_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          organization_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          organization_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          max_campaigns: number | null
+          max_phone_numbers: number | null
+          max_users: number | null
+          monthly_call_limit: number | null
+          name: string
+          settings: Json | null
+          slug: string
+          subscription_status: string
+          subscription_tier: string
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          max_campaigns?: number | null
+          max_phone_numbers?: number | null
+          max_users?: number | null
+          monthly_call_limit?: number | null
+          name: string
+          settings?: Json | null
+          slug: string
+          subscription_status?: string
+          subscription_tier?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          max_campaigns?: number | null
+          max_phone_numbers?: number | null
+          max_users?: number | null
+          monthly_call_limit?: number | null
+          name?: string
+          settings?: Json | null
+          slug?: string
+          subscription_status?: string
+          subscription_tier?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       phone_numbers: {
         Row: {
           area_code: string
@@ -3988,6 +4068,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -3995,6 +4076,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      user_in_organization: { Args: { org_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
