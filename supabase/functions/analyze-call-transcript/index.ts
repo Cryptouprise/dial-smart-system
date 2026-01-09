@@ -368,16 +368,24 @@ Respond with a JSON object containing:
 
         if (pipelineBoard) {
           // Move lead to appropriate pipeline position
-          await supabaseAdmin
+          console.log(`[Analyze Transcript] Moving lead ${callData.lead_id} to pipeline board: ${pipelineBoard.id}`);
+          const { error: pipelineError } = await supabaseAdmin
             .from('lead_pipeline_positions')
             .upsert({
               user_id: user.id,
               lead_id: callData.lead_id,
               pipeline_board_id: pipelineBoard.id,
               position: 0,
+              moved_at: new Date().toISOString(),
               moved_by_user: false,
               notes: `Auto-moved based on AI analysis: ${aiAnalysis.reasoning}`
-            })
+            }, { onConflict: 'lead_id,user_id' });
+          
+          if (pipelineError) {
+            console.error(`[Analyze Transcript] Pipeline update FAILED:`, pipelineError);
+          } else {
+            console.log(`[Analyze Transcript] ✅ Pipeline updated successfully`);
+          }
         }
       }
 
