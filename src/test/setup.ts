@@ -1,6 +1,6 @@
+import '@testing-library/jest-dom/vitest';
 import { expect, afterEach, vi, beforeAll, afterAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
-import '@testing-library/jest-dom/vitest';
 
 // Cleanup after each test
 afterEach(() => {
@@ -19,6 +19,8 @@ vi.mock('@/integrations/supabase/client', () => ({
       getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
       getUser: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })),
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signIn: vi.fn(),
+      signOut: vi.fn(),
     },
     from: vi.fn(() => ({
       select: vi.fn().mockReturnThis(),
@@ -28,6 +30,9 @@ vi.mock('@/integrations/supabase/client', () => ({
       eq: vi.fn().mockReturnThis(),
       single: vi.fn(() => Promise.resolve({ data: null, error: null })),
     })),
+    functions: {
+      invoke: vi.fn(() => Promise.resolve({ data: null, error: null })),
+    },
   },
 }));
 
