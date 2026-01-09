@@ -310,7 +310,7 @@ const TranscriptAnalyzer = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Agents</SelectItem>
-                        {[...new Map(agents.map(a => [a.agent_id, a])).values()].map(agent => (
+                        {[...new Map(retellAgents.map(a => [a.agent_id, a])).values()].map(agent => (
                           <SelectItem key={agent.agent_id} value={agent.agent_id}>
                             {agent.agent_name}
                           </SelectItem>
@@ -653,7 +653,7 @@ const TranscriptAnalyzer = () => {
                     </div>
                     <div className="bg-muted p-3 rounded-lg text-center">
                       <div className="text-2xl font-bold">
-                        {calls.filter(c => c.transcript).length}
+                        {calls.filter(c => c.transcript || c.notes).length}
                       </div>
                       <div className="text-sm text-muted-foreground">With Transcripts</div>
                     </div>
@@ -667,7 +667,7 @@ const TranscriptAnalyzer = () => {
 
                   <Button 
                     onClick={handleCompareToScript}
-                    disabled={isComparingScript || calls.filter(c => c.transcript).length === 0}
+                    disabled={isComparingScript || calls.filter(c => c.transcript || c.notes).length === 0}
                     className="w-full"
                   >
                     <Wand2 className="h-4 w-4 mr-2" />

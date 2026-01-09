@@ -84,24 +84,23 @@ export const useCallHistory = () => {
     }
   }, []);
 
-  // Fetch unique dispositions from call_logs
+  // Fetch all dispositions from dispositions table
   const fetchDispositions = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('call_logs')
-        .select('outcome, auto_disposition')
-        .eq('user_id', user.id);
+        .from('dispositions')
+        .select('name')
+        .eq('user_id', user.id)
+        .order('name');
 
       if (error) throw error;
 
-      // Get unique dispositions
       const unique = new Set<string>();
       (data || []).forEach(row => {
-        if (row.outcome) unique.add(row.outcome);
-        if (row.auto_disposition) unique.add(row.auto_disposition);
+        if (row.name) unique.add(row.name);
       });
 
       setDispositions(Array.from(unique).sort());
