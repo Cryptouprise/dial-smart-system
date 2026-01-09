@@ -7,6 +7,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Map AI disposition names to valid database outcome values
+// DB constraint allows: interested, not_interested, callback, callback_requested, converted, do_not_call, contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
+function mapDispositionToOutcome(disposition: string): string {
+  const mapping: Record<string, string> = {
+    // Positive outcomes
+    'Appointment Booked': 'appointment_set',
+    'Hot Lead': 'interested',
+    'Interested': 'interested',
+    // Callback/Follow-up
+    'Callback Requested': 'callback_requested',
+    'Follow Up': 'callback',
+    'Potential Prospect': 'contacted',
+    // Neutral/No contact
+    'Voicemail': 'voicemail',
+    'Not Connected': 'no_answer',
+    'Dropped Call': 'failed',
+    // Negative/Disqualified
+    'Not Interested': 'not_interested',
+    'Wrong Number': 'failed',
+    'Already Has Solar': 'not_interested',
+    'Renter': 'not_interested',
+    'Do Not Call': 'do_not_call',
+    // Special
+    'Dial Tree Workflow': 'contacted',
+    // Fallbacks
+    'Connected - Manual Review Needed': 'contacted',
+    'No Answer': 'no_answer',
+  };
+  
+  return mapping[disposition] || 'unknown';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -204,7 +236,7 @@ Respond with a JSON object containing:
         objections: []
       };
       
-      // Update with fallback
+      // Update with fallback - use mapped outcome for DB constraint
       await supabaseAdmin
         .from('call_logs')
         .update({
@@ -212,8 +244,7 @@ Respond with a JSON object containing:
           ai_analysis: fallbackAnalysis,
           auto_disposition: fallbackAnalysis.disposition,
           confidence_score: fallbackAnalysis.confidence,
-          outcome: fallbackAnalysis.disposition,
-          ai_analysis_error: errorText
+          outcome: mapDispositionToOutcome(fallbackAnalysis.disposition)
         })
         .eq('id', callId);
       
@@ -253,6 +284,7 @@ Respond with a JSON object containing:
     }
 
     // Update call log with analysis including all new columns
+    // Use mapDispositionToOutcome for the outcome column to satisfy DB constraint
     const { error: updateError } = await supabaseAdmin
       .from('call_logs')
       .update({
@@ -262,7 +294,7 @@ Respond with a JSON object containing:
         confidence_score: aiAnalysis.confidence,
         sentiment: aiAnalysis.sentiment || null,
         call_summary: aiAnalysis.key_points?.join('. ') || null,
-        outcome: aiAnalysis.disposition
+        outcome: mapDispositionToOutcome(aiAnalysis.disposition)
       })
       .eq('id', callId)
       .eq('user_id', user.id)
