@@ -147,7 +147,8 @@ export const useCallHistory = () => {
         query = query.lte('created_at', filters.dateTo + 'T23:59:59');
       }
       if (filters.hasTranscript) {
-        query = query.not('transcript', 'is', null);
+        // Check EITHER transcript OR notes has content
+        query = query.or('transcript.neq.null,notes.neq.null');
       }
       if (filters.minDuration !== undefined) {
         query = query.gte('duration_seconds', filters.minDuration);
