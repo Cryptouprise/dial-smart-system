@@ -4,6 +4,19 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 
 ## 🎯 Key Features
 
+### 🏢 Enterprise Multi-Tenancy
+- **Organization Management**: Support for multiple organizations with role-based access control
+- **Organization Selector**: Easy switching between organizations in the navigation
+- **Tenant Isolation**: Secure data separation between organizations
+- **Role Hierarchy**: Owner, Admin, Manager, and Member roles with proper permissions
+
+### 🔍 System Monitoring & Health Checks
+- **Production Health Dashboard**: Real-time metrics for API connectivity, memory usage, and performance
+- **System Health Check**: Comprehensive integration testing for Twilio, Retell AI, Go High Level, and database
+- **Lady Jarvis Monitoring**: Autonomous health monitoring system with adaptive check scheduling
+- **Edge Function Error Tracking**: Centralized error logging and resolution management
+- **System Testing Hub**: Unified dashboard for all monitoring and diagnostic tools
+
 ### Real-Time Concurrency Management
 - **Live concurrent call tracking** with automatic updates every 10 seconds
 - **Visual utilization monitoring** with color-coded progress bars
@@ -48,6 +61,14 @@ A comprehensive, AI-powered predictive dialing system with industry-leading feat
 
 ## 📚 Documentation
 
+### Enterprise Features
+- **Multi-Tenancy**: Organization context with graceful database fallback
+- **Monitoring Hub**: Access via `/system-testing` route
+- **Health Dashboards**: Real-time production metrics and integration checks
+- **Error Tracking**: Automatic edge function error logging
+
+### Integration Guides
+
 See [INBOUND_TRANSFER_INTEGRATION.md](./INBOUND_TRANSFER_INTEGRATION.md) for inbound transfer webhook guide including:
 - Setup instructions and configuration
 - VICIdial integration examples
@@ -70,6 +91,28 @@ See [PREDICTIVE_DIALING_GUIDE.md](./PREDICTIVE_DIALING_GUIDE.md) for comprehensi
 - Troubleshooting and performance tuning
 
 ## 🚀 Getting Started
+
+### Environment Setup
+
+1. Copy `.env.example` to `.env` and configure:
+```env
+# Required: Supabase credentials
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# Optional: Error tracking and feature flags
+VITE_SENTRY_DSN=your-sentry-dsn
+VITE_ENABLE_MONITORING=true
+VITE_ENABLE_MULTI_TENANCY=true
+```
+
+2. Install dependencies and start development server:
+```sh
+npm install
+npm run dev
+```
+
+3. Visit `/system-testing` to verify system health
 
 ## Project info
 
@@ -132,8 +175,19 @@ This project is built with:
 - Tailwind CSS
 - Supabase (Backend & Database)
 - Recharts (Data Visualization)
+- Sentry (Error Monitoring)
 
-## Predictive Dialing System Components
+## 🎭 System Architecture
+
+### Enterprise Components
+1. **OrganizationProvider**: Context provider for multi-tenant organization management
+2. **OrganizationSelector**: UI component for switching between organizations
+3. **SystemTestingHub**: Unified monitoring and diagnostics dashboard
+4. **LadyJarvisMonitor**: Autonomous health monitoring with adaptive scheduling
+5. **ProductionHealthDashboard**: Real-time production metrics and alerts
+6. **SystemHealthCheck**: Comprehensive integration testing suite
+
+### Predictive Dialing System Components
 
 ### New Components (4)
 1. **ConcurrencyMonitor**: Real-time concurrent call tracking and management
