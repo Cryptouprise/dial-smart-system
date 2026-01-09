@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Shield, CheckCircle, AlertCircle, Zap, Eye } from 'lucide-react';
+import { Shield, CheckCircle, AlertCircle, Zap, Eye, Wrench, MessageSquare } from 'lucide-react';
 import { useAIErrors } from '@/contexts/AIErrorContext';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +12,10 @@ const GuardianStatusWidget: React.FC = () => {
   const navigate = useNavigate();
 
   const pendingCount = errors.filter(e => e.status === 'pending').length;
-  const fixedCount = errors.filter(e => e.status === 'fixed').length;
+  
+  // Separate actual fixes from suggestions
+  const actuallyFixed = errors.filter(e => e.status === 'fixed' && e.actualChange);
+  const suggestionsOnly = errors.filter(e => e.status === 'fixed' && !e.actualChange);
   const failedCount = errors.filter(e => e.status === 'failed').length;
   
   const lastError = errors[0];
@@ -45,20 +48,45 @@ const GuardianStatusWidget: React.FC = () => {
         </div>
       </CardHeader>
       <CardContent className="pt-0 px-4 pb-4 space-y-3">
-        <div className="grid grid-cols-3 gap-2 text-center">
+        {/* Updated Grid: Pending, Actually Fixed, Suggestions, Failed */}
+        <div className="grid grid-cols-4 gap-1.5 text-center">
           <div className="p-2 rounded-lg bg-muted/50">
             <div className="text-lg font-bold text-yellow-500">{pendingCount}</div>
-            <div className="text-xs text-muted-foreground">Pending</div>
+            <div className="text-[10px] text-muted-foreground">Pending</div>
           </div>
           <div className="p-2 rounded-lg bg-muted/50">
-            <div className="text-lg font-bold text-green-500">{fixedCount}</div>
-            <div className="text-xs text-muted-foreground">Fixed</div>
+            <div className="flex items-center justify-center gap-1">
+              <Wrench className="h-3 w-3 text-green-500" />
+              <span className="text-lg font-bold text-green-500">{actuallyFixed.length}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground">Fixed</div>
+          </div>
+          <div className="p-2 rounded-lg bg-muted/50">
+            <div className="flex items-center justify-center gap-1">
+              <MessageSquare className="h-3 w-3 text-blue-500" />
+              <span className="text-lg font-bold text-blue-500">{suggestionsOnly.length}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground">Suggested</div>
           </div>
           <div className="p-2 rounded-lg bg-muted/50">
             <div className="text-lg font-bold text-red-500">{failedCount}</div>
-            <div className="text-xs text-muted-foreground">Failed</div>
+            <div className="text-[10px] text-muted-foreground">Failed</div>
           </div>
         </div>
+
+        {/* Recent Fixes Summary */}
+        {actuallyFixed.length > 0 && (
+          <div className="text-xs bg-green-50 dark:bg-green-900/20 p-2 rounded border border-green-200 dark:border-green-800">
+            <span className="font-medium text-green-700 dark:text-green-400">
+              ✓ {actuallyFixed.length} issue(s) actually fixed
+            </span>
+            {actuallyFixed[0]?.fixDetails && (
+              <p className="text-green-600 dark:text-green-500 mt-1">
+                Last: {JSON.stringify(actuallyFixed[0].fixDetails).substring(0, 50)}...
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1">

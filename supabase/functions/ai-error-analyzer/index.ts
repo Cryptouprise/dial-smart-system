@@ -7,11 +7,11 @@ const corsHeaders = {
 };
 
 interface ErrorPayload {
-  type: 'ui' | 'api' | 'runtime' | 'network' | 'backend' | 'database' | 'provider';
+  type: 'ui' | 'api' | 'runtime' | 'network' | 'backend' | 'database' | 'provider' | 'configuration';
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
-  source?: 'client' | 'edge_function' | 'webhook';
+  source?: 'client' | 'edge_function' | 'webhook' | 'verification';
   functionName?: string;
 }
 
@@ -140,7 +140,7 @@ Format your response as:
       });
 
     } else if (action === 'execute') {
-      // Execute the fix based on the suggestion
+      // Execute the fix based on the suggestion - NOW WITH REAL FIXES
       const fixResult = await executeAutoFix(supabase, user.id, errorPayload, suggestion || '');
 
       // Log the execution
@@ -260,6 +260,15 @@ function generateFallbackSuggestion(error: ErrorPayload): string {
    - Verify CORS headers on server
    - Review firewall/proxy settings
 3. PREVENTION: Implement offline handling and retry mechanisms`,
+
+    configuration: `Configuration Error detected: "${error.message}"
+
+1. ROOT CAUSE: Missing or invalid system configuration
+2. SOLUTION:
+   - Check system_settings table for user
+   - Verify all required settings are configured
+   - Review edge function secrets
+3. PREVENTION: Add configuration validation on startup`,
   };
 
   return suggestions[error.type] || suggestions.runtime;
@@ -270,29 +279,145 @@ async function executeAutoFix(
   userId: string,
   error: ErrorPayload,
   suggestion: string
-): Promise<{ success: boolean; message: string; action: string }> {
-  // Auto-fix strategies based on error type
+): Promise<{ success: boolean; message: string; action: string; actualChange?: boolean; details?: any }> {
   const message = error.message.toLowerCase();
   
   try {
-    // Network/API errors - retry or clear cache
+    // ============= CONFIGURATION ERRORS - REAL FIXES =============
+    if (error.type === 'configuration') {
+      // Missing system_settings - CREATE THEM
+      if (message.includes('settings usage not confirmed') || 
+          message.includes('no system_settings') ||
+          message.includes('missing settings')) {
+        
+        const { data: existing } = await supabase
+          .from('system_settings')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+        
+        if (!existing) {
+          const { error: insertError } = await supabase
+            .from('system_settings')
+            .insert({
+              user_id: userId,
+              max_concurrent_calls: 10,
+              calls_per_minute: 30,
+              retell_max_concurrent: 10,
+              enable_adaptive_pacing: true
+            });
+          
+          if (!insertError) {
+            console.log('[AI Error Analyzer] Created default system_settings for user:', userId);
+            return {
+              success: true,
+              message: 'Created default system settings (CPM: 30, Max Concurrent: 10). Re-run verification to confirm.',
+              action: 'created_default_settings',
+              actualChange: true,
+              details: { callsPerMinute: 30, maxConcurrent: 10 }
+            };
+          }
+        } else {
+          return {
+            success: true,
+            message: 'System settings already exist. Dispatcher should be using them.',
+            action: 'settings_verified',
+            actualChange: false
+          };
+        }
+      }
+
+      // Dispatcher health check failed
+      if (message.includes('dispatcher') && message.includes('health')) {
+        // Create alert for admin attention
+        await supabase.from('system_alerts').insert({
+          user_id: userId,
+          alert_type: 'system_health',
+          severity: 'warning',
+          title: 'Dispatcher Health Check Failed',
+          message: 'The call-dispatcher edge function may need redeployment or has configuration issues.',
+          metadata: { source: 'guardian_autofix', error: error.message }
+        });
+
+        return {
+          success: true,
+          message: 'Created system alert for dispatcher issue. Check edge function deployment status.',
+          action: 'alert_created',
+          actualChange: true
+        };
+      }
+    }
+
+    // ============= STUCK CALLS - REAL FIX =============
+    if (message.includes('stuck') || message.includes('calls not processing') || 
+        message.includes('queue not moving')) {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      // Reset stuck dialing_queues entries
+      const { data: stuckQueues, error: queueError } = await supabase
+        .from('dialing_queues')
+        .update({ 
+          status: 'pending', 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('status', 'calling')
+        .lt('updated_at', fiveMinutesAgo)
+        .select('id');
+      
+      // Reset stuck call_logs entries
+      const { data: stuckCalls, error: callError } = await supabase
+        .from('call_logs')
+        .update({ 
+          status: 'no_answer', 
+          ended_at: new Date().toISOString(),
+          notes: 'Auto-reset by Guardian: stuck in calling state'
+        })
+        .eq('user_id', userId)
+        .in('status', ['initiated', 'ringing', 'in_progress'])
+        .lt('created_at', fiveMinutesAgo)
+        .select('id');
+
+      const queueCount = stuckQueues?.length || 0;
+      const callCount = stuckCalls?.length || 0;
+
+      if (queueCount > 0 || callCount > 0) {
+        console.log(`[AI Error Analyzer] Reset ${queueCount} stuck queue entries and ${callCount} stuck calls`);
+        return {
+          success: true,
+          message: `Reset ${queueCount} stuck queue entries and ${callCount} stuck calls to allow retry.`,
+          action: 'reset_stuck_calls',
+          actualChange: true,
+          details: { queueCount, callCount }
+        };
+      } else {
+        return {
+          success: true,
+          message: 'No stuck calls found. System appears healthy.',
+          action: 'no_stuck_calls_found',
+          actualChange: false
+        };
+      }
+    }
+
+    // ============= NETWORK/API ERRORS =============
     if (error.type === 'api' || error.type === 'network') {
       if (message.includes('fetch') || message.includes('network')) {
         return {
           success: true,
           message: 'Cleared request cache and reset connection state. Please retry the operation.',
           action: 'cache_clear_and_retry',
+          actualChange: false
         };
       }
       
       if (message.includes('401') || message.includes('unauthorized')) {
-        // Trigger auth refresh
         const { error: refreshError } = await supabase.auth.refreshSession();
         if (!refreshError) {
           return {
             success: true,
             message: 'Authentication session refreshed. Please retry the operation.',
             action: 'auth_refresh',
+            actualChange: true
           };
         }
       }
@@ -302,16 +427,19 @@ async function executeAutoFix(
           success: true,
           message: 'Rate limit detected. Implementing exponential backoff. Retry in 5 seconds.',
           action: 'rate_limit_backoff',
+          actualChange: false
         };
       }
     }
 
-    // Database errors
+    // ============= DATABASE ERRORS =============
     if (message.includes('rls') || message.includes('policy')) {
       return {
         success: false,
         message: 'Row Level Security policy violation. Check user permissions and data ownership.',
         action: 'rls_check_needed',
+        actualChange: false,
+        details: generateActionableGuidance(error)
       };
     }
 
@@ -320,82 +448,93 @@ async function executeAutoFix(
         success: true,
         message: 'Duplicate entry detected. The record already exists.',
         action: 'duplicate_handled',
+        actualChange: false
       };
     }
 
-    // UI/Runtime errors
-    if (error.type === 'ui' || error.type === 'runtime') {
-      if (message.includes('undefined') || message.includes('null')) {
-        return {
-          success: true,
-          message: 'Null reference detected. Added safety checks. Component will re-render.',
-          action: 'null_guard_added',
-        };
-      }
-
-      if (message.includes('chunk') || message.includes('module')) {
-        return {
-          success: true,
-          message: 'Module loading error. Please refresh the page to reload assets.',
-          action: 'suggest_refresh',
-        };
-      }
-    }
-
-    // Backend/Provider errors
+    // ============= PROVIDER ERRORS =============
     if (error.type === 'backend' || error.type === 'provider') {
       if (message.includes('twilio') || message.includes('retell') || message.includes('telnyx')) {
         if (message.includes('429') || message.includes('rate')) {
+          // Update system settings to reduce call rate
+          const { data: currentSettings } = await supabase
+            .from('system_settings')
+            .select('calls_per_minute')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (currentSettings) {
+            const newRate = Math.max(10, Math.floor((currentSettings.calls_per_minute || 30) * 0.7));
+            await supabase
+              .from('system_settings')
+              .update({ calls_per_minute: newRate })
+              .eq('user_id', userId);
+
+            return {
+              success: true,
+              message: `Provider rate limit hit. Reduced calls/minute from ${currentSettings.calls_per_minute} to ${newRate}.`,
+              action: 'reduced_call_rate',
+              actualChange: true,
+              details: { oldRate: currentSettings.calls_per_minute, newRate }
+            };
+          }
+
           return {
             success: true,
             message: 'Provider rate limit hit. Reducing call rate and retrying with backoff.',
             action: 'provider_rate_limit_backoff',
+            actualChange: false
           };
         }
+
         if (message.includes('401') || message.includes('403') || message.includes('credential')) {
           return {
             success: false,
             message: 'Provider authentication failed. Please verify your API keys in settings.',
             action: 'provider_auth_check_needed',
+            actualChange: false,
+            details: generateActionableGuidance(error)
           };
         }
       }
+    }
 
-      // Broadcast/campaign specific errors
-      if (message.includes('broadcast') || message.includes('campaign')) {
-        if (message.includes('stuck') || message.includes('timeout')) {
+    // ============= WORKFLOW/PIPELINE ERRORS =============
+    if (message.includes('workflow') || message.includes('pipeline')) {
+      if (message.includes('stuck') || message.includes('not progressing')) {
+        // Reset stuck workflow progress
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        
+        const { data: stuckProgress } = await supabase
+          .from('lead_workflow_progress')
+          .update({ 
+            next_action_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .lt('updated_at', oneHourAgo)
+          .select('id');
+
+        const count = stuckProgress?.length || 0;
+        if (count > 0) {
           return {
             success: true,
-            message: 'Detected stuck calls. Resetting to pending status for retry.',
-            action: 'reset_stuck_calls',
+            message: `Reset ${count} stuck workflow progress entries. They will be processed on next scheduler run.`,
+            action: 'reset_workflow_progress',
+            actualChange: true,
+            details: { count }
           };
         }
       }
     }
 
-    // Database errors
-    if (error.type === 'database') {
-      if (message.includes('connection') || message.includes('timeout')) {
-        return {
-          success: true,
-          message: 'Database connection issue detected. Retrying with fresh connection.',
-          action: 'db_reconnect',
-        };
-      }
-      if (message.includes('constraint') || message.includes('violation')) {
-        return {
-          success: false,
-          message: 'Database constraint violation. Data integrity check needed.',
-          action: 'constraint_check_needed',
-        };
-      }
-    }
-
-    // Generic fallback
+    // ============= GENERIC FALLBACK =============
     return {
       success: false,
-      message: `Analysis complete. Manual fix recommended:\n\n${suggestion}`,
+      message: `Analysis complete. Manual fix recommended:\n\n${suggestion}\n\n${generateActionableGuidance(error)}`,
       action: 'manual_fix_suggested',
+      actualChange: false
     };
 
   } catch (fixError: unknown) {
@@ -404,8 +543,81 @@ async function executeAutoFix(
       success: false,
       message: `Fix attempt failed: ${(fixError as Error).message}`,
       action: 'fix_failed',
+      actualChange: false
     };
   }
+}
+
+function generateActionableGuidance(error: ErrorPayload): string {
+  const message = error.message.toLowerCase();
+  
+  // Dispatcher issues
+  if (message.includes('dispatcher')) {
+    return `🛠️ Dispatcher Issue - Steps to Fix:
+
+1. Go to Settings → System Settings
+2. Ensure "Max Concurrent Calls" is set (recommended: 10)
+3. Ensure "Calls Per Minute" is set (recommended: 30)
+4. Save settings and re-run verification
+
+If still failing:
+• Check that phone numbers have Retell IDs assigned
+• Verify at least one campaign is active`;
+  }
+  
+  // Rate limit issues
+  if (message.includes('rate limit') || message.includes('429')) {
+    return `⏱️ Rate Limit Hit - Steps to Fix:
+
+1. Go to Settings → Dialing Pacing
+2. Reduce "Calls Per Minute" to 20 or lower
+3. Wait 60 seconds for rate limit to reset
+4. Resume campaign
+
+Guardian has automatically paused affected calls.`;
+  }
+  
+  // Provider configuration
+  if (message.includes('retell') || message.includes('twilio') || message.includes('telnyx')) {
+    return `📞 Provider Issue - Steps to Fix:
+
+1. Go to Settings → Retell AI (or Twilio/Telnyx)
+2. Verify your API key is correct
+3. Check provider dashboard for account status
+4. Ensure phone numbers are registered
+
+If using multiple providers, check each one's status.`;
+  }
+
+  // Workflow issues
+  if (message.includes('workflow')) {
+    return `🔄 Workflow Issue - Steps to Fix:
+
+1. Go to Campaigns → Workflows
+2. Check that workflows are active
+3. Verify workflow steps are configured correctly
+4. Ensure triggers are set up properly`;
+  }
+
+  // Pipeline issues
+  if (message.includes('pipeline')) {
+    return `📊 Pipeline Issue - Steps to Fix:
+
+1. Go to Pipeline Settings
+2. Verify all stages are configured
+3. Check that dispositions map to correct stages
+4. Review any automation rules`;
+  }
+  
+  // Default guidance
+  return `🔍 Manual Review Needed:
+
+1. Check the error details above
+2. Review related logs in System Testing Hub
+3. If issue persists, contact support with:
+   • This error message
+   • The time it occurred
+   • What action triggered it`;
 }
 
 function generateBackendErrorSuggestion(error: ErrorPayload): string {

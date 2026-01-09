@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 export interface ErrorRecord {
   id: string;
   timestamp: Date;
-  type: 'ui' | 'api' | 'runtime' | 'network';
+  type: 'ui' | 'api' | 'runtime' | 'network' | 'configuration';
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
@@ -13,6 +13,8 @@ export interface ErrorRecord {
   suggestion?: string;
   autoFixAttempted?: boolean;
   retryCount: number;
+  actualChange?: boolean; // NEW: Flag indicating if Guardian actually modified data
+  fixDetails?: Record<string, unknown>; // NEW: Details about what was changed
 }
 
 export interface AIErrorSettings {
@@ -212,12 +214,18 @@ export const useAIErrorHandler = () => {
 
       if (data?.success) {
         setErrors(prev => prev.map(e => 
-          e.id === errorId ? { ...e, status: 'fixed', autoFixAttempted: true } : e
+          e.id === errorId ? { 
+            ...e, 
+            status: 'fixed', 
+            autoFixAttempted: true,
+            actualChange: data.actualChange || false,
+            fixDetails: data.details
+          } : e
         ));
 
         toast({
-          title: "🛡️ Guardian resolved the issue",
-          description: data.message || "The error has been automatically fixed",
+          title: data.actualChange ? "🛡️ Guardian fixed the issue" : "🛡️ Guardian analyzed the issue",
+          description: data.message || "The error has been processed",
         });
 
         return true;

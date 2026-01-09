@@ -155,6 +155,27 @@ serve(async (req) => {
       user = { id: authUser.id };
     }
 
+    // Handle health_check action for system verification
+    if (action === 'health_check') {
+      console.log('[Dispatcher] Health check requested');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          healthy: true,
+          timestamp: new Date().toISOString(),
+          capabilities: ['dispatch', 'cleanup_stuck_calls', 'health_check'],
+          settingsConfigured: !!systemSettings,
+          currentSettings: systemSettings ? {
+            callsPerMinute,
+            maxConcurrent,
+            retellConcurrent: retellConcurrency,
+            adaptivePacing
+          } : null
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Handle cleanup action
     if (action === 'cleanup_stuck_calls') {
       const { cleanedCount, resetQueueCount } = await cleanupStuckCallsAndQueues(supabase, user.id);
@@ -1009,6 +1030,16 @@ serve(async (req) => {
         maxDialsInFlight,
         utilizationPercent: utilizationPct,
         nextBatchDelaySeconds: delaySeconds,
+        // NEW: usedSettings for verification diagnostics
+        usedSettings: {
+          callsPerMinute,
+          maxConcurrent: maxDialsInFlight,
+          retellConcurrent: retellConcurrency,
+          adaptivePacing,
+          source: systemSettings ? 'configured' : 'defaults'
+        },
+        targetBatchSize: batchSize,
+        availableSlots: maxDialsInFlight - activeCount,
         callbacks: { 
           queued: callbacksQueued, 
           enrolled: callbacksEnrolledInWorkflow, 
