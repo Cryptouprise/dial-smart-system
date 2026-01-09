@@ -155,22 +155,39 @@ serve(async (req) => {
       user = { id: authUser.id };
     }
 
+    // ============= FETCH SYSTEM SETTINGS FIRST (before health_check) =============
+    const { data: systemSettings, error: settingsError } = await supabase
+      .from('system_settings')
+      .select('max_concurrent_calls, calls_per_minute, retell_max_concurrent, enable_adaptive_pacing')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (settingsError) {
+      console.warn('[Dispatcher] Settings fetch error (continuing with defaults):', settingsError.message);
+    }
+
+    const retellConcurrency = systemSettings?.retell_max_concurrent || 10;
+    const callsPerMinute = systemSettings?.calls_per_minute || 40;
+    const maxConcurrent = systemSettings?.max_concurrent_calls || 10;
+    const adaptivePacing = systemSettings?.enable_adaptive_pacing !== false;
+
     // Handle health_check action for system verification
-    if (action === 'health_check') {
+    if (action === 'health_check' || action === 'status_check') {
       console.log('[Dispatcher] Health check requested');
       return new Response(
         JSON.stringify({
           success: true,
           healthy: true,
           timestamp: new Date().toISOString(),
+          function: 'call-dispatcher',
           capabilities: ['dispatch', 'cleanup_stuck_calls', 'health_check'],
           settingsConfigured: !!systemSettings,
-          currentSettings: systemSettings ? {
+          currentSettings: {
             callsPerMinute,
             maxConcurrent,
             retellConcurrent: retellConcurrency,
             adaptivePacing
-          } : null
+          }
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -191,18 +208,6 @@ serve(async (req) => {
     }
 
     console.log('Call Dispatcher running for user:', user.id);
-
-    // ============= FETCH SYSTEM SETTINGS FOR CONCURRENCY CONTROL =============
-    const { data: systemSettings } = await supabase
-      .from('system_settings')
-      .select('max_concurrent_calls, calls_per_minute, retell_max_concurrent, enable_adaptive_pacing')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const retellConcurrency = systemSettings?.retell_max_concurrent || 10;
-    const callsPerMinute = systemSettings?.calls_per_minute || 40;
-    const maxConcurrent = systemSettings?.max_concurrent_calls || 10;
-    const adaptivePacing = systemSettings?.enable_adaptive_pacing !== false;
 
     console.log(`[Dispatcher] Settings: ${retellConcurrency} Retell concurrent, ${callsPerMinute} calls/min, adaptive: ${adaptivePacing}`);
 

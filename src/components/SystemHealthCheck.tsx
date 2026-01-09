@@ -15,7 +15,8 @@ import {
   Link,
   Database,
   Shield,
-  MessageSquare
+  MessageSquare,
+  Zap
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -25,12 +26,33 @@ interface HealthCheckResult {
   status: 'pending' | 'success' | 'error' | 'warning';
   message: string;
   details?: string;
-  category: 'auth' | 'retell' | 'twilio' | 'ghl' | 'database' | 'sms';
+  category: 'auth' | 'retell' | 'twilio' | 'ghl' | 'database' | 'sms' | 'edge_functions';
 }
+
+interface EdgeFunctionTestResult {
+  name: string;
+  status: 'pending' | 'success' | 'error';
+  message: string;
+  details?: string;
+  capabilities?: string[];
+}
+
+// Critical edge functions that should have health_check handlers
+const CRITICAL_EDGE_FUNCTIONS = [
+  { name: 'call-dispatcher', description: 'Dispatches outbound calls' },
+  { name: 'sms-messaging', description: 'Handles SMS sending' },
+  { name: 'workflow-executor', description: 'Executes workflow steps' },
+  { name: 'voice-broadcast-queue', description: 'Manages broadcast queues' },
+  { name: 'disposition-router', description: 'Routes call dispositions' },
+  { name: 'retell-call-webhook', description: 'Handles Retell webhooks' },
+  { name: 'ai-error-analyzer', description: 'Guardian error analysis' },
+];
 
 export const SystemHealthCheck = () => {
   const [isRunning, setIsRunning] = useState(false);
+  const [isTestingFunctions, setIsTestingFunctions] = useState(false);
   const [results, setResults] = useState<HealthCheckResult[]>([]);
+  const [edgeFunctionResults, setEdgeFunctionResults] = useState<EdgeFunctionTestResult[]>([]);
   const resultsRef = useRef<HealthCheckResult[]>([]);
   const { toast } = useToast();
 
@@ -38,10 +60,70 @@ export const SystemHealthCheck = () => {
     setResults(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], status, message, details };
-      // Keep a non-react ref in sync so we can safely compute summary/toasts
-      // without triggering side-effects inside React state updater functions.
       resultsRef.current = updated;
       return updated;
+    });
+  };
+
+  // Test all critical edge functions with health_check
+  const testAllEdgeFunctions = async () => {
+    setIsTestingFunctions(true);
+    
+    const initialResults: EdgeFunctionTestResult[] = CRITICAL_EDGE_FUNCTIONS.map(fn => ({
+      name: fn.name,
+      status: 'pending' as const,
+      message: 'Testing...',
+      details: fn.description,
+    }));
+    
+    setEdgeFunctionResults(initialResults);
+    
+    const updatedResults = [...initialResults];
+    
+    for (let i = 0; i < CRITICAL_EDGE_FUNCTIONS.length; i++) {
+      const fn = CRITICAL_EDGE_FUNCTIONS[i];
+      
+      try {
+        const { data, error } = await supabase.functions.invoke(fn.name, {
+          body: { action: 'health_check' }
+        });
+        
+        if (error) throw error;
+        
+        if (data?.healthy || data?.success) {
+          updatedResults[i] = {
+            name: fn.name,
+            status: 'success',
+            message: 'Healthy',
+            details: data.capabilities ? `Capabilities: ${data.capabilities.join(', ')}` : fn.description,
+            capabilities: data.capabilities,
+          };
+        } else {
+          throw new Error(data?.error || 'Unknown error');
+        }
+      } catch (error: any) {
+        updatedResults[i] = {
+          name: fn.name,
+          status: 'error',
+          message: error.message || 'Failed',
+          details: fn.description,
+        };
+      }
+      
+      setEdgeFunctionResults([...updatedResults]);
+    }
+    
+    setIsTestingFunctions(false);
+    
+    const successCount = updatedResults.filter(r => r.status === 'success').length;
+    const errorCount = updatedResults.filter(r => r.status === 'error').length;
+    
+    toast({
+      title: `Edge Functions: ${successCount}/${CRITICAL_EDGE_FUNCTIONS.length} Healthy`,
+      description: errorCount > 0 
+        ? `${errorCount} function(s) need attention`
+        : 'All critical functions operational!',
+      variant: errorCount > 0 ? 'destructive' : 'default',
     });
   };
 
@@ -63,7 +145,7 @@ export const SystemHealthCheck = () => {
       { name: 'Database - Phone Numbers Table', status: 'pending', message: 'Checking...', category: 'database' },
       { name: 'Database - SMS Messages Table', status: 'pending', message: 'Checking...', category: 'sms' },
       { name: 'Database - Campaigns Table', status: 'pending', message: 'Checking...', category: 'database' },
-      { name: 'Edge Functions - Health', status: 'pending', message: 'Checking...', category: 'database' },
+      { name: 'Edge Functions - Health', status: 'pending', message: 'Checking...', category: 'edge_functions' },
     ];
 
     resultsRef.current = checks;
@@ -317,6 +399,7 @@ export const SystemHealthCheck = () => {
       case 'twilio': return <Phone className="h-4 w-4" />;
       case 'ghl': return <Link className="h-4 w-4" />;
       case 'database': return <Database className="h-4 w-4" />;
+      case 'edge_functions': return <Zap className="h-4 w-4" />;
       case 'sms': return <MessageSquare className="h-4 w-4" />;
     }
   };
@@ -359,6 +442,7 @@ export const SystemHealthCheck = () => {
     twilio: 'Twilio',
     ghl: 'Go High Level',
     database: 'Database',
+    edge_functions: 'Edge Functions',
     sms: 'SMS System'
   };
 
@@ -375,33 +459,88 @@ export const SystemHealthCheck = () => {
               Validates all integrations: Twilio, Retell AI, Go High Level, Database, and SMS
             </CardDescription>
           </div>
-          <Button
-            onClick={runHealthCheck}
-            disabled={isRunning}
-            size="lg"
-          >
-            {isRunning ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Running {results.filter(r => r.status !== 'pending').length}/{results.length}...
-              </>
-            ) : (
-              <>
-                <PlayCircle className="h-4 w-4 mr-2" />
-                Run Health Check
-              </>
-            )}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={testAllEdgeFunctions}
+              disabled={isTestingFunctions || isRunning}
+              variant="outline"
+            >
+              {isTestingFunctions ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Testing Functions...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4 mr-2" />
+                  Test Edge Functions
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={runHealthCheck}
+              disabled={isRunning || isTestingFunctions}
+              size="lg"
+            >
+              {isRunning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Running {results.filter(r => r.status !== 'pending').length}/{results.length}...
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  Run Health Check
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
-        {results.length === 0 ? (
+      <CardContent className="space-y-6">
+        {/* Edge Function Test Results */}
+        {edgeFunctionResults.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+              <Zap className="h-4 w-4" />
+              Edge Function Health Check
+              <Badge variant="outline" className="ml-2">
+                {edgeFunctionResults.filter(r => r.status === 'success').length}/{edgeFunctionResults.length} Healthy
+              </Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-6">
+              {edgeFunctionResults.map((result, index) => (
+                <div
+                  key={`edge-${index}`}
+                  className="flex items-start gap-3 p-3 border rounded-lg bg-card"
+                >
+                  <div className="flex-shrink-0 mt-0.5">
+                    {getStatusIcon(result.status)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-sm font-mono">{result.name}</h4>
+                      {getStatusBadge(result.status)}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{result.message}</p>
+                    {result.details && (
+                      <p className="text-xs text-muted-foreground">{result.details}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Main Health Check Results */}
+        {results.length === 0 && edgeFunctionResults.length === 0 ? (
           <Alert>
             <AlertDescription>
-              Click "Run Health Check" to test all system integrations including Twilio, Retell AI, Go High Level, and database connections.
+              Click "Test Edge Functions" to verify all critical backend functions, or "Run Health Check" to test all system integrations.
             </AlertDescription>
           </Alert>
-        ) : (
+        ) : results.length > 0 && (
           <div className="space-y-6">
             {Object.entries(groupedResults).map(([category, categoryResults]) => (
               <div key={category} className="space-y-2">

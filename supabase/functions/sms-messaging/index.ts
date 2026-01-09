@@ -99,9 +99,26 @@ serve(async (req) => {
       return btoa(credentials);
     };
 
+    // Get Telnyx credentials (for health check)
+    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+
     let result: Record<string, unknown>;
 
     switch (request.action) {
+      case 'health_check': {
+        console.log('[SMS Messaging] Health check requested');
+        result = {
+          success: true,
+          healthy: true,
+          timestamp: new Date().toISOString(),
+          function: 'sms-messaging',
+          capabilities: ['send_sms', 'get_messages', 'get_available_numbers', 'check_webhook_status', 'configure_webhook'],
+          twilio_configured: !!(twilioAccountSid && twilioAuthToken),
+          telnyx_configured: !!telnyxApiKey,
+        };
+        break;
+      }
+
       case 'send_sms': {
         if (!request.to || !request.from || !request.body) {
           throw new Error('To, from, and body are required for sending SMS');
