@@ -116,13 +116,13 @@ After completing the setup, verify all of the following:
 - [ ] All existing users are mapped to default-org as 'owner'
 - [ ] Edge function errors table exists and is accessible
 - [ ] Helper functions work correctly:
-  - [ ] `get_user_organizations(UUID)` 
-  - [ ] `user_in_organization(UUID)` with two params
-  - [ ] `user_in_organization(UUID)` with one param (uses auth.uid())
-  - [ ] `get_user_org_role(UUID, UUID)` with two params
-  - [ ] `get_user_org_role(UUID)` with one param (uses auth.uid())
-  - [ ] `is_org_admin(UUID, UUID)` with two params
-  - [ ] `is_org_admin(UUID)` with one param (uses auth.uid())
+  - [ ] `get_user_organizations(user_uuid UUID)` 
+  - [ ] `user_in_organization(user_uuid UUID, org_uuid UUID)` with two params
+  - [ ] `user_in_organization(org_uuid UUID)` with one param (uses auth.uid())
+  - [ ] `get_user_org_role(user_uuid UUID, org_uuid UUID)` with two params
+  - [ ] `get_user_org_role(org_uuid UUID)` with one param (uses auth.uid())
+  - [ ] `is_org_admin(user_uuid UUID, org_uuid UUID)` with two params
+  - [ ] `is_org_admin(org_uuid UUID)` with one param (uses auth.uid())
 - [ ] RLS policies allow viewing own organization data
 - [ ] RLS policies allow admins to update organizations
 - [ ] RLS policies allow authenticated users to create organizations
@@ -155,6 +155,24 @@ This comprehensive migration:
 7. ✅ Creates a 'Default Organization' if it doesn't exist
 8. ✅ Maps all existing users to the default organization as 'owner'
 9. ✅ Creates an `enterprise_status_v` view for easy verification
+
+## Security Considerations
+
+### User Role Assignment
+By default, all existing users are assigned the 'owner' role in the default organization to ensure backward compatibility and prevent permission issues during migration. After running the migration, administrators should:
+
+1. Review user roles in the default organization
+2. Adjust roles as needed (downgrade unnecessary owners to members)
+3. Create separate organizations for different client groups
+
+### RLS Policies
+The migration creates comprehensive Row Level Security (RLS) policies that:
+- Restrict users to viewing only their organization's data
+- Require admin privileges for modifying organization settings
+- Allow service role access for system operations
+
+### Edge Function Error Logging
+The error logging system allows unrestricted insertions via the service role. This is intentional to ensure errors are captured even during system failures. The errors table uses RLS to restrict viewing to authorized users only.
 
 ## Next Steps
 

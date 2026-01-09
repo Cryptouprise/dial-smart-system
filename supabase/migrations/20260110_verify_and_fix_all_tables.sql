@@ -220,6 +220,9 @@ SELECT 'Default Organization', 'default-org', 'enterprise', 'active'
 WHERE NOT EXISTS (SELECT 1 FROM public.organizations WHERE slug = 'default-org');
 
 -- Map all existing users to default organization as owners (if not already mapped)
+-- NOTE: All users are given 'owner' role to ensure backward compatibility
+-- and prevent any permission issues during migration. Admins can adjust
+-- roles after migration if needed.
 INSERT INTO public.organization_users (organization_id, user_id, role)
 SELECT 
   (SELECT id FROM public.organizations WHERE slug = 'default-org'),
