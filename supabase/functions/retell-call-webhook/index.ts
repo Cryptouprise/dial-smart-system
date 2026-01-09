@@ -691,9 +691,15 @@ serve(async (req) => {
     }
 
     const metadata = call.metadata || {};
-    const leadId = metadata.lead_id;
+    let leadId = metadata.lead_id;
     const campaignId = metadata.campaign_id;
     let userId = metadata.user_id;
+
+    // Phone numbers for fallback lookups
+    const callerNumber = call.from_number || '';
+    const receivingNumber = call.to_number || '';
+    const callerLast10 = callerNumber.replace(/\D/g, '').slice(-10);
+    const receivingLast10 = receivingNumber.replace(/\D/g, '').slice(-10);
 
     // If user_id is missing from metadata, try to look it up from call_logs
     if (!userId) {
@@ -706,15 +712,93 @@ serve(async (req) => {
       
       if (callLogLookup?.user_id) {
         userId = callLogLookup.user_id;
-        console.log('[Retell Webhook] Found user_id from call_logs:', userId);
-      } else {
-        console.error('[Retell Webhook] Could not find user_id for call:', call.call_id);
-        return new Response(JSON.stringify({ error: 'Could not determine user_id for call' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        if (!leadId && callLogLookup.lead_id) {
+          leadId = callLogLookup.lead_id;
+        }
+        console.log('[Retell Webhook] Found user_id from call_logs:', userId, 'lead_id:', leadId);
       }
     }
+
+    // === PHASE 1: FALLBACK PHONE LOOKUP ===
+    // If still no userId, try to find user by receiving phone number
+    if (!userId && receivingLast10) {
+      console.log('[Retell Webhook] Trying phone lookup for userId using receiving number:', receivingNumber);
+      const { data: phoneOwner } = await supabase
+        .from('phone_numbers')
+        .select('user_id')
+        .ilike('number', `%${receivingLast10}`)
+        .limit(1)
+        .maybeSingle();
+      
+      if (phoneOwner?.user_id) {
+        userId = phoneOwner.user_id;
+        console.log('[Retell Webhook] Found userId via phone lookup:', userId);
+      }
+    }
+
+    // If still no user, we can't process this call
+    if (!userId) {
+      console.error('[Retell Webhook] Could not find user_id for call:', call.call_id);
+      return new Response(JSON.stringify({ error: 'Could not determine user_id for call' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // === PHASE 1 CONTINUED: FALLBACK LEAD LOOKUP ===
+    // If we have userId but no leadId, try to find lead by caller phone number
+    if (!leadId && userId && callerLast10) {
+      console.log('[Retell Webhook] No lead_id, trying phone lookup for lead using caller number:', callerNumber);
+      const { data: foundLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('user_id', userId)
+        .ilike('phone_number', `%${callerLast10}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (foundLead?.id) {
+        leadId = foundLead.id;
+        console.log('[Retell Webhook] Found lead via phone lookup:', leadId);
+      }
+    }
+
+    // === PHASE 2: AUTO-CREATE LEAD FOR UNKNOWN INBOUND CALLERS ===
+    if (!leadId && userId && callerLast10) {
+      console.log('[Retell Webhook] Creating new lead for unknown inbound caller:', callerNumber);
+      const formattedPhone = callerNumber.startsWith('+') ? callerNumber : `+1${callerLast10}`;
+      
+      const { data: newLead, error: createError } = await supabase
+        .from('leads')
+        .insert({
+          user_id: userId,
+          phone_number: formattedPhone,
+          first_name: '',
+          last_name: '',
+          status: 'new',
+          lead_source: 'inbound_call',
+          notes: `Auto-created from inbound call on ${new Date().toLocaleString()}`,
+        })
+        .select('id')
+        .maybeSingle();
+      
+      if (!createError && newLead?.id) {
+        leadId = newLead.id;
+        console.log('[Retell Webhook] Created new lead for inbound caller:', leadId);
+      } else if (createError) {
+        console.error('[Retell Webhook] Failed to create lead for inbound caller:', createError);
+      }
+    }
+
+    // === PHASE 3: DETAILED LOGGING FOR INBOUND CALL LIFECYCLE ===
+    console.log('[Retell Webhook] === CALL ENDED LIFECYCLE CHECK ===');
+    console.log('[Retell Webhook] Direction:', call.direction || 'unknown');
+    console.log('[Retell Webhook] Caller:', callerNumber);
+    console.log('[Retell Webhook] Receiving:', receivingNumber);
+    console.log('[Retell Webhook] Lead ID found:', leadId ? `YES (${leadId})` : 'NO');
+    console.log('[Retell Webhook] User ID:', userId);
+    console.log('[Retell Webhook] Will process lifecycle:', leadId && userId ? 'YES' : 'NO - missing lead or user');
 
     // Calculate call duration
     const durationSeconds = call.start_timestamp && call.end_timestamp

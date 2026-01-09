@@ -120,6 +120,8 @@ serve(async (req) => {
       });
     }
 
+    const callerLast10 = callerFormats.find(f => f.length === 10) || callerFormats[0] || '';
+
     // 2) Try to find the lead by caller number (or via retell_transfer_context if transfer)
     let lead: any = null;
 
@@ -184,6 +186,33 @@ serve(async (req) => {
           lead = leads.find((l: any) => l.first_name && String(l.first_name).trim() !== '') || leads[0];
           console.log('[Retell Inbound Webhook] Found lead via caller lookup:', lead?.id, lead?.first_name);
         }
+      }
+    }
+
+    // === AUTO-CREATE LEAD FOR UNKNOWN INBOUND CALLERS ===
+    if (!lead && userId && callerLast10) {
+      console.log('[Retell Inbound Webhook] Creating new lead for unknown inbound caller:', fromNumber);
+      const formattedPhone = fromNumber.startsWith('+') ? fromNumber : `+1${callerLast10}`;
+      
+      const { data: newLead, error: createError } = await supabase
+        .from('leads')
+        .insert({
+          user_id: userId,
+          phone_number: formattedPhone,
+          first_name: '',
+          last_name: '',
+          status: 'new',
+          lead_source: 'inbound_call',
+          notes: `Auto-created from inbound call on ${new Date().toLocaleString()}`,
+        })
+        .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, phone_number')
+        .maybeSingle();
+      
+      if (!createError && newLead) {
+        lead = newLead;
+        console.log('[Retell Inbound Webhook] Created new lead for inbound caller:', lead.id);
+      } else if (createError) {
+        console.error('[Retell Inbound Webhook] Failed to create lead for inbound caller:', createError);
       }
     }
 
