@@ -2464,7 +2464,7 @@ async function executeToolCall(
           .eq('user_id', userId)
           .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-        const successfulDecisions = recentDecisions?.filter(d => d.success) || [];
+        const successfulDecisions = recentDecisions?.filter((d: { success: boolean }) => d.success) || [];
 
         return {
           success: true,
@@ -2585,7 +2585,7 @@ async function executeToolCall(
           insights.push(`Most successful pattern: ${topPattern.pattern_key} (${topPattern.success_count} successes)`);
         }
         if (outcomes?.length) {
-          const positiveOutcomes = outcomes.filter(o => o.outcome_type === 'positive');
+          const positiveOutcomes = outcomes.filter((o: { outcome_type: string }) => o.outcome_type === 'positive');
           insights.push(`Recent outcomes: ${positiveOutcomes.length}/${outcomes.length} positive`);
         }
 
@@ -2595,7 +2595,7 @@ async function executeToolCall(
             patterns_learned: patterns?.length || 0,
             recent_outcomes: outcomes?.length || 0,
             insights: insights.length ? insights : ['No significant patterns learned yet. Keep using the system!'],
-            top_patterns: patterns?.slice(0, 5).map(p => ({ key: p.pattern_key, successes: p.success_count }))
+            top_patterns: patterns?.slice(0, 5).map((p: { pattern_key: string; success_count: number }) => ({ key: p.pattern_key, successes: p.success_count }))
           },
           location: LOCATION_MAP.learning.route
         };
@@ -2664,7 +2664,7 @@ async function executeToolCall(
         return {
           success: true,
           result: {
-            leads: data?.map(d => ({
+            leads: data?.map((d: any) => ({
               name: `${d.leads?.first_name || ''} ${d.leads?.last_name || ''}`.trim() || 'Unknown',
               phone: d.leads?.phone_number,
               priority_score: d.priority_score,
@@ -2739,7 +2739,7 @@ async function executeToolCall(
           .eq('campaign_id', campaignId);
 
         const totalCalls = callStats?.length || 0;
-        const answeredCalls = callStats?.filter(c => c.status === 'completed').length || 0;
+        const answeredCalls = callStats?.filter((c: { status: string }) => c.status === 'completed').length || 0;
         const answerRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
 
         const recommendations = [];
@@ -2982,7 +2982,7 @@ async function executeToolCall(
           
           if (error) throw error;
           
-          const numbers = phonePool?.map(p => p.phone_numbers?.number).filter(Boolean) || [];
+          const numbers = phonePool?.map((p: any) => p.phone_numbers?.number).filter(Boolean) || [];
           
           return {
             success: true,

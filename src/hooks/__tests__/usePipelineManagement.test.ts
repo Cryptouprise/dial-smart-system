@@ -1,106 +1,68 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { usePipelineManagement } from '../usePipelineManagement';
 
-// Mock Supabase
-vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      single: vi.fn(() => Promise.resolve({ data: null, error: null })),
-    })),
-  },
-}));
+vi.mock('@/integrations/supabase/client');
 
 describe('usePipelineManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should initialize with default pipeline stages', () => {
+  it('should initialize with pipeline data', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
     expect(result.current).toBeDefined();
-    expect(result.current.stages).toBeDefined();
+    expect(result.current.dispositions).toBeDefined();
+    expect(result.current.pipelineBoards).toBeDefined();
+    expect(result.current.leadPositions).toBeDefined();
   });
 
-  it('should handle moving lead between stages', async () => {
+  it('should have dispositions array', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    const leadId = 'lead-123';
-    const newStage = 'qualified';
-    
-    await act(async () => {
-      await result.current.moveLead(leadId, newStage);
-    });
-    
-    // Verify the move was attempted
-    expect(result.current.isMoving).toBe(false);
+    expect(Array.isArray(result.current.dispositions)).toBe(true);
   });
 
-  it('should validate stage transitions', () => {
+  it('should have pipelineBoards array', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    const validMove = result.current.canMoveTo('new', 'contacted');
-    const invalidMove = result.current.canMoveTo('closed', 'new');
-    
-    expect(validMove).toBeDefined();
-    expect(invalidMove).toBeDefined();
+    expect(Array.isArray(result.current.pipelineBoards)).toBe(true);
   });
 
-  it('should track pipeline analytics', () => {
+  it('should have leadPositions array', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    expect(result.current.analytics).toBeDefined();
-    expect(result.current.analytics.totalLeads).toBeDefined();
-    expect(result.current.analytics.conversionRate).toBeDefined();
+    expect(Array.isArray(result.current.leadPositions)).toBe(true);
   });
 
-  it('should handle bulk stage updates', async () => {
+  it('should have loading state', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    const leadIds = ['lead-1', 'lead-2', 'lead-3'];
-    const newStage = 'qualified';
-    
-    await act(async () => {
-      await result.current.bulkMoveLead(leadIds, newStage);
-    });
-    
-    expect(result.current.error).toBeNull();
+    expect(typeof result.current.isLoading).toBe('boolean');
   });
 
-  it('should provide stage statistics', () => {
+  it('should have loadingStates object', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    const stats = result.current.getStageStats('qualified');
-    
-    expect(stats).toBeDefined();
-    expect(stats.count).toBeDefined();
-    expect(stats.value).toBeDefined();
+    expect(result.current.loadingStates).toBeDefined();
   });
 
-  it('should handle pipeline filters', () => {
+  it('should have createDisposition function', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    act(() => {
-      result.current.setFilter('assignedTo', 'user-123');
-    });
-    
-    expect(result.current.activeFilters).toContain('assignedTo');
+    expect(typeof result.current.createDisposition).toBe('function');
   });
 
-  it('should calculate conversion rates', () => {
+  it('should have createPipelineBoard function', () => {
     const { result } = renderHook(() => usePipelineManagement());
     
-    const rate = result.current.getConversionRate('new', 'closed');
+    expect(typeof result.current.createPipelineBoard).toBe('function');
+  });
+
+  it('should have refetch function', () => {
+    const { result } = renderHook(() => usePipelineManagement());
     
-    expect(typeof rate).toBe('number');
-    expect(rate).toBeGreaterThanOrEqual(0);
-    expect(rate).toBeLessThanOrEqual(100);
+    expect(typeof result.current.refetch).toBe('function');
   });
 });

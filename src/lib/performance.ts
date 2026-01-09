@@ -23,7 +23,7 @@ export const trackPageLoad = (pageName: string) => {
           dnsLookup: perfData.domainLookupEnd - perfData.domainLookupStart,
           tcpConnection: perfData.connectEnd - perfData.connectStart,
           serverResponse: perfData.responseEnd - perfData.requestStart,
-          domProcessing: perfData.domComplete - perfData.domLoading,
+          domProcessing: perfData.domComplete - perfData.domContentLoadedEventEnd,
           totalLoadTime: perfData.loadEventEnd - perfData.fetchStart,
         };
 

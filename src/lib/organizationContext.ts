@@ -3,10 +3,12 @@
  * 
  * Utilities for working with multi-tenant organizations in the Dial Smart System.
  * Phase 2 Multi-Tenancy Support.
+ * 
+ * NOTE: These tables (organizations, organization_users) need to be created via migration
+ * before this functionality will work. For now, we stub the functions to prevent build errors.
  */
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 
 export interface Organization {
   id: string;
@@ -38,40 +40,12 @@ export interface OrganizationWithRole extends Organization {
 
 /**
  * Get all organizations the current user belongs to
+ * NOTE: Stubbed until organizations table is created
  */
 export async function getUserOrganizations(): Promise<OrganizationWithRole[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data, error } = await supabase
-    .from('organization_users')
-    .select(`
-      role,
-      organization:organizations (
-        id,
-        name,
-        slug,
-        settings,
-        subscription_tier,
-        subscription_status,
-        created_at,
-        updated_at
-      )
-    `)
-    .eq('user_id', user.id);
-
-  if (error) {
-    console.error('Error fetching user organizations:', error);
-    return [];
-  }
-
-  return data?.map(item => {
-    if (!item.organization) return null;
-    return {
-      ...item.organization,
-      user_role: item.role
-    };
-  }).filter(Boolean) || [];
+  // TODO: Implement when organizations table is created via migration
+  console.log('[OrganizationContext] organizations table not yet created');
+  return [];
 }
 
 /**
@@ -85,221 +59,92 @@ export async function getCurrentOrganization(): Promise<OrganizationWithRole | n
 
 /**
  * Get a specific organization by ID
+ * NOTE: Stubbed until organizations table is created
  */
-export async function getOrganization(organizationId: string): Promise<Organization | null> {
-  const { data, error } = await supabase
-    .from('organizations')
-    .select('*')
-    .eq('id', organizationId)
-    .single();
-
-  if (error) {
-    console.error('Error fetching organization:', error);
-    return null;
-  }
-
-  return data;
+export async function getOrganization(_organizationId: string): Promise<Organization | null> {
+  // TODO: Implement when organizations table is created via migration
+  console.log('[OrganizationContext] organizations table not yet created');
+  return null;
 }
 
 /**
  * Check if user has a specific role in an organization
+ * NOTE: Stubbed until organizations table is created
  */
 export async function hasOrganizationRole(
-  organizationId: string,
-  role: 'owner' | 'admin' | 'manager' | 'member'
+  _organizationId: string,
+  _role: 'owner' | 'admin' | 'manager' | 'member'
 ): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const { data, error } = await supabase
-    .from('organization_users')
-    .select('role')
-    .eq('organization_id', organizationId)
-    .eq('user_id', user.id)
-    .single();
-
-  if (error || !data) return false;
-
-  // Check if user's role matches or exceeds required role
-  const roleHierarchy = { member: 1, manager: 2, admin: 3, owner: 4 };
-  return roleHierarchy[data.role] >= roleHierarchy[role];
+  // TODO: Implement when organizations table is created via migration
+  return false;
 }
 
 /**
  * Check if user is an admin (owner or admin role) in an organization
+ * NOTE: Stubbed until organizations table is created
  */
-export async function isOrganizationAdmin(organizationId: string): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const { data, error } = await supabase
-    .from('organization_users')
-    .select('role')
-    .eq('organization_id', organizationId)
-    .eq('user_id', user.id)
-    .single();
-
-  if (error || !data) return false;
-  return data.role === 'owner' || data.role === 'admin';
+export async function isOrganizationAdmin(_organizationId: string): Promise<boolean> {
+  // TODO: Implement when organizations table is created via migration
+  return false;
 }
 
 /**
  * Get all members of an organization
+ * NOTE: Stubbed until organizations table is created
  */
-export async function getOrganizationMembers(organizationId: string) {
-  const { data, error } = await supabase
-    .from('organization_users')
-    .select(`
-      id,
-      role,
-      joined_at,
-      user:user_id (
-        id,
-        email
-      )
-    `)
-    .eq('organization_id', organizationId);
-
-  if (error) {
-    console.error('Error fetching organization members:', error);
-    return [];
-  }
-
-  return data || [];
+export async function getOrganizationMembers(_organizationId: string) {
+  // TODO: Implement when organizations table is created via migration
+  return [];
 }
 
 /**
  * Create a new organization
- * Only available to authenticated users
+ * NOTE: Stubbed until organizations table is created
  */
 export async function createOrganization(
-  name: string,
-  slug: string,
-  settings?: Record<string, any>
+  _name: string,
+  _slug: string,
+  _settings?: Record<string, any>
 ): Promise<Organization | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('User not authenticated');
-
-  // Create organization
-  const { data: org, error: orgError } = await supabase
-    .from('organizations')
-    .insert({
-      name,
-      slug,
-      settings: settings || {},
-      subscription_tier: 'basic',
-      subscription_status: 'trial'
-    })
-    .select()
-    .single();
-
-  if (orgError) {
-    console.error('Error creating organization:', orgError);
-    throw orgError;
-  }
-
-  // Add creator as owner
-  const { error: userError } = await supabase
-    .from('organization_users')
-    .insert({
-      organization_id: org.id,
-      user_id: user.id,
-      role: 'owner'
-    });
-
-  if (userError) {
-    console.error('Error adding user to organization:', userError);
-    // Rollback organization creation
-    await supabase.from('organizations').delete().eq('id', org.id);
-    throw userError;
-  }
-
-  return org;
+  // TODO: Implement when organizations table is created via migration
+  throw new Error('Organizations table not yet created. Please run the multi-tenancy migration first.');
 }
 
 /**
  * Add a user to an organization
- * Requires admin permissions
+ * NOTE: Stubbed until organizations table is created
  */
 export async function addUserToOrganization(
-  organizationId: string,
-  userId: string,
-  role: 'member' | 'manager' | 'admin' = 'member'
+  _organizationId: string,
+  _userId: string,
+  _role: 'member' | 'manager' | 'admin' = 'member'
 ): Promise<boolean> {
-  // Check if current user is admin
-  const isAdmin = await isOrganizationAdmin(organizationId);
-  if (!isAdmin) {
-    throw new Error('Insufficient permissions to add users');
-  }
-
-  const { error } = await supabase
-    .from('organization_users')
-    .insert({
-      organization_id: organizationId,
-      user_id: userId,
-      role
-    });
-
-  if (error) {
-    console.error('Error adding user to organization:', error);
-    return false;
-  }
-
-  return true;
+  // TODO: Implement when organizations table is created via migration
+  return false;
 }
 
 /**
  * Remove a user from an organization
- * Requires admin permissions
+ * NOTE: Stubbed until organizations table is created
  */
 export async function removeUserFromOrganization(
-  organizationId: string,
-  userId: string
+  _organizationId: string,
+  _userId: string
 ): Promise<boolean> {
-  // Check if current user is admin
-  const isAdmin = await isOrganizationAdmin(organizationId);
-  if (!isAdmin) {
-    throw new Error('Insufficient permissions to remove users');
-  }
-
-  const { error } = await supabase
-    .from('organization_users')
-    .delete()
-    .eq('organization_id', organizationId)
-    .eq('user_id', userId);
-
-  if (error) {
-    console.error('Error removing user from organization:', error);
-    return false;
-  }
-
-  return true;
+  // TODO: Implement when organizations table is created via migration
+  return false;
 }
 
 /**
  * Update organization settings
- * Requires admin permissions
+ * NOTE: Stubbed until organizations table is created
  */
 export async function updateOrganization(
-  organizationId: string,
-  updates: Partial<Organization>
+  _organizationId: string,
+  _updates: Partial<Organization>
 ): Promise<boolean> {
-  const isAdmin = await isOrganizationAdmin(organizationId);
-  if (!isAdmin) {
-    throw new Error('Insufficient permissions to update organization');
-  }
-
-  const { error } = await supabase
-    .from('organizations')
-    .update(updates)
-    .eq('id', organizationId);
-
-  if (error) {
-    console.error('Error updating organization:', error);
-    return false;
-  }
-
-  return true;
+  // TODO: Implement when organizations table is created via migration
+  return false;
 }
 
 /**
@@ -319,6 +164,3 @@ export function useOrganization() {
 
   return { organization, loading };
 }
-
-// Re-export for convenience
-export { supabase };

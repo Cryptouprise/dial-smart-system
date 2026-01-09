@@ -2603,7 +2603,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .eq('user_id', userId)
           .limit(5);
         
-        const campaignList = campaigns?.map(c => `• ${c.name} (${c.status})`).join('\n') || 'No campaigns';
+        const campaignList = campaigns?.map((c: { name: string; status: string }) => `• ${c.name} (${c.status})`).join('\n') || 'No campaigns';
         return { 
           success: false, 
           message: `❌ Campaign not found. Your campaigns:\n${campaignList}\n\nTry: "add numbers to [campaign name]"` 

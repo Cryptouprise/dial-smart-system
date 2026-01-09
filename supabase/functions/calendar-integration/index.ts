@@ -2473,7 +2473,7 @@ serve(async (req) => {
         }
 
         // Extract title_contains from the request for natural language matching (e.g., "cancel the one with John")
-        const titleContains = body.title_contains || body.titleContains || null;
+        const titleContains = (params as any).title_contains || (params as any).titleContains || null;
 
         // If no specific appointment is provided, find the right one to cancel
         if (!appointmentId && !eventIdParam && !(requestedDate && requestedTime)) {
