@@ -19,7 +19,10 @@ import {
   BarChart3,
   Sparkles,
   Bot,
-  Download
+  Download,
+  AlertTriangle,
+  Clock,
+  Info
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -432,13 +435,61 @@ export const ScriptManager: React.FC = () => {
                   {insights && insights.recommendations && insights.recommendations.length > 0 && (
                     <div className="space-y-3 mt-4">
                       <h4 className="font-medium">Latest Recommendations:</h4>
-                      {insights.recommendations.map((rec, idx) => (
-                        <Card key={idx} className="bg-muted/50">
-                          <CardContent className="pt-4">
-                            <p className="text-sm">{rec}</p>
-                          </CardContent>
-                        </Card>
-                      ))}
+                      {insights.recommendations.map((rec: any, idx: number) => {
+                        // Handle both old string format and new structured format
+                        const isStructured = typeof rec === 'object' && rec.type;
+                        
+                        if (!isStructured) {
+                          // Legacy string format fallback
+                          return (
+                            <Card key={idx} className="bg-muted/50">
+                              <CardContent className="pt-4">
+                                <p className="text-sm">{rec}</p>
+                              </CardContent>
+                            </Card>
+                          );
+                        }
+                        
+                        // New structured format
+                        return (
+                          <Card 
+                            key={idx} 
+                            className={`border-l-4 ${
+                              rec.type === 'success' ? 'border-l-green-500' :
+                              rec.type === 'warning' ? 'border-l-orange-500' :
+                              rec.type === 'timing' ? 'border-l-blue-500' :
+                              'border-l-muted-foreground'
+                            }`}
+                          >
+                            <CardContent className="pt-4">
+                              <div className="flex items-start gap-3">
+                                <div className="mt-0.5">
+                                  {rec.type === 'success' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                                  {rec.type === 'warning' && <AlertTriangle className="h-5 w-5 text-orange-500" />}
+                                  {rec.type === 'timing' && <Clock className="h-5 w-5 text-blue-500" />}
+                                  {rec.type === 'info' && <Info className="h-5 w-5 text-muted-foreground" />}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="font-medium">{rec.title}</div>
+                                  <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                                  {rec.metric && (
+                                    <Badge variant="secondary" className="mt-2">{rec.metric}</Badge>
+                                  )}
+                                  {rec.action && (
+                                    <p className="text-xs text-primary mt-2">→ {rec.action}</p>
+                                  )}
+                                </div>
+                                <Badge 
+                                  variant={rec.priority === 'high' ? 'destructive' : 'outline'} 
+                                  className="ml-auto shrink-0"
+                                >
+                                  {rec.priority}
+                                </Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
