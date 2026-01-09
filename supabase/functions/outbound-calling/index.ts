@@ -496,6 +496,13 @@ serve(async (req) => {
 
               if (!res.ok) {
                 const errorText = await res.text();
+                
+                // Check for rate limit / concurrency errors from Retell
+                if (res.status === 429 || errorText.includes('concurrency') || errorText.includes('rate limit')) {
+                  console.warn('[Outbound Calling] Retell rate limit hit - concurrency exceeded');
+                  throw new Error(`RATE_LIMIT: Retell concurrency limit exceeded. Status ${res.status}`);
+                }
+                
                 throw new Error(`Retell API error ${res.status}: ${errorText}`);
               }
 

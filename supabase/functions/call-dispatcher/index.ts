@@ -171,6 +171,20 @@ serve(async (req) => {
 
     console.log('Call Dispatcher running for user:', user.id);
 
+    // ============= FETCH SYSTEM SETTINGS FOR CONCURRENCY CONTROL =============
+    const { data: systemSettings } = await supabase
+      .from('system_settings')
+      .select('max_concurrent_calls, calls_per_minute, retell_max_concurrent, enable_adaptive_pacing')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const retellConcurrency = systemSettings?.retell_max_concurrent || 10;
+    const callsPerMinute = systemSettings?.calls_per_minute || 40;
+    const maxConcurrent = systemSettings?.max_concurrent_calls || 10;
+    const adaptivePacing = systemSettings?.enable_adaptive_pacing !== false;
+
+    console.log(`[Dispatcher] Settings: ${retellConcurrency} Retell concurrent, ${callsPerMinute} calls/min, adaptive: ${adaptivePacing}`);
+
     // Automatic cleanup
     try {
       await cleanupStuckCallsAndQueues(supabase, user.id);
@@ -713,7 +727,62 @@ serve(async (req) => {
     // Track usage for rotation within this batch
     const numberUsageInBatch: Record<string, number> = {};
 
-    // Now process the dialing queue
+    // ============= CONCURRENCY-AWARE BATCH SIZING =============
+    // Count active calls (initiated, ringing, or in_progress) to check capacity
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    const { count: activeCallCount, error: activeCallError } = await supabase
+      .from('call_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .in('status', ['initiated', 'ringing', 'in_progress', 'queued'])
+      .gte('created_at', fiveMinAgo);
+
+    if (activeCallError) {
+      console.error('[Dispatcher] Error counting active calls:', activeCallError);
+    }
+
+    const activeCount = activeCallCount || 0;
+
+    // Calculate available capacity
+    // With ~10% pickup rate, we can safely have 10x concurrency in dials
+    const pickupRate = 0.10;
+    const maxDialsInFlight = Math.floor(retellConcurrency / pickupRate); // 10 / 0.1 = 100
+
+    const availableSlots = maxDialsInFlight - activeCount;
+    
+    // Calculate batch size based on calls_per_minute
+    // For 40 calls/min with 6-10 second intervals between batches, we need ~7-10 calls per batch
+    const batchInterval = 6; // seconds between dispatcher runs
+    const targetBatchSize = Math.ceil((callsPerMinute / 60) * batchInterval);
+    
+    // Use the smaller of: available slots, target batch, or 15 max per invocation
+    const batchSize = Math.max(1, Math.min(availableSlots, targetBatchSize, 15));
+
+    const utilizationPct = maxDialsInFlight > 0 ? Math.round((activeCount / maxDialsInFlight) * 100) : 0;
+    console.log(`[Dispatcher] Concurrency: ${activeCount}/${maxDialsInFlight} active (${utilizationPct}%), batch size: ${batchSize}`);
+
+    // If at capacity, return early and let scheduler retry
+    if (availableSlots <= 0) {
+      console.log(`[Dispatcher] At capacity (${activeCount}/${maxDialsInFlight}), waiting for calls to complete`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          dispatched: 0,
+          status: 'at_capacity',
+          message: `${activeCount} calls in flight, max is ${maxDialsInFlight}. Need more Retell concurrency or wait for calls to complete.`,
+          activeCallCount: activeCount,
+          maxDialsInFlight,
+          retellConcurrency,
+          workflowEnrolled,
+          dialingQueued,
+          callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Now process the dialing queue with DYNAMIC batch size
     const { data: queuedCalls, error: queueError } = await supabase
       .from('dialing_queues')
       .select(`
@@ -726,7 +795,7 @@ serve(async (req) => {
       .lte('scheduled_at', nowIso)
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
-      .limit(5);
+      .limit(batchSize);
 
     if (queueError) throw queueError;
 
@@ -845,7 +914,36 @@ serve(async (req) => {
       } catch (callError: any) {
         console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);
         
-        // Check if should retry
+        // Check if this is a rate limit error from Retell
+        const errorMsg = callError.message || '';
+        if (errorMsg.includes('RATE_LIMIT') || 
+            errorMsg.includes('429') || 
+            errorMsg.includes('concurrency') ||
+            errorMsg.includes('rate limit')) {
+          console.warn('[Dispatcher] Rate limit hit - backing off 10 seconds');
+          
+          // Keep lead in queue for retry soon
+          await supabase
+            .from('dialing_queues')
+            .update({ 
+              status: 'pending', 
+              scheduled_at: new Date(Date.now() + 10 * 1000).toISOString(), // 10 second delay
+              updated_at: nowIso 
+            })
+            .eq('id', queueItem.id);
+          
+          dispatchResults.push({
+            leadId: queueItem.lead_id,
+            success: false,
+            error: 'Rate limit - will retry',
+            rateLimited: true,
+          });
+          
+          // Break out of loop - stop trying to dial more this batch
+          break;
+        }
+        
+        // Check if should retry for other errors
         const attempts = (queueItem.attempts || 0) + 1;
         const maxAttempts = queueItem.max_attempts || 3;
         
@@ -873,12 +971,44 @@ serve(async (req) => {
       }
     }
 
+    // ============= SELF-SCHEDULING FOR CONTINUOUS DIALING =============
+    // Check if there are more pending leads and schedule next batch
+    const { count: remainingCount } = await supabase
+      .from('dialing_queues')
+      .select('*', { count: 'exact', head: true })
+      .in('campaign_id', campaignIds)
+      .eq('status', 'pending');
+
+    const remaining = remainingCount || 0;
+
+    // Calculate delay based on calls_per_minute target
+    // For 40 calls/min with batch of 7, invoke every ~10 seconds
+    const delaySeconds = batchSize > 0 
+      ? Math.max(5, Math.floor((batchSize / callsPerMinute) * 60))
+      : 10;
+
+    console.log(`[Dispatcher] Dispatched ${dispatched}, ${remaining} leads remaining`);
+
+    // Self-schedule if there are more leads and we're actively dialing
+    let selfScheduled = false;
+    if (remaining > 0 && dispatched > 0 && !isInternalCall) {
+      // Only self-schedule from user-initiated calls to avoid infinite loops
+      // The automation-scheduler will handle the continuous scheduling
+      console.log(`[Dispatcher] ${remaining} pending, next batch will be scheduled by automation-scheduler`);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         dispatched,
         workflowEnrolled,
         dialingQueued,
+        remaining,
+        batchSize,
+        activeCallCount: activeCount,
+        maxDialsInFlight,
+        utilizationPercent: utilizationPct,
+        nextBatchDelaySeconds: delaySeconds,
         callbacks: { 
           queued: callbacksQueued, 
           enrolled: callbacksEnrolledInWorkflow, 

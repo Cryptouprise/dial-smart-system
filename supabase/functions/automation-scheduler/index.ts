@@ -380,9 +380,10 @@ serve(async (req) => {
 
     // THIRD: Trigger call dispatcher for users who have DUE queue items (incl. callbacks)
     // This is what actually places the calls; otherwise entries can sit as "overdue".
+    // For high-velocity dialing (40+ calls/min), we invoke dispatcher multiple times per minute
     console.log('[Scheduler] Checking for due dialing queue items to dispatch...');
     const nowIso = new Date().toISOString();
-    const dispatchSummary = { users: 0, ok: 0, failed: 0 };
+    const dispatchSummary = { users: 0, ok: 0, failed: 0, invocations: 0 };
 
     try {
       const { data: dueQueue, error: dueQueueError } = await supabase
@@ -390,7 +391,7 @@ serve(async (req) => {
         .select('campaign_id, campaigns(user_id)')
         .eq('status', 'pending')
         .lte('scheduled_at', nowIso)
-        .limit(100);
+        .limit(200);
 
       if (dueQueueError) {
         console.error('[Scheduler] Error checking due queue:', dueQueueError);
@@ -405,26 +406,60 @@ serve(async (req) => {
 
         dispatchSummary.users = userIds.length;
 
-        for (const userId of userIds) {
-          const resp = await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ internal: true, userId }),
-          });
+        // For each user with pending calls, invoke dispatcher multiple times
+        // This enables drip-mode style calling at 4-6 calls per invocation
+        // With 6 invocations per minute = ~40 calls/minute potential throughput
+        const invocationsPerUser = dueQueue && dueQueue.length > 20 ? 6 : 2;
 
-          if (resp.ok) {
-            dispatchSummary.ok++;
-          } else {
-            dispatchSummary.failed++;
-            console.error('[Scheduler] call-dispatcher failed:', resp.status, await resp.text());
+        for (const userId of userIds) {
+          for (let i = 0; i < invocationsPerUser; i++) {
+            // Stagger invocations by ~8 seconds each
+            const delayMs = i * 8000;
+            
+            // Use immediate invocation for first call, schedule rest
+            if (i === 0) {
+              const resp = await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ internal: true, userId }),
+              });
+
+              if (resp.ok) {
+                dispatchSummary.ok++;
+                const result = await resp.json();
+                console.log(`[Scheduler] Dispatcher for ${userId}: dispatched ${result.dispatched}, remaining ${result.remaining}`);
+              } else {
+                dispatchSummary.failed++;
+                console.error('[Scheduler] call-dispatcher failed:', resp.status, await resp.text());
+              }
+              dispatchSummary.invocations++;
+            } else {
+              // Schedule delayed invocations using setTimeout within the edge function
+              // This allows continuous dialing without waiting for next cron trigger
+              setTimeout(async () => {
+                try {
+                  await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${supabaseKey}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ internal: true, userId }),
+                  });
+                } catch (e) {
+                  console.error('[Scheduler] Delayed dispatcher invocation failed:', e);
+                }
+              }, delayMs);
+              dispatchSummary.invocations++;
+            }
           }
         }
 
         if (dispatchSummary.users > 0) {
-          console.log(`[Scheduler] call-dispatcher invoked for ${dispatchSummary.users} users (ok=${dispatchSummary.ok}, failed=${dispatchSummary.failed})`);
+          console.log(`[Scheduler] call-dispatcher: ${dispatchSummary.users} users, ${dispatchSummary.invocations} invocations scheduled`);
         }
       }
     } catch (dispatchError: any) {
