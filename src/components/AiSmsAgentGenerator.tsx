@@ -263,13 +263,18 @@ PIPELINE AWARENESS:
 
       if (settingsError) throw settingsError;
 
-      // Store campaign-specific SMS config
+      // Store campaign-specific SMS config - fetch description first, then update
+      const { data: campaignData } = await supabase
+        .from('campaigns')
+        .select('description')
+        .eq('id', campaignId)
+        .maybeSingle();
+      
+      const existingDescription = campaignData?.description || '';
       const { error: campaignError } = await supabase
         .from('campaigns')
         .update({
-          // Store SMS agent config in campaign metadata or dedicated field
-          description: (await supabase.from('campaigns').select('description').eq('id', campaignId).single()).data?.description 
-            + '\n\n[SMS Agent: Enabled with ' + aggressionLevel + ' follow-up style]'
+          description: existingDescription + '\n\n[SMS Agent: Enabled with ' + aggressionLevel + ' follow-up style]'
         })
         .eq('id', campaignId);
 

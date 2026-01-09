@@ -139,7 +139,7 @@ const CalendarIntegrationSection: React.FC<{
         .from('calendar_availability')
         .select('weekly_schedule, timezone')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       // Check for upcoming appointments
       const { data: appointments, count } = await supabase
