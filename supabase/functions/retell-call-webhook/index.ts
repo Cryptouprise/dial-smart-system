@@ -1158,14 +1158,40 @@ serve(async (req) => {
           console.error('[Retell Webhook] Pipeline position error:', pipelineError);
         }
 
-        // 7. CRITICAL: Advance workflow to next step after call ends
-        // Skip for terminal dispositions
+        // 7. CRITICAL: Handle workflow based on disposition type
+        // Terminal dispositions should STOP workflow, not advance
         const TERMINAL_DISPOSITIONS = [
           'callback_requested', 'callback', 'appointment_set', 'appointment_booked', 
-          'converted', 'not_interested', 'dnc', 'wrong_number', 'do_not_call'
+          'converted', 'not_interested', 'dnc', 'wrong_number', 'do_not_call',
+          'already_has_solar', 'renter'
         ];
         
-        if (!TERMINAL_DISPOSITIONS.includes(outcome)) {
+        // Dispositions that should remove lead from campaigns
+        const CAMPAIGN_REMOVAL_DISPOSITIONS = [
+          'not_interested', 'dnc', 'do_not_call', 'wrong_number',
+          'already_has_solar', 'renter', 'appointment_set', 'appointment_booked', 'converted'
+        ];
+        
+        if (TERMINAL_DISPOSITIONS.includes(outcome)) {
+          // STOP the workflow for terminal dispositions
+          try {
+            await stopWorkflowForTerminalDisposition(supabase, leadId, outcome);
+          } catch (stopError: any) {
+            console.error('[Retell Webhook] Workflow stop error:', stopError);
+          }
+          
+          // Remove from campaigns for removal-eligible dispositions
+          if (CAMPAIGN_REMOVAL_DISPOSITIONS.includes(outcome)) {
+            try {
+              await removeFromCampaignsOnTerminal(supabase, leadId, outcome);
+            } catch (removeError: any) {
+              console.error('[Retell Webhook] Campaign removal error:', removeError);
+            }
+          }
+          
+          console.log(`[Retell Webhook] Terminal disposition "${outcome}" - workflow stopped, campaign removed`);
+        } else {
+          // Advance workflow to next step for non-terminal outcomes
           try {
             await advanceWorkflowAfterCall(supabase, leadId, userId, outcome);
           } catch (workflowError: any) {
@@ -1176,8 +1202,6 @@ serve(async (req) => {
               error: workflowError.message,
             });
           }
-        } else {
-          console.log(`[Retell Webhook] Skipping workflow advancement for terminal disposition: ${outcome}`);
         }
 
         // 8. Sync to Go High Level if configured
@@ -1612,16 +1636,79 @@ async function updatePipelinePosition(
     .maybeSingle();
 
   if (pipelineBoard) {
-    await supabase.from('lead_pipeline_positions').upsert({
+    console.log(`[Retell Webhook] Moving lead ${leadId} to pipeline: ${stageName} (board: ${pipelineBoard.id})`);
+    
+    const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
       user_id: userId,
       lead_id: leadId,
       pipeline_board_id: pipelineBoard.id,
+      position: 0,
       moved_at: new Date().toISOString(),
       moved_by_user: false,
       notes: `Auto-moved by call outcome: ${outcome}`,
     }, {
-      onConflict: 'user_id,lead_id,pipeline_board_id',
+      onConflict: 'lead_id,user_id',  // Fixed: matches actual unique constraint
     });
+    
+    if (pipelineError) {
+      console.error('[Retell Webhook] Pipeline update failed:', pipelineError);
+    } else {
+      console.log(`[Retell Webhook] ✅ Lead ${leadId} successfully moved to ${stageName}`);
+    }
+  } else {
+    console.log(`[Retell Webhook] ⚠️ No pipeline board found for stage: ${stageName}`);
+  }
+}
+
+// Stop workflow when a terminal disposition is reached
+async function stopWorkflowForTerminalDisposition(
+  supabase: any,
+  leadId: string,
+  outcome: string
+) {
+  const { data: activeProgress } = await supabase
+    .from('lead_workflow_progress')
+    .select('id')
+    .eq('lead_id', leadId)
+    .eq('status', 'active')
+    .maybeSingle();
+  
+  if (activeProgress) {
+    const { error } = await supabase
+      .from('lead_workflow_progress')
+      .update({
+        status: 'stopped',
+        removal_reason: `Terminal disposition: ${outcome}`,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', activeProgress.id);
+    
+    if (error) {
+      console.error('[Retell Webhook] Failed to stop workflow:', error);
+    } else {
+      console.log(`[Retell Webhook] ⛔ Stopped workflow for lead ${leadId} due to: ${outcome}`);
+    }
+  }
+}
+
+// Remove lead from all campaigns when terminal disposition reached
+async function removeFromCampaignsOnTerminal(
+  supabase: any,
+  leadId: string,
+  outcome: string
+) {
+  const { error, count } = await supabase
+    .from('campaign_leads')
+    .delete()
+    .eq('lead_id', leadId);
+
+  if (error) {
+    console.error('[Retell Webhook] Failed to remove lead from campaigns:', error);
+  } else if (count && count > 0) {
+    console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${count} campaign(s) due to: ${outcome}`);
+  } else {
+    console.log(`[Retell Webhook] Lead ${leadId} was not in any campaigns`);
   }
 }
 
