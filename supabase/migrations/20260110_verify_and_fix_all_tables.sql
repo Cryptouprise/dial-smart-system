@@ -40,7 +40,7 @@ ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS public.organization_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'manager', 'member')),
   joined_at TIMESTAMPTZ DEFAULT now(),
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -58,20 +58,28 @@ ALTER TABLE public.organization_users ENABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS public.edge_function_errors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   function_name TEXT NOT NULL,
+  action TEXT,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  lead_id UUID REFERENCES public.leads(id) ON DELETE SET NULL,
+  campaign_id UUID REFERENCES public.campaigns(id) ON DELETE SET NULL,
+  workflow_id UUID REFERENCES public.campaign_workflows(id) ON DELETE SET NULL,
   error_message TEXT NOT NULL,
   error_stack TEXT,
-  severity TEXT DEFAULT 'error' CHECK (severity IN ('warning', 'error', 'critical')),
-  context JSONB DEFAULT '{}',
-  user_id UUID,
-  organization_id UUID,
+  request_payload JSONB,
+  severity TEXT NOT NULL CHECK (severity IN ('error', 'warning', 'critical')) DEFAULT 'error',
   resolved BOOLEAN DEFAULT FALSE,
   resolved_at TIMESTAMPTZ,
-  resolved_by UUID,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  resolution_notes TEXT,
+  organization_id UUID,
+  context JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_edge_errors_function ON public.edge_function_errors(function_name);
-CREATE INDEX IF NOT EXISTS idx_edge_errors_created ON public.edge_function_errors(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_errors_function ON public.edge_function_errors(function_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_errors_unresolved ON public.edge_function_errors(resolved, severity, created_at DESC) WHERE resolved = false;
+CREATE INDEX IF NOT EXISTS idx_edge_errors_user ON public.edge_function_errors(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_errors_lead ON public.edge_function_errors(lead_id);
 CREATE INDEX IF NOT EXISTS idx_edge_errors_severity ON public.edge_function_errors(severity);
 
 ALTER TABLE public.edge_function_errors ENABLE ROW LEVEL SECURITY;
@@ -171,7 +179,7 @@ $$;
 DROP POLICY IF EXISTS "Users can view their organizations" ON public.organizations;
 CREATE POLICY "Users can view their organizations" ON public.organizations
   FOR SELECT USING (
-    id IN (SELECT organization_id FROM organization_users WHERE user_id = auth.uid())
+    id IN (SELECT public.get_user_organizations(auth.uid()))
   );
 
 DROP POLICY IF EXISTS "Admins can update organizations" ON public.organizations;
@@ -196,19 +204,20 @@ CREATE POLICY "Users can join via invite" ON public.organization_users
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
 -- Edge function errors policies
-DROP POLICY IF EXISTS "Users can view their errors" ON public.edge_function_errors;
-CREATE POLICY "Users can view their errors" ON public.edge_function_errors
-  FOR SELECT USING (user_id = auth.uid() OR organization_id IN (
-    SELECT organization_id FROM organization_users WHERE user_id = auth.uid()
-  ));
+DROP POLICY IF EXISTS "Users can view own errors" ON public.edge_function_errors;
+CREATE POLICY "Users can view own errors" ON public.edge_function_errors
+  FOR SELECT USING (
+    auth.uid() = user_id OR 
+    organization_id IN (SELECT public.get_user_organizations(auth.uid()))
+  );
 
-DROP POLICY IF EXISTS "Service can insert errors" ON public.edge_function_errors;
-CREATE POLICY "Service can insert errors" ON public.edge_function_errors
+DROP POLICY IF EXISTS "Service role can insert errors" ON public.edge_function_errors;
+CREATE POLICY "Service role can insert errors" ON public.edge_function_errors
   FOR INSERT WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Users can resolve their errors" ON public.edge_function_errors;
-CREATE POLICY "Users can resolve their errors" ON public.edge_function_errors
-  FOR UPDATE USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Users can update own errors" ON public.edge_function_errors;
+CREATE POLICY "Users can update own errors" ON public.edge_function_errors
+  FOR UPDATE USING (auth.uid() = user_id);
 
 -- =====================
 -- 6. CREATE DEFAULT ORGANIZATION & MAP USERS
