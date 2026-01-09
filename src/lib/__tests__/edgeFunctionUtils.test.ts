@@ -4,14 +4,7 @@ import { extractEdgeFunctionError, validateRequiredParams } from '../edgeFunctio
 describe('edgeFunctionUtils', () => {
   describe('extractEdgeFunctionError', () => {
     it('should extract error message from object with error field', async () => {
-      const mockError = {
-        context: {
-          json: vi.fn(() => Promise.resolve({ error: 'Custom error message' })),
-        },
-      };
-      
-      // The function checks instanceof FunctionsHttpError, so mock won't work as expected
-      // Test with a regular error object instead
+      // Test with a regular error object
       const result = await extractEdgeFunctionError({ message: 'Custom error message' });
       expect(result).toBe('Custom error message');
     });
@@ -28,7 +21,7 @@ describe('edgeFunctionUtils', () => {
         context: {
           json: vi.fn(() => Promise.reject(new Error('Parse error'))),
         },
-      } as unknown as FunctionsHttpError;
+      };
       
       const result = await extractEdgeFunctionError(mockError);
       expect(result).toBe('An unexpected error occurred. Please try again.');

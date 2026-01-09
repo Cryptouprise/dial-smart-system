@@ -825,12 +825,14 @@ serve(async (req) => {
       } catch (analysisError: any) {
         console.error('[Retell Webhook] Analysis error:', analysisError);
         // Queue for retry by logging to system_alerts
-        await logFailedOperation(supabase, userId, 'transcript_analysis', {
-          callId: call.call_id,
-          leadId,
-          error: analysisError.message,
-          transcript: formattedTranscript.substring(0, 500),
-        });
+        if (userId) {
+          await logFailedOperation(supabase, userId, 'transcript_analysis', {
+            callId: call.call_id,
+            leadId,
+            error: analysisError.message,
+            transcript: formattedTranscript.substring(0, 500),
+          });
+        }
       }
     }
 
@@ -1125,12 +1127,14 @@ serve(async (req) => {
         console.log('[Retell Webhook] Disposition router response:', dispositionResponse.data);
       } catch (routerError: any) {
         console.error('[Retell Webhook] Disposition router error:', routerError);
-        await logFailedOperation(supabase, userId, 'disposition_routing', {
-          leadId,
-          outcome,
-          callId: call.call_id,
-          error: routerError.message,
-        });
+        if (userId) {
+          await logFailedOperation(supabase, userId, 'disposition_routing', {
+            leadId,
+            outcome,
+            callId: call.call_id,
+            error: routerError.message,
+          });
+        }
       }
 
       // 5. Update nudge tracking

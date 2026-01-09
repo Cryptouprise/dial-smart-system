@@ -939,14 +939,15 @@ DO NOT include any special characters or formatting that may not work well in SM
         // User provided both date and time - attempt to book!
         console.log('[AI SMS] User wants to book:', dateMatch[0], timeMatch[0]);
         
-        // Get lead info for booking
-        const { data: lead } = await supabase
+        // Get lead info for booking (lookup by phone number)
+        const { data: leadForBooking } = await supabase
           .from('leads')
-          .select('first_name, last_name, email, phone_number')
-          .eq('id', leadId)
+          .select('id, first_name, last_name, email, phone_number')
+          .eq('user_id', userId)
+          .eq('phone_number', incomingMessage.From)
           .maybeSingle();
         
-        if (lead) {
+        if (leadForBooking) {
           const bookingResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
             method: 'POST',
             headers: {
@@ -958,9 +959,9 @@ DO NOT include any special characters or formatting that may not work well in SM
               user_id: userId,
               date: dateMatch[0],
               time: timeMatch[0],
-              attendee_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
-              attendee_email: lead.email,
-              attendee_phone: lead.phone_number,
+              attendee_name: `${leadForBooking.first_name || ''} ${leadForBooking.last_name || ''}`.trim(),
+              attendee_email: leadForBooking.email,
+              attendee_phone: leadForBooking.phone_number,
               duration_minutes: 30,
             }),
           });
