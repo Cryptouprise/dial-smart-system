@@ -150,15 +150,19 @@ export const useCallHistory = () => {
         .limit(limit);
 
       // Apply filters
-      // Agent filter: Since agent_id is often NULL for historical calls,
-      // we also search agent_name in notes/transcript for better matching
+      // Agent filter: Handle "unassigned" option and historical calls
       if (filters.agentId) {
-        // Try to find agent name for text-based search fallback
-        const agentName = filters.agentName;
-        if (agentName) {
-          query = query.or(`agent_id.eq.${filters.agentId},agent_name.ilike.%${agentName}%,notes.ilike.%${agentName}%`);
+        if (filters.agentId === 'unassigned') {
+          // Show calls without agent_id (historical calls missing agent data)
+          query = query.is('agent_id', null);
         } else {
-          query = query.eq('agent_id', filters.agentId);
+          // Try to find agent name for text-based search fallback
+          const agentName = filters.agentName;
+          if (agentName) {
+            query = query.or(`agent_id.eq.${filters.agentId},agent_name.ilike.%${agentName}%,notes.ilike.%${agentName}%`);
+          } else {
+            query = query.eq('agent_id', filters.agentId);
+          }
         }
       }
       

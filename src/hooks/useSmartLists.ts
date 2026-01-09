@@ -83,9 +83,10 @@ export const useSmartLists = () => {
           lead_count: count
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error('Failed to create list - no data returned');
 
       toast({
         title: 'Smart List Created',

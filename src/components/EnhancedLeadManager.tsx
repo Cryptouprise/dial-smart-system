@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
+import { useSmartLists, SmartList, SmartListFilters } from '@/hooks/useSmartLists';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight } from 'lucide-react';
+import { SmartListsSidebar } from '@/components/SmartListsSidebar';
+import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft } from 'lucide-react';
 
 interface Lead {
   id: string;
@@ -47,15 +50,26 @@ const EnhancedLeadManager = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedSmartList, setSelectedSmartList] = useState<SmartList | null>(null);
+  const [builtInFilter, setBuiltInFilter] = useState<'all' | 'new' | 'hot' | 'recent'>('all');
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
+  const { getListLeads, lists, fetchLists } = useSmartLists();
 
   useEffect(() => {
     loadData();
     checkGHLConnection();
+    fetchLists();
   }, []);
+
+  // Reload leads when smart list or built-in filter changes
+  useEffect(() => {
+    loadLeadsForCurrentFilter();
+  }, [selectedSmartList, builtInFilter]);
 
   const loadData = async () => {
     const [leadsData, campaignsData] = await Promise.all([
@@ -65,6 +79,59 @@ const EnhancedLeadManager = () => {
     
     if (leadsData) setLeads(leadsData);
     if (campaignsData) setCampaigns(campaignsData);
+  };
+
+  const loadLeadsForCurrentFilter = useCallback(async () => {
+    if (selectedSmartList) {
+      // Load leads from smart list
+      const smartListLeads = await getListLeads(selectedSmartList.id);
+      setLeads(smartListLeads);
+    } else {
+      // Load all leads with built-in filter
+      const allLeads = await getLeads();
+      if (allLeads) {
+        let filtered = allLeads;
+        if (builtInFilter === 'new') {
+          filtered = allLeads.filter(l => l.status === 'new');
+        } else if (builtInFilter === 'hot') {
+          filtered = allLeads.filter(l => l.status === 'interested');
+        } else if (builtInFilter === 'recent') {
+          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          filtered = allLeads.filter(l => l.created_at && new Date(l.created_at) > yesterday);
+        }
+        setLeads(filtered);
+      }
+    }
+  }, [selectedSmartList, builtInFilter, getLeads, getListLeads]);
+
+  const handleSelectSmartList = (list: SmartList | null) => {
+    setSelectedSmartList(list);
+    setBuiltInFilter('all');
+  };
+
+  const handleSelectBuiltIn = (type: 'all' | 'new' | 'hot' | 'recent') => {
+    setBuiltInFilter(type);
+    setSelectedSmartList(null);
+  };
+
+  const handleFilterChange = async (filters: SmartListFilters) => {
+    // Apply filters to current leads
+    const allLeads = await getLeads();
+    if (!allLeads) return;
+    
+    let filtered = allLeads;
+    
+    if (filters.status?.length) {
+      filtered = filtered.filter(l => filters.status!.includes(l.status));
+    }
+    if (filters.lead_source) {
+      filtered = filtered.filter(l => l.lead_source === filters.lead_source);
+    }
+    if (filters.tags?.length) {
+      filtered = filtered.filter(l => l.tags?.some(t => filters.tags!.includes(t)));
+    }
+    
+    setLeads(filtered);
   };
 
   const checkGHLConnection = () => {
@@ -244,24 +311,68 @@ const EnhancedLeadManager = () => {
   });
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <div>
-          <h2 className="text-xl md:text-2xl font-bold">Lead Management</h2>
-          <p className="text-sm text-muted-foreground">
-            Import, manage, and assign leads to campaigns
-          </p>
+    <div className="flex h-full">
+      {/* Smart Lists Sidebar - Desktop */}
+      {showSidebar && (
+        <div className="hidden lg:block">
+          <SmartListsSidebar 
+            onSelectList={handleSelectSmartList}
+            onSelectBuiltIn={handleSelectBuiltIn}
+            selectedListId={selectedSmartList?.id}
+          />
         </div>
-        
-        {ghlConnected && (
-          <Button onClick={handleGHLSync} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Sync GHL
-          </Button>
-        )}
-      </div>
+      )}
 
-      <Tabs defaultValue="manage" className="space-y-4">
+      <div className="flex-1 space-y-4 md:space-y-6 p-4">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="hidden lg:flex"
+            >
+              {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+            </Button>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold">
+                {selectedSmartList ? selectedSmartList.name : 'Lead Management'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {selectedSmartList 
+                  ? `${selectedSmartList.lead_count} leads in this list`
+                  : 'Import, manage, and assign leads to campaigns'}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              variant={showFilters ? "secondary" : "outline"} 
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+            </Button>
+            {ghlConnected && (
+              <Button onClick={handleGHLSync} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Sync GHL
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <AdvancedLeadFilter 
+            onFilterChange={handleFilterChange}
+            onLeadCountChange={(count) => console.log('Matching:', count)}
+          />
+        )}
+
+        <Tabs defaultValue="manage" className="space-y-4">
         <TabsList className="grid w-full grid-cols-3 h-auto">
           <TabsTrigger value="manage" className="text-xs sm:text-sm py-2">
             <Users className="h-4 w-4 sm:mr-2" />
@@ -548,6 +659,7 @@ const EnhancedLeadManager = () => {
         onOpenChange={setIsDetailOpen}
         onLeadUpdated={loadData}
       />
+      </div>
     </div>
   );
 };
