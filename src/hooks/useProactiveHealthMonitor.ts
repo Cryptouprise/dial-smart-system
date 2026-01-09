@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { computeHealthScore, getNextCheckDate } from '@/lib/monitoringScheduler';
 
 interface HealthIssue {
   id: string;
@@ -14,6 +15,8 @@ interface HealthIssue {
 interface HealthStatus {
   overall: 'healthy' | 'degraded' | 'critical';
   lastCheck: Date | null;
+  healthScore: number;
+  nextCheckAt: Date | null;
   issues: HealthIssue[];
   metrics: {
     activeCampaigns: number;
@@ -26,6 +29,8 @@ interface HealthStatus {
 const DEFAULT_STATUS: HealthStatus = {
   overall: 'healthy',
   lastCheck: null,
+  healthScore: 100,
+  nextCheckAt: null,
   issues: [],
   metrics: {
     activeCampaigns: 0,
@@ -39,9 +44,16 @@ export const useProactiveHealthMonitor = (enabled: boolean = true, intervalMs: n
   const [status, setStatus] = useState<HealthStatus>(DEFAULT_STATUS);
   const [isChecking, setIsChecking] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const nextEligibleCheckRef = useRef<Date | null>(null);
   const { toast } = useToast();
 
   const checkHealth = useCallback(async () => {
+    const now = new Date();
+
+    if (nextEligibleCheckRef.current && now < nextEligibleCheckRef.current) {
+      return;
+    }
+
     if (isChecking) return;
     setIsChecking(true);
 
@@ -162,9 +174,15 @@ export const useProactiveHealthMonitor = (enabled: boolean = true, intervalMs: n
           ? 'degraded' 
           : 'healthy';
 
+      // Cadence scoring only depends on severity, not full issue payload
+      const healthScore = computeHealthScore(issues.map(issue => ({ type: issue.type })));
+      const nextCheckAt = getNextCheckDate(healthScore, now);
+
       const newStatus: HealthStatus = {
         overall,
-        lastCheck: new Date(),
+        lastCheck: now,
+        healthScore,
+        nextCheckAt,
         issues,
         metrics: {
           activeCampaigns: activeCampaigns?.length || 0,
@@ -177,6 +195,7 @@ export const useProactiveHealthMonitor = (enabled: boolean = true, intervalMs: n
       };
 
       setStatus(newStatus);
+      nextEligibleCheckRef.current = nextCheckAt;
 
       // Notify on status change to critical
       if (overall === 'critical' && status.overall !== 'critical') {
