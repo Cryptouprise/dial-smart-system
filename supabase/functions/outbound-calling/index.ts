@@ -65,7 +65,7 @@ async function logError(
 }
 
 interface OutboundCallRequest {
-  action: 'create_call' | 'get_call_status' | 'end_call';
+  action: 'create_call' | 'get_call_status' | 'end_call' | 'health_check';
   campaignId?: string;
   leadId?: string;
   phoneNumber?: string;
@@ -654,6 +654,21 @@ serve(async (req) => {
         }
 
         result = { success: true };
+        break;
+
+      case 'health_check':
+        // Health check for system verification
+        console.log('[Outbound Calling] Health check requested');
+        const retellConfigured = !!apiKey;
+        result = {
+          success: true,
+          healthy: true,
+          retell_configured: retellConfigured,
+          timestamp: new Date().toISOString(),
+          capabilities: ['create_call', 'get_call_status', 'end_call', 'health_check'],
+          rate_limit_handling: true,
+          retry_logic: true
+        };
         break;
 
       default:
