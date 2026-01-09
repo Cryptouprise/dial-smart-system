@@ -10,31 +10,51 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranscriptAnalysis } from '@/hooks/useTranscriptAnalysis';
 import { useCallHistory, CallRecord } from '@/hooks/useCallHistory';
+import { useRetellAI } from '@/hooks/useRetellAI';
 import TranscriptAnalyzerErrorBoundary from '@/components/TranscriptAnalyzer/ErrorBoundary';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle, 
-  Filter, History, Lightbulb, Play, ChevronDown, ChevronUp, Calendar
+  Filter, History, Lightbulb, Play, ChevronDown, ChevronUp, Calendar,
+  Bot, Download, FileText, Clock, Mic, ExternalLink, BarChart3, Wand2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
+interface RetellAgentInfo {
+  agent_id: string;
+  agent_name: string;
+  llm_id?: string;
+}
+
 const TranscriptAnalyzer = () => {
   const [transcript, setTranscript] = useState('');
   const [callId, setCallId] = useState('');
-  const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
   
   // Filters
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [dispositionFilter, setDispositionFilter] = useState<string>('all');
+  const [sentimentFilter, setSentimentFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [minDuration, setMinDuration] = useState<string>('');
+  const [maxDuration, setMaxDuration] = useState<string>('');
+  
+  // Script comparison state
+  const [retellAgents, setRetellAgents] = useState<RetellAgentInfo[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [agentScript, setAgentScript] = useState<string>('');
+  const [isLoadingScript, setIsLoadingScript] = useState(false);
+  const [isComparingScript, setIsComparingScript] = useState(false);
+  const [scriptComparison, setScriptComparison] = useState<any>(null);
   
   const { analyzeTranscript, bulkAnalyzeTranscripts, isAnalyzing, analysis } = useTranscriptAnalysis();
   const { 
     calls, isLoading, agents, dispositions, 
     fetchCalls, fetchAgents, fetchDispositions, getAggregatedInsights 
   } = useCallHistory();
+  const { listAgents } = useRetellAI();
   const { toast } = useToast();
 
   // Load initial data
@@ -42,16 +62,34 @@ const TranscriptAnalyzer = () => {
     fetchAgents();
     fetchDispositions();
     fetchCalls({ hasTranscript: true });
+    loadRetellAgents();
   }, [fetchAgents, fetchDispositions, fetchCalls]);
+
+  const loadRetellAgents = async () => {
+    try {
+      const agentList = await listAgents();
+      if (agentList) {
+        setRetellAgents(agentList.map(a => ({
+          agent_id: a.agent_id,
+          agent_name: a.agent_name,
+        })));
+      }
+    } catch (error) {
+      console.error('Error loading Retell agents:', error);
+    }
+  };
 
   // Apply filters
   const handleApplyFilters = () => {
     fetchCalls({
       agentId: agentFilter !== 'all' ? agentFilter : undefined,
       disposition: dispositionFilter !== 'all' ? dispositionFilter : undefined,
+      sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
-      hasTranscript: true
+      hasTranscript: true,
+      minDuration: minDuration ? parseInt(minDuration) : undefined,
+      maxDuration: maxDuration ? parseInt(maxDuration) : undefined,
     });
   };
 
@@ -128,16 +166,119 @@ const TranscriptAnalyzer = () => {
     }
   };
 
+  // Load script from Retell agent
+  const handleLoadAgentScript = async () => {
+    if (!selectedAgentId) {
+      toast({ title: "Select Agent", description: "Please select a Retell agent first", variant: "destructive" });
+      return;
+    }
+
+    setIsLoadingScript(true);
+    try {
+      // First get agent details to get LLM ID
+      const { data: agentData, error: agentError } = await supabase.functions.invoke('retell-agent-management', {
+        body: { action: 'get_agent', agentId: selectedAgentId }
+      });
+
+      if (agentError || !agentData?.agent) {
+        throw new Error('Failed to fetch agent details');
+      }
+
+      const llmId = agentData.agent.llm_websocket_url?.split('/').pop() || agentData.agent.response_engine?.llm_id;
+      
+      if (!llmId) {
+        toast({ title: "No LLM Found", description: "This agent doesn't have an LLM configured", variant: "destructive" });
+        return;
+      }
+
+      // Get LLM details for the prompt/script
+      const { data: llmData, error: llmError } = await supabase.functions.invoke('retell-llm-management', {
+        body: { action: 'get', llmId }
+      });
+
+      if (llmError || !llmData?.llm) {
+        throw new Error('Failed to fetch LLM details');
+      }
+
+      const script = llmData.llm.general_prompt || llmData.llm.begin_message || '';
+      
+      if (!script) {
+        toast({ title: "No Script", description: "This agent doesn't have a script/prompt configured", variant: "destructive" });
+        return;
+      }
+
+      setAgentScript(script);
+      toast({ title: "Script Loaded", description: `Loaded script from ${agentData.agent.agent_name}` });
+    } catch (error) {
+      console.error('Error loading agent script:', error);
+      toast({ title: "Error", description: "Failed to load agent script", variant: "destructive" });
+    } finally {
+      setIsLoadingScript(false);
+    }
+  };
+
+  // Compare calls against script using AI
+  const handleCompareToScript = async () => {
+    if (!agentScript.trim()) {
+      toast({ title: "Load Script First", description: "Please load an agent script first", variant: "destructive" });
+      return;
+    }
+
+    const callsWithTranscripts = calls.filter(c => c.transcript || c.notes);
+    if (callsWithTranscripts.length === 0) {
+      toast({ title: "No Calls", description: "No calls with transcripts to compare", variant: "destructive" });
+      return;
+    }
+
+    setIsComparingScript(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-call-transcript', {
+        body: {
+          action: 'compare_to_script',
+          script: agentScript,
+          transcripts: callsWithTranscripts.slice(0, 20).map(c => ({
+            callId: c.id,
+            transcript: c.transcript || c.notes || '',
+            sentiment: c.sentiment,
+            outcome: c.auto_disposition || c.outcome,
+            duration: c.duration_seconds
+          }))
+        }
+      });
+
+      if (error) throw error;
+
+      setScriptComparison(data);
+      toast({ title: "Comparison Complete", description: "Script improvement suggestions ready" });
+    } catch (error) {
+      console.error('Error comparing script:', error);
+      toast({ title: "Error", description: "Failed to compare transcripts to script", variant: "destructive" });
+    } finally {
+      setIsComparingScript(false);
+    }
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
   const insights = getAggregatedInsights(calls);
 
   return (
     <TranscriptAnalyzerErrorBoundary>
       <div className="space-y-6">
         <Tabs defaultValue="history" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="h-4 w-4" />
               Call History
+            </TabsTrigger>
+            <TabsTrigger value="script-compare" className="flex items-center gap-2">
+              <Wand2 className="h-4 w-4" />
+              Script Analysis
             </TabsTrigger>
             <TabsTrigger value="insights" className="flex items-center gap-2">
               <Lightbulb className="h-4 w-4" />
@@ -145,13 +286,13 @@ const TranscriptAnalyzer = () => {
             </TabsTrigger>
             <TabsTrigger value="manual" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
-              Manual Analysis
+              Manual
             </TabsTrigger>
           </TabsList>
 
           {/* Historical Calls Tab */}
           <TabsContent value="history" className="space-y-4">
-            {/* Filters */}
+            {/* Enhanced Filters */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -193,6 +334,41 @@ const TranscriptAnalyzer = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Sentiment</Label>
+                    <Select value={sentimentFilter} onValueChange={setSentimentFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Sentiments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sentiments</SelectItem>
+                        <SelectItem value="positive">👍 Positive</SelectItem>
+                        <SelectItem value="neutral">😐 Neutral</SelectItem>
+                        <SelectItem value="negative">👎 Negative</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Duration (seconds)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        placeholder="Min"
+                        value={minDuration}
+                        onChange={(e) => setMinDuration(e.target.value)}
+                        className="w-1/2"
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Max"
+                        value={maxDuration}
+                        onChange={(e) => setMaxDuration(e.target.value)}
+                        className="w-1/2"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -262,20 +438,41 @@ const TranscriptAnalyzer = () => {
                               <div className="font-medium">
                                 {call.lead?.first_name} {call.lead?.last_name || 'Unknown'}
                               </div>
-                              <div className="text-sm text-muted-foreground">
+                              <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                <Calendar className="h-3 w-3" />
                                 {format(new Date(call.created_at), 'MMM d, yyyy h:mm a')}
-                                {call.duration_seconds && ` • ${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, '0')}`}
+                                <Clock className="h-3 w-3 ml-2" />
+                                {formatDuration(call.duration_seconds)}
+                                {call.agent_name && (
+                                  <>
+                                    <Bot className="h-3 w-3 ml-2" />
+                                    {call.agent_name}
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
                           
                           <div className="flex items-center gap-2">
+                            {call.recording_url && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.open(call.recording_url!, '_blank');
+                                }}
+                                title="Play Recording"
+                              >
+                                <Mic className="h-4 w-4" />
+                              </Button>
+                            )}
                             {call.sentiment && (
                               <Badge variant={
                                 call.sentiment === 'positive' ? 'default' :
                                 call.sentiment === 'negative' ? 'destructive' : 'secondary'
                               }>
-                                {call.sentiment}
+                                {call.sentiment === 'positive' ? '👍' : call.sentiment === 'negative' ? '👎' : '😐'}
                               </Badge>
                             )}
                             <Badge variant="outline">
@@ -310,6 +507,15 @@ const TranscriptAnalyzer = () => {
                         {/* Expanded Details */}
                         {expandedCallId === call.id && (
                           <div className="mt-4 pt-4 border-t space-y-4">
+                            {call.recording_url && (
+                              <div>
+                                <Label className="text-xs">Recording</Label>
+                                <audio controls className="w-full mt-1" src={call.recording_url}>
+                                  Your browser does not support audio playback.
+                                </audio>
+                              </div>
+                            )}
+
                             {call.call_summary && (
                               <div>
                                 <Label className="text-xs">Summary</Label>
@@ -376,6 +582,169 @@ const TranscriptAnalyzer = () => {
             </Card>
           </TabsContent>
 
+          {/* Script Comparison Tab */}
+          <TabsContent value="script-compare" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5" />
+                  Load Agent Script
+                </CardTitle>
+                <CardDescription>
+                  Import your Retell AI agent's script to compare against call transcripts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1 space-y-2">
+                    <Label>Select Retell Agent</Label>
+                    <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose an agent..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {retellAgents.map(agent => (
+                          <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                            {agent.agent_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button 
+                    onClick={handleLoadAgentScript} 
+                    disabled={!selectedAgentId || isLoadingScript}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {isLoadingScript ? 'Loading...' : 'Import Script'}
+                  </Button>
+                </div>
+
+                {agentScript && (
+                  <div className="space-y-2">
+                    <Label>Agent Script/Prompt</Label>
+                    <Textarea
+                      value={agentScript}
+                      onChange={(e) => setAgentScript(e.target.value)}
+                      rows={8}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {agentScript && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Compare Transcripts to Script
+                  </CardTitle>
+                  <CardDescription>
+                    Analyze how your calls compare to the intended script and get improvement suggestions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-muted p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold">{calls.length}</div>
+                      <div className="text-sm text-muted-foreground">Calls Loaded</div>
+                    </div>
+                    <div className="bg-muted p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold">
+                        {calls.filter(c => c.transcript).length}
+                      </div>
+                      <div className="text-sm text-muted-foreground">With Transcripts</div>
+                    </div>
+                    <div className="bg-muted p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold">
+                        {Math.round(insights.avgConfidence * 100)}%
+                      </div>
+                      <div className="text-sm text-muted-foreground">Avg Confidence</div>
+                    </div>
+                  </div>
+
+                  <Button 
+                    onClick={handleCompareToScript}
+                    disabled={isComparingScript || calls.filter(c => c.transcript).length === 0}
+                    className="w-full"
+                  >
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    {isComparingScript ? 'Analyzing...' : 'Compare & Generate Improvements'}
+                  </Button>
+
+                  {scriptComparison && (
+                    <div className="space-y-4 mt-4">
+                      <Separator />
+                      
+                      {scriptComparison.script_adherence_score !== undefined && (
+                        <div className="bg-primary/10 p-4 rounded-lg">
+                          <div className="text-lg font-medium">Script Adherence Score</div>
+                          <div className="text-3xl font-bold text-primary">
+                            {Math.round(scriptComparison.script_adherence_score * 100)}%
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            How closely calls follow the intended script
+                          </p>
+                        </div>
+                      )}
+
+                      {scriptComparison.improvements?.length > 0 && (
+                        <div>
+                          <Label className="text-lg">Suggested Script Improvements</Label>
+                          <div className="space-y-3 mt-2">
+                            {scriptComparison.improvements.map((improvement: any, i: number) => (
+                              <div key={i} className="bg-muted p-3 rounded-lg border-l-4 border-primary">
+                                <div className="font-medium">{improvement.title}</div>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {improvement.suggestion}
+                                </p>
+                                {improvement.example && (
+                                  <div className="mt-2 p-2 bg-background rounded text-sm font-mono">
+                                    "{improvement.example}"
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {scriptComparison.common_deviations?.length > 0 && (
+                        <div>
+                          <Label className="text-lg text-orange-500">Common Deviations from Script</Label>
+                          <ul className="space-y-2 mt-2">
+                            {scriptComparison.common_deviations.map((deviation: string, i: number) => (
+                              <li key={i} className="flex items-start gap-2 text-sm">
+                                <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5" />
+                                {deviation}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {scriptComparison.best_practices?.length > 0 && (
+                        <div>
+                          <Label className="text-lg text-green-500">What's Working Well</Label>
+                          <ul className="space-y-2 mt-2">
+                            {scriptComparison.best_practices.map((practice: string, i: number) => (
+                              <li key={i} className="flex items-start gap-2 text-sm">
+                                <Sparkles className="h-4 w-4 text-green-500 mt-0.5" />
+                                {practice}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
           {/* Insights Tab */}
           <TabsContent value="insights" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -412,18 +781,21 @@ const TranscriptAnalyzer = () => {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Filters Active</CardTitle>
+                  <CardTitle className="text-sm font-medium">Active Filters</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-wrap gap-1">
                   {agentFilter !== 'all' && (
-                    <Badge variant="outline">Agent: {agents.find(a => a.agent_id === agentFilter)?.agent_name}</Badge>
+                    <Badge variant="outline">Agent</Badge>
                   )}
                   {dispositionFilter !== 'all' && (
-                    <Badge variant="outline">Disposition: {dispositionFilter}</Badge>
+                    <Badge variant="outline">Disposition</Badge>
                   )}
-                  {dateFrom && <Badge variant="outline">From: {dateFrom}</Badge>}
-                  {dateTo && <Badge variant="outline">To: {dateTo}</Badge>}
-                  {agentFilter === 'all' && dispositionFilter === 'all' && !dateFrom && !dateTo && (
+                  {sentimentFilter !== 'all' && (
+                    <Badge variant="outline">Sentiment</Badge>
+                  )}
+                  {dateFrom && <Badge variant="outline">Date Range</Badge>}
+                  {(minDuration || maxDuration) && <Badge variant="outline">Duration</Badge>}
+                  {agentFilter === 'all' && dispositionFilter === 'all' && !dateFrom && !minDuration && !maxDuration && sentimentFilter === 'all' && (
                     <span className="text-muted-foreground text-sm">None</span>
                   )}
                 </CardContent>

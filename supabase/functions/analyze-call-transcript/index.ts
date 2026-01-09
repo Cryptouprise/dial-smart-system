@@ -40,14 +40,83 @@ serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    const { callId, transcript } = await req.json()
-
-    if (!callId || !transcript) {
-      throw new Error('Missing required parameters: callId and transcript')
-    }
+    const body = await req.json();
+    const { action, callId, transcript, script, transcripts } = body;
 
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured')
+    }
+
+    // Handle script comparison action
+    if (action === 'compare_to_script') {
+      if (!script || !transcripts || transcripts.length === 0) {
+        throw new Error('Missing required parameters: script and transcripts');
+      }
+
+      const comparisonResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert sales script optimizer. Analyze multiple call transcripts and compare them against the intended agent script. Identify patterns, deviations, and suggest improvements.
+
+Respond with a JSON object:
+{
+  "script_adherence_score": 0.75, // 0-1 score of how well calls follow the script
+  "improvements": [
+    {
+      "title": "Improvement title",
+      "suggestion": "Detailed suggestion for script improvement",
+      "example": "Example script text to add/modify"
+    }
+  ],
+  "common_deviations": ["List of common ways calls deviate from script"],
+  "best_practices": ["What's working well in calls that should be kept"],
+  "objection_patterns": ["Common objections that script doesn't address"],
+  "tone_analysis": "Analysis of tone differences between script and actual calls"
+}`
+            },
+            {
+              role: 'user',
+              content: `AGENT SCRIPT:\n${script}\n\nCALL TRANSCRIPTS (${transcripts.length} calls):\n${transcripts.map((t: any, i: number) => 
+                `--- Call ${i + 1} (${t.sentiment || 'unknown'} sentiment, outcome: ${t.outcome || 'unknown'}, ${t.duration || 0}s) ---\n${t.transcript}`
+              ).join('\n\n')}`
+            }
+          ],
+        }),
+      });
+
+      if (!comparisonResponse.ok) {
+        throw new Error(`AI API error: ${comparisonResponse.status}`);
+      }
+
+      const comparisonData = await comparisonResponse.json();
+      const content = comparisonData.choices?.[0]?.message?.content;
+      
+      let comparison;
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        comparison = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(content);
+      } catch (parseError) {
+        console.error('[Script Comparison] Failed to parse AI response:', content);
+        throw new Error('Failed to parse AI comparison response');
+      }
+
+      return new Response(
+        JSON.stringify(comparison),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Standard transcript analysis
+    if (!callId || !transcript) {
+      throw new Error('Missing required parameters: callId and transcript')
     }
 
     // Analyze transcript with Lovable AI
