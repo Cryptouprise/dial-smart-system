@@ -1,12 +1,12 @@
-
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare, LogOut } from 'lucide-react';
+import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare, LogOut, Activity } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import DemoBadge from './DemoBadge';
+import { OrganizationSelector } from '@/components/OrganizationSelector';
 
 const Navigation = () => {
   const location = useLocation();
@@ -19,6 +19,7 @@ const Navigation = () => {
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/sms-conversations', label: 'AI SMS', icon: MessageSquare },
     { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { path: '/system-testing', label: 'System Testing', icon: Activity },
     { path: '/api-keys', label: 'API Keys', icon: Key },
     { path: '/settings', label: 'Settings', icon: Settings },
     { path: '/help', label: 'Help', icon: HelpCircle },
@@ -90,6 +91,8 @@ const Navigation = () => {
           </div>
 
           <div className="flex items-center space-x-2">
+            <OrganizationSelector />
+            
             {/* Desktop Right Side Navigation */}
             <div className="hidden md:flex items-center space-x-1">
               {navLinks.slice(3).map((link) => {

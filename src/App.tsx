@@ -9,6 +9,7 @@ import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
 import { AIErrorProvider } from "@/contexts/AIErrorContext";
 import { AIBrainProvider } from "@/contexts/AIBrainContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
@@ -25,6 +26,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const AiSmsConversations = lazy(() => import("./components/AiSmsConversations"));
 const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
+const SystemTestingHub = lazy(() => import("./pages/SystemTestingHub"));
 
 // Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
@@ -71,33 +73,36 @@ const App = () => (
                 <Sonner />
                 <BrowserRouter>
                   <AuthProvider>
-                    <AIBrainProvider>
-                      <Suspense fallback={<PageLoader />}>
-                        <Routes>
-                          {/* Public route */}
-                          <Route path="/auth" element={<Auth />} />
-                          
-                          {/* Protected routes */}
-                          <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                          <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
-                          <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
-                          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                          <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
-                          <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
-                          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-                          <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
-                          
-                          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                          <Route path="*" element={<NotFound />} />
-                        </Routes>
-                      </Suspense>
-                      {/* Mobile Navigation */}
-                      <MobileBottomNav />
-                      {/* Install Banner for first-time mobile visitors */}
-                      <InstallBanner />
-                      {/* Global AI Assistant - available on all pages */}
-                      <AIAssistantChat />
-                    </AIBrainProvider>
+                    <OrganizationProvider>
+                      <AIBrainProvider>
+                        <Suspense fallback={<PageLoader />}>
+                          <Routes>
+                            {/* Public route */}
+                            <Route path="/auth" element={<Auth />} />
+                            
+                            {/* Protected routes */}
+                            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                            <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
+                            <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
+                            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                            <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
+                            <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+                            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                            <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
+                            <Route path="/system-testing" element={<ProtectedRoute><SystemTestingHub /></ProtectedRoute>} />
+                            
+                            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                            <Route path="*" element={<NotFound />} />
+                          </Routes>
+                        </Suspense>
+                        {/* Mobile Navigation */}
+                        <MobileBottomNav />
+                        {/* Install Banner for first-time mobile visitors */}
+                        <InstallBanner />
+                        {/* Global AI Assistant - available on all pages */}
+                        <AIAssistantChat />
+                      </AIBrainProvider>
+                    </OrganizationProvider>
                   </AuthProvider>
                 </BrowserRouter>
               </TooltipProvider>
