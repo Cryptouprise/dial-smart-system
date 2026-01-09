@@ -9,12 +9,14 @@ export interface ErrorRecord {
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
-  status: 'pending' | 'analyzing' | 'suggested' | 'fixing' | 'fixed' | 'failed';
+  status: 'pending' | 'analyzing' | 'suggested' | 'fixing' | 'fixed' | 'failed' | 'needs_manual';
   suggestion?: string;
   autoFixAttempted?: boolean;
   retryCount: number;
-  actualChange?: boolean; // NEW: Flag indicating if Guardian actually modified data
-  fixDetails?: Record<string, unknown>; // NEW: Details about what was changed
+  actualChange?: boolean;
+  fixDetails?: Record<string, unknown>;
+  manualSteps?: string; // New: Clear steps for manual resolution
+  retryable?: boolean; // New: Whether this error can be retried
 }
 
 export interface AIErrorSettings {
@@ -31,7 +33,7 @@ const DEFAULT_SETTINGS: AIErrorSettings = {
   logErrors: true,
 };
 
-// Patterns to ignore (Supabase auth errors, React warnings, etc.)
+// Patterns to ignore (Supabase auth errors, React warnings, Guardian's own errors, etc.)
 const IGNORED_ERROR_PATTERNS = [
   'Failed to fetch',
   '_getUser',
@@ -50,6 +52,16 @@ const IGNORED_ERROR_PATTERNS = [
   // Common non-critical warnings
   'ResizeObserver loop',
   'Non-passive event listener',
+  // CRITICAL: Prevent Guardian from capturing its own errors
+  '[🛡️ Guardian]',
+  '[AI Error Handler]',
+  'Error in Guardian tab',
+  'AIErrorPanel',
+  'GuardianStatusWidget',
+  'useAIErrorHandler',
+  'ai-error-analyzer',
+  // Prevent catching React setState warnings from Guardian UI
+  'Cannot update a component',
 ];
 
 export const useAIErrorHandler = () => {
@@ -64,6 +76,12 @@ export const useAIErrorHandler = () => {
   // Deduplication: track recent errors to prevent loops (30 second window)
   const recentErrorsRef = useRef<Map<string, number>>(new Map());
   const DEDUPE_WINDOW_MS = 30000;
+  
+  // NEW: In-flight lock to prevent concurrent processing of same error
+  const inFlightRef = useRef<Set<string>>(new Set());
+  
+  // NEW: Retry timers to prevent stacking multiple timeouts
+  const retryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     localStorage.setItem('ai-error-settings', JSON.stringify(settings));
@@ -77,6 +95,17 @@ export const useAIErrorHandler = () => {
     return IGNORED_ERROR_PATTERNS.some(pattern => message.includes(pattern));
   }, []);
 
+  // NEW: Normalize error keys by stripping volatile parts (timestamps, query params)
+  const normalizeErrorKey = useCallback((type: string, message: string): string => {
+    // Remove timestamps, query params like ?t=123, and line numbers that change
+    const normalized = message
+      .replace(/\?t=\d+/g, '') // Remove Vite HMR timestamps
+      .replace(/:\d+:\d+/g, '') // Remove line:column numbers
+      .replace(/\d{13,}/g, '') // Remove epoch timestamps
+      .substring(0, 100);
+    return `${type}:${normalized}`;
+  }, []);
+
   const captureError = useCallback(async (
     error: Error | string,
     type: ErrorRecord['type'] = 'runtime',
@@ -87,13 +116,13 @@ export const useAIErrorHandler = () => {
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
-    // Skip ignored patterns (Supabase auth, network errors, React warnings)
+    // Skip ignored patterns (including Guardian's own errors)
     if (shouldIgnoreError(errorMessage)) {
       return null;
     }
 
-    // Deduplication: skip if we've seen this error recently (within 30 seconds)
-    const errorKey = `${type}:${errorMessage.substring(0, 100)}`;
+    // NEW: Use normalized error key for better deduplication
+    const errorKey = normalizeErrorKey(type, errorMessage);
     const now = Date.now();
     const lastSeen = recentErrorsRef.current.get(errorKey);
     
@@ -123,18 +152,14 @@ export const useAIErrorHandler = () => {
       context,
       status: 'pending',
       retryCount: 0,
+      retryable: true, // Default to retryable until backend says otherwise
     };
 
     setErrors(prev => [record, ...prev].slice(0, 50));
 
-    // Log to database if enabled AND online (skip auth call to prevent loop)
-    if (settings.logErrors && navigator.onLine) {
-      try {
-        // Don't call supabase.auth.getUser() - it causes the loop!
-        console.log('[🛡️ Guardian] Captured:', type, errorMessage.substring(0, 100));
-      } catch (logError) {
-        // Silently fail - don't log errors about logging errors
-      }
+    // Log to console (not database to prevent loops)
+    if (settings.logErrors) {
+      console.log('[🛡️ Guardian] Captured:', type, errorMessage.substring(0, 100));
     }
 
     // Show toast when auto-fix activates
@@ -147,7 +172,7 @@ export const useAIErrorHandler = () => {
     }
 
     return record.id;
-  }, [settings, shouldIgnoreError, toast]);
+  }, [settings, shouldIgnoreError, normalizeErrorKey, toast]);
 
   const analyzeError = useCallback(async (errorId: string): Promise<string | null> => {
     const error = errors.find(e => e.id === errorId);
@@ -180,7 +205,7 @@ export const useAIErrorHandler = () => {
 
       return suggestion;
     } catch (err) {
-      console.error('Error analysis failed:', err);
+      console.error('[🛡️ Guardian] Error analysis failed:', err);
       setErrors(prev => prev.map(e => 
         e.id === errorId ? { ...e, status: 'failed' } : e
       ));
@@ -212,6 +237,9 @@ export const useAIErrorHandler = () => {
 
       if (fnError) throw fnError;
 
+      // NEW: Check retryable flag from backend
+      const isRetryable = data?.retryable !== false;
+
       if (data?.success) {
         setErrors(prev => prev.map(e => 
           e.id === errorId ? { 
@@ -219,7 +247,8 @@ export const useAIErrorHandler = () => {
             status: 'fixed', 
             autoFixAttempted: true,
             actualChange: data.actualChange || false,
-            fixDetails: data.details
+            fixDetails: data.details,
+            retryable: isRetryable
           } : e
         ));
 
@@ -230,27 +259,73 @@ export const useAIErrorHandler = () => {
 
         return true;
       } else {
+        // NEW: Check if this is a non-retryable situation
+        if (!isRetryable) {
+          // Don't retry - mark as needs_manual
+          setErrors(prev => prev.map(e => 
+            e.id === errorId ? { 
+              ...e, 
+              status: 'needs_manual', 
+              autoFixAttempted: true,
+              retryable: false,
+              manualSteps: data.details || data.message
+            } : e
+          ));
+
+          toast({
+            title: "🛡️ Manual action required",
+            description: "Guardian has provided steps for you to follow",
+          });
+
+          return false;
+        }
+
         throw new Error(data?.message || 'Fix execution failed');
       }
     } catch (err) {
-      console.error('Fix execution failed:', err);
+      console.error('[🛡️ Guardian] Fix execution failed:', err);
       
-      const currentError = errors.find(e => e.id === errorId);
-      if (currentError && currentError.retryCount < settings.maxRetries) {
-        setErrors(prev => prev.map(e => 
-          e.id === errorId ? { ...e, retryCount: e.retryCount + 1, status: 'pending' } : e
-        ));
-        
-        // Retry with exponential backoff
-        setTimeout(() => analyzeAndFix(errorId), Math.pow(2, currentError.retryCount) * 1000);
-      } else {
-        setErrors(prev => prev.map(e => 
-          e.id === errorId ? { ...e, status: 'failed', autoFixAttempted: true } : e
-        ));
+      // NEW: Use functional update to get accurate retry count
+      setErrors(prev => {
+        return prev.map(e => {
+          if (e.id !== errorId) return e;
+          
+          const nextRetryCount = e.retryCount + 1;
+          const shouldRetry = nextRetryCount < settings.maxRetries && e.retryable !== false;
+          
+          if (shouldRetry) {
+            // Schedule retry with exponential backoff (but only if not already scheduled)
+            if (!retryTimersRef.current.has(errorId)) {
+              const backoffMs = Math.pow(2, nextRetryCount) * 1000;
+              const timer = setTimeout(() => {
+                retryTimersRef.current.delete(errorId);
+                analyzeAndFix(errorId);
+              }, backoffMs);
+              retryTimersRef.current.set(errorId, timer);
+            }
+            
+            return { 
+              ...e, 
+              retryCount: nextRetryCount, 
+              status: 'pending' as const 
+            };
+          } else {
+            // Max retries reached or non-retryable
+            return { 
+              ...e, 
+              status: 'failed' as const, 
+              autoFixAttempted: true 
+            };
+          }
+        });
+      });
 
+      // Show toast only once on final failure
+      const currentError = errors.find(e => e.id === errorId);
+      if (currentError && currentError.retryCount >= settings.maxRetries - 1) {
         toast({
           title: "🛡️ Guardian needs help",
-          description: "Auto-fix failed. Manual intervention may be required.",
+          description: `Auto-fix failed after ${settings.maxRetries} attempts. Manual intervention may be required.`,
           variant: "destructive",
         });
       }
@@ -260,22 +335,41 @@ export const useAIErrorHandler = () => {
   }, [errors, settings.maxRetries, toast]);
 
   const analyzeAndFix = useCallback(async (errorId: string) => {
+    // NEW: Prevent concurrent processing of same error
+    if (inFlightRef.current.has(errorId)) {
+      console.log('[🛡️ Guardian] Already processing error:', errorId);
+      return;
+    }
+
+    inFlightRef.current.add(errorId);
     setIsProcessing(true);
+    
     try {
       const suggestion = await analyzeError(errorId);
       if (suggestion && settings.autoFixMode) {
         await executeFixFromSuggestion(errorId);
       }
     } finally {
+      inFlightRef.current.delete(errorId);
       setIsProcessing(false);
     }
   }, [analyzeError, executeFixFromSuggestion, settings.autoFixMode]);
 
   const clearError = useCallback((errorId: string) => {
+    // Clear any pending retry timer
+    const timer = retryTimersRef.current.get(errorId);
+    if (timer) {
+      clearTimeout(timer);
+      retryTimersRef.current.delete(errorId);
+    }
     setErrors(prev => prev.filter(e => e.id !== errorId));
   }, []);
 
   const clearAllErrors = useCallback(() => {
+    // Clear all pending retry timers
+    retryTimersRef.current.forEach(timer => clearTimeout(timer));
+    retryTimersRef.current.clear();
+    inFlightRef.current.clear();
     setErrors([]);
   }, []);
 
@@ -283,8 +377,15 @@ export const useAIErrorHandler = () => {
     const error = errors.find(e => e.id === errorId);
     if (!error) return;
 
+    // Clear any existing timer
+    const timer = retryTimersRef.current.get(errorId);
+    if (timer) {
+      clearTimeout(timer);
+      retryTimersRef.current.delete(errorId);
+    }
+
     setErrors(prev => prev.map(e => 
-      e.id === errorId ? { ...e, status: 'pending', retryCount: 0 } : e
+      e.id === errorId ? { ...e, status: 'pending', retryCount: 0, retryable: true } : e
     ));
 
     await analyzeAndFix(errorId);
@@ -309,14 +410,20 @@ export const useAIErrorHandler = () => {
 export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIErrorHandler>['captureError']) => {
   // Handler functions - need references for cleanup
   const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    captureError(
-      event.reason?.message || 'Unhandled Promise Rejection',
-      'runtime',
-      { reason: event.reason }
-    );
+    const message = event.reason?.message || 'Unhandled Promise Rejection';
+    // Skip Guardian-related errors
+    if (message.includes('Guardian') || message.includes('ai-error') || message.includes('AIError')) {
+      return;
+    }
+    captureError(message, 'runtime', { reason: event.reason });
   };
 
   const handleError = (event: ErrorEvent) => {
+    const message = event.error?.message || event.message || '';
+    // Skip Guardian-related errors
+    if (message.includes('Guardian') || message.includes('ai-error') || message.includes('AIError')) {
+      return;
+    }
     captureError(
       event.error || event.message,
       'runtime',
@@ -332,16 +439,31 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
   window.addEventListener('unhandledrejection', handleUnhandledRejection);
   window.addEventListener('error', handleError);
 
-  // Console error interception
+  // Console error interception with BETTER handling
   const originalConsoleError = console.error;
   console.error = (...args) => {
     originalConsoleError.apply(console, args);
-    const message = args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ');
     
-    // Don't capture our own logs OR Supabase auth/network errors OR React warnings
+    // NEW: Build message properly - handle Error objects specially
+    const messageParts: string[] = [];
+    for (const arg of args) {
+      if (arg instanceof Error) {
+        messageParts.push(`${arg.message} ${arg.stack || ''}`);
+      } else if (typeof arg === 'object' && arg !== null) {
+        try {
+          messageParts.push(JSON.stringify(arg));
+        } catch {
+          messageParts.push('[Object]');
+        }
+      } else {
+        messageParts.push(String(arg));
+      }
+    }
+    const message = messageParts.join(' ');
+    
+    // Don't capture our own logs OR Guardian-related errors OR known noise
     const shouldIgnore = [
+      '[🛡️ Guardian]',
       '[AI Error Handler]',
       'Failed to fetch',
       '_getUser',
@@ -359,9 +481,20 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       'validateDOMNesting',
       'ResizeObserver loop',
       'Non-passive event listener',
+      // CRITICAL: Guardian tab and component errors
+      'Error in Guardian tab',
+      'Error in AI Errors tab',
+      'AIErrorPanel',
+      'GuardianStatusWidget',
+      'useAIErrorHandler',
+      'ai-error-analyzer',
+      'TabErrorBoundary',
+      // React setState warnings (often benign in dev)
+      'Cannot update a component',
+      'Cannot update during an existing state transition',
     ].some(pattern => message.includes(pattern));
     
-    if (!shouldIgnore) {
+    if (!shouldIgnore && message.length > 0) {
       captureError(message, 'runtime', { source: 'console.error' });
     }
   };

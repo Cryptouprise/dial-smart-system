@@ -17,6 +17,7 @@ const GuardianStatusWidget: React.FC = () => {
   const actuallyFixed = errors.filter(e => e.status === 'fixed' && e.actualChange);
   const suggestionsOnly = errors.filter(e => e.status === 'fixed' && !e.actualChange);
   const failedCount = errors.filter(e => e.status === 'failed').length;
+  const needsManualCount = errors.filter(e => e.status === 'needs_manual').length;
   
   const lastError = errors[0];
   const lastActivity = lastError 
@@ -48,29 +49,33 @@ const GuardianStatusWidget: React.FC = () => {
         </div>
       </CardHeader>
       <CardContent className="pt-0 px-4 pb-4 space-y-3">
-        {/* Updated Grid: Pending, Actually Fixed, Suggestions, Failed */}
-        <div className="grid grid-cols-4 gap-1.5 text-center">
-          <div className="p-2 rounded-lg bg-muted/50">
+        {/* Updated Grid: Pending, Fixed, Suggested, Needs Manual, Failed */}
+        <div className="grid grid-cols-5 gap-1 text-center">
+          <div className="p-1.5 rounded-lg bg-muted/50">
             <div className="text-lg font-bold text-yellow-500">{pendingCount}</div>
-            <div className="text-[10px] text-muted-foreground">Pending</div>
+            <div className="text-[9px] text-muted-foreground">Pending</div>
           </div>
-          <div className="p-2 rounded-lg bg-muted/50">
-            <div className="flex items-center justify-center gap-1">
+          <div className="p-1.5 rounded-lg bg-muted/50">
+            <div className="flex items-center justify-center gap-0.5">
               <Wrench className="h-3 w-3 text-green-500" />
               <span className="text-lg font-bold text-green-500">{actuallyFixed.length}</span>
             </div>
-            <div className="text-[10px] text-muted-foreground">Fixed</div>
+            <div className="text-[9px] text-muted-foreground">Fixed</div>
           </div>
-          <div className="p-2 rounded-lg bg-muted/50">
-            <div className="flex items-center justify-center gap-1">
+          <div className="p-1.5 rounded-lg bg-muted/50">
+            <div className="flex items-center justify-center gap-0.5">
               <MessageSquare className="h-3 w-3 text-blue-500" />
               <span className="text-lg font-bold text-blue-500">{suggestionsOnly.length}</span>
             </div>
-            <div className="text-[10px] text-muted-foreground">Suggested</div>
+            <div className="text-[9px] text-muted-foreground">Suggested</div>
           </div>
-          <div className="p-2 rounded-lg bg-muted/50">
+          <div className="p-1.5 rounded-lg bg-muted/50">
+            <div className="text-lg font-bold text-amber-500">{needsManualCount}</div>
+            <div className="text-[9px] text-muted-foreground">Manual</div>
+          </div>
+          <div className="p-1.5 rounded-lg bg-muted/50">
             <div className="text-lg font-bold text-red-500">{failedCount}</div>
-            <div className="text-[10px] text-muted-foreground">Failed</div>
+            <div className="text-[9px] text-muted-foreground">Failed</div>
           </div>
         </div>
 

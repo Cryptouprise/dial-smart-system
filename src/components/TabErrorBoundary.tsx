@@ -14,6 +14,15 @@ interface State {
   errorInfo?: ErrorInfo;
 }
 
+// List of tabs that should NOT have their errors captured by Guardian
+// to prevent infinite loops
+const GUARDIAN_EXEMPT_TABS = [
+  'Guardian',
+  'AI Errors',
+  'ai-errors',
+  'guardian',
+];
+
 class TabErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false
@@ -24,7 +33,20 @@ class TabErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`Error in ${this.props.tabName} tab:`, error, errorInfo);
+    // CRITICAL: Don't log Guardian tab errors to console.error
+    // This prevents the console.error interceptor from creating new Guardian errors
+    const isGuardianTab = GUARDIAN_EXEMPT_TABS.some(
+      tab => this.props.tabName.toLowerCase().includes(tab.toLowerCase())
+    );
+
+    if (isGuardianTab) {
+      // Use console.warn instead to avoid triggering Guardian's console.error interceptor
+      console.warn(`[TabErrorBoundary] Error in ${this.props.tabName} tab (not captured by Guardian):`, error.message);
+    } else {
+      // For other tabs, log normally so Guardian can capture if needed
+      console.error(`Error in ${this.props.tabName} tab:`, error, errorInfo);
+    }
+    
     this.setState({ errorInfo });
   }
 
