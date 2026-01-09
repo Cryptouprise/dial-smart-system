@@ -1,30 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   FileText,
-  Plus,
   Edit,
-  Trash2,
   TrendingUp,
   Activity,
   CheckCircle2,
   Loader2,
   Copy,
   BarChart3,
-  Sparkles
+  Sparkles,
+  Bot,
+  Download
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useMLLearning } from '@/hooks/useMLLearning';
+import { useRetellAI } from '@/hooks/useRetellAI';
 
 interface CampaignScript {
   id: string;
@@ -34,6 +34,11 @@ interface CampaignScript {
   status: string;
   created_at: string;
   agent_id: string | null;
+}
+
+interface RetellAgent {
+  agent_id: string;
+  agent_name: string;
 }
 
 const SCRIPT_TEMPLATES = [
@@ -83,17 +88,96 @@ Would it help if I {{offer_solution}}?`
 export const ScriptManager: React.FC = () => {
   const { toast } = useToast();
   const { getScriptAnalytics, analyzePerformance, insights } = useMLLearning();
+  const { listAgents, getAgent, isLoading: isRetellLoading } = useRetellAI();
   const [campaigns, setCampaigns] = useState<CampaignScript[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignScript | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editScript, setEditScript] = useState('');
   const [scriptAnalytics, setScriptAnalytics] = useState<any[]>([]);
+  const [retellAgents, setRetellAgents] = useState<RetellAgent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [isImportingScript, setIsImportingScript] = useState(false);
 
   useEffect(() => {
     loadCampaigns();
     loadScriptAnalytics();
+    loadRetellAgents();
   }, []);
+
+  const loadRetellAgents = async () => {
+    try {
+      const agents = await listAgents();
+      if (agents) {
+        setRetellAgents(agents);
+      }
+    } catch (error) {
+      console.error('Error loading Retell agents:', error);
+    }
+  };
+
+  const handleImportFromRetell = async (agentId: string) => {
+    if (!agentId) return;
+    
+    setIsImportingScript(true);
+    try {
+      const agentDetails = await getAgent(agentId);
+      if (!agentDetails) {
+        toast({
+          title: 'Import Failed',
+          description: 'Could not fetch agent details',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Get the LLM ID to fetch the prompt
+      const llmId = agentDetails?.response_engine?.llm_id || agentDetails?.llm_id;
+      
+      if (llmId) {
+        // Fetch the LLM to get the prompt
+        const { data: llmData, error: llmError } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'get_llm', llmId }
+        });
+
+        if (!llmError && llmData?.general_prompt) {
+          setEditScript(llmData.general_prompt);
+          setSelectedAgentId(agentId);
+          toast({
+            title: 'Script Imported',
+            description: `Imported prompt from "${agentDetails.agent_name}"`,
+          });
+          return;
+        }
+      }
+
+      // Fallback: use any available prompt data from agent
+      const prompt = agentDetails?.prompt || agentDetails?.general_prompt || '';
+      if (prompt) {
+        setEditScript(prompt);
+        setSelectedAgentId(agentId);
+        toast({
+          title: 'Script Imported',
+          description: `Imported configuration from "${agentDetails.agent_name}"`,
+        });
+      } else {
+        toast({
+          title: 'No Script Found',
+          description: 'This agent does not have a configured prompt/script',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('Error importing from Retell:', error);
+      toast({
+        title: 'Import Error',
+        description: 'Failed to import script from Retell agent',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsImportingScript(false);
+    }
+  };
 
   const loadScriptAnalytics = async () => {
     const analytics = await getScriptAnalytics();
@@ -468,7 +552,7 @@ export const ScriptManager: React.FC = () => {
 
       {/* Edit Script Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Script - {selectedCampaign?.name}</DialogTitle>
             <DialogDescription>
@@ -477,6 +561,45 @@ export const ScriptManager: React.FC = () => {
           </DialogHeader>
           
           <div className="space-y-4">
+            {/* Import from Retell Agent */}
+            <div className="space-y-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+              <Label className="flex items-center gap-2 text-purple-700 dark:text-purple-300">
+                <Bot className="h-4 w-4" />
+                Import from Retell AI Agent
+              </Label>
+              <div className="flex gap-2">
+                <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select a Retell AI agent..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {retellAgents.map((agent) => (
+                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                        {agent.agent_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={() => handleImportFromRetell(selectedAgentId)}
+                  disabled={!selectedAgentId || isImportingScript}
+                >
+                  {isImportingScript ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-1" />
+                      Import
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically import the script/prompt from your Retell AI agent
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Quick Templates</Label>
               <div className="flex flex-wrap gap-2">
