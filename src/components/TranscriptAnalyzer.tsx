@@ -16,7 +16,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { 
   Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle, 
   Filter, History, Lightbulb, Play, ChevronDown, ChevronUp, Calendar,
-  Bot, Download, FileText, Clock, Mic, ExternalLink, BarChart3, Wand2
+  Bot, Download, FileText, Clock, Mic, ExternalLink, BarChart3, Wand2,
+  Plus, Save, CheckCircle2, AlertCircle, Info
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -45,9 +46,12 @@ const TranscriptAnalyzer = () => {
   const [retellAgents, setRetellAgents] = useState<RetellAgentInfo[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [agentScript, setAgentScript] = useState<string>('');
+  const [originalAgentScript, setOriginalAgentScript] = useState<string>(''); // Track original for comparison
   const [isLoadingScript, setIsLoadingScript] = useState(false);
   const [isComparingScript, setIsComparingScript] = useState(false);
   const [scriptComparison, setScriptComparison] = useState<any>(null);
+  const [isSavingToAgent, setIsSavingToAgent] = useState(false);
+  const [selectedAgentLlmId, setSelectedAgentLlmId] = useState<string>(''); // Store LLM ID for saving
   
   const { analyzeTranscript, bulkAnalyzeTranscripts, isAnalyzing, analysis } = useTranscriptAnalysis();
   const { 
@@ -81,8 +85,11 @@ const TranscriptAnalyzer = () => {
 
   // Apply filters
   const handleApplyFilters = () => {
+    // Get agent name for text-based search fallback
+    const selectedAgent = retellAgents.find(a => a.agent_id === agentFilter);
     fetchCalls({
       agentId: agentFilter !== 'all' ? agentFilter : undefined,
+      agentName: selectedAgent?.agent_name, // Pass agent name for text search fallback
       disposition: dispositionFilter !== 'all' ? dispositionFilter : undefined,
       sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
       dateFrom: dateFrom || undefined,
@@ -191,6 +198,9 @@ const TranscriptAnalyzer = () => {
         return;
       }
 
+      // Store LLM ID for later saving
+      setSelectedAgentLlmId(llmId);
+
       // Get LLM details for the prompt/script
       const { data: llmData, error: llmError } = await supabase.functions.invoke('retell-llm-management', {
         body: { action: 'get', llmId }
@@ -208,12 +218,75 @@ const TranscriptAnalyzer = () => {
       }
 
       setAgentScript(script);
+      setOriginalAgentScript(script); // Track original for comparison
       toast({ title: "Script Loaded", description: `Loaded script from ${agentData.agent_name}` });
     } catch (error) {
       console.error('Error loading agent script:', error);
       toast({ title: "Error", description: "Failed to load agent script", variant: "destructive" });
     } finally {
       setIsLoadingScript(false);
+    }
+  };
+
+  // Apply a specific improvement to the script
+  const handleApplyImprovement = (improvement: any) => {
+    const addition = improvement.example 
+      ? `\n\n// ${improvement.title}\n${improvement.example}`
+      : `\n\n// ${improvement.title}\n// ${improvement.suggestion}`;
+    
+    setAgentScript(prev => prev + addition);
+    toast({ title: "Improvement Applied", description: `Added: ${improvement.title}` });
+  };
+
+  // Save the modified script back to the Retell agent
+  const handleSaveToAgent = async () => {
+    if (!selectedAgentLlmId || !agentScript.trim()) {
+      toast({ title: "Error", description: "No script or agent to save to", variant: "destructive" });
+      return;
+    }
+
+    setIsSavingToAgent(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retell-llm-management', {
+        body: { 
+          action: 'update', 
+          llmId: selectedAgentLlmId,
+          updates: {
+            general_prompt: agentScript
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      // Log the improvement to agent_improvement_history
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const selectedAgent = retellAgents.find(a => a.agent_id === selectedAgentId);
+        await supabase.from('agent_improvement_history').insert({
+          user_id: user.id,
+          agent_id: selectedAgentId,
+          agent_name: selectedAgent?.agent_name || 'Unknown',
+          improvement_type: 'script_update',
+          title: 'Script updated from Transcript Analyzer',
+          details: {
+            original_length: originalAgentScript.length,
+            new_length: agentScript.length,
+            comparison_results: scriptComparison ? {
+              adherence_score: scriptComparison.script_adherence_score,
+              improvements_count: scriptComparison.improvements?.length || 0
+            } : null
+          }
+        });
+      }
+
+      setOriginalAgentScript(agentScript); // Update original after save
+      toast({ title: "Saved!", description: "Script changes saved to Retell agent" });
+    } catch (error) {
+      console.error('Error saving to agent:', error);
+      toast({ title: "Error", description: "Failed to save script to agent", variant: "destructive" });
+    } finally {
+      setIsSavingToAgent(false);
     }
   };
 
@@ -692,14 +765,62 @@ const TranscriptAnalyzer = () => {
 
                       {scriptComparison.improvements?.length > 0 && (
                         <div>
-                          <Label className="text-lg">Suggested Script Improvements</Label>
-                          <div className="space-y-3 mt-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <Label className="text-lg">Suggested Script Improvements</Label>
+                            {selectedAgentLlmId && (
+                              <Button
+                                size="sm"
+                                onClick={handleSaveToAgent}
+                                disabled={isSavingToAgent || agentScript === originalAgentScript}
+                              >
+                                <Save className="h-4 w-4 mr-1" />
+                                {isSavingToAgent ? 'Saving...' : 'Save All to Agent'}
+                              </Button>
+                            )}
+                          </div>
+                          <div className="space-y-3">
                             {scriptComparison.improvements.map((improvement: any, i: number) => (
-                              <div key={i} className="bg-muted p-3 rounded-lg border-l-4 border-primary">
-                                <div className="font-medium">{improvement.title}</div>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {improvement.suggestion}
-                                </p>
+                              <div key={i} className={`bg-muted p-3 rounded-lg border-l-4 ${
+                                improvement.priority === 'critical' ? 'border-red-500' :
+                                improvement.priority === 'important' ? 'border-orange-500' :
+                                'border-primary'
+                              }`}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">{improvement.title}</span>
+                                      {improvement.priority && (
+                                        <Badge 
+                                          variant={improvement.priority === 'critical' ? 'destructive' : 'secondary'}
+                                          className="text-xs"
+                                        >
+                                          {improvement.priority}
+                                        </Badge>
+                                      )}
+                                      {improvement.section && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {improvement.section}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                      {improvement.suggestion}
+                                    </p>
+                                    {improvement.ai_voice_notes && (
+                                      <p className="text-xs text-blue-600 mt-1 italic">
+                                        🎙️ {improvement.ai_voice_notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleApplyImprovement(improvement)}
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Apply
+                                  </Button>
+                                </div>
                                 {improvement.example && (
                                   <div className="mt-2 p-2 bg-background rounded text-sm font-mono">
                                     "{improvement.example}"

@@ -35,7 +35,16 @@ interface LearningInsights {
   dispositionAccuracy: Record<string, { accuracy: number; confidence: number }>;
   leadScoringFactors: Record<string, number>;
   agentBenchmarks: Record<string, { conversionRate: number; avgCallDuration: number }>;
-  recommendations: string[];
+  recommendations: StructuredRecommendation[];
+}
+
+interface StructuredRecommendation {
+  type: 'success' | 'warning' | 'info' | 'timing';
+  title: string;
+  description: string;
+  metric?: string;
+  action?: string;
+  priority: 'high' | 'medium' | 'low';
 }
 
 serve(async (req) => {
@@ -191,17 +200,22 @@ async function generateLearningInsights(supabase: any, userId: string): Promise<
     stats.confidence = stats.confidence / stats.total;
   });
 
-  // Generate recommendations based on insights
-  const recommendations: string[] = [];
+  // Generate structured recommendations based on insights
+  const recommendations: StructuredRecommendation[] = [];
   
   // Recommend best-performing scripts
   const bestScript = Object.entries(scriptPerformance)
     .sort((a, b) => b[1].successRate - a[1].successRate)[0];
   
   if (bestScript && bestScript[1].totalCalls >= 10) {
-    recommendations.push(
-      `🎯 Best performing script: "${bestScript[0]}" with ${bestScript[1].successRate.toFixed(1)}% success rate. Consider using this as your primary script.`
-    );
+    recommendations.push({
+      type: 'success',
+      title: 'Best Performing Script',
+      description: bestScript[0],
+      metric: `${bestScript[1].successRate.toFixed(1)}% success rate`,
+      action: 'Consider using this as your primary script',
+      priority: 'high'
+    });
   }
 
   // Recommend disposition improvements
@@ -209,9 +223,13 @@ async function generateLearningInsights(supabase: any, userId: string): Promise<
     .filter(([_, stats]) => stats.accuracy < 70 && stats.total >= 5);
   
   if (lowAccuracyDispositions.length > 0) {
-    recommendations.push(
-      `⚠️ Auto-disposition accuracy below 70% for: ${lowAccuracyDispositions.map(([d]) => d).join(', ')}. Consider refining AI prompts or disposition rules.`
-    );
+    recommendations.push({
+      type: 'warning',
+      title: 'Low Disposition Accuracy',
+      description: `Auto-disposition below 70% for: ${lowAccuracyDispositions.map(([d]) => d).join(', ')}`,
+      action: 'Refine AI prompts or disposition rules',
+      priority: 'medium'
+    });
   }
 
   // Recommend call timing optimizations
@@ -219,7 +237,7 @@ async function generateLearningInsights(supabase: any, userId: string): Promise<
     .from('call_logs')
     .select('created_at, outcome')
     .eq('user_id', userId)
-    .in('outcome', ['qualified', 'appointment_booked'])
+    .in('outcome', ['qualified', 'appointment_booked', 'appointment_set', 'interested'])
     .gte('created_at', thirtyDaysAgo.toISOString());
 
   if (timeData && timeData.length > 10) {
@@ -232,9 +250,52 @@ async function generateLearningInsights(supabase: any, userId: string): Promise<
     const bestHour = Object.entries(hourCounts)
       .sort((a, b) => b[1] - a[1])[0];
     
-    recommendations.push(
-      `🕐 Peak conversion hour: ${bestHour[0]}:00. Schedule more calls during this time for better results.`
-    );
+    if (bestHour) {
+      recommendations.push({
+        type: 'timing',
+        title: 'Peak Conversion Hour',
+        description: `${bestHour[0]}:00`,
+        metric: `${bestHour[1]} successful calls`,
+        action: 'Schedule more calls during this time for better results',
+        priority: 'medium'
+      });
+    }
+  }
+
+  // Add general insights
+  const totalCalls = Object.values(scriptPerformance).reduce((sum, s) => sum + s.totalCalls, 0);
+  if (totalCalls > 0) {
+    const avgSuccessRate = Object.values(scriptPerformance).reduce((sum, s) => sum + s.successRate, 0) / Object.keys(scriptPerformance).length;
+    
+    if (avgSuccessRate >= 50) {
+      recommendations.push({
+        type: 'success',
+        title: 'Overall Performance',
+        description: 'Your scripts are performing above average',
+        metric: `${avgSuccessRate.toFixed(1)}% average success rate`,
+        priority: 'low'
+      });
+    } else if (avgSuccessRate < 30) {
+      recommendations.push({
+        type: 'warning',
+        title: 'Performance Alert',
+        description: 'Overall script performance is below target',
+        metric: `${avgSuccessRate.toFixed(1)}% average success rate`,
+        action: 'Consider A/B testing different scripts or reviewing objection handling',
+        priority: 'high'
+      });
+    }
+  }
+
+  // Add info about data quality
+  if (totalCalls < 50) {
+    recommendations.push({
+      type: 'info',
+      title: 'Limited Data',
+      description: `Only ${totalCalls} calls analyzed in the last 30 days`,
+      action: 'Make more calls to get more accurate insights',
+      priority: 'low'
+    });
   }
 
   return {

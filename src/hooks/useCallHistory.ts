@@ -31,6 +31,7 @@ export interface CallRecord {
 
 export interface CallFilters {
   agentId?: string;
+  agentName?: string; // For text-based search fallback when agent_id is NULL
   disposition?: string;
   sentiment?: string;
   dateFrom?: string;
@@ -39,6 +40,25 @@ export interface CallFilters {
   minDuration?: number;
   maxDuration?: number;
 }
+
+// Map disposition names from UI to database outcome values
+const dispositionToOutcomeMap: Record<string, string[]> = {
+  'Already Has Solar': ['completed', 'not_interested'],
+  'Appointment Booked': ['appointment_set'],
+  'Callback Requested': ['callback_requested', 'callback'],
+  'Hot Lead': ['interested'],
+  'Interested': ['interested'],
+  'Not Connected': ['no_answer'],
+  'Not Interested': ['not_interested'],
+  'Do Not Call': ['do_not_call', 'dnc'],
+  'Voicemail': ['voicemail'],
+  'Wrong Number': ['failed'],
+  'Dropped Call': ['failed'],
+  'Follow Up': ['callback', 'callback_requested'],
+  'Potential Prospect': ['interested', 'contacted'],
+  '1st call': ['completed', 'contacted'],
+  'Renter': ['not_interested'],
+};
 
 export interface RetellAgent {
   agent_id: string;
@@ -130,11 +150,30 @@ export const useCallHistory = () => {
         .limit(limit);
 
       // Apply filters
+      // Agent filter: Since agent_id is often NULL for historical calls,
+      // we also search agent_name in notes/transcript for better matching
       if (filters.agentId) {
-        query = query.eq('agent_id', filters.agentId);
+        // Try to find agent name for text-based search fallback
+        const agentName = filters.agentName;
+        if (agentName) {
+          query = query.or(`agent_id.eq.${filters.agentId},agent_name.ilike.%${agentName}%,notes.ilike.%${agentName}%`);
+        } else {
+          query = query.eq('agent_id', filters.agentId);
+        }
       }
+      
+      // Disposition filter: Map user-friendly names to database outcome values
       if (filters.disposition) {
-        query = query.or(`outcome.eq.${filters.disposition},auto_disposition.eq.${filters.disposition}`);
+        const mappedOutcomes = dispositionToOutcomeMap[filters.disposition];
+        if (mappedOutcomes && mappedOutcomes.length > 0) {
+          // Build OR query for all possible outcome values
+          const outcomeConditions = mappedOutcomes.map(o => `outcome.eq.${o}`).join(',');
+          const dispositionCondition = `auto_disposition.ilike.%${filters.disposition}%`;
+          query = query.or(`${outcomeConditions},${dispositionCondition}`);
+        } else {
+          // Fallback: search both outcome and auto_disposition
+          query = query.or(`outcome.ilike.%${filters.disposition}%,auto_disposition.ilike.%${filters.disposition}%`);
+        }
       }
       if (filters.sentiment) {
         query = query.eq('sentiment', filters.sentiment);

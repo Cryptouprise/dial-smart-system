@@ -96,23 +96,52 @@ serve(async (req) => {
           messages: [
             {
               role: 'system',
-              content: `You are an expert sales script optimizer. Analyze multiple call transcripts and compare them against the intended agent script. Identify patterns, deviations, and suggest improvements.
+              content: `You are an expert AI voice agent script optimizer. Analyze multiple call transcripts and compare them against the intended agent script. Identify patterns, deviations, and suggest improvements.
 
-Respond with a JSON object:
+IMPORTANT: Provide structured, actionable improvements categorized by script section with priority levels.
+
+Respond with a JSON object (no markdown):
 {
-  "script_adherence_score": 0.75, // 0-1 score of how well calls follow the script
+  "script_adherence_score": 0.75,
+  "sections_analysis": {
+    "opening": { "score": 0.8, "issues": ["list of issues"], "strengths": ["what works well"] },
+    "qualification": { "score": 0.6, "issues": [], "strengths": [] },
+    "objection_handling": { "score": 0.5, "issues": [], "strengths": [] },
+    "value_proposition": { "score": 0.7, "issues": [], "strengths": [] },
+    "closing": { "score": 0.7, "issues": [], "strengths": [] }
+  },
   "improvements": [
     {
-      "title": "Improvement title",
-      "suggestion": "Detailed suggestion for script improvement",
-      "example": "Example script text to add/modify"
+      "section": "opening|qualification|objection_handling|value_proposition|closing",
+      "priority": "critical|important|nice-to-have",
+      "title": "Short descriptive title",
+      "suggestion": "Detailed explanation of the improvement needed",
+      "example": "Exact script text to add or modify",
+      "ai_voice_notes": "Specific guidance for AI voice delivery - tone, pacing, emphasis, pauses"
     }
   ],
   "common_deviations": ["List of common ways calls deviate from script"],
   "best_practices": ["What's working well in calls that should be kept"],
-  "objection_patterns": ["Common objections that script doesn't address"],
-  "tone_analysis": "Analysis of tone differences between script and actual calls"
-}`
+  "objection_patterns": ["Common objections that script doesn't address well"],
+  "tone_analysis": "Analysis of tone differences between script and actual calls",
+  "voice_agent_recommendations": {
+    "pacing_issues": ["Issues with speaking speed or pauses"],
+    "tone_suggestions": ["Suggestions for emotional tone adjustments"],
+    "branching_opportunities": ["Where conditional logic could improve responses"]
+  }
+}
+
+Priority Levels:
+- critical: Must fix - causing lost conversions or negative reactions
+- important: Should fix - impacts call quality significantly
+- nice-to-have: Could improve - minor enhancements
+
+Section Categories:
+- opening: Introduction, building rapport, setting context
+- qualification: Asking discovery questions, understanding needs
+- objection_handling: Responding to concerns, price objections, timing objections
+- value_proposition: Presenting benefits, differentiators, ROI
+- closing: Booking appointments, next steps, call to action`
             },
             {
               role: 'user',
