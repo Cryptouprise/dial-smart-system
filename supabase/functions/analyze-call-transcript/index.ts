@@ -183,7 +183,7 @@ Respond with a JSON object containing:
       throw new Error('Failed to parse AI analysis response');
     }
 
-    // Update call log with analysis
+    // Update call log with analysis including all new columns
     const { error: updateError } = await supabaseAdmin
       .from('call_logs')
       .update({
@@ -191,6 +191,8 @@ Respond with a JSON object containing:
         ai_analysis: aiAnalysis,
         auto_disposition: aiAnalysis.disposition,
         confidence_score: aiAnalysis.confidence,
+        sentiment: aiAnalysis.sentiment || null,
+        call_summary: aiAnalysis.key_points?.join('. ') || null,
         outcome: aiAnalysis.disposition
       })
       .eq('id', callId)

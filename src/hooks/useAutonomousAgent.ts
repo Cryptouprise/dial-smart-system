@@ -536,12 +536,82 @@ export const useAutonomousAgent = () => {
   }, []);
 
   const applyScriptSuggestion = useCallback(async (suggestionId: string, isAutonomous: boolean) => {
-    toast({
-      title: "Feature Coming Soon",
-      description: "Script optimization will be available in a future update",
-    });
-    return false;
-  }, [toast]);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in", variant: "destructive" });
+        return false;
+      }
+
+      // Check autonomous settings
+      if (isAutonomous && !settings.auto_approve_script_changes) {
+        toast({ title: "Auto-approve disabled", description: "Enable auto-approve script changes in settings", variant: "destructive" });
+        return false;
+      }
+
+      // Check daily limit for autonomous changes
+      if (isAutonomous) {
+        const today = new Date().toISOString().split('T')[0];
+        const { count } = await supabase
+          .from('agent_improvement_history')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('created_by', 'lady_jarvis')
+          .gte('created_at', today);
+
+        const maxChanges = 5; // Default max auto changes per day
+        if ((count || 0) >= maxChanges) {
+          toast({ title: "Daily limit reached", description: `Max ${maxChanges} auto script changes per day`, variant: "destructive" });
+          return false;
+        }
+      }
+
+      // Get the suggestion from scriptSuggestions
+      const suggestion = scriptSuggestions.find(s => s.id === suggestionId);
+      if (!suggestion) {
+        toast({ title: "Error", description: "Suggestion not found", variant: "destructive" });
+        return false;
+      }
+
+      // Call AI Brain to apply the change
+      const { data, error } = await supabase.functions.invoke('ai-brain', {
+        body: {
+          message: `Apply script improvement to agent ${suggestion.agentId}: "${suggestion.improvement}"`,
+          sessionId: `script-opt-${Date.now()}`,
+          user_id: user.id
+        }
+      });
+
+      if (error) throw error;
+
+      // Log to agent_improvement_history
+      await supabase.from('agent_improvement_history').insert({
+        user_id: user.id,
+        agent_id: suggestion.agentId || 'unknown',
+        agent_name: suggestion.agentName || 'AI Agent',
+        improvement_type: 'script_optimization',
+        title: suggestion.title || 'Script Improvement',
+        details: {
+          suggestion,
+          result: data,
+          applied_at: new Date().toISOString(),
+          autonomous: isAutonomous
+        },
+        created_by: isAutonomous ? 'lady_jarvis' : 'user'
+      });
+
+      toast({
+        title: isAutonomous ? "Auto-applied script change" : "Script change applied",
+        description: suggestion.title || "Improvement applied successfully"
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error applying script suggestion:', error);
+      toast({ title: "Error", description: "Failed to apply script change", variant: "destructive" });
+      return false;
+    }
+  }, [toast, settings.auto_approve_script_changes, scriptSuggestions]);
 
   const loadScriptSuggestions = useCallback(async () => {
     return [];
