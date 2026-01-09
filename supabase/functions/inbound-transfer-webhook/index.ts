@@ -246,7 +246,7 @@ serve(async (req) => {
       .from('inbound_transfers')
       .insert(transferData)
       .select()
-      .single();
+      .maybeSingle();
 
     if (transferError) {
       console.error('Error creating transfer record:', transferError);
@@ -355,14 +355,20 @@ async function findOrCreateLead(
     last_contacted_at: new Date().toISOString(),
   };
 
+  // Use maybeSingle since we're inserting (row should always be created if no error)
   const { data: newLead, error: leadError } = await supabase
     .from('leads')
     .insert(leadData)
     .select('id')
-    .single();
+    .maybeSingle();
 
   if (leadError) {
     console.error('Error creating lead:', leadError);
+    return null;
+  }
+  
+  if (!newLead) {
+    console.error('Lead insert returned no data');
     return null;
   }
 
@@ -378,16 +384,23 @@ async function createCallLog(
   transferId: string
 ) {
   try {
-    const callLogData = {
+    // Build notes with all relevant metadata (external_call_id stored here instead of non-existent column)
+    const noteParts = [
+      `Inbound transfer from ${payload.source_system || 'external system'}`,
+      payload.external_call_id ? `External Call ID: ${payload.external_call_id}` : null,
+      payload.transfer_metadata?.reason ? `Reason: ${payload.transfer_metadata.reason}` : null,
+      payload.transfer_metadata?.agent_notes ? `Agent Notes: ${payload.transfer_metadata.agent_notes}` : null,
+    ].filter(Boolean).join('\n');
+
+    // Only include columns that exist in call_logs table
+    const callLogData: Record<string, any> = {
       user_id: userId,
       lead_id: leadId,
       phone_number: payload.from_number,
       caller_id: payload.to_number,
       status: 'pending',
       outcome: 'inbound-transfer',
-      notes: `Inbound transfer from ${payload.source_system || 'external system'}${payload.transfer_metadata?.reason ? `: ${payload.transfer_metadata.reason}` : ''}${payload.transfer_metadata?.agent_notes ? `\n\nAgent Notes: ${payload.transfer_metadata.agent_notes}` : ''}`,
-      call_type: 'inbound',
-      external_call_id: payload.external_call_id,
+      notes: noteParts,
     };
 
     const { error } = await supabase

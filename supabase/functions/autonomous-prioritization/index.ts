@@ -160,13 +160,17 @@ async function calculateLeadScore(
   settings?: any
 ): Promise<LeadScoreResult | null> {
   try {
-    // Fetch lead data
-    const { data: lead } = await supabase
+    // Fetch lead data - use maybeSingle to avoid crash when lead doesn't exist
+    const { data: lead, error: leadError } = await supabase
       .from('leads')
       .select('*')
       .eq('id', leadId)
-      .single();
+      .maybeSingle();
 
+    if (leadError) {
+      console.error(`[Prioritization] Error fetching lead ${leadId}:`, leadError);
+      return null;
+    }
     if (!lead) return null;
 
     // Fetch SMS history
