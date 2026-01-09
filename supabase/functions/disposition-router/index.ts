@@ -54,6 +54,23 @@ serve(async (req) => {
 
     const { action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy } = await req.json();
 
+    // Handle health_check action for system verification
+    if (action === 'health_check') {
+      console.log('[Disposition Router] Health check requested');
+      return new Response(JSON.stringify({
+        success: true,
+        healthy: true,
+        timestamp: new Date().toISOString(),
+        function: 'disposition-router',
+        capabilities: ['process_disposition'],
+        dnc_dispositions: DNC_DISPOSITIONS.length,
+        remove_all_dispositions: REMOVE_ALL_DISPOSITIONS.length,
+        pause_workflow_dispositions: PAUSE_WORKFLOW_DISPOSITIONS.length,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (action === 'process_disposition') {
       const normalizedDisposition = dispositionName?.toLowerCase().replace(/[^a-z0-9]/g, '_') || '';
       const actions: string[] = [];

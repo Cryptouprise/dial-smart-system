@@ -56,6 +56,20 @@ serve(async (req) => {
     }
 
     switch (action) {
+      case 'health_check': {
+        console.log('[Voice Broadcast Queue] Health check requested');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            healthy: true,
+            timestamp: new Date().toISOString(),
+            function: 'voice-broadcast-queue',
+            capabilities: ['add_leads', 'add_numbers', 'clear_queue', 'reset_queue', 'get_stats', 'remove_items', 'cleanup_stuck_calls', 'retry_failed'],
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'add_leads': {
         if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
           throw new Error('No leads provided');

@@ -17,8 +17,11 @@ import {
   Zap,
   Settings,
   Shield,
-  XCircle
+  XCircle,
+  Copy,
+  Wrench
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { ErrorRecord } from '@/hooks/useAIErrorHandler';
 import { useAIErrors } from '@/contexts/AIErrorContext';
 import { formatDistanceToNow } from 'date-fns';
@@ -317,17 +320,49 @@ const AIErrorPanel: React.FC = () => {
                               {error.suggestion}
                             </div>
                             
-                            {error.status === 'suggested' && (
-                              <Button
-                                size="sm"
-                                className="mt-2"
-                                onClick={() => executeFixFromSuggestion(error.id)}
-                                disabled={isProcessing}
-                              >
-                                <Play className="h-3 w-3 mr-1" />
-                                Execute Fix
-                              </Button>
-                            )}
+                            <div className="flex gap-2 mt-2">
+                              {error.status === 'suggested' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => executeFixFromSuggestion(error.id)}
+                                  disabled={isProcessing}
+                                >
+                                  <Play className="h-3 w-3 mr-1" />
+                                  Execute Fix
+                                </Button>
+                              )}
+                              
+                              {/* Copy Fix Instructions for code bugs */}
+                              {(error.lovablePrompt || (error.type === 'edge_function' && error.suggestion)) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const prompt = error.lovablePrompt || 
+                                      `Fix this edge function error:\n\nError: ${error.message}\n\nSuggested fix: ${error.suggestion}`;
+                                    navigator.clipboard.writeText(prompt);
+                                    toast.success('Fix instructions copied! Paste in Lovable chat to apply.');
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy Fix Instructions
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Code bug indicator */}
+                        {error.isCodeBug && (
+                          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                            <p className="text-xs font-medium mb-2 flex items-center gap-1 text-blue-700 dark:text-blue-400">
+                              <Wrench className="h-3 w-3" />
+                              Code Bug Detected
+                            </p>
+                            <p className="text-xs text-blue-600 dark:text-blue-500">
+                              This error requires a code fix and redeployment. Guardian cannot auto-fix code bugs.
+                              Use "Copy Fix Instructions" to get the fix prompt.
+                            </p>
                           </div>
                         )}
 

@@ -38,6 +38,20 @@ serve(async (req) => {
 
     const { action, userId, leadId, workflowId, campaignId } = await req.json();
 
+    // Handle health_check action for system verification
+    if (action === 'health_check') {
+      console.log('[Workflow Executor] Health check requested');
+      return new Response(JSON.stringify({
+        success: true,
+        healthy: true,
+        timestamp: new Date().toISOString(),
+        function: 'workflow-executor',
+        capabilities: ['start_workflow', 'execute_pending', 'remove_from_workflow', 'pause_workflow', 'resume_workflow'],
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (action === 'start_workflow') {
       // ============= DUPLICATE CHECK - PREVENT MULTIPLE ENROLLMENTS =============
       console.log(`[Workflow] Checking for existing enrollment: lead=${leadId}, workflow=${workflowId}, campaign=${campaignId}`);

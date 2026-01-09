@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 export interface ErrorRecord {
   id: string;
   timestamp: Date;
-  type: 'ui' | 'api' | 'runtime' | 'network' | 'configuration';
+  type: 'ui' | 'api' | 'runtime' | 'network' | 'configuration' | 'edge_function';
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
@@ -15,8 +15,10 @@ export interface ErrorRecord {
   retryCount: number;
   actualChange?: boolean;
   fixDetails?: Record<string, unknown>;
-  manualSteps?: string; // New: Clear steps for manual resolution
-  retryable?: boolean; // New: Whether this error can be retried
+  manualSteps?: string; // Clear steps for manual resolution
+  retryable?: boolean; // Whether this error can be retried
+  isCodeBug?: boolean; // Whether this is a code bug requiring deployment
+  lovablePrompt?: string; // Pre-formatted prompt to paste into Lovable
 }
 
 export interface AIErrorSettings {
