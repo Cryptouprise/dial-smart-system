@@ -559,7 +559,7 @@ serve(async (req) => {
 
       case 'get_calendar_events': {
         // Fetch events/busy times from a specific GHL calendar
-        const { calendarId, startTime, endTime } = body as any;
+        const { calendarId, startTime, endTime } = requestBody as any;
         
         if (!calendarId) {
           throw new Error('Calendar ID is required');
@@ -607,7 +607,7 @@ serve(async (req) => {
 
       case 'test_calendar': {
         // Test GHL calendar connection by fetching upcoming events
-        const { calendarId: testCalId } = body as any;
+        const { calendarId: testCalId } = requestBody as any;
         
         if (!testCalId) {
           throw new Error('Calendar ID is required');
