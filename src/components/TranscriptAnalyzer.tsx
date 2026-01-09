@@ -180,11 +180,11 @@ const TranscriptAnalyzer = () => {
         body: { action: 'get_agent', agentId: selectedAgentId }
       });
 
-      if (agentError || !agentData?.agent) {
+      if (agentError || !agentData) {
         throw new Error('Failed to fetch agent details');
       }
 
-      const llmId = agentData.agent.llm_websocket_url?.split('/').pop() || agentData.agent.response_engine?.llm_id;
+      const llmId = agentData.llm_websocket_url?.split('/').pop() || agentData.response_engine?.llm_id;
       
       if (!llmId) {
         toast({ title: "No LLM Found", description: "This agent doesn't have an LLM configured", variant: "destructive" });
@@ -196,11 +196,11 @@ const TranscriptAnalyzer = () => {
         body: { action: 'get', llmId }
       });
 
-      if (llmError || !llmData?.llm) {
+      if (llmError || !llmData) {
         throw new Error('Failed to fetch LLM details');
       }
 
-      const script = llmData.llm.general_prompt || llmData.llm.begin_message || '';
+      const script = llmData.general_prompt || llmData.begin_message || '';
       
       if (!script) {
         toast({ title: "No Script", description: "This agent doesn't have a script/prompt configured", variant: "destructive" });
@@ -208,7 +208,7 @@ const TranscriptAnalyzer = () => {
       }
 
       setAgentScript(script);
-      toast({ title: "Script Loaded", description: `Loaded script from ${agentData.agent.agent_name}` });
+      toast({ title: "Script Loaded", description: `Loaded script from ${agentData.agent_name}` });
     } catch (error) {
       console.error('Error loading agent script:', error);
       toast({ title: "Error", description: "Failed to load agent script", variant: "destructive" });
@@ -310,7 +310,7 @@ const TranscriptAnalyzer = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Agents</SelectItem>
-                        {agents.map(agent => (
+                        {[...new Map(agents.map(a => [a.agent_id, a])).values()].map(agent => (
                           <SelectItem key={agent.agent_id} value={agent.agent_id}>
                             {agent.agent_name}
                           </SelectItem>
