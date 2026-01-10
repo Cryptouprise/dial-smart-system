@@ -212,3 +212,6 @@ verify_jwt = true
 
 [functions.email-sender]
 verify_jwt = true
+
+[functions.validate-phone-numbers]
+verify_jwt = true

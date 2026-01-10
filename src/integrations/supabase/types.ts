@@ -2712,6 +2712,7 @@ export type Database = {
         Row: {
           area_code: string
           caller_name: string | null
+          capabilities: Json | null
           carrier_name: string | null
           created_at: string
           daily_calls: number
@@ -2735,12 +2736,16 @@ export type Database = {
           sip_trunk_provider: string | null
           status: string
           stir_shaken_attestation: string | null
+          twilio_sid: string | null
+          twilio_verified: boolean | null
+          twilio_verified_at: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           area_code: string
           caller_name?: string | null
+          capabilities?: Json | null
           carrier_name?: string | null
           created_at?: string
           daily_calls?: number
@@ -2764,12 +2769,16 @@ export type Database = {
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
+          twilio_sid?: string | null
+          twilio_verified?: boolean | null
+          twilio_verified_at?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           area_code?: string
           caller_name?: string | null
+          capabilities?: Json | null
           carrier_name?: string | null
           created_at?: string
           daily_calls?: number
@@ -2793,6 +2802,9 @@ export type Database = {
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
+          twilio_sid?: string | null
+          twilio_verified?: boolean | null
+          twilio_verified_at?: string | null
           updated_at?: string
           user_id?: string
         }
