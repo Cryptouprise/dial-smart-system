@@ -76,6 +76,25 @@ interface GHLSyncSettings {
   ghl_calendar_name?: string | null;
 }
 
+interface GHLTag {
+  id: string;
+  name: string;
+}
+
+interface GHLWorkflow {
+  id: string;
+  name: string;
+  status?: string;
+}
+
+interface ImportFilters {
+  tags?: string[];
+  excludeTags?: string[];
+  workflowIds?: string[];
+  campaignIds?: string[];
+  dateRange?: { start: string; end: string };
+}
+
 export const useGoHighLevel = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -225,7 +244,10 @@ export const useGoHighLevel = () => {
     }
   };
 
-  const syncContacts = async (direction: 'import' | 'export' | 'bidirectional' = 'import') => {
+  const syncContacts = async (
+    direction: 'import' | 'export' | 'bidirectional' = 'import',
+    importFilters?: ImportFilters
+  ) => {
     const credentials = await getGHLCredentials();
     if (!credentials) {
       toast({
@@ -242,15 +264,21 @@ export const useGoHighLevel = () => {
         body: {
           action: 'sync_contacts',
           direction,
+          importFilters,
           ...credentials
         }
       });
 
       if (error) throw error;
 
+      const hasErrors = data.failed > 0 || data.errors?.length > 0;
+      
       toast({
-        title: "Sync Complete!",
-        description: `${direction === 'import' ? 'Imported' : 'Synced'} ${data.imported || 0} contacts`,
+        title: hasErrors ? "Sync Completed with Errors" : "Sync Complete!",
+        description: hasErrors 
+          ? `Imported ${data.imported || 0} contacts, ${data.failed || 0} failed` 
+          : `${direction === 'import' ? 'Imported' : 'Synced'} ${data.imported || 0} contacts`,
+        variant: hasErrors ? "default" : "default"
       });
 
       return data;
@@ -258,6 +286,85 @@ export const useGoHighLevel = () => {
       toast({
         title: "Sync Failed",
         description: error.message || "Failed to sync contacts",
+        variant: "destructive"
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getTags = async (): Promise<GHLTag[] | null> => {
+    const credentials = await getGHLCredentials();
+    if (!credentials) return null;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'get_tags',
+          ...credentials
+        }
+      });
+
+      if (error) throw error;
+      return data.tags || [];
+    } catch (error: any) {
+      console.error('Failed to fetch tags:', error);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getWorkflows = async (): Promise<GHLWorkflow[] | null> => {
+    const credentials = await getGHLCredentials();
+    if (!credentials) return null;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'get_workflows',
+          ...credentials
+        }
+      });
+
+      if (error) throw error;
+      return data.workflows || [];
+    } catch (error: any) {
+      console.error('Failed to fetch workflows:', error);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const previewFilteredContacts = async (importFilters: ImportFilters): Promise<{
+    totalInGHL: number;
+    matchingFilters: number;
+    withValidPhone: number;
+    sample: Array<{ name: string; phone: string; email?: string; tags: string[]; dateAdded?: string }>;
+  } | null> => {
+    const credentials = await getGHLCredentials();
+    if (!credentials) return null;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'preview_filtered_contacts',
+          importFilters,
+          ...credentials
+        }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error: any) {
+      toast({
+        title: "Preview Failed",
+        description: error.message || "Failed to preview contacts",
         variant: "destructive"
       });
       return null;
@@ -716,6 +823,9 @@ export const useGoHighLevel = () => {
     saveSyncSettings,
     createOpportunity,
     getPipelines,
-    getContacts
+    getContacts,
+    getTags,
+    getWorkflows,
+    previewFilteredContacts
   };
 };

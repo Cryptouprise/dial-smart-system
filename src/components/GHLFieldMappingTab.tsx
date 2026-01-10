@@ -374,6 +374,8 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
   const [autoCreateOpportunities, setAutoCreateOpportunities] = useState(false);
   const [defaultOpportunityValue, setDefaultOpportunityValue] = useState(0);
   const [removeConflictingTags, setRemoveConflictingTags] = useState(true);
+  const [showAllFields, setShowAllFields] = useState(false);
+  const [fieldSearchQuery, setFieldSearchQuery] = useState('');
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [newTagInput, setNewTagInput] = useState<Record<string, string>>({});
   const [expandedTagOutcomes, setExpandedTagOutcomes] = useState<Record<string, boolean>>({});
@@ -843,24 +845,110 @@ const GHLFieldMappingTab: React.FC<FieldMappingTabProps> = ({ isConnected }) => 
                 </div>
               </div>
 
-              {/* Existing GHL Fields */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Your GHL Custom Fields</Label>
+              {/* Browsable GHL Custom Fields */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Your GHL Custom Fields ({ghlCustomFields.length} total)</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllFields(!showAllFields)}
+                    className="text-xs"
+                  >
+                    {showAllFields ? 'Hide All Fields' : 'Browse All Fields'}
+                    {showAllFields ? <ChevronDown className="h-3 w-3 ml-1" /> : <ChevronRight className="h-3 w-3 ml-1" />}
+                  </Button>
+                </div>
+                
+                {/* Quick preview badges */}
                 <div className="flex flex-wrap gap-2">
-                  {ghlCustomFields.slice(0, 12).map(field => (
+                  {ghlCustomFields.slice(0, 8).map(field => (
                     <Badge key={field.id} variant="outline" className="text-xs">
                       {field.name} ({field.dataType})
                     </Badge>
                   ))}
-                  {ghlCustomFields.length > 12 && (
-                    <Badge variant="secondary" className="text-xs">
-                      +{ghlCustomFields.length - 12} more
+                  {ghlCustomFields.length > 8 && !showAllFields && (
+                    <Badge 
+                      variant="secondary" 
+                      className="text-xs cursor-pointer hover:bg-primary/20"
+                      onClick={() => setShowAllFields(true)}
+                    >
+                      +{ghlCustomFields.length - 8} more (click to browse)
                     </Badge>
                   )}
                   {ghlCustomFields.length === 0 && (
                     <span className="text-sm text-muted-foreground">No custom fields found</span>
                   )}
                 </div>
+
+                {/* Full browsable list */}
+                {showAllFields && (
+                  <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search fields by name or key..."
+                        value={fieldSearchQuery}
+                        onChange={(e) => setFieldSearchQuery(e.target.value)}
+                        className="flex-1"
+                      />
+                    </div>
+                    <ScrollArea className="h-64">
+                      <div className="space-y-2 pr-4">
+                        {ghlCustomFields
+                          .filter(field => {
+                            if (!fieldSearchQuery) return true;
+                            const query = fieldSearchQuery.toLowerCase();
+                            return (
+                              field.name.toLowerCase().includes(query) ||
+                              (field.fieldKey && field.fieldKey.toLowerCase().includes(query)) ||
+                              field.dataType.toLowerCase().includes(query)
+                            );
+                          })
+                          .map(field => (
+                            <div 
+                              key={field.id} 
+                              className="flex items-center justify-between p-2 border rounded bg-background hover:bg-muted/50"
+                            >
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{field.name}</div>
+                                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                  <span className="font-mono bg-muted px-1 rounded">{field.fieldKey || field.id}</span>
+                                  <Badge variant="outline" className="text-xs">{field.dataType}</Badge>
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(field.fieldKey || field.name);
+                                  toast({
+                                    title: "Copied!",
+                                    description: `Field key "${field.fieldKey || field.name}" copied to clipboard`,
+                                  });
+                                }}
+                              >
+                                Copy Key
+                              </Button>
+                            </div>
+                          ))}
+                        {ghlCustomFields.filter(field => {
+                          if (!fieldSearchQuery) return true;
+                          const query = fieldSearchQuery.toLowerCase();
+                          return (
+                            field.name.toLowerCase().includes(query) ||
+                            (field.fieldKey && field.fieldKey.toLowerCase().includes(query))
+                          );
+                        }).length === 0 && (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            No fields match your search
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
               </div>
 
               {/* Create New Field */}

@@ -10,8 +10,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database } from 'lucide-react';
+import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database, Filter, Eye, X, Tag } from 'lucide-react';
 import GHLFieldMappingTab from './GHLFieldMappingTab';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
+interface ImportFilters {
+  tags: string[];
+  excludeTags: string[];
+  dateRange: { start: string; end: string } | null;
+}
 
 const GoHighLevelManager = () => {
   const [credentials, setCredentials] = useState({
@@ -44,6 +52,21 @@ const GoHighLevelManager = () => {
     contactsUpdated: 0,
     errors: 0
   });
+  
+  // Import filter state
+  const [ghlTags, setGhlTags] = useState<Array<{ id: string; name: string }>>([]);
+  const [importFilters, setImportFilters] = useState<ImportFilters>({
+    tags: [],
+    excludeTags: [],
+    dateRange: null
+  });
+  const [showFilters, setShowFilters] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    totalInGHL: number;
+    matchingFilters: number;
+    withValidPhone: number;
+    sample: Array<{ name: string; phone: string; email?: string; tags: string[]; dateAdded?: string }>;
+  } | null>(null);
 
   const { toast } = useToast();
   const {
@@ -55,7 +78,9 @@ const GoHighLevelManager = () => {
     syncContacts,
     getPipelines,
     getContacts,
-    createOpportunity
+    createOpportunity,
+    getTags,
+    previewFilteredContacts
   } = useGoHighLevel();
 
   useEffect(() => {
@@ -75,8 +100,9 @@ const GoHighLevelManager = () => {
       if (result) {
         setIsConnected(true);
         setConnectionData(result);
-        loadPipelines();
-        loadContacts();
+      loadPipelines();
+      loadContacts();
+      loadTags();
       }
     }
   };
@@ -99,7 +125,15 @@ const GoHighLevelManager = () => {
         setConnectionData(result);
         loadPipelines();
         loadContacts();
+        loadTags();
       }
+    }
+  };
+
+  const loadTags = async () => {
+    const tagsData = await getTags();
+    if (tagsData) {
+      setGhlTags(tagsData);
     }
   };
 
@@ -118,17 +152,76 @@ const GoHighLevelManager = () => {
   };
 
   const handleSync = async () => {
-    const result = await syncContacts(syncSettings.syncDirection);
+    // Build filters object if any filters are set
+    const hasFilters = importFilters.tags.length > 0 || 
+                       importFilters.excludeTags.length > 0 || 
+                       importFilters.dateRange !== null;
+    
+    const filtersToSend = hasFilters ? {
+      tags: importFilters.tags.length > 0 ? importFilters.tags : undefined,
+      excludeTags: importFilters.excludeTags.length > 0 ? importFilters.excludeTags : undefined,
+      dateRange: importFilters.dateRange || undefined
+    } : undefined;
+    
+    const result = await syncContacts(syncSettings.syncDirection, filtersToSend);
     if (result) {
       const newStats = {
         lastSync: new Date().toISOString(),
         contactsImported: result.imported || 0,
         contactsUpdated: result.updated || 0,
-        errors: result.errors || 0
+        errors: result.failed || 0
       };
       setSyncStats(newStats);
+      setPreviewData(null); // Clear preview after sync
       loadContacts(); // Refresh contacts after sync
     }
+  };
+
+  const handlePreviewContacts = async () => {
+    const hasFilters = importFilters.tags.length > 0 || 
+                       importFilters.excludeTags.length > 0 || 
+                       importFilters.dateRange !== null;
+    
+    const filtersToSend = {
+      tags: importFilters.tags.length > 0 ? importFilters.tags : undefined,
+      excludeTags: importFilters.excludeTags.length > 0 ? importFilters.excludeTags : undefined,
+      dateRange: importFilters.dateRange || undefined
+    };
+    
+    const preview = await previewFilteredContacts(filtersToSend);
+    if (preview) {
+      setPreviewData(preview);
+    }
+  };
+
+  const clearFilters = () => {
+    setImportFilters({
+      tags: [],
+      excludeTags: [],
+      dateRange: null
+    });
+    setPreviewData(null);
+  };
+
+  const toggleTagFilter = (tagName: string, type: 'include' | 'exclude') => {
+    if (type === 'include') {
+      setImportFilters(prev => ({
+        ...prev,
+        tags: prev.tags.includes(tagName) 
+          ? prev.tags.filter(t => t !== tagName)
+          : [...prev.tags, tagName],
+        excludeTags: prev.excludeTags.filter(t => t !== tagName) // Remove from exclude if adding to include
+      }));
+    } else {
+      setImportFilters(prev => ({
+        ...prev,
+        excludeTags: prev.excludeTags.includes(tagName)
+          ? prev.excludeTags.filter(t => t !== tagName)
+          : [...prev.excludeTags, tagName],
+        tags: prev.tags.filter(t => t !== tagName) // Remove from include if adding to exclude
+      }));
+    }
+    setPreviewData(null); // Clear preview when filters change
   };
 
   const handleCreateOpportunity = async () => {
@@ -468,123 +561,330 @@ const GoHighLevelManager = () => {
           </TabsContent>
 
           <TabsContent value="sync">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Sync Controls */}
+            <div className="space-y-6">
+              {/* Import Filters */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <RefreshCw className="h-5 w-5" />
-                    Lead Synchronization
-                  </CardTitle>
-                  <CardDescription>
-                    Sync leads between Go High Level and your voice campaigns
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Filter className="h-5 w-5" />
+                        Import Filters
+                      </CardTitle>
+                      <CardDescription>
+                        Filter which contacts to import from GHL by tags, dates, etc.
+                      </CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      {(importFilters.tags.length > 0 || importFilters.excludeTags.length > 0 || importFilters.dateRange) && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                          <X className="h-4 w-4 mr-1" />
+                          Clear Filters
+                        </Button>
+                      )}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setShowFilters(!showFilters)}
+                      >
+                        {showFilters ? 'Hide Filters' : 'Show Filters'}
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label>Sync Direction</Label>
-                    <Select 
-                      value={syncSettings.syncDirection} 
-                      onValueChange={(value: any) => setSyncSettings(prev => ({ ...prev, syncDirection: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="import">
-                          Import from GHL to Voice System
-                        </SelectItem>
-                        <SelectItem value="export">
-                          Export from Voice System to GHL
-                        </SelectItem>
-                        <SelectItem value="bidirectional">
-                          Bidirectional Sync
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label>Default Pipeline</Label>
-                    <Select 
-                      value={syncSettings.defaultPipelineId} 
-                      onValueChange={(value) => setSyncSettings(prev => ({ ...prev, defaultPipelineId: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select pipeline" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pipelines.map((pipeline) => (
-                          <SelectItem key={pipeline.id} value={pipeline.id}>
-                            {pipeline.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={handleSync}
-                      disabled={isLoading}
-                      className="flex-1"
-                    >
-                      <ArrowLeftRight className="h-4 w-4 mr-2" />
-                      {isLoading ? 'Syncing...' : 'Start Sync'}
-                    </Button>
-                    <Button 
-                      onClick={saveSyncSettings}
-                      variant="outline"
-                    >
-                      Save Settings
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Sync Stats */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Sync Statistics</CardTitle>
-                  <CardDescription>Recent synchronization activity</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-3 border rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">
-                          {syncStats.contactsImported}
+                
+                {showFilters && (
+                  <CardContent className="space-y-4">
+                    {/* Tag Filters */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium flex items-center gap-2">
+                        <Tag className="h-4 w-4" />
+                        Filter by Tags ({ghlTags.length} available)
+                      </Label>
+                      
+                      {ghlTags.length > 0 ? (
+                        <ScrollArea className="h-40 border rounded-lg p-3">
+                          <div className="space-y-2">
+                            {ghlTags.map(tag => {
+                              const isIncluded = importFilters.tags.includes(tag.name);
+                              const isExcluded = importFilters.excludeTags.includes(tag.name);
+                              
+                              return (
+                                <div key={tag.id} className="flex items-center justify-between py-1">
+                                  <span className="text-sm">{tag.name}</span>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant={isIncluded ? "default" : "outline"}
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => toggleTagFilter(tag.name, 'include')}
+                                    >
+                                      Include
+                                    </Button>
+                                    <Button
+                                      variant={isExcluded ? "destructive" : "outline"}
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => toggleTagFilter(tag.name, 'exclude')}
+                                    >
+                                      Exclude
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
+                      ) : (
+                        <div className="text-center py-4 text-muted-foreground text-sm border rounded-lg">
+                          <Button variant="ghost" size="sm" onClick={loadTags} disabled={isLoading}>
+                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                            Load Tags from GHL
+                          </Button>
                         </div>
-                        <div className="text-sm text-gray-500">Imported</div>
-                      </div>
-                      <div className="text-center p-3 border rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">
-                          {syncStats.contactsUpdated}
+                      )}
+                      
+                      {/* Active filters summary */}
+                      {(importFilters.tags.length > 0 || importFilters.excludeTags.length > 0) && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {importFilters.tags.map(tag => (
+                            <Badge key={`inc-${tag}`} variant="default" className="text-xs">
+                              + {tag}
+                              <X 
+                                className="h-3 w-3 ml-1 cursor-pointer" 
+                                onClick={() => toggleTagFilter(tag, 'include')}
+                              />
+                            </Badge>
+                          ))}
+                          {importFilters.excludeTags.map(tag => (
+                            <Badge key={`exc-${tag}`} variant="destructive" className="text-xs">
+                              - {tag}
+                              <X 
+                                className="h-3 w-3 ml-1 cursor-pointer" 
+                                onClick={() => toggleTagFilter(tag, 'exclude')}
+                              />
+                            </Badge>
+                          ))}
                         </div>
-                        <div className="text-sm text-gray-500">Updated</div>
+                      )}
+                    </div>
+                    
+                    {/* Date Range Filter */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Date Added Range (Optional)</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">From</Label>
+                          <Input
+                            type="date"
+                            value={importFilters.dateRange?.start || ''}
+                            onChange={(e) => setImportFilters(prev => ({
+                              ...prev,
+                              dateRange: {
+                                start: e.target.value,
+                                end: prev.dateRange?.end || ''
+                              }
+                            }))}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">To</Label>
+                          <Input
+                            type="date"
+                            value={importFilters.dateRange?.end || ''}
+                            onChange={(e) => setImportFilters(prev => ({
+                              ...prev,
+                              dateRange: {
+                                start: prev.dateRange?.start || '',
+                                end: e.target.value
+                              }
+                            }))}
+                          />
+                        </div>
                       </div>
                     </div>
                     
-                    {syncStats.errors > 0 && (
-                      <div className="text-center p-3 border rounded-lg border-red-200 bg-red-50">
-                        <div className="text-2xl font-bold text-red-600">
-                          {syncStats.errors}
+                    {/* Preview Button */}
+                    <Button 
+                      variant="outline" 
+                      onClick={handlePreviewContacts}
+                      disabled={isLoading}
+                      className="w-full"
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      {isLoading ? 'Loading Preview...' : 'Preview Matching Contacts'}
+                    </Button>
+                    
+                    {/* Preview Results */}
+                    {previewData && (
+                      <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <div className="text-xl font-bold">{previewData.totalInGHL}</div>
+                            <div className="text-xs text-muted-foreground">Total in GHL</div>
+                          </div>
+                          <div>
+                            <div className="text-xl font-bold text-primary">{previewData.matchingFilters}</div>
+                            <div className="text-xs text-muted-foreground">Match Filters</div>
+                          </div>
+                          <div>
+                            <div className="text-xl font-bold text-green-600">{previewData.withValidPhone}</div>
+                            <div className="text-xs text-muted-foreground">Ready to Import</div>
+                          </div>
                         </div>
-                        <div className="text-sm text-red-500">Errors</div>
+                        
+                        {previewData.sample.length > 0 && (
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Sample Contacts:</Label>
+                            <ScrollArea className="h-32">
+                              <div className="space-y-1">
+                                {previewData.sample.map((contact, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-sm p-1 bg-background rounded">
+                                    <span>{contact.name}</span>
+                                    <span className="text-muted-foreground text-xs">{contact.phone}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </ScrollArea>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Sync Controls */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5" />
+                      Lead Synchronization
+                    </CardTitle>
+                    <CardDescription>
+                      Sync leads between Go High Level and your voice campaigns
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label>Sync Direction</Label>
+                      <Select 
+                        value={syncSettings.syncDirection} 
+                        onValueChange={(value: any) => setSyncSettings(prev => ({ ...prev, syncDirection: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="import">
+                            Import from GHL to Voice System
+                          </SelectItem>
+                          <SelectItem value="export">
+                            Export from Voice System to GHL
+                          </SelectItem>
+                          <SelectItem value="bidirectional">
+                            Bidirectional Sync
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label>Default Pipeline</Label>
+                      <Select 
+                        value={syncSettings.defaultPipelineId} 
+                        onValueChange={(value) => setSyncSettings(prev => ({ ...prev, defaultPipelineId: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select pipeline" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pipelines.map((pipeline) => (
+                            <SelectItem key={pipeline.id} value={pipeline.id}>
+                              {pipeline.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Show active filters summary */}
+                    {(importFilters.tags.length > 0 || importFilters.excludeTags.length > 0) && (
+                      <div className="p-2 border rounded bg-muted/30 text-xs">
+                        <span className="font-medium">Active Filters: </span>
+                        {importFilters.tags.length > 0 && (
+                          <span className="text-green-600">+{importFilters.tags.length} tags </span>
+                        )}
+                        {importFilters.excludeTags.length > 0 && (
+                          <span className="text-red-600">-{importFilters.excludeTags.length} tags</span>
+                        )}
                       </div>
                     )}
 
-                    {syncStats.lastSync && (
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500">Last Sync</p>
-                        <p className="text-xs">
-                          {new Date(syncStats.lastSync).toLocaleString()}
-                        </p>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={handleSync}
+                        disabled={isLoading}
+                        className="flex-1"
+                      >
+                        <ArrowLeftRight className="h-4 w-4 mr-2" />
+                        {isLoading ? 'Syncing...' : previewData ? `Import ${previewData.withValidPhone} Contacts` : 'Start Sync'}
+                      </Button>
+                      <Button 
+                        onClick={saveSyncSettings}
+                        variant="outline"
+                      >
+                        Save Settings
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Sync Stats */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Sync Statistics</CardTitle>
+                    <CardDescription>Recent synchronization activity</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="text-center p-3 border rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {syncStats.contactsImported}
+                          </div>
+                          <div className="text-sm text-gray-500">Imported</div>
+                        </div>
+                        <div className="text-center p-3 border rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {syncStats.contactsUpdated}
+                          </div>
+                          <div className="text-sm text-gray-500">Updated</div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                      
+                      {syncStats.errors > 0 && (
+                        <div className="text-center p-3 border rounded-lg border-red-200 bg-red-50">
+                          <div className="text-2xl font-bold text-red-600">
+                            {syncStats.errors}
+                          </div>
+                          <div className="text-sm text-red-500">Failed</div>
+                        </div>
+                      )}
+
+                      {syncStats.lastSync && (
+                        <div className="text-center">
+                          <p className="text-sm text-gray-500">Last Sync</p>
+                          <p className="text-xs">
+                            {new Date(syncStats.lastSync).toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 

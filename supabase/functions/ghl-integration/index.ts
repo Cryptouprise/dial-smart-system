@@ -7,6 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface ImportFilters {
+  tags?: string[];
+  excludeTags?: string[];
+  workflowIds?: string[];
+  campaignIds?: string[];
+  dateRange?: { start: string; end: string };
+}
+
 interface GHLRequest {
   action: 
     | 'test_connection' 
@@ -21,7 +29,10 @@ interface GHLRequest {
     | 'sync_with_field_mapping'
     | 'get_calendars'
     | 'get_calendar_events'
-    | 'test_calendar';
+    | 'test_calendar'
+    | 'get_tags'
+    | 'get_workflows'
+    | 'preview_filtered_contacts';
   apiKey: string;
   locationId: string;
   webhookKey?: string;
@@ -35,6 +46,7 @@ interface GHLRequest {
   stageId?: string;
   fieldMappings?: Record<string, string>;
   tagRules?: Record<string, string[]>;
+  importFilters?: ImportFilters;
 }
 
 // Helper to join array fields as comma-separated strings
@@ -86,7 +98,8 @@ serve(async (req) => {
       pipelineId,
       stageId,
       fieldMappings,
-      tagRules
+      tagRules,
+      importFilters
     } = requestBody;
 
     if (!apiKey || !locationId) {
@@ -222,18 +235,78 @@ serve(async (req) => {
 
       case 'sync_contacts':
         if (direction === 'import' || direction === 'bidirectional') {
-          // Import contacts from GHL
-          response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
-            method: 'GET',
-            headers
-          });
+          let contacts: any[] = [];
+          
+          // Check if we have import filters
+          if (importFilters && (importFilters.tags?.length || importFilters.excludeTags?.length || importFilters.dateRange)) {
+            console.log('[GHL] Using filtered contact search with:', importFilters);
+            
+            // Use search endpoint for filtered queries
+            const searchBody: any = {
+              locationId,
+              page: 1,
+              pageLimit: 100
+            };
+            
+            // Add tag filter if specified
+            if (importFilters.tags?.length) {
+              searchBody.tags = importFilters.tags;
+            }
+            
+            // Fetch with search
+            response = await fetch(`${baseUrl}/contacts/search`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(searchBody)
+            });
+            
+            if (!response.ok) {
+              // Fall back to basic fetch if search fails
+              console.log('[GHL] Search endpoint failed, falling back to basic fetch');
+              response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
+                method: 'GET',
+                headers
+              });
+            }
+          } else {
+            // Basic fetch without filters
+            response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
+              method: 'GET',
+              headers
+            });
+          }
 
           if (!response.ok) {
             throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
           }
 
           const ghlContacts = await response.json();
-          const contacts = ghlContacts.contacts || [];
+          contacts = ghlContacts.contacts || [];
+          
+          // Apply client-side filters for excludeTags (not supported by API)
+          if (importFilters?.excludeTags?.length) {
+            const excludeSet = new Set(importFilters.excludeTags.map(t => t.toLowerCase()));
+            contacts = contacts.filter((c: any) => {
+              const contactTags = (c.tags || []).map((t: string) => t.toLowerCase());
+              return !contactTags.some((t: string) => excludeSet.has(t));
+            });
+            console.log('[GHL] After exclude filter:', contacts.length, 'contacts');
+          }
+          
+          // Apply date range filter client-side
+          if (importFilters?.dateRange?.start || importFilters?.dateRange?.end) {
+            const startDate = importFilters.dateRange.start ? new Date(importFilters.dateRange.start) : null;
+            const endDate = importFilters.dateRange.end ? new Date(importFilters.dateRange.end) : null;
+            
+            contacts = contacts.filter((c: any) => {
+              const dateAdded = c.dateAdded ? new Date(c.dateAdded) : null;
+              if (!dateAdded) return true;
+              if (startDate && dateAdded < startDate) return false;
+              if (endDate && dateAdded > endDate) return false;
+              return true;
+            });
+            console.log('[GHL] After date filter:', contacts.length, 'contacts');
+          }
           
           // Import to our leads table
           const leadsToInsert = contacts.map((contact: any) => ({
@@ -250,22 +323,60 @@ serve(async (req) => {
           })).filter((lead: any) => lead.phone_number);
 
           if (leadsToInsert.length > 0) {
-            const { error: insertError } = await supabaseClient
+            // Try batch upsert first
+            const { error: batchError } = await supabaseClient
               .from('leads')
               .upsert(leadsToInsert, { 
                 onConflict: 'phone_number,user_id',
                 ignoreDuplicates: false 
               });
 
-            if (insertError) {
-              console.error('Error inserting leads:', insertError);
+            if (batchError) {
+              console.error('[GHL] Batch upsert failed, trying individual inserts:', batchError);
+              
+              // Fall back to individual inserts for better error reporting
+              let insertedCount = 0;
+              let failedCount = 0;
+              const errors: string[] = [];
+              
+              for (const lead of leadsToInsert) {
+                const { error: singleError } = await supabaseClient
+                  .from('leads')
+                  .upsert(lead, { onConflict: 'phone_number,user_id' });
+                
+                if (singleError) {
+                  console.error('[GHL] Insert failed for:', lead.phone_number, singleError);
+                  failedCount++;
+                  if (errors.length < 5) {
+                    errors.push(`${lead.phone_number}: ${singleError.message}`);
+                  }
+                } else {
+                  insertedCount++;
+                }
+              }
+              
+              result = { 
+                imported: insertedCount, 
+                failed: failedCount,
+                total: contacts.length,
+                errors: errors.length > 0 ? errors : undefined,
+                warning: failedCount > 0 ? `${failedCount} contacts failed to import` : undefined
+              };
+            } else {
+              console.log('[GHL] Batch upsert successful:', leadsToInsert.length, 'leads');
+              result = { 
+                imported: leadsToInsert.length,
+                total: contacts.length,
+                success: true
+              };
             }
+          } else {
+            result = {
+              imported: 0,
+              total: contacts.length,
+              message: 'No contacts with valid phone numbers to import'
+            };
           }
-
-          result = { 
-            imported: leadsToInsert.length,
-            total: contacts.length
-          };
         }
         break;
 
@@ -655,6 +766,125 @@ serve(async (req) => {
             isActive: calendarInfo.calendar?.isActive ?? calendarInfo.isActive ?? true,
             upcomingEvents
           }
+        };
+        break;
+      }
+
+      case 'get_tags': {
+        // Fetch all tags for this location
+        console.log('[GHL] Fetching tags for location:', locationId);
+        response = await fetch(`${baseUrl}/locations/${locationId}/tags`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+        }
+
+        const tagsData = await response.json();
+        console.log('[GHL] Found tags:', tagsData.tags?.length || 0);
+        result = { 
+          tags: (tagsData.tags || []).map((tag: any) => ({
+            id: tag.id || tag.name,
+            name: tag.name
+          }))
+        };
+        break;
+      }
+
+      case 'get_workflows': {
+        // Fetch all workflows for this location
+        console.log('[GHL] Fetching workflows for location:', locationId);
+        response = await fetch(`${baseUrl}/workflows/?locationId=${locationId}`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+        }
+
+        const workflowsData = await response.json();
+        console.log('[GHL] Found workflows:', workflowsData.workflows?.length || 0);
+        result = { 
+          workflows: (workflowsData.workflows || []).map((wf: any) => ({
+            id: wf.id,
+            name: wf.name,
+            status: wf.status
+          }))
+        };
+        break;
+      }
+
+      case 'preview_filtered_contacts': {
+        // Preview contacts that match filters without importing
+        console.log('[GHL] Previewing filtered contacts with:', importFilters);
+        
+        let contacts: any[] = [];
+        
+        // Fetch contacts
+        response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
+          method: 'GET',
+          headers
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
+        }
+
+        const allContacts = await response.json();
+        contacts = allContacts.contacts || [];
+        const totalBefore = contacts.length;
+        
+        // Apply tag filter
+        if (importFilters?.tags?.length) {
+          const includeSet = new Set(importFilters.tags.map(t => t.toLowerCase()));
+          contacts = contacts.filter((c: any) => {
+            const contactTags = (c.tags || []).map((t: string) => t.toLowerCase());
+            return contactTags.some((t: string) => includeSet.has(t));
+          });
+        }
+        
+        // Apply excludeTags filter
+        if (importFilters?.excludeTags?.length) {
+          const excludeSet = new Set(importFilters.excludeTags.map(t => t.toLowerCase()));
+          contacts = contacts.filter((c: any) => {
+            const contactTags = (c.tags || []).map((t: string) => t.toLowerCase());
+            return !contactTags.some((t: string) => excludeSet.has(t));
+          });
+        }
+        
+        // Apply date range filter
+        if (importFilters?.dateRange?.start || importFilters?.dateRange?.end) {
+          const startDate = importFilters.dateRange?.start ? new Date(importFilters.dateRange.start) : null;
+          const endDate = importFilters.dateRange?.end ? new Date(importFilters.dateRange.end) : null;
+          
+          contacts = contacts.filter((c: any) => {
+            const dateAdded = c.dateAdded ? new Date(c.dateAdded) : null;
+            if (!dateAdded) return true;
+            if (startDate && dateAdded < startDate) return false;
+            if (endDate && dateAdded > endDate) return false;
+            return true;
+          });
+        }
+        
+        // Only return contacts with valid phone numbers
+        const validContacts = contacts.filter((c: any) => c.phone || c.primaryPhone);
+        
+        result = {
+          totalInGHL: totalBefore,
+          matchingFilters: contacts.length,
+          withValidPhone: validContacts.length,
+          sample: validContacts.slice(0, 10).map((c: any) => ({
+            name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unknown',
+            phone: c.phone || c.primaryPhone,
+            email: c.email,
+            tags: c.tags || [],
+            dateAdded: c.dateAdded
+          }))
         };
         break;
       }
