@@ -236,52 +236,117 @@ serve(async (req) => {
       case 'sync_contacts':
         if (direction === 'import' || direction === 'bidirectional') {
           let contacts: any[] = [];
+          const PAGE_SIZE = 100; // GHL max per page
+          const MAX_PAGES = 200; // Safety limit: 200 pages * 100 = 20,000 contacts max
+          
+          console.log('[GHL] Starting contact sync with pagination...');
           
           // Check if we have import filters
           if (importFilters && (importFilters.tags?.length || importFilters.excludeTags?.length || importFilters.dateRange)) {
             console.log('[GHL] Using filtered contact search with:', importFilters);
             
-            // Use search endpoint for filtered queries
-            const searchBody: any = {
-              locationId,
-              page: 1,
-              pageLimit: 100
-            };
+            // Use search endpoint with pagination for filtered queries
+            let page = 1;
+            let hasMore = true;
             
-            // Add tag filter if specified
-            if (importFilters.tags?.length) {
-              searchBody.tags = importFilters.tags;
+            while (hasMore && page <= MAX_PAGES) {
+              const searchBody: any = {
+                locationId,
+                page,
+                pageLimit: PAGE_SIZE
+              };
+              
+              // Add tag filter if specified
+              if (importFilters.tags?.length) {
+                searchBody.tags = importFilters.tags;
+              }
+              
+              response = await fetch(`${baseUrl}/contacts/search`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(searchBody)
+              });
+              
+              if (!response.ok) {
+                if (page === 1) {
+                  // Fall back to basic paginated fetch if search fails on first page
+                  console.log('[GHL] Search endpoint failed, falling back to paginated basic fetch');
+                  break;
+                }
+                // Otherwise just stop pagination
+                hasMore = false;
+                break;
+              }
+              
+              const pageData = await response.json();
+              const pageContacts = pageData.contacts || [];
+              contacts = contacts.concat(pageContacts);
+              
+              console.log(`[GHL] Page ${page}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
+              
+              // Check if there are more pages
+              hasMore = pageContacts.length === PAGE_SIZE;
+              page++;
             }
+          }
+          
+          // If no contacts yet (either no filters or search failed), use basic paginated fetch
+          if (contacts.length === 0) {
+            console.log('[GHL] Using paginated basic fetch...');
+            let startAfter: string | null = null;
+            let pageNum = 1;
+            let hasMore = true;
             
-            // Fetch with search
-            response = await fetch(`${baseUrl}/contacts/search`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify(searchBody)
-            });
-            
-            if (!response.ok) {
-              // Fall back to basic fetch if search fails
-              console.log('[GHL] Search endpoint failed, falling back to basic fetch');
-              response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
+            while (hasMore && pageNum <= MAX_PAGES) {
+              let url = `${baseUrl}/contacts/?locationId=${locationId}&limit=${PAGE_SIZE}`;
+              if (startAfter) {
+                url += `&startAfter=${startAfter}`;
+              }
+              
+              response = await fetch(url, {
                 method: 'GET',
                 headers
               });
+              
+              if (!response.ok) {
+                if (pageNum === 1) {
+                  throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
+                }
+                // Otherwise just stop pagination
+                hasMore = false;
+                break;
+              }
+              
+              const pageData = await response.json();
+              const pageContacts = pageData.contacts || [];
+              contacts = contacts.concat(pageContacts);
+              
+              console.log(`[GHL] Page ${pageNum}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
+              
+              // Check if there are more pages - use startAfterId or check if we got a full page
+              if (pageData.meta?.startAfterId) {
+                startAfter = pageData.meta.startAfterId;
+                hasMore = true;
+              } else if (pageData.startAfterId) {
+                startAfter = pageData.startAfterId;
+                hasMore = true;
+              } else if (pageContacts.length === PAGE_SIZE && pageContacts.length > 0) {
+                // If no explicit cursor but we got a full page, use last contact ID
+                startAfter = pageContacts[pageContacts.length - 1].id;
+                hasMore = true;
+              } else {
+                hasMore = false;
+              }
+              
+              pageNum++;
             }
-          } else {
-            // Basic fetch without filters
-            response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
-              method: 'GET',
-              headers
-            });
+            
+            if (pageNum > MAX_PAGES) {
+              console.log(`[GHL] Reached max pages limit (${MAX_PAGES}), stopping pagination`);
+            }
           }
-
-          if (!response.ok) {
-            throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
-          }
-
-          const ghlContacts = await response.json();
-          contacts = ghlContacts.contacts || [];
+          
+          console.log(`[GHL] Total contacts fetched: ${contacts.length}`);
           
           // Apply client-side filters for excludeTags (not supported by API)
           if (importFilters?.excludeTags?.length) {
