@@ -1451,6 +1451,36 @@ export const VoiceBroadcastManager: React.FC = () => {
                     </Button>
                   </div>
 
+                  {/* Stuck Calls Warning - shown when calls are stuck in "calling" status */}
+                  {broadcastStats.calling > 0 && broadcastStats.potentiallyStuckCalls > 0 && (
+                    <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-xs flex-1">
+                        <span className="font-medium text-amber-700">
+                          {broadcastStats.potentiallyStuckCalls} call(s) may be stuck
+                        </span>
+                        <span className="text-amber-600 ml-1">
+                          - calls in "calling" status for 2+ minutes. This usually means the From number isn't verified in Twilio.
+                        </span>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="text-amber-700 hover:text-amber-800 p-0 h-auto ml-2"
+                          onClick={async () => {
+                            await cleanupStuckCalls(broadcast.id);
+                            loadBroadcasts();
+                            toast({
+                              title: "Stuck Calls Cleaned Up",
+                              description: "Calls stuck in 'calling' status have been marked as failed",
+                            });
+                          }}
+                        >
+                          Clean up stuck calls →
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Error Banner */}
                   {(broadcast as any).last_error && (
                     <div className="mt-3 p-2 bg-destructive/10 border border-destructive/20 rounded-md flex items-start gap-2">
@@ -1458,6 +1488,16 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <div className="text-xs">
                         <span className="font-medium text-destructive">Last Error: </span>
                         <span className="text-destructive/80">{(broadcast as any).last_error}</span>
+                        {(broadcast as any).last_error?.includes('Twilio') && (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="text-destructive/80 hover:text-destructive p-0 h-auto ml-2"
+                            onClick={() => window.open('https://console.twilio.com/us1/develop/phone-numbers/manage/incoming', '_blank')}
+                          >
+                            Verify in Twilio Console →
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}
