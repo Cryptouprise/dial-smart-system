@@ -501,9 +501,20 @@ export const useVoiceBroadcast = () => {
     } catch (error: any) {
       console.error('Error starting broadcast:', error);
       
+      // Extract meaningful error message
+      let errorMessage = 'Failed to start broadcast. Please check your configuration.';
+      
+      if (error?.message && typeof error.message === 'string' && error.message.trim()) {
+        errorMessage = error.message;
+      } else if (error?.error && typeof error.error === 'string') {
+        errorMessage = error.error;
+      } else if (typeof error === 'string' && error.trim()) {
+        errorMessage = error;
+      }
+      
       toast({
         title: "Cannot Start Broadcast",
-        description: error.message || "Failed to start broadcast",
+        description: errorMessage,
         variant: "destructive",
       });
       throw error;

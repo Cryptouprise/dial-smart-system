@@ -39,8 +39,23 @@ const PhoneNumberPurchasing = () => {
 
   // Purchase state
   const [areaCode, setAreaCode] = useState('');
+  const [areaCodeError, setAreaCodeError] = useState('');
   const [quantity, setQuantity] = useState('5');
   const [provider, setProvider] = useState('retell');
+  
+  // Area code validation helper
+  const validateAreaCode = (code: string): string => {
+    if (code.length === 0) return '';
+    if (code.length !== 3) return 'Area code must be 3 digits';
+    const num = parseInt(code, 10);
+    if (isNaN(num)) return 'Area code must be numeric';
+    // US area codes don't start with 0 or 1
+    if (num < 200 || num > 999) return 'Invalid US area code';
+    // Exclude special service codes
+    const invalidCodes = ['211', '311', '411', '511', '611', '711', '811', '911'];
+    if (invalidCodes.includes(code)) return 'This is a special service code, not a valid area code';
+    return '';
+  };
   
   // Twilio state
   const [twilioNumbers, setTwilioNumbers] = useState<any[]>([]);
@@ -273,13 +288,26 @@ const PhoneNumberPurchasing = () => {
                       id="area-code"
                       placeholder="e.g., 212"
                       value={areaCode}
-                      onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 3);
+                        setAreaCode(val);
+                        // Clear error while typing, validate on blur
+                        if (areaCodeError) setAreaCodeError('');
+                      }}
+                      onBlur={() => {
+                        const error = validateAreaCode(areaCode);
+                        setAreaCodeError(error);
+                      }}
                       maxLength={3}
-                      className="font-mono"
+                      className={`font-mono ${areaCodeError ? 'border-destructive' : ''}`}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      3-digit US area code
-                    </p>
+                    {areaCodeError ? (
+                      <p className="text-xs text-destructive">{areaCodeError}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        3-digit US area code
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -348,7 +376,7 @@ const PhoneNumberPurchasing = () => {
 
                 <Button
                   onClick={handlePurchase}
-                  disabled={isPurchasing || !areaCode || !quantity}
+                  disabled={isPurchasing || !areaCode || !quantity || !!areaCodeError}
                   className="w-full"
                   size="lg"
                 >
