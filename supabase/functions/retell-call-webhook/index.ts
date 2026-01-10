@@ -1712,9 +1712,9 @@ async function updatePipelinePosition(
     'interested': 'Interested',
     'converted': 'Converted',
     
-    // Callbacks/Follow-up (amber)
-    'callback_requested': 'Follow Up',
-    'callback': 'Follow Up',
+    // Callbacks/Follow-up (amber) - Use "Callback Scheduled" to match user's existing board
+    'callback_requested': 'Callback Scheduled',
+    'callback': 'Callback Scheduled',
     'follow_up': 'Follow Up',
     'potential_prospect': 'Prospects',
     
@@ -1724,6 +1724,9 @@ async function updatePipelinePosition(
     'not_connected': 'Not Contacted',
     'dropped_call': 'Not Contacted',
     'dial_tree_workflow': 'In Progress',
+    'no_answer': 'Not Contacted',
+    'busy': 'Not Contacted',
+    'failed': 'Not Contacted',
     
     // Negative/Disqualified (red)
     'not_interested': 'Not Interested',
@@ -1735,39 +1738,87 @@ async function updatePipelinePosition(
   };
 
   const stageName = stageMapping[outcome];
-  if (!stageName) return;
+  if (!stageName) {
+    console.log(`[Retell Webhook] No pipeline stage mapping for outcome: ${outcome}`);
+    return;
+  }
 
-  // Find the pipeline board for this stage
-  const { data: pipelineBoard } = await supabase
-    .from('pipeline_boards')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('name', stageName)
-    .maybeSingle();
-
-  if (pipelineBoard) {
-    console.log(`[Retell Webhook] Moving lead ${leadId} to pipeline: ${stageName} (board: ${pipelineBoard.id})`);
+  // BULLETPROOF: Ensure the pipeline board exists, create if missing
+  try {
+    const board = await ensurePipelineBoardLocal(supabase, userId, stageName);
+    
+    console.log(`[Retell Webhook] Moving lead ${leadId} to pipeline: ${board.name} (board: ${board.id})`);
     
     const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
       user_id: userId,
       lead_id: leadId,
-      pipeline_board_id: pipelineBoard.id,
+      pipeline_board_id: board.id,
       position: 0,
       moved_at: new Date().toISOString(),
       moved_by_user: false,
       notes: `Auto-moved by call outcome: ${outcome}`,
     }, {
-      onConflict: 'lead_id,user_id',  // Fixed: matches actual unique constraint
+      onConflict: 'lead_id,user_id',
     });
     
     if (pipelineError) {
       console.error('[Retell Webhook] Pipeline update failed:', pipelineError);
     } else {
-      console.log(`[Retell Webhook] ✅ Lead ${leadId} successfully moved to ${stageName}`);
+      console.log(`[Retell Webhook] ✅ Lead ${leadId} successfully moved to ${board.name}${board.created ? ' (board auto-created)' : ''}`);
     }
-  } else {
-    console.log(`[Retell Webhook] ⚠️ No pipeline board found for stage: ${stageName}`);
+  } catch (error) {
+    console.error('[Retell Webhook] Pipeline update error:', error);
   }
+}
+
+// BULLETPROOF local helper - ensures pipeline board exists, creates if missing
+async function ensurePipelineBoardLocal(
+  supabase: any,
+  userId: string,
+  desiredName: string
+): Promise<{ id: string; name: string; created: boolean }> {
+  const normalizedName = desiredName.trim();
+  
+  // Try case-insensitive match first
+  const { data: existingBoards } = await supabase
+    .from('pipeline_boards')
+    .select('id, name, position')
+    .eq('user_id', userId);
+  
+  // Case-insensitive matching with common variations
+  const variations = [
+    normalizedName.toLowerCase(),
+    normalizedName.toLowerCase().replace(/_/g, ' '),
+    normalizedName.replace(/([A-Z])/g, ' $1').trim().toLowerCase(),
+  ];
+  
+  for (const board of existingBoards || []) {
+    const boardNameLower = board.name.toLowerCase();
+    if (variations.includes(boardNameLower) || boardNameLower === normalizedName.toLowerCase()) {
+      return { id: board.id, name: board.name, created: false };
+    }
+  }
+  
+  // Create the board if not found
+  const maxPosition = (existingBoards || []).reduce((max: number, b: any) => 
+    Math.max(max, b.position || 0), 0);
+  
+  const { data: created, error } = await supabase
+    .from('pipeline_boards')
+    .insert({
+      user_id: userId,
+      name: normalizedName,
+      description: `Auto-created for: ${normalizedName}`,
+      position: maxPosition + 1,
+      settings: {},
+    })
+    .select('id, name')
+    .single();
+  
+  if (error) throw error;
+  
+  console.log(`[Retell Webhook] ✅ Auto-created pipeline board: ${created.name}`);
+  return { id: created.id, name: created.name, created: true };
 }
 
 // Stop workflow when a terminal disposition is reached

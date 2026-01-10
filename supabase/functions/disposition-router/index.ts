@@ -263,28 +263,57 @@ serve(async (req) => {
         }
       }
 
-      // 5. Update lead pipeline position based on disposition
+      // 5. BULLETPROOF: Update lead pipeline position based on disposition
+      // First try disposition.pipeline_stage, then fall back to dispositionName
       const { data: disposition } = await supabase
         .from('dispositions')
-        .select('pipeline_stage')
+        .select('pipeline_stage, name')
         .eq('id', dispositionId)
         .maybeSingle();
 
-      if (disposition?.pipeline_stage) {
-        // Find the pipeline board for this stage
-        const { data: pipelineBoard } = await supabase
-          .from('pipeline_boards')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('name', disposition.pipeline_stage)
-          .maybeSingle();
+      // Determine the target stage name - try multiple sources
+      let targetStageName = disposition?.pipeline_stage || disposition?.name || dispositionName;
+      
+      // Normalize snake_case to Title Case (e.g., "hot_leads" -> "Hot Leads")
+      if (targetStageName && targetStageName.includes('_')) {
+        targetStageName = targetStageName
+          .split('_')
+          .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+      }
+      
+      // Map common disposition names to standard pipeline stages
+      const stageNormalization: Record<string, string> = {
+        'callbacks': 'Callback Scheduled',
+        'callback': 'Callback Scheduled',
+        'callback requested': 'Callback Scheduled',
+        'hot leads': 'Hot Leads',
+        'hot lead': 'Hot Leads',
+        'not interested': 'Not Interested',
+        'no answer': 'Not Contacted',
+        'voicemail': 'Contacted',
+        'contacted': 'Contacted',
+        'appointment': 'Appointment Set',
+        'appointment set': 'Appointment Set',
+        'dnc': 'DNC',
+        'do not call': 'DNC',
+      };
+      
+      const normalizedLower = targetStageName?.toLowerCase() || '';
+      if (stageNormalization[normalizedLower]) {
+        targetStageName = stageNormalization[normalizedLower];
+      }
 
-        if (pipelineBoard) {
-          console.log(`[Disposition Router] Moving lead ${leadId} to pipeline: ${disposition.pipeline_stage} (board: ${pipelineBoard.id})`);
+      if (targetStageName) {
+        try {
+          // BULLETPROOF: Ensure board exists, create if missing
+          const board = await ensurePipelineBoardLocal(supabase, userId, targetStageName);
+          
+          console.log(`[Disposition Router] Moving lead ${leadId} to pipeline: ${board.name} (board: ${board.id})`);
           const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
             user_id: userId,
             lead_id: leadId,
-            pipeline_board_id: pipelineBoard.id,
+            pipeline_board_id: board.id,
             position: 0,
             moved_at: new Date().toISOString(),
             moved_by_user: false,
@@ -294,9 +323,11 @@ serve(async (req) => {
           if (pipelineError) {
             console.error(`[Disposition Router] Pipeline update FAILED:`, pipelineError);
           } else {
-            console.log(`[Disposition Router] ✅ Pipeline updated successfully`);
-            actions.push(`Moved to pipeline stage: ${disposition.pipeline_stage}`);
+            console.log(`[Disposition Router] ✅ Pipeline updated successfully${board.created ? ' (board auto-created)' : ''}`);
+            actions.push(`Moved to pipeline stage: ${board.name}`);
           }
+        } catch (pipelineErr) {
+          console.error(`[Disposition Router] Pipeline board error:`, pipelineErr);
         }
       }
 
@@ -576,4 +607,53 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
   console.log(`[Disposition Router] Action ${autoAction.action_type} ${success ? 'succeeded' : 'failed'} in ${executionTime}ms`);
   
   return { success, error: errorMessage, executionTime };
+}
+
+// BULLETPROOF local helper - ensures pipeline board exists, creates if missing
+async function ensurePipelineBoardLocal(
+  supabase: any,
+  userId: string,
+  desiredName: string
+): Promise<{ id: string; name: string; created: boolean }> {
+  const normalizedName = desiredName.trim();
+  
+  // Try case-insensitive match first
+  const { data: existingBoards } = await supabase
+    .from('pipeline_boards')
+    .select('id, name, position')
+    .eq('user_id', userId);
+  
+  // Case-insensitive matching with common variations
+  const variations = [
+    normalizedName.toLowerCase(),
+    normalizedName.toLowerCase().replace(/_/g, ' '),
+  ];
+  
+  for (const board of existingBoards || []) {
+    const boardNameLower = board.name.toLowerCase();
+    if (variations.includes(boardNameLower) || boardNameLower === normalizedName.toLowerCase()) {
+      return { id: board.id, name: board.name, created: false };
+    }
+  }
+  
+  // Create the board if not found
+  const maxPosition = (existingBoards || []).reduce((max: number, b: any) => 
+    Math.max(max, b.position || 0), 0);
+  
+  const { data: created, error } = await supabase
+    .from('pipeline_boards')
+    .insert({
+      user_id: userId,
+      name: normalizedName,
+      description: `Auto-created for: ${normalizedName}`,
+      position: maxPosition + 1,
+      settings: {},
+    })
+    .select('id, name')
+    .single();
+  
+  if (error) throw error;
+  
+  console.log(`[Disposition Router] ✅ Auto-created pipeline board: ${created.name}`);
+  return { id: created.id, name: created.name, created: true };
 }
