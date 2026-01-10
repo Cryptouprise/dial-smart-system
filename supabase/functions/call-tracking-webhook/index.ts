@@ -415,40 +415,35 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
       }
     }
 
-    // Move lead out of "Callback Scheduled" pipeline stage if call was answered
-    if (shouldUpdatePipeline && queueItem.lead_id) {
+    // BULLETPROOF: Move lead to appropriate pipeline stage based on call outcome
+    if (shouldUpdateLead && queueItem.lead_id) {
       try {
-        // Get the broadcast owner's user_id
         const userId = queueItem.voice_broadcasts?.user_id;
         
         if (userId) {
-          // Find "Contacted" pipeline board for this user
-          const { data: contactedBoard } = await supabase
-            .from('pipeline_boards')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('name', 'Contacted')
-            .maybeSingle();
+          // Determine stage based on outcome
+          const stageName = finalStatus === 'answered' ? 'Contacted' : 'Not Contacted';
           
-          if (contactedBoard) {
-            // Move lead to Contacted stage
-            const { error: pipelineError } = await supabase
-              .from('lead_pipeline_positions')
-              .upsert({
-                user_id: userId,
-                lead_id: queueItem.lead_id,
-                pipeline_board_id: contactedBoard.id,
-                position: 0,
-                moved_at: new Date().toISOString(),
-                moved_by_user: false,
-                notes: `Auto-moved: Voice broadcast call answered (${duration}s)`
-              }, { onConflict: 'lead_id,user_id' });
-            
-            if (pipelineError) {
-              console.error('[Twilio Webhook] Error updating pipeline:', pipelineError);
-            } else {
-              console.log(`[Twilio Webhook] Moved lead ${queueItem.lead_id} to Contacted pipeline`);
-            }
+          // Ensure pipeline board exists (create if missing)
+          const board = await ensurePipelineBoardLocal(supabase, userId, stageName);
+          
+          // Move lead to the stage
+          const { error: pipelineError } = await supabase
+            .from('lead_pipeline_positions')
+            .upsert({
+              user_id: userId,
+              lead_id: queueItem.lead_id,
+              pipeline_board_id: board.id,
+              position: 0,
+              moved_at: new Date().toISOString(),
+              moved_by_user: false,
+              notes: `Auto-moved: Voice broadcast ${finalStatus} (${duration}s)`
+            }, { onConflict: 'lead_id,user_id' });
+          
+          if (pipelineError) {
+            console.error('[Twilio Webhook] Error updating pipeline:', pipelineError);
+          } else {
+            console.log(`[Twilio Webhook] ✅ Moved lead ${queueItem.lead_id} to ${board.name}${board.created ? ' (auto-created)' : ''}`);
           }
         }
       } catch (pipelineErr) {
@@ -1296,4 +1291,53 @@ async function handleLegacyWebhook(supabase: any, payload: RetellCallEvent) {
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
+}
+
+// BULLETPROOF local helper - ensures pipeline board exists, creates if missing
+async function ensurePipelineBoardLocal(
+  supabase: any,
+  userId: string,
+  desiredName: string
+): Promise<{ id: string; name: string; created: boolean }> {
+  const normalizedName = desiredName.trim();
+  
+  // Try case-insensitive match first
+  const { data: existingBoards } = await supabase
+    .from('pipeline_boards')
+    .select('id, name, position')
+    .eq('user_id', userId);
+  
+  // Case-insensitive matching
+  const variations = [
+    normalizedName.toLowerCase(),
+    normalizedName.toLowerCase().replace(/_/g, ' '),
+  ];
+  
+  for (const board of existingBoards || []) {
+    const boardNameLower = board.name.toLowerCase();
+    if (variations.includes(boardNameLower) || boardNameLower === normalizedName.toLowerCase()) {
+      return { id: board.id, name: board.name, created: false };
+    }
+  }
+  
+  // Create the board if not found
+  const maxPosition = (existingBoards || []).reduce((max: number, b: any) => 
+    Math.max(max, b.position || 0), 0);
+  
+  const { data: created, error } = await supabase
+    .from('pipeline_boards')
+    .insert({
+      user_id: userId,
+      name: normalizedName,
+      description: `Auto-created for: ${normalizedName}`,
+      position: maxPosition + 1,
+      settings: {},
+    })
+    .select('id, name')
+    .single();
+  
+  if (error) throw error;
+  
+  console.log(`[Call Tracking] ✅ Auto-created pipeline board: ${created.name}`);
+  return { id: created.id, name: created.name, created: true };
 }

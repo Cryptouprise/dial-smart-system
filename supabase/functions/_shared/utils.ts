@@ -457,3 +457,112 @@ export async function withDatabaseRetry<T>(
 
   throw lastError || new Error('Max retries exceeded');
 }
+
+/**
+ * BULLETPROOF PIPELINE HELPER
+ * Ensures a pipeline board exists for a user, creating it if missing.
+ * Handles case-insensitive matching and name normalization.
+ */
+export async function ensurePipelineBoard(
+  supabase: any,
+  userId: string,
+  desiredName: string,
+  dispositionId?: string
+): Promise<{ id: string; name: string; created: boolean }> {
+  const normalizedName = desiredName.trim();
+  
+  // First, try case-insensitive match on existing boards
+  const { data: existingBoards, error: fetchError } = await supabase
+    .from('pipeline_boards')
+    .select('id, name')
+    .eq('user_id', userId);
+  
+  if (fetchError) {
+    console.error('[ensurePipelineBoard] Failed to fetch boards:', fetchError);
+    throw fetchError;
+  }
+  
+  // Case-insensitive matching with common variations
+  const variations = [
+    normalizedName.toLowerCase(),
+    normalizedName.toLowerCase().replace(/_/g, ' '),
+    normalizedName.replace(/([A-Z])/g, ' $1').trim().toLowerCase(),
+  ];
+  
+  for (const board of existingBoards || []) {
+    const boardNameLower = board.name.toLowerCase();
+    if (variations.includes(boardNameLower) || boardNameLower === normalizedName.toLowerCase()) {
+      console.log(`[ensurePipelineBoard] Found existing board: ${board.name} (id: ${board.id})`);
+      return { id: board.id, name: board.name, created: false };
+    }
+  }
+  
+  // No match found - create the board
+  // Get max position for ordering
+  const maxPosition = (existingBoards || []).reduce((max: number, b: any) => 
+    Math.max(max, b.position || 0), 0);
+  
+  const newBoard = {
+    user_id: userId,
+    name: normalizedName,
+    description: `Auto-created pipeline stage for: ${normalizedName}`,
+    position: maxPosition + 1,
+    settings: {},
+    disposition_id: dispositionId || null,
+  };
+  
+  const { data: created, error: createError } = await supabase
+    .from('pipeline_boards')
+    .insert(newBoard)
+    .select('id, name')
+    .single();
+  
+  if (createError) {
+    console.error('[ensurePipelineBoard] Failed to create board:', createError);
+    throw createError;
+  }
+  
+  console.log(`[ensurePipelineBoard] ✅ Created new board: ${created.name} (id: ${created.id})`);
+  return { id: created.id, name: created.name, created: true };
+}
+
+/**
+ * Move a lead to a pipeline stage, creating the stage if it doesn't exist.
+ * This is the BULLETPROOF way to update pipeline positions.
+ */
+export async function moveLeadToPipelineStage(
+  supabase: any,
+  leadId: string,
+  userId: string,
+  stageName: string,
+  notes?: string
+): Promise<{ success: boolean; boardId: string; boardName: string; created: boolean }> {
+  try {
+    // Ensure the pipeline board exists (creates if missing)
+    const board = await ensurePipelineBoard(supabase, userId, stageName);
+    
+    // Upsert the lead's pipeline position
+    const { error: upsertError } = await supabase
+      .from('lead_pipeline_positions')
+      .upsert({
+        user_id: userId,
+        lead_id: leadId,
+        pipeline_board_id: board.id,
+        position: 0,
+        moved_at: new Date().toISOString(),
+        moved_by_user: false,
+        notes: notes || `Auto-moved to: ${board.name}`,
+      }, { onConflict: 'lead_id,user_id' });
+    
+    if (upsertError) {
+      console.error('[moveLeadToPipelineStage] Upsert failed:', upsertError);
+      throw upsertError;
+    }
+    
+    console.log(`[moveLeadToPipelineStage] ✅ Lead ${leadId} moved to "${board.name}"`);
+    return { success: true, boardId: board.id, boardName: board.name, created: board.created };
+  } catch (error) {
+    console.error('[moveLeadToPipelineStage] Failed:', error);
+    return { success: false, boardId: '', boardName: stageName, created: false };
+  }
+}
