@@ -1900,6 +1900,69 @@ export type Database = {
         }
         Relationships: []
       }
+      guardian_alerts: {
+        Row: {
+          component: string | null
+          context: Json | null
+          created_at: string | null
+          detected_at: string | null
+          file_path: string | null
+          function_name: string | null
+          id: string
+          line_number: number | null
+          message: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          stack_trace: string | null
+          status: string
+          type: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          component?: string | null
+          context?: Json | null
+          created_at?: string | null
+          detected_at?: string | null
+          file_path?: string | null
+          function_name?: string | null
+          id?: string
+          line_number?: number | null
+          message: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          stack_trace?: string | null
+          status?: string
+          type: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          component?: string | null
+          context?: Json | null
+          created_at?: string | null
+          detected_at?: string | null
+          file_path?: string | null
+          function_name?: string | null
+          id?: string
+          line_number?: number | null
+          message?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          stack_trace?: string | null
+          status?: string
+          type?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       lead_list_memberships: {
         Row: {
           added_at: string | null
