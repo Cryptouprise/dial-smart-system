@@ -289,7 +289,28 @@ const PhoneNumberPurchasing = () => {
                       type="number"
                       placeholder="5"
                       value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        // Allow empty for typing, but clamp on blur
+                        if (val === '') {
+                          setQuantity('');
+                        } else {
+                          const num = parseInt(val, 10);
+                          if (!isNaN(num)) {
+                            // Clamp between 1 and 50
+                            setQuantity(String(Math.min(50, Math.max(1, num))));
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        // Ensure valid value on blur
+                        const num = parseInt(quantity, 10);
+                        if (isNaN(num) || num < 1) {
+                          setQuantity('1');
+                        } else if (num > 50) {
+                          setQuantity('50');
+                        }
+                      }}
                       min={1}
                       max={50}
                     />
