@@ -388,20 +388,23 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
       }
     }
 
-    // Update lead status and clear callback if answered
+    // Update lead status - FIXED: Only mark as 'contacted' if ACTUALLY connected
+    // This allows multi-step workflows to continue calling after no-answer/busy/failed
     if (shouldUpdateLead && queueItem.lead_id) {
       const leadUpdate: Record<string, any> = {
         last_contacted_at: new Date().toISOString(),
       };
       
+      // Only set status to 'contacted' for actual successful connections
       if (finalStatus === 'answered') {
         leadUpdate.status = 'contacted';
         leadUpdate.next_callback_at = null; // Clear callback - call was made!
-      } else if (finalStatus === 'no_answer') {
-        // Don't change status, leave for retry
-      } else {
-        leadUpdate.status = 'contacted';
+        console.log(`[Twilio Webhook] Lead ${queueItem.lead_id} answered, status -> contacted`);
+      } else if (finalStatus === 'no_answer' || finalStatus === 'busy' || finalStatus === 'failed') {
+        // DON'T change status - let workflow continue calling
+        console.log(`[Twilio Webhook] Lead ${queueItem.lead_id} not reached (${finalStatus}), keeping current status for workflow retry`);
       }
+      // Note: No else branch - for other statuses, we just update last_contacted_at
       
       const { error: leadError } = await supabase
         .from('leads')
@@ -586,13 +589,27 @@ async function handleCallEnded(supabase: any, call: any, existingCall: any) {
       console.log('Call log updated successfully');
       
       // Update lead's last_contacted_at
+      // FIXED: Only mark as 'contacted' if ACTUALLY connected/answered
+      // This allows multi-step workflows to continue calling after no-answer/busy/failed
       if (existingCall.lead_id) {
+        const connectedOutcomes = ['connected', 'answered', 'appointment_set', 'callback_requested'];
+        const leadUpdate: Record<string, unknown> = {
+          last_contacted_at: new Date().toISOString(),
+        };
+        
+        // Only change status to 'contacted' if the call was actually successful
+        if (connectedOutcomes.includes(outcome)) {
+          leadUpdate.status = 'contacted';
+          leadUpdate.next_callback_at = null; // Clear callback since we reached them
+          console.log(`[Retell] Lead ${existingCall.lead_id} successfully contacted, status -> contacted`);
+        } else {
+          // For no_answer, busy, failed - DON'T change status, let workflow continue
+          console.log(`[Retell] Lead ${existingCall.lead_id} not reached (${outcome}), keeping current status for workflow retry`);
+        }
+        
         await supabase
           .from('leads')
-          .update({ 
-            last_contacted_at: new Date().toISOString(),
-            status: outcome === 'no-answer' ? 'no-answer' : 'contacted'
-          })
+          .update(leadUpdate)
           .eq('id', existingCall.lead_id);
       }
     }

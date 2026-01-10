@@ -562,16 +562,17 @@ async function executeStep(supabase: any, progress: any) {
 }
 
 async function executeCallStep(supabase: any, lead: any, progress: any, config: any) {
-  console.log(`[Workflow] Initiating call to ${lead?.phone_number}`);
+  console.log(`[Workflow] Initiating call to ${lead?.phone_number} (step: ${progress.current_step_id})`);
 
   try {
     const maxAttempts = config.max_attempts || 1;
+    const skipIfContacted = config.skip_if_contacted === true; // Optional: skip if ANY step already reached lead
     
     // Check recent call history for this lead to avoid duplicate calls
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: recentCalls } = await supabase
       .from('call_logs')
-      .select('id, status, outcome, duration_seconds, created_at')
+      .select('id, status, outcome, duration_seconds, created_at, campaign_id')
       .eq('lead_id', lead.id)
       .gte('created_at', fiveMinutesAgo)
       .order('created_at', { ascending: false });
@@ -586,14 +587,19 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
       return { success: true, action: 'call_already_pending', callId: pendingCall.id };
     }
 
-    // Check if lead was recently contacted successfully
-    const recentSuccess = recentCalls?.find((c: any) => 
-      c.outcome && ['connected', 'answered', 'appointment_set', 'callback_requested'].includes(c.outcome)
-    );
+    // FIXED: Only skip if skip_if_contacted is true AND a successful call exists
+    // By default, multi-step workflows should continue calling regardless of previous outcomes
+    if (skipIfContacted) {
+      const recentSuccess = recentCalls?.find((c: any) => 
+        c.outcome && ['connected', 'answered', 'appointment_set', 'callback_requested'].includes(c.outcome)
+      );
 
-    if (recentSuccess) {
-      console.log(`[Workflow] Lead ${lead.id} was recently contacted successfully, skipping`);
-      return { success: true, action: 'recently_contacted', callId: recentSuccess.id };
+      if (recentSuccess) {
+        console.log(`[Workflow] Lead ${lead.id} was recently contacted successfully and skip_if_contacted=true, skipping`);
+        return { success: true, action: 'recently_contacted', callId: recentSuccess.id };
+      }
+    } else {
+      console.log(`[Workflow] Multi-step workflow - proceeding with call regardless of previous contact status`);
     }
 
     // Trigger outbound call
