@@ -114,36 +114,78 @@ export const useBroadcastReadiness = () => {
       // Check: Phone numbers available
       const { data: phoneNumbers } = await supabase
         .from('phone_numbers')
-        .select('id, number, status, is_spam, retell_phone_id, quarantine_until')
+        .select('id, number, status, is_spam, retell_phone_id, quarantine_until, carrier_name, provider')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .eq('is_spam', false);
 
-      // Filter out quarantined numbers only - Retell-registered numbers CAN be used for broadcasts
-      // because the engine forces Twilio for audio playback regardless of retell_phone_id
       const now = new Date();
-      const availableNumbers = phoneNumbers?.filter(p => {
+      
+      // For audio broadcasts, we need Twilio or Telnyx numbers (NOT Retell-only)
+      const isAudioBroadcast = broadcast.audio_url && broadcast.ivr_mode !== 'ai_conversational';
+      
+      // Filter out quarantined numbers
+      const nonQuarantinedNumbers = phoneNumbers?.filter(p => {
         if (p.quarantine_until && new Date(p.quarantine_until) > now) return false;
         return true;
       }) || [];
+      
+      // For audio broadcasts, further filter to only Twilio/Telnyx numbers
+      let availableNumbers = nonQuarantinedNumbers;
+      let hasRetellOnlyNumbers = false;
+      
+      if (isAudioBroadcast) {
+        availableNumbers = nonQuarantinedNumbers.filter(p => {
+          // Telnyx numbers
+          if (p.carrier_name?.toLowerCase().includes('telnyx') || p.provider === 'telnyx') return true;
+          // Twilio numbers (not Retell-only - has retell_phone_id but also registered with Twilio)
+          if (!p.retell_phone_id || p.provider === 'twilio') return true;
+          return false;
+        });
+        
+        // Check if user has Retell-only numbers that can't be used
+        hasRetellOnlyNumbers = nonQuarantinedNumbers.some(p => 
+          p.retell_phone_id && 
+          !p.carrier_name?.toLowerCase().includes('telnyx') && 
+          p.provider !== 'twilio'
+        );
+      }
       
       const quarantinedCount = phoneNumbers?.filter(p => p.quarantine_until && new Date(p.quarantine_until) > now).length || 0;
       
       // Check for low phone count warning (high volume needs more numbers)
       const hasLowPhoneCount = availableNumbers.length > 0 && availableNumbers.length < 3;
       
+      // Build appropriate message
+      let phoneMessage = '';
+      let phoneStatus: 'pass' | 'fail' | 'warning' = 'pass';
+      
+      if (availableNumbers.length === 0) {
+        phoneStatus = 'fail';
+        if (isAudioBroadcast && hasRetellOnlyNumbers) {
+          phoneMessage = 'Your numbers are Retell-only (for AI agent calls). Audio broadcasts require Twilio or Telnyx numbers.';
+        } else {
+          phoneMessage = 'No phone numbers available for broadcasts';
+        }
+      } else if (hasLowPhoneCount) {
+        phoneStatus = 'warning';
+        phoneMessage = `Only ${availableNumbers.length} number(s) - add more for better pickup rates with high volume`;
+      } else {
+        phoneMessage = `${availableNumbers.length} number(s) ready${quarantinedCount > 0 ? ` (${quarantinedCount} quarantined)` : ''}`;
+      }
+      
       checks.push({
         id: 'phone_numbers',
         label: 'Phone numbers available',
-        status: availableNumbers.length === 0 ? 'fail' : hasLowPhoneCount ? 'warning' : 'pass',
-        message: availableNumbers.length === 0 
-          ? 'No phone numbers available for broadcasts'
-          : hasLowPhoneCount
-            ? `Only ${availableNumbers.length} number(s) - add more for better pickup rates with high volume`
-            : `${availableNumbers.length} number(s) ready${quarantinedCount > 0 ? ` (${quarantinedCount} quarantined)` : ''}`,
+        status: phoneStatus,
+        message: phoneMessage,
         critical: availableNumbers.length === 0
       });
-      if (availableNumbers.length === 0) blockingReasons.push('No phone numbers available for broadcasts');
+      if (availableNumbers.length === 0) {
+        blockingReasons.push(isAudioBroadcast && hasRetellOnlyNumbers 
+          ? 'Retell-only numbers cannot be used for audio broadcasts - add Twilio/Telnyx numbers or use AI Agent mode'
+          : 'No phone numbers available for broadcasts');
+      }
 
       // Check: Spam-flagged numbers warning
       const spamNumbers = phoneNumbers?.filter(p => p.is_spam).length || 0;
