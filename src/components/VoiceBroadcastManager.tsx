@@ -1257,32 +1257,41 @@ export const VoiceBroadcastManager: React.FC = () => {
                                         <Button
                                           size="sm"
                                           onClick={async () => {
-                                            // Run readiness check before starting
                                             setStartingBroadcastId(broadcast.id);
-                                            const result = await checkBroadcastReadiness(broadcast.id);
-                                            setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
-                                            if (result.isReady) {
-                                              const leadCount = broadcast.total_leads || 0;
-                                              // Check for high volume and low phone numbers
-                                              if (leadCount >= 1000) {
-                                                const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
-                                                const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
-                                                const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
-                                                setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
-                                                setStartingBroadcastId(null);
-                                                return;
+                                            try {
+                                              // Run readiness check before starting
+                                              const result = await checkBroadcastReadiness(broadcast.id);
+                                              setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
+                                              if (result.isReady) {
+                                                const leadCount = broadcast.total_leads || 0;
+                                                // Check for high volume and low phone numbers
+                                                if (leadCount >= 1000) {
+                                                  const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
+                                                  const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
+                                                  const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
+                                                  setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
+                                                  return;
+                                                }
+                                                // Cleanup stuck calls first
+                                                await cleanupStuckCalls(broadcast.id);
+                                                await startBroadcast(broadcast.id);
+                                              } else {
+                                                toast({
+                                                  title: "Broadcast Not Ready",
+                                                  description: result.blockingReasons.join(', '),
+                                                  variant: "destructive",
+                                                });
                                               }
-                                              // Cleanup stuck calls first
-                                              await cleanupStuckCalls(broadcast.id);
-                                              await startBroadcast(broadcast.id);
-                                            } else {
+                                            } catch (err: any) {
+                                              console.error('Start broadcast error:', err);
                                               toast({
-                                                title: "Broadcast Not Ready",
-                                                description: result.blockingReasons.join(', '),
+                                                title: "Failed to Start",
+                                                description: err.message || "An unexpected error occurred",
                                                 variant: "destructive",
                                               });
+                                            } finally {
+                                              setStartingBroadcastId(null);
                                             }
-                                            setStartingBroadcastId(null);
                                           }}
                                           disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || !hasPendingLeads}
                                         >

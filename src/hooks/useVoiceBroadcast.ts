@@ -463,15 +463,18 @@ export const useVoiceBroadcast = () => {
         validationErrors.push('No active phone numbers available');
       }
 
-      // Check for leads in queue
-      const { data: queueItems, count } = await (supabase
-        .from('voice_broadcast_queue' as any)
+      // Check for leads in queue - use correct table name
+      const { count, error: queueError } = await supabase
+        .from('broadcast_queue')
         .select('id', { count: 'exact', head: true })
         .eq('broadcast_id', broadcastId)
-        .eq('status', 'pending') as any);
+        .eq('status', 'pending');
 
-      if (!count || count === 0) {
-        validationErrors.push('No leads in the queue. Add leads first.');
+      if (queueError) {
+        console.error('Queue check error:', queueError);
+        validationErrors.push('Could not check broadcast queue');
+      } else if (!count || count === 0) {
+        validationErrors.push('No pending leads. Add leads or click "Reset & Run Again"');
       }
 
       if (validationErrors.length > 0) {
