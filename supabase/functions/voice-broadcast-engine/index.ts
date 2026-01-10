@@ -622,15 +622,80 @@ serve(async (req) => {
         
         console.log(`[Broadcast] ${availablePhoneNumbers.length}/${phoneNumbers.length} numbers available (within daily limits)`);
         
-        // Replace phoneNumbers with filtered list for the rest of the function
-        const rotationNumbers = availablePhoneNumbers;
-
-        // Determine which provider to use - pass hasAudioUrl to prefer Twilio for audio playback
+        // Determine broadcast type and filter numbers accordingly
         const hasAudioUrl = !!broadcast.audio_url;
-        const selectedProvider = selectProvider(providers, undefined, hasAudioUrl);
-        if (!selectedProvider) {
-          throw new Error('No telephony provider configured. Please configure Retell AI, Twilio, or Telnyx API keys.');
+        
+        // For audio broadcasts, we need Twilio or Telnyx numbers (NOT Retell-only numbers)
+        // Retell-only numbers have retell_phone_id but no Twilio/Telnyx registration
+        // Check if numbers have Twilio capability (no carrier_name or non-telnyx carrier)
+        // or Telnyx capability (carrier_name contains 'telnyx')
+        const hasTwilioNumbers = availablePhoneNumbers.some(n => 
+          !n.retell_phone_id || n.provider === 'twilio'
+        );
+        const hasTelnyxNumbers = availablePhoneNumbers.some(n => 
+          n.carrier_name?.toLowerCase().includes('telnyx') || n.provider === 'telnyx'
+        );
+        const hasRetellOnlyNumbers = availablePhoneNumbers.some(n => 
+          n.retell_phone_id && !n.carrier_name?.toLowerCase().includes('telnyx') && n.provider !== 'twilio'
+        );
+        
+        console.log(`[Broadcast] Number providers available - Twilio: ${hasTwilioNumbers}, Telnyx: ${hasTelnyxNumbers}, Retell-only: ${hasRetellOnlyNumbers}`);
+        
+        // For audio broadcasts, filter to only numbers that can be used with Twilio/Telnyx
+        let rotationNumbers = availablePhoneNumbers;
+        if (hasAudioUrl) {
+          // Audio broadcasts require Twilio or Telnyx numbers
+          rotationNumbers = availablePhoneNumbers.filter(n => {
+            // Telnyx numbers
+            if (n.carrier_name?.toLowerCase().includes('telnyx') || n.provider === 'telnyx') return true;
+            // Twilio numbers (not Retell-only)
+            if (!n.retell_phone_id || n.provider === 'twilio') return true;
+            return false;
+          });
+          
+          if (rotationNumbers.length === 0) {
+            const errorMsg = 'Audio broadcasts require Twilio or Telnyx phone numbers. Your numbers are Retell-native only (for AI agent calls). Please add Twilio/Telnyx numbers or use Retell Agent mode instead of audio files.';
+            await supabase.from('voice_broadcasts').update({ 
+              last_error: errorMsg, 
+              last_error_at: new Date().toISOString(),
+              status: 'failed' 
+            }).eq('id', broadcastId);
+            throw new Error(errorMsg);
+          }
+          
+          console.log(`[Broadcast] Filtered to ${rotationNumbers.length} Twilio/Telnyx numbers for audio broadcast`);
         }
+
+        // Determine which provider to use based on available number types
+        let selectedProvider: 'retell' | 'twilio' | 'telnyx' | null = null;
+        
+        if (hasAudioUrl) {
+          // For audio broadcasts, prefer Telnyx (cheaper), then Twilio
+          if (hasTelnyxNumbers && providers.telnyxApiKey) {
+            selectedProvider = 'telnyx';
+          } else if (hasTwilioNumbers && providers.twilioAccountSid && providers.twilioAuthToken) {
+            selectedProvider = 'twilio';
+          }
+        } else {
+          // For AI agent mode, prefer Retell
+          if (providers.retellKey) {
+            selectedProvider = 'retell';
+          } else if (providers.twilioAccountSid && providers.twilioAuthToken) {
+            selectedProvider = 'twilio';
+          } else if (providers.telnyxApiKey) {
+            selectedProvider = 'telnyx';
+          }
+        }
+        
+        if (!selectedProvider) {
+          const errorMsg = hasAudioUrl 
+            ? 'No Twilio or Telnyx API keys configured for audio broadcasts. Please add Twilio or Telnyx credentials in your settings.'
+            : 'No telephony provider configured. Please configure Retell AI, Twilio, or Telnyx API keys.';
+          throw new Error(errorMsg);
+        }
+        
+        console.log(`[Broadcast] Selected provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
+
 
         // Fetch SIP trunk configurations for cost savings
         const { data: sipConfigs } = await supabase
@@ -807,12 +872,28 @@ serve(async (req) => {
             // Track usage for this call
             numberUsageCount.set(callerNumber.id, (numberUsageCount.get(callerNumber.id) || 0) + 1);
             
-            // For voice broadcasts with audio, ALWAYS use Twilio regardless of number's retell_phone_id
-            // The number provider only matters for AI conversational mode
-            const numberProvider = hasAudioUrl 
-              ? 'twilio'  // Force Twilio for audio playback
-              : (callerNumber.retell_phone_id ? 'retell' : 
-                  callerNumber.carrier_name?.toLowerCase().includes('telnyx') ? 'telnyx' : 'twilio');
+            // Determine provider based on number's actual registration
+            // For audio broadcasts: use the number's actual provider (already filtered above)
+            // For AI mode: prefer Retell if registered
+            let numberProvider: 'retell' | 'twilio' | 'telnyx';
+            
+            if (hasAudioUrl) {
+              // For audio broadcasts, use Telnyx if the number is Telnyx, otherwise Twilio
+              if (callerNumber.carrier_name?.toLowerCase().includes('telnyx') || callerNumber.provider === 'telnyx') {
+                numberProvider = 'telnyx';
+              } else {
+                numberProvider = 'twilio';
+              }
+            } else {
+              // For AI/agent mode, use Retell if registered, otherwise carrier
+              if (callerNumber.retell_phone_id) {
+                numberProvider = 'retell';
+              } else if (callerNumber.carrier_name?.toLowerCase().includes('telnyx') || callerNumber.provider === 'telnyx') {
+                numberProvider = 'telnyx';
+              } else {
+                numberProvider = 'twilio';
+              }
+            }
 
             // Update queue item to 'calling'
             const { error: updateItemError } = await supabase
