@@ -4043,6 +4043,7 @@ export type Database = {
           total_leads: number | null
           transfers_completed: number | null
           updated_at: string | null
+          use_sip_trunk: boolean | null
           user_id: string
           voice_id: string | null
           voice_model: string | null
@@ -4082,6 +4083,7 @@ export type Database = {
           total_leads?: number | null
           transfers_completed?: number | null
           updated_at?: string | null
+          use_sip_trunk?: boolean | null
           user_id: string
           voice_id?: string | null
           voice_model?: string | null
@@ -4121,6 +4123,7 @@ export type Database = {
           total_leads?: number | null
           transfers_completed?: number | null
           updated_at?: string | null
+          use_sip_trunk?: boolean | null
           user_id?: string
           voice_id?: string | null
           voice_model?: string | null

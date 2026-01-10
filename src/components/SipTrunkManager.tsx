@@ -87,6 +87,8 @@ export function SipTrunkManager() {
   const [trunkPhoneNumbers, setTrunkPhoneNumbers] = useState<TrunkPhoneNumber[]>([]);
   const [availableNumbers, setAvailableNumbers] = useState<any[]>([]);
   const [isLoadingPhoneNumbers, setIsLoadingPhoneNumbers] = useState(false);
+  const [verifyingTrunkId, setVerifyingTrunkId] = useState<string | null>(null);
+  const [verificationResults, setVerificationResults] = useState<Record<string, { verified: boolean; error?: string }>>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -380,6 +382,91 @@ export function SipTrunkManager() {
     }
   };
 
+  // Verify a SIP trunk exists in Twilio
+  const verifyTrunkInTwilio = async (config: SipTrunkConfig) => {
+    if (!config.twilio_trunk_sid) {
+      toast({ title: "No trunk SID", description: "This configuration doesn't have a Twilio trunk SID", variant: "destructive" });
+      return;
+    }
+    
+    setVerifyingTrunkId(config.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'list_sip_trunks' }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      const trunks = data.trunks || [];
+      const found = trunks.find((t: TwilioTrunk) => t.sid === config.twilio_trunk_sid);
+      
+      if (found) {
+        setVerificationResults(prev => ({ ...prev, [config.id]: { verified: true } }));
+        toast({ title: "✅ Verified", description: `Trunk "${config.name}" exists in Twilio` });
+      } else {
+        setVerificationResults(prev => ({ ...prev, [config.id]: { verified: false, error: 'Not found in Twilio' } }));
+        toast({ 
+          title: "⚠️ Not Found", 
+          description: `Trunk SID ${config.twilio_trunk_sid} not found in your Twilio account`,
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      setVerificationResults(prev => ({ ...prev, [config.id]: { verified: false, error: error.message } }));
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    } finally {
+      setVerifyingTrunkId(null);
+    }
+  };
+
+  // Toggle trunk active state
+  const toggleTrunkActive = async (config: SipTrunkConfig) => {
+    try {
+      const { error } = await supabase
+        .from('sip_trunk_configs')
+        .update({ is_active: !config.is_active })
+        .eq('id', config.id);
+      
+      if (error) throw error;
+      toast({ title: config.is_active ? "Trunk disabled" : "Trunk enabled" });
+      loadConfigs();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  // Delete trunk from Twilio
+  const deleteTrunkFromTwilio = async (config: SipTrunkConfig) => {
+    if (!config.twilio_trunk_sid) {
+      // Just delete from DB if no Twilio SID
+      await handleDelete(config.id);
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: { action: 'delete_sip_trunk', trunkSid: config.twilio_trunk_sid }
+      });
+
+      if (error) throw error;
+      if (data.error) {
+        // If trunk doesn't exist in Twilio, just delete from DB
+        if (data.error.includes('not found') || data.error.includes('404')) {
+          await handleDelete(config.id);
+          toast({ title: "Removed", description: "Trunk removed from database (was not in Twilio)" });
+          return;
+        }
+        throw new Error(data.error);
+      }
+
+      await handleDelete(config.id);
+      toast({ title: "Deleted", description: "Trunk deleted from Twilio and database" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
   // Import an existing Twilio trunk
   const importExistingTrunk = async (trunk: TwilioTrunk) => {
     try {
@@ -495,7 +582,7 @@ export function SipTrunkManager() {
             {configs.map((config) => (
               <div
                 key={config.id}
-                className="flex items-center justify-between p-4 border rounded-lg bg-card"
+                className={`flex items-center justify-between p-4 border rounded-lg ${config.is_active ? 'bg-card' : 'bg-muted/50 opacity-75'}`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${getProviderColor(config.provider_type)}`}>
@@ -508,7 +595,19 @@ export function SipTrunkManager() {
                         <Badge variant="secondary" className="text-xs">Default</Badge>
                       )}
                       {!config.is_active && (
-                        <Badge variant="outline" className="text-xs">Inactive</Badge>
+                        <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/30">Disabled</Badge>
+                      )}
+                      {config.is_active && verificationResults[config.id]?.verified && (
+                        <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                          <Check className="h-3 w-3 mr-1" />
+                          Verified
+                        </Badge>
+                      )}
+                      {verificationResults[config.id]?.verified === false && (
+                        <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/30">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Not Found
+                        </Badge>
                       )}
                     </div>
                     <div className="text-sm text-muted-foreground">
@@ -519,12 +618,40 @@ export function SipTrunkManager() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="text-right mr-4">
+                  <div className="text-right mr-2">
                     <div className="flex items-center gap-1 text-sm text-green-600">
                       <DollarSign className="h-3 w-3" />
                       ${config.cost_per_minute?.toFixed(4)}/min
                     </div>
                   </div>
+                  
+                  {/* Active Toggle */}
+                  <div className="flex items-center gap-1 mr-2">
+                    <Switch
+                      checked={config.is_active}
+                      onCheckedChange={() => toggleTrunkActive(config)}
+                      className="scale-75"
+                    />
+                    <span className="text-xs text-muted-foreground">Active</span>
+                  </div>
+                  
+                  {/* Verify in Twilio */}
+                  {config.provider_type === 'twilio' && config.twilio_trunk_sid && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => verifyTrunkInTwilio(config)}
+                      disabled={verifyingTrunkId === config.id}
+                    >
+                      {verifyingTrunkId === config.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                      )}
+                      Verify
+                    </Button>
+                  )}
+                  
                   {config.provider_type === 'twilio' && config.twilio_trunk_sid && (
                     <Button
                       variant="ghost"
@@ -555,7 +682,7 @@ export function SipTrunkManager() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleDelete(config.id)}
+                    onClick={() => deleteTrunkFromTwilio(config)}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>

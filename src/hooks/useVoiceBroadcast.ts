@@ -34,6 +34,7 @@ export interface VoiceBroadcast {
   created_at: string | null;
   updated_at: string | null;
   caller_id: string | null;
+  use_sip_trunk: boolean | null;
 }
 
 export interface DTMFAction {
@@ -126,6 +127,7 @@ export const useVoiceBroadcast = () => {
     enable_amd?: boolean;
     voicemail_action?: 'hangup' | 'leave_message';
     voicemail_audio_url?: string | null;
+    use_sip_trunk?: boolean;
   }) => {
     setIsLoading(true);
     try {
@@ -156,6 +158,7 @@ export const useVoiceBroadcast = () => {
           enable_amd: broadcast.enable_amd ?? true,
           voicemail_action: broadcast.voicemail_action || 'hangup',
           voicemail_audio_url: broadcast.voicemail_audio_url || null,
+          use_sip_trunk: broadcast.use_sip_trunk ?? false,
         })
         .select()
         .maybeSingle();

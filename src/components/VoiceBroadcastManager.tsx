@@ -160,6 +160,8 @@ export const VoiceBroadcastManager: React.FC = () => {
     enable_amd: true,
     voicemail_action: 'hangup' as 'hangup' | 'leave_message',
     voicemail_audio_url: '',
+    // SIP trunk (opt-in for cost savings, default off for reliability)
+    use_sip_trunk: false,
   });
 
   useEffect(() => {
@@ -345,6 +347,7 @@ export const VoiceBroadcastManager: React.FC = () => {
         enable_amd: formData.enable_amd,
         voicemail_action: formData.voicemail_action,
         voicemail_audio_url: formData.voicemail_audio_url || null,
+        use_sip_trunk: formData.use_sip_trunk,
       });
       setShowCreateDialog(false);
       resetForm();
@@ -376,6 +379,7 @@ export const VoiceBroadcastManager: React.FC = () => {
       enable_amd: true,
       voicemail_action: 'hangup',
       voicemail_audio_url: '',
+      use_sip_trunk: false,
     });
   };
 
@@ -1100,6 +1104,38 @@ export const VoiceBroadcastManager: React.FC = () => {
                           </div>
                         )}
                       </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* SIP Trunk Settings (Advanced) */}
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Settings className="h-4 w-4" />
+                      Advanced Calling
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm font-medium">Use SIP Trunk (Cost Savings)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Route calls through SIP trunk for lower cost. Disable for maximum reliability.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formData.use_sip_trunk}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, use_sip_trunk: checked })
+                        }
+                      />
+                    </div>
+                    {formData.use_sip_trunk && (
+                      <div className="text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded flex items-center gap-2">
+                        <AlertTriangle className="h-3 w-3" />
+                        SIP trunk must be configured and verified in Settings → SIP Trunks
+                      </div>
                     )}
                   </CardContent>
                 </Card>
