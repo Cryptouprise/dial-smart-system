@@ -127,6 +127,9 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [generatingAudioId, setGeneratingAudioId] = useState<string | null>(null);
   const [testConfirmBroadcastId, setTestConfirmBroadcastId] = useState<string | null>(null);
   const [lastStatsUpdate, setLastStatsUpdate] = useState<Date>(new Date());
+  
+  // Direct pending counts from database - fixes race condition with stats loading
+  const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
 
   // Form state
   const [formData, setFormData] = useState({
@@ -179,6 +182,38 @@ export const VoiceBroadcastManager: React.FC = () => {
       console.error('Error loading phone numbers:', error);
     }
   };
+
+  // Load pending counts directly from database (fast, reliable, no race condition)
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadPendingCounts = async () => {
+      if (broadcasts.length === 0) return;
+      
+      const counts: Record<string, number> = {};
+      
+      // Batch query for all broadcasts
+      for (const b of broadcasts) {
+        const { count, error } = await supabase
+          .from('broadcast_queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', b.id)
+          .eq('status', 'pending');
+        
+        if (!error && isMounted) {
+          counts[b.id] = count || 0;
+        }
+      }
+      
+      if (isMounted) {
+        setPendingCounts(counts);
+      }
+    };
+    
+    loadPendingCounts();
+    
+    return () => { isMounted = false; };
+  }, [broadcasts]);
 
   useEffect(() => {
     // Load stats for each broadcast - properly handle async operations
@@ -1112,13 +1147,20 @@ export const VoiceBroadcastManager: React.FC = () => {
               <Card key={broadcast.id}>
                 <CardHeader className="pb-2">
                   {/* Step Progress Indicator */}
-                  <div className="mb-2">
-                    <BroadcastStepIndicator
-                      hasAudio={!!broadcast.audio_url}
-                      hasLeads={(broadcastStats.pending || 0) > 0 || (broadcast.total_leads || 0) > 0}
-                      isGeneratingAudio={generatingAudioId === broadcast.id}
-                    />
-                  </div>
+                  {/* Use pendingCounts for reliable immediate display, fallback to broadcastStats */}
+                  {(() => {
+                    const reliablePendingCount = pendingCounts[broadcast.id] ?? broadcastStats.pending ?? 0;
+                    const hasLeads = reliablePendingCount > 0 || (broadcast.total_leads || 0) > 0;
+                    return (
+                      <div className="mb-2">
+                        <BroadcastStepIndicator
+                          hasAudio={!!broadcast.audio_url}
+                          hasLeads={hasLeads}
+                          isGeneratingAudio={generatingAudioId === broadcast.id}
+                        />
+                      </div>
+                    );
+                  })()}
                   
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap items-center gap-3">
@@ -1151,108 +1193,119 @@ export const VoiceBroadcastManager: React.FC = () => {
                           </>
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">
-                            {/* Show "Add leads first" if no leads at all */}
-                            {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="text-amber-600 hover:text-amber-700 p-0 h-auto"
-                                onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
-                              >
-                                Add leads first →
-                              </Button>
-                            )}
-                            {/* Show "Reset & Run Again" if leads exist but none are pending (all completed) */}
-                            {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) > 0 && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => resetBroadcastQueue(broadcast.id)}
-                                disabled={isLoading}
-                                title="Reset all leads to pending and run broadcast again"
-                              >
-                                <RotateCcw className="h-4 w-4 mr-1" />
-                                Reset & Run Again
-                              </Button>
-                            )}
-                            {/* Test Batch Button - With Warning Styling */}
-                            {(broadcastStats.pending || 0) > 0 && broadcast.audio_url && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-amber-500/50 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
-                                    onClick={() => setTestConfirmBroadcastId(broadcast.id)}
-                                    disabled={isLoading || testingBroadcastId === broadcast.id}
-                                  >
-                                    {testingBroadcastId === broadcast.id ? (
-                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                    ) : (
-                                      <TestTube className="h-4 w-4 mr-1" />
+                            {/* Use reliable pending count from direct DB query */}
+                            {(() => {
+                              const reliablePendingCount = pendingCounts[broadcast.id] ?? broadcastStats.pending ?? 0;
+                              const hasLeads = reliablePendingCount > 0 || (broadcast.total_leads || 0) > 0;
+                              const hasPendingLeads = reliablePendingCount > 0;
+                              
+                              return (
+                                <>
+                                  {/* Show "Add leads first" if no leads at all */}
+                                  {!hasLeads && (
+                                    <Button
+                                      variant="link"
+                                      size="sm"
+                                      className="text-amber-600 hover:text-amber-700 p-0 h-auto"
+                                      onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
+                                    >
+                                      Add leads first →
+                                    </Button>
+                                  )}
+                                  {/* Show "Reset & Run Again" if leads exist but none are pending (all completed) */}
+                                  {!hasPendingLeads && hasLeads && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => resetBroadcastQueue(broadcast.id)}
+                                      disabled={isLoading}
+                                      title="Reset all leads to pending and run broadcast again"
+                                    >
+                                      <RotateCcw className="h-4 w-4 mr-1" />
+                                      Reset & Run Again
+                                    </Button>
+                                  )}
+                                  {/* Test Batch Button - With Warning Styling */}
+                                  {hasPendingLeads && broadcast.audio_url && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="border-amber-500/50 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                          onClick={() => setTestConfirmBroadcastId(broadcast.id)}
+                                          disabled={isLoading || testingBroadcastId === broadcast.id}
+                                        >
+                                          {testingBroadcastId === broadcast.id ? (
+                                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                          ) : (
+                                            <TestTube className="h-4 w-4 mr-1" />
+                                          )}
+                                          Test 10
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        <p className="font-medium">⚠️ Makes 10 REAL calls</p>
+                                        <p className="text-xs text-muted-foreground">This will dial 10 leads from your queue</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                  {/* Start Button with Tooltip */}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span>
+                                        <Button
+                                          size="sm"
+                                          onClick={async () => {
+                                            // Run readiness check before starting
+                                            setStartingBroadcastId(broadcast.id);
+                                            const result = await checkBroadcastReadiness(broadcast.id);
+                                            setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
+                                            if (result.isReady) {
+                                              const leadCount = broadcast.total_leads || 0;
+                                              // Check for high volume and low phone numbers
+                                              if (leadCount >= 1000) {
+                                                const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
+                                                const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
+                                                const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
+                                                setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
+                                                setStartingBroadcastId(null);
+                                                return;
+                                              }
+                                              // Cleanup stuck calls first
+                                              await cleanupStuckCalls(broadcast.id);
+                                              await startBroadcast(broadcast.id);
+                                            } else {
+                                              toast({
+                                                title: "Broadcast Not Ready",
+                                                description: result.blockingReasons.join(', '),
+                                                variant: "destructive",
+                                              });
+                                            }
+                                            setStartingBroadcastId(null);
+                                          }}
+                                          disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || !hasPendingLeads}
+                                        >
+                                          {startingBroadcastId === broadcast.id ? (
+                                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                          ) : (
+                                            <Play className="h-4 w-4 mr-1" />
+                                          )}
+                                          {startingBroadcastId === broadcast.id ? 'Checking...' : 'Start'}
+                                        </Button>
+                                      </span>
+                                    </TooltipTrigger>
+                                    {(!broadcast.audio_url || !hasPendingLeads) && (
+                                      <TooltipContent side="bottom">
+                                        {!broadcast.audio_url 
+                                          ? "Generate audio first →" 
+                                          : "No pending leads - Reset queue or add leads"}
+                                      </TooltipContent>
                                     )}
-                                    Test 10
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">
-                                  <p className="font-medium">⚠️ Makes 10 REAL calls</p>
-                                  <p className="text-xs text-muted-foreground">This will dial 10 leads from your queue</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                            {/* Start Button with Tooltip */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span>
-                                  <Button
-                                    size="sm"
-                                    onClick={async () => {
-                                      // Run readiness check before starting
-                                      setStartingBroadcastId(broadcast.id);
-                                      const result = await checkBroadcastReadiness(broadcast.id);
-                                      setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
-                                      if (result.isReady) {
-                                        const leadCount = broadcast.total_leads || 0;
-                                        // Check for high volume and low phone numbers
-                                        if (leadCount >= 1000) {
-                                          const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
-                                          const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
-                                          const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
-                                          setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
-                                          setStartingBroadcastId(null);
-                                          return;
-                                        }
-                                        // Cleanup stuck calls first
-                                        await cleanupStuckCalls(broadcast.id);
-                                        await startBroadcast(broadcast.id);
-                                      } else {
-                                        toast({
-                                          title: "Broadcast Not Ready",
-                                          description: result.blockingReasons.join(', '),
-                                          variant: "destructive",
-                                        });
-                                      }
-                                      setStartingBroadcastId(null);
-                                    }}
-                                    disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
-                                  >
-                                    {startingBroadcastId === broadcast.id ? (
-                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                    ) : (
-                                      <Play className="h-4 w-4 mr-1" />
-                                    )}
-                                    {startingBroadcastId === broadcast.id ? 'Checking...' : 'Start'}
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              {(!broadcast.audio_url || (broadcastStats.pending || 0) === 0) && (
-                                <TooltipContent side="bottom">
-                                  {!broadcast.audio_url 
-                                    ? "Generate audio first →" 
-                                    : "No pending leads - Reset queue or add leads"}
-                                </TooltipContent>
-                              )}
-                            </Tooltip>
+                                  </Tooltip>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                         {/* Generate Audio Button with Loading State */}
