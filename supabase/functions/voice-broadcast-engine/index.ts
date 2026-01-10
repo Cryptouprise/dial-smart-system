@@ -210,6 +210,80 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
+// Validate that a phone number exists in Twilio account
+async function validateTwilioNumber(
+  accountSid: string, 
+  authToken: string, 
+  phoneNumber: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`,
+      {
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      return { valid: false, error: `Twilio API returned ${response.status}` };
+    }
+    
+    const data = await response.json();
+    const found = data.incoming_phone_numbers && data.incoming_phone_numbers.length > 0;
+    
+    if (!found) {
+      return { 
+        valid: false, 
+        error: `Number ${phoneNumber} is not registered in your Twilio account. Please verify ownership in Twilio Console.` 
+      };
+    }
+    
+    return { valid: true };
+  } catch (e: any) {
+    console.error('Failed to validate Twilio number:', e);
+    return { valid: false, error: e.message };
+  }
+}
+
+// Parse Twilio error response for actionable messages
+function parseTwilioError(errorText: string, fromNumber: string, toNumber: string): string {
+  try {
+    const errorData = JSON.parse(errorText);
+    const errorCode = errorData.code;
+    const errorMessage = errorData.message;
+    
+    // Common Twilio errors with actionable messages
+    switch (errorCode) {
+      case 21211:
+        return `Invalid 'To' number: ${toNumber} is not a valid phone number`;
+      case 21214:
+        return `'To' number ${toNumber} is not reachable or invalid`;
+      case 21217:
+        return `Phone number ${toNumber} requires a geographic permission you don't have`;
+      case 21608:
+        return `'From' number ${fromNumber} is not owned by this Twilio account. Please verify in Twilio Console.`;
+      case 21610:
+        return `SMS has been blocked for ${toNumber} (opted out)`;
+      case 21612:
+        return `'To' number ${toNumber} is not currently reachable`;
+      case 21614:
+        return `'To' number ${toNumber} is not a valid mobile number`;
+      case 21216:
+        return `Account is not authorized to call ${toNumber}`;
+      case 21219:
+        return `'From' number ${fromNumber} does not match verification rules`;
+      case 21220:
+        return `Invalid From number ${fromNumber} for this account`;
+      default:
+        return errorMessage || `Twilio error ${errorCode}: ${errorText}`;
+    }
+  } catch {
+    return errorText;
+  }
+}
+
 // Make a call using Twilio with optional AMD
 async function callWithTwilio(
   accountSid: string,
@@ -222,11 +296,22 @@ async function callWithTwilio(
   dtmfHandlerUrl: string,
   transferNumber?: string,
   amdEnabled: boolean = false,
-  amdCallbackUrl?: string
+  amdCallbackUrl?: string,
+  validateFromNumber: boolean = false
 ): Promise<CallResult> {
   try {
     console.log(`Making Twilio call from ${fromNumber} to ${toNumber}${amdEnabled ? ' with AMD enabled' : ''}`);
     console.log(`Audio URL: ${audioUrl}`);
+    
+    // Optionally validate that From number exists in Twilio
+    if (validateFromNumber) {
+      const validation = await validateTwilioNumber(accountSid, authToken, fromNumber);
+      if (!validation.valid) {
+        console.error(`Twilio number validation failed: ${validation.error}`);
+        return { success: false, provider: 'twilio', error: validation.error };
+      }
+      console.log(`✅ Twilio number ${fromNumber} validated`);
+    }
     
     // Build DTMF action URL with transfer number if available
     const dtmfActionUrl = transferNumber 
@@ -288,10 +373,12 @@ async function callWithTwilio(
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Twilio API error:', errorText);
-      return { success: false, provider: 'twilio', error: errorText };
+      const parsedError = parseTwilioError(errorText, fromNumber, toNumber);
+      return { success: false, provider: 'twilio', error: parsedError };
     }
 
     const result = await response.json();
+    console.log(`✅ Twilio call created: ${result.sid} (status: ${result.status})`);
     return { success: true, provider: 'twilio', callId: result.sid };
   } catch (error: any) {
     console.error('Twilio call error:', error);
@@ -523,14 +610,33 @@ serve(async (req) => {
           throw new Error(errorMsg);
         }
 
-        // First, cleanup any stuck calls from previous runs
+        // First, cleanup any stuck calls from previous runs (calls stuck in 'calling' for >5 min)
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-        await supabase
+        const { data: stuckCalls, error: stuckError } = await supabase
           .from('broadcast_queue')
-          .update({ status: 'pending' })
+          .update({ 
+            status: 'failed',
+            // Note: We can't add error_message here as it may not exist, but we log it
+          })
           .eq('broadcast_id', broadcastId)
           .eq('status', 'calling')
-          .lt('updated_at', fiveMinutesAgo);
+          .lt('updated_at', fiveMinutesAgo)
+          .select('id, phone_number, call_sid');
+        
+        if (stuckCalls && stuckCalls.length > 0) {
+          console.log(`⚠️ Found ${stuckCalls.length} stuck calls (>5 min in 'calling' status) - marked as failed`);
+          stuckCalls.forEach(sc => {
+            console.log(`  - ${sc.phone_number} (call_sid: ${sc.call_sid || 'none'}) marked failed`);
+          });
+          
+          // Update broadcast with warning about stuck calls
+          await supabase.from('voice_broadcasts')
+            .update({ 
+              last_error: `${stuckCalls.length} calls timed out (stuck in calling status >5min). This usually means the From number isn't verified in Twilio.`,
+              last_error_at: new Date().toISOString()
+            })
+            .eq('id', broadcastId);
+        }
 
         // Check calling hours BEFORE starting (unless bypass is enabled)
         const bypassCallingHours = broadcast.bypass_calling_hours === true;
@@ -966,6 +1072,9 @@ serve(async (req) => {
                     amdCallbackUrl
                   );
                 } else {
+                  // Validate Twilio number on first call of this number to fail fast
+                  const shouldValidate = !callerNumber._twilio_validated;
+                  
                   callResult = await callWithTwilio(
                     providers.twilioAccountSid!,
                     providers.twilioAuthToken!,
@@ -977,8 +1086,14 @@ serve(async (req) => {
                     dtmfHandlerUrl,
                     transferNumber,
                     amdEnabled,
-                    amdCallbackUrl
+                    amdCallbackUrl,
+                    shouldValidate  // Validate From number ownership
                   );
+                  
+                  // Mark as validated so we don't re-validate every call
+                  if (callResult.success) {
+                    callerNumber._twilio_validated = true;
+                  }
                 }
                 break;
               case 'telnyx':
@@ -1039,19 +1154,33 @@ serve(async (req) => {
 
           } catch (callError: any) {
             console.error(`Error dispatching call to ${item.phone_number}:`, callError);
-            errors.push(`${item.phone_number}: ${callError.message}`);
+            const errorMsg = callError.message || 'Unknown error';
+            errors.push(`${item.phone_number}: ${errorMsg}`);
             
             // Mark as failed if max attempts reached
             const newAttempts = (item.attempts || 0) + 1;
             const maxAttempts = item.max_attempts || broadcast.max_attempts || 1;
+            const isFinalAttempt = newAttempts >= maxAttempts;
             
+            // Update queue item with error details
             await supabase
               .from('broadcast_queue')
               .update({ 
-                status: newAttempts >= maxAttempts ? 'failed' : 'pending',
+                status: isFinalAttempt ? 'failed' : 'pending',
                 attempts: newAttempts,
               })
               .eq('id', item.id);
+            
+            // If this looks like a Twilio number validation error, update the broadcast with a clear message
+            if (errorMsg.includes('not owned by this Twilio account') || 
+                errorMsg.includes('not registered in your Twilio account')) {
+              await supabase.from('voice_broadcasts')
+                .update({ 
+                  last_error: `Number validation failed: ${errorMsg}. Please verify your phone numbers are registered in Twilio Console.`,
+                  last_error_at: new Date().toISOString()
+                })
+                .eq('id', broadcastId);
+            }
           }
         }
 
