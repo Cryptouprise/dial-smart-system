@@ -136,10 +136,15 @@ serve(async (req) => {
 
         if (insertError) throw insertError;
 
-        // Update broadcast total leads count
+        // Sync broadcast total_leads count with actual queue count
+        const { count: actualQueueCount } = await supabase
+          .from('broadcast_queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId);
+
         await supabase
           .from('voice_broadcasts')
-          .update({ total_leads: broadcast.total_leads + newLeads.length })
+          .update({ total_leads: actualQueueCount || 0 })
           .eq('id', broadcastId);
 
         console.log(`Added ${newLeads.length} leads to broadcast queue`);
@@ -204,10 +209,15 @@ serve(async (req) => {
 
         if (insertError) throw insertError;
 
-        // Update broadcast total leads count
+        // Sync broadcast total_leads count with actual queue count
+        const { count: actualQueueCount } = await supabase
+          .from('broadcast_queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId);
+
         await supabase
           .from('voice_broadcasts')
-          .update({ total_leads: broadcast.total_leads + newNumbers.length })
+          .update({ total_leads: actualQueueCount || 0 })
           .eq('id', broadcastId);
 
         return new Response(
