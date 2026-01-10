@@ -119,10 +119,10 @@ export const useBroadcastReadiness = () => {
         .eq('status', 'active')
         .eq('is_spam', false);
 
-      // Filter out quarantined and Retell-only numbers for voice broadcasts
+      // Filter out quarantined numbers only - Retell-registered numbers CAN be used for broadcasts
+      // because the engine forces Twilio for audio playback regardless of retell_phone_id
       const now = new Date();
       const availableNumbers = phoneNumbers?.filter(p => {
-        if (p.retell_phone_id && broadcast.ivr_mode !== 'ai_conversational') return false;
         if (p.quarantine_until && new Date(p.quarantine_until) > now) return false;
         return true;
       }) || [];
@@ -356,12 +356,12 @@ export const useBroadcastReadiness = () => {
         };
       }
 
-      // Temporarily limit the batch size for testing
+      // Call engine with testBatchSize to limit calls and NOT set broadcast to active
       const response = await supabase.functions.invoke('voice-broadcast-engine', {
         body: { 
           action: 'start', 
           broadcastId,
-          // Engine will respect calls_per_minute from broadcast settings
+          testBatchSize: testSize, // Limit batch size for testing
         }
       });
 

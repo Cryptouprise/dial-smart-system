@@ -496,9 +496,12 @@ serve(async (req) => {
     }
 
     const requestBody = await req.json();
-    const { action, broadcastId, queueItemId, digit } = requestBody;
+    const { action, broadcastId, queueItemId, digit, testBatchSize } = requestBody;
+    
+    // Test mode: if testBatchSize is provided, limit calls and don't set status to active
+    const isTestMode = typeof testBatchSize === 'number' && testBatchSize > 0;
 
-    console.log(`Voice broadcast engine action: ${action} for broadcast ${broadcastId}`);
+    console.log(`Voice broadcast engine action: ${action} for broadcast ${broadcastId}${isTestMode ? ` (TEST MODE: ${testBatchSize} calls)` : ''}`);
 
     // Verify broadcast ownership
     const { data: broadcast, error: broadcastError } = await supabase
@@ -578,13 +581,17 @@ serve(async (req) => {
           throw new Error('No pending calls in the queue. Add leads first.');
         }
 
-        // Update broadcast status
-        const { error: updateStatusError } = await supabase
-          .from('voice_broadcasts')
-          .update({ status: 'active' })
-          .eq('id', broadcastId);
+        // Update broadcast status only if NOT in test mode
+        if (!isTestMode) {
+          const { error: updateStatusError } = await supabase
+            .from('voice_broadcasts')
+            .update({ status: 'active' })
+            .eq('id', broadcastId);
 
-        if (updateStatusError) throw updateStatusError;
+          if (updateStatusError) throw updateStatusError;
+        } else {
+          console.log('Test mode: skipping status update to active');
+        }
 
         // Get available phone numbers with provider info - filter by rotation_enabled
         const { data: phoneNumbers, error: numbersError } = await supabase
@@ -727,11 +734,12 @@ serve(async (req) => {
           }
         }
 
-        // Calculate actual batch size accounting for concurrent limit
+        // Calculate actual batch size accounting for concurrent limit and test mode
         const availableConcurrency = MAX_CONCURRENT_CALLS - currentConcurrent;
-        const batchSize = Math.min(broadcast.calls_per_minute || 50, pendingCount, availableConcurrency);
+        const maxBatchSize = isTestMode ? testBatchSize : (broadcast.calls_per_minute || 50);
+        const batchSize = Math.min(maxBatchSize, pendingCount, availableConcurrency);
         
-        console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency})`);
+        console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency}${isTestMode ? `, test limit: ${testBatchSize}` : ''})`);
         
         const { data: queueItems, error: queueError } = await supabase
           .from('broadcast_queue')
