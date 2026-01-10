@@ -784,6 +784,72 @@ serve(async (req) => {
           }
           
           console.log(`[Broadcast] Filtered to ${rotationNumbers.length} Twilio/Telnyx numbers for audio broadcast`);
+          
+          // ===== PRE-VALIDATE TWILIO NUMBERS BEFORE STARTING =====
+          // This catches the "From number not owned" error upfront instead of mid-broadcast
+          if (providers.twilioAccountSid && providers.twilioAuthToken) {
+            const twilioNumbers = rotationNumbers.filter(n => 
+              n.provider === 'twilio' || (!n.carrier_name?.toLowerCase().includes('telnyx') && !n.provider?.includes('telnyx'))
+            );
+            
+            if (twilioNumbers.length > 0) {
+              console.log(`[Broadcast] Pre-validating ${twilioNumbers.length} Twilio numbers...`);
+              
+              // If a specific caller_id is set, validate just that one
+              const numbersToValidate = broadcast.caller_id 
+                ? twilioNumbers.filter(n => n.number === broadcast.caller_id)
+                : twilioNumbers.slice(0, 5); // Validate first 5 to catch issues quickly
+              
+              const invalidNumbers: string[] = [];
+              for (const num of numbersToValidate) {
+                const validation = await validateTwilioNumber(
+                  providers.twilioAccountSid,
+                  providers.twilioAuthToken,
+                  num.number
+                );
+                
+                if (!validation.valid) {
+                  console.warn(`[Broadcast] Twilio validation failed for ${num.number}: ${validation.error}`);
+                  invalidNumbers.push(num.number);
+                  
+                  // Remove from rotation pool
+                  rotationNumbers = rotationNumbers.filter(n => n.id !== num.id);
+                  
+                  // Mark in database so we don't keep trying
+                  await supabase.from('phone_numbers')
+                    .update({ 
+                      status: 'unverified',
+                      notes: `Twilio validation failed: ${validation.error}`
+                    })
+                    .eq('id', num.id);
+                } else {
+                  console.log(`[Broadcast] ✅ Twilio validated: ${num.number}`);
+                }
+              }
+              
+              // If the specified caller_id is invalid, fail immediately
+              if (broadcast.caller_id && invalidNumbers.includes(broadcast.caller_id)) {
+                const errorMsg = `Selected caller ID ${broadcast.caller_id} is not registered in your Twilio account. Please verify this number in Twilio Console or select a different number.`;
+                await supabase.from('voice_broadcasts').update({ 
+                  last_error: errorMsg, 
+                  last_error_at: new Date().toISOString(),
+                  status: 'failed' 
+                }).eq('id', broadcastId);
+                throw new Error(errorMsg);
+              }
+              
+              // If all Twilio numbers are invalid, fail
+              if (rotationNumbers.length === 0) {
+                const errorMsg = `All Twilio numbers failed validation. Numbers not found in your Twilio account: ${invalidNumbers.join(', ')}. Please verify in Twilio Console.`;
+                await supabase.from('voice_broadcasts').update({ 
+                  last_error: errorMsg, 
+                  last_error_at: new Date().toISOString(),
+                  status: 'failed' 
+                }).eq('id', broadcastId);
+                throw new Error(errorMsg);
+              }
+            }
+          }
         }
 
         // Determine which provider to use based on available number types
