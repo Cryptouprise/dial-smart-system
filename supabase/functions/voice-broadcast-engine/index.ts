@@ -883,21 +883,29 @@ serve(async (req) => {
         console.log(`[Broadcast] Selected provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
 
 
-        // Fetch SIP trunk configurations for cost savings
-        const { data: sipConfigs } = await supabase
-          .from('sip_trunk_configs')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .order('is_default', { ascending: false });
+        // === SIP TRUNK CONFIGURATION (OPT-IN ONLY) ===
+        // SIP trunk is now opt-in per broadcast for reliability
+        // Default behavior is direct API (like Quick Test) which is proven to work
+        let sipConfig: SipTrunkConfig | null = null;
         
-        // Get the default or first active SIP config
-        const sipConfig: SipTrunkConfig | null = sipConfigs?.[0] || null;
-        
-        if (sipConfig) {
-          console.log(`SIP trunk configured: ${sipConfig.provider_type} - ${sipConfig.id}`);
+        // Only fetch SIP config if broadcast explicitly requests SIP trunk usage
+        if (broadcast.use_sip_trunk === true) {
+          const { data: sipConfigs } = await supabase
+            .from('sip_trunk_configs')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .order('is_default', { ascending: false });
+          
+          sipConfig = sipConfigs?.[0] || null;
+          
+          if (sipConfig) {
+            console.log(`✅ SIP trunk enabled for this broadcast: ${sipConfig.provider_type} - ${sipConfig.id}`);
+          } else {
+            console.log('⚠️ Broadcast requested SIP trunk but none configured, falling back to direct API');
+          }
         } else {
-          console.log('No SIP trunk configured, using standard API calls');
+          console.log('📞 Using direct API for calls (SIP trunk disabled or not requested)');
         }
 
         console.log(`Using provider: ${selectedProvider} (hasAudio: ${hasAudioUrl})`);
