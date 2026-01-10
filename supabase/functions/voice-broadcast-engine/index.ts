@@ -917,6 +917,15 @@ serve(async (req) => {
                 sipTrunkCalls++;
               }
               
+              // BULLETPROOF: Store call_sid on queue item for reliable webhook matching
+              if (callResult.callId) {
+                await supabase
+                  .from('broadcast_queue')
+                  .update({ call_sid: callResult.callId })
+                  .eq('id', item.id);
+                console.log(`Stored call_sid ${callResult.callId} on queue item ${item.id}`);
+              }
+              
               // Update phone number usage
               await supabase
                 .from('phone_numbers')
