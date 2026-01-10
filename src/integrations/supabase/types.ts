@@ -660,6 +660,7 @@ export type Database = {
           attempts: number | null
           broadcast_id: string
           call_duration_seconds: number | null
+          call_sid: string | null
           callback_scheduled_at: string | null
           created_at: string | null
           dtmf_pressed: string | null
@@ -668,6 +669,7 @@ export type Database = {
           lead_name: string | null
           max_attempts: number | null
           phone_number: string
+          recording_url: string | null
           scheduled_at: string | null
           status: string
           transfer_status: string | null
@@ -678,6 +680,7 @@ export type Database = {
           attempts?: number | null
           broadcast_id: string
           call_duration_seconds?: number | null
+          call_sid?: string | null
           callback_scheduled_at?: string | null
           created_at?: string | null
           dtmf_pressed?: string | null
@@ -686,6 +689,7 @@ export type Database = {
           lead_name?: string | null
           max_attempts?: number | null
           phone_number: string
+          recording_url?: string | null
           scheduled_at?: string | null
           status?: string
           transfer_status?: string | null
@@ -696,6 +700,7 @@ export type Database = {
           attempts?: number | null
           broadcast_id?: string
           call_duration_seconds?: number | null
+          call_sid?: string | null
           callback_scheduled_at?: string | null
           created_at?: string | null
           dtmf_pressed?: string | null
@@ -704,6 +709,7 @@ export type Database = {
           lead_name?: string | null
           max_attempts?: number | null
           phone_number?: string
+          recording_url?: string | null
           scheduled_at?: string | null
           status?: string
           transfer_status?: string | null

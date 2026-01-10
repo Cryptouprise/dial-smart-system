@@ -212,17 +212,18 @@ serve(async (req) => {
   }
 });
 
-// Handle Twilio status callback webhooks
+// Handle Twilio status callback webhooks - BULLETPROOF matching via call_sid
 async function handleTwilioWebhook(supabase: any, payload: Record<string, string>) {
   const callSid = payload.CallSid;
   const callStatus = payload.CallStatus;
   const from = payload.From;
   const to = payload.To;
   const duration = payload.CallDuration ? parseInt(payload.CallDuration) : 0;
+  const recordingUrl = payload.RecordingUrl || null;
   
-  console.log(`Twilio webhook: CallSid=${callSid}, Status=${callStatus}, From=${from}, To=${to}, Duration=${duration}`);
+  console.log(`[Twilio Webhook] CallSid=${callSid}, Status=${callStatus}, From=${from}, To=${to}, Duration=${duration}`);
 
-  // Map Twilio status to our status
+  // Map Twilio status to our internal status
   const statusMapping: Record<string, string> = {
     'queued': 'queued',
     'ringing': 'ringing',
@@ -230,68 +231,143 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     'completed': 'completed',
     'busy': 'busy',
     'failed': 'failed',
-    'no-answer': 'no-answer',
+    'no-answer': 'no_answer',
     'canceled': 'canceled',
   };
 
   const mappedStatus = statusMapping[callStatus] || callStatus;
 
-  // Try to find the broadcast queue item by phone number
-  const cleanTo = to?.replace(/[^\d+]/g, '') || '';
+  // BULLETPROOF MATCHING: First try to find by call_sid (most reliable)
+  let queueItem: any = null;
+  let queueError: any = null;
   
-  // Find queue item that's currently "calling" for this phone number
-  const { data: queueItem, error: queueError } = await supabase
-    .from('broadcast_queue')
-    .select('*, voice_broadcasts(*)')
-    .eq('status', 'calling')
-    .or(`phone_number.eq.${cleanTo},phone_number.eq.${cleanTo.replace('+', '')}`)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (callSid) {
+    const result = await supabase
+      .from('broadcast_queue')
+      .select('*, voice_broadcasts(*)')
+      .eq('call_sid', callSid)
+      .maybeSingle();
+    
+    queueItem = result.data;
+    queueError = result.error;
+    
+    if (queueItem) {
+      console.log(`[Twilio Webhook] Found queue item by call_sid: ${queueItem.id}`);
+    }
+  }
+  
+  // FALLBACK: If no call_sid match, try phone number matching (handles SIP and E.164 formats)
+  if (!queueItem && to) {
+    // Normalize the To field - handles sip:number@domain.com AND +1XXXXXXXXXX formats
+    let cleanTo = to;
+    
+    // Handle SIP URI format: sip:18324936169@example.com -> 18324936169
+    if (to.toLowerCase().startsWith('sip:')) {
+      cleanTo = to.replace(/^sip:/i, '').split('@')[0];
+    }
+    
+    // Remove all non-digit characters except leading +
+    cleanTo = cleanTo.replace(/[^\d+]/g, '');
+    
+    // Normalize to E.164 format
+    if (!cleanTo.startsWith('+')) {
+      cleanTo = cleanTo.length === 10 ? `+1${cleanTo}` : `+${cleanTo}`;
+    }
+    
+    console.log(`[Twilio Webhook] Normalized phone: ${to} -> ${cleanTo}`);
+    
+    // Try multiple phone formats for maximum matching
+    const phoneVariants = [
+      cleanTo,                                    // +18324936169
+      cleanTo.replace('+', ''),                   // 18324936169
+      cleanTo.replace(/^\+1/, ''),               // 8324936169 (no country code)
+    ];
+    
+    // Find queue item that's currently "calling" for this phone number
+    const result = await supabase
+      .from('broadcast_queue')
+      .select('*, voice_broadcasts(*)')
+      .in('status', ['calling', 'in_progress'])
+      .or(phoneVariants.map(p => `phone_number.eq.${p}`).join(','))
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    queueItem = result.data;
+    queueError = result.error;
+    
+    if (queueItem) {
+      console.log(`[Twilio Webhook] Found queue item by phone fallback: ${queueItem.id}`);
+      
+      // Store the call_sid for future webhooks (bulletproof for subsequent events)
+      if (callSid && !queueItem.call_sid) {
+        await supabase
+          .from('broadcast_queue')
+          .update({ call_sid: callSid })
+          .eq('id', queueItem.id);
+        console.log(`[Twilio Webhook] Stored call_sid ${callSid} on queue item ${queueItem.id}`);
+      }
+    }
+  }
 
   if (queueError) {
-    console.error('Error finding queue item:', queueError);
+    console.error('[Twilio Webhook] Error finding queue item:', queueError);
   }
 
   if (queueItem) {
-    console.log(`Found queue item: ${queueItem.id} for broadcast ${queueItem.broadcast_id}`);
+    console.log(`[Twilio Webhook] Processing queue item: ${queueItem.id} for broadcast ${queueItem.broadcast_id}`);
     
-    // Determine final status
-    let finalStatus = 'pending';
+    // Determine final status based on call outcome
+    let finalStatus = queueItem.status;
     let updateBroadcastStats = false;
+    let shouldUpdateLead = false;
+    let shouldUpdatePipeline = false;
     
     if (callStatus === 'completed') {
       finalStatus = duration > 0 ? 'answered' : 'completed';
       updateBroadcastStats = true;
+      shouldUpdateLead = true;
+      shouldUpdatePipeline = duration > 0; // Move pipeline only if actually answered
     } else if (callStatus === 'no-answer') {
       finalStatus = 'no_answer';
       updateBroadcastStats = true;
+      shouldUpdateLead = true;
     } else if (callStatus === 'busy') {
       finalStatus = 'busy';
       updateBroadcastStats = true;
+      shouldUpdateLead = true;
     } else if (callStatus === 'failed' || callStatus === 'canceled') {
       finalStatus = 'failed';
       updateBroadcastStats = true;
     } else if (callStatus === 'in-progress') {
-      finalStatus = 'answered';
+      finalStatus = 'in_progress';
     } else if (callStatus === 'ringing') {
       finalStatus = 'calling';
     }
 
-    // Update queue item
+    // Update queue item with status, duration, recording
+    const queueUpdate: Record<string, any> = {
+      status: finalStatus,
+      updated_at: new Date().toISOString(),
+    };
+    
+    if (duration > 0) {
+      queueUpdate.call_duration_seconds = duration;
+    }
+    
+    if (recordingUrl) {
+      queueUpdate.recording_url = recordingUrl;
+    }
+    
     const { error: updateError } = await supabase
       .from('broadcast_queue')
-      .update({
-        status: finalStatus,
-        call_duration_seconds: duration || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(queueUpdate)
       .eq('id', queueItem.id);
 
     if (updateError) {
-      console.error('Error updating queue item:', updateError);
+      console.error('[Twilio Webhook] Error updating queue item:', updateError);
     } else {
-      console.log(`Updated queue item ${queueItem.id} to status: ${finalStatus}`);
+      console.log(`[Twilio Webhook] Updated queue item ${queueItem.id} to status: ${finalStatus}`);
     }
 
     // Update broadcast stats if call ended
@@ -308,24 +384,79 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
           .from('voice_broadcasts')
           .update(statsUpdate)
           .eq('id', queueItem.broadcast_id);
+        console.log(`[Twilio Webhook] Updated broadcast stats:`, statsUpdate);
       }
     }
 
-    // Update lead if linked
-    if (queueItem.lead_id && (callStatus === 'completed' || callStatus === 'no-answer' || callStatus === 'busy' || callStatus === 'failed')) {
-      const leadStatus = callStatus === 'completed' && duration > 0 ? 'contacted' : 
-                        callStatus === 'no-answer' ? 'no-answer' : 'contacted';
+    // Update lead status and clear callback if answered
+    if (shouldUpdateLead && queueItem.lead_id) {
+      const leadUpdate: Record<string, any> = {
+        last_contacted_at: new Date().toISOString(),
+      };
       
-      await supabase
+      if (finalStatus === 'answered') {
+        leadUpdate.status = 'contacted';
+        leadUpdate.next_callback_at = null; // Clear callback - call was made!
+      } else if (finalStatus === 'no_answer') {
+        // Don't change status, leave for retry
+      } else {
+        leadUpdate.status = 'contacted';
+      }
+      
+      const { error: leadError } = await supabase
         .from('leads')
-        .update({
-          last_contacted_at: new Date().toISOString(),
-          status: leadStatus,
-        })
+        .update(leadUpdate)
         .eq('id', queueItem.lead_id);
+      
+      if (leadError) {
+        console.error('[Twilio Webhook] Error updating lead:', leadError);
+      } else {
+        console.log(`[Twilio Webhook] Updated lead ${queueItem.lead_id}:`, leadUpdate);
+      }
+    }
+
+    // Move lead out of "Callback Scheduled" pipeline stage if call was answered
+    if (shouldUpdatePipeline && queueItem.lead_id) {
+      try {
+        // Get the broadcast owner's user_id
+        const userId = queueItem.voice_broadcasts?.user_id;
+        
+        if (userId) {
+          // Find "Contacted" pipeline board for this user
+          const { data: contactedBoard } = await supabase
+            .from('pipeline_boards')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('name', 'Contacted')
+            .maybeSingle();
+          
+          if (contactedBoard) {
+            // Move lead to Contacted stage
+            const { error: pipelineError } = await supabase
+              .from('lead_pipeline_positions')
+              .upsert({
+                user_id: userId,
+                lead_id: queueItem.lead_id,
+                pipeline_board_id: contactedBoard.id,
+                position: 0,
+                moved_at: new Date().toISOString(),
+                moved_by_user: false,
+                notes: `Auto-moved: Voice broadcast call answered (${duration}s)`
+              }, { onConflict: 'lead_id,user_id' });
+            
+            if (pipelineError) {
+              console.error('[Twilio Webhook] Error updating pipeline:', pipelineError);
+            } else {
+              console.log(`[Twilio Webhook] Moved lead ${queueItem.lead_id} to Contacted pipeline`);
+            }
+          }
+        }
+      } catch (pipelineErr) {
+        console.error('[Twilio Webhook] Pipeline update error:', pipelineErr);
+      }
     }
   } else {
-    console.log('No matching queue item found for this Twilio webhook');
+    console.log(`[Twilio Webhook] No matching queue item found for CallSid=${callSid}, To=${to}`);
   }
 
   // Return TwiML empty response for Twilio

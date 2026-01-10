@@ -6,7 +6,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { 
   Phone, PhoneOff, Clock, CheckCircle, XCircle, RefreshCw, 
   ChevronDown, ChevronUp, MessageSquare, Calendar, Users,
-  TrendingUp, AlertCircle, PhoneCall, PhoneMissed, Voicemail
+  TrendingUp, AlertCircle, PhoneCall, PhoneMissed, Voicemail,
+  Play, Pause
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -508,28 +509,7 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
               ) : (
                 <div className="space-y-2">
                   {calls.map((call) => (
-                    <div
-                      key={call.id}
-                      className="flex items-center justify-between p-2 border rounded-lg hover:bg-accent/50 transition-colors text-sm"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium truncate">
-                            {call.leads?.first_name || 'Unknown'} {call.leads?.last_name || ''}
-                          </span>
-                          {getStatusBadge(call.status, call.outcome)}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                          <span className="font-mono">{call.phone_number}</span>
-                          {call.duration_seconds > 0 && (
-                            <span>• {Math.floor(call.duration_seconds / 60)}:{(call.duration_seconds % 60).toString().padStart(2, '0')}</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                        {new Date(call.created_at).toLocaleTimeString()}
-                      </div>
-                    </div>
+                    <CallActivityRow key={call.id} call={call} getStatusBadge={getStatusBadge} />
                   ))}
                 </div>
               )}
@@ -537,6 +517,77 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
           </CollapsibleContent>
         </Card>
       </Collapsible>
+    </div>
+  );
+};
+
+// Recording player component for call activity rows
+const CallActivityRow = ({ call, getStatusBadge }: { call: any; getStatusBadge: (status: string, outcome?: string) => React.ReactNode }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioError, setAudioError] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+
+  const togglePlayback = () => {
+    if (!audioRef.current) return;
+    
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(() => setAudioError(true));
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleEnded = () => setIsPlaying(false);
+
+  return (
+    <div className="flex items-center justify-between p-2 border rounded-lg hover:bg-accent/50 transition-colors text-sm">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium truncate">
+            {call.leads?.first_name || 'Unknown'} {call.leads?.last_name || ''}
+          </span>
+          {getStatusBadge(call.status, call.outcome)}
+        </div>
+        <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+          <span className="font-mono">{call.phone_number}</span>
+          {call.duration_seconds > 0 && (
+            <span>• {Math.floor(call.duration_seconds / 60)}:{(call.duration_seconds % 60).toString().padStart(2, '0')}</span>
+          )}
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-2 ml-2">
+        {/* Recording playback button */}
+        {call.recording_url && !audioError && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={togglePlayback}
+              title={isPlaying ? 'Pause recording' : 'Play recording'}
+            >
+              {isPlaying ? (
+                <Pause className="h-3.5 w-3.5 text-primary" />
+              ) : (
+                <Play className="h-3.5 w-3.5 text-primary" />
+              )}
+            </Button>
+            <audio
+              ref={audioRef}
+              src={call.recording_url}
+              onEnded={handleEnded}
+              onError={() => setAudioError(true)}
+              preload="none"
+            />
+          </>
+        )}
+        
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {new Date(call.created_at).toLocaleTimeString()}
+        </span>
+      </div>
     </div>
   );
 };
