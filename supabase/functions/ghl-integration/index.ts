@@ -373,7 +373,7 @@ serve(async (req) => {
             console.log('[GHL] After date filter:', contacts.length, 'contacts');
           }
           
-          // Import to our leads table
+          // Import to our leads table with address fields
           const leadsToInsert = contacts.map((contact: any) => ({
             user_id: user.id,
             phone_number: contact.phone || contact.primaryPhone || '',
@@ -381,6 +381,11 @@ serve(async (req) => {
             last_name: contact.lastName || '',
             email: contact.email || '',
             company: contact.companyName || '',
+            // Address fields from GHL
+            address: contact.address1 || '',
+            city: contact.city || '',
+            state: contact.state || '',
+            zip_code: contact.postalCode || '',
             status: 'new',
             priority: 1,
             notes: `Imported from GHL - Contact ID: ${contact.id}`,
