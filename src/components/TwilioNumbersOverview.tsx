@@ -3,6 +3,7 @@
  * 
  * Provides full transparency into ALL Twilio numbers and their webhook configurations.
  * Shows which numbers point to your app vs GHL vs elsewhere.
+ * Includes Twilio number verification to ensure numbers actually exist in your account.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -44,10 +45,13 @@ import {
   Search,
   Settings,
   Globe,
-  MessageSquare,
   Loader2,
   X,
-  PhoneIncoming
+  PhoneIncoming,
+  ShieldCheck,
+  ShieldX,
+  Download,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -68,6 +72,10 @@ interface TwilioNumberDetail {
   // Derived fields
   webhook_destination: 'app' | 'ghl' | 'other' | 'none';
   in_app_database: boolean;
+  // Verification fields from DB
+  twilio_verified?: boolean;
+  twilio_verified_at?: string;
+  twilio_sid?: string;
 }
 
 const GHL_WEBHOOK_URL = 'https://services.msgsndr.com/conversations/providers/twilio/inbound_message';
@@ -87,6 +95,11 @@ const TwilioNumbersOverview: React.FC = () => {
   // Friendly name editing
   const [editingFriendlyName, setEditingFriendlyName] = useState<string | null>(null);
   const [friendlyNameValue, setFriendlyNameValue] = useState('');
+  // Verification states
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isRemovingInvalid, setIsRemovingInvalid] = useState(false);
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
 
   useEffect(() => {
     loadNumbers();
@@ -102,16 +115,15 @@ const TwilioNumbersOverview: React.FC = () => {
 
       if (twilioError) throw twilioError;
 
-      // Get numbers that are in our database
+      // Get numbers that are in our database with verification status
       const { data: dbNumbers } = await supabase
         .from('phone_numbers')
-        .select('number');
+        .select('number, twilio_verified, twilio_verified_at, twilio_sid');
 
-      const dbNumberSet = new Set(dbNumbers?.map(n => n.number) || []);
+      const dbNumberMap = new Map((dbNumbers || []).map(n => [n.number, n]));
       
       // Get the app's webhook URL
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://emonjusymdripmkvtttc.supabase.co';
-      const appUrl = `${supabaseUrl}/functions/v1/twilio-sms-webhook`;
+      const appUrl = `https://emonjusymdripmkvtttc.supabase.co/functions/v1/twilio-sms-webhook`;
       setAppWebhookUrl(appUrl);
 
       // Process numbers to determine webhook destination
@@ -128,6 +140,8 @@ const TwilioNumbersOverview: React.FC = () => {
           }
         }
 
+        const dbInfo = dbNumberMap.get(num.phone_number);
+
         return {
           sid: num.sid,
           phone_number: num.phone_number,
@@ -137,7 +151,10 @@ const TwilioNumbersOverview: React.FC = () => {
           capabilities: num.capabilities || { sms: false, voice: false, mms: false },
           status: num.status || 'active',
           webhook_destination: webhookDestination,
-          in_app_database: dbNumberSet.has(num.phone_number),
+          in_app_database: dbNumberMap.has(num.phone_number),
+          twilio_verified: dbInfo?.twilio_verified,
+          twilio_verified_at: dbInfo?.twilio_verified_at,
+          twilio_sid: dbInfo?.twilio_sid,
         };
       });
 
@@ -151,6 +168,97 @@ const TwilioNumbersOverview: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const verifyAllNumbers = async () => {
+    setIsVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-phone-numbers', {
+        body: { action: 'validate' }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Verification Complete',
+        description: `Checked ${data.summary.total_checked} numbers: ${data.summary.verified} verified, ${data.summary.not_found} not found in Twilio`,
+      });
+
+      await loadNumbers();
+    } catch (error) {
+      console.error('Verification failed:', error);
+      toast({
+        title: 'Verification Failed',
+        description: error instanceof Error ? error.message : 'Could not verify numbers',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const syncFromTwilio = async () => {
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-phone-numbers', {
+        body: { action: 'sync' }
+      });
+
+      if (error) throw error;
+
+      if (data.summary.imported > 0) {
+        toast({
+          title: 'Sync Complete',
+          description: `Imported ${data.summary.imported} new numbers from Twilio`,
+        });
+      } else {
+        toast({
+          title: 'Already Synced',
+          description: 'All Twilio numbers are already in the database',
+        });
+      }
+
+      await loadNumbers();
+    } catch (error) {
+      console.error('Sync failed:', error);
+      toast({
+        title: 'Sync Failed',
+        description: error instanceof Error ? error.message : 'Could not sync from Twilio',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const removeInvalidNumbers = async () => {
+    setIsRemovingInvalid(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-phone-numbers', {
+        body: { action: 'remove_invalid' }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Cleanup Complete',
+        description: data.removed > 0 
+          ? `Removed ${data.removed} invalid numbers from database`
+          : 'No invalid numbers to remove',
+      });
+
+      setShowRemoveDialog(false);
+      await loadNumbers();
+    } catch (error) {
+      console.error('Remove failed:', error);
+      toast({
+        title: 'Cleanup Failed',
+        description: error instanceof Error ? error.message : 'Could not remove invalid numbers',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRemovingInvalid(false);
     }
   };
 
@@ -391,6 +499,9 @@ const TwilioNumbersOverview: React.FC = () => {
     pointingToOther: numbers.filter(n => n.webhook_destination === 'other').length,
     notConfigured: numbers.filter(n => n.webhook_destination === 'none').length,
     inDatabase: numbers.filter(n => n.in_app_database).length,
+    verified: numbers.filter(n => n.twilio_verified === true).length,
+    unverified: numbers.filter(n => n.twilio_verified === false && n.twilio_verified_at).length,
+    unchecked: numbers.filter(n => n.in_app_database && !n.twilio_verified_at).length,
   };
 
   return (
@@ -417,11 +528,33 @@ const TwilioNumbersOverview: React.FC = () => {
       </Card>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">{stats.total}</div>
             <div className="text-sm text-muted-foreground">Total Numbers</div>
+          </CardContent>
+        </Card>
+        <Card className="border-green-200 dark:border-green-900">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-green-600">{stats.verified}</div>
+            <div className="text-sm text-muted-foreground flex items-center gap-1">
+              <ShieldCheck className="h-3 w-3" /> Verified
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200 dark:border-red-900">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-red-600">{stats.unverified}</div>
+            <div className="text-sm text-muted-foreground flex items-center gap-1">
+              <ShieldX className="h-3 w-3" /> Not in Twilio
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-yellow-200 dark:border-yellow-900">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-yellow-600">{stats.unchecked}</div>
+            <div className="text-sm text-muted-foreground">Unchecked</div>
           </CardContent>
         </Card>
         <Card className="border-green-200 dark:border-green-900">
@@ -436,42 +569,65 @@ const TwilioNumbersOverview: React.FC = () => {
             <div className="text-sm text-muted-foreground">→ GoHighLevel</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-muted-foreground">{stats.pointingToOther}</div>
-            <div className="text-sm text-muted-foreground">→ Other</div>
-          </CardContent>
-        </Card>
-        <Card className="border-red-200 dark:border-red-900">
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-red-600">{stats.notConfigured}</div>
-            <div className="text-sm text-muted-foreground">Not Configured</div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Main Table Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Phone className="h-5 w-5" />
                 All Twilio Numbers
               </CardTitle>
               <CardDescription>
-                Complete view of all numbers and their webhook destinations
+                Complete view of all numbers with verification status and webhook destinations
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={verifyAllNumbers}
+                disabled={isVerifying}
+              >
+                {isVerifying ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                )}
+                Verify All
+              </Button>
               <Button
                 variant="outline"
+                size="sm"
+                onClick={syncFromTwilio}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Sync from Twilio
+              </Button>
+              {stats.unverified > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowRemoveDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Remove Invalid ({stats.unverified})
+                </Button>
+              )}
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={loadNumbers}
                 disabled={isLoading}
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                Refresh
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
@@ -564,10 +720,10 @@ const TwilioNumbersOverview: React.FC = () => {
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>Phone Number</TableHead>
+                    <TableHead>Verified</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>SMS Webhook Destination</TableHead>
+                    <TableHead>SMS Webhook</TableHead>
                     <TableHead>Capabilities</TableHead>
-                    <TableHead>In Database</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -589,6 +745,48 @@ const TwilioNumbersOverview: React.FC = () => {
                         </TableCell>
                         <TableCell className="font-mono">
                           {formatPhoneNumber(num.phone_number)}
+                        </TableCell>
+                        <TableCell>
+                          {num.twilio_verified === true ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="default" className="gap-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                    <ShieldCheck className="h-3 w-3" />
+                                    Verified
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Confirmed in Twilio account</p>
+                                  {num.twilio_verified_at && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Verified: {new Date(num.twilio_verified_at).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : num.twilio_verified === false && num.twilio_verified_at ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="destructive" className="gap-1">
+                                    <ShieldX className="h-3 w-3" />
+                                    Not Found
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Not found in your Twilio account</p>
+                                  <p className="text-xs">This number may not work for calls/SMS</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <Badge variant="outline" className="gap-1 text-muted-foreground">
+                              <Info className="h-3 w-3" />
+                              Unchecked
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           {editingFriendlyName === num.phone_number ? (
@@ -660,16 +858,6 @@ const TwilioNumbersOverview: React.FC = () => {
                               <Badge variant="outline" className="text-xs">MMS</Badge>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {num.in_app_database ? (
-                            <Badge variant="default" className="gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Yes
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary">No</Badge>
-                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -812,6 +1000,53 @@ const TwilioNumbersOverview: React.FC = () => {
                 'Revert to GoHighLevel'
               ) : (
                 'Clear Webhooks'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Invalid Numbers Dialog */}
+      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Remove Invalid Numbers
+            </DialogTitle>
+            <DialogDescription>
+              This will remove {stats.unverified} number(s) from your database that were not found in your Twilio account.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-md">
+              <p className="text-sm text-red-800 dark:text-red-200">
+                <strong>Warning:</strong> These numbers are in your database but do NOT exist in your Twilio account. 
+                They cannot be used for calls or SMS. Removing them will clean up your number pool.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRemoveDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={removeInvalidNumbers} 
+              disabled={isRemovingInvalid}
+            >
+              {isRemovingInvalid ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Remove Invalid Numbers
+                </>
               )}
             </Button>
           </DialogFooter>
