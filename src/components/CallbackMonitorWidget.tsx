@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,30 +10,12 @@ import {
   Clock, 
   RefreshCw, 
   User, 
-  Calendar,
   X,
   Play,
-  AlertTriangle,
-  ExternalLink
+  AlertTriangle
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
-
-interface CallbackEntry {
-  id: string;
-  lead_id: string;
-  scheduled_at: string;
-  priority: number;
-  status: string;
-  phone_number: string;
-  campaign_id: string;
-  source: 'dialing_queue' | 'scheduled_follow_up';
-  lead?: {
-    first_name: string | null;
-    last_name: string | null;
-    phone_number: string;
-    notes: string | null;
-  };
-}
+import { useCallbacks, UnifiedCallback } from '@/hooks/useCallbacks';
 
 interface CallbackMonitorWidgetProps {
   onOverdueCountChange?: (count: number) => void;
@@ -42,120 +24,32 @@ interface CallbackMonitorWidgetProps {
 export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({ 
   onOverdueCountChange 
 }) => {
-  const [callbacks, setCallbacks] = useState<CallbackEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { callbacks, isLoading, overdueCount, refresh } = useCallbacks();
   const { toast } = useToast();
 
-  const loadCallbacks = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Fetch from dialing_queues where priority >= 2 (callbacks have priority 2)
-      const { data: queueCallbacks, error: queueError } = await supabase
-        .from('dialing_queues')
-        .select(`
-          id, lead_id, scheduled_at, priority, status, phone_number, campaign_id,
-          leads (first_name, last_name, phone_number, notes)
-        `)
-        .eq('status', 'pending')
-        .gte('priority', 2)
-        .order('scheduled_at', { ascending: true });
-
-      if (queueError) {
-        console.error('Error fetching queue callbacks:', queueError);
-      }
-
-      // Fetch from scheduled_follow_ups with action_type containing 'call'
-      const { data: followUpCallbacks, error: followUpError } = await supabase
-        .from('scheduled_follow_ups')
-        .select(`
-          id, lead_id, scheduled_at, status, action_type,
-          leads (first_name, last_name, phone_number, notes)
-        `)
-        .eq('user_id', user.id)
-        .eq('status', 'pending')
-        .ilike('action_type', '%call%')
-        .order('scheduled_at', { ascending: true });
-
-      if (followUpError) {
-        console.error('Error fetching follow-up callbacks:', followUpError);
-      }
-
-      // Combine and deduplicate by lead_id, preferring dialing_queue entries
-      const combined: CallbackEntry[] = [];
-      const seenLeadIds = new Set<string>();
-
-      // Add queue callbacks first (higher priority source)
-      for (const qc of queueCallbacks || []) {
-        if (!seenLeadIds.has(qc.lead_id)) {
-          seenLeadIds.add(qc.lead_id);
-          combined.push({
-            id: qc.id,
-            lead_id: qc.lead_id,
-            scheduled_at: qc.scheduled_at,
-            priority: qc.priority,
-            status: qc.status,
-            phone_number: qc.phone_number,
-            campaign_id: qc.campaign_id,
-            source: 'dialing_queue',
-            lead: qc.leads as any
-          });
-        }
-      }
-
-      // Add follow-up callbacks that aren't already in the list
-      for (const fc of followUpCallbacks || []) {
-        if (!seenLeadIds.has(fc.lead_id)) {
-          seenLeadIds.add(fc.lead_id);
-          combined.push({
-            id: fc.id,
-            lead_id: fc.lead_id,
-            scheduled_at: fc.scheduled_at,
-            priority: 1,
-            status: fc.status,
-            phone_number: (fc.leads as any)?.phone_number || '',
-            campaign_id: '',
-            source: 'scheduled_follow_up',
-            lead: fc.leads as any
-          });
-        }
-      }
-
-      // Sort by scheduled_at
-      combined.sort((a, b) => 
-        new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-      );
-
-      setCallbacks(combined);
-      
-      // Calculate and report overdue count
-      const overdueCount = combined.filter(cb => isPast(new Date(cb.scheduled_at))).length;
-      onOverdueCountChange?.(overdueCount);
-      
-    } catch (error) {
-      console.error('Error loading callbacks:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onOverdueCountChange]);
-
+  // Report overdue count to parent
   useEffect(() => {
-    loadCallbacks();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(loadCallbacks, 30000);
-    return () => clearInterval(interval);
-  }, [loadCallbacks]);
+    onOverdueCountChange?.(overdueCount);
+  }, [overdueCount, onOverdueCountChange]);
 
-  const handleCancelCallback = async (callback: CallbackEntry) => {
+  const handleCancelCallback = async (callback: UnifiedCallback) => {
     try {
-      if (callback.source === 'dialing_queue') {
+      // Clear from all sources
+      if (callback.source === 'lead') {
+        await supabase
+          .from('leads')
+          .update({ next_callback_at: null, updated_at: new Date().toISOString() })
+          .eq('id', callback.lead_id);
+      }
+      
+      if (callback.source === 'dialing_queue' || callback.source === 'lead') {
         await supabase
           .from('dialing_queues')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-          .eq('id', callback.id);
-      } else {
+          .delete()
+          .eq('lead_id', callback.lead_id);
+      }
+      
+      if (callback.source === 'scheduled_follow_up') {
         await supabase
           .from('scheduled_follow_ups')
           .update({ status: 'cancelled' })
@@ -164,10 +58,10 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
 
       toast({
         title: "Callback Cancelled",
-        description: `Callback for ${callback.lead?.first_name || 'lead'} has been cancelled`,
+        description: `Callback for ${callback.first_name || 'lead'} has been cancelled`,
       });
 
-      loadCallbacks();
+      refresh();
     } catch (error) {
       console.error('Error cancelling callback:', error);
       toast({
@@ -178,25 +72,60 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
     }
   };
 
-  const handleCallNow = async (callback: CallbackEntry) => {
+  const handleCallNow = async (callback: UnifiedCallback) => {
     try {
-      // Update scheduled_at to now to trigger immediate call
-      if (callback.source === 'dialing_queue') {
-        await supabase
-          .from('dialing_queues')
-          .update({ 
-            scheduled_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', callback.id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Find an active campaign
+      const { data: campaign } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+
+      if (!campaign) {
+        toast({
+          title: "No Active Campaign",
+          description: "Please start a campaign first to make calls.",
+          variant: "destructive"
+        });
+        return;
       }
 
-      toast({
-        title: "Call Queued",
-        description: `Call to ${callback.lead?.first_name || 'lead'} has been moved to immediate queue`,
+      // Delete existing queue entry
+      await supabase
+        .from('dialing_queues')
+        .delete()
+        .eq('lead_id', callback.lead_id);
+
+      // Add with immediate scheduling
+      await supabase
+        .from('dialing_queues')
+        .insert({
+          campaign_id: campaign.id,
+          lead_id: callback.lead_id,
+          phone_number: callback.phone_number,
+          status: 'pending',
+          scheduled_at: new Date().toISOString(),
+          priority: 10,
+          max_attempts: 3,
+          attempts: 0
+        });
+
+      // Trigger dispatcher
+      await supabase.functions.invoke('call-dispatcher', {
+        body: { immediate: true }
       });
 
-      loadCallbacks();
+      toast({
+        title: "Call Initiated",
+        description: `Call to ${callback.first_name || 'lead'} has been queued`,
+      });
+
+      refresh();
     } catch (error) {
       console.error('Error triggering call:', error);
       toast({
@@ -207,9 +136,7 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
     }
   };
 
-  const isOverdue = (scheduledAt: string) => {
-    return isPast(new Date(scheduledAt));
-  };
+  const isOverdue = (scheduledAt: string) => isPast(new Date(scheduledAt));
 
   const getTimeDisplay = (scheduledAt: string) => {
     const date = new Date(scheduledAt);
@@ -230,29 +157,23 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
     };
   };
 
-  const getLeadName = (lead: CallbackEntry['lead']) => {
-    if (!lead) return 'Unknown';
-    const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ');
+  const getLeadName = (callback: UnifiedCallback) => {
+    const name = [callback.first_name, callback.last_name].filter(Boolean).join(' ');
     return name || 'Unknown';
   };
 
-  // Extract last call note from notes (look for the most recent call log entry)
   const getLastCallNote = (notes: string | null): string | null => {
     if (!notes) return null;
     
-    // Look for call log entries - they start with the separator
     const callLogMatch = notes.match(/━━━━━━━━━━━━━━━━━━━━━━━━━━[\s\S]*?(?=━━━━━━━━━━━━━━━━━━━━━━━━━━|$)/g);
     if (callLogMatch && callLogMatch.length > 0) {
-      // Get the last (most recent) call log
       const lastLog = callLogMatch[callLogMatch.length - 1];
-      // Extract summary line
       const summaryMatch = lastLog.match(/Summary: (.+)/);
       if (summaryMatch) {
         return summaryMatch[1].slice(0, 100);
       }
     }
     
-    // Fallback: just return last 100 chars
     return notes.slice(-100);
   };
 
@@ -271,7 +192,6 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
   }
 
   const overdueCallbacks = callbacks.filter(cb => isOverdue(cb.scheduled_at));
-  const upcomingCallbacks = callbacks.filter(cb => !isOverdue(cb.scheduled_at));
 
   return (
     <Card>
@@ -288,7 +208,7 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
               </Badge>
             )}
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={loadCallbacks} disabled={isLoading}>
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
@@ -298,9 +218,9 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
           <div className="divide-y">
             {callbacks.map(callback => {
               const timeDisplay = getTimeDisplay(callback.scheduled_at);
-              const leadName = getLeadName(callback.lead);
+              const leadName = getLeadName(callback);
               const overdue = isOverdue(callback.scheduled_at);
-              const lastNote = getLastCallNote(callback.lead?.notes || null);
+              const lastNote = getLastCallNote(callback.notes || null);
               
               return (
                 <div 
@@ -324,10 +244,10 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
                         <div className="flex items-center gap-2">
                           <span className="font-medium truncate">{leadName}</span>
                           <Badge 
-                            variant={callback.source === 'dialing_queue' ? 'default' : 'secondary'}
+                            variant={callback.source === 'lead' ? 'outline' : callback.source === 'dialing_queue' ? 'default' : 'secondary'}
                             className="text-xs"
                           >
-                            {callback.source === 'dialing_queue' ? 'Requested' : 'Scheduled'}
+                            {callback.source === 'lead' ? 'Callback' : callback.source === 'dialing_queue' ? 'Requested' : 'Scheduled'}
                           </Badge>
                           {overdue && (
                             <Badge variant="destructive" className="text-xs">
@@ -337,7 +257,7 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
                         </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Phone className="h-3 w-3" />
-                          <span>{callback.phone_number || callback.lead?.phone_number}</span>
+                          <span>{callback.phone_number}</span>
                         </div>
                       </div>
                     </div>

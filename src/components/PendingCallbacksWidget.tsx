@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,60 +7,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { Phone, Clock, AlertTriangle, RefreshCw, User, X } from 'lucide-react';
-
-interface PendingCallback {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  phone_number: string;
-  next_callback_at: string;
-  status: string;
-}
+import { useCallbacks, UnifiedCallback } from '@/hooks/useCallbacks';
 
 interface PendingCallbacksWidgetProps {
   onCallNow?: (leadId: string) => void;
 }
 
 export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ onCallNow }) => {
-  const [callbacks, setCallbacks] = useState<PendingCallback[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { callbacks, isLoading, overdueCount, upcomingCount, refresh } = useCallbacks();
   const [isCallingLead, setIsCallingLead] = useState<string | null>(null);
   const [isCancellingLead, setIsCancellingLead] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const loadCallbacks = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('leads')
-        .select('id, first_name, last_name, phone_number, next_callback_at, status')
-        .eq('user_id', user.id)
-        .eq('do_not_call', false)
-        .not('next_callback_at', 'is', null)
-        .lte('next_callback_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()) // Next 24 hours
-        .order('next_callback_at', { ascending: true })
-        .limit(20);
-
-      if (error) throw error;
-      setCallbacks(data || []);
-    } catch (error) {
-      console.error('Error loading callbacks:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadCallbacks();
-    const interval = setInterval(loadCallbacks, 30000); // Refresh every 30s
-    return () => clearInterval(interval);
-  }, [loadCallbacks]);
-
-  const handleCallNow = async (lead: PendingCallback) => {
-    setIsCallingLead(lead.id);
+  const handleCallNow = async (callback: UnifiedCallback) => {
+    setIsCallingLead(callback.id);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
@@ -102,22 +62,21 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
       }
 
       // Delete ANY existing queue entry for this lead (regardless of status)
-      // to avoid unique constraint violation on (campaign_id, lead_id)
       await supabase
         .from('dialing_queues')
         .delete()
-        .eq('lead_id', lead.id);
+        .eq('lead_id', callback.lead_id);
 
       // Add to queue with immediate scheduling and high priority
       const { error: insertError } = await supabase
         .from('dialing_queues')
         .insert({
           campaign_id: campaign.id,
-          lead_id: lead.id,
-          phone_number: lead.phone_number,
+          lead_id: callback.lead_id,
+          phone_number: callback.phone_number,
           status: 'pending',
           scheduled_at: new Date().toISOString(),
-          priority: 10, // Highest priority
+          priority: 10,
           max_attempts: 3,
           attempts: 0
         });
@@ -133,22 +92,20 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
         throw new Error(dispatchResponse.error.message || 'Dispatch failed');
       }
 
-      // Check if dispatch had issues
       if (dispatchResponse.data?.error) {
         throw new Error(dispatchResponse.data.error);
       }
 
       toast({
         title: "Call Initiated",
-        description: `Calling ${lead.first_name || lead.phone_number} now...`,
+        description: `Calling ${callback.first_name || callback.phone_number} now...`,
       });
 
       if (onCallNow) {
-        onCallNow(lead.id);
+        onCallNow(callback.lead_id);
       }
 
-      // Refresh list
-      setTimeout(loadCallbacks, 2000);
+      setTimeout(refresh, 2000);
     } catch (error: any) {
       console.error('Error triggering call:', error);
       toast({
@@ -161,8 +118,8 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
     }
   };
 
-  const handleCancelCallback = async (lead: PendingCallback) => {
-    setIsCancellingLead(lead.id);
+  const handleCancelCallback = async (callback: UnifiedCallback) => {
+    setIsCancellingLead(callback.id);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
@@ -172,10 +129,10 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
         .from('leads')
         .update({
           next_callback_at: null,
-          status: 'contacted', // Move back to contacted
+          status: 'contacted',
           updated_at: new Date().toISOString()
         })
-        .eq('id', lead.id);
+        .eq('id', callback.lead_id);
 
       if (leadError) throw leadError;
 
@@ -183,37 +140,28 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
       await supabase
         .from('dialing_queues')
         .delete()
-        .eq('lead_id', lead.id);
+        .eq('lead_id', callback.lead_id);
 
-      // 3. Resume any paused workflow for this lead
+      // 3. Cancel scheduled follow-ups
+      await supabase
+        .from('scheduled_follow_ups')
+        .update({ status: 'cancelled' })
+        .eq('lead_id', callback.lead_id)
+        .eq('status', 'pending');
+
+      // 4. Resume any paused workflow for this lead
       await supabase
         .from('lead_workflow_progress')
         .update({ status: 'active' })
-        .eq('lead_id', lead.id)
+        .eq('lead_id', callback.lead_id)
         .eq('status', 'paused');
-
-      // 4. Add a note to the lead
-      const { data: currentLead } = await supabase
-        .from('leads')
-        .select('notes')
-        .eq('id', lead.id)
-        .maybeSingle();
-
-      const existingNotes = currentLead?.notes || '';
-      const newNote = `\n\n[${new Date().toISOString()}] CALLBACK CANCELLED: Manually cancelled by user. Workflow resumed.`;
-      
-      await supabase
-        .from('leads')
-        .update({ notes: existingNotes + newNote })
-        .eq('id', lead.id);
 
       toast({
         title: "Callback Cancelled",
-        description: `${lead.first_name || lead.phone_number} removed from callbacks. Workflow resumed.`,
+        description: `${callback.first_name || callback.phone_number} removed from callbacks.`,
       });
 
-      // Refresh list
-      loadCallbacks();
+      refresh();
     } catch (error: any) {
       console.error('Error cancelling callback:', error);
       toast({
@@ -226,11 +174,8 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
     }
   };
 
-  const overdueCount = callbacks.filter(c => isPast(new Date(c.next_callback_at))).length;
-  const upcomingCount = callbacks.length - overdueCount;
-
   if (callbacks.length === 0 && !isLoading) {
-    return null; // Don't show widget if no callbacks
+    return null;
   }
 
   return (
@@ -253,7 +198,7 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
               </Badge>
             )}
           </div>
-          <Button variant="ghost" size="sm" onClick={loadCallbacks} disabled={isLoading}>
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
@@ -262,7 +207,7 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
         <ScrollArea className="h-[200px]">
           <div className="space-y-2">
             {callbacks.map((callback) => {
-              const isOverdue = isPast(new Date(callback.next_callback_at));
+              const isOverdue = isPast(new Date(callback.scheduled_at));
               const name = [callback.first_name, callback.last_name].filter(Boolean).join(' ') || 'Unknown';
               
               return (
@@ -293,10 +238,10 @@ export const PendingCallbacksWidget: React.FC<PendingCallbacksWidgetProps> = ({ 
                           <Clock className="h-3 w-3" />
                           {isOverdue ? (
                             <span className="text-destructive">
-                              {formatDistanceToNow(new Date(callback.next_callback_at), { addSuffix: true })}
+                              {formatDistanceToNow(new Date(callback.scheduled_at), { addSuffix: true })}
                             </span>
                           ) : (
-                            format(new Date(callback.next_callback_at), 'h:mm a')
+                            format(new Date(callback.scheduled_at), 'h:mm a')
                           )}
                         </span>
                       </div>
