@@ -1250,9 +1250,34 @@ serve(async (req) => {
       }
 
       case 'stats': {
+        // First, cleanup stuck calls (>5 min in 'calling' status)
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data: stuckCalls, error: stuckCleanupError } = await supabase
+          .from('broadcast_queue')
+          .update({ status: 'failed' })
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'calling')
+          .lt('updated_at', fiveMinutesAgo)
+          .select('id, phone_number, call_sid');
+        
+        let stuckCallsCleanedUp = 0;
+        if (stuckCalls && stuckCalls.length > 0) {
+          stuckCallsCleanedUp = stuckCalls.length;
+          console.log(`[Stats] Cleaned up ${stuckCallsCleanedUp} stuck calls (>5 min in 'calling' status)`);
+          
+          // Update broadcast with warning
+          await supabase.from('voice_broadcasts')
+            .update({ 
+              last_error: `${stuckCallsCleanedUp} call(s) timed out - stuck in 'calling' for >5 min. This usually means the From number isn't verified in Twilio Console.`,
+              last_error_at: new Date().toISOString()
+            })
+            .eq('id', broadcastId);
+        }
+        
+        // Now get the actual stats
         const { data: queueStats, error: statsError } = await supabase
           .from('broadcast_queue')
-          .select('status, dtmf_pressed, call_duration_seconds')
+          .select('status, dtmf_pressed, call_duration_seconds, updated_at')
           .eq('broadcast_id', broadcastId);
 
         if (statsError) throw statsError;
@@ -1269,10 +1294,15 @@ serve(async (req) => {
           dnc: 0,
           avgDuration: 0,
           dtmfBreakdown: {} as Record<string, number>,
+          stuckCallsCleanedUp,
         };
 
         let totalDuration = 0;
         let durationCount = 0;
+        
+        // Track calls that are close to being stuck (>2 min in calling)
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+        let potentiallyStuckCalls = 0;
 
         for (const item of queueStats || []) {
           const status = item.status as string;
@@ -1289,9 +1319,18 @@ serve(async (req) => {
             stats.dtmfBreakdown[item.dtmf_pressed] = 
               (stats.dtmfBreakdown[item.dtmf_pressed] || 0) + 1;
           }
+          
+          // Count calls that have been in 'calling' for >2 minutes (warning threshold)
+          if (status === 'calling' && item.updated_at) {
+            const updatedAt = new Date(item.updated_at);
+            if (updatedAt < twoMinutesAgo) {
+              potentiallyStuckCalls++;
+            }
+          }
         }
 
         stats.avgDuration = durationCount > 0 ? Math.round(totalDuration / durationCount) : 0;
+        stats.potentiallyStuckCalls = potentiallyStuckCalls;
 
         // Auto-complete broadcast if no pending or calling items remain
         if (stats.pending === 0 && stats.calling === 0 && stats.total > 0) {
