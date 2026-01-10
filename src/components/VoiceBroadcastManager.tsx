@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ import {
   Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
   Phone, PhoneOff, Clock, Settings, BarChart3, 
   MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw,
-  AlertTriangle, CheckCircle2, XCircle, Square, TestTube
+  AlertTriangle, CheckCircle2, XCircle, Square, TestTube, Loader2
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -33,10 +33,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import QuickTestBroadcast from '@/components/QuickTestBroadcast';
 import BroadcastReadinessChecker from '@/components/BroadcastReadinessChecker';
 import BroadcastQueueManager from '@/components/BroadcastQueueManager';
 import LiveProgressDashboard from '@/components/LiveProgressDashboard';
+import BroadcastStepIndicator from '@/components/BroadcastStepIndicator';
 
 const ELEVENLABS_VOICES = [
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
@@ -120,6 +122,11 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [emergencyStopId, setEmergencyStopId] = useState<string | null>(null);
   const [testingBroadcastId, setTestingBroadcastId] = useState<string | null>(null);
   const [highVolumeConfirm, setHighVolumeConfirm] = useState<{ broadcastId: string; leadCount: number; phoneCount: number } | null>(null);
+  
+  // NEW: Audio generation tracking and test confirmation
+  const [generatingAudioId, setGeneratingAudioId] = useState<string | null>(null);
+  const [testConfirmBroadcastId, setTestConfirmBroadcastId] = useState<string | null>(null);
+  const [lastStatsUpdate, setLastStatsUpdate] = useState<Date>(new Date());
 
   // Form state
   const [formData, setFormData] = useState({
@@ -205,17 +212,31 @@ export const VoiceBroadcastManager: React.FC = () => {
     };
   }, [broadcasts]);
 
-  // Auto-refresh stats for active broadcasts every 5 seconds
+  // Auto-refresh stats for active broadcasts every 3 seconds (faster refresh)
   useEffect(() => {
     const hasActiveBroadcast = broadcasts.some(b => b.status === 'active');
     if (!hasActiveBroadcast) return;
 
     const interval = setInterval(() => {
       loadBroadcasts();
-    }, 5000);
+      setLastStatsUpdate(new Date());
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [broadcasts]);
+
+  // Auto-refresh results dialog when viewing active broadcast
+  useEffect(() => {
+    if (!resultsDialogBroadcastId) return;
+    const broadcast = broadcasts.find(b => b.id === resultsDialogBroadcastId);
+    if (broadcast?.status !== 'active') return;
+
+    const interval = setInterval(() => {
+      loadQueueResults(resultsDialogBroadcastId);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [resultsDialogBroadcastId, broadcasts]);
 
   const loadLeads = async () => {
     try {
@@ -319,11 +340,20 @@ export const VoiceBroadcastManager: React.FC = () => {
   };
 
   const handleGenerateAudio = async (broadcast: VoiceBroadcast) => {
-    const fullMessage = broadcast.ivr_enabled && broadcast.ivr_prompt
-      ? `${broadcast.message_text} ... ${broadcast.ivr_prompt}`
-      : broadcast.message_text;
-    
-    await generateAudio(broadcast.id, fullMessage, broadcast.voice_id || 'TX3LPaxmHKxFdv7VOQHJ');
+    setGeneratingAudioId(broadcast.id);
+    try {
+      const fullMessage = broadcast.ivr_enabled && broadcast.ivr_prompt
+        ? `${broadcast.message_text} ... ${broadcast.ivr_prompt}`
+        : broadcast.message_text;
+      
+      await generateAudio(broadcast.id, fullMessage, broadcast.voice_id || 'TX3LPaxmHKxFdv7VOQHJ');
+      toast({
+        title: "Audio Generated",
+        description: "Your broadcast audio is ready. You can now add leads and start.",
+      });
+    } finally {
+      setGeneratingAudioId(null);
+    }
   };
 
   const handleAddLeads = async (broadcastId: string) => {
@@ -370,14 +400,20 @@ export const VoiceBroadcastManager: React.FC = () => {
               <CardTitle className="text-base flex items-center gap-2">
                 <Radio className="h-4 w-4 animate-pulse text-primary" />
                 Live: {activeBroadcast.name}
+                <Badge variant="outline" className="ml-2 text-[10px] bg-green-500/10 border-green-500/30 text-green-600 animate-pulse">
+                  LIVE
+                </Badge>
               </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-muted-foreground">
+                  Updated {Math.round((new Date().getTime() - lastStatsUpdate.getTime()) / 1000)}s ago
+                </span>
                 {health && (
                   <Badge variant={health.healthy ? 'default' : 'destructive'} className="text-xs">
                     {health.healthy ? 'Healthy' : `${health.stuckCalls} stuck`}
                   </Badge>
                 )}
-                <Button variant="ghost" size="sm" onClick={() => { refetchLiveStats(); loadBroadcasts(); }}>
+                <Button variant="ghost" size="sm" onClick={() => { refetchLiveStats(); loadBroadcasts(); setLastStatsUpdate(new Date()); }}>
                   <RefreshCw className="h-3 w-3" />
                 </Button>
               </div>
@@ -385,23 +421,23 @@ export const VoiceBroadcastManager: React.FC = () => {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="text-center p-2 rounded-lg bg-blue-500/10">
+              <div className="text-center p-2 rounded-lg bg-blue-500/10 transition-all duration-300">
                 <div className="text-2xl font-bold text-blue-600">{liveStats.calling || 0}</div>
                 <div className="text-xs text-muted-foreground">Calling</div>
               </div>
-              <div className="text-center p-2 rounded-lg bg-slate-500/10">
+              <div className="text-center p-2 rounded-lg bg-slate-500/10 transition-all duration-300">
                 <div className="text-2xl font-bold">{liveStats.pending || 0}</div>
                 <div className="text-xs text-muted-foreground">Pending</div>
               </div>
-              <div className="text-center p-2 rounded-lg bg-green-500/10">
+              <div className="text-center p-2 rounded-lg bg-green-500/10 transition-all duration-300">
                 <div className="text-2xl font-bold text-green-600">{(liveStats.completed || 0) + (liveStats.answered || 0)}</div>
                 <div className="text-xs text-muted-foreground">Completed</div>
               </div>
-              <div className="text-center p-2 rounded-lg bg-red-500/10">
+              <div className="text-center p-2 rounded-lg bg-red-500/10 transition-all duration-300">
                 <div className="text-2xl font-bold text-red-600">{liveStats.failed || 0}</div>
                 <div className="text-xs text-muted-foreground">Failed</div>
               </div>
-              <div className={`text-center p-2 rounded-lg ${(liveStats.errorRate || 0) > 10 ? 'bg-red-500/20' : (liveStats.errorRate || 0) > 5 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+              <div className={`text-center p-2 rounded-lg transition-all duration-300 ${(liveStats.errorRate || 0) > 10 ? 'bg-red-500/20' : (liveStats.errorRate || 0) > 5 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
                 <div className={`text-2xl font-bold ${(liveStats.errorRate || 0) > 10 ? 'text-red-600' : (liveStats.errorRate || 0) > 5 ? 'text-amber-600' : 'text-green-600'}`}>
                   {(liveStats.errorRate || 0).toFixed(1)}%
                 </div>
@@ -1075,6 +1111,15 @@ export const VoiceBroadcastManager: React.FC = () => {
             return (
               <Card key={broadcast.id}>
                 <CardHeader className="pb-2">
+                  {/* Step Progress Indicator */}
+                  <div className="mb-2">
+                    <BroadcastStepIndicator
+                      hasAudio={!!broadcast.audio_url}
+                      hasLeads={(broadcastStats.pending || 0) > 0 || (broadcast.total_leads || 0) > 0}
+                      isGeneratingAudio={generatingAudioId === broadcast.id}
+                    />
+                  </div>
+                  
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap items-center gap-3">
                       <Badge className={getStatusColor(broadcast.status)}>
@@ -1082,170 +1127,196 @@ export const VoiceBroadcastManager: React.FC = () => {
                       </Badge>
                       <CardTitle className="text-lg">{broadcast.name}</CardTitle>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                      {broadcast.status === 'active' ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => stopBroadcast(broadcast.id)}
-                            disabled={isLoading}
-                          >
-                            <Pause className="h-4 w-4 mr-1" />
-                            Pause
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => setEmergencyStopId(broadcast.id)}
-                          >
-                            <Square className="h-4 w-4 mr-1" />
-                            STOP
-                          </Button>
-                        </>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Show "Add leads first" if no leads at all */}
-                          {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="text-amber-600 hover:text-amber-700 p-0 h-auto"
-                              onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
-                            >
-                              Add leads first →
-                            </Button>
-                          )}
-                          {/* Show "Reset & Run Again" if leads exist but none are pending (all completed) */}
-                          {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) > 0 && (
+                    <TooltipProvider>
+                      <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+                        {broadcast.status === 'active' ? (
+                          <>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => resetBroadcastQueue(broadcast.id)}
+                              onClick={() => stopBroadcast(broadcast.id)}
                               disabled={isLoading}
-                              title="Reset all leads to pending and run broadcast again"
                             >
-                              <RotateCcw className="h-4 w-4 mr-1" />
-                              Reset & Run Again
+                              <Pause className="h-4 w-4 mr-1" />
+                              Pause
                             </Button>
-                          )}
-                          {/* Test Batch Button */}
-                          {(broadcastStats.pending || 0) > 0 && broadcast.audio_url && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setEmergencyStopId(broadcast.id)}
+                            >
+                              <Square className="h-4 w-4 mr-1" />
+                              STOP
+                            </Button>
+                          </>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Show "Add leads first" if no leads at all */}
+                            {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) === 0 && (
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="text-amber-600 hover:text-amber-700 p-0 h-auto"
+                                onClick={() => setAddLeadsDialogBroadcastId(broadcast.id)}
+                              >
+                                Add leads first →
+                              </Button>
+                            )}
+                            {/* Show "Reset & Run Again" if leads exist but none are pending (all completed) */}
+                            {(broadcastStats.pending || 0) === 0 && (broadcast.total_leads || 0) > 0 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => resetBroadcastQueue(broadcast.id)}
+                                disabled={isLoading}
+                                title="Reset all leads to pending and run broadcast again"
+                              >
+                                <RotateCcw className="h-4 w-4 mr-1" />
+                                Reset & Run Again
+                              </Button>
+                            )}
+                            {/* Test Batch Button - With Warning Styling */}
+                            {(broadcastStats.pending || 0) > 0 && broadcast.audio_url && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-amber-500/50 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                    onClick={() => setTestConfirmBroadcastId(broadcast.id)}
+                                    disabled={isLoading || testingBroadcastId === broadcast.id}
+                                  >
+                                    {testingBroadcastId === broadcast.id ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <TestTube className="h-4 w-4 mr-1" />
+                                    )}
+                                    Test 10
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  <p className="font-medium">⚠️ Makes 10 REAL calls</p>
+                                  <p className="text-xs text-muted-foreground">This will dial 10 leads from your queue</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {/* Start Button with Tooltip */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                      // Run readiness check before starting
+                                      setStartingBroadcastId(broadcast.id);
+                                      const result = await checkBroadcastReadiness(broadcast.id);
+                                      setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
+                                      if (result.isReady) {
+                                        const leadCount = broadcast.total_leads || 0;
+                                        // Check for high volume and low phone numbers
+                                        if (leadCount >= 1000) {
+                                          const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
+                                          const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
+                                          const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
+                                          setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
+                                          setStartingBroadcastId(null);
+                                          return;
+                                        }
+                                        // Cleanup stuck calls first
+                                        await cleanupStuckCalls(broadcast.id);
+                                        await startBroadcast(broadcast.id);
+                                      } else {
+                                        toast({
+                                          title: "Broadcast Not Ready",
+                                          description: result.blockingReasons.join(', '),
+                                          variant: "destructive",
+                                        });
+                                      }
+                                      setStartingBroadcastId(null);
+                                    }}
+                                    disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
+                                  >
+                                    {startingBroadcastId === broadcast.id ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <Play className="h-4 w-4 mr-1" />
+                                    )}
+                                    {startingBroadcastId === broadcast.id ? 'Checking...' : 'Start'}
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              {(!broadcast.audio_url || (broadcastStats.pending || 0) === 0) && (
+                                <TooltipContent side="bottom">
+                                  {!broadcast.audio_url 
+                                    ? "Generate audio first →" 
+                                    : "No pending leads - Reset queue or add leads"}
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </div>
+                        )}
+                        {/* Generate Audio Button with Loading State */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={async () => {
-                                setTestingBroadcastId(broadcast.id);
-                                const result = await runTestBatch(broadcast.id, 10);
-                                if (result.success) {
-                                  toast({
-                                    title: "Test Batch Started",
-                                    description: result.message,
-                                  });
-                                } else {
-                                  toast({
-                                    title: "Test Failed",
-                                    description: result.message,
-                                    variant: "destructive",
-                                  });
-                                }
-                                setTestingBroadcastId(null);
-                              }}
-                              disabled={isLoading || testingBroadcastId === broadcast.id}
-                              title="Test with 10 calls before full launch"
+                              onClick={() => handleGenerateAudio(broadcast)}
+                              disabled={isLoading || generatingAudioId === broadcast.id}
+                              className={!broadcast.audio_url ? "border-primary/50 text-primary" : ""}
                             >
-                              {testingBroadcastId === broadcast.id ? (
-                                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                              {generatingAudioId === broadcast.id ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                               ) : (
-                                <TestTube className="h-4 w-4 mr-1" />
+                                <Volume2 className="h-4 w-4 mr-1" />
                               )}
-                              Test 10
+                              {generatingAudioId === broadcast.id 
+                                ? 'Generating...' 
+                                : broadcast.audio_url 
+                                  ? 'Regenerate' 
+                                  : 'Generate Audio'}
                             </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            onClick={async () => {
-                              // Run readiness check before starting
-                              setStartingBroadcastId(broadcast.id);
-                              const result = await checkBroadcastReadiness(broadcast.id);
-                              setReadinessResults(prev => ({ ...prev, [broadcast.id]: result }));
-                              if (result.isReady) {
-                                const leadCount = broadcast.total_leads || 0;
-                                // Check for high volume and low phone numbers
-                                if (leadCount >= 1000) {
-                                  const phoneCountCheck = result.checks.find(c => c.id === 'phone_numbers');
-                                  const phoneMatch = phoneCountCheck?.message?.match(/(\d+)\s+number/);
-                                  const phoneCount = phoneMatch ? parseInt(phoneMatch[1]) : 1;
-                                  setHighVolumeConfirm({ broadcastId: broadcast.id, leadCount, phoneCount });
-                                  setStartingBroadcastId(null);
-                                  return;
-                                }
-                                // Cleanup stuck calls first
-                                await cleanupStuckCalls(broadcast.id);
-                                await startBroadcast(broadcast.id);
-                              } else {
-                                toast({
-                                  title: "Broadcast Not Ready",
-                                  description: result.blockingReasons.join(', '),
-                                  variant: "destructive",
-                                });
-                              }
-                              setStartingBroadcastId(null);
-                            }}
-                            disabled={isLoading || isCheckingReadiness || startingBroadcastId === broadcast.id || !broadcast.audio_url || (broadcastStats.pending || 0) === 0}
-                            title={!broadcast.audio_url ? 'Generate audio first' : (broadcastStats.pending || 0) === 0 ? 'No pending leads - click Reset to run again' : 'Start broadcast'}
-                          >
-                            {startingBroadcastId === broadcast.id ? (
-                              <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                            ) : (
-                              <Play className="h-4 w-4 mr-1" />
-                            )}
-                            {startingBroadcastId === broadcast.id ? 'Checking...' : 'Start'}
-                          </Button>
-                        </div>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleGenerateAudio(broadcast)}
-                        disabled={isLoading}
-                      >
-                        <Volume2 className="h-4 w-4 mr-1" />
-                        {broadcast.audio_url ? 'Regenerate' : 'Generate'} Audio
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setResultsDialogBroadcastId(broadcast.id);
-                          loadQueueResults(broadcast.id);
-                        }}
-                        title="View Results"
-                      >
-                        <BarChart3 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedBroadcast(broadcast);
-                          setSettingsTab('settings');
-                        }}
-                        aria-label="Broadcast settings"
-                      >
-                        <Settings className="h-4 w-4 mr-1" />
-                        Settings
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteBroadcast(broadcast.id)}
-                        className="text-destructive"
-                        aria-label="Delete broadcast"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            {broadcast.audio_url 
+                              ? "Re-generate the audio with current settings"
+                              : "Convert your message text to speech"}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setResultsDialogBroadcastId(broadcast.id);
+                            loadQueueResults(broadcast.id);
+                          }}
+                          title="View Results"
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedBroadcast(broadcast);
+                            setSettingsTab('settings');
+                          }}
+                          aria-label="Broadcast settings"
+                        >
+                          <Settings className="h-4 w-4 mr-1" />
+                          Settings
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteBroadcast(broadcast.id)}
+                          className="text-destructive"
+                          aria-label="Delete broadcast"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TooltipProvider>
                   </div>
                   {broadcast.description && (
                     <CardDescription>{broadcast.description}</CardDescription>
@@ -1796,10 +1867,27 @@ export const VoiceBroadcastManager: React.FC = () => {
       >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Broadcast Results: {broadcasts.find(b => b.id === resultsDialogBroadcastId)?.name || 'Unknown'}
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Broadcast Results: {broadcasts.find(b => b.id === resultsDialogBroadcastId)?.name || 'Unknown'}
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                {broadcasts.find(b => b.id === resultsDialogBroadcastId)?.status === 'active' && (
+                  <Badge variant="outline" className="text-[10px] bg-green-500/10 border-green-500/30 text-green-600 animate-pulse">
+                    LIVE - Auto-refreshing
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => resultsDialogBroadcastId && loadQueueResults(resultsDialogBroadcastId)}
+                  disabled={loadingResults}
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingResults ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+            </div>
             <DialogDescription>
               View detailed results for each lead in this broadcast campaign
             </DialogDescription>
@@ -1992,6 +2080,65 @@ export const VoiceBroadcastManager: React.FC = () => {
               }}
             >
               Start Broadcast
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Test Batch Confirmation Dialog */}
+      <AlertDialog open={!!testConfirmBroadcastId} onOpenChange={(open) => !open && setTestConfirmBroadcastId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <TestTube className="h-5 w-5 text-amber-500" />
+              Test Batch - Real Calls
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p className="text-foreground font-medium">
+                ⚠️ This will make 10 real phone calls
+              </p>
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-amber-600" />
+                  <span>10 leads will be dialed from your queue</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-600" />
+                  <span>~2-3 minutes to complete</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use this to verify your audio, transfer settings, and IVR options work correctly before launching the full campaign.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (testConfirmBroadcastId) {
+                  setTestingBroadcastId(testConfirmBroadcastId);
+                  const result = await runTestBatch(testConfirmBroadcastId, 10);
+                  if (result.success) {
+                    toast({
+                      title: "Test Batch Started",
+                      description: "10 real calls are being made. Check results in a few minutes.",
+                    });
+                  } else {
+                    toast({
+                      title: "Test Failed",
+                      description: result.message,
+                      variant: "destructive",
+                    });
+                  }
+                  setTestingBroadcastId(null);
+                }
+                setTestConfirmBroadcastId(null);
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              <TestTube className="h-4 w-4 mr-2" />
+              Start 10 Test Calls
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
