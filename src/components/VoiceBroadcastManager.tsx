@@ -130,6 +130,11 @@ export const VoiceBroadcastManager: React.FC = () => {
   
   // Direct pending counts from database - fixes race condition with stats loading
   const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
+  
+  // Call inspection state
+  const [inspectingBroadcastId, setInspectingBroadcastId] = useState<string | null>(null);
+  const [inspectionResults, setInspectionResults] = useState<any[] | null>(null);
+  const [inspectionDialogOpen, setInspectionDialogOpen] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -1460,23 +1465,59 @@ export const VoiceBroadcastManager: React.FC = () => {
                           {broadcastStats.potentiallyStuckCalls} call(s) may be stuck
                         </span>
                         <span className="text-amber-600 ml-1">
-                          - calls in "calling" status for 2+ minutes. This usually means the From number isn't verified in Twilio.
+                          - calls in "calling" status for 2+ minutes. This usually means StatusCallback wasn't received.
                         </span>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="text-amber-700 hover:text-amber-800 p-0 h-auto ml-2"
-                          onClick={async () => {
-                            await cleanupStuckCalls(broadcast.id);
-                            loadBroadcasts();
-                            toast({
-                              title: "Stuck Calls Cleaned Up",
-                              description: "Calls stuck in 'calling' status have been marked as failed",
-                            });
-                          }}
-                        >
-                          Clean up stuck calls →
-                        </Button>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="text-amber-700 hover:text-amber-800 p-0 h-auto"
+                            disabled={inspectingBroadcastId === broadcast.id}
+                            onClick={async () => {
+                              setInspectingBroadcastId(broadcast.id);
+                              try {
+                                const { data: session } = await supabase.auth.getSession();
+                                const response = await supabase.functions.invoke('voice-broadcast-engine', {
+                                  body: { action: 'inspect_calls', broadcastId: broadcast.id },
+                                  headers: { Authorization: `Bearer ${session.session?.access_token}` }
+                                });
+                                if (response.error) throw response.error;
+                                setInspectionResults(response.data?.calls || []);
+                                setInspectionDialogOpen(true);
+                              } catch (err: any) {
+                                toast({
+                                  title: "Inspection Failed",
+                                  description: err.message,
+                                  variant: "destructive"
+                                });
+                              } finally {
+                                setInspectingBroadcastId(null);
+                              }
+                            }}
+                          >
+                            {inspectingBroadcastId === broadcast.id ? (
+                              <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Inspecting...</>
+                            ) : (
+                              <>Inspect with Twilio →</>
+                            )}
+                          </Button>
+                          <span className="text-amber-600">|</span>
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="text-amber-700 hover:text-amber-800 p-0 h-auto"
+                            onClick={async () => {
+                              await cleanupStuckCalls(broadcast.id);
+                              loadBroadcasts();
+                              toast({
+                                title: "Stuck Calls Cleaned Up",
+                                description: "Calls stuck in 'calling' status have been marked as failed",
+                              });
+                            }}
+                          >
+                            Clean up stuck calls →
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2245,6 +2286,90 @@ export const VoiceBroadcastManager: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Call Inspection Results Dialog */}
+      <Dialog open={inspectionDialogOpen} onOpenChange={setInspectionDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Phone className="h-5 w-5" />
+              Twilio Call Inspection Results
+            </DialogTitle>
+            <DialogDescription>
+              Direct status from Twilio for calls currently in "calling" status. This shows what Twilio actually knows about each call.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {inspectionResults && inspectionResults.length > 0 ? (
+            <div className="space-y-4">
+              {inspectionResults.map((call, index) => (
+                <Card key={index} className={call.status_mismatch ? 'border-amber-500' : ''}>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Phone Number</Label>
+                        <p className="font-mono">{call.phone_number}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Our Status</Label>
+                        <Badge variant="outline">{call.our_status}</Badge>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Twilio Status</Label>
+                        <Badge variant={call.twilio_status === 'completed' ? 'default' : call.twilio_status === 'failed' ? 'destructive' : 'secondary'}>
+                          {call.twilio_status || 'Unknown'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Duration</Label>
+                        <p>{call.twilio_duration || '0'}s</p>
+                      </div>
+                    </div>
+                    
+                    {call.error && (
+                      <div className="mt-2 p-2 bg-destructive/10 rounded text-xs text-destructive">
+                        Error: {call.error}
+                      </div>
+                    )}
+                    
+                    {call.twilio_error_code && (
+                      <div className="mt-2 p-2 bg-destructive/10 rounded text-xs text-destructive">
+                        Twilio Error {call.twilio_error_code}: {call.twilio_error_message}
+                      </div>
+                    )}
+                    
+                    {call.status_mismatch && (
+                      <div className="mt-2 p-2 bg-amber-500/10 rounded text-xs text-amber-700">
+                        ⚠️ Status mismatch - Twilio says "{call.twilio_status}" but our DB says "{call.our_status}". 
+                        This usually means StatusCallback webhooks are not being received.
+                      </div>
+                    )}
+                    
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <span className="font-mono">CallSid: {call.call_sid}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p className="font-medium mb-1">💡 What this means:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                  <li>If Twilio shows "completed" but our status is "calling" → StatusCallback wasn't received</li>
+                  <li>If Twilio shows "failed" → Check the error code for why the call failed</li>
+                  <li>If Twilio shows "queued" or "ringing" → Call is still in progress</li>
+                  <li>Error 21608 → From number not verified in your Twilio account</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500" />
+              <p>No calls to inspect. All calls have completed status updates.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Refresh Button */}
       <div className="flex justify-center">

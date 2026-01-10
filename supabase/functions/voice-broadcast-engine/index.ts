@@ -337,26 +337,33 @@ async function callWithTwilio(
     
     console.log('TwiML Response:', twimlResponse);
 
-    // Build request body
-    const requestBody: Record<string, string> = {
-      To: toNumber,
-      From: fromNumber,
-      Twiml: twimlResponse,
-      StatusCallback: statusCallbackUrl,
-      StatusCallbackEvent: 'initiated ringing answered completed',
-    };
+    // Build request body using URLSearchParams to properly handle multiple StatusCallbackEvent values
+    // CRITICAL: Twilio requires StatusCallbackEvent to be sent as separate parameters, NOT a space-delimited string
+    const requestBody = new URLSearchParams();
+    requestBody.append('To', toNumber);
+    requestBody.append('From', fromNumber);
+    requestBody.append('Twiml', twimlResponse);
+    requestBody.append('StatusCallback', statusCallbackUrl);
+    requestBody.append('StatusCallbackMethod', 'POST');
+    // Send each event as a separate parameter (this is what Twilio expects)
+    requestBody.append('StatusCallbackEvent', 'initiated');
+    requestBody.append('StatusCallbackEvent', 'ringing');
+    requestBody.append('StatusCallbackEvent', 'answered');
+    requestBody.append('StatusCallbackEvent', 'completed');
     
     // Add AMD parameters if enabled
     if (amdEnabled && amdCallbackUrl) {
-      requestBody.MachineDetection = 'DetectMessageEnd';
-      requestBody.AsyncAmd = 'true';
-      requestBody.AsyncAmdStatusCallback = amdCallbackUrl;
-      requestBody.MachineDetectionTimeout = '30';
-      requestBody.MachineDetectionSpeechThreshold = '2500';
-      requestBody.MachineDetectionSpeechEndThreshold = '1200';
-      requestBody.MachineDetectionSilenceTimeout = '5000';
+      requestBody.append('MachineDetection', 'DetectMessageEnd');
+      requestBody.append('AsyncAmd', 'true');
+      requestBody.append('AsyncAmdStatusCallback', amdCallbackUrl);
+      requestBody.append('MachineDetectionTimeout', '30');
+      requestBody.append('MachineDetectionSpeechThreshold', '2500');
+      requestBody.append('MachineDetectionSpeechEndThreshold', '1200');
+      requestBody.append('MachineDetectionSilenceTimeout', '5000');
       console.log('AMD enabled with callback:', amdCallbackUrl);
     }
+
+    console.log(`Twilio call params: To=${toNumber}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
 
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
@@ -366,7 +373,7 @@ async function callWithTwilio(
           'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams(requestBody),
+        body: requestBody,
       }
     );
 
@@ -473,26 +480,33 @@ async function callWithTwilioSipTrunk(
     
     console.log(`SIP To address: ${sipTo}`);
 
-    // Build request body
-    const requestBody: Record<string, string> = {
-      To: sipTo,
-      From: fromNumber,
-      Twiml: twimlResponse,
-      StatusCallback: statusCallbackUrl,
-      StatusCallbackEvent: 'initiated ringing answered completed',
-    };
+    // Build request body using URLSearchParams to properly handle multiple StatusCallbackEvent values
+    // CRITICAL: Twilio requires StatusCallbackEvent to be sent as separate parameters
+    const requestBody = new URLSearchParams();
+    requestBody.append('To', sipTo);
+    requestBody.append('From', fromNumber);
+    requestBody.append('Twiml', twimlResponse);
+    requestBody.append('StatusCallback', statusCallbackUrl);
+    requestBody.append('StatusCallbackMethod', 'POST');
+    // Send each event as a separate parameter
+    requestBody.append('StatusCallbackEvent', 'initiated');
+    requestBody.append('StatusCallbackEvent', 'ringing');
+    requestBody.append('StatusCallbackEvent', 'answered');
+    requestBody.append('StatusCallbackEvent', 'completed');
     
     // Add AMD parameters if enabled
     if (amdEnabled && amdCallbackUrl) {
-      requestBody.MachineDetection = 'DetectMessageEnd';
-      requestBody.AsyncAmd = 'true';
-      requestBody.AsyncAmdStatusCallback = amdCallbackUrl;
-      requestBody.MachineDetectionTimeout = '30';
-      requestBody.MachineDetectionSpeechThreshold = '2500';
-      requestBody.MachineDetectionSpeechEndThreshold = '1200';
-      requestBody.MachineDetectionSilenceTimeout = '5000';
+      requestBody.append('MachineDetection', 'DetectMessageEnd');
+      requestBody.append('AsyncAmd', 'true');
+      requestBody.append('AsyncAmdStatusCallback', amdCallbackUrl);
+      requestBody.append('MachineDetectionTimeout', '30');
+      requestBody.append('MachineDetectionSpeechThreshold', '2500');
+      requestBody.append('MachineDetectionSpeechEndThreshold', '1200');
+      requestBody.append('MachineDetectionSilenceTimeout', '5000');
       console.log('AMD enabled with callback:', amdCallbackUrl);
     }
+
+    console.log(`Twilio SIP call params: To=${sipTo}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
 
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
@@ -502,7 +516,7 @@ async function callWithTwilioSipTrunk(
           'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams(requestBody),
+        body: requestBody,
       }
     );
 
@@ -1268,10 +1282,73 @@ serve(async (req) => {
           // Update broadcast with warning
           await supabase.from('voice_broadcasts')
             .update({ 
-              last_error: `${stuckCallsCleanedUp} call(s) timed out - stuck in 'calling' for >5 min. This usually means the From number isn't verified in Twilio Console.`,
+              last_error: `${stuckCallsCleanedUp} call(s) timed out - stuck in 'calling' for >5 min. This usually means the From number isn't verified in Twilio Console or StatusCallback wasn't received.`,
               last_error_at: new Date().toISOString()
             })
             .eq('id', broadcastId);
+        }
+        
+        // FALLBACK RECONCILIATION: For calls in 'calling' for >90 seconds with a call_sid, check Twilio directly
+        const ninetySecondsAgo = new Date(Date.now() - 90 * 1000).toISOString();
+        const { data: maybeStuckCalls } = await supabase
+          .from('broadcast_queue')
+          .select('id, phone_number, call_sid')
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'calling')
+          .lt('updated_at', ninetySecondsAgo)
+          .not('call_sid', 'is', null);
+        
+        let reconciledCalls = 0;
+        if (maybeStuckCalls && maybeStuckCalls.length > 0 && providers.twilioAccountSid && providers.twilioAuthToken) {
+          console.log(`[Stats] Checking ${maybeStuckCalls.length} potentially stuck calls with Twilio`);
+          
+          for (const stuckCall of maybeStuckCalls) {
+            try {
+              const twilioResponse = await fetch(
+                `https://api.twilio.com/2010-04-01/Accounts/${providers.twilioAccountSid}/Calls/${stuckCall.call_sid}.json`,
+                {
+                  headers: {
+                    'Authorization': 'Basic ' + btoa(`${providers.twilioAccountSid}:${providers.twilioAuthToken}`),
+                  },
+                }
+              );
+              
+              if (twilioResponse.ok) {
+                const twilioCall = await twilioResponse.json();
+                const twilioStatus = twilioCall.status;
+                
+                // Map Twilio status to our status
+                let newStatus: string | null = null;
+                if (['completed', 'busy', 'no-answer', 'failed', 'canceled'].includes(twilioStatus)) {
+                  if (twilioStatus === 'completed') {
+                    newStatus = twilioCall.duration && parseInt(twilioCall.duration) > 0 ? 'answered' : 'completed';
+                  } else if (twilioStatus === 'no-answer') {
+                    newStatus = 'no_answer';
+                  } else {
+                    newStatus = 'failed';
+                  }
+                  
+                  console.log(`[Reconcile] Call ${stuckCall.call_sid}: Twilio status=${twilioStatus}, updating to ${newStatus}`);
+                  
+                  await supabase
+                    .from('broadcast_queue')
+                    .update({ 
+                      status: newStatus,
+                      call_duration_seconds: twilioCall.duration ? parseInt(twilioCall.duration) : null,
+                    })
+                    .eq('id', stuckCall.id);
+                  
+                  reconciledCalls++;
+                }
+              }
+            } catch (reconcileError) {
+              console.error(`[Reconcile] Error checking call ${stuckCall.call_sid}:`, reconcileError);
+            }
+          }
+          
+          if (reconciledCalls > 0) {
+            console.log(`[Stats] Reconciled ${reconciledCalls} calls from Twilio`);
+          }
         }
         
         // Now get the actual stats
@@ -1295,6 +1372,7 @@ serve(async (req) => {
           avgDuration: 0,
           dtmfBreakdown: {} as Record<string, number>,
           stuckCallsCleanedUp,
+          reconciledCalls,
         };
 
         let totalDuration = 0;
@@ -1351,6 +1429,96 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({ success: true, ...stats }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'inspect_calls': {
+        // Inspect actual Twilio status for calls that are in 'calling' or 'in_progress' status
+        const { data: callsToInspect, error: inspectQueryError } = await supabase
+          .from('broadcast_queue')
+          .select('id, phone_number, call_sid, status, updated_at')
+          .eq('broadcast_id', broadcastId)
+          .in('status', ['calling', 'in_progress'])
+          .not('call_sid', 'is', null);
+        
+        if (inspectQueryError) throw inspectQueryError;
+        
+        if (!callsToInspect || callsToInspect.length === 0) {
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              message: 'No calls to inspect',
+              calls: [] 
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (!providers.twilioAccountSid || !providers.twilioAuthToken) {
+          throw new Error('Twilio credentials not configured - cannot inspect calls');
+        }
+        
+        const inspectionResults: any[] = [];
+        
+        for (const call of callsToInspect) {
+          try {
+            const twilioResponse = await fetch(
+              `https://api.twilio.com/2010-04-01/Accounts/${providers.twilioAccountSid}/Calls/${call.call_sid}.json`,
+              {
+                headers: {
+                  'Authorization': 'Basic ' + btoa(`${providers.twilioAccountSid}:${providers.twilioAuthToken}`),
+                },
+              }
+            );
+            
+            if (twilioResponse.ok) {
+              const twilioCall = await twilioResponse.json();
+              inspectionResults.push({
+                queue_item_id: call.id,
+                phone_number: call.phone_number,
+                call_sid: call.call_sid,
+                our_status: call.status,
+                twilio_status: twilioCall.status,
+                twilio_direction: twilioCall.direction,
+                twilio_start_time: twilioCall.start_time,
+                twilio_end_time: twilioCall.end_time,
+                twilio_duration: twilioCall.duration,
+                twilio_answered_by: twilioCall.answered_by,
+                twilio_error_code: twilioCall.error_code,
+                twilio_error_message: twilioCall.error_message,
+                twilio_from: twilioCall.from,
+                twilio_to: twilioCall.to,
+                status_mismatch: call.status !== twilioCall.status,
+              });
+            } else {
+              const errorText = await twilioResponse.text();
+              inspectionResults.push({
+                queue_item_id: call.id,
+                phone_number: call.phone_number,
+                call_sid: call.call_sid,
+                our_status: call.status,
+                error: `Twilio API error: ${twilioResponse.status}`,
+                error_details: errorText,
+              });
+            }
+          } catch (inspectError: any) {
+            inspectionResults.push({
+              queue_item_id: call.id,
+              phone_number: call.phone_number,
+              call_sid: call.call_sid,
+              our_status: call.status,
+              error: inspectError.message,
+            });
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            inspected_count: callsToInspect.length,
+            calls: inspectionResults 
+          }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
