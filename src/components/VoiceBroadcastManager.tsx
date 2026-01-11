@@ -229,7 +229,8 @@ export const VoiceBroadcastManager: React.FC = () => {
             trunkSid: sipData.twilio_trunk_sid
           }
         });
-        setTrunkPhoneNumbers(trunkNumbers?.phoneNumbers?.map((p: any) => p.phoneNumber) || []);
+        // API returns snake_case: phone_numbers with phone_number field
+        setTrunkPhoneNumbers(trunkNumbers?.phone_numbers?.map((p: any) => p.phone_number) || []);
       }
     } catch (error) {
       console.error('Error loading phone numbers:', error);
@@ -247,21 +248,45 @@ export const VoiceBroadcastManager: React.FC = () => {
       return;
     }
 
-    if (!phone.twilio_sid) {
-      toast({
-        title: 'Missing Twilio SID',
-        description: 'This phone number does not have a Twilio SID. Try syncing your numbers first.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     try {
+      let phoneNumberSid = phone.twilio_sid;
+
+      // If we don't have the Twilio SID in the database, look it up from Twilio
+      if (!phoneNumberSid) {
+        console.log('Looking up Twilio SID for', phone.number);
+        const { data: twilioNumbers } = await supabase.functions.invoke('twilio-integration', {
+          body: { action: 'list_numbers' }
+        });
+
+        // Find this phone number in the Twilio response
+        const twilioNumber = twilioNumbers?.numbers?.find(
+          (n: any) => n.phone_number === phone.number || n.phoneNumber === phone.number
+        );
+
+        if (twilioNumber?.sid) {
+          phoneNumberSid = twilioNumber.sid;
+          console.log('Found Twilio SID:', phoneNumberSid);
+
+          // Also update the database with the SID for future use
+          await supabase
+            .from('phone_numbers')
+            .update({ twilio_sid: phoneNumberSid })
+            .eq('number', phone.number);
+        } else {
+          toast({
+            title: 'Phone number not found in Twilio',
+            description: 'This number may not be in your Twilio account',
+            variant: 'destructive'
+          });
+          return;
+        }
+      }
+
       const { data, error } = await supabase.functions.invoke('twilio-integration', {
         body: {
           action: 'add_phone_to_trunk',
           trunkSid: sipTrunkConfig.twilio_trunk_sid,
-          phoneNumberSid: phone.twilio_sid
+          phoneNumberSid: phoneNumberSid
         }
       });
 
