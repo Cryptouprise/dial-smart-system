@@ -16,7 +16,7 @@ const corsHeaders = {
 };
 
 interface SmsRequest {
-  action: 'send_sms' | 'get_messages' | 'get_available_numbers' | 'check_webhook_status' | 'configure_webhook';
+  action: 'send_sms' | 'get_messages' | 'get_available_numbers' | 'check_webhook_status' | 'configure_webhook' | 'health_check';
   to?: string;
   from?: string;
   body?: string;

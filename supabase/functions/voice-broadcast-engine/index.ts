@@ -1122,7 +1122,7 @@ serve(async (req) => {
               (providerToUse === 'telnyx' && sipConfig.provider_type === 'telnyx' && sipConfig.telnyx_connection_id)
             );
 
-            if (useSipTrunk) {
+            if (useSipTrunk && sipConfig) {
               console.log(`Using SIP trunk: ${sipConfig.provider_type} (${sipConfig.id})`);
             }
 
@@ -1143,7 +1143,7 @@ serve(async (req) => {
                   : undefined;
                 
                 // Use SIP trunk if configured
-                if (useSipTrunk && sipConfig.provider_type === 'twilio') {
+                if (useSipTrunk && sipConfig && sipConfig.provider_type === 'twilio') {
                   callResult = await callWithTwilioSipTrunk(
                     providers.twilioAccountSid!,
                     providers.twilioAuthToken!,
@@ -1224,7 +1224,7 @@ serve(async (req) => {
                 break;
               case 'telnyx':
                 // Use SIP connection ID if configured
-                const connectionId = (useSipTrunk && sipConfig.provider_type === 'telnyx') 
+                const connectionId = (useSipTrunk && sipConfig && sipConfig.provider_type === 'telnyx') 
                   ? sipConfig.telnyx_connection_id 
                   : undefined;
                 callResult = await callWithTelnyx(
