@@ -1067,6 +1067,90 @@ serve(async (req) => {
       const trunk = await createTrunkResponse.json();
       console.log('✅ Trunk created:', trunk.sid);
 
+      // Step 2: Create an IP Access Control List for the trunk
+      // This is REQUIRED for SIP trunk termination to work - without it, calls get 403 Forbidden
+      console.log('🔧 Creating IP ACL for trunk authentication...');
+
+      let aclSid: string | null = null;
+      try {
+        const createAclResponse = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/SIP/IpAccessControlLists.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+              FriendlyName: `${name}-ACL`
+            }).toString()
+          }
+        );
+
+        if (createAclResponse.ok) {
+          const aclData = await createAclResponse.json();
+          aclSid = aclData.sid;
+          console.log('✅ IP ACL created:', aclSid);
+
+          // Step 3: Add Twilio's signaling server IPs to the ACL
+          // These are the IP ranges that Twilio uses for SIP signaling
+          const twilioSignalingIPs = [
+            { ip: '54.172.60.0', cidr: 30, name: 'Twilio-US-East-1' },
+            { ip: '54.244.51.0', cidr: 30, name: 'Twilio-US-West-2' },
+            { ip: '54.171.127.192', cidr: 30, name: 'Twilio-EU-West-1' },
+            { ip: '35.156.191.128', cidr: 30, name: 'Twilio-EU-Central-1' },
+            { ip: '54.65.63.192', cidr: 30, name: 'Twilio-AP-NE-1' },
+            { ip: '54.169.127.128', cidr: 30, name: 'Twilio-AP-SE-1' },
+            { ip: '54.252.254.64', cidr: 30, name: 'Twilio-AP-SE-2' },
+            { ip: '177.71.206.192', cidr: 30, name: 'Twilio-SA-East-1' }
+          ];
+
+          for (const ipInfo of twilioSignalingIPs) {
+            await fetch(
+              `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/SIP/IpAccessControlLists/${aclSid}/IpAddresses.json`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                  FriendlyName: ipInfo.name,
+                  IpAddress: ipInfo.ip,
+                  CidrPrefixLength: ipInfo.cidr.toString()
+                }).toString()
+              }
+            );
+          }
+          console.log('✅ Added Twilio signaling IPs to ACL');
+
+          // Step 4: Associate the IP ACL with the trunk
+          const assocResponse = await fetch(
+            `https://trunking.twilio.com/v1/Trunks/${trunk.sid}/IpAccessControlLists`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: new URLSearchParams({
+                IpAccessControlListSid: aclSid
+              }).toString()
+            }
+          );
+
+          if (assocResponse.ok) {
+            console.log('✅ IP ACL associated with trunk');
+          } else {
+            console.warn('⚠️ Failed to associate IP ACL with trunk:', await assocResponse.text());
+          }
+        } else {
+          console.warn('⚠️ Failed to create IP ACL:', await createAclResponse.text());
+        }
+      } catch (aclError) {
+        console.warn('⚠️ Error setting up IP ACL (trunk still created):', aclError);
+      }
+
       // The termination URI is the key - it's what you use to route calls through this trunk
       const terminationUri = `${trunk.sid.toLowerCase()}.pstn.twilio.com`;
 
@@ -1074,10 +1158,11 @@ serve(async (req) => {
         sid: trunk.sid,
         name: trunk.friendly_name,
         termination_uri: terminationUri,
+        ip_acl_sid: aclSid,
         settings: trunkSettings
       });
 
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         success: true,
         trunk: {
           sid: trunk.sid,
@@ -1087,9 +1172,10 @@ serve(async (req) => {
           secure: trunk.secure,
           recording: trunk.recording,
           cnam_lookup_enabled: trunk.cnam_lookup_enabled,
-          date_created: trunk.date_created
+          date_created: trunk.date_created,
+          ip_acl_configured: !!aclSid
         },
-        message: 'SIP trunk created successfully. Use the termination URI for outbound calls.'
+        message: 'SIP trunk created and configured successfully. Use the termination URI for outbound calls.'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
