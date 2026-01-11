@@ -73,8 +73,9 @@ serve(async (req) => {
 
     console.log('✅ Credentials loaded - Twilio:', !!twilioAccountSid, 'Retell:', !!retellApiKey);
 
-    const { action, phoneNumberSid, phoneNumber, phoneNumbers, messagingServiceSid, webhookUrl, voiceWebhookUrl }: TwilioImportRequest = await req.json();
-    console.log('📥 Request action:', action, { phoneNumber, phoneNumbersCount: phoneNumbers?.length || 0, phoneNumberSid, messagingServiceSid, webhookUrl });
+    const requestBody: TwilioImportRequest = await req.json();
+    const { action, phoneNumberSid, phoneNumber, phoneNumbers, messagingServiceSid, webhookUrl, voiceWebhookUrl, trunkSid, trunkName, trunkSettings } = requestBody;
+    console.log('📥 Request action:', action, { phoneNumber, phoneNumbersCount: phoneNumbers?.length || 0, phoneNumberSid, messagingServiceSid, webhookUrl, trunkSid });
 
     // Helper function to encode credentials safely (handles UTF-8)
     const encodeCredentials = (accountSid: string, authToken: string): string => {
@@ -1096,9 +1097,7 @@ serve(async (req) => {
 
     // Update SIP trunk settings
     if (action === 'update_sip_trunk') {
-      const requestBody = await req.json().catch(() => ({}));
-      const { trunkSid, trunkSettings, trunkName } = requestBody || {};
-      
+      // trunkSid, trunkSettings, trunkName already extracted from requestBody at top
       if (!trunkSid) {
         return new Response(JSON.stringify({ error: 'trunkSid is required' }), {
           status: 400,
@@ -1158,9 +1157,7 @@ serve(async (req) => {
 
     // List phone numbers associated with a trunk
     if (action === 'list_trunk_phone_numbers') {
-      const requestBody = await req.json().catch(() => ({}));
-      const { trunkSid } = requestBody || {};
-      
+      // trunkSid already extracted from requestBody at top
       if (!trunkSid) {
         return new Response(JSON.stringify({ error: 'trunkSid is required' }), {
           status: 400,
@@ -1207,9 +1204,7 @@ serve(async (req) => {
 
     // Add phone number to trunk
     if (action === 'add_phone_to_trunk') {
-      const requestBody = await req.json().catch(() => ({}));
-      const { trunkSid, phoneNumberSid } = requestBody || {};
-      
+      // trunkSid, phoneNumberSid already extracted from requestBody at top
       if (!trunkSid || !phoneNumberSid) {
         return new Response(JSON.stringify({ error: 'trunkSid and phoneNumberSid are required' }), {
           status: 400,
@@ -1272,9 +1267,7 @@ serve(async (req) => {
 
     // Remove phone number from trunk
     if (action === 'remove_phone_from_trunk') {
-      const requestBody = await req.json().catch(() => ({}));
-      const { trunkSid, phoneNumberSid } = requestBody || {};
-      
+      // trunkSid, phoneNumberSid already extracted from requestBody at top
       if (!trunkSid || !phoneNumberSid) {
         return new Response(JSON.stringify({ error: 'trunkSid and phoneNumberSid are required' }), {
           status: 400,
