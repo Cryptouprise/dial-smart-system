@@ -1089,25 +1089,49 @@ serve(async (req) => {
 
         if (createAclResponse.ok) {
           const aclData = await createAclResponse.json();
-          aclSid = aclData.sid;
-          console.log('✅ IP ACL created:', aclSid);
+          const createdAclSid = typeof aclData?.sid === 'string' ? aclData.sid : null;
 
-          // Step 3: Add Twilio's signaling server IPs to the ACL
-          // These are the IP ranges that Twilio uses for SIP signaling
-          const twilioSignalingIPs = [
-            { ip: '54.172.60.0', cidr: 30, name: 'Twilio-US-East-1' },
-            { ip: '54.244.51.0', cidr: 30, name: 'Twilio-US-West-2' },
-            { ip: '54.171.127.192', cidr: 30, name: 'Twilio-EU-West-1' },
-            { ip: '35.156.191.128', cidr: 30, name: 'Twilio-EU-Central-1' },
-            { ip: '54.65.63.192', cidr: 30, name: 'Twilio-AP-NE-1' },
-            { ip: '54.169.127.128', cidr: 30, name: 'Twilio-AP-SE-1' },
-            { ip: '54.252.254.64', cidr: 30, name: 'Twilio-AP-SE-2' },
-            { ip: '177.71.206.192', cidr: 30, name: 'Twilio-SA-East-1' }
-          ];
+          if (!createdAclSid) {
+            console.warn('⚠️ IP ACL created but missing sid; skipping trunk association:', aclData);
+          } else {
+            aclSid = createdAclSid;
+            console.log('✅ IP ACL created:', aclSid);
 
-          for (const ipInfo of twilioSignalingIPs) {
-            await fetch(
-              `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/SIP/IpAccessControlLists/${aclSid}/IpAddresses.json`,
+            // Step 3: Add Twilio's signaling server IPs to the ACL
+            // These are the IP ranges that Twilio uses for SIP signaling
+            const twilioSignalingIPs = [
+              { ip: '54.172.60.0', cidr: 30, name: 'Twilio-US-East-1' },
+              { ip: '54.244.51.0', cidr: 30, name: 'Twilio-US-West-2' },
+              { ip: '54.171.127.192', cidr: 30, name: 'Twilio-EU-West-1' },
+              { ip: '35.156.191.128', cidr: 30, name: 'Twilio-EU-Central-1' },
+              { ip: '54.65.63.192', cidr: 30, name: 'Twilio-AP-NE-1' },
+              { ip: '54.169.127.128', cidr: 30, name: 'Twilio-AP-SE-1' },
+              { ip: '54.252.254.64', cidr: 30, name: 'Twilio-AP-SE-2' },
+              { ip: '177.71.206.192', cidr: 30, name: 'Twilio-SA-East-1' }
+            ];
+
+            for (const ipInfo of twilioSignalingIPs) {
+              await fetch(
+                `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/SIP/IpAccessControlLists/${createdAclSid}/IpAddresses.json`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  body: new URLSearchParams({
+                    FriendlyName: ipInfo.name,
+                    IpAddress: ipInfo.ip,
+                    CidrPrefixLength: ipInfo.cidr.toString()
+                  }).toString()
+                }
+              );
+            }
+            console.log('✅ Added Twilio signaling IPs to ACL');
+
+            // Step 4: Associate the IP ACL with the trunk
+            const assocResponse = await fetch(
+              `https://trunking.twilio.com/v1/Trunks/${trunk.sid}/IpAccessControlLists`,
               {
                 method: 'POST',
                 headers: {
@@ -1115,34 +1139,16 @@ serve(async (req) => {
                   'Content-Type': 'application/x-www-form-urlencoded'
                 },
                 body: new URLSearchParams({
-                  FriendlyName: ipInfo.name,
-                  IpAddress: ipInfo.ip,
-                  CidrPrefixLength: ipInfo.cidr.toString()
+                  IpAccessControlListSid: createdAclSid
                 }).toString()
               }
             );
-          }
-          console.log('✅ Added Twilio signaling IPs to ACL');
 
-          // Step 4: Associate the IP ACL with the trunk
-          const assocResponse = await fetch(
-            `https://trunking.twilio.com/v1/Trunks/${trunk.sid}/IpAccessControlLists`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: new URLSearchParams({
-                IpAccessControlListSid: aclSid
-              }).toString()
+            if (assocResponse.ok) {
+              console.log('✅ IP ACL associated with trunk');
+            } else {
+              console.warn('⚠️ Failed to associate IP ACL with trunk:', await assocResponse.text());
             }
-          );
-
-          if (assocResponse.ok) {
-            console.log('✅ IP ACL associated with trunk');
-          } else {
-            console.warn('⚠️ Failed to associate IP ACL with trunk:', await assocResponse.text());
           }
         } else {
           console.warn('⚠️ Failed to create IP ACL:', await createAclResponse.text());
