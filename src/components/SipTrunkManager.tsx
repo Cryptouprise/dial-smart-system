@@ -89,6 +89,8 @@ export function SipTrunkManager() {
   const [isLoadingPhoneNumbers, setIsLoadingPhoneNumbers] = useState(false);
   const [verifyingTrunkId, setVerifyingTrunkId] = useState<string | null>(null);
   const [verificationResults, setVerificationResults] = useState<Record<string, { verified: boolean; error?: string }>>({});
+  const [phoneNumberFilter, setPhoneNumberFilter] = useState<'all' | 'broadcast' | 'not_on_trunk'>('all');
+  const [broadcastPhoneNumbers, setBroadcastPhoneNumbers] = useState<string[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -307,6 +309,28 @@ export function SipTrunkManager() {
 
       if (error) throw error;
       setAvailableNumbers(data.numbers || []);
+
+      // Also load phone numbers used in active broadcasts
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: broadcasts } = await supabase
+          .from('voice_broadcasts')
+          .select('caller_id')
+          .eq('user_id', user.id)
+          .in('status', ['draft', 'active', 'paused']);
+
+        // Get rotation-enabled phone numbers (used by default in broadcasts)
+        const { data: rotationNumbers } = await supabase
+          .from('phone_numbers')
+          .select('number')
+          .eq('user_id', user.id)
+          .eq('rotation_enabled', true);
+
+        const broadcastNumbers = new Set<string>();
+        broadcasts?.forEach(b => b.caller_id && broadcastNumbers.add(b.caller_id));
+        rotationNumbers?.forEach(n => broadcastNumbers.add(n.number));
+        setBroadcastPhoneNumbers(Array.from(broadcastNumbers));
+      }
     } catch (error: any) {
       console.error('Failed to load available numbers:', error);
     }
@@ -1078,9 +1102,25 @@ export function SipTrunkManager() {
 
               {/* Available numbers to add */}
               <div>
-                <Label className="text-sm font-medium">Add Phone Numbers</Label>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">Add Phone Numbers</Label>
+                  <Select value={phoneNumberFilter} onValueChange={(v: 'all' | 'broadcast' | 'not_on_trunk') => setPhoneNumberFilter(v)}>
+                    <SelectTrigger className="w-44 h-8 text-xs">
+                      <SelectValue placeholder="Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Numbers</SelectItem>
+                      <SelectItem value="broadcast">Used in Broadcasts</SelectItem>
+                      <SelectItem value="not_on_trunk">Not on Trunk</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Select from your Twilio account phone numbers
+                  {phoneNumberFilter === 'broadcast'
+                    ? 'Showing numbers used in voice broadcasts or rotation-enabled'
+                    : phoneNumberFilter === 'not_on_trunk'
+                    ? 'Showing numbers not yet added to a SIP trunk'
+                    : 'All Twilio account phone numbers'}
                 </p>
                 {availableNumbers.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-2">No available numbers found</p>
@@ -1088,24 +1128,39 @@ export function SipTrunkManager() {
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {availableNumbers
                       .filter(num => !trunkPhoneNumbers.some(tn => tn.phone_number === num.phone_number))
-                      .map(num => (
-                        <div key={num.sid} className="flex items-center justify-between p-2 border rounded">
-                          <div>
-                            <span className="font-medium">{num.phone_number}</span>
-                            {num.friendly_name && (
-                              <span className="text-xs text-muted-foreground ml-2">{num.friendly_name}</span>
-                            )}
+                      .filter(num => {
+                        if (phoneNumberFilter === 'broadcast') {
+                          return broadcastPhoneNumbers.includes(num.phone_number);
+                        }
+                        // 'not_on_trunk' is already filtered above
+                        return true;
+                      })
+                      .map(num => {
+                        const usedInBroadcast = broadcastPhoneNumbers.includes(num.phone_number);
+                        return (
+                          <div key={num.sid} className="flex items-center justify-between p-2 border rounded">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{num.phone_number}</span>
+                              {num.friendly_name && (
+                                <span className="text-xs text-muted-foreground">{num.friendly_name}</span>
+                              )}
+                              {usedInBroadcast && (
+                                <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">
+                                  Broadcast
+                                </Badge>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => addPhoneToTrunk(num.sid)}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add
+                            </Button>
                           </div>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => addPhoneToTrunk(num.sid)}
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add
-                          </Button>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>

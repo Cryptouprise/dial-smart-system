@@ -1159,6 +1159,44 @@ serve(async (req) => {
                     amdEnabled,
                     amdCallbackUrl
                   );
+
+                  // FALLBACK: If SIP trunk fails with 403 (caller ID not on trunk), retry with direct API
+                  if (!callResult.success && callResult.error &&
+                      (callResult.error.includes('403') || callResult.error.includes('Forbidden') ||
+                       callResult.error.includes('not associated') || callResult.error.includes('not authorized'))) {
+                    console.warn(`⚠️ SIP trunk failed with auth error for ${callerNumber.number}, falling back to direct Twilio API`);
+                    console.warn(`   SIP error: ${callResult.error}`);
+
+                    // Retry with direct Twilio API (no SIP trunk)
+                    callResult = await callWithTwilio(
+                      providers.twilioAccountSid!,
+                      providers.twilioAuthToken!,
+                      callerNumber.number,
+                      item.phone_number,
+                      broadcast.audio_url || '',
+                      callMetadata,
+                      statusCallbackUrl,
+                      dtmfHandlerUrl,
+                      transferNumber,
+                      amdEnabled,
+                      amdCallbackUrl,
+                      true // Validate From number ownership
+                    );
+
+                    if (callResult.success) {
+                      console.log(`✅ Fallback to direct API succeeded for ${item.phone_number}`);
+                      // Mark this number as having SIP issues so we can inform the user
+                      await supabase.from('phone_numbers')
+                        .update({
+                          sip_trunk_config: {
+                            ...callerNumber.sip_trunk_config,
+                            sip_issue: 'Number not associated with SIP trunk - using direct API',
+                            sip_issue_at: new Date().toISOString()
+                          }
+                        })
+                        .eq('id', callerNumber.id);
+                    }
+                  }
                 } else {
                   // Validate Twilio number on first call of this number to fail fast
                   const shouldValidate = !callerNumber._twilio_validated;

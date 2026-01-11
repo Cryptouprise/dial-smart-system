@@ -114,7 +114,9 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [loadingResults, setLoadingResults] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'settings' | 'results'>('settings');
   const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
-  
+  const [sipTrunkConfig, setSipTrunkConfig] = useState<any>(null);
+  const [trunkPhoneNumbers, setTrunkPhoneNumbers] = useState<string[]>([]);
+
   // New state for queue manager and readiness
   const [queueManagerBroadcastId, setQueueManagerBroadcastId] = useState<string | null>(null);
   const [readinessResults, setReadinessResults] = useState<Record<string, BroadcastReadinessResult>>({});
@@ -177,7 +179,7 @@ export const VoiceBroadcastManager: React.FC = () => {
 
       const { data, error } = await supabase
         .from('phone_numbers')
-        .select('id, number, friendly_name, status, purpose, retell_phone_id')
+        .select('id, number, friendly_name, status, purpose, retell_phone_id, sip_trunk_config, provider, twilio_sid')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .eq('is_spam', false)
@@ -185,8 +187,79 @@ export const VoiceBroadcastManager: React.FC = () => {
 
       if (error) throw error;
       setPhoneNumbers(data || []);
+
+      // Also load the active SIP trunk config
+      const { data: sipData } = await supabase
+        .from('sip_trunk_configs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('is_default', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setSipTrunkConfig(sipData);
+
+      // Get list of phone numbers associated with the trunk
+      if (sipData?.twilio_trunk_sid) {
+        const { data: trunkNumbers } = await supabase.functions.invoke('twilio-integration', {
+          body: {
+            action: 'list_trunk_phone_numbers',
+            trunkSid: sipData.twilio_trunk_sid
+          }
+        });
+        setTrunkPhoneNumbers(trunkNumbers?.phoneNumbers?.map((p: any) => p.phoneNumber) || []);
+      }
     } catch (error) {
       console.error('Error loading phone numbers:', error);
+    }
+  };
+
+  // Add a phone number to the SIP trunk
+  const addPhoneToTrunk = async (phone: { number: string; twilio_sid?: string }) => {
+    if (!sipTrunkConfig?.twilio_trunk_sid) {
+      toast({
+        title: 'No SIP trunk configured',
+        description: 'Please configure a SIP trunk first in Settings → SIP Trunks',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!phone.twilio_sid) {
+      toast({
+        title: 'Missing Twilio SID',
+        description: 'This phone number does not have a Twilio SID. Try syncing your numbers first.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('twilio-integration', {
+        body: {
+          action: 'add_phone_to_trunk',
+          trunkSid: sipTrunkConfig.twilio_trunk_sid,
+          phoneNumberSid: phone.twilio_sid
+        }
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: 'Phone added to trunk',
+        description: `${phone.number} has been added to the SIP trunk`
+      });
+
+      // Refresh phone numbers to update trunk status
+      loadPhoneNumbers();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to add phone',
+        description: error.message || 'Could not add phone to trunk',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -1121,7 +1194,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <div className="space-y-0.5">
                         <Label className="text-sm font-medium">Use SIP Trunk (Cost Savings)</Label>
                         <p className="text-xs text-muted-foreground">
-                          Route calls through SIP trunk for lower cost. Disable for maximum reliability.
+                          Route calls through SIP trunk for ~50% lower cost (~$0.007/min vs $0.015/min).
                         </p>
                       </div>
                       <Switch
@@ -1132,9 +1205,68 @@ export const VoiceBroadcastManager: React.FC = () => {
                       />
                     </div>
                     {formData.use_sip_trunk && (
-                      <div className="text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded flex items-center gap-2">
-                        <AlertTriangle className="h-3 w-3" />
-                        SIP trunk must be configured and verified in Settings → SIP Trunks
+                      <div className="space-y-3">
+                        {!sipTrunkConfig ? (
+                          <div className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 p-2 rounded flex items-center gap-2">
+                            <XCircle className="h-3 w-3" />
+                            No SIP trunk configured. <a href="/settings" className="underline font-medium">Configure in Settings</a>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 p-2 rounded flex items-center gap-2">
+                              <CheckCircle2 className="h-3 w-3" />
+                              SIP Trunk: {sipTrunkConfig.friendly_name || sipTrunkConfig.twilio_trunk_sid}
+                            </div>
+
+                            {/* Show caller ID trunk status */}
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium text-muted-foreground">Caller ID Status on Trunk</Label>
+                              <div className="max-h-32 overflow-y-auto space-y-1">
+                                {phoneNumbers.filter(p => !p.retell_phone_id || p.provider === 'twilio').map(phone => {
+                                  const isOnTrunk = trunkPhoneNumbers.includes(phone.number);
+                                  const hasSipIssue = phone.sip_trunk_config?.sip_issue;
+                                  return (
+                                    <div key={phone.id} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50">
+                                      <span className="font-mono">{phone.number}</span>
+                                      <div className="flex items-center gap-2">
+                                        {hasSipIssue ? (
+                                          <Badge variant="outline" className="text-orange-600 border-orange-300 text-[10px]">
+                                            Fallback to Direct
+                                          </Badge>
+                                        ) : isOnTrunk ? (
+                                          <Badge variant="outline" className="text-green-600 border-green-300 text-[10px]">
+                                            On Trunk
+                                          </Badge>
+                                        ) : (
+                                          <>
+                                            <Badge variant="outline" className="text-yellow-600 border-yellow-300 text-[10px]">
+                                              Not on Trunk
+                                            </Badge>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-5 px-2 text-[10px]"
+                                              onClick={() => addPhoneToTrunk(phone)}
+                                            >
+                                              <Plus className="h-3 w-3 mr-1" />
+                                              Add
+                                            </Button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {phoneNumbers.filter(p => !p.retell_phone_id || p.provider === 'twilio').some(p => !trunkPhoneNumbers.includes(p.number)) && (
+                                <p className="text-xs text-muted-foreground">
+                                  Numbers not on trunk will automatically fall back to direct Twilio API.{' '}
+                                  <a href="/settings" className="text-primary underline">Add to trunk in Settings</a>
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </CardContent>
