@@ -31,24 +31,24 @@ async function fetchTwilioNumbers(accountSid: string, authToken: string): Promis
   let nextPageUri: string | null = `/2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers.json?PageSize=100`;
   
   while (nextPageUri) {
-    const url = nextPageUri.startsWith('http') 
+    const fetchUrl: string = nextPageUri.startsWith('http') 
       ? nextPageUri 
       : `https://api.twilio.com${nextPageUri}`;
     
-    const response = await fetch(url, {
+    const fetchResponse: Response = await fetch(fetchUrl, {
       headers: {
         'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
       },
     });
     
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Twilio API error: ${response.status} - ${error}`);
+    if (!fetchResponse.ok) {
+      const errorText = await fetchResponse.text();
+      throw new Error(`Twilio API error: ${fetchResponse.status} - ${errorText}`);
     }
     
-    const data = await response.json();
-    allNumbers.push(...(data.incoming_phone_numbers || []));
-    nextPageUri = data.next_page_uri || null;
+    const responseData: { incoming_phone_numbers?: TwilioNumber[]; next_page_uri?: string } = await fetchResponse.json();
+    allNumbers.push(...(responseData.incoming_phone_numbers || []));
+    nextPageUri = responseData.next_page_uri || null;
   }
   
   return allNumbers;
@@ -314,10 +314,11 @@ serve(async (req) => {
       });
     }
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in validate-phone-numbers:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error' 
+      error: errorMessage 
     }), { 
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     });
