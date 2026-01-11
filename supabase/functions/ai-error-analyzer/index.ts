@@ -7,12 +7,33 @@ const corsHeaders = {
 };
 
 interface ErrorPayload {
-  type: 'ui' | 'api' | 'runtime' | 'network' | 'backend' | 'database' | 'provider' | 'configuration';
+  type: 'ui' | 'api' | 'runtime' | 'network' | 'backend' | 'database' | 'provider' | 'configuration' | 'edge_function';
   message: string;
   stack?: string;
   context?: Record<string, unknown>;
   source?: 'client' | 'edge_function' | 'webhook' | 'verification';
   functionName?: string;
+}
+
+// Strip Vite HMR timestamps and normalize paths for cleaner storage
+function normalizeErrorPath(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  return path
+    .replace(/\?t=\d+/g, '') // Remove Vite HMR timestamps like ?t=1234567890
+    .replace(/:\d+:\d+$/, ''); // Remove line:column numbers
+}
+
+function normalizeErrorPayload(payload: ErrorPayload): ErrorPayload {
+  return {
+    ...payload,
+    message: payload.message.replace(/\?t=\d+/g, ''), // Clean timestamps from message
+    stack: normalizeErrorPath(payload.stack),
+    context: payload.context ? {
+      ...payload.context,
+      filename: normalizeErrorPath(payload.context.filename as string | undefined),
+      file_path: normalizeErrorPath(payload.context.file_path as string | undefined),
+    } : undefined,
+  };
 }
 
 interface RequestBody {
@@ -86,14 +107,17 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[AI Error Analyzer] Processing ${action} for error type: ${errorPayload.type}`);
-    console.log(`[AI Error Analyzer] Error message: ${errorPayload.message}`);
+    // Normalize the error payload to clean up Vite timestamps and paths
+    const normalizedError = normalizeErrorPayload(errorPayload);
+
+    console.log(`[AI Error Analyzer] Processing ${action} for error type: ${normalizedError.type}`);
+    console.log(`[AI Error Analyzer] Error message: ${normalizedError.message}`);
 
     if (!lovableApiKey) {
       console.error('[AI Error Analyzer] LOVABLE_API_KEY not configured');
       return new Response(JSON.stringify({ 
         error: 'AI service not configured',
-        suggestion: generateFallbackSuggestion(errorPayload),
+        suggestion: generateFallbackSuggestion(normalizedError),
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -102,7 +126,7 @@ serve(async (req) => {
 
     if (action === 'analyze') {
       // Analyze the error and generate a suggestion
-      const analysisPrompt = buildAnalysisPrompt(errorPayload);
+      const analysisPrompt = buildAnalysisPrompt(normalizedError);
       
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -136,7 +160,7 @@ Format your response as:
         
         // Return fallback suggestion
         return new Response(JSON.stringify({
-          suggestion: generateFallbackSuggestion(errorPayload),
+          suggestion: generateFallbackSuggestion(normalizedError),
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -151,13 +175,13 @@ Format your response as:
       await supabase.from('agent_decisions').insert({
         user_id: user.id,
         decision_type: 'error_analysis',
-        reasoning: `Analyzed ${errorPayload.type} error: ${errorPayload.message.substring(0, 100)}`,
+        reasoning: `Analyzed ${normalizedError.type} error: ${normalizedError.message.substring(0, 100)}`,
         action_taken: 'Generated fix suggestion',
         success: true,
       });
 
       return new Response(JSON.stringify({
-        suggestion: aiSuggestion || generateFallbackSuggestion(errorPayload),
+        suggestion: aiSuggestion || generateFallbackSuggestion(normalizedError),
         analyzed: true,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

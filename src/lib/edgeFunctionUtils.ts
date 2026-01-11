@@ -1,4 +1,5 @@
 import { FunctionsHttpError, SupabaseClient } from '@supabase/supabase-js';
+import { reportEdgeFunctionError } from './guardianReporter';
 
 /**
  * Extract a user-friendly error message from edge function errors
@@ -37,6 +38,7 @@ export async function extractEdgeFunctionError(error: unknown): Promise<string> 
 /**
  * Safely invoke an edge function with proper error handling
  * Returns { data, error } where error is a user-friendly string or null
+ * Also reports errors to Guardian for tracking
  */
 export async function safeEdgeFunctionInvoke<T = unknown>(
   supabase: SupabaseClient,
@@ -48,17 +50,44 @@ export async function safeEdgeFunctionInvoke<T = unknown>(
     
     if (error) {
       const errorMessage = await extractEdgeFunctionError(error);
+      
+      // Report to Guardian (fire and forget - don't block the response)
+      reportEdgeFunctionError({
+        functionName,
+        error: errorMessage,
+        requestBody: body,
+      }).catch(() => {}); // Swallow errors from reporting
+      
       return { data: null, error: errorMessage };
     }
     
     // Check if the response itself indicates an error
     if (data && typeof data === 'object' && 'error' in data) {
-      return { data: null, error: String(data.error) };
+      const errorMsg = String(data.error);
+      
+      // Report to Guardian
+      reportEdgeFunctionError({
+        functionName,
+        error: errorMsg,
+        requestBody: body,
+        context: { responseError: true },
+      }).catch(() => {});
+      
+      return { data: null, error: errorMsg };
     }
     
     return { data: data as T, error: null };
   } catch (err: unknown) {
     const errorMessage = await extractEdgeFunctionError(err);
+    
+    // Report to Guardian
+    reportEdgeFunctionError({
+      functionName,
+      error: err instanceof Error ? err : errorMessage,
+      requestBody: body,
+      context: { caught: true },
+    }).catch(() => {});
+    
     return { data: null, error: errorMessage };
   }
 }
