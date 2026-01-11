@@ -77,7 +77,6 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
   const getProviderBadge = () => {
     switch (provider) {
       case 'retell':
-      case 'retell_native':
         return { label: 'Retell AI', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' };
       case 'telnyx':
         return { label: 'Telnyx', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' };
