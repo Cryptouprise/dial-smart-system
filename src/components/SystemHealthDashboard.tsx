@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle, AlertTriangle, Clock, Database, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import GuardianStatusWidget from '@/components/GuardianStatusWidget';
 
 interface SystemHealth {
   overall_status: 'healthy' | 'degraded' | 'critical';
@@ -199,6 +200,11 @@ const SystemHealthDashboard = () => {
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Last checked: {new Date(systemHealth.checked_at).toLocaleString()}
               </span>
+            </div>
+
+            {/* Guardian Error Shield */}
+            <div className="mt-4">
+              <GuardianStatusWidget />
             </div>
           </div>
         ) : (

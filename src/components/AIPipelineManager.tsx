@@ -30,6 +30,7 @@ import { useAutonomousAgent } from '@/hooks/useAutonomousAgent';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import ScriptManager from './ScriptManager';
+import GuardianStatusWidget from '@/components/GuardianStatusWidget';
 
 const AIPipelineManager: React.FC = () => {
   const { 
@@ -309,6 +310,9 @@ const AIPipelineManager: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Guardian Error Shield */}
+      <GuardianStatusWidget />
 
       {showSettings && (
         <Card className="border-purple-200 bg-purple-50 dark:bg-purple-900/20">

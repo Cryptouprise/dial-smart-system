@@ -1,56 +1,74 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RotateCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'react-router-dom';
-import CallAnalytics from '@/components/CallAnalytics';
-import NumberRotationManager from '@/components/NumberRotationManager';
-import SpamDetectionManager from '@/components/SpamDetectionManager';
-import AIDecisionEngine from '@/components/AIDecisionEngine';
-import SystemHealthDashboard from '@/components/SystemHealthDashboard';
-import PredictiveDialingDashboard from '@/components/PredictiveDialingDashboard';
-import RetellAIManager from '@/components/RetellAIManager';
-import PipelineKanban from '@/components/PipelineKanban';
-import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
-import SmsMessaging from '@/components/SmsMessaging';
+import { Skeleton } from '@/components/ui/skeleton';
+
+// Eagerly loaded - needed for Overview tab (most common entry point)
 import TabErrorBoundary from '@/components/TabErrorBoundary';
-import DailyReports from '@/components/DailyReports';
-import CampaignAutomation from '@/components/CampaignAutomation';
-import DispositionAutomationManager from '@/components/DispositionAutomationManager';
-import AIPipelineManager from '@/components/AIPipelineManager';
-import FollowUpScheduler from '@/components/FollowUpScheduler';
-import AgentActivityDashboard from '@/components/AgentActivityDashboard';
-import AgentActivityWidget from '@/components/AgentActivityWidget';
-import WorkflowBuilder from '@/components/WorkflowBuilder';
-import LeadUpload from '@/components/LeadUpload';
-import EnhancedLeadManager from '@/components/EnhancedLeadManager';
-import AIWorkflowGenerator from '@/components/AIWorkflowGenerator';
-import ReachabilityDashboard from '@/components/ReachabilityDashboard';
-import CampaignResultsDashboard from '@/components/CampaignResultsDashboard';
-import LiveCampaignMonitor from '@/components/LiveCampaignMonitor';
-import WorkflowABTesting from '@/components/WorkflowABTesting';
-import VoiceBroadcastManager from '@/components/VoiceBroadcastManager';
-import AIErrorPanel from '@/components/AIErrorPanel';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import QuickStartCards from '@/components/QuickStartCards';
 import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import QuickLaunchButton from '@/components/QuickLaunchButton';
 import SystemHealthIndicator from '@/components/SystemHealthIndicator';
-import { BudgetManager } from '@/components/BudgetManager';
-import { OnboardingWizard } from '@/components/ai-configuration/OnboardingWizard';
-import { AISetupAssistant } from '@/components/ai-configuration/AISetupAssistant';
-import { CalendarIntegrationManager } from '@/components/CalendarIntegrationManager';
+import SystemHealthDashboard from '@/components/SystemHealthDashboard';
+import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
+import AgentActivityWidget from '@/components/AgentActivityWidget';
+import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
+import GuardianStatusWidget from '@/components/GuardianStatusWidget';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
-import AutonomousAgentDashboard from '@/components/AutonomousAgentDashboard';
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
-import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
-import GuardianStatusWidget from '@/components/GuardianStatusWidget';
+
+// Lazy-loaded tab components - only loaded when user navigates to them
+const CallAnalytics = lazy(() => import('@/components/CallAnalytics'));
+const NumberRotationManager = lazy(() => import('@/components/NumberRotationManager'));
+const SpamDetectionManager = lazy(() => import('@/components/SpamDetectionManager'));
+const AIDecisionEngine = lazy(() => import('@/components/AIDecisionEngine'));
+const PredictiveDialingDashboard = lazy(() => import('@/components/PredictiveDialingDashboard'));
+const RetellAIManager = lazy(() => import('@/components/RetellAIManager'));
+const PipelineKanban = lazy(() => import('@/components/PipelineKanban'));
+const SmsMessaging = lazy(() => import('@/components/SmsMessaging'));
+const DailyReports = lazy(() => import('@/components/DailyReports'));
+const CampaignAutomation = lazy(() => import('@/components/CampaignAutomation'));
+const DispositionAutomationManager = lazy(() => import('@/components/DispositionAutomationManager'));
+const AIPipelineManager = lazy(() => import('@/components/AIPipelineManager'));
+const FollowUpScheduler = lazy(() => import('@/components/FollowUpScheduler'));
+const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDashboard'));
+const WorkflowBuilder = lazy(() => import('@/components/WorkflowBuilder'));
+const LeadUpload = lazy(() => import('@/components/LeadUpload'));
+const EnhancedLeadManager = lazy(() => import('@/components/EnhancedLeadManager'));
+const AIWorkflowGenerator = lazy(() => import('@/components/AIWorkflowGenerator'));
+const ReachabilityDashboard = lazy(() => import('@/components/ReachabilityDashboard'));
+const CampaignResultsDashboard = lazy(() => import('@/components/CampaignResultsDashboard'));
+const LiveCampaignMonitor = lazy(() => import('@/components/LiveCampaignMonitor'));
+const WorkflowABTesting = lazy(() => import('@/components/WorkflowABTesting'));
+const VoiceBroadcastManager = lazy(() => import('@/components/VoiceBroadcastManager'));
+const AIErrorPanel = lazy(() => import('@/components/AIErrorPanel'));
+const BudgetManager = lazy(() => import('@/components/BudgetManager').then(m => ({ default: m.BudgetManager })));
+const OnboardingWizard = lazy(() => import('@/components/ai-configuration/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
+const AISetupAssistant = lazy(() => import('@/components/ai-configuration/AISetupAssistant').then(m => ({ default: m.AISetupAssistant })));
+const CalendarIntegrationManager = lazy(() => import('@/components/CalendarIntegrationManager').then(m => ({ default: m.CalendarIntegrationManager })));
+const AutonomousAgentDashboard = lazy(() => import('@/components/AutonomousAgentDashboard'));
+
+// Loading component for lazy-loaded tabs
+const TabLoader = () => (
+  <div className="space-y-4 p-4">
+    <Skeleton className="h-8 w-1/3" />
+    <Skeleton className="h-4 w-1/2" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+      <Skeleton className="h-32" />
+      <Skeleton className="h-32" />
+    </div>
+    <Skeleton className="h-64 mt-4" />
+  </div>
+);
 
 interface PhoneNumber {
   id: string;
@@ -357,63 +375,63 @@ const Dashboard = () => {
           </TabErrorBoundary>
         );
       case 'leads':
-        return <TabErrorBoundary tabName="Leads"><EnhancedLeadManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Leads"><Suspense fallback={<TabLoader />}><EnhancedLeadManager /></Suspense></TabErrorBoundary>;
       case 'pipeline':
-        return <TabErrorBoundary tabName="Pipeline"><PipelineKanban /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Pipeline"><Suspense fallback={<TabLoader />}><PipelineKanban /></Suspense></TabErrorBoundary>;
       case 'predictive':
-        return <TabErrorBoundary tabName="Predictive Dialing"><PredictiveDialingDashboard /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Predictive Dialing"><Suspense fallback={<TabLoader />}><PredictiveDialingDashboard /></Suspense></TabErrorBoundary>;
       case 'retell':
-        return <TabErrorBoundary tabName="Retell AI"><RetellAIManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Retell AI"><Suspense fallback={<TabLoader />}><RetellAIManager /></Suspense></TabErrorBoundary>;
       case 'workflows':
-        return <TabErrorBoundary tabName="Workflows"><WorkflowBuilder /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Workflows"><Suspense fallback={<TabLoader />}><WorkflowBuilder /></Suspense></TabErrorBoundary>;
       case 'lead-upload':
-        return <TabErrorBoundary tabName="Lead Upload"><LeadUpload /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Lead Upload"><Suspense fallback={<TabLoader />}><LeadUpload /></Suspense></TabErrorBoundary>;
       case 'analytics':
-        return <TabErrorBoundary tabName="Analytics"><CallAnalytics numbers={numbers} /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Analytics"><Suspense fallback={<TabLoader />}><CallAnalytics numbers={numbers} /></Suspense></TabErrorBoundary>;
       case 'ai-engine':
-        return <TabErrorBoundary tabName="AI Engine"><AIDecisionEngine numbers={numbers} onRefreshNumbers={refreshNumbers} /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="AI Engine"><Suspense fallback={<TabLoader />}><AIDecisionEngine numbers={numbers} onRefreshNumbers={refreshNumbers} /></Suspense></TabErrorBoundary>;
       case 'rotation':
-        return <TabErrorBoundary tabName="Rotation"><NumberRotationManager numbers={numbers} onRefreshNumbers={refreshNumbers} /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Rotation"><Suspense fallback={<TabLoader />}><NumberRotationManager numbers={numbers} onRefreshNumbers={refreshNumbers} /></Suspense></TabErrorBoundary>;
       case 'spam':
-        return <TabErrorBoundary tabName="Spam Detection"><SpamDetectionManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Spam Detection"><Suspense fallback={<TabLoader />}><SpamDetectionManager /></Suspense></TabErrorBoundary>;
       case 'sms':
-        return <TabErrorBoundary tabName="SMS"><SmsMessaging /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="SMS"><Suspense fallback={<TabLoader />}><SmsMessaging /></Suspense></TabErrorBoundary>;
       case 'reports':
-        return <TabErrorBoundary tabName="Reports"><DailyReports /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Reports"><Suspense fallback={<TabLoader />}><DailyReports /></Suspense></TabErrorBoundary>;
       case 'automation':
-        return <TabErrorBoundary tabName="Automation"><CampaignAutomation /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Automation"><Suspense fallback={<TabLoader />}><CampaignAutomation /></Suspense></TabErrorBoundary>;
       case 'dispositions':
-        return <TabErrorBoundary tabName="Dispositions"><DispositionAutomationManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Dispositions"><Suspense fallback={<TabLoader />}><DispositionAutomationManager /></Suspense></TabErrorBoundary>;
       case 'ai-manager':
-        return <TabErrorBoundary tabName="AI Manager"><AIPipelineManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="AI Manager"><Suspense fallback={<TabLoader />}><AIPipelineManager /></Suspense></TabErrorBoundary>;
       case 'follow-ups':
-        return <TabErrorBoundary tabName="Follow-ups"><FollowUpScheduler /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Follow-ups"><Suspense fallback={<TabLoader />}><FollowUpScheduler /></Suspense></TabErrorBoundary>;
       case 'agent-activity':
-        return <TabErrorBoundary tabName="Agent Activity"><AgentActivityDashboard /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Agent Activity"><Suspense fallback={<TabLoader />}><AgentActivityDashboard /></Suspense></TabErrorBoundary>;
       case 'ai-workflows':
-        return <TabErrorBoundary tabName="AI Workflows"><AIWorkflowGenerator /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="AI Workflows"><Suspense fallback={<TabLoader />}><AIWorkflowGenerator /></Suspense></TabErrorBoundary>;
       case 'reachability':
-        return <TabErrorBoundary tabName="Reachability"><ReachabilityDashboard /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Reachability"><Suspense fallback={<TabLoader />}><ReachabilityDashboard /></Suspense></TabErrorBoundary>;
       case 'campaign-results':
-        return <TabErrorBoundary tabName="Campaign Results"><CampaignResultsDashboard /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Campaign Results"><Suspense fallback={<TabLoader />}><CampaignResultsDashboard /></Suspense></TabErrorBoundary>;
       case 'live-monitor':
-        return <TabErrorBoundary tabName="Live Monitor"><LiveCampaignMonitor /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Live Monitor"><Suspense fallback={<TabLoader />}><LiveCampaignMonitor /></Suspense></TabErrorBoundary>;
       case 'ab-testing':
-        return <TabErrorBoundary tabName="A/B Testing"><WorkflowABTesting /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="A/B Testing"><Suspense fallback={<TabLoader />}><WorkflowABTesting /></Suspense></TabErrorBoundary>;
       case 'broadcast':
-        return <TabErrorBoundary tabName="Voice Broadcasting"><VoiceBroadcastManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Voice Broadcasting"><Suspense fallback={<TabLoader />}><VoiceBroadcastManager /></Suspense></TabErrorBoundary>;
       case 'ai-errors':
-        return <TabErrorBoundary tabName="Guardian"><AIErrorPanel /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Guardian"><Suspense fallback={<TabLoader />}><AIErrorPanel /></Suspense></TabErrorBoundary>;
       case 'budget':
-        return <TabErrorBoundary tabName="Budget Manager"><BudgetManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Budget Manager"><Suspense fallback={<TabLoader />}><BudgetManager /></Suspense></TabErrorBoundary>;
       case 'onboarding':
-        return <TabErrorBoundary tabName="Setup Wizard"><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Setup Wizard"><Suspense fallback={<TabLoader />}><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></Suspense></TabErrorBoundary>;
       case 'ai-setup':
-        return <TabErrorBoundary tabName="AI Setup"><AISetupAssistant /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="AI Setup"><Suspense fallback={<TabLoader />}><AISetupAssistant /></Suspense></TabErrorBoundary>;
       case 'calendar':
-        return <TabErrorBoundary tabName="Calendar"><CalendarIntegrationManager /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Calendar"><Suspense fallback={<TabLoader />}><CalendarIntegrationManager /></Suspense></TabErrorBoundary>;
       case 'autonomous-agent':
-        return <TabErrorBoundary tabName="Autonomous Agent"><AutonomousAgentDashboard /></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Autonomous Agent"><Suspense fallback={<TabLoader />}><AutonomousAgentDashboard /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }

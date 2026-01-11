@@ -164,6 +164,31 @@ export const useAIErrorHandler = () => {
       console.log('[🛡️ Guardian] Captured:', type, errorMessage.substring(0, 100));
     }
 
+    // Write to guardian_alerts table for Claude Code integration
+    // This allows Claude Code to query the table via Supabase MCP and investigate
+    if (settings.logErrors) {
+      supabase.from('guardian_alerts').insert({
+        type: type === 'ui' ? 'frontend_error' :
+              type === 'api' ? 'api_failure' :
+              type === 'edge_function' ? 'edge_function_error' :
+              type === 'runtime' ? 'runtime_error' :
+              type === 'network' ? 'api_failure' :
+              'other',
+        severity: 'medium',
+        component: context?.component as string || context?.filename as string || undefined,
+        file_path: context?.filename as string || undefined,
+        line_number: context?.lineno as number || undefined,
+        message: errorMessage.substring(0, 1000),
+        stack_trace: errorStack?.substring(0, 5000),
+        context: context || {},
+        status: 'open',
+        detected_at: new Date().toISOString(),
+      }).then(
+        () => console.log('[🛡️ Guardian] Alert saved for Claude Code'),
+        (err) => console.log('[🛡️ Guardian] Alert save skipped:', err?.message)
+      );
+    }
+
     // Show toast when auto-fix activates
     if (settings.autoFixMode) {
       toast({
