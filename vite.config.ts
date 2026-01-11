@@ -96,5 +96,13 @@ export default defineConfig(({ mode }) => ({
     },
     chunkSizeWarningLimit: 600,
     sourcemap: mode === 'development',
+    // Remove debugger statements in production builds
+    // Note: console.log/debug are NOT stripped to preserve error diagnostics
+    // Use the logger utility for production-safe logging
+    minify: 'esbuild',
+    esbuild: mode === 'production' ? {
+      drop: ['debugger'],
+      pure: ['console.log', 'console.debug', 'console.info'],
+    } : undefined,
   },
 }));

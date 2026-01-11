@@ -1,11 +1,17 @@
 /**
  * Logging Utilities
- * 
+ *
  * Provides structured logging with different severity levels
  * and integrates with monitoring systems.
+ *
+ * In production, debug and info logs are suppressed to reduce noise.
+ * Only warnings and errors are logged in production.
  */
 
 import { captureMessage, addBreadcrumb } from './sentry';
+
+// Check if we're in production mode
+const IS_PRODUCTION = import.meta.env.PROD;
 
 export enum LogLevel {
   DEBUG = 'debug',
@@ -50,21 +56,22 @@ class Logger {
   }
 
   /**
-   * Log debug message
+   * Log debug message (dev only)
    */
   debug(message: string, context?: LogContext) {
-    if (import.meta.env.DEV) {
+    if (!IS_PRODUCTION) {
       console.debug(this.formatMessage(LogLevel.DEBUG, message, context));
     }
-    
     addBreadcrumb(message, { level: 'debug', ...context });
   }
 
   /**
-   * Log info message
+   * Log info message (dev only in console, always to breadcrumbs)
    */
   info(message: string, context?: LogContext) {
-    console.info(this.formatMessage(LogLevel.INFO, message, context));
+    if (!IS_PRODUCTION) {
+      console.info(this.formatMessage(LogLevel.INFO, message, context));
+    }
     addBreadcrumb(message, { level: 'info', ...context });
   }
 
