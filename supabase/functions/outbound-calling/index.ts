@@ -231,7 +231,36 @@ serve(async (req) => {
           agent: agentId
         });
 
-        // First, set the outbound agent on the phone number
+        // First, check if the phone number exists in Retell and set the outbound agent
+        console.log('[Outbound Calling] Checking phone number in Retell:', callerId);
+        
+        // Try to get the phone number first to see if it exists in Retell
+        const getPhoneResponse = await fetch(`https://api.retellai.com/get-phone-number/${encodeURIComponent(callerId)}`, {
+          method: 'GET',
+          headers: retellHeaders,
+        });
+        
+        if (!getPhoneResponse.ok) {
+          const getError = await getPhoneResponse.text();
+          console.error('[Outbound Calling] Phone number not found in Retell:', getError);
+          
+          // Check if it's a 404 - number not in Retell
+          if (getPhoneResponse.status === 404) {
+            // Update call log with clear error
+            await supabaseAdmin
+              .from('call_logs')
+              .update({
+                status: 'failed',
+                ended_at: new Date().toISOString(),
+                notes: `Phone number ${callerId} is not imported in Retell AI. Please import this number in your Retell dashboard or use a number that has been imported.`,
+              })
+              .eq('id', callLog.id);
+            
+            throw new Error(`Phone number ${callerId} is not registered in Retell AI. To use this number for AI calls, you must first import it in the Retell dashboard (Phone Numbers section). Alternatively, use a different number that is already in Retell.`);
+          }
+        }
+        
+        // Now try to set the outbound agent on the phone number
         console.log('[Outbound Calling] Setting outbound agent on phone number...');
         const updatePhoneResponse = await fetch(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
           method: 'PATCH',
@@ -244,7 +273,7 @@ serve(async (req) => {
         if (!updatePhoneResponse.ok) {
           const updateError = await updatePhoneResponse.text();
           console.error('[Outbound Calling] Failed to set outbound agent:', updateError);
-          // Continue anyway, maybe it's already set
+          // Continue anyway, maybe it's already set or we can proceed without this
         } else {
           console.log('[Outbound Calling] Outbound agent set successfully');
         }
