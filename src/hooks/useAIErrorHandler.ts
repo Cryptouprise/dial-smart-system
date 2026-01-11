@@ -467,6 +467,7 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
     const shouldIgnore = [
       '[🛡️ Guardian]',
       '[AI Error Handler]',
+      '[Guardian',
       'Failed to fetch',
       '_getUser',
       '_useSession',
@@ -489,6 +490,8 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       'AIErrorPanel',
       'GuardianStatusWidget',
       'useAIErrorHandler',
+      'useGuardianPersistence',
+      'guardianReporter',
       'ai-error-analyzer',
       'TabErrorBoundary',
       // React setState warnings (often benign in dev)
@@ -501,10 +504,74 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
     }
   };
 
+  // NEW: Wrap fetch to capture network errors (500+ and network failures)
+  const originalFetch = window.fetch;
+  window.fetch = async function guardianFetch(
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+    
+    // Skip health check and Guardian's own endpoints
+    if (url.includes('ai-error-analyzer') || url.includes('/health')) {
+      return originalFetch(input, init);
+    }
+    
+    try {
+      const response = await originalFetch(input, init);
+
+      // Report server errors (500+) but don't block the response
+      if (!response.ok && response.status >= 500) {
+        const functionName = extractFunctionNameFromUrl(url);
+        captureError(
+          `API Error ${response.status}: ${functionName}`,
+          'api',
+          { 
+            url: url.substring(0, 200),
+            status: response.status,
+            statusText: response.statusText,
+          }
+        );
+      }
+
+      return response;
+    } catch (error) {
+      // Network failure - capture as network error
+      const functionName = extractFunctionNameFromUrl(url);
+      captureError(
+        error instanceof Error ? error.message : `Network error: ${functionName}`,
+        'network',
+        { 
+          url: url.substring(0, 200),
+          errorType: 'network_failure',
+        }
+      );
+
+      throw error; // Re-throw so the original caller gets the error
+    }
+  };
+
   // Return cleanup function that removes ALL listeners
   return () => {
     window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     window.removeEventListener('error', handleError);
     console.error = originalConsoleError;
+    window.fetch = originalFetch;
   };
 };
+
+// Helper to extract function name from URL for better error messages
+function extractFunctionNameFromUrl(url: string): string {
+  // Match Supabase edge function URLs
+  const match = url.match(/\/functions\/v1\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  
+  // For other URLs, use the last path segment
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    return pathParts[pathParts.length - 1] || 'unknown';
+  } catch {
+    return 'api-request';
+  }
+}

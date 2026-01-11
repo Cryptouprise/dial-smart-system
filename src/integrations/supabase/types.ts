@@ -4254,6 +4254,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
