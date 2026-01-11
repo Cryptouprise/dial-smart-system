@@ -328,13 +328,13 @@ const Dashboard = () => {
                             <div className="font-mono text-sm truncate">{number.phoneNumber}</div>
                             <div>
                               <Badge className={`text-xs ${
-                                (number.provider === 'retell' || number.provider === 'retell_native')
+                                number.provider === 'retell'
                                   ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
                                   : number.provider === 'telnyx'
                                   ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                                   : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                               }`}>
-                                {(number.provider === 'retell' || number.provider === 'retell_native') ? 'Retell AI' : number.provider === 'telnyx' ? 'Telnyx' : 'Twilio'}
+                                {number.provider === 'retell' ? 'Retell AI' : number.provider === 'telnyx' ? 'Telnyx' : 'Twilio'}
                               </Badge>
                             </div>
                             <div>
