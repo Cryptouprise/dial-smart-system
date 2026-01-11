@@ -24,6 +24,7 @@ import { CampaignWorkflowEditor } from './CampaignWorkflowEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
+import { DispatcherActivityFeed } from './DispatcherActivityFeed';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAIErrors } from '@/contexts/AIErrorContext';
@@ -1174,10 +1175,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
                       {autoDispatchEnabled && (
                         <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 p-2 rounded">
-                          <Zap className="h-4 w-4" />
+                          <Zap className="h-4 w-4 animate-pulse" />
                           <span className="text-sm">AI Auto-Dispatch Active - calls every 30s</span>
                         </div>
                       )}
+
+                      {/* Live Dispatcher Activity Feed */}
+                      <DispatcherActivityFeed 
+                        campaignId={campaign.id} 
+                        isActive={dialingCampaignId === campaign.id}
+                      />
 
                       {/* Current Lead Card */}
                       {currentLead ? (
@@ -1412,7 +1419,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 )}
 
                 {viewingLiveStatus === campaign.id && (
-                  <div className="pt-4">
+                  <div className="pt-4 space-y-4">
+                    {/* Show real-time dispatcher activity */}
+                    <DispatcherActivityFeed 
+                      campaignId={campaign.id} 
+                      isActive={campaign.status === 'active'}
+                    />
                     <LiveCampaignStatusMonitor campaignId={campaign.id} />
                   </div>
                 )}
