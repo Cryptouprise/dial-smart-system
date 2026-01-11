@@ -79,18 +79,19 @@ const CallCenter = ({ onStatsUpdate }: CallCenterProps) => {
     setIsDialing(true);
     
     try {
-      // Get an active phone number to use as caller ID
+      // Only select phone numbers that are registered in Retell AI for AI calls
       const { data: phoneNumbers, error: phoneError } = await supabase
         .from('phone_numbers')
-        .select('number')
+        .select('number, retell_phone_id')
         .eq('status', 'active')
+        .not('retell_phone_id', 'is', null)
         .limit(1)
         .maybeSingle();
 
       if (phoneError || !phoneNumbers) {
         toast({
-          title: "No Phone Numbers",
-          description: "Please add an active phone number to make calls",
+          title: "No Retell Phone Numbers",
+          description: "Please add a phone number registered with Retell AI to make AI calls",
           variant: "destructive"
         });
         setIsDialing(false);
