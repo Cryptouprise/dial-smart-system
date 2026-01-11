@@ -73,8 +73,9 @@ interface PhoneNumberStatus {
 
 const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
+  const [forceDispatchingLead, setForceDispatchingLead] = useState<string | null>(null);
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
-  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, forceRequeueLeads, isDispatching } = useCallDispatcher();
+  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, forceRequeueLeads, forceDispatchLead, isDispatching } = useCallDispatcher();
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
@@ -1178,6 +1179,36 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                           <Zap className="h-4 w-4 animate-pulse" />
                           <span className="text-sm">AI Auto-Dispatch Active - calls every 30s</span>
                         </div>
+                      )}
+
+                      {/* Warning about high retry delay */}
+                      {(campaign as any).retry_delay_minutes > 30 && (
+                        <div className="flex items-center justify-between gap-2 text-orange-800 dark:text-orange-200 bg-orange-100 dark:bg-orange-900/30 p-2 rounded">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">
+                              Retry delay is {(campaign as any).retry_delay_minutes} minutes - leads won't be re-called until then
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Force Call First Lead Now button */}
+                      {currentLead && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full bg-green-600 hover:bg-green-700"
+                          onClick={async () => {
+                            setForceDispatchingLead(currentLead.id);
+                            await forceDispatchLead(currentLead.id, campaign.id);
+                            setForceDispatchingLead(null);
+                          }}
+                          disabled={forceDispatchingLead === currentLead.id || isDispatching}
+                        >
+                          <Zap className="h-4 w-4 mr-1" />
+                          {forceDispatchingLead === currentLead.id ? 'Forcing Call...' : 'Force Call This Lead Now'}
+                        </Button>
                       )}
 
                       {/* Live Dispatcher Activity Feed */}
