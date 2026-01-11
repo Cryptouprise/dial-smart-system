@@ -9,27 +9,46 @@ const corsHeaders = {
 async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   console.log('[Dispatcher Cleanup] Cleaning up stuck calls for user:', userId);
 
-  // Mark old "ringing" / "initiated" / "in_progress" calls as "no_answer" if older than 5 minutes
+  // Mark old "ringing" / "initiated" calls as "no_answer" if older than 2 minutes (reduced from 5)
+  // Retell calls typically connect or fail within 30-60 seconds
+  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-  const { data: stuckCalls, error: cleanupError } = await supabase
+  // Quick cleanup for ringing/initiated (2 min threshold)
+  const { data: stuckRingingCalls, error: ringingCleanupError } = await supabase
     .from('call_logs')
     .update({
       status: 'no_answer',
       ended_at: new Date().toISOString(),
-      notes: 'Auto-cleaned: stuck in ringing state',
+      notes: 'Auto-cleaned: stuck in ringing state (2 min timeout)',
     })
     .eq('user_id', userId)
-    .in('status', ['initiated', 'ringing', 'in_progress'])
+    .in('status', ['initiated', 'ringing'])
+    .lt('created_at', twoMinutesAgo)
+    .select();
+
+  if (ringingCleanupError) {
+    console.error('[Dispatcher Cleanup] Ringing call cleanup error:', ringingCleanupError);
+  }
+
+  // Slower cleanup for in_progress (5 min threshold - these are actual conversations)
+  const { data: stuckInProgressCalls, error: inProgressCleanupError } = await supabase
+    .from('call_logs')
+    .update({
+      status: 'no_answer',
+      ended_at: new Date().toISOString(),
+      notes: 'Auto-cleaned: stuck in_progress state',
+    })
+    .eq('user_id', userId)
+    .eq('status', 'in_progress')
     .lt('created_at', fiveMinutesAgo)
     .select();
 
-  if (cleanupError) {
-    console.error('[Dispatcher Cleanup] Call log cleanup error:', cleanupError);
-    throw cleanupError;
+  if (inProgressCleanupError) {
+    console.error('[Dispatcher Cleanup] In-progress call cleanup error:', inProgressCleanupError);
   }
 
-  const cleanedRingingCount = stuckCalls?.length || 0;
+  const cleanedRingingCount = (stuckRingingCalls?.length || 0) + (stuckInProgressCalls?.length || 0);
 
   // Cleanup stuck queued calls
   const queuedCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
@@ -76,7 +95,7 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
       })
       .in('campaign_id', userCampaignIds)
       .eq('status', 'calling')
-      .lt('updated_at', fiveMinutesAgo)
+      .lt('updated_at', twoMinutesAgo)
       .select('id');
 
     if (resetError) {
@@ -202,6 +221,95 @@ serve(async (req) => {
           cleaned: cleanedCount,
           resetQueue: resetQueueCount,
           message: `Cleaned up ${cleanedCount} stuck calls and reset ${resetQueueCount} stuck queue entries`,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Handle force_dispatch action - immediately call a specific lead
+    if (action === 'force_dispatch') {
+      const { leadId, campaignId } = requestBody;
+      
+      if (!leadId || !campaignId) {
+        return new Response(
+          JSON.stringify({ error: 'leadId and campaignId are required for force_dispatch' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log(`[Dispatcher] Force dispatch requested for lead ${leadId} in campaign ${campaignId}`);
+      const nowIso = new Date().toISOString();
+      
+      // 1. End any stuck ringing/initiated calls for this lead
+      const { data: clearedCalls } = await supabase
+        .from('call_logs')
+        .update({ 
+          status: 'no_answer', 
+          ended_at: nowIso,
+          notes: 'Cleared for force dispatch'
+        })
+        .eq('lead_id', leadId)
+        .in('status', ['ringing', 'initiated', 'queued'])
+        .select('id');
+      
+      console.log(`[Dispatcher] Cleared ${clearedCalls?.length || 0} stuck calls for lead ${leadId}`);
+      
+      // 2. Check if lead already has a queue entry
+      const { data: existingEntry } = await supabase
+        .from('dialing_queues')
+        .select('id')
+        .eq('lead_id', leadId)
+        .eq('campaign_id', campaignId)
+        .maybeSingle();
+      
+      if (existingEntry) {
+        // Update existing entry to dispatch immediately
+        await supabase
+          .from('dialing_queues')
+          .update({ 
+            scheduled_at: nowIso, 
+            status: 'pending',
+            attempts: 0,
+            updated_at: nowIso
+          })
+          .eq('id', existingEntry.id);
+        
+        console.log(`[Dispatcher] Reset queue entry ${existingEntry.id} for immediate dispatch`);
+      } else {
+        // Get lead phone number
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('phone_number')
+          .eq('id', leadId)
+          .maybeSingle();
+        
+        if (!lead) {
+          return new Response(
+            JSON.stringify({ error: 'Lead not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Create new queue entry with highest priority
+        await supabase.from('dialing_queues').insert({
+          campaign_id: campaignId,
+          lead_id: leadId,
+          phone_number: lead.phone_number,
+          status: 'pending',
+          scheduled_at: nowIso,
+          priority: 100, // Highest priority for force dispatch
+          max_attempts: 3,
+          attempts: 0,
+        });
+        
+        console.log(`[Dispatcher] Created new queue entry for force dispatch of lead ${leadId}`);
+      }
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `Lead ${leadId} queued for immediate dispatch`,
+          clearedCalls: clearedCalls?.length || 0,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
