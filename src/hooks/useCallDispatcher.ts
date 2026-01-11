@@ -260,11 +260,84 @@ export const useCallDispatcher = () => {
     [toast, dispatchCalls]
   );
 
+  // Force dispatch a specific lead immediately (clears stuck calls, resets queue)
+  const forceDispatchLead = useCallback(
+    async (leadId: string, campaignId: string) => {
+      try {
+        console.log(`[Force Dispatch] Requesting immediate dispatch for lead ${leadId}`);
+
+        const { data, error } = await supabase.functions.invoke('call-dispatcher', {
+          method: 'POST',
+          body: {
+            action: 'force_dispatch',
+            leadId,
+            campaignId,
+          },
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: 'Force Dispatch Queued',
+          description: `Lead queued for immediate calling${data?.clearedCalls > 0 ? ` (cleared ${data.clearedCalls} stuck calls)` : ''}`,
+        });
+
+        // Trigger immediate dispatch to actually make the call
+        await dispatchCalls({ silent: true });
+
+        return data;
+      } catch (error: any) {
+        console.error('[Force Dispatch] Error:', error);
+        toast({
+          title: 'Force Dispatch Failed',
+          description: error.message || 'Failed to force dispatch lead',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    },
+    [toast, dispatchCalls]
+  );
+
+  // Cleanup stuck calls manually
+  const cleanupStuckCalls = useCallback(
+    async () => {
+      try {
+        console.log('[Cleanup] Requesting stuck call cleanup...');
+
+        const { data, error } = await supabase.functions.invoke('call-dispatcher', {
+          method: 'POST',
+          body: { action: 'cleanup_stuck_calls' },
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: 'Cleanup Complete',
+          description: data?.message || 'Stuck calls cleaned up',
+        });
+
+        return data;
+      } catch (error: any) {
+        console.error('[Cleanup] Error:', error);
+        toast({
+          title: 'Cleanup Failed',
+          description: error.message || 'Failed to cleanup stuck calls',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    },
+    [toast]
+  );
+
   return {
     dispatchCalls,
     startAutoDispatch,
     stopAutoDispatch,
     forceRequeueLeads,
+    forceDispatchLead,
+    cleanupStuckCalls,
     isDispatching,
   };
 };
