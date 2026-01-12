@@ -254,8 +254,8 @@ export function DispatcherActivityFeed({ campaignId, isActive }: DispatcherActiv
             <p className="text-xs mt-1">Calls will appear here when dispatched</p>
           </div>
         ) : (
-          <ScrollArea className="h-[300px]" ref={scrollRef}>
-            <div className="space-y-2">
+          <ScrollArea className="h-[300px]">
+            <div ref={scrollRef} className="space-y-2">
               {events.map((event) => (
                 <div
                   key={event.id}

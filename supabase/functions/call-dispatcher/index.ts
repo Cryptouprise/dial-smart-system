@@ -922,7 +922,7 @@ serve(async (req) => {
       .select(`
         *,
         leads (id, phone_number, first_name, last_name),
-        campaigns (id, agent_id, name)
+        campaigns (id, agent_id, name, retry_delay_minutes)
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending')
@@ -934,6 +934,41 @@ serve(async (req) => {
     if (queueError) throw queueError;
 
     console.log(`[Dispatcher] Processing ${queuedCalls?.length || 0} queued calls`);
+
+    // ============= DIAGNOSTICS FOR ZERO DISPATCHED =============
+    // If no queued calls are eligible NOW, check if there are any scheduled for later
+    let diagnostics: any = null;
+    if (!queuedCalls || queuedCalls.length === 0) {
+      const { data: pendingCalls, count: pendingTotal } = await supabase
+        .from('dialing_queues')
+        .select('id, scheduled_at, lead_id, status', { count: 'exact' })
+        .in('campaign_id', campaignIds)
+        .eq('status', 'pending')
+        .order('scheduled_at', { ascending: true })
+        .limit(5);
+
+      const pendingEligibleNow = 0; // We already know none are eligible
+      const pendingScheduledFuture = pendingTotal || 0;
+      const earliestScheduledAt = pendingCalls?.[0]?.scheduled_at || null;
+      
+      let waitMessage = 'No pending calls in queue.';
+      if (pendingScheduledFuture > 0 && earliestScheduledAt) {
+        const earliestTime = new Date(earliestScheduledAt);
+        const minutesUntil = Math.max(0, Math.round((earliestTime.getTime() - Date.now()) / 60000));
+        waitMessage = `${pendingScheduledFuture} calls pending but scheduled for later. Next eligible at ${earliestScheduledAt} (in ${minutesUntil}m).`;
+      }
+      
+      diagnostics = {
+        pending_total: pendingTotal || 0,
+        pending_eligible_now: 0,
+        pending_scheduled_future: pendingScheduledFuture,
+        earliest_scheduled_at: earliestScheduledAt,
+        server_now_iso: nowIso,
+        message: waitMessage,
+      };
+      
+      console.log(`[Dispatcher] Diagnostics: ${JSON.stringify(diagnostics)}`);
+    }
 
     let dispatched = 0;
     const dispatchResults: any[] = [];
@@ -1082,11 +1117,19 @@ serve(async (req) => {
         const maxAttempts = queueItem.max_attempts || 3;
         
         if (attempts < maxAttempts) {
+          // Use campaign's retry_delay_minutes, clamped to 1-60 minutes (default 5)
+          const campaign = queueItem.campaigns as any;
+          const rawRetryDelay = campaign?.retry_delay_minutes ?? 5;
+          const clampedRetryDelay = Math.max(1, Math.min(60, rawRetryDelay));
+          const retryDelayMs = clampedRetryDelay * 60 * 1000;
+          
+          console.log(`[Dispatcher] Retry in ${clampedRetryDelay} minutes for lead ${queueItem.lead_id} (campaign setting: ${rawRetryDelay})`);
+          
           await supabase
             .from('dialing_queues')
             .update({ 
               status: 'pending', 
-              scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              scheduled_at: new Date(Date.now() + retryDelayMs).toISOString(),
               updated_at: nowIso 
             })
             .eq('id', queueItem.id);
@@ -1143,7 +1186,9 @@ serve(async (req) => {
         maxDialsInFlight,
         utilizationPercent: utilizationPct,
         nextBatchDelaySeconds: delaySeconds,
-        // NEW: usedSettings for verification diagnostics
+        // Diagnostics for when 0 dispatched
+        diagnostics: diagnostics || null,
+        // usedSettings for verification
         usedSettings: {
           callsPerMinute,
           maxConcurrent: maxDialsInFlight,
