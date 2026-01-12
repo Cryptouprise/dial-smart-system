@@ -437,6 +437,9 @@ async function callWithTelnyx(
 }
 
 // Make a call using Twilio Elastic SIP Trunk with optional AMD
+// NOTE: For Twilio Elastic SIP Trunking, calls are routed through the trunk
+// automatically when the From number is associated with the trunk.
+// We use regular phone number format, NOT sip: URIs.
 async function callWithTwilioSipTrunk(
   accountSid: string,
   authToken: string,
@@ -454,16 +457,16 @@ async function callWithTwilioSipTrunk(
 ): Promise<CallResult> {
   try {
     console.log(`Making Twilio SIP trunk call from ${fromNumber} to ${toNumber} via trunk ${trunkSid}${amdEnabled ? ' with AMD enabled' : ''}`);
-    
+
     // Build DTMF action URL with transfer number if available
-    const dtmfActionUrl = transferNumber 
+    const dtmfActionUrl = transferNumber
       ? `${dtmfHandlerUrl}?transfer=${encodeURIComponent(transferNumber)}&queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`
       : `${dtmfHandlerUrl}?queue_item_id=${encodeURIComponent(String(metadata.queue_item_id || ''))}&broadcast_id=${encodeURIComponent(String(metadata.broadcast_id || ''))}`;
-    
+
     // XML-escape URLs for TwiML
     const escapedAudioUrl = escapeXml(audioUrl);
     const escapedDtmfActionUrl = escapeXml(dtmfActionUrl);
-    
+
     // Create TwiML for playing audio and handling DTMF
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -474,16 +477,23 @@ async function callWithTwilioSipTrunk(
   <Hangup/>
 </Response>`;
 
-    // For SIP trunk, we use the sip: URI format to route through the trunk
-    // The To field uses sip:number@terminationUri format
-    const sipTo = `sip:${toNumber.replace(/\+/g, '')}@${terminationUri}`;
-    
-    console.log(`SIP To address: ${sipTo}`);
+    // For Twilio Elastic SIP Trunking, we use REGULAR phone numbers, not SIP URIs.
+    // When the From number is associated with a trunk, Twilio automatically
+    // routes the call through that trunk. The terminationUri is NOT used as
+    // a SIP destination - it's only for reference.
+    //
+    // The OLD approach (INCORRECT):
+    //   const sipTo = `sip:${toNumber.replace(/\+/g, '')}@${terminationUri}`;
+    //
+    // The CORRECT approach is to use regular phone number format:
+    const callTo = toNumber;
+
+    console.log(`SIP trunk call: From=${fromNumber} To=${callTo} (trunk: ${trunkSid})`);
 
     // Build request body using URLSearchParams to properly handle multiple StatusCallbackEvent values
     // CRITICAL: Twilio requires StatusCallbackEvent to be sent as separate parameters
     const requestBody = new URLSearchParams();
-    requestBody.append('To', sipTo);
+    requestBody.append('To', callTo);
     requestBody.append('From', fromNumber);
     requestBody.append('Twiml', twimlResponse);
     requestBody.append('StatusCallback', statusCallbackUrl);
@@ -493,7 +503,7 @@ async function callWithTwilioSipTrunk(
     requestBody.append('StatusCallbackEvent', 'ringing');
     requestBody.append('StatusCallbackEvent', 'answered');
     requestBody.append('StatusCallbackEvent', 'completed');
-    
+
     // Add AMD parameters if enabled
     if (amdEnabled && amdCallbackUrl) {
       requestBody.append('MachineDetection', 'DetectMessageEnd');
@@ -506,7 +516,7 @@ async function callWithTwilioSipTrunk(
       console.log('AMD enabled with callback:', amdCallbackUrl);
     }
 
-    console.log(`Twilio SIP call params: To=${sipTo}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
+    console.log(`Twilio SIP trunk call params: To=${callTo}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
 
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
