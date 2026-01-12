@@ -14,6 +14,30 @@ let globalIntervalRef: ReturnType<typeof setInterval> | null = null;
 let globalDispatchInFlight = false;
 let globalLastDispatchAttemptAt = 0;
 
+// Store last dispatcher response for diagnostics
+let globalLastDispatcherResponse: DispatcherResponse | null = null;
+
+export interface DispatcherDiagnostics {
+  pending_total: number;
+  pending_eligible_now: number;
+  pending_scheduled_future: number;
+  earliest_scheduled_at: string | null;
+  server_now_iso: string;
+  message: string;
+}
+
+export interface DispatcherResponse {
+  success?: boolean;
+  dispatched?: number;
+  remaining?: number;
+  message?: string;
+  diagnostics?: DispatcherDiagnostics | null;
+  activeCallCount?: number;
+  maxDialsInFlight?: number;
+  status?: string;
+  error?: string;
+}
+
 const getErrorText = (err: unknown) => {
   const anyErr = err as any;
   const parts = [
@@ -56,11 +80,12 @@ const shouldSkipDispatchFetch = () => {
 
 export const useCallDispatcher = () => {
   const [isDispatching, setIsDispatching] = useState(false);
+  const [lastResponse, setLastResponse] = useState<DispatcherResponse | null>(null);
   const { toast } = useToast();
 
   const dispatchCalls = useCallback(
-    async (options: { silent?: boolean } = {}) => {
-      if (globalDispatchInFlight || shouldSkipDispatchFetch()) return null;
+    async (options: { silent?: boolean } = {}): Promise<DispatcherResponse | null> => {
+      if (globalDispatchInFlight || shouldSkipDispatchFetch()) return globalLastDispatcherResponse;
 
       globalDispatchInFlight = true;
       globalLastDispatchAttemptAt = Date.now();
@@ -76,15 +101,21 @@ export const useCallDispatcher = () => {
 
         if (error) throw error;
 
+        // Store last response for diagnostics
+        globalLastDispatcherResponse = data as DispatcherResponse;
+        setLastResponse(data);
+
         if (data?.dispatched > 0) {
           toast({
             title: 'Calls Dispatched',
             description: `Successfully dispatched ${data.dispatched} calls`,
           });
         } else if (!options.silent) {
+          // Show more helpful message with diagnostics
+          const diagMsg = data?.diagnostics?.message || data?.message || 'No pending calls found';
           toast({
             title: 'No Calls to Dispatch',
-            description: data?.message || 'No pending calls found',
+            description: diagMsg,
             variant: 'default',
           });
         }
@@ -282,8 +313,9 @@ export const useCallDispatcher = () => {
           description: `Lead queued for immediate calling${data?.clearedCalls > 0 ? ` (cleared ${data.clearedCalls} stuck calls)` : ''}`,
         });
 
-        // Trigger immediate dispatch to actually make the call
-        await dispatchCalls({ silent: true });
+        // Trigger immediate dispatch to actually make the call - bypass cooldown
+        globalLastDispatchAttemptAt = 0; // Reset to allow immediate dispatch
+        await dispatchCalls({ silent: false });
 
         return data;
       } catch (error: any) {
@@ -291,6 +323,53 @@ export const useCallDispatcher = () => {
         toast({
           title: 'Force Dispatch Failed',
           description: error.message || 'Failed to force dispatch lead',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    },
+    [toast, dispatchCalls]
+  );
+
+  // Reset schedule for pending leads to make them dispatchable now
+  const resetSchedule = useCallback(
+    async (campaignId: string) => {
+      try {
+        console.log(`[Reset Schedule] Resetting scheduled_at for campaign ${campaignId}`);
+
+        // Update all pending queue entries to be scheduled now
+        const { data, error } = await supabase
+          .from('dialing_queues')
+          .update({ 
+            scheduled_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('campaign_id', campaignId)
+          .eq('status', 'pending')
+          .gt('scheduled_at', new Date().toISOString())
+          .select('id');
+
+        if (error) throw error;
+
+        const resetCount = data?.length || 0;
+
+        toast({
+          title: 'Schedule Reset',
+          description: resetCount > 0 
+            ? `${resetCount} leads now eligible for immediate dialing` 
+            : 'No scheduled leads found to reset',
+        });
+
+        // Trigger immediate dispatch
+        globalLastDispatchAttemptAt = 0; // Reset to allow immediate dispatch
+        await dispatchCalls({ silent: false });
+
+        return { resetCount };
+      } catch (error: any) {
+        console.error('[Reset Schedule] Error:', error);
+        toast({
+          title: 'Reset Failed',
+          description: error.message || 'Failed to reset schedule',
           variant: 'destructive',
         });
         return null;
@@ -337,7 +416,9 @@ export const useCallDispatcher = () => {
     stopAutoDispatch,
     forceRequeueLeads,
     forceDispatchLead,
+    resetSchedule,
     cleanupStuckCalls,
     isDispatching,
+    lastResponse,
   };
 };

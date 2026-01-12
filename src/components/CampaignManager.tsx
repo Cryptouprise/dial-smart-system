@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -75,7 +75,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { getCampaigns, createCampaign, updateCampaign, getLeads, makeCall, updateCallOutcome, isLoading } = usePredictiveDialing();
   const [forceDispatchingLead, setForceDispatchingLead] = useState<string | null>(null);
   const { prioritizeLeads, isCalculating } = useLeadPrioritization();
-  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, forceRequeueLeads, forceDispatchLead, isDispatching } = useCallDispatcher();
+  const { dispatchCalls, startAutoDispatch, stopAutoDispatch, forceRequeueLeads, forceDispatchLead, resetSchedule, isDispatching, lastResponse } = useCallDispatcher();
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
@@ -1178,6 +1178,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                         <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/30 p-2 rounded">
                           <Zap className="h-4 w-4 animate-pulse" />
                           <span className="text-sm">AI Auto-Dispatch Active - calls every 30s</span>
+                        </div>
+                      )}
+
+                      {/* Dispatcher Diagnostics - shows why calls aren't going out */}
+                      {lastResponse?.diagnostics && lastResponse.diagnostics.pending_scheduled_future > 0 && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2">
+                          <div className="flex items-start gap-2">
+                            <Clock className="h-4 w-4 text-amber-600 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                                {lastResponse.diagnostics.pending_scheduled_future} calls scheduled for later
+                              </p>
+                              <p className="text-xs text-amber-700 dark:text-amber-300">
+                                {lastResponse.diagnostics.message}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                            onClick={() => resetSchedule(campaign.id)}
+                            disabled={isDispatching}
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            Reset Schedule (Call Now)
+                          </Button>
                         </div>
                       )}
 
