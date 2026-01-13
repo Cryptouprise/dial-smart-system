@@ -162,26 +162,70 @@ serve(async (req) => {
         };
         break;
 
-      case 'get_contacts':
-        let contactsUrl = `${baseUrl}/contacts/?locationId=${locationId}`;
-        
-        if (filters?.search) {
-          contactsUrl += `&query=${encodeURIComponent(filters.search)}`;
-        }
-        
-        response = await fetch(contactsUrl, {
-          method: 'GET',
-          headers
-        });
+      case 'get_contacts': {
+        // Fetch contacts with pagination
+        const PAGE_SIZE = 100;
+        const MAX_PAGES = 200; // Up to 20,000 contacts
+        let allContacts: any[] = [];
+        let startAfter: string | null = null;
+        let pageNum = 1;
+        let hasMore = true;
 
-        if (!response.ok) {
-          const errorData = await response.text();
-          throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+        console.log('[GHL] Fetching contacts with pagination...');
+
+        while (hasMore && pageNum <= MAX_PAGES) {
+          let contactsUrl = `${baseUrl}/contacts/?locationId=${locationId}&limit=${PAGE_SIZE}`;
+
+          if (startAfter) {
+            contactsUrl += `&startAfter=${startAfter}`;
+          }
+
+          if (filters?.search) {
+            contactsUrl += `&query=${encodeURIComponent(filters.search)}`;
+          }
+
+          response = await fetch(contactsUrl, {
+            method: 'GET',
+            headers
+          });
+
+          if (!response.ok) {
+            if (pageNum === 1) {
+              const errorData = await response.text();
+              throw new Error(`GHL API error: ${response.status} - ${errorData}`);
+            }
+            break;
+          }
+
+          const pageData = await response.json();
+          const pageContacts = pageData.contacts || [];
+          allContacts = allContacts.concat(pageContacts);
+
+          console.log(`[GHL] Page ${pageNum}: fetched ${pageContacts.length} contacts (total: ${allContacts.length})`);
+
+          // Check for next page cursor
+          const nextCursor = pageData.meta?.startAfterId
+            || pageData.meta?.startAfter
+            || pageData.startAfterId
+            || pageData.startAfter;
+
+          if (nextCursor) {
+            startAfter = nextCursor;
+            hasMore = true;
+          } else if (pageContacts.length === PAGE_SIZE) {
+            startAfter = pageContacts[pageContacts.length - 1].id;
+            hasMore = true;
+          } else {
+            hasMore = false;
+          }
+
+          pageNum++;
         }
 
-        const contactsData = await response.json();
-        result = { contacts: contactsData.contacts || [] };
+        console.log(`[GHL] Total contacts fetched: ${allContacts.length}`);
+        result = { contacts: allContacts, total: allContacts.length };
         break;
+      }
 
       case 'get_custom_fields':
         // Fetch all custom fields for contacts in this location
@@ -323,19 +367,27 @@ serve(async (req) => {
               
               console.log(`[GHL] Page ${pageNum}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
               
-              // Check if there are more pages - use startAfterId or check if we got a full page
-              if (pageData.meta?.startAfterId) {
-                startAfter = pageData.meta.startAfterId;
-                hasMore = true;
-              } else if (pageData.startAfterId) {
-                startAfter = pageData.startAfterId;
+              // Check if there are more pages - GHL API may return cursor in various fields
+              const nextCursor = pageData.meta?.startAfterId
+                || pageData.meta?.startAfter
+                || pageData.meta?.nextPageUrl?.split('startAfter=')[1]?.split('&')[0]
+                || pageData.startAfterId
+                || pageData.startAfter;
+
+              console.log(`[GHL] Page ${pageNum} response meta:`, JSON.stringify(pageData.meta || {}));
+              console.log(`[GHL] Next cursor found:`, nextCursor || 'none');
+
+              if (nextCursor) {
+                startAfter = nextCursor;
                 hasMore = true;
               } else if (pageContacts.length === PAGE_SIZE && pageContacts.length > 0) {
                 // If no explicit cursor but we got a full page, use last contact ID
                 startAfter = pageContacts[pageContacts.length - 1].id;
                 hasMore = true;
+                console.log(`[GHL] No cursor in response, using last contact ID: ${startAfter}`);
               } else {
                 hasMore = false;
+                console.log(`[GHL] No more pages - got ${pageContacts.length} contacts (less than ${PAGE_SIZE})`);
               }
               
               pageNum++;
@@ -892,22 +944,61 @@ serve(async (req) => {
       case 'preview_filtered_contacts': {
         // Preview contacts that match filters without importing
         console.log('[GHL] Previewing filtered contacts with:', importFilters);
-        
-        let contacts: any[] = [];
-        
-        // Fetch contacts
-        response = await fetch(`${baseUrl}/contacts/?locationId=${locationId}`, {
-          method: 'GET',
-          headers
-        });
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
+        let contacts: any[] = [];
+        const PAGE_SIZE = 100;
+        const MAX_PREVIEW_PAGES = 100; // Limit preview to 10,000 contacts
+
+        // Fetch contacts with pagination
+        let startAfter: string | null = null;
+        let pageNum = 1;
+        let hasMore = true;
+
+        while (hasMore && pageNum <= MAX_PREVIEW_PAGES) {
+          let url = `${baseUrl}/contacts/?locationId=${locationId}&limit=${PAGE_SIZE}`;
+          if (startAfter) {
+            url += `&startAfter=${startAfter}`;
+          }
+
+          response = await fetch(url, {
+            method: 'GET',
+            headers
+          });
+
+          if (!response.ok) {
+            if (pageNum === 1) {
+              throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
+            }
+            break;
+          }
+
+          const pageData = await response.json();
+          const pageContacts = pageData.contacts || [];
+          contacts = contacts.concat(pageContacts);
+
+          console.log(`[GHL Preview] Page ${pageNum}: fetched ${pageContacts.length} (total: ${contacts.length})`);
+
+          // Check for next page cursor
+          const nextCursor = pageData.meta?.startAfterId
+            || pageData.meta?.startAfter
+            || pageData.startAfterId
+            || pageData.startAfter;
+
+          if (nextCursor) {
+            startAfter = nextCursor;
+            hasMore = true;
+          } else if (pageContacts.length === PAGE_SIZE) {
+            startAfter = pageContacts[pageContacts.length - 1].id;
+            hasMore = true;
+          } else {
+            hasMore = false;
+          }
+
+          pageNum++;
         }
 
-        const allContacts = await response.json();
-        contacts = allContacts.contacts || [];
         const totalBefore = contacts.length;
+        console.log(`[GHL Preview] Total contacts fetched: ${totalBefore}`);
         
         // Apply tag filter
         if (importFilters?.tags?.length) {
