@@ -185,8 +185,9 @@ serve(async (req) => {
       console.warn('[Dispatcher] Settings fetch error (continuing with defaults):', settingsError.message);
     }
 
+    // Defaults match ai-error-analyzer defaults for consistency
     const retellConcurrency = systemSettings?.retell_max_concurrent || 10;
-    const callsPerMinute = systemSettings?.calls_per_minute || 40;
+    const callsPerMinute = systemSettings?.calls_per_minute || 30; // Changed from 40 to match ai-error-analyzer
     const maxConcurrent = systemSettings?.max_concurrent_calls || 10;
     const adaptivePacing = systemSettings?.enable_adaptive_pacing !== false;
 

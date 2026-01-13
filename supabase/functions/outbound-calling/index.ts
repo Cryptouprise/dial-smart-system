@@ -7,6 +7,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Fetch with timeout to prevent hanging requests
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = 30000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Retry helper for transient failures
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
@@ -235,10 +260,10 @@ serve(async (req) => {
         console.log('[Outbound Calling] Checking phone number in Retell:', callerId);
         
         // Try to get the phone number first to see if it exists in Retell
-        const getPhoneResponse = await fetch(`https://api.retellai.com/get-phone-number/${encodeURIComponent(callerId)}`, {
+        const getPhoneResponse = await fetchWithTimeout(`https://api.retellai.com/get-phone-number/${encodeURIComponent(callerId)}`, {
           method: 'GET',
           headers: retellHeaders,
-        });
+        }, 15000);
         
         if (!getPhoneResponse.ok) {
           const getError = await getPhoneResponse.text();
@@ -262,13 +287,13 @@ serve(async (req) => {
         
         // Now try to set the outbound agent on the phone number
         console.log('[Outbound Calling] Setting outbound agent on phone number...');
-        const updatePhoneResponse = await fetch(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
+        const updatePhoneResponse = await fetchWithTimeout(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
           method: 'PATCH',
           headers: retellHeaders,
           body: JSON.stringify({
             outbound_agent_id: agentId
           }),
-        });
+        }, 15000);
 
         if (!updatePhoneResponse.ok) {
           const updateError = await updatePhoneResponse.text();
@@ -506,7 +531,8 @@ serve(async (req) => {
         try {
           response = await retryWithBackoff(
             async () => {
-              const res = await fetch(`${baseUrl}/create-phone-call`, {
+              // Use fetchWithTimeout to prevent hanging requests (30 second timeout)
+              const res = await fetchWithTimeout(`${baseUrl}/create-phone-call`, {
                 method: 'POST',
                 headers: retellHeaders,
                 body: JSON.stringify({
@@ -521,7 +547,7 @@ serve(async (req) => {
                     user_id: userId
                   }
                 }),
-              });
+              }, 30000);
 
               if (!res.ok) {
                 const errorText = await res.text();
@@ -595,8 +621,6 @@ serve(async (req) => {
           );
             
           throw new Error(`Failed to create call via Retell: ${errorMessage}`);
-            
-          throw new Error(`Retell AI API error: ${response.status} - ${errorData}`);
         }
 
         const callData = await response.json();
@@ -623,11 +647,11 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        // Try Retell API first - use correct endpoint
-        response = await fetch(`${baseUrl}/get-call/${retellCallId}`, {
+        // Try Retell API first - use correct endpoint (15 second timeout)
+        response = await fetchWithTimeout(`${baseUrl}/get-call/${retellCallId}`, {
           method: 'GET',
           headers: retellHeaders,
-        });
+        }, 15000);
 
         if (!response.ok) {
           // If Retell API fails (404 = call expired), check our database for status
@@ -672,10 +696,10 @@ serve(async (req) => {
           throw new Error('Retell call ID is required');
         }
 
-        response = await fetch(`${baseUrl}/call/${retellCallId}`, {
+        response = await fetchWithTimeout(`${baseUrl}/call/${retellCallId}`, {
           method: 'DELETE',
           headers: retellHeaders,
-        });
+        }, 15000);
 
         if (!response.ok) {
           const errorData = await response.text();

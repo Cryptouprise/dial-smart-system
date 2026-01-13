@@ -705,10 +705,63 @@ serve(async (req) => {
       });
     }
 
-    // Only process call_ended and call_analyzed events for the rest
-    if (!['call_ended', 'call_analyzed'].includes(event)) {
+    // Only process call_ended, call_analyzed, and call_failed events for the rest
+    if (!['call_ended', 'call_analyzed', 'call_failed'].includes(event)) {
       console.log('[Retell Webhook] Ignoring event type:', event);
       return new Response(JSON.stringify({ received: true, processed: false }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Handle call_failed immediately - mark as failed and return early
+    if (event === 'call_failed') {
+      console.log('[Retell Webhook] Processing call_failed event for call:', call.call_id);
+
+      // Update call_logs to mark as failed
+      const { error: updateError } = await supabase
+        .from('call_logs')
+        .update({
+          status: 'failed',
+          ended_at: new Date().toISOString(),
+          notes: `Call failed: ${call.disconnection_reason || 'Unknown reason'}`,
+        })
+        .eq('retell_call_id', call.call_id);
+
+      if (updateError) {
+        console.error('[Retell Webhook] Failed to update call_logs for failed call:', updateError);
+      }
+
+      // Also update dialing_queues if this was a campaign call
+      const metadata = call.metadata || {};
+      if (metadata.campaign_id && metadata.lead_id) {
+        const { error: queueError } = await supabase
+          .from('dialing_queues')
+          .update({
+            status: 'failed',
+            last_error: call.disconnection_reason || 'Call failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('campaign_id', metadata.campaign_id)
+          .eq('lead_id', metadata.lead_id)
+          .eq('status', 'calling');
+
+        if (queueError) {
+          console.error('[Retell Webhook] Failed to update dialing_queues:', queueError);
+        }
+      }
+
+      // Decrement phone number daily_calls if it was incremented
+      if (call.from_number) {
+        const fromLast10 = call.from_number.replace(/\D/g, '').slice(-10);
+        await supabase.rpc('decrement_daily_calls', { phone_last_10: fromLast10 });
+      }
+
+      return new Response(JSON.stringify({
+        received: true,
+        processed: true,
+        event: 'call_failed',
+        call_id: call.call_id
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

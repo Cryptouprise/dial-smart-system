@@ -138,9 +138,16 @@ serve(async (req) => {
 
         if (leadsError) throw leadsError;
 
-        const callableLeads = campaignLeads?.filter((cl: any) => 
-          cl.leads && ['new', 'contacted', 'qualified'].includes(cl.leads.status)
-        ) || [];
+        // Filter to only leads ready to be called immediately
+        // Explicitly exclude 'callback' leads - they have a scheduled callback time
+        // Also exclude 'converted', 'dnc', 'bad_number' statuses
+        const callableLeads = campaignLeads?.filter((cl: any) => {
+          if (!cl.leads) return false;
+          const status = cl.leads.status;
+          const callableStatuses = ['new', 'contacted', 'qualified'];
+          const excludedStatuses = ['callback', 'converted', 'dnc', 'bad_number', 'unqualified'];
+          return callableStatuses.includes(status) && !excludedStatuses.includes(status);
+        }) || [];
 
         // Check which leads are already in queue
         const { data: existingQueue } = await supabase
