@@ -2785,6 +2785,7 @@ export type Database = {
           is_spam: boolean
           is_stationary: boolean | null
           is_voip: boolean | null
+          last_daily_reset: string | null
           last_lookup_at: string | null
           last_used: string | null
           line_type: string | null
@@ -2818,6 +2819,7 @@ export type Database = {
           is_spam?: boolean
           is_stationary?: boolean | null
           is_voip?: boolean | null
+          last_daily_reset?: string | null
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
@@ -2851,6 +2853,7 @@ export type Database = {
           is_spam?: boolean
           is_stationary?: boolean | null
           is_voip?: boolean | null
+          last_daily_reset?: string | null
           last_lookup_at?: string | null
           last_used?: string | null
           line_type?: string | null
@@ -3986,6 +3989,99 @@ export type Database = {
         }
         Relationships: []
       }
+      user_feature_flags: {
+        Row: {
+          ai_dialing: boolean | null
+          ai_pipeline_manager: boolean | null
+          api_access: boolean | null
+          autonomous_mode: boolean | null
+          callback_scheduling: boolean | null
+          created_at: string | null
+          current_tier: string | null
+          custom_dashboard: boolean | null
+          disposition_automation: boolean | null
+          ghl_basic_tagging: boolean | null
+          ghl_contact_import: boolean | null
+          id: string
+          multi_carrier: boolean | null
+          pipeline_sync: boolean | null
+          predictive_pacing: boolean | null
+          retell_integration: boolean | null
+          script_optimization: boolean | null
+          self_learning: boolean | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status: string | null
+          transcript_analysis: boolean | null
+          trial_ends_at: string | null
+          updated_at: string | null
+          user_id: string
+          voice_broadcast: boolean | null
+          white_label: boolean | null
+          workflow_triggers: boolean | null
+        }
+        Insert: {
+          ai_dialing?: boolean | null
+          ai_pipeline_manager?: boolean | null
+          api_access?: boolean | null
+          autonomous_mode?: boolean | null
+          callback_scheduling?: boolean | null
+          created_at?: string | null
+          current_tier?: string | null
+          custom_dashboard?: boolean | null
+          disposition_automation?: boolean | null
+          ghl_basic_tagging?: boolean | null
+          ghl_contact_import?: boolean | null
+          id?: string
+          multi_carrier?: boolean | null
+          pipeline_sync?: boolean | null
+          predictive_pacing?: boolean | null
+          retell_integration?: boolean | null
+          script_optimization?: boolean | null
+          self_learning?: boolean | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
+          transcript_analysis?: boolean | null
+          trial_ends_at?: string | null
+          updated_at?: string | null
+          user_id: string
+          voice_broadcast?: boolean | null
+          white_label?: boolean | null
+          workflow_triggers?: boolean | null
+        }
+        Update: {
+          ai_dialing?: boolean | null
+          ai_pipeline_manager?: boolean | null
+          api_access?: boolean | null
+          autonomous_mode?: boolean | null
+          callback_scheduling?: boolean | null
+          created_at?: string | null
+          current_tier?: string | null
+          custom_dashboard?: boolean | null
+          disposition_automation?: boolean | null
+          ghl_basic_tagging?: boolean | null
+          ghl_contact_import?: boolean | null
+          id?: string
+          multi_carrier?: boolean | null
+          pipeline_sync?: boolean | null
+          predictive_pacing?: boolean | null
+          retell_integration?: boolean | null
+          script_optimization?: boolean | null
+          self_learning?: boolean | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: string | null
+          transcript_analysis?: boolean | null
+          trial_ends_at?: string | null
+          updated_at?: string | null
+          user_id?: string
+          voice_broadcast?: boolean | null
+          white_label?: boolean | null
+          workflow_triggers?: boolean | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -4254,7 +4350,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_and_reset_daily_calls: { Args: never; Returns: undefined }
       cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
+      decrement_daily_calls: {
+        Args: { phone_last_10: string }
+        Returns: undefined
+      }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -4264,6 +4365,16 @@ export type Database = {
         Returns: boolean
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      reset_all_daily_calls: { Args: never; Returns: number }
+      upgrade_user_tier: {
+        Args: {
+          p_stripe_customer_id?: string
+          p_stripe_subscription_id?: string
+          p_tier: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       user_in_organization: { Args: { org_id: string }; Returns: boolean }
     }
     Enums: {

@@ -14,7 +14,7 @@ let globalIntervalRef: ReturnType<typeof setInterval> | null = null;
 let globalDispatchInFlight = false;
 let globalLastDispatchAttemptAt = 0;
 
-// Store last dispatcher response for diagnostics
+// Store last dispatcher response for diagnostics (singleton for global access)
 let globalLastDispatcherResponse: DispatcherResponse | null = null;
 
 export interface DispatcherDiagnostics {
