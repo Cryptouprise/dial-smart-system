@@ -315,7 +315,58 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 - RLS: Enabled on all tables
 - Auth: Supabase Auth with JWT
 
+## January 2026 Enterprise Audit - FIXES APPLIED
+
+### Database Migration Applied
+**Migration**: `add_phone_number_daily_calls_management`
+- Added `decrement_daily_calls(phone_last_10 TEXT)` function - decrements daily_calls for failed calls
+- Added `check_and_reset_daily_calls()` function - resets daily_calls if new day (checks last_reset_date)
+- Added `reset_all_daily_calls()` function - bulk reset for all phone numbers
+- **Purpose**: Phone number `daily_calls` counter was never resetting, causing numbers to hit limits permanently
+
+### Edge Functions Deployed (Supabase)
+All fixes deployed to production Supabase project `emonjusymdripmkvtttc`:
+
+| Function | Version | Key Fixes |
+|----------|---------|-----------|
+| `predictive-dialing-engine` | v423 | Callback lead protection filter |
+| `call-dispatcher` | v445 | System settings fallback consistency |
+| `outbound-calling` | v438 | Retry logic with backoff, failed call cleanup |
+| `retell-call-webhook` | v298 | Full webhook processing |
+
+### Issues Identified & Fixed
+
+1. **Phone Number daily_calls Never Resets** ✅ FIXED
+   - **Problem**: `daily_calls` counter incremented but never reset at midnight
+   - **Solution**: Database functions for reset + `last_reset_date` tracking
+   - **Location**: Migration `add_phone_number_daily_calls_management`
+
+2. **Callback Leads Re-queued on Campaign Start** ✅ FIXED
+   - **Problem**: Leads with `status='callback'` or future `next_callback_at` were being re-queued
+   - **Solution**: Filter in `predictive-dialing-engine` lines 141-143 excludes callback leads
+   - **Location**: `supabase/functions/predictive-dialing-engine/index.ts`
+
+3. **System Settings Fallback Mismatch** ✅ FIXED
+   - **Problem**: `calls_per_minute` defaulted to 30 in some places, 40 in others
+   - **Solution**: Standardized to `|| 40` across call-dispatcher
+   - **Location**: `supabase/functions/call-dispatcher/index.ts:189`
+
+4. **Outbound Calling Error Handling** ✅ FIXED
+   - **Problem**: Failed Retell calls could leave call_logs stuck in "queued" status
+   - **Solution**: Retry with backoff + immediate status update on failure
+   - **Location**: `supabase/functions/outbound-calling/index.ts`
+
+### Git Commit
+- **Commit**: `572dcfc` pushed to `main` branch
+- **Message**: "Enterprise audit fixes: daily_calls reset, callback protection, error handling"
+
+### Remaining Items (Not Critical)
+These were identified but not addressed in this audit:
+- Dead code at `outbound-calling` line 599 (duplicate throw statement)
+- GHL sync fallback logic could be improved
+- Bundle size optimization (1,073KB → target <600KB)
+
 ---
 
-**Last Updated**: January 10, 2026
+**Last Updated**: January 13, 2026
 **Audit Confidence**: Very High (comprehensive codebase analysis)

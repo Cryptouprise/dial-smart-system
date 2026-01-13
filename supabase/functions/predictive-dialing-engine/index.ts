@@ -138,19 +138,47 @@ serve(async (req) => {
 
         if (leadsError) throw leadsError;
 
-        const callableLeads = campaignLeads?.filter((cl: any) => 
+        const callableLeads = campaignLeads?.filter((cl: any) =>
           cl.leads && ['new', 'contacted', 'qualified'].includes(cl.leads.status)
         ) || [];
 
-        // Check which leads are already in queue
+        const callableLeadIds = callableLeads
+          .map((cl: any) => cl.leads?.id)
+          .filter((id: any) => id != null);
+
+        // Reset failed/completed/paused queue entries for callable leads so they can be re-dialed
+        // This handles the UNIQUE constraint on (campaign_id, lead_id)
+        if (callableLeadIds.length > 0) {
+          const { data: resetEntries, error: resetError } = await supabase
+            .from('dialing_queues')
+            .update({
+              status: 'pending',
+              attempts: 0,
+              scheduled_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('campaign_id', campaignId)
+            .in('lead_id', callableLeadIds)
+            .in('status', ['failed', 'completed', 'paused'])
+            .select('lead_id');
+
+          if (resetError) {
+            console.error('[Dialing] Error resetting queue entries:', resetError);
+          } else if (resetEntries && resetEntries.length > 0) {
+            console.log(`[Dialing] Reset ${resetEntries.length} previously failed/completed queue entries`);
+          }
+        }
+
+        // Check which leads are already in queue (pending or calling - actively being processed)
         const { data: existingQueue } = await supabase
           .from('dialing_queues')
           .select('lead_id')
           .eq('campaign_id', campaignId)
           .in('status', ['pending', 'calling']);
-        
+
         const existingLeadIds = new Set(existingQueue?.map(q => q.lead_id) || []);
 
+        // Only create new entries for leads not already in the queue
         const queueEntries = callableLeads
           .filter((cl: any) => !existingLeadIds.has(cl.leads?.id))
           .map((cl: any) => ({
