@@ -97,6 +97,8 @@ interface ImportFilters {
 
 export const useGoHighLevel = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingTags, setIsLoadingTags] = useState(false);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const { toast } = useToast();
 
   const getGHLCredentials = useCallback(async (): Promise<GHLCredentials | null> => {
@@ -298,7 +300,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    setIsLoadingTags(true);
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -313,7 +315,7 @@ export const useGoHighLevel = () => {
       console.error('Failed to fetch tags:', error);
       return null;
     } finally {
-      setIsLoading(false);
+      setIsLoadingTags(false);
     }
   };
 
@@ -349,7 +351,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    setIsLoadingPreview(true);
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -369,7 +371,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      setIsLoadingPreview(false);
     }
   };
 
@@ -807,6 +809,8 @@ export const useGoHighLevel = () => {
 
   return {
     isLoading,
+    isLoadingTags,
+    isLoadingPreview,
     testConnection,
     saveGHLCredentials,
     getGHLCredentials,

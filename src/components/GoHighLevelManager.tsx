@@ -71,6 +71,8 @@ const GoHighLevelManager = () => {
   const { toast } = useToast();
   const {
     isLoading,
+    isLoadingTags,
+    isLoadingPreview,
     testConnection,
     saveGHLCredentials,
     getGHLCredentials,
@@ -637,9 +639,9 @@ const GoHighLevelManager = () => {
                         </ScrollArea>
                       ) : (
                         <div className="text-center py-4 text-muted-foreground text-sm border rounded-lg">
-                          <Button variant="ghost" size="sm" onClick={loadTags} disabled={isLoading}>
-                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                            Load Tags from GHL
+                          <Button variant="ghost" size="sm" onClick={loadTags} disabled={isLoadingTags}>
+                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingTags ? 'animate-spin' : ''}`} />
+                            {isLoadingTags ? 'Loading Tags...' : 'Load Tags from GHL'}
                           </Button>
                         </div>
                       )}
@@ -705,14 +707,14 @@ const GoHighLevelManager = () => {
                     </div>
                     
                     {/* Preview Button */}
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={handlePreviewContacts}
-                      disabled={isLoading}
+                      disabled={isLoadingPreview}
                       className="w-full"
                     >
-                      <Eye className="h-4 w-4 mr-2" />
-                      {isLoading ? 'Loading Preview...' : 'Preview Matching Contacts'}
+                      <Eye className={`h-4 w-4 mr-2 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                      {isLoadingPreview ? 'Loading Preview...' : 'Preview Matching Contacts'}
                     </Button>
                     
                     {/* Preview Results */}
