@@ -1016,9 +1016,12 @@ serve(async (req) => {
           pageNum++;
         }
 
+        let stoppedReason = 'incomplete_page';
         if (pageNum > MAX_PREVIEW_PAGES) {
+          stoppedReason = 'max_pages_reached';
           console.log(`[GHL Preview] Hit max pages limit (${MAX_PREVIEW_PAGES})`);
         }
+        const pagesFetched = pageNum - 1;
 
         const totalBefore = contacts.length;
         console.log(`[GHL Preview] Total contacts fetched: ${totalBefore}`);
@@ -1062,6 +1065,12 @@ serve(async (req) => {
           totalInGHL: totalBefore,
           matchingFilters: contacts.length,
           withValidPhone: validContacts.length,
+          // Debug info to understand pagination
+          _debug: {
+            pagesFetched,
+            stoppedReason,
+            pageSize: PAGE_SIZE
+          },
           sample: validContacts.slice(0, 10).map((c: any) => ({
             name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unknown',
             phone: c.phone || c.primaryPhone,
