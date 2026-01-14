@@ -220,8 +220,9 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
   const to = payload.To;
   const duration = payload.CallDuration ? parseInt(payload.CallDuration) : 0;
   const recordingUrl = payload.RecordingUrl || null;
-  
-  console.log(`[Twilio Webhook] CallSid=${callSid}, Status=${callStatus}, From=${from}, To=${to}, Duration=${duration}`);
+  const callPrice = payload.Price ? parseFloat(payload.Price) : null;
+
+  console.log(`[Twilio Webhook] CallSid=${callSid}, Status=${callStatus}, From=${from}, To=${to}, Duration=${duration}, Price=${callPrice}`);
 
   // Map Twilio status to our internal status
   const statusMapping: Record<string, string> = {
@@ -375,7 +376,13 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     if (recordingUrl) {
       queueUpdate.recording_url = recordingUrl;
     }
-    
+
+    // Capture Twilio call cost (sent on completed calls)
+    if (callPrice !== null && callPrice !== 0) {
+      queueUpdate.call_cost = Math.abs(callPrice); // Twilio sends negative values
+      console.log(`[Twilio Webhook] Captured call cost: $${Math.abs(callPrice).toFixed(4)}`);
+    }
+
     const { error: updateError } = await supabase
       .from('broadcast_queue')
       .update(queueUpdate)

@@ -773,9 +773,12 @@ serve(async (req) => {
 
     // ============= FETCH AVAILABLE PHONE NUMBERS WITH ROTATION =============
     console.log('[Dispatcher] Loading available phone numbers for rotation...');
-    
+
+    // Reset stale daily_calls counters (from previous days) before selecting
+    await supabase.rpc('reset_stale_daily_calls', { target_user_id: user.id });
+
     let availableNumbers: any[] = [];
-    
+
     // First query: Get all phone numbers with Retell IDs and rotation enabled
     const { data: retellNumbers, error: retellError } = await supabase
       .from('phone_numbers')
@@ -1074,12 +1077,9 @@ serve(async (req) => {
         });
 
         console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
-        
-        // Update daily_calls on the phone number
-        await supabase
-          .from('phone_numbers')
-          .update({ daily_calls: (selectedNumber.daily_calls || 0) + 1 })
-          .eq('id', selectedNumber.id);
+
+        // Update daily_calls on the phone number (with auto-reset if date changed)
+        await supabase.rpc('increment_daily_calls_with_reset', { phone_number_id: selectedNumber.id });
 
       } catch (callError: any) {
         console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);

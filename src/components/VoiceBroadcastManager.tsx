@@ -430,7 +430,7 @@ export const VoiceBroadcastManager: React.FC = () => {
         .select(`
           id, phone_number, status, dtmf_pressed, lead_name,
           created_at, updated_at, callback_scheduled_at,
-          amd_result, call_duration_seconds,
+          amd_result, call_duration_seconds, call_cost,
           lead:leads(first_name, last_name, phone_number, status)
         `)
         .eq('broadcast_id', broadcastId)
@@ -2387,7 +2387,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </Card>
               </div>
 
-              {/* Summary Cards - Row 2: Rates & Duration */}
+              {/* Summary Cards - Row 2: Rates, Duration & Cost */}
               {(() => {
                 const attempted = queueResults.filter(r => !['pending', 'queued'].includes(r.status)).length;
                 const answered = queueResults.filter(r => ['answered', 'transferred', 'callback', 'completed'].includes(r.status)).length;
@@ -2396,9 +2396,11 @@ export const VoiceBroadcastManager: React.FC = () => {
                 const vmRate = attempted > 0 ? (voicemails / attempted) * 100 : 0;
                 const totalSeconds = queueResults.reduce((sum, r) => sum + (r.call_duration_seconds || 0), 0);
                 const totalMinutes = totalSeconds / 60;
+                const totalCost = queueResults.reduce((sum, r) => sum + (r.call_cost || 0), 0);
+                const hasCostData = queueResults.some(r => r.call_cost != null);
 
                 return (
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-5 gap-3 mb-4">
                     <Card className="p-3 text-center bg-green-50 dark:bg-green-950/20">
                       <div className="text-xl font-bold text-green-600">{pickupRate.toFixed(1)}%</div>
                       <div className="text-xs text-muted-foreground">Pickup Rate</div>
@@ -2409,11 +2411,19 @@ export const VoiceBroadcastManager: React.FC = () => {
                     </Card>
                     <Card className="p-3 text-center bg-yellow-50 dark:bg-yellow-950/20">
                       <div className="text-xl font-bold text-yellow-600">{voicemails}</div>
-                      <div className="text-xs text-muted-foreground">Voicemail ({vmRate.toFixed(0)}%)</div>
+                      <div className="text-xs text-muted-foreground">VM ({vmRate.toFixed(0)}%)</div>
                     </Card>
                     <Card className="p-3 text-center bg-blue-50 dark:bg-blue-950/20">
                       <div className="text-xl font-bold text-blue-600">{totalMinutes.toFixed(1)}</div>
-                      <div className="text-xs text-muted-foreground">Total Minutes</div>
+                      <div className="text-xs text-muted-foreground">Minutes</div>
+                    </Card>
+                    <Card className="p-3 text-center bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
+                      <div className="text-xl font-bold text-emerald-600">
+                        {hasCostData ? `$${totalCost.toFixed(2)}` : '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {hasCostData ? 'Twilio Cost' : 'Cost (pending)'}
+                      </div>
                     </Card>
                   </div>
                 );
@@ -2428,6 +2438,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <TableHead>Phone</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Duration</TableHead>
+                      <TableHead>Cost</TableHead>
                       <TableHead>DTMF</TableHead>
                       <TableHead>Updated</TableHead>
                     </TableRow>
@@ -2459,6 +2470,15 @@ export const VoiceBroadcastManager: React.FC = () => {
                           {result.call_duration_seconds ? (
                             <span className={result.call_duration_seconds > 60 ? 'text-amber-600 font-medium' : ''}>
                               {Math.floor(result.call_duration_seconds / 60)}:{(result.call_duration_seconds % 60).toString().padStart(2, '0')}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {result.call_cost ? (
+                            <span className={result.call_cost > 0.05 ? 'text-amber-600 font-medium' : 'text-emerald-600'}>
+                              ${result.call_cost.toFixed(3)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground">—</span>

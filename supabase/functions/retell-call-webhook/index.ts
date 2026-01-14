@@ -1381,21 +1381,17 @@ serve(async (req) => {
       }
     }
 
-    // 7. Update phone number usage stats
+    // 7. Update phone number usage stats (with auto-reset if date changed)
     if (call.from_number) {
       const { data: phoneData } = await supabase
         .from('phone_numbers')
-        .select('daily_calls')
+        .select('id')
         .eq('number', call.from_number)
         .maybeSingle();
 
-      await supabase
-        .from('phone_numbers')
-        .update({
-          last_used: new Date().toISOString(),
-          daily_calls: (phoneData?.daily_calls || 0) + 1,
-        })
-        .eq('number', call.from_number);
+      if (phoneData?.id) {
+        await supabase.rpc('increment_daily_calls_with_reset', { phone_number_id: phoneData.id });
+      }
     }
 
     console.log('[Retell Webhook] Processing complete for call:', call.call_id);
