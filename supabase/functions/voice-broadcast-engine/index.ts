@@ -1930,10 +1930,90 @@ serve(async (req) => {
         }
         
         return new Response(
-          JSON.stringify({ 
-            success: true, 
+          JSON.stringify({
+            success: true,
             inspected_count: callsToInspect.length,
-            calls: inspectionResults 
+            calls: inspectionResults
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'backfill_costs': {
+        // Fetch costs from Twilio for all calls that have a call_sid but no cost yet
+        if (!providers.twilioAccountSid || !providers.twilioAuthToken) {
+          throw new Error('Twilio credentials not configured - cannot fetch costs');
+        }
+
+        const { data: callsToPrice, error: priceQueryError } = await supabase
+          .from('broadcast_queue')
+          .select('id, call_sid, phone_number')
+          .eq('broadcast_id', broadcastId)
+          .not('call_sid', 'is', null)
+          .is('call_cost', null);
+
+        if (priceQueryError) throw priceQueryError;
+
+        if (!callsToPrice || callsToPrice.length === 0) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: 'No calls need cost backfill',
+              updated: 0
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`[Backfill Costs] Fetching prices for ${callsToPrice.length} calls`);
+
+        let updated = 0;
+        let totalCost = 0;
+        const errors: string[] = [];
+
+        for (const call of callsToPrice) {
+          try {
+            const twilioResponse = await fetch(
+              `https://api.twilio.com/2010-04-01/Accounts/${providers.twilioAccountSid}/Calls/${call.call_sid}.json`,
+              {
+                headers: {
+                  'Authorization': 'Basic ' + btoa(`${providers.twilioAccountSid}:${providers.twilioAuthToken}`),
+                },
+              }
+            );
+
+            if (twilioResponse.ok) {
+              const twilioCall = await twilioResponse.json();
+              const price = twilioCall.price ? Math.abs(parseFloat(twilioCall.price)) : null;
+
+              if (price !== null && price > 0) {
+                await supabase
+                  .from('broadcast_queue')
+                  .update({ call_cost: price })
+                  .eq('id', call.id);
+
+                updated++;
+                totalCost += price;
+                console.log(`[Backfill] ${call.call_sid}: $${price.toFixed(4)}`);
+              }
+            } else {
+              errors.push(`${call.call_sid}: API error ${twilioResponse.status}`);
+            }
+
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (err: any) {
+            errors.push(`${call.call_sid}: ${err.message}`);
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            total_calls: callsToPrice.length,
+            updated,
+            total_cost: totalCost.toFixed(4),
+            errors: errors.length > 0 ? errors : undefined
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );

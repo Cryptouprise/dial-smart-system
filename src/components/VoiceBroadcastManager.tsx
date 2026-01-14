@@ -16,11 +16,11 @@ import { useVoiceBroadcast, VoiceBroadcast, DTMFAction, parseDTMFActions } from 
 import { useBroadcastReadiness, BroadcastReadinessResult } from '@/hooks/useBroadcastReadiness';
 import { useLiveCampaignStats, useSystemHealth } from '@/hooks/useLiveCampaignStats';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  Radio, Play, Pause, Plus, Trash2, Volume2, Users, 
-  Phone, PhoneOff, Clock, Settings, BarChart3, 
+import {
+  Radio, Play, Pause, Plus, Trash2, Volume2, Users,
+  Phone, PhoneOff, Clock, Settings, BarChart3,
   MessageSquare, Bot, Hash, RefreshCw, PhoneForwarded, Mic, Gauge, RotateCcw,
-  AlertTriangle, CheckCircle2, XCircle, Square, TestTube, Loader2
+  AlertTriangle, CheckCircle2, XCircle, Square, TestTube, Loader2, DollarSign
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -137,6 +137,9 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [inspectingBroadcastId, setInspectingBroadcastId] = useState<string | null>(null);
   const [inspectionResults, setInspectionResults] = useState<any[] | null>(null);
   const [inspectionDialogOpen, setInspectionDialogOpen] = useState(false);
+
+  // Cost backfill state
+  const [backfillingCosts, setBackfillingCosts] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -443,6 +446,34 @@ export const VoiceBroadcastManager: React.FC = () => {
       console.error('Error loading queue results:', error);
     } finally {
       setLoadingResults(false);
+    }
+  };
+
+  const backfillCosts = async (broadcastId: string) => {
+    try {
+      setBackfillingCosts(true);
+      const { data, error } = await supabase.functions.invoke('voice-broadcast-engine', {
+        body: { action: 'backfill_costs', broadcastId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Cost Backfill Complete',
+        description: `Updated ${data.updated} calls. Total cost: $${data.total_cost}`,
+      });
+
+      // Reload results to show updated costs
+      await loadQueueResults(broadcastId);
+    } catch (error: any) {
+      console.error('Error backfilling costs:', error);
+      toast({
+        title: 'Backfill Failed',
+        description: error.message || 'Failed to fetch costs from Twilio',
+        variant: 'destructive',
+      });
+    } finally {
+      setBackfillingCosts(false);
     }
   };
 
@@ -2422,7 +2453,21 @@ export const VoiceBroadcastManager: React.FC = () => {
                         {hasCostData ? `$${totalCost.toFixed(2)}` : '—'}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {hasCostData ? 'Twilio Cost' : 'Cost (pending)'}
+                        {hasCostData ? 'Twilio Cost' : (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs text-emerald-600 hover:text-emerald-700"
+                            onClick={() => resultsDialogBroadcastId && backfillCosts(resultsDialogBroadcastId)}
+                            disabled={backfillingCosts}
+                          >
+                            {backfillingCosts ? (
+                              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Fetching...</>
+                            ) : (
+                              <><DollarSign className="h-3 w-3 mr-1" />Fetch Costs</>
+                            )}
+                          </Button>
+                        )}
                       </div>
                     </Card>
                   </div>
