@@ -847,16 +847,31 @@ serve(async (req) => {
     }
     
     if (availableNumbers.length === 0) {
-      console.error('[Dispatcher] ERROR: No phone numbers with Retell IDs available for calling after all attempts');
+      console.error('[Dispatcher] CRITICAL: No phone numbers available - campaign cannot proceed');
+
+      // Log this critical error so it's visible in monitoring
+      await supabase.from('edge_function_errors').insert({
+        function_name: 'call-dispatcher',
+        error_type: 'no_numbers_available',
+        error_message: 'No phone numbers available for calling. All numbers may have hit daily limits or been quarantined.',
+        user_id: user.id,
+        context: {
+          workflowEnrolled,
+          dialingQueued,
+          suggestion: 'Check phone_numbers table - ensure rotation_enabled=true, is_spam=false, daily_calls < max_daily_calls'
+        }
+      });
+
       return new Response(
-        JSON.stringify({ 
-          error: 'No phone numbers available for calling. Import numbers to Retell first.',
+        JSON.stringify({
+          error: 'No phone numbers available for calling. All numbers may have hit daily limits, been quarantined, or need Retell import.',
           dispatched: 0,
           workflowEnrolled,
           dialingQueued,
-          callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed }
+          callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed },
+          action_required: 'Check phone number status in settings or wait for daily reset'
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
@@ -983,10 +998,29 @@ serve(async (req) => {
         const campaign = queueItem.campaigns as any;
         
         if (!campaign?.agent_id) {
-          console.error(`[Dispatcher] Campaign ${queueItem.campaign_id} has no agent_id`);
+          console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no agent_id - cannot make calls`);
+
+          // Log this configuration error prominently
+          await supabase.from('edge_function_errors').insert({
+            function_name: 'call-dispatcher',
+            error_type: 'campaign_config_error',
+            error_message: `Campaign "${campaign?.name || queueItem.campaign_id}" has no Retell agent configured`,
+            user_id: user.id,
+            context: {
+              campaign_id: queueItem.campaign_id,
+              campaign_name: campaign?.name,
+              lead_id: queueItem.lead_id,
+              action_required: 'Configure a Retell agent for this campaign in campaign settings'
+            }
+          });
+
           await supabase
             .from('dialing_queues')
-            .update({ status: 'failed', updated_at: nowIso })
+            .update({
+              status: 'failed',
+              updated_at: nowIso,
+              notes: 'Campaign has no Retell agent configured'
+            })
             .eq('id', queueItem.id);
           continue;
         }

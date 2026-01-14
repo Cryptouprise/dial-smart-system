@@ -297,8 +297,22 @@ serve(async (req) => {
 
         if (!updatePhoneResponse.ok) {
           const updateError = await updatePhoneResponse.text();
-          console.error('[Outbound Calling] Failed to set outbound agent:', updateError);
-          // Continue anyway, maybe it's already set or we can proceed without this
+          console.error('[Outbound Calling] CRITICAL: Failed to set outbound agent:', updateError);
+
+          // Log this critical error
+          await logError(supabaseAdmin, 'outbound-calling', 'set_outbound_agent', userId, {
+            message: `Failed to set Retell agent ${agentId} on phone ${callerId}`,
+            retellError: updateError
+          }, { callerId, agentId, phoneNumber });
+
+          // Check if this is a permissions/not-found error vs transient error
+          if (updateError.includes('not found') || updateError.includes('404')) {
+            throw new Error(`Phone number ${callerId} not found in Retell. Import it first.`);
+          } else if (updateError.includes('permission') || updateError.includes('403')) {
+            throw new Error(`Permission denied setting agent on ${callerId}. Check Retell API key permissions.`);
+          }
+          // For other errors, throw with the original message
+          throw new Error(`Failed to configure Retell agent for calling: ${updateError}`);
         } else {
           console.log('[Outbound Calling] Outbound agent set successfully');
         }
