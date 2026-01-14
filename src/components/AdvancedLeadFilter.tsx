@@ -81,10 +81,16 @@ export const AdvancedLeadFilter: React.FC<AdvancedLeadFilterProps> = ({
   useEffect(() => {
     const updateCount = async () => {
       setIsLoadingCount(true);
-      const count = await getFilteredCount(debouncedFilters);
-      setMatchingCount(count);
-      onLeadCountChange?.(count);
-      setIsLoadingCount(false);
+      try {
+        const count = await getFilteredCount(debouncedFilters);
+        setMatchingCount(count);
+        onLeadCountChange?.(count);
+      } catch (error) {
+        console.error('Error getting filtered count:', error);
+        setMatchingCount(0);
+      } finally {
+        setIsLoadingCount(false);
+      }
     };
     updateCount();
   }, [debouncedFilters, getFilteredCount, onLeadCountChange]);
@@ -424,8 +430,18 @@ export const AdvancedLeadFilter: React.FC<AdvancedLeadFilterProps> = ({
             </span>
             <span className="text-sm text-muted-foreground">leads</span>
           </div>
-          <Button onClick={() => onFilterChange?.(filters)}>
-            Apply Filters
+          <Button
+            onClick={() => onFilterChange?.(filters)}
+            disabled={isLoadingCount}
+          >
+            {isLoadingCount ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Apply Filters'
+            )}
           </Button>
         </div>
       </CardContent>

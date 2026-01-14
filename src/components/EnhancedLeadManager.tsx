@@ -117,7 +117,10 @@ const EnhancedLeadManager = () => {
   const handleFilterChange = useCallback(async (filters: SmartListFilters) => {
     // Apply filters to current leads
     const allLeads = await getLeads();
-    if (!allLeads) return;
+    if (!allLeads) {
+      console.error('Failed to load leads for filtering');
+      return;
+    }
 
     let filtered = allLeads;
 
@@ -129,6 +132,16 @@ const EnhancedLeadManager = () => {
     }
     if (filters.tags?.length) {
       filtered = filtered.filter(l => l.tags?.some(t => filters.tags!.includes(t)));
+    }
+    // Handle tags_exclude - exclude leads that have any of the excluded tags
+    if (filters.tags_exclude?.length) {
+      filtered = filtered.filter(l => !l.tags?.some(t => filters.tags_exclude!.includes(t)));
+    }
+    if (filters.created_after) {
+      filtered = filtered.filter(l => l.created_at && new Date(l.created_at) >= new Date(filters.created_after!));
+    }
+    if (filters.created_before) {
+      filtered = filtered.filter(l => l.created_at && new Date(l.created_at) <= new Date(filters.created_before!));
     }
 
     setLeads(filtered);
@@ -347,8 +360,17 @@ const EnhancedLeadManager = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            <Button 
-              variant={showFilters ? "secondary" : "outline"} 
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadLeadsForCurrentFilter()}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant={showFilters ? "secondary" : "outline"}
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
             >
@@ -356,8 +378,8 @@ const EnhancedLeadManager = () => {
               Filters
             </Button>
             {ghlConnected && (
-              <Button onClick={handleGHLSync} variant="outline" size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" />
+              <Button onClick={handleGHLSync} variant="outline" size="sm" disabled={isLoading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                 Sync GHL
               </Button>
             )}

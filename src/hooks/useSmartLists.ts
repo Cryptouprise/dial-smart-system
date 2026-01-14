@@ -184,6 +184,13 @@ export const useSmartLists = () => {
       if (filters.tags_all?.length) {
         query = query.contains('tags', filters.tags_all);
       }
+      // Handle tags_exclude - exclude leads that have any of these tags
+      if (filters.tags_exclude?.length) {
+        // Use NOT overlaps to exclude leads with any excluded tags
+        for (const excludedTag of filters.tags_exclude) {
+          query = query.not('tags', 'cs', `{${excludedTag}}`);
+        }
+      }
       if (filters.created_after) {
         query = query.gte('created_at', filters.created_after);
       }
@@ -238,6 +245,12 @@ export const useSmartLists = () => {
       }
       if (filters.tags_all?.length) {
         query = query.contains('tags', filters.tags_all);
+      }
+      // Handle tags_exclude - exclude leads that have any of these tags
+      if (filters.tags_exclude?.length) {
+        for (const excludedTag of filters.tags_exclude) {
+          query = query.not('tags', 'cs', `{${excludedTag}}`);
+        }
       }
       if (filters.created_after) {
         query = query.gte('created_at', filters.created_after);

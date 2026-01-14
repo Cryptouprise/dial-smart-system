@@ -943,7 +943,7 @@ serve(async (req) => {
 
       case 'preview_filtered_contacts': {
         // Preview contacts that match filters without importing
-        console.log('[GHL] Previewing filtered contacts with:', importFilters);
+        console.log('[GHL] Previewing filtered contacts with:', JSON.stringify(importFilters));
 
         let contacts: any[] = [];
         const PAGE_SIZE = 100;
@@ -960,14 +960,18 @@ serve(async (req) => {
             url += `&startAfter=${startAfter}`;
           }
 
+          console.log(`[GHL Preview] Page ${pageNum} URL: ${url}`);
+
           response = await fetch(url, {
             method: 'GET',
             headers
           });
 
           if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[GHL Preview] Page ${pageNum} failed: ${response.status} - ${errorText}`);
             if (pageNum === 1) {
-              throw new Error(`Failed to fetch contacts from GHL: ${response.status}`);
+              throw new Error(`Failed to fetch contacts from GHL: ${response.status} - ${errorText}`);
             }
             break;
           }
@@ -976,25 +980,44 @@ serve(async (req) => {
           const pageContacts = pageData.contacts || [];
           contacts = contacts.concat(pageContacts);
 
-          console.log(`[GHL Preview] Page ${pageNum}: fetched ${pageContacts.length} (total: ${contacts.length})`);
+          // Enhanced logging to debug pagination
+          console.log(`[GHL Preview] Page ${pageNum}: fetched ${pageContacts.length} contacts (total: ${contacts.length})`);
+          console.log(`[GHL Preview] Page ${pageNum} response keys: ${Object.keys(pageData).join(', ')}`);
+          console.log(`[GHL Preview] Page ${pageNum} meta: ${JSON.stringify(pageData.meta || 'no meta')}`);
 
-          // Check for next page cursor
+          if (pageContacts.length > 0) {
+            console.log(`[GHL Preview] First contact ID: ${pageContacts[0].id}, Last contact ID: ${pageContacts[pageContacts.length - 1].id}`);
+          }
+
+          // Check for next page cursor - GHL uses various field names
           const nextCursor = pageData.meta?.startAfterId
             || pageData.meta?.startAfter
+            || pageData.meta?.nextPageUrl?.split('startAfter=')[1]?.split('&')[0]
             || pageData.startAfterId
-            || pageData.startAfter;
+            || pageData.startAfter
+            || pageData.nextPageUrl?.split('startAfter=')[1]?.split('&')[0];
+
+          console.log(`[GHL Preview] Page ${pageNum} cursor found: ${nextCursor || 'NONE'}`);
 
           if (nextCursor) {
             startAfter = nextCursor;
             hasMore = true;
-          } else if (pageContacts.length === PAGE_SIZE) {
+            console.log(`[GHL Preview] Using cursor for next page: ${startAfter}`);
+          } else if (pageContacts.length === PAGE_SIZE && pageContacts.length > 0) {
+            // No explicit cursor but we got a full page - use last contact ID
             startAfter = pageContacts[pageContacts.length - 1].id;
             hasMore = true;
+            console.log(`[GHL Preview] No cursor, using last contact ID for next page: ${startAfter}`);
           } else {
             hasMore = false;
+            console.log(`[GHL Preview] Pagination complete - got ${pageContacts.length} contacts (less than ${PAGE_SIZE})`);
           }
 
           pageNum++;
+        }
+
+        if (pageNum > MAX_PREVIEW_PAGES) {
+          console.log(`[GHL Preview] Hit max pages limit (${MAX_PREVIEW_PAGES})`);
         }
 
         const totalBefore = contacts.length;
