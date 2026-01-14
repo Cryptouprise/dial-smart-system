@@ -948,79 +948,127 @@ serve(async (req) => {
         let contacts: any[] = [];
         const PAGE_SIZE = 100;
         const MAX_PREVIEW_PAGES = 100; // Limit preview to 10,000 contacts
-
-        // Fetch contacts with pagination
-        let startAfter: string | null = null;
         let pageNum = 1;
-        let hasMore = true;
+        let stoppedReason = 'complete';
+        let paginationMethod = 'unknown';
 
-        while (hasMore && pageNum <= MAX_PREVIEW_PAGES) {
-          let url = `${baseUrl}/contacts/?locationId=${locationId}&limit=${PAGE_SIZE}`;
-          if (startAfter) {
-            url += `&startAfter=${startAfter}`;
-          }
+        // TRY METHOD 1: Use search endpoint with page-based pagination (more reliable)
+        console.log('[GHL Preview] Trying search endpoint with page-based pagination...');
+        try {
+          let hasMore = true;
+          paginationMethod = 'search_endpoint';
 
-          console.log(`[GHL Preview] Page ${pageNum} URL: ${url}`);
+          while (hasMore && pageNum <= MAX_PREVIEW_PAGES) {
+            const searchBody: any = {
+              locationId,
+              page: pageNum,
+              pageLimit: PAGE_SIZE
+            };
 
-          response = await fetch(url, {
-            method: 'GET',
-            headers
-          });
+            console.log(`[GHL Preview] Search page ${pageNum} request:`, JSON.stringify(searchBody));
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[GHL Preview] Page ${pageNum} failed: ${response.status} - ${errorText}`);
-            if (pageNum === 1) {
-              throw new Error(`Failed to fetch contacts from GHL: ${response.status} - ${errorText}`);
+            response = await fetch(`${baseUrl}/contacts/search`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(searchBody)
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[GHL Preview] Search page ${pageNum} failed: ${response.status} - ${errorText}`);
+              if (pageNum === 1) {
+                // Search endpoint failed on first try - will fall back to GET method
+                throw new Error(`Search failed: ${response.status}`);
+              }
+              break;
             }
-            break;
+
+            const pageData = await response.json();
+            const pageContacts = pageData.contacts || [];
+            contacts = contacts.concat(pageContacts);
+
+            console.log(`[GHL Preview] Search page ${pageNum}: fetched ${pageContacts.length} contacts (total: ${contacts.length})`);
+            console.log(`[GHL Preview] Search response meta:`, JSON.stringify(pageData.meta || 'no meta'));
+
+            // Check if there are more pages - search uses page-based
+            hasMore = pageContacts.length === PAGE_SIZE;
+            pageNum++;
           }
 
-          const pageData = await response.json();
-          const pageContacts = pageData.contacts || [];
-          contacts = contacts.concat(pageContacts);
+          if (pageNum > MAX_PREVIEW_PAGES) {
+            stoppedReason = 'max_pages_reached';
+          }
+        } catch (searchError) {
+          // Search endpoint failed, fall back to cursor-based GET
+          console.log('[GHL Preview] Search endpoint failed, falling back to GET with cursor:', searchError);
+          contacts = [];
+          pageNum = 1;
+          paginationMethod = 'get_cursor';
 
-          // Enhanced logging to debug pagination
-          console.log(`[GHL Preview] Page ${pageNum}: fetched ${pageContacts.length} contacts (total: ${contacts.length})`);
-          console.log(`[GHL Preview] Page ${pageNum} response keys: ${Object.keys(pageData).join(', ')}`);
-          console.log(`[GHL Preview] Page ${pageNum} meta: ${JSON.stringify(pageData.meta || 'no meta')}`);
+          let startAfter: string | null = null;
+          let hasMore = true;
 
-          if (pageContacts.length > 0) {
-            console.log(`[GHL Preview] First contact ID: ${pageContacts[0].id}, Last contact ID: ${pageContacts[pageContacts.length - 1].id}`);
+          while (hasMore && pageNum <= MAX_PREVIEW_PAGES) {
+            let url = `${baseUrl}/contacts/?locationId=${locationId}&limit=${PAGE_SIZE}`;
+            if (startAfter) {
+              url += `&startAfter=${startAfter}`;
+            }
+
+            console.log(`[GHL Preview] GET page ${pageNum} URL: ${url}`);
+
+            response = await fetch(url, {
+              method: 'GET',
+              headers
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[GHL Preview] GET page ${pageNum} failed: ${response.status} - ${errorText}`);
+              if (pageNum === 1) {
+                throw new Error(`Failed to fetch contacts from GHL: ${response.status} - ${errorText}`);
+              }
+              break;
+            }
+
+            const pageData = await response.json();
+            const pageContacts = pageData.contacts || [];
+            contacts = contacts.concat(pageContacts);
+
+            console.log(`[GHL Preview] GET page ${pageNum}: fetched ${pageContacts.length} contacts (total: ${contacts.length})`);
+            console.log(`[GHL Preview] GET page ${pageNum} meta: ${JSON.stringify(pageData.meta || 'no meta')}`);
+
+            // Check for next page cursor - GHL uses various field names
+            const nextCursor = pageData.meta?.startAfterId
+              || pageData.meta?.startAfter
+              || pageData.meta?.nextPageUrl?.split('startAfter=')[1]?.split('&')[0]
+              || pageData.startAfterId
+              || pageData.startAfter;
+
+            if (nextCursor) {
+              startAfter = nextCursor;
+              hasMore = true;
+            } else if (pageContacts.length === PAGE_SIZE) {
+              // Full page but no cursor - use last contact ID
+              const lastId = pageContacts[pageContacts.length - 1].id;
+              if (lastId !== startAfter) {
+                startAfter = lastId;
+                hasMore = true;
+                console.log(`[GHL Preview] No cursor, using last contact ID: ${startAfter}`);
+              } else {
+                hasMore = false;
+              }
+            } else {
+              hasMore = false;
+            }
+
+            pageNum++;
           }
 
-          // Check for next page cursor - GHL uses various field names
-          const nextCursor = pageData.meta?.startAfterId
-            || pageData.meta?.startAfter
-            || pageData.meta?.nextPageUrl?.split('startAfter=')[1]?.split('&')[0]
-            || pageData.startAfterId
-            || pageData.startAfter
-            || pageData.nextPageUrl?.split('startAfter=')[1]?.split('&')[0];
-
-          console.log(`[GHL Preview] Page ${pageNum} cursor found: ${nextCursor || 'NONE'}`);
-
-          if (nextCursor) {
-            startAfter = nextCursor;
-            hasMore = true;
-            console.log(`[GHL Preview] Using cursor for next page: ${startAfter}`);
-          } else if (pageContacts.length === PAGE_SIZE && pageContacts.length > 0) {
-            // No explicit cursor but we got a full page - use last contact ID
-            startAfter = pageContacts[pageContacts.length - 1].id;
-            hasMore = true;
-            console.log(`[GHL Preview] No cursor, using last contact ID for next page: ${startAfter}`);
-          } else {
-            hasMore = false;
-            console.log(`[GHL Preview] Pagination complete - got ${pageContacts.length} contacts (less than ${PAGE_SIZE})`);
+          if (pageNum > MAX_PREVIEW_PAGES) {
+            stoppedReason = 'max_pages_reached';
           }
-
-          pageNum++;
         }
 
-        let stoppedReason = 'incomplete_page';
-        if (pageNum > MAX_PREVIEW_PAGES) {
-          stoppedReason = 'max_pages_reached';
-          console.log(`[GHL Preview] Hit max pages limit (${MAX_PREVIEW_PAGES})`);
-        }
         const pagesFetched = pageNum - 1;
 
         const totalBefore = contacts.length;
@@ -1069,6 +1117,7 @@ serve(async (req) => {
           _debug: {
             pagesFetched,
             stoppedReason,
+            paginationMethod,
             pageSize: PAGE_SIZE
           },
           sample: validContacts.slice(0, 10).map((c: any) => ({
