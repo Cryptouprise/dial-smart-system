@@ -35,11 +35,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { 
-  Phone, 
-  RefreshCw, 
-  AlertTriangle, 
-  CheckCircle, 
+import {
+  Phone,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle,
   ExternalLink,
   Info,
   Search,
@@ -51,7 +51,9 @@ import {
   ShieldCheck,
   ShieldX,
   Download,
-  Trash2
+  Trash2,
+  Tag,
+  Plus
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -76,6 +78,8 @@ interface TwilioNumberDetail {
   twilio_verified?: boolean;
   twilio_verified_at?: string;
   twilio_sid?: string;
+  // Tags for filtering
+  tags?: string[];
 }
 
 const GHL_WEBHOOK_URL = 'https://services.msgsndr.com/conversations/providers/twilio/inbound_message';
@@ -100,6 +104,11 @@ const TwilioNumbersOverview: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRemovingInvalid, setIsRemovingInvalid] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  // Tag management states
+  const [showTagDialog, setShowTagDialog] = useState(false);
+  const [newTagValue, setNewTagValue] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('');
+  const [allTags, setAllTags] = useState<string[]>([]);
 
   useEffect(() => {
     loadNumbers();
@@ -115,12 +124,19 @@ const TwilioNumbersOverview: React.FC = () => {
 
       if (twilioError) throw twilioError;
 
-      // Get numbers that are in our database with verification status
+      // Get numbers that are in our database with verification status and tags
       const { data: dbNumbers } = await supabase
         .from('phone_numbers')
-        .select('number, twilio_verified, twilio_verified_at, twilio_sid');
+        .select('number, twilio_verified, twilio_verified_at, twilio_sid, tags');
 
       const dbNumberMap = new Map((dbNumbers || []).map(n => [n.number, n]));
+
+      // Extract all unique tags for filtering
+      const uniqueTags = new Set<string>();
+      (dbNumbers || []).forEach(n => {
+        (n.tags || []).forEach((tag: string) => uniqueTags.add(tag));
+      });
+      setAllTags(Array.from(uniqueTags).sort());
       
       // Get the app's webhook URL
       const appUrl = `https://emonjusymdripmkvtttc.supabase.co/functions/v1/twilio-sms-webhook`;
@@ -155,6 +171,7 @@ const TwilioNumbersOverview: React.FC = () => {
           twilio_verified: dbInfo?.twilio_verified,
           twilio_verified_at: dbInfo?.twilio_verified_at,
           twilio_sid: dbInfo?.twilio_sid,
+          tags: dbInfo?.tags || [],
         };
       });
 
@@ -383,6 +400,75 @@ const TwilioNumbersOverview: React.FC = () => {
     setSelectedNumbers(new Set());
   };
 
+  const addTagToSelected = async () => {
+    if (!newTagValue.trim() || selectedNumbers.size === 0) return;
+
+    const tag = newTagValue.trim().toLowerCase();
+
+    try {
+      // Update each selected number to add the tag
+      for (const phoneNumber of selectedNumbers) {
+        const currentNumber = numbers.find(n => n.phone_number === phoneNumber);
+        const currentTags = currentNumber?.tags || [];
+
+        if (!currentTags.includes(tag)) {
+          const newTags = [...currentTags, tag];
+          await supabase
+            .from('phone_numbers')
+            .update({ tags: newTags })
+            .eq('number', phoneNumber);
+        }
+      }
+
+      toast({
+        title: 'Tag Added',
+        description: `Added "${tag}" to ${selectedNumbers.size} number(s)`,
+      });
+
+      setNewTagValue('');
+      setShowTagDialog(false);
+      await loadNumbers();
+    } catch (error) {
+      console.error('Failed to add tag:', error);
+      toast({
+        title: 'Failed to Add Tag',
+        description: error instanceof Error ? error.message : 'Could not add tag',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const removeTagFromSelected = async (tag: string) => {
+    if (selectedNumbers.size === 0) return;
+
+    try {
+      for (const phoneNumber of selectedNumbers) {
+        const currentNumber = numbers.find(n => n.phone_number === phoneNumber);
+        const currentTags = currentNumber?.tags || [];
+        const newTags = currentTags.filter((t: string) => t !== tag);
+
+        await supabase
+          .from('phone_numbers')
+          .update({ tags: newTags })
+          .eq('number', phoneNumber);
+      }
+
+      toast({
+        title: 'Tag Removed',
+        description: `Removed "${tag}" from ${selectedNumbers.size} number(s)`,
+      });
+
+      await loadNumbers();
+    } catch (error) {
+      console.error('Failed to remove tag:', error);
+      toast({
+        title: 'Failed to Remove Tag',
+        description: error instanceof Error ? error.message : 'Could not remove tag',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleEditFriendlyName = (phoneNumber: string, currentName: string) => {
     setEditingFriendlyName(phoneNumber);
     setFriendlyNameValue(currentName || '');
@@ -483,11 +569,17 @@ const TwilioNumbersOverview: React.FC = () => {
   };
 
   const filteredNumbers = numbers.filter(num => {
+    // Tag filter
+    if (selectedTagFilter && !(num.tags || []).includes(selectedTagFilter)) {
+      return false;
+    }
+    // Search filter
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
       num.phone_number.includes(term) ||
-      num.friendly_name?.toLowerCase().includes(term)
+      num.friendly_name?.toLowerCase().includes(term) ||
+      (num.tags || []).some((t: string) => t.toLowerCase().includes(term))
     );
   });
 
@@ -633,16 +725,43 @@ const TwilioNumbersOverview: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Search and Actions */}
+          {/* Search and Filters */}
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by number or name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex gap-2 items-center flex-wrap">
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by number, name, or tag..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              {/* Tag Filter Dropdown */}
+              {allTags.length > 0 && (
+                <select
+                  value={selectedTagFilter}
+                  onChange={(e) => setSelectedTagFilter(e.target.value)}
+                  className="h-10 px-3 py-2 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">All Tags</option>
+                  {allTags.map(tag => (
+                    <option key={tag} value={tag}>
+                      {tag} ({numbers.filter(n => (n.tags || []).includes(tag)).length})
+                    </option>
+                  ))}
+                </select>
+              )}
+              {selectedTagFilter && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedTagFilter('')}
+                  className="text-muted-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {selectedNumbers.size > 0 && (
@@ -652,6 +771,15 @@ const TwilioNumbersOverview: React.FC = () => {
                   </span>
                   <Button variant="ghost" size="sm" onClick={deselectAll}>
                     Clear
+                  </Button>
+                  {/* Tag Button */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowTagDialog(true)}
+                  >
+                    <Tag className="h-4 w-4 mr-2" />
+                    Add Tag
                   </Button>
                   <Button
                     size="sm"
@@ -720,6 +848,7 @@ const TwilioNumbersOverview: React.FC = () => {
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>Phone Number</TableHead>
+                    <TableHead>Tags</TableHead>
                     <TableHead>Verified</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>SMS Webhook</TableHead>
@@ -729,7 +858,7 @@ const TwilioNumbersOverview: React.FC = () => {
                 <TableBody>
                   {filteredNumbers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         {searchTerm ? 'No numbers match your search' : 'No Twilio numbers found'}
                       </TableCell>
                     </TableRow>
@@ -745,6 +874,19 @@ const TwilioNumbersOverview: React.FC = () => {
                         </TableCell>
                         <TableCell className="font-mono">
                           {formatPhoneNumber(num.phone_number)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 flex-wrap max-w-32">
+                            {(num.tags || []).length > 0 ? (
+                              (num.tags || []).map((tag: string) => (
+                                <Badge key={tag} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {num.twilio_verified === true ? (
@@ -1048,6 +1190,93 @@ const TwilioNumbersOverview: React.FC = () => {
                   Remove Invalid Numbers
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Tag Dialog */}
+      <Dialog open={showTagDialog} onOpenChange={setShowTagDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5 text-blue-500" />
+              Add Tag to Numbers
+            </DialogTitle>
+            <DialogDescription>
+              Add a tag to {selectedNumbers.size} selected number(s) for easy filtering.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="newTag">Tag Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="newTag"
+                  placeholder="e.g., ghl, broadcast, ai-only"
+                  value={newTagValue}
+                  onChange={(e) => setNewTagValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addTagToSelected();
+                  }}
+                />
+                <Button onClick={addTagToSelected} disabled={!newTagValue.trim()}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Tags are lowercase and used for filtering numbers
+              </p>
+            </div>
+
+            {allTags.length > 0 && (
+              <div>
+                <Label>Quick Add Existing Tag</Label>
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {allTags.map(tag => (
+                    <Button
+                      key={tag}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setNewTagValue(tag);
+                        addTagToSelected();
+                      }}
+                    >
+                      {tag}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Selected Numbers ({selectedNumbers.size}):</Label>
+              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/50">
+                {Array.from(selectedNumbers).map(num => {
+                  const numData = numbers.find(n => n.phone_number === num);
+                  return (
+                    <div key={num} className="flex items-center justify-between text-sm">
+                      <span className="font-mono">{formatPhoneNumber(num)}</span>
+                      <div className="flex gap-1">
+                        {(numData?.tags || []).map((t: string) => (
+                          <Badge key={t} variant="secondary" className="text-xs">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTagDialog(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -96,10 +96,18 @@ interface ImportFilters {
 }
 
 export const useGoHighLevel = () => {
-  const [isLoading, setIsLoading] = useState(false);
+  // Use loading counter to handle concurrent operations properly
+  const [loadingCount, setLoadingCount] = useState(0);
   const [isLoadingTags, setIsLoadingTags] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const { toast } = useToast();
+
+  // Derived loading state - true if any operation is in progress
+  const isLoading = loadingCount > 0;
+
+  // Helper functions for managing loading state
+  const startLoading = () => setLoadingCount(prev => prev + 1);
+  const stopLoading = () => setLoadingCount(prev => Math.max(0, prev - 1));
 
   const getGHLCredentials = useCallback(async (): Promise<GHLCredentials | null> => {
     try {
@@ -217,14 +225,20 @@ export const useGoHighLevel = () => {
   }, []);
 
   const testConnection = async (credentials: GHLCredentials) => {
-    setIsLoading(true);
+    startLoading();
     try {
+      // Add timeout to prevent infinite hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
           action: 'test_connection',
           ...credentials
         }
       });
+
+      clearTimeout(timeoutId);
 
       if (error) throw error;
 
@@ -235,14 +249,17 @@ export const useGoHighLevel = () => {
 
       return data;
     } catch (error: any) {
+      const message = error.name === 'AbortError'
+        ? 'Connection timed out - please check your API credentials'
+        : (error.message || "Failed to connect to Go High Level");
       toast({
         title: "Connection Failed",
-        description: error.message || "Failed to connect to Go High Level",
+        description: message,
         variant: "destructive"
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -260,7 +277,7 @@ export const useGoHighLevel = () => {
       return null;
     }
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -292,30 +309,44 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
   const getTags = async (): Promise<GHLTag[] | null> => {
     const credentials = await getGHLCredentials();
-    if (!credentials) return null;
+    if (!credentials) {
+      console.log('[GHL] No credentials found, skipping getTags');
+      return null;
+    }
 
     setIsLoadingTags(true);
+    console.log('[GHL] Loading tags...');
+
     try {
-      const { data, error } = await supabase.functions.invoke('ghl-integration', {
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out after 15 seconds')), 15000)
+      );
+
+      const fetchPromise = supabase.functions.invoke('ghl-integration', {
         body: {
           action: 'get_tags',
           ...credentials
         }
       });
 
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
       if (error) throw error;
+      console.log('[GHL] Tags loaded:', data.tags?.length || 0);
       return data.tags || [];
     } catch (error: any) {
-      console.error('Failed to fetch tags:', error);
+      console.error('[GHL] Failed to fetch tags:', error.message);
       return null;
     } finally {
       setIsLoadingTags(false);
+      console.log('[GHL] Loading tags complete');
     }
   };
 
@@ -323,7 +354,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -338,7 +369,7 @@ export const useGoHighLevel = () => {
       console.error('Failed to fetch workflows:', error);
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -379,7 +410,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -398,7 +429,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -410,7 +441,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -436,7 +467,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -444,7 +475,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -463,7 +494,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -481,7 +512,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -501,7 +532,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -520,7 +551,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -539,7 +570,7 @@ export const useGoHighLevel = () => {
       console.error('Failed to update GHL contact:', error);
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -547,7 +578,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -565,7 +596,7 @@ export const useGoHighLevel = () => {
       console.error('Failed to update pipeline stage:', error);
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -573,7 +604,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -590,7 +621,7 @@ export const useGoHighLevel = () => {
       console.error('Failed to sync with field mapping:', error);
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -717,7 +748,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -744,7 +775,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -752,7 +783,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -771,7 +802,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 
@@ -783,7 +814,7 @@ export const useGoHighLevel = () => {
     const credentials = await getGHLCredentials();
     if (!credentials) return null;
 
-    setIsLoading(true);
+    startLoading();
     try {
       const { data, error } = await supabase.functions.invoke('ghl-integration', {
         body: {
@@ -803,7 +834,7 @@ export const useGoHighLevel = () => {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      stopLoading();
     }
   };
 

@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
-import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database, Filter, Eye, X, Tag } from 'lucide-react';
+import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database, Filter, Eye, X, Tag, Loader2 } from 'lucide-react';
 import GHLFieldMappingTab from './GHLFieldMappingTab';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -102,9 +102,12 @@ const GoHighLevelManager = () => {
       if (result) {
         setIsConnected(true);
         setConnectionData(result);
-      loadPipelines();
-      loadContacts();
-      loadTags();
+        // Load data in parallel but await all to complete
+        await Promise.all([
+          loadPipelines(),
+          loadContacts(),
+          loadTags()
+        ]);
       }
     }
   };
@@ -125,9 +128,12 @@ const GoHighLevelManager = () => {
       if (saved) {
         setIsConnected(true);
         setConnectionData(result);
-        loadPipelines();
-        loadContacts();
-        loadTags();
+        // Load data in parallel but await all to complete
+        await Promise.all([
+          loadPipelines(),
+          loadContacts(),
+          loadTags()
+        ]);
       }
     }
   };
@@ -713,7 +719,11 @@ const GoHighLevelManager = () => {
                       disabled={isLoadingPreview}
                       className="w-full"
                     >
-                      <Eye className={`h-4 w-4 mr-2 ${isLoadingPreview ? 'animate-spin' : ''}`} />
+                      {isLoadingPreview ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Eye className="h-4 w-4 mr-2" />
+                      )}
                       {isLoadingPreview ? 'Loading Preview...' : 'Preview Matching Contacts'}
                     </Button>
                     

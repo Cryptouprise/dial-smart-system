@@ -324,10 +324,27 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     let shouldUpdatePipeline = false;
     
     if (callStatus === 'completed') {
-      finalStatus = duration > 0 ? 'answered' : 'completed';
-      updateBroadcastStats = true;
-      shouldUpdateLead = true;
-      shouldUpdatePipeline = duration > 0; // Move pipeline only if actually answered
+      // Check if AMD is enabled on the broadcast - if so, don't mark as 'answered' yet
+      // The AMD webhook will set the correct status (answered vs voicemail)
+      const broadcast = queueItem.voice_broadcasts;
+      const amdEnabled = broadcast?.enable_amd === true;
+      const amdResultAlreadySet = !!queueItem.amd_result;
+
+      if (amdEnabled && !amdResultAlreadySet && duration > 0) {
+        // AMD is enabled but no result yet - keep as 'in_progress' or check if AMD already set status
+        // The AMD webhook will update to 'answered' or 'voicemail'
+        console.log(`[Twilio Webhook] AMD enabled, waiting for AMD callback before final status`);
+        finalStatus = queueItem.status === 'voicemail' ? 'voicemail' : 'in_progress';
+        updateBroadcastStats = false; // Don't update stats yet, AMD will handle it
+        shouldUpdateLead = false;
+        shouldUpdatePipeline = false;
+      } else {
+        // AMD not enabled or result already set - proceed normally
+        finalStatus = duration > 0 ? 'answered' : 'completed';
+        updateBroadcastStats = true;
+        shouldUpdateLead = true;
+        shouldUpdatePipeline = duration > 0; // Move pipeline only if actually answered
+      }
     } else if (callStatus === 'no-answer') {
       finalStatus = 'no_answer';
       updateBroadcastStats = true;

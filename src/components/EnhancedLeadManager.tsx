@@ -114,13 +114,13 @@ const EnhancedLeadManager = () => {
     setSelectedSmartList(null);
   };
 
-  const handleFilterChange = async (filters: SmartListFilters) => {
+  const handleFilterChange = useCallback(async (filters: SmartListFilters) => {
     // Apply filters to current leads
     const allLeads = await getLeads();
     if (!allLeads) return;
-    
+
     let filtered = allLeads;
-    
+
     if (filters.status?.length) {
       filtered = filtered.filter(l => filters.status!.includes(l.status));
     }
@@ -130,9 +130,9 @@ const EnhancedLeadManager = () => {
     if (filters.tags?.length) {
       filtered = filtered.filter(l => l.tags?.some(t => filters.tags!.includes(t)));
     }
-    
+
     setLeads(filtered);
-  };
+  }, [getLeads]);
 
   const checkGHLConnection = () => {
     const creds = getGHLCredentials();

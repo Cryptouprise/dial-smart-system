@@ -59,9 +59,20 @@ serve(async (req) => {
 
     if (isMachine) {
       console.log(`[AMD Webhook] Machine detected (${answeredBy}), processing voicemail action`);
-      
-      // Update queue item status to 'voicemail'
+
+      // Update queue item status to 'voicemail' and update broadcast stats
       if (queueItemId) {
+        // First fetch the queue item to get broadcast info
+        const { data: queueItem, error: fetchError } = await supabase
+          .from('broadcast_queue')
+          .select('*, voice_broadcasts(*)')
+          .eq('id', queueItemId)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error('[AMD Webhook] Failed to fetch queue item:', fetchError);
+        }
+
         const { error: updateError } = await supabase
           .from('broadcast_queue')
           .update({
@@ -70,11 +81,23 @@ serve(async (req) => {
             updated_at: new Date().toISOString()
           })
           .eq('id', queueItemId);
-        
+
         if (updateError) {
           console.error('[AMD Webhook] Failed to update queue item:', updateError);
         } else {
           console.log(`[AMD Webhook] Queue item ${queueItemId} marked as voicemail`);
+
+          // Update broadcast calls_made count (voicemail counts as a completed call attempt)
+          if (queueItem?.voice_broadcasts) {
+            const broadcast = queueItem.voice_broadcasts;
+            await supabase
+              .from('voice_broadcasts')
+              .update({
+                calls_made: (broadcast.calls_made || 0) + 1
+              })
+              .eq('id', broadcast.id);
+            console.log(`[AMD Webhook] Updated broadcast calls_made for voicemail`);
+          }
         }
       }
 
@@ -127,22 +150,58 @@ serve(async (req) => {
         },
       });
     } else {
-      // Human detected or unknown - let the call continue
-      console.log(`[AMD Webhook] Human detected (${answeredBy}), allowing call to continue`);
-      
-      // Update queue item to mark as 'in_progress' (human answered)
+      // Human detected or unknown - mark as answered and update stats
+      console.log(`[AMD Webhook] Human detected (${answeredBy}), marking as answered`);
+
+      // Update queue item to mark as 'answered' (human answered)
       if (queueItemId) {
+        const { data: queueItem, error: fetchError } = await supabase
+          .from('broadcast_queue')
+          .select('*, voice_broadcasts(*)')
+          .eq('id', queueItemId)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error('[AMD Webhook] Failed to fetch queue item:', fetchError);
+        }
+
         const { error: updateError } = await supabase
           .from('broadcast_queue')
           .update({
-            status: 'in_progress',
+            status: 'answered',
             amd_result: answeredBy,
             updated_at: new Date().toISOString()
           })
           .eq('id', queueItemId);
-        
+
         if (updateError) {
           console.error('[AMD Webhook] Failed to update queue item:', updateError);
+        } else {
+          console.log(`[AMD Webhook] Queue item ${queueItemId} marked as answered (human)`);
+
+          // Update broadcast stats
+          if (queueItem?.voice_broadcasts) {
+            const broadcast = queueItem.voice_broadcasts;
+            await supabase
+              .from('voice_broadcasts')
+              .update({
+                calls_answered: (broadcast.calls_answered || 0) + 1
+              })
+              .eq('id', broadcast.id);
+            console.log(`[AMD Webhook] Updated broadcast calls_answered`);
+          }
+
+          // Update lead status to contacted
+          if (queueItem?.lead_id) {
+            await supabase
+              .from('leads')
+              .update({
+                status: 'contacted',
+                last_contacted_at: new Date().toISOString()
+              })
+              .eq('id', queueItem.lead_id);
+            console.log(`[AMD Webhook] Lead ${queueItem.lead_id} marked as contacted`);
+          }
         }
       }
 

@@ -430,6 +430,7 @@ export const VoiceBroadcastManager: React.FC = () => {
         .select(`
           id, phone_number, status, dtmf_pressed, lead_name,
           created_at, updated_at, callback_scheduled_at,
+          amd_result, call_duration_seconds,
           lead:leads(first_name, last_name, phone_number, status)
         `)
         .eq('broadcast_id', broadcastId)
@@ -1099,7 +1100,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                           <SelectValue placeholder="Choose auto or a single number" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="auto">Auto (use pool / rotate if enabled)</SelectItem>
+                          <SelectItem value="auto">🔄 Auto-Rotate Numbers (Recommended)</SelectItem>
                           {phoneNumbers
                             .filter(
                               (p) =>
@@ -1118,7 +1119,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <p className="text-xs text-muted-foreground">
                         {formData.caller_id
                           ? 'Single number mode: rotation is off and all calls use this number.'
-                          : 'Auto mode: the system chooses from your pool (may rotate numbers for deliverability).'}
+                          : 'Auto-Rotate: Spreads calls across all your Twilio numbers with rotation_enabled=true. Add more numbers in Settings → Phone Numbers to increase capacity.'}
                       </p>
                       {phoneNumbers.some(p => p.retell_phone_id) && (
                         <p className="text-xs text-amber-600">
@@ -1351,13 +1352,16 @@ export const VoiceBroadcastManager: React.FC = () => {
         ) : (
           broadcasts.map((broadcast) => {
             const broadcastStats = stats[broadcast.id] || {};
-            // Calculate completed as: answered + transferred + callback + dnc + completed + failed
-            const totalCompleted = (broadcastStats.answered || 0) + 
-              (broadcastStats.transferred || 0) + 
-              (broadcastStats.callback || 0) + 
-              (broadcastStats.dnc || 0) + 
-              (broadcastStats.completed || 0) + 
-              (broadcastStats.failed || 0);
+            // Calculate completed as all finished call attempts (not pending or calling)
+            const totalCompleted = (broadcastStats.answered || 0) +
+              (broadcastStats.transferred || 0) +
+              (broadcastStats.callback || 0) +
+              (broadcastStats.dnc || 0) +
+              (broadcastStats.completed || 0) +
+              (broadcastStats.failed || 0) +
+              (broadcastStats.voicemail || 0) +
+              (broadcastStats.no_answer || 0) +
+              (broadcastStats.busy || 0);
             const progress = broadcast.total_leads 
               ? Math.round((totalCompleted / broadcast.total_leads) * 100) 
               : 0;
@@ -2128,7 +2132,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <SelectValue placeholder="Choose auto or a single number" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="auto">Auto (use pool / rotate if enabled)</SelectItem>
+                      <SelectItem value="auto">🔄 Auto-Rotate Numbers (Recommended)</SelectItem>
                       {phoneNumbers
                         .filter(
                           (p) =>
@@ -2149,7 +2153,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                     <p className="text-xs text-muted-foreground">
                       {selectedBroadcast.caller_id
                         ? 'Single number mode: rotation is off and all calls use this number.'
-                        : 'Auto mode: the system chooses from your pool (may rotate numbers for deliverability).'}
+                        : 'Auto-Rotate: Spreads calls across all your Twilio numbers with rotation_enabled=true. Add more numbers in Settings → Phone Numbers to increase capacity.'}
                     </p>
                     <Button asChild variant="outline" size="sm">
                       <a href="/?tab=overview#phone-numbers" target="_blank" rel="noreferrer">
@@ -2351,8 +2355,8 @@ export const VoiceBroadcastManager: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-5 gap-3 mb-4">
+              {/* Summary Cards - Row 1: Counts */}
+              <div className="grid grid-cols-5 gap-3 mb-3">
                 <Card className="p-3 text-center">
                   <div className="text-xl font-bold">{queueResults.length}</div>
                   <div className="text-xs text-muted-foreground">Total</div>
@@ -2383,6 +2387,38 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </Card>
               </div>
 
+              {/* Summary Cards - Row 2: Rates & Duration */}
+              {(() => {
+                const attempted = queueResults.filter(r => !['pending', 'queued'].includes(r.status)).length;
+                const answered = queueResults.filter(r => ['answered', 'transferred', 'callback', 'completed'].includes(r.status)).length;
+                const voicemails = queueResults.filter(r => r.status === 'voicemail' || r.amd_result === 'machine_end_beep' || r.amd_result === 'machine_end_silence').length;
+                const pickupRate = attempted > 0 ? (answered / attempted) * 100 : 0;
+                const vmRate = attempted > 0 ? (voicemails / attempted) * 100 : 0;
+                const totalSeconds = queueResults.reduce((sum, r) => sum + (r.call_duration_seconds || 0), 0);
+                const totalMinutes = totalSeconds / 60;
+
+                return (
+                  <div className="grid grid-cols-4 gap-3 mb-4">
+                    <Card className="p-3 text-center bg-green-50 dark:bg-green-950/20">
+                      <div className="text-xl font-bold text-green-600">{pickupRate.toFixed(1)}%</div>
+                      <div className="text-xs text-muted-foreground">Pickup Rate</div>
+                    </Card>
+                    <Card className="p-3 text-center">
+                      <div className="text-xl font-bold text-purple-600">{answered}</div>
+                      <div className="text-xs text-muted-foreground">Answered</div>
+                    </Card>
+                    <Card className="p-3 text-center bg-yellow-50 dark:bg-yellow-950/20">
+                      <div className="text-xl font-bold text-yellow-600">{voicemails}</div>
+                      <div className="text-xs text-muted-foreground">Voicemail ({vmRate.toFixed(0)}%)</div>
+                    </Card>
+                    <Card className="p-3 text-center bg-blue-50 dark:bg-blue-950/20">
+                      <div className="text-xl font-bold text-blue-600">{totalMinutes.toFixed(1)}</div>
+                      <div className="text-xs text-muted-foreground">Total Minutes</div>
+                    </Card>
+                  </div>
+                );
+              })()}
+
               {/* Results Table */}
               <div className="max-h-[400px] overflow-y-auto border rounded-md">
                 <Table>
@@ -2391,6 +2427,7 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <TableHead>Lead</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Duration</TableHead>
                       <TableHead>DTMF</TableHead>
                       <TableHead>Updated</TableHead>
                     </TableRow>
@@ -2417,6 +2454,15 @@ export const VoiceBroadcastManager: React.FC = () => {
                           >
                             {result.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {result.call_duration_seconds ? (
+                            <span className={result.call_duration_seconds > 60 ? 'text-amber-600 font-medium' : ''}>
+                              {Math.floor(result.call_duration_seconds / 60)}:{(result.call_duration_seconds % 60).toString().padStart(2, '0')}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           {result.dtmf_pressed ? (
