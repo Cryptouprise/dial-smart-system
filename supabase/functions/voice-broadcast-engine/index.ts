@@ -584,11 +584,11 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
+
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Supabase configuration missing');
     }
-    
+
     // Get provider API keys
     const providers: ProviderConfig = {
       retellKey: Deno.env.get('RETELL_AI_API_KEY'),
@@ -596,18 +596,308 @@ serve(async (req) => {
       twilioAuthToken: Deno.env.get('TWILIO_AUTH_TOKEN'),
       telnyxApiKey: Deno.env.get('TELNYX_API_KEY'),
     };
-    
+
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify user
+    const requestBody = await req.json();
+    const { action, broadcastId, queueItemId, digit, testBatchSize } = requestBody;
+
+    // Handle process_active action (cron/service-role triggered)
+    // This processes all active broadcasts without requiring user auth
+    if (action === 'process_active') {
+      console.log('[Broadcast Engine] Processing all active broadcasts (cron triggered)');
+
+      // Get all active broadcasts with pending queue items
+      const { data: activeBroadcasts, error: broadcastsError } = await supabase
+        .from('voice_broadcasts')
+        .select('*, broadcast_queue!inner(id)')
+        .eq('status', 'active')
+        .eq('broadcast_queue.status', 'pending')
+        .limit(10);
+
+      if (broadcastsError) {
+        console.error('[Broadcast Engine] Error fetching active broadcasts:', broadcastsError);
+        throw broadcastsError;
+      }
+
+      if (!activeBroadcasts || activeBroadcasts.length === 0) {
+        console.log('[Broadcast Engine] No active broadcasts with pending items');
+        return new Response(
+          JSON.stringify({ success: true, message: 'No active broadcasts to process', processed: 0 }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Deduplicate by broadcast ID (the join may return multiple rows per broadcast)
+      const uniqueBroadcasts = [...new Map(activeBroadcasts.map(b => [b.id, b])).values()];
+      console.log(`[Broadcast Engine] Found ${uniqueBroadcasts.length} active broadcasts to process`);
+
+      const results: Array<{ broadcastId: string; name: string; processed: number; errors: string[] }> = [];
+
+      for (const broadcast of uniqueBroadcasts) {
+        try {
+          // Process this broadcast by invoking the same function with 'start' action
+          // but we'll inline the processing here to avoid auth issues
+          console.log(`[Broadcast Engine] Processing broadcast: ${broadcast.name} (${broadcast.id})`);
+
+          // Check calling hours
+          const bypassCallingHours = broadcast.bypass_calling_hours === true;
+          if (!bypassCallingHours) {
+            const broadcastTimezone = broadcast.timezone || 'America/New_York';
+            const callingHoursStart = broadcast.calling_hours_start || '09:00:00';
+            const callingHoursEnd = broadcast.calling_hours_end || '21:00:00';
+
+            const now = new Date();
+            const options: Intl.DateTimeFormatOptions = { timeZone: broadcastTimezone, hour: '2-digit', minute: '2-digit', hour12: false };
+            const currentTimeStr = now.toLocaleTimeString('en-US', options);
+            const [currentHour, currentMinute] = currentTimeStr.split(':').map(Number);
+            const currentMinutes = currentHour * 60 + currentMinute;
+
+            const [startHour, startMin] = callingHoursStart.split(':').map(Number);
+            const [endHour, endMin] = callingHoursEnd.split(':').map(Number);
+            const startMinutes = startHour * 60 + startMin;
+            const endMinutes = endHour * 60 + endMin;
+
+            if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
+              console.log(`[Broadcast Engine] ${broadcast.name} outside calling hours, skipping`);
+              results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['Outside calling hours'] });
+              continue;
+            }
+          }
+
+          // Get pending queue items for this broadcast (limit batch size)
+          const { data: pendingItems, error: queueError } = await supabase
+            .from('broadcast_queue')
+            .select('*')
+            .eq('broadcast_id', broadcast.id)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true })
+            .limit(10);
+
+          if (queueError || !pendingItems || pendingItems.length === 0) {
+            console.log(`[Broadcast Engine] No pending items for ${broadcast.name}`);
+            results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: queueError ? [queueError.message] : [] });
+            continue;
+          }
+
+          // Get phone numbers for this user
+          const { data: phoneNumbers, error: numbersError } = await supabase
+            .from('phone_numbers')
+            .select('*')
+            .eq('user_id', broadcast.user_id)
+            .eq('status', 'active')
+            .eq('is_spam', false)
+            .eq('rotation_enabled', true);
+
+          if (numbersError || !phoneNumbers || phoneNumbers.length === 0) {
+            console.error(`[Broadcast Engine] No phone numbers for ${broadcast.name}`);
+            results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No active phone numbers'] });
+            continue;
+          }
+
+          // Filter to numbers within daily limits
+          const maxDailyDefault = 100;
+          const availableNumbers = phoneNumbers.filter(n => (n.daily_calls || 0) < (n.max_daily_calls || maxDailyDefault));
+
+          if (availableNumbers.length === 0) {
+            console.error(`[Broadcast Engine] All numbers at daily limit for ${broadcast.name}`);
+            results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['All numbers at daily limit'] });
+            continue;
+          }
+
+          // Filter to Twilio numbers for audio broadcasts (exclude retell_native)
+          const hasAudioUrl = !!broadcast.audio_url;
+          let rotationNumbers = availableNumbers;
+          if (hasAudioUrl) {
+            rotationNumbers = availableNumbers.filter(n => {
+              if (n.carrier_name?.toLowerCase().includes('telnyx') || n.provider === 'telnyx') return true;
+              if (!n.retell_phone_id || n.provider === 'twilio') return true;
+              if (n.provider === 'retell_native') return false;
+              return true;
+            });
+            if (rotationNumbers.length === 0) {
+              console.error(`[Broadcast Engine] No Twilio/Telnyx numbers for audio broadcast ${broadcast.name}`);
+              results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No Twilio/Telnyx numbers for audio broadcast'] });
+              continue;
+            }
+          }
+
+          // Track number usage for rotation within this batch
+          const numberUsageCount = new Map<string, number>();
+          rotationNumbers.forEach(n => numberUsageCount.set(n.id, n.daily_calls || 0));
+
+          const broadcastErrors: string[] = [];
+          let processedCount = 0;
+
+          // Check for SIP trunk config if broadcast requests it
+          let sipConfig: SipTrunkConfig | null = null;
+          if (broadcast.use_sip_trunk === true) {
+            const { data: sipConfigs } = await supabase
+              .from('sip_trunk_configs')
+              .select('*')
+              .eq('user_id', broadcast.user_id)
+              .eq('is_active', true)
+              .order('is_default', { ascending: false });
+
+            sipConfig = sipConfigs?.[0] || null;
+            if (sipConfig) {
+              console.log(`[Broadcast Engine] SIP trunk enabled: ${sipConfig.provider_type} - ${sipConfig.twilio_trunk_sid}`);
+            } else {
+              console.log(`[Broadcast Engine] SIP trunk requested but none configured, using direct API`);
+            }
+          }
+
+          const statusCallbackUrl = `${supabaseUrl}/functions/v1/call-tracking-webhook`;
+          const dtmfHandlerUrl = `${supabaseUrl}/functions/v1/twilio-dtmf-handler`;
+
+          // AMD settings for automated broadcasts - use broadcast.enable_amd setting
+          const amdEnabled = broadcast.enable_amd !== false; // Default to true if not explicitly disabled
+          console.log(`[Broadcast Engine] AMD enabled: ${amdEnabled} for broadcast ${broadcast.name}`);
+
+          for (const item of pendingItems) {
+            // Build AMD callback URL for this queue item
+            const amdCallbackUrl = amdEnabled
+              ? `${supabaseUrl}/functions/v1/twilio-amd-webhook?queue_item_id=${item.id}&broadcast_id=${broadcast.id}`
+              : undefined;
+
+            try {
+              // Select best number for this call using rotation
+              let callerNumber: any;
+              if (broadcast.caller_id) {
+                callerNumber = rotationNumbers.find(n => n.number === broadcast.caller_id);
+              }
+              if (!callerNumber) {
+                // Use selectBestNumber for proper rotation with local presence
+                callerNumber = selectBestNumber(
+                  rotationNumbers,
+                  item.phone_number,
+                  numberUsageCount,
+                  true, // enableLocalPresence
+                  true  // enableRotation
+                );
+              }
+              if (!callerNumber) {
+                broadcastErrors.push(`${item.phone_number}: No suitable caller number`);
+                continue;
+              }
+
+              // Track usage for this number
+              numberUsageCount.set(callerNumber.id, (numberUsageCount.get(callerNumber.id) || 0) + 1);
+
+              // Mark as calling
+              await supabase
+                .from('broadcast_queue')
+                .update({ status: 'calling', attempts: (item.attempts || 0) + 1, updated_at: new Date().toISOString() })
+                .eq('id', item.id);
+
+              // Make the call via Twilio
+              if (!providers.twilioAccountSid || !providers.twilioAuthToken) {
+                throw new Error('Twilio credentials not configured');
+              }
+
+              const callMetadata = {
+                broadcast_id: broadcast.id,
+                queue_item_id: item.id,
+                lead_id: item.lead_id,
+              };
+
+              let callResult: CallResult;
+
+              // Use SIP trunk if configured, otherwise direct Twilio API
+              if (sipConfig && sipConfig.twilio_trunk_sid && sipConfig.twilio_termination_uri) {
+                console.log(`[Broadcast Engine] Making SIP trunk call to ${item.phone_number} from ${callerNumber.number}`);
+                callResult = await callWithTwilioSipTrunk(
+                  providers.twilioAccountSid,
+                  providers.twilioAuthToken,
+                  sipConfig.twilio_trunk_sid,
+                  sipConfig.twilio_termination_uri,
+                  callerNumber.number,
+                  item.phone_number,
+                  broadcast.audio_url || '',
+                  callMetadata,
+                  statusCallbackUrl,
+                  dtmfHandlerUrl,
+                  undefined, // transferNumber
+                  amdEnabled, // amdEnabled - use broadcast setting
+                  amdCallbackUrl // amdCallbackUrl
+                );
+              } else {
+                console.log(`[Broadcast Engine] Making direct Twilio call to ${item.phone_number} from ${callerNumber.number}`);
+                callResult = await callWithTwilio(
+                  providers.twilioAccountSid,
+                  providers.twilioAuthToken,
+                  callerNumber.number,
+                  item.phone_number,
+                  broadcast.audio_url || '',
+                  callMetadata,
+                  statusCallbackUrl,
+                  dtmfHandlerUrl,
+                  undefined, // transferNumber
+                  amdEnabled, // amdEnabled - use broadcast setting
+                  amdCallbackUrl, // amdCallbackUrl
+                  false // validateFromNumber
+                );
+              }
+
+              if (!callResult.success) {
+                console.error(`[Broadcast Engine] Call failed for ${item.phone_number}:`, callResult.error);
+                await supabase
+                  .from('broadcast_queue')
+                  .update({ status: 'failed', updated_at: new Date().toISOString() })
+                  .eq('id', item.id);
+                broadcastErrors.push(`${item.phone_number}: ${callResult.error}`);
+                continue;
+              }
+
+              console.log(`[Broadcast Engine] Call initiated: ${item.phone_number} -> ${callResult.callId}${callResult.usedSipTrunk ? ' (SIP trunk)' : ''}`);
+
+              // Update queue with call SID
+              await supabase
+                .from('broadcast_queue')
+                .update({ call_sid: callResult.callId, updated_at: new Date().toISOString() })
+                .eq('id', item.id);
+
+              // Increment daily calls counter
+              await supabase.rpc('increment_daily_calls', { phone_last_10: callerNumber.number.slice(-10) });
+
+              processedCount++;
+
+              // Small delay between calls
+              await sleep(CALL_DELAY_MS);
+
+            } catch (itemError: any) {
+              console.error(`[Broadcast Engine] Error processing item ${item.id}:`, itemError);
+              broadcastErrors.push(`${item.phone_number}: ${itemError.message}`);
+              await supabase
+                .from('broadcast_queue')
+                .update({ status: 'failed', updated_at: new Date().toISOString() })
+                .eq('id', item.id);
+            }
+          }
+
+          results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: processedCount, errors: broadcastErrors });
+
+        } catch (broadcastError: any) {
+          console.error(`[Broadcast Engine] Error processing broadcast ${broadcast.id}:`, broadcastError);
+          results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: [broadcastError.message] });
+        }
+      }
+
+      const totalProcessed = results.reduce((sum, r) => sum + r.processed, 0);
+      console.log(`[Broadcast Engine] Completed processing. Total calls: ${totalProcessed}`);
+
+      return new Response(
+        JSON.stringify({ success: true, totalProcessed, results }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For all other actions, verify user authentication
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) {
       throw new Error('Unauthorized');
     }
-
-    const requestBody = await req.json();
-    const { action, broadcastId, queueItemId, digit, testBatchSize } = requestBody;
     
     // Test mode: if testBatchSize is provided, limit calls and don't set status to active
     const isTestMode = typeof testBatchSize === 'number' && testBatchSize > 0;

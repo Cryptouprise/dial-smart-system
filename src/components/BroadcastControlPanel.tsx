@@ -14,10 +14,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { 
-  Play, Pause, Square, TestTube, AlertTriangle, Activity, 
+import {
+  Play, Pause, Square, TestTube, AlertTriangle, Activity,
   Phone, PhoneOff, Users, TrendingUp, Clock, RefreshCw,
-  XCircle, CheckCircle2, Zap
+  XCircle, CheckCircle2, Zap, Voicemail, Timer, PhoneForwarded, Percent
 } from 'lucide-react';
 import { useBroadcastReadiness } from '@/hooks/useBroadcastReadiness';
 import { useLiveCampaignStats } from '@/hooks/useLiveCampaignStats';
@@ -158,28 +158,55 @@ export const BroadcastControlPanel: React.FC<BroadcastControlPanelProps> = ({
 
         {/* Live Stats Row */}
         {isActive && stats && (
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <div className="bg-muted/50 rounded-lg p-2">
-              <Activity className="h-4 w-4 mx-auto text-blue-500 animate-pulse" />
-              <div className="text-lg font-bold">{stats.calling}</div>
-              <div className="text-[10px] text-muted-foreground">Calling</div>
+          <>
+            {/* Primary Stats */}
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="bg-muted/50 rounded-lg p-2">
+                <Activity className="h-4 w-4 mx-auto text-blue-500 animate-pulse" />
+                <div className="text-lg font-bold">{stats.calling}</div>
+                <div className="text-[10px] text-muted-foreground">Calling</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <Users className="h-4 w-4 mx-auto text-muted-foreground" />
+                <div className="text-lg font-bold">{stats.pending}</div>
+                <div className="text-[10px] text-muted-foreground">Pending</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <CheckCircle2 className="h-4 w-4 mx-auto text-green-500" />
+                <div className="text-lg font-bold">{stats.answered + stats.transferred}</div>
+                <div className="text-[10px] text-muted-foreground">Answered</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <XCircle className="h-4 w-4 mx-auto text-red-500" />
+                <div className="text-lg font-bold">{stats.failed}</div>
+                <div className="text-[10px] text-muted-foreground">Failed</div>
+              </div>
             </div>
-            <div className="bg-muted/50 rounded-lg p-2">
-              <Users className="h-4 w-4 mx-auto text-muted-foreground" />
-              <div className="text-lg font-bold">{stats.pending}</div>
-              <div className="text-[10px] text-muted-foreground">Pending</div>
+
+            {/* Secondary Stats - Rates & Duration */}
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="bg-muted/50 rounded-lg p-2">
+                <Percent className="h-4 w-4 mx-auto text-green-500" />
+                <div className="text-lg font-bold">{(stats.pickupRate || 0).toFixed(1)}%</div>
+                <div className="text-[10px] text-muted-foreground">Pickup Rate</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <Voicemail className="h-4 w-4 mx-auto text-yellow-500" />
+                <div className="text-lg font-bold">{stats.voicemail || 0}</div>
+                <div className="text-[10px] text-muted-foreground">VM ({(stats.voicemailRate || 0).toFixed(0)}%)</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <PhoneForwarded className="h-4 w-4 mx-auto text-purple-500" />
+                <div className="text-lg font-bold">{stats.transferred}</div>
+                <div className="text-[10px] text-muted-foreground">Transfers</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-2">
+                <Timer className="h-4 w-4 mx-auto text-blue-400" />
+                <div className="text-lg font-bold">{(stats.totalMinutes || 0).toFixed(1)}</div>
+                <div className="text-[10px] text-muted-foreground">Total Min</div>
+              </div>
             </div>
-            <div className="bg-muted/50 rounded-lg p-2">
-              <CheckCircle2 className="h-4 w-4 mx-auto text-green-500" />
-              <div className="text-lg font-bold">{stats.completed}</div>
-              <div className="text-[10px] text-muted-foreground">Done</div>
-            </div>
-            <div className="bg-muted/50 rounded-lg p-2">
-              <XCircle className="h-4 w-4 mx-auto text-red-500" />
-              <div className="text-lg font-bold">{stats.failed}</div>
-              <div className="text-[10px] text-muted-foreground">Failed</div>
-            </div>
-          </div>
+          </>
         )}
 
         {/* Test Result Banner */}

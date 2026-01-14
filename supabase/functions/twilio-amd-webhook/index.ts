@@ -64,8 +64,9 @@ serve(async (req) => {
       if (queueItemId) {
         const { error: updateError } = await supabase
           .from('broadcast_queue')
-          .update({ 
+          .update({
             status: 'voicemail',
+            amd_result: answeredBy,
             updated_at: new Date().toISOString()
           })
           .eq('id', queueItemId);
@@ -133,8 +134,9 @@ serve(async (req) => {
       if (queueItemId) {
         const { error: updateError } = await supabase
           .from('broadcast_queue')
-          .update({ 
+          .update({
             status: 'in_progress',
+            amd_result: answeredBy,
             updated_at: new Date().toISOString()
           })
           .eq('id', queueItemId);

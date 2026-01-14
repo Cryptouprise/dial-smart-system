@@ -14,9 +14,13 @@ interface LiveCampaignStats {
   failed: number;
   dnc: number;
   callback: number;
+  voicemail: number;
   errorRate: number;
   completionRate: number;
+  pickupRate: number;
+  voicemailRate: number;
   avgDuration: number;
+  totalMinutes: number;
   lastUpdated: Date;
 }
 
@@ -62,7 +66,7 @@ export const useLiveCampaignStats = (broadcastId?: string) => {
       // Get queue stats
       const { data: queueItems, error: queueError } = await supabase
         .from('broadcast_queue')
-        .select('status, call_duration_seconds')
+        .select('status, call_duration_seconds, amd_result')
         .eq('broadcast_id', broadcastId);
 
       if (queueError) throw queueError;
@@ -77,6 +81,7 @@ export const useLiveCampaignStats = (broadcastId?: string) => {
         failed: 0,
         dnc: 0,
         callback: 0,
+        voicemail: 0,
       };
 
       let totalDuration = 0;
@@ -96,6 +101,17 @@ export const useLiveCampaignStats = (broadcastId?: string) => {
       const processedCalls = statCounts.completed + statCounts.answered + statCounts.transferred + statCounts.failed + statCounts.dnc;
       const successfulCalls = statCounts.completed + statCounts.answered + statCounts.transferred;
 
+      // Calculate pickup rate (answered + transferred + callback vs total attempted)
+      const attemptedCalls = statCounts.total - statCounts.pending;
+      const pickedUpCalls = statCounts.answered + statCounts.transferred + statCounts.callback + statCounts.completed;
+      const pickupRate = attemptedCalls > 0 ? (pickedUpCalls / attemptedCalls) * 100 : 0;
+      
+      // Calculate voicemail rate
+      const voicemailRate = attemptedCalls > 0 ? (statCounts.voicemail / attemptedCalls) * 100 : 0;
+      
+      // Calculate total minutes
+      const totalMinutes = Math.round(totalDuration / 60 * 100) / 100;
+
       setStats({
         broadcastId,
         broadcastName: broadcast.name,
@@ -103,7 +119,10 @@ export const useLiveCampaignStats = (broadcastId?: string) => {
         ...statCounts,
         errorRate: processedCalls > 0 ? (statCounts.failed / processedCalls) * 100 : 0,
         completionRate: statCounts.total > 0 ? (successfulCalls / statCounts.total) * 100 : 0,
+        pickupRate,
+        voicemailRate,
         avgDuration: durationCount > 0 ? Math.round(totalDuration / durationCount) : 0,
+        totalMinutes,
         lastUpdated: new Date(),
       });
 
