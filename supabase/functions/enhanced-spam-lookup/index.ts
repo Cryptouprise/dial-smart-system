@@ -755,11 +755,15 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
     const numbersData = await numbersResponse.json();
     
     if (!numbersData.incoming_phone_numbers || numbersData.incoming_phone_numbers.length === 0) {
+      // Return 200 with business-logic error payload (not a transport error)
+      // so the frontend can handle it without Supabase throwing a FunctionsHttpError.
       return new Response(JSON.stringify({ 
         error: 'Phone number not found in Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.',
-        notInTwilio: true 
+        notInTwilio: true,
+        phoneNumber: e164Number,
+        found: false,
       }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
