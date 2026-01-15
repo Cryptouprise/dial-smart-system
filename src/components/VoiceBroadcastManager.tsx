@@ -973,6 +973,60 @@ export const VoiceBroadcastManager: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="settings" className="space-y-4">
+                {/* SIP Trunk Cost Savings - PROMINENT at top */}
+                <Card className={formData.use_sip_trunk
+                  ? "border-2 border-green-500/50 bg-green-50/50 dark:bg-green-950/20"
+                  : "border-2 border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20"}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <DollarSign className={`h-4 w-4 ${formData.use_sip_trunk ? 'text-green-600' : 'text-amber-600'}`} />
+                      Call Routing Mode
+                      {formData.use_sip_trunk ? (
+                        <Badge className="ml-2 bg-green-500 hover:bg-green-600">SIP Trunk Active</Badge>
+                      ) : (
+                        <Badge variant="outline" className="ml-2 border-amber-500 text-amber-700">Programmable Voice</Badge>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <Label className="text-sm font-medium">Use SIP Trunk (Recommended for Cost Savings)</Label>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className={`text-xs px-2 py-0.5 rounded ${formData.use_sip_trunk ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            SIP: ~$0.007/min
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${!formData.use_sip_trunk ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                            PV: ~$0.017/min
+                          </span>
+                          <span className="text-xs text-green-600 font-medium">
+                            {formData.use_sip_trunk ? '60% savings active!' : 'Save 60% with SIP Trunk'}
+                          </span>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={formData.use_sip_trunk}
+                        onCheckedChange={(checked) => setFormData({ ...formData, use_sip_trunk: checked })}
+                      />
+                    </div>
+                    {!formData.use_sip_trunk && (
+                      <p className="text-xs text-amber-600 bg-amber-100/50 p-2 rounded">
+                        Programmable Voice costs more. Enable SIP Trunk to save ~60% on call costs.
+                      </p>
+                    )}
+                    {formData.use_sip_trunk && !sipTrunkConfig && (
+                      <p className="text-xs text-red-600 bg-red-100/50 p-2 rounded">
+                        No SIP trunk configured! <a href="/settings" className="underline font-medium">Configure in Settings</a> first.
+                      </p>
+                    )}
+                    {formData.use_sip_trunk && sipTrunkConfig && (
+                      <p className="text-xs text-green-600">
+                        Using: {sipTrunkConfig.name || sipTrunkConfig.twilio_trunk_sid}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Dialer Features for Better Deliverability */}
                 <Card className="border-green-500/30 bg-green-50/50 dark:bg-green-950/20">
                   <CardHeader className="pb-2">
@@ -1259,46 +1313,19 @@ export const VoiceBroadcastManager: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* SIP Trunk Settings (Advanced) */}
+                {/* Phone Numbers on SIP Trunk - Only show if SIP trunk is enabled */}
+                {formData.use_sip_trunk && sipTrunkConfig && (
                 <Card>
                   <CardHeader className="py-3">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Settings className="h-4 w-4" />
-                      Advanced Calling
+                      <Phone className="h-4 w-4 text-green-600" />
+                      Phone Numbers on SIP Trunk
+                      <Badge variant="outline" className="ml-2 text-xs">{trunkPhoneNumbers.length} numbers</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm font-medium">Use SIP Trunk (Cost Savings)</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Route calls through SIP trunk for ~50% lower cost (~$0.007/min vs $0.015/min).
-                        </p>
-                      </div>
-                      <Switch
-                        checked={formData.use_sip_trunk}
-                        onCheckedChange={(checked) =>
-                          setFormData({ ...formData, use_sip_trunk: checked })
-                        }
-                      />
-                    </div>
-                    {formData.use_sip_trunk && (
-                      <div className="space-y-3">
-                        {!sipTrunkConfig ? (
-                          <div className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 p-2 rounded flex items-center gap-2">
-                            <XCircle className="h-3 w-3" />
-                            No SIP trunk configured. <a href="/settings" className="underline font-medium">Configure in Settings</a>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 p-2 rounded flex items-center gap-2">
-                              <CheckCircle2 className="h-3 w-3" />
-                              SIP Trunk: {sipTrunkConfig.friendly_name || sipTrunkConfig.twilio_trunk_sid}
-                            </div>
-
                             {/* Show caller ID trunk status */}
                             <div className="space-y-2">
-                              <Label className="text-xs font-medium text-muted-foreground">Caller ID Status on Trunk</Label>
                               <div className="max-h-32 overflow-y-auto space-y-1">
                                 {phoneNumbers.filter(p => !p.retell_phone_id || p.provider === 'twilio').map(phone => {
                                   const isOnTrunk = trunkPhoneNumbers.includes(phone.number);
@@ -1343,12 +1370,9 @@ export const VoiceBroadcastManager: React.FC = () => {
                                 </p>
                               )}
                             </div>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
+                )}
               </TabsContent>
             </Tabs>
 
@@ -1421,6 +1445,18 @@ export const VoiceBroadcastManager: React.FC = () => {
                       <Badge className={getStatusColor(broadcast.status)}>
                         {broadcast.status}
                       </Badge>
+                      {/* SIP Trunk vs Programmable Voice Indicator - Always visible */}
+                      {(broadcast as any).use_sip_trunk ? (
+                        <Badge variant="outline" className="bg-green-500/10 border-green-500/50 text-green-700 font-medium">
+                          <Phone className="h-3 w-3 mr-1" />
+                          SIP Trunk
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-amber-500/10 border-amber-500/50 text-amber-700 font-medium">
+                          <Phone className="h-3 w-3 mr-1" />
+                          Prog. Voice
+                        </Badge>
+                      )}
                       <CardTitle className="text-lg">{broadcast.name}</CardTitle>
                     </div>
                     <TooltipProvider>
@@ -1639,29 +1675,33 @@ export const VoiceBroadcastManager: React.FC = () => {
                   )}
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-6 gap-4 mb-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{broadcast.total_leads || 0}</div>
-                      <div className="text-xs text-muted-foreground">Total Leads</div>
+                  <div className="grid grid-cols-4 md:grid-cols-7 gap-3 mb-4">
+                    <div className="text-center p-2 rounded-lg bg-slate-500/5">
+                      <div className="text-xl font-bold">{broadcast.total_leads || 0}</div>
+                      <div className="text-xs text-muted-foreground">Total</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{broadcast.calls_made || 0}</div>
-                      <div className="text-xs text-muted-foreground">Calls Made</div>
+                    <div className="text-center p-2 rounded-lg bg-blue-500/5">
+                      <div className="text-xl font-bold text-blue-600">{broadcast.calls_made || 0}</div>
+                      <div className="text-xs text-muted-foreground">Made</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{broadcast.calls_answered || 0}</div>
+                    <div className="text-center p-2 rounded-lg bg-green-500/10">
+                      <div className="text-xl font-bold text-green-600">{broadcast.calls_answered || 0}</div>
                       <div className="text-xs text-muted-foreground">Answered</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">{broadcast.transfers_completed || 0}</div>
+                    <div className="text-center p-2 rounded-lg bg-purple-500/10">
+                      <div className="text-xl font-bold text-purple-600">{broadcastStats.voicemail || 0}</div>
+                      <div className="text-xs text-muted-foreground">Voicemail</div>
+                    </div>
+                    <div className="text-center p-2 rounded-lg bg-emerald-500/10">
+                      <div className="text-xl font-bold text-emerald-600">{broadcast.transfers_completed || 0}</div>
                       <div className="text-xs text-muted-foreground">Transfers</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{broadcast.callbacks_scheduled || 0}</div>
+                    <div className="text-center p-2 rounded-lg bg-sky-500/10">
+                      <div className="text-xl font-bold text-sky-600">{broadcast.callbacks_scheduled || 0}</div>
                       <div className="text-xs text-muted-foreground">Callbacks</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-red-600">{broadcast.dnc_requests || 0}</div>
+                    <div className="text-center p-2 rounded-lg bg-red-500/10">
+                      <div className="text-xl font-bold text-red-600">{broadcast.dnc_requests || 0}</div>
                       <div className="text-xs text-muted-foreground">DNC</div>
                     </div>
                   </div>

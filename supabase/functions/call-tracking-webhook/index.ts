@@ -341,10 +341,21 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
         shouldUpdatePipeline = false;
       } else {
         // AMD not enabled or result already set - proceed normally
-        finalStatus = duration > 0 ? 'answered' : 'completed';
-        updateBroadcastStats = true;
-        shouldUpdateLead = true;
-        shouldUpdatePipeline = duration > 0; // Move pipeline only if actually answered
+        // FIXED: Preserve status if already set by AMD webhook (e.g., 'voicemail')
+        if (amdResultAlreadySet && (queueItem.status === 'voicemail' || queueItem.status === 'answered')) {
+          // AMD already set the correct status, preserve it
+          finalStatus = queueItem.status;
+          console.log(`[Twilio Webhook] AMD already set status to '${finalStatus}', preserving`);
+          // Only count as "answered" for stats if it was actually answered by a human
+          updateBroadcastStats = queueItem.status === 'answered';
+          shouldUpdateLead = queueItem.status === 'answered';
+          shouldUpdatePipeline = queueItem.status === 'answered';
+        } else {
+          finalStatus = duration > 0 ? 'answered' : 'completed';
+          updateBroadcastStats = true;
+          shouldUpdateLead = true;
+          shouldUpdatePipeline = duration > 0; // Move pipeline only if actually answered
+        }
       }
     } else if (callStatus === 'no-answer') {
       finalStatus = 'no_answer';
