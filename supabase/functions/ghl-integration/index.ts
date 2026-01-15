@@ -295,9 +295,11 @@ serve(async (req) => {
           let searchFailed = false;
 
           while (hasMore && page <= MAX_PAGES) {
+            // GHL search endpoint - try both limit and pageLimit for compatibility
             const searchBody: any = {
               locationId,
               page,
+              limit: PAGE_SIZE,
               pageLimit: PAGE_SIZE
             };
 
@@ -332,10 +334,31 @@ serve(async (req) => {
             const pageContacts = pageData.contacts || [];
             contacts = contacts.concat(pageContacts);
 
+            // Log full pagination info from response
             console.log(`[GHL] Search page ${page}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
+            console.log(`[GHL] Search page ${page} meta:`, JSON.stringify(pageData.meta || pageData.pagination || 'no meta'));
+            console.log(`[GHL] Search page ${page} total in response:`, pageData.total || pageData.count || 'unknown');
 
-            // Check if there are more pages - if we got a full page, there might be more
-            hasMore = pageContacts.length === PAGE_SIZE;
+            // Check if there are more pages using multiple methods:
+            // 1. Check meta.total or total field if available
+            const totalFromApi = pageData.meta?.total || pageData.total || pageData.count;
+            if (totalFromApi && contacts.length >= totalFromApi) {
+              console.log(`[GHL] Reached total contacts (${totalFromApi}), stopping`);
+              hasMore = false;
+            }
+            // 2. Check meta.nextPage or similar
+            else if (pageData.meta?.nextPage === false || pageData.meta?.hasMore === false) {
+              console.log('[GHL] API indicates no more pages');
+              hasMore = false;
+            }
+            // 3. Fall back to checking if we got a full page
+            else if (pageContacts.length < PAGE_SIZE) {
+              console.log(`[GHL] Got ${pageContacts.length} contacts (less than ${PAGE_SIZE}), no more pages`);
+              hasMore = false;
+            } else {
+              hasMore = true;
+            }
+
             page++;
           }
 
