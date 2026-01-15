@@ -1693,10 +1693,41 @@ export const VoiceBroadcastManager: React.FC = () => {
                           Audio Ready
                         </Badge>
                       )}
+                      {/* Phone Pool Indicator - Shows how many numbers in rotation */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className={trunkPhoneNumbers.length > 0 ? "text-purple-600 cursor-pointer" : "text-amber-600 cursor-pointer"}
+                              onClick={() => {
+                                setSelectedBroadcast(broadcast);
+                                setSettingsTab('settings');
+                              }}
+                            >
+                              <Phone className="h-3 w-3 mr-1" />
+                              {trunkPhoneNumbers.length > 0
+                                ? `${trunkPhoneNumbers.length} Numbers`
+                                : phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).length > 0
+                                  ? `${phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).length} Numbers`
+                                  : '0 Numbers'
+                              }
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-xs">
+                            <p className="font-medium">Phone Number Pool</p>
+                            <p className="text-xs text-muted-foreground">
+                              {trunkPhoneNumbers.length > 0
+                                ? `${trunkPhoneNumbers.length} numbers on SIP trunk for rotation`
+                                : 'Click to configure phone numbers'}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                     <div className="flex-1" />
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => setQueueManagerBroadcastId(broadcast.id)}
                     >
@@ -2285,25 +2316,108 @@ export const VoiceBroadcastManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Message Preview */}
+              {/* Phone Number Pool Summary - Always Visible */}
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-purple-500" />
+                  Phone Number Pool
+                  <Badge variant="outline" className="ml-2">
+                    {trunkPhoneNumbers.length > 0
+                      ? `${trunkPhoneNumbers.length} numbers on SIP trunk`
+                      : phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).length > 0
+                        ? `${phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).length} numbers available`
+                        : '0 numbers'
+                    }
+                  </Badge>
+                </h3>
+                <div className="max-h-40 overflow-y-auto space-y-1 border rounded-lg p-2">
+                  {trunkPhoneNumbers.length > 0 ? (
+                    trunkPhoneNumbers.map((number, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50">
+                        <span className="font-mono">{number}</span>
+                        <Badge variant="outline" className="text-green-600 border-green-300 text-[10px]">
+                          On SIP Trunk
+                        </Badge>
+                      </div>
+                    ))
+                  ) : phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).length > 0 ? (
+                    phoneNumbers.filter(p => p.status === 'active' && !p.retell_phone_id).map((phone) => (
+                      <div key={phone.id} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50">
+                        <span className="font-mono">{phone.number}</span>
+                        <span className="text-muted-foreground">{phone.friendly_name || 'Twilio'}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      No phone numbers configured. Add numbers in Settings → Phone Numbers.
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  These numbers will rotate for caller ID to maximize deliverability. More numbers = better spam protection.
+                </p>
+              </div>
+
+              {/* Message/Script Editor */}
               <div className="space-y-4">
                 <h3 className="font-semibold flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-orange-500" />
-                  Message
+                  Script / Message
                 </h3>
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm">{selectedBroadcast.message_text}</p>
-                  {selectedBroadcast.ivr_enabled && selectedBroadcast.ivr_prompt && (
-                    <p className="text-sm text-muted-foreground mt-2 italic">
-                      {selectedBroadcast.ivr_prompt}
-                    </p>
-                  )}
+                <div className="space-y-2">
+                  <Label>Message Text</Label>
+                  <Textarea
+                    defaultValue={selectedBroadcast.message_text}
+                    placeholder="Enter your broadcast message..."
+                    rows={4}
+                    onBlur={async (e) => {
+                      if (e.target.value !== selectedBroadcast.message_text) {
+                        await updateBroadcast(selectedBroadcast.id, { message_text: e.target.value });
+                        setSelectedBroadcast({ ...selectedBroadcast, message_text: e.target.value });
+                        toast({
+                          title: 'Script Updated',
+                          description: 'Remember to regenerate audio after changing the script.',
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Edit your message above. After saving, click "Regenerate Audio" to update the audio file.
+                  </p>
                 </div>
+                {selectedBroadcast.ivr_enabled && (
+                  <div className="space-y-2">
+                    <Label>IVR Prompt (played after message)</Label>
+                    <Textarea
+                      defaultValue={selectedBroadcast.ivr_prompt || ''}
+                      placeholder="Press 1 to speak with a representative..."
+                      rows={2}
+                      onBlur={async (e) => {
+                        if (e.target.value !== selectedBroadcast.ivr_prompt) {
+                          await updateBroadcast(selectedBroadcast.id, { ivr_prompt: e.target.value });
+                          setSelectedBroadcast({ ...selectedBroadcast, ivr_prompt: e.target.value });
+                        }
+                      }}
+                    />
+                  </div>
+                )}
                 {selectedBroadcast.audio_url && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
                     <Volume2 className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-green-600">Audio generated</span>
+                    <span className="text-sm text-green-600">Audio ready</span>
                     <audio controls src={selectedBroadcast.audio_url} className="h-8 flex-1" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleGenerateAudio(selectedBroadcast)}
+                      disabled={generatingAudioId === selectedBroadcast.id}
+                    >
+                      {generatingAudioId === selectedBroadcast.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                    </Button>
                   </div>
                 )}
               </div>
