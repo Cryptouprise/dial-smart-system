@@ -657,8 +657,10 @@ export type Database = {
       broadcast_queue: {
         Row: {
           ai_transcript: string | null
+          amd_result: string | null
           attempts: number | null
           broadcast_id: string
+          call_cost: number | null
           call_duration_seconds: number | null
           call_sid: string | null
           callback_scheduled_at: string | null
@@ -677,8 +679,10 @@ export type Database = {
         }
         Insert: {
           ai_transcript?: string | null
+          amd_result?: string | null
           attempts?: number | null
           broadcast_id: string
+          call_cost?: number | null
           call_duration_seconds?: number | null
           call_sid?: string | null
           callback_scheduled_at?: string | null
@@ -697,8 +701,10 @@ export type Database = {
         }
         Update: {
           ai_transcript?: string | null
+          amd_result?: string | null
           attempts?: number | null
           broadcast_id?: string
+          call_cost?: number | null
           call_duration_seconds?: number | null
           call_sid?: string | null
           callback_scheduled_at?: string | null
@@ -2800,6 +2806,7 @@ export type Database = {
           sip_trunk_provider: string | null
           status: string
           stir_shaken_attestation: string | null
+          tags: string[] | null
           twilio_sid: string | null
           twilio_verified: boolean | null
           twilio_verified_at: string | null
@@ -2834,6 +2841,7 @@ export type Database = {
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
+          tags?: string[] | null
           twilio_sid?: string | null
           twilio_verified?: boolean | null
           twilio_verified_at?: string | null
@@ -2868,6 +2876,7 @@ export type Database = {
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
+          tags?: string[] | null
           twilio_sid?: string | null
           twilio_verified?: boolean | null
           twilio_verified_at?: string | null
@@ -4356,6 +4365,10 @@ export type Database = {
         Args: { phone_last_10: string }
         Returns: undefined
       }
+      get_effective_daily_calls: {
+        Args: { phone_number_id: string }
+        Returns: number
+      }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -4364,8 +4377,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_daily_calls_with_reset: {
+        Args: { phone_number_id: string }
+        Returns: number
+      }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
       reset_all_daily_calls: { Args: never; Returns: number }
+      reset_stale_daily_calls: {
+        Args: { target_user_id?: string }
+        Returns: number
+      }
       upgrade_user_tier: {
         Args: {
           p_stripe_customer_id?: string

@@ -66,7 +66,7 @@ export const useLiveCampaignStats = (broadcastId?: string) => {
       // Get queue stats
       const { data: queueItems, error: queueError } = await supabase
         .from('broadcast_queue')
-        .select('status, call_duration_seconds, amd_result')
+        .select('status, call_duration_seconds')
         .eq('broadcast_id', broadcastId);
 
       if (queueError) throw queueError;

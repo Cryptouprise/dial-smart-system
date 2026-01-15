@@ -124,19 +124,15 @@ const TwilioNumbersOverview: React.FC = () => {
 
       if (twilioError) throw twilioError;
 
-      // Get numbers that are in our database with verification status and tags
+      // Get numbers that are in our database with verification status
       const { data: dbNumbers } = await supabase
         .from('phone_numbers')
-        .select('number, twilio_verified, twilio_verified_at, twilio_sid, tags');
+        .select('number, twilio_verified, twilio_verified_at, twilio_sid');
 
       const dbNumberMap = new Map((dbNumbers || []).map(n => [n.number, n]));
 
-      // Extract all unique tags for filtering
-      const uniqueTags = new Set<string>();
-      (dbNumbers || []).forEach(n => {
-        (n.tags || []).forEach((tag: string) => uniqueTags.add(tag));
-      });
-      setAllTags(Array.from(uniqueTags).sort());
+      // Tags feature not available - column doesn't exist in schema
+      setAllTags([]);
       
       // Get the app's webhook URL
       const appUrl = `https://emonjusymdripmkvtttc.supabase.co/functions/v1/twilio-sms-webhook`;
@@ -171,7 +167,7 @@ const TwilioNumbersOverview: React.FC = () => {
           twilio_verified: dbInfo?.twilio_verified,
           twilio_verified_at: dbInfo?.twilio_verified_at,
           twilio_sid: dbInfo?.twilio_sid,
-          tags: dbInfo?.tags || [],
+          tags: [],
         };
       });
 
@@ -401,72 +397,22 @@ const TwilioNumbersOverview: React.FC = () => {
   };
 
   const addTagToSelected = async () => {
-    if (!newTagValue.trim() || selectedNumbers.size === 0) return;
-
-    const tag = newTagValue.trim().toLowerCase();
-
-    try {
-      // Update each selected number to add the tag
-      for (const phoneNumber of selectedNumbers) {
-        const currentNumber = numbers.find(n => n.phone_number === phoneNumber);
-        const currentTags = currentNumber?.tags || [];
-
-        if (!currentTags.includes(tag)) {
-          const newTags = [...currentTags, tag];
-          await supabase
-            .from('phone_numbers')
-            .update({ tags: newTags })
-            .eq('number', phoneNumber);
-        }
-      }
-
-      toast({
-        title: 'Tag Added',
-        description: `Added "${tag}" to ${selectedNumbers.size} number(s)`,
-      });
-
-      setNewTagValue('');
-      setShowTagDialog(false);
-      await loadNumbers();
-    } catch (error) {
-      console.error('Failed to add tag:', error);
-      toast({
-        title: 'Failed to Add Tag',
-        description: error instanceof Error ? error.message : 'Could not add tag',
-        variant: 'destructive',
-      });
-    }
+    // Tags feature not available - column doesn't exist in schema
+    toast({
+      title: 'Feature Not Available',
+      description: 'Tags feature requires a database migration to add the tags column',
+      variant: 'destructive',
+    });
+    setShowTagDialog(false);
   };
 
-  const removeTagFromSelected = async (tag: string) => {
-    if (selectedNumbers.size === 0) return;
-
-    try {
-      for (const phoneNumber of selectedNumbers) {
-        const currentNumber = numbers.find(n => n.phone_number === phoneNumber);
-        const currentTags = currentNumber?.tags || [];
-        const newTags = currentTags.filter((t: string) => t !== tag);
-
-        await supabase
-          .from('phone_numbers')
-          .update({ tags: newTags })
-          .eq('number', phoneNumber);
-      }
-
-      toast({
-        title: 'Tag Removed',
-        description: `Removed "${tag}" from ${selectedNumbers.size} number(s)`,
-      });
-
-      await loadNumbers();
-    } catch (error) {
-      console.error('Failed to remove tag:', error);
-      toast({
-        title: 'Failed to Remove Tag',
-        description: error instanceof Error ? error.message : 'Could not remove tag',
-        variant: 'destructive',
-      });
-    }
+  const removeTagFromSelected = async (_tag: string) => {
+    // Tags feature not available - column doesn't exist in schema
+    toast({
+      title: 'Feature Not Available',
+      description: 'Tags feature requires a database migration to add the tags column',
+      variant: 'destructive',
+    });
   };
 
   const handleEditFriendlyName = (phoneNumber: string, currentName: string) => {
