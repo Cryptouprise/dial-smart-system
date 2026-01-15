@@ -113,7 +113,7 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
     setActionType('assign');
     
     try {
-      const { data, error } = await supabase.functions.invoke('enhanced-spam-lookup', {
+      const response = await supabase.functions.invoke('enhanced-spam-lookup', {
         body: { 
           transferToProfile: true, 
           phoneNumber: number.number,
@@ -121,34 +121,45 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
         }
       });
 
+      const { data, error } = response;
+
+      // Handle error responses - parse the error body for specific error types
       if (error) {
-        // Parse error body from various possible locations
         let errorData: any = null;
+        
         try {
-          if (typeof error === 'object' && error.context?.body) {
+          // Try multiple ways to extract error details
+          if (error.context?.body) {
             errorData = typeof error.context.body === 'string' 
               ? JSON.parse(error.context.body) 
               : error.context.body;
-          } else if (error.message) {
-            // Try parsing error message as JSON
-            try {
+          } else if (typeof error.message === 'string') {
+            // Check if message itself is JSON
+            if (error.message.startsWith('{')) {
               errorData = JSON.parse(error.message);
-            } catch {
+            } else {
               errorData = { error: error.message };
             }
           }
         } catch (parseErr) {
           console.error('Error parsing response:', parseErr);
+          errorData = { error: error.message || 'Unknown error' };
         }
 
-        if (errorData?.incompleteSetup) {
+        // Handle specific error types with user-friendly messages
+        if (errorData?.notInTwilio) {
+          toast({
+            title: "Number Not in Twilio",
+            description: "This phone number is not in your Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
+            variant: "destructive"
+          });
+        } else if (errorData?.incompleteSetup) {
           toast({
             title: "Trust Hub Setup Incomplete",
             description: errorData.error || "Complete all required entities in Twilio Trust Hub before assigning numbers.",
             variant: "destructive",
             duration: 10000
           });
-          // Open help link
           if (errorData.helpUrl) {
             window.open(errorData.helpUrl, '_blank');
           }
@@ -158,16 +169,10 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
             description: "This profile type doesn't support phone assignments. Use a SHAKEN Business Profile.",
             variant: "destructive"
           });
-        } else if (errorData?.notInTwilio) {
-          toast({
-            title: "Number Not in Twilio",
-            description: "This phone number is not in your Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
-            variant: "destructive"
-          });
         } else {
           toast({
             title: "Assignment Failed",
-            description: errorData?.error || errorData?.details || error.message || "Unknown error occurred",
+            description: errorData?.error || errorData?.details || "Failed to assign number to profile",
             variant: "destructive"
           });
         }
@@ -176,14 +181,22 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
 
       // Check if data contains an error (for 200 responses with error info)
       if (data?.error) {
-        toast({
-          title: data.incompleteSetup ? "Trust Hub Setup Incomplete" : "Assignment Issue",
-          description: data.error,
-          variant: "destructive",
-          duration: 10000
-        });
-        if (data.helpUrl) {
-          window.open(data.helpUrl, '_blank');
+        if (data.notInTwilio) {
+          toast({
+            title: "Number Not in Twilio",
+            description: "This phone number is not in your Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: data.incompleteSetup ? "Trust Hub Setup Incomplete" : "Assignment Issue",
+            description: data.error,
+            variant: "destructive",
+            duration: 10000
+          });
+          if (data.helpUrl) {
+            window.open(data.helpUrl, '_blank');
+          }
         }
         return;
       }
@@ -196,9 +209,26 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
       onRefresh?.();
     } catch (error: any) {
       console.error('Assignment failed:', error);
+      
+      // Even in catch, try to parse error for specific types
+      let errorMessage = "Failed to assign number";
+      try {
+        if (error.message?.includes('notInTwilio') || error.message?.includes('not found in Twilio')) {
+          toast({
+            title: "Number Not in Twilio",
+            description: "This phone number is not in your Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
+            variant: "destructive"
+          });
+          return;
+        }
+        errorMessage = error.message || errorMessage;
+      } catch {
+        // ignore parse errors
+      }
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to assign number",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
