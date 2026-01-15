@@ -282,61 +282,70 @@ serve(async (req) => {
           let contacts: any[] = [];
           const PAGE_SIZE = 100; // GHL max per page
           const MAX_PAGES = 200; // Safety limit: 200 pages * 100 = 20,000 contacts max
-          
+
           console.log('[GHL] Starting contact sync with pagination...');
-          
-          // Check if we have import filters
-          if (importFilters && (importFilters.tags?.length || importFilters.excludeTags?.length || importFilters.dateRange)) {
-            console.log('[GHL] Using filtered contact search with:', importFilters);
-            
-            // Use search endpoint with pagination for filtered queries
-            let page = 1;
-            let hasMore = true;
-            
-            while (hasMore && page <= MAX_PAGES) {
-              const searchBody: any = {
-                locationId,
-                page,
-                pageLimit: PAGE_SIZE
-              };
-              
-              // Add tag filter if specified
-              if (importFilters.tags?.length) {
-                searchBody.tags = importFilters.tags;
-              }
-              
-              response = await fetch(`${baseUrl}/contacts/search`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(searchBody)
-              });
-              
-              if (!response.ok) {
-                if (page === 1) {
-                  // Fall back to basic paginated fetch if search fails on first page
-                  console.log('[GHL] Search endpoint failed, falling back to paginated basic fetch');
-                  break;
-                }
-                // Otherwise just stop pagination
-                hasMore = false;
+          console.log('[GHL] Import filters:', JSON.stringify(importFilters || 'none'));
+
+          // ALWAYS try the search endpoint first (it has reliable page-based pagination)
+          // The GET endpoint is deprecated and has unreliable cursor pagination
+          console.log('[GHL] Using Search endpoint with page-based pagination...');
+
+          let page = 1;
+          let hasMore = true;
+          let searchFailed = false;
+
+          while (hasMore && page <= MAX_PAGES) {
+            const searchBody: any = {
+              locationId,
+              page,
+              pageLimit: PAGE_SIZE
+            };
+
+            // Add tag filter if specified
+            if (importFilters?.tags?.length) {
+              searchBody.tags = importFilters.tags;
+            }
+
+            console.log(`[GHL] Search page ${page} request:`, JSON.stringify(searchBody));
+
+            response = await fetch(`${baseUrl}/contacts/search`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(searchBody)
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[GHL] Search page ${page} failed: ${response.status} - ${errorText}`);
+              if (page === 1) {
+                // Fall back to basic paginated fetch if search fails on first page
+                console.log('[GHL] Search endpoint failed on first page, falling back to cursor-based GET');
+                searchFailed = true;
                 break;
               }
-              
-              const pageData = await response.json();
-              const pageContacts = pageData.contacts || [];
-              contacts = contacts.concat(pageContacts);
-              
-              console.log(`[GHL] Page ${page}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
-              
-              // Check if there are more pages
-              hasMore = pageContacts.length === PAGE_SIZE;
-              page++;
+              // Otherwise just stop pagination
+              hasMore = false;
+              break;
             }
+
+            const pageData = await response.json();
+            const pageContacts = pageData.contacts || [];
+            contacts = contacts.concat(pageContacts);
+
+            console.log(`[GHL] Search page ${page}: fetched ${pageContacts.length} contacts (total so far: ${contacts.length})`);
+
+            // Check if there are more pages - if we got a full page, there might be more
+            hasMore = pageContacts.length === PAGE_SIZE;
+            page++;
           }
-          
-          // If no contacts yet (either no filters or search failed), use basic paginated fetch
-          if (contacts.length === 0) {
-            console.log('[GHL] Using paginated basic fetch...');
+
+          if (page > MAX_PAGES) {
+            console.log(`[GHL] Reached max pages limit (${MAX_PAGES}), stopping pagination at ${contacts.length} contacts`);
+          }
+
+          // Only use fallback if search failed on first page
+          if (searchFailed) {
+            console.log('[GHL] Using fallback cursor-based GET (deprecated endpoint)...');
             let startAfter: string | null = null;
             let pageNum = 1;
             let hasMore = true;
