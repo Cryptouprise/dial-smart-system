@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -53,7 +54,8 @@ import {
   Download,
   Trash2,
   Tag,
-  Plus
+  Plus,
+  Server
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -109,6 +111,15 @@ const TwilioNumbersOverview: React.FC = () => {
   const [newTagValue, setNewTagValue] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('');
   const [allTags, setAllTags] = useState<string[]>([]);
+  // SIP Trunk states
+  const [showSipTrunkDialog, setShowSipTrunkDialog] = useState(false);
+  const [sipTrunks, setSipTrunks] = useState<any[]>([]);
+  const [selectedTrunkSid, setSelectedTrunkSid] = useState<string>('');
+  const [isAddingToTrunk, setIsAddingToTrunk] = useState(false);
+  const [isLoadingTrunks, setIsLoadingTrunks] = useState(false);
+  // Delete states
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadNumbers();
@@ -413,6 +424,180 @@ const TwilioNumbersOverview: React.FC = () => {
       description: 'Tags feature requires a database migration to add the tags column',
       variant: 'destructive',
     });
+  };
+
+  // Load SIP trunks from database
+  const loadSipTrunks = async () => {
+    setIsLoadingTrunks(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('sip_trunk_configs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('is_default', { ascending: false });
+
+      if (error) throw error;
+      setSipTrunks(data || []);
+
+      // Auto-select default trunk if available
+      const defaultTrunk = data?.find(t => t.is_default);
+      if (defaultTrunk?.twilio_trunk_sid) {
+        setSelectedTrunkSid(defaultTrunk.twilio_trunk_sid);
+      } else if (data?.[0]?.twilio_trunk_sid) {
+        setSelectedTrunkSid(data[0].twilio_trunk_sid);
+      }
+    } catch (error) {
+      console.error('Failed to load SIP trunks:', error);
+    } finally {
+      setIsLoadingTrunks(false);
+    }
+  };
+
+  // Add selected numbers to SIP trunk
+  const addSelectedToSipTrunk = async () => {
+    if (!selectedTrunkSid || selectedNumbers.size === 0) {
+      toast({
+        title: 'Cannot Add to Trunk',
+        description: 'Please select a SIP trunk and at least one number',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsAddingToTrunk(true);
+    const succeeded: string[] = [];
+    const failed: { number: string; error: string }[] = [];
+
+    try {
+      for (const phoneNumber of selectedNumbers) {
+        // Find the SID for this number
+        const numData = numbers.find(n => n.phone_number === phoneNumber);
+        if (!numData?.sid) {
+          failed.push({ number: phoneNumber, error: 'No Twilio SID found' });
+          continue;
+        }
+
+        try {
+          const { data, error } = await supabase.functions.invoke('twilio-integration', {
+            body: {
+              action: 'add_phone_to_trunk',
+              trunkSid: selectedTrunkSid,
+              phoneNumberSid: numData.sid
+            }
+          });
+
+          if (error) throw error;
+          if (data?.error) {
+            if (data.already_exists) {
+              failed.push({ number: phoneNumber, error: 'Already on a SIP trunk' });
+            } else {
+              throw new Error(data.error);
+            }
+          } else {
+            succeeded.push(phoneNumber);
+          }
+        } catch (err: any) {
+          failed.push({ number: phoneNumber, error: err.message || 'Unknown error' });
+        }
+      }
+
+      if (succeeded.length > 0) {
+        toast({
+          title: 'Numbers Added to SIP Trunk',
+          description: `Successfully added ${succeeded.length} number(s). ${failed.length > 0 ? `${failed.length} failed.` : ''}`,
+        });
+      } else if (failed.length > 0) {
+        toast({
+          title: 'Failed to Add Numbers',
+          description: `All ${failed.length} numbers failed. ${failed[0]?.error}`,
+          variant: 'destructive',
+        });
+      }
+
+      setShowSipTrunkDialog(false);
+      setSelectedNumbers(new Set());
+    } catch (error) {
+      console.error('Failed to add numbers to trunk:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to add numbers to trunk',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAddingToTrunk(false);
+    }
+  };
+
+  // Delete numbers from Twilio and database
+  const deleteSelectedNumbers = async () => {
+    if (selectedNumbers.size === 0) return;
+
+    setIsDeleting(true);
+    const succeeded: string[] = [];
+    const failed: { number: string; error: string }[] = [];
+
+    try {
+      for (const phoneNumber of selectedNumbers) {
+        const numData = numbers.find(n => n.phone_number === phoneNumber);
+        if (!numData?.sid) {
+          failed.push({ number: phoneNumber, error: 'No Twilio SID found' });
+          continue;
+        }
+
+        try {
+          // Release from Twilio
+          const { data, error } = await supabase.functions.invoke('twilio-integration', {
+            body: {
+              action: 'release_phone_number',
+              phoneNumberSid: numData.sid
+            }
+          });
+
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+
+          // Delete from database
+          await supabase
+            .from('phone_numbers')
+            .delete()
+            .eq('number', phoneNumber);
+
+          succeeded.push(phoneNumber);
+        } catch (err: any) {
+          failed.push({ number: phoneNumber, error: err.message || 'Unknown error' });
+        }
+      }
+
+      if (succeeded.length > 0) {
+        toast({
+          title: 'Numbers Deleted',
+          description: `Successfully deleted ${succeeded.length} number(s) from Twilio${failed.length > 0 ? `. ${failed.length} failed.` : '.'}`,
+        });
+      } else if (failed.length > 0) {
+        toast({
+          title: 'Delete Failed',
+          description: `All ${failed.length} numbers failed to delete. ${failed[0]?.error}`,
+          variant: 'destructive',
+        });
+      }
+
+      setShowDeleteDialog(false);
+      setSelectedNumbers(new Set());
+      await loadNumbers();
+    } catch (error) {
+      console.error('Failed to delete numbers:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete numbers',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleEditFriendlyName = (phoneNumber: string, currentName: string) => {
@@ -771,6 +956,26 @@ const TwilioNumbersOverview: React.FC = () => {
                       <PhoneIncoming className="h-4 w-4 mr-2" />
                     )}
                     Enable Inbound Calls
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                    onClick={() => {
+                      loadSipTrunks();
+                      setShowSipTrunkDialog(true);
+                    }}
+                  >
+                    <Server className="h-4 w-4 mr-2" />
+                    Add to SIP Trunk
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setShowDeleteDialog(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete from Twilio
                   </Button>
                 </>
               )}
@@ -1223,6 +1428,165 @@ const TwilioNumbersOverview: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowTagDialog(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add to SIP Trunk Dialog */}
+      <Dialog open={showSipTrunkDialog} onOpenChange={setShowSipTrunkDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5 text-green-500" />
+              Add Numbers to SIP Trunk
+            </DialogTitle>
+            <DialogDescription>
+              Add {selectedNumbers.size} selected number(s) to a SIP trunk for lower-cost calling.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {isLoadingTrunks ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : sipTrunks.length === 0 ? (
+              <div className="text-center py-4">
+                <Server className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground mb-2">No SIP trunks configured</p>
+                <p className="text-xs text-muted-foreground">
+                  Go to Settings → SIP Trunks to create one first
+                </p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Select SIP Trunk</Label>
+                  <Select value={selectedTrunkSid} onValueChange={setSelectedTrunkSid}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Choose a SIP trunk..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sipTrunks.filter(t => t.twilio_trunk_sid).map(trunk => (
+                        <SelectItem key={trunk.id} value={trunk.twilio_trunk_sid}>
+                          <div className="flex items-center gap-2">
+                            {trunk.name}
+                            {trunk.is_default && (
+                              <Badge variant="secondary" className="text-xs">Default</Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Selected Numbers ({selectedNumbers.size}):</Label>
+                  <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/50">
+                    {Array.from(selectedNumbers).map(num => (
+                      <div key={num} className="font-mono text-sm">{formatPhoneNumber(num)}</div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                  <p className="text-sm text-green-800 dark:text-green-200">
+                    <strong>SIP Trunk Benefits:</strong> Lower per-minute costs, better call quality,
+                    and unified billing through your carrier.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowSipTrunkDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={addSelectedToSipTrunk}
+              disabled={isAddingToTrunk || !selectedTrunkSid || sipTrunks.length === 0}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isAddingToTrunk ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add to Trunk
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Numbers Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Delete Phone Numbers from Twilio
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently release {selectedNumbers.size} number(s) from your Twilio account.
+              You will be charged if you purchase them again later.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-md">
+              <p className="text-sm text-red-800 dark:text-red-200">
+                <strong>Warning:</strong> This action cannot be undone! The numbers will be released
+                back to Twilio and may be purchased by someone else. They will also be removed from
+                your database and any SIP trunks they're assigned to.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Numbers to Delete ({selectedNumbers.size}):</Label>
+              <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/50">
+                {Array.from(selectedNumbers).map(num => {
+                  const numData = numbers.find(n => n.phone_number === num);
+                  return (
+                    <div key={num} className="flex justify-between items-center">
+                      <span className="font-mono text-sm">{formatPhoneNumber(num)}</span>
+                      {numData?.friendly_name && (
+                        <span className="text-xs text-muted-foreground">{numData.friendly_name}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={deleteSelectedNumbers}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {selectedNumbers.size} Number(s)
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

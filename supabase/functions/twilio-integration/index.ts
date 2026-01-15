@@ -83,27 +83,43 @@ serve(async (req) => {
       return btoa(credentials);
     };
 
-    // List all Twilio numbers
+    // List all Twilio numbers (with pagination to get ALL numbers)
     if (action === 'list_numbers') {
-      console.log('📞 Fetching Twilio numbers...');
-      const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json`,
-        {
+      console.log('📞 Fetching ALL Twilio numbers (with pagination)...');
+
+      const allNumbers: any[] = [];
+      let nextPageUri: string | null = `/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=1000`;
+
+      // Fetch all pages
+      while (nextPageUri) {
+        const fullUrl = nextPageUri.startsWith('http')
+          ? nextPageUri
+          : `https://api.twilio.com${nextPageUri}`;
+
+        const response = await fetch(fullUrl, {
           headers: {
             'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
-        }
-      );
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Twilio API error:', response.status, errorText);
-        throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Twilio API error:', response.status, errorText);
+          throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        const pageNumbers = data.incoming_phone_numbers || [];
+        allNumbers.push(...pageNumbers);
+
+        console.log(`📞 Fetched page with ${pageNumbers.length} numbers (total so far: ${allNumbers.length})`);
+
+        // Get next page URL if it exists
+        nextPageUri = data.next_page_uri || null;
       }
 
-      const data = await response.json();
-      console.log('✅ Fetched', data.incoming_phone_numbers?.length || 0, 'Twilio numbers');
-      return new Response(JSON.stringify({ numbers: data.incoming_phone_numbers }), {
+      console.log('✅ Fetched ALL', allNumbers.length, 'Twilio numbers');
+      return new Response(JSON.stringify({ numbers: allNumbers }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -375,30 +391,45 @@ serve(async (req) => {
         }
       };
 
-      // Fetch all phone numbers with their messaging service bindings
-      console.log('📞 Fetching phone numbers...');
-      const numbersResponse = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=100`,
-        {
+      // Fetch ALL phone numbers with pagination
+      console.log('📞 Fetching ALL phone numbers (with pagination)...');
+      const allNumbers: any[] = [];
+      let nextPageUri: string | null = `/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=1000`;
+
+      while (nextPageUri) {
+        const fullUrl = nextPageUri.startsWith('http')
+          ? nextPageUri
+          : `https://api.twilio.com${nextPageUri}`;
+
+        const numbersResponse = await fetch(fullUrl, {
           headers: {
             'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
-        }
-      );
+        });
 
-      if (numbersResponse.ok) {
-        const numbersData = await numbersResponse.json();
-        results.phone_numbers = numbersData.incoming_phone_numbers?.map((num: any) => ({
-          phone_number: num.phone_number,
-          sid: num.sid,
-          friendly_name: num.friendly_name,
-          capabilities: num.capabilities,
-          status: num.status,
-          sms_url: num.sms_url,
-          voice_url: num.voice_url,
-        })) || [];
-        results.summary.total_numbers = results.phone_numbers.length;
+        if (numbersResponse.ok) {
+          const numbersData = await numbersResponse.json();
+          const pageNumbers = numbersData.incoming_phone_numbers || [];
+          allNumbers.push(...pageNumbers);
+          console.log(`📞 A2P check: Fetched ${pageNumbers.length} numbers (total: ${allNumbers.length})`);
+          nextPageUri = numbersData.next_page_uri || null;
+        } else {
+          console.error('❌ Failed to fetch numbers for A2P check');
+          break;
+        }
       }
+
+      results.phone_numbers = allNumbers.map((num: any) => ({
+        phone_number: num.phone_number,
+        sid: num.sid,
+        friendly_name: num.friendly_name,
+        capabilities: num.capabilities,
+        status: num.status,
+        sms_url: num.sms_url,
+        voice_url: num.voice_url,
+      }));
+      results.summary.total_numbers = results.phone_numbers.length;
+      console.log('✅ A2P check: Total numbers loaded:', results.summary.total_numbers);
 
       // Fetch Messaging Services
       console.log('📨 Fetching messaging services...');
@@ -1477,9 +1508,55 @@ serve(async (req) => {
       }
 
       console.log('✅ SIP trunk deleted:', trunkSid);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         success: true,
         message: 'SIP trunk deleted successfully'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Release (delete) a phone number from Twilio
+    if (action === 'release_phone_number') {
+      const requestData = await req.json().catch(() => ({}));
+      const phoneNumberSid = requestData.phoneNumberSid;
+
+      if (!phoneNumberSid) {
+        return new Response(JSON.stringify({ error: 'phoneNumberSid is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('🗑️ Releasing phone number:', phoneNumberSid);
+
+      const releaseResponse = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers/${phoneNumberSid}.json`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
+          }
+        }
+      );
+
+      if (!releaseResponse.ok && releaseResponse.status !== 204) {
+        const errorText = await releaseResponse.text();
+        console.error('❌ Failed to release phone number:', errorText);
+        return new Response(JSON.stringify({
+          error: 'Failed to release phone number',
+          details: errorText
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('✅ Phone number released:', phoneNumberSid);
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Phone number released successfully',
+        phoneNumberSid
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
