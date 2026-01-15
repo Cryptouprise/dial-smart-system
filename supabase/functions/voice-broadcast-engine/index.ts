@@ -928,9 +928,10 @@ serve(async (req) => {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const { data: stuckCalls, error: stuckError } = await supabase
           .from('broadcast_queue')
-          .update({ 
+          .update({
             status: 'failed',
-            // Note: We can't add error_message here as it may not exist, but we log it
+            error_message: 'Call timed out - stuck in calling status >5 minutes',
+            error_code: 'TIMEOUT',
           })
           .eq('broadcast_id', broadcastId)
           .eq('status', 'calling')
@@ -1591,9 +1592,11 @@ serve(async (req) => {
             // Update queue item with error details
             await supabase
               .from('broadcast_queue')
-              .update({ 
+              .update({
                 status: isFinalAttempt ? 'failed' : 'pending',
                 attempts: newAttempts,
+                error_message: errorMsg,
+                error_code: callError.code || callError.status || null,
               })
               .eq('id', item.id);
             
