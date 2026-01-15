@@ -158,6 +158,12 @@ const PhoneNumberRow = ({ number, onRefresh }: PhoneNumberRowProps) => {
             description: "This profile type doesn't support phone assignments. Use a SHAKEN Business Profile.",
             variant: "destructive"
           });
+        } else if (errorData?.notInTwilio) {
+          toast({
+            title: "Number Not in Twilio",
+            description: "This phone number is not in your Twilio account. Only Twilio numbers can be assigned to STIR/SHAKEN profiles.",
+            variant: "destructive"
+          });
         } else {
           toast({
             title: "Assignment Failed",
