@@ -3,29 +3,45 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+export type PhoneNumberPurpose = 'sip_broadcast' | 'voice_ai' | 'sms' | 'inbound' | 'programmable_voice';
+
 export const usePhoneNumberPurchasing = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const purchaseNumbers = async (areaCode: string, quantity: number, provider = 'retell') => {
+  const purchaseNumbers = async (
+    areaCode: string,
+    quantity: number,
+    provider = 'retell',
+    purpose: PhoneNumberPurpose = 'voice_ai'
+  ) => {
     setIsLoading(true);
     try {
-      console.log(`Purchasing ${quantity} numbers in area code ${areaCode}`);
+      console.log(`Purchasing ${quantity} numbers in area code ${areaCode} for ${purpose}`);
 
       const { data, error } = await supabase.functions.invoke('phone-number-purchasing', {
         method: 'POST',
         body: {
           areaCode,
           quantity,
-          provider
+          provider,
+          purpose
         }
       });
 
       if (error) throw error;
 
+      const purposeLabels: Record<PhoneNumberPurpose, string> = {
+        'sip_broadcast': 'Voice Broadcast',
+        'voice_ai': 'AI Calling',
+        'sms': 'SMS',
+        'inbound': 'Inbound',
+        'programmable_voice': 'Programmable Voice'
+      };
+
       toast({
         title: "Numbers Purchased Successfully",
-        description: `${quantity} numbers purchased in area code ${areaCode}`,
+        description: `${quantity} ${purposeLabels[purpose]} numbers purchased in area code ${areaCode}${purpose === 'sip_broadcast' ? ' - added to rotator' : ''}`,
       });
 
       return data;

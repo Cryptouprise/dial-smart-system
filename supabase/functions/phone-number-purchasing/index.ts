@@ -8,10 +8,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Valid phone number purposes
+const VALID_PURPOSES = ['sip_broadcast', 'voice_ai', 'sms', 'inbound', 'programmable_voice'] as const;
+type PhoneNumberPurpose = typeof VALID_PURPOSES[number];
+
+// Map purpose to allowed_uses array
+const PURPOSE_TO_ALLOWED_USES: Record<PhoneNumberPurpose, string[]> = {
+  'sip_broadcast': ['sip_broadcast'],
+  'voice_ai': ['voice_ai'],
+  'sms': ['sms'],
+  'inbound': ['inbound'],
+  'programmable_voice': ['programmable_voice', 'sip_broadcast'], // Flexible
+};
+
 const PurchaseRequestSchema = z.object({
   areaCode: z.string().regex(/^\d{3}$/, 'Area code must be exactly 3 digits'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Maximum 100 numbers per order'),
-  provider: z.enum(['retell', 'telnyx', 'twilio']).default('retell')
+  provider: z.enum(['retell', 'telnyx', 'twilio']).default('retell'),
+  purpose: z.enum(VALID_PURPOSES).default('voice_ai'),
 });
 
 serve(async (req) => {
@@ -58,8 +72,12 @@ serve(async (req) => {
         );
       }
 
-      const { areaCode, quantity, provider } = validationResult.data;
-      console.log(`Processing order: ${quantity} numbers in area code ${areaCode}`);
+      const { areaCode, quantity, provider, purpose } = validationResult.data;
+      console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose}`);
+
+      // Determine allowed_uses and rotation_enabled based on purpose
+      const allowedUses = PURPOSE_TO_ALLOWED_USES[purpose];
+      const rotationEnabled = purpose === 'sip_broadcast'; // Only SIP broadcast numbers participate in rotation
 
       // Create order record
       const { data: order, error: orderError } = await supabaseClient
@@ -74,7 +92,10 @@ serve(async (req) => {
           order_details: {
             requested_at: new Date().toISOString(),
             area_code: areaCode,
-            quantity
+            quantity,
+            purpose,
+            allowed_uses: allowedUses,
+            rotation_enabled: rotationEnabled
           }
         })
         .select()
@@ -88,78 +109,174 @@ serve(async (req) => {
         });
       }
 
-      // Get Retell AI credentials
-      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-      if (!retellApiKey) {
-        console.error('RETELL_AI_API_KEY not configured');
-        await supabaseClient
-          .from('number_orders')
-          .update({ status: 'failed' })
-          .eq('id', order.id);
-        
-        return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      // Purchase numbers based on provider
+      const numbers: any[] = [];
+
+      // For SIP broadcast, recommend Twilio
+      const effectiveProvider = provider === 'retell' && purpose === 'sip_broadcast'
+        ? 'twilio' // Auto-switch to Twilio for SIP broadcast if Retell was selected
+        : provider;
+
+      console.log(`Using provider: ${effectiveProvider} for purpose: ${purpose}`);
+
+      if (effectiveProvider === 'twilio') {
+        // Purchase from Twilio
+        const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+        const twilioToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+        if (!twilioSid || !twilioToken) {
+          console.error('Twilio credentials not configured');
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+
+          return new Response(JSON.stringify({ error: 'Twilio credentials not configured' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Search for available numbers
+        const searchUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/AvailablePhoneNumbers/US/Local.json?AreaCode=${areaCode}&VoiceEnabled=true&Limit=${quantity}`;
+        const searchAuth = btoa(`${twilioSid}:${twilioToken}`);
+
+        const searchResponse = await fetch(searchUrl, {
+          headers: { 'Authorization': `Basic ${searchAuth}` }
         });
-      }
 
-      // Purchase numbers from Retell AI
-      const numbers = [];
-      const retellNumbers = [];
-      
-      for (let i = 0; i < quantity; i++) {
-        try {
-          // Purchase from Retell AI
-          const purchaseResponse = await fetch('https://api.retellai.com/create-phone-number', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${retellApiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              area_code: parseInt(areaCode, 10),
-              // You can optionally assign agents here
-              // inbound_agent_id: "agent_id_here",
-              // outbound_agent_id: "agent_id_here"
-            })
+        if (!searchResponse.ok) {
+          console.error('Twilio search failed:', await searchResponse.text());
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+
+          return new Response(JSON.stringify({
+            error: `No phone numbers available in area code ${areaCode}`
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
+        }
 
-          if (!purchaseResponse.ok) {
-            const errorText = await purchaseResponse.text();
-            console.error('Retell purchase failed:', errorText);
-            
-            // Parse error message
-            let errorMessage = `Retell API error: ${purchaseResponse.status}`;
-            try {
-              const errorJson = JSON.parse(errorText);
-              if (errorJson.message) {
-                errorMessage = errorJson.message;
-              } else if (errorJson.error_message) {
-                errorMessage = errorJson.error_message;
-              }
-            } catch (parseError) {
-              // Use default error message - JSON parse failed
-              console.error('Failed to parse Retell purchase error:', parseError);
+        const searchData = await searchResponse.json();
+        const availableNumbers = searchData.available_phone_numbers || [];
+
+        if (availableNumbers.length === 0) {
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+
+          return new Response(JSON.stringify({
+            error: `No phone numbers available in area code ${areaCode}. Try a different area code.`
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Purchase each available number
+        for (const avail of availableNumbers) {
+          try {
+            const purchaseUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/IncomingPhoneNumbers.json`;
+            const purchaseResponse = await fetch(purchaseUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${searchAuth}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: new URLSearchParams({
+                PhoneNumber: avail.phone_number,
+                FriendlyName: `Dial Smart - ${purpose}`
+              })
+            });
+
+            if (!purchaseResponse.ok) {
+              console.error('Twilio purchase failed:', await purchaseResponse.text());
+              continue;
             }
-            
-            throw new Error(errorMessage);
+
+            const purchased = await purchaseResponse.json();
+            console.log('Purchased number from Twilio:', purchased.phone_number);
+
+            numbers.push({
+              number: purchased.phone_number,
+              area_code: areaCode,
+              status: 'active',
+              daily_calls: 0,
+              user_id: user.id,
+              twilio_sid: purchased.sid,
+              allowed_uses: allowedUses,
+              rotation_enabled: rotationEnabled,
+              provider: 'twilio'
+            });
+          } catch (error) {
+            console.error('Failed to purchase Twilio number:', error);
           }
+        }
+      } else {
+        // Purchase from Retell AI (for voice_ai purpose)
+        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        if (!retellApiKey) {
+          console.error('RETELL_AI_API_KEY not configured');
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
 
-          const retellNumber = await purchaseResponse.json();
-          console.log('Purchased number from Retell:', retellNumber);
-
-          retellNumbers.push(retellNumber);
-          numbers.push({
-            number: retellNumber.phone_number,
-            area_code: areaCode,
-            status: 'active',
-            daily_calls: 0,
-            user_id: user.id,
-            retell_phone_id: retellNumber.phone_number_id
+          return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
-        } catch (error) {
-          console.error(`Failed to purchase number ${i + 1}:`, error);
-          // Continue trying other numbers
+        }
+
+        for (let i = 0; i < quantity; i++) {
+          try {
+            const purchaseResponse = await fetch('https://api.retellai.com/create-phone-number', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${retellApiKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                area_code: parseInt(areaCode, 10)
+              })
+            });
+
+            if (!purchaseResponse.ok) {
+              const errorText = await purchaseResponse.text();
+              console.error('Retell purchase failed:', errorText);
+
+              let errorMessage = `Retell API error: ${purchaseResponse.status}`;
+              try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.message || errorJson.error_message || errorMessage;
+              } catch {
+                // Use default error message
+              }
+
+              throw new Error(errorMessage);
+            }
+
+            const retellNumber = await purchaseResponse.json();
+            console.log('Purchased number from Retell:', retellNumber);
+
+            numbers.push({
+              number: retellNumber.phone_number,
+              area_code: areaCode,
+              status: 'active',
+              daily_calls: 0,
+              user_id: user.id,
+              retell_phone_id: retellNumber.phone_number_id,
+              allowed_uses: allowedUses,
+              rotation_enabled: rotationEnabled,
+              provider: 'retell'
+            });
+          } catch (error) {
+            console.error(`Failed to purchase number ${i + 1}:`, error);
+          }
         }
       }
 

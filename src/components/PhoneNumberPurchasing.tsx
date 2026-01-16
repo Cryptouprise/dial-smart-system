@@ -21,7 +21,7 @@ import {
   Download,
   LogIn
 } from 'lucide-react';
-import { usePhoneNumberPurchasing } from '@/hooks/usePhoneNumberPurchasing';
+import { usePhoneNumberPurchasing, PhoneNumberPurpose } from '@/hooks/usePhoneNumberPurchasing';
 import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -42,6 +42,7 @@ const PhoneNumberPurchasing = () => {
   const [areaCodeError, setAreaCodeError] = useState('');
   const [quantity, setQuantity] = useState('5');
   const [provider, setProvider] = useState('retell');
+  const [purpose, setPurpose] = useState<PhoneNumberPurpose>('voice_ai');
   
   // Area code validation helper
   const validateAreaCode = (code: string): string => {
@@ -113,7 +114,7 @@ const PhoneNumberPurchasing = () => {
     }
 
     try {
-      await purchaseNumbers(areaCode, qty, provider);
+      await purchaseNumbers(areaCode, qty, provider, purpose);
       setAreaCode('');
       setQuantity('5');
     } catch (error) {
@@ -262,25 +263,67 @@ const PhoneNumberPurchasing = () => {
                 <ol className="space-y-2 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">1</Badge>
-                    <span>Enter area code and quantity of numbers to purchase</span>
+                    <span>Select your purpose (Voice Broadcast, AI Calling, etc.)</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">2</Badge>
-                    <span>Numbers are automatically purchased through Retell AI</span>
+                    <span>Enter area code and quantity of numbers</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">3</Badge>
-                    <span>Each number is checked for spam reputation</span>
+                    <span>Numbers are purchased from the appropriate provider</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">4</Badge>
-                    <span>Numbers are added to your pool and ready to use</span>
+                    <span><strong>Voice Broadcast numbers are auto-added to the rotator!</strong></span>
                   </li>
                 </ol>
               </div>
 
               {/* Purchase Form */}
               <div className="grid gap-6">
+                {/* Purpose Selector - Most Important */}
+                <div className="space-y-2">
+                  <Label htmlFor="purpose">What will you use these numbers for? *</Label>
+                  <Select value={purpose} onValueChange={(v) => setPurpose(v as PhoneNumberPurpose)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sip_broadcast">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">Voice Broadcast</span>
+                          <span className="text-xs text-muted-foreground">Audio broadcasts, auto-added to number rotator</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="voice_ai">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">AI Calling</span>
+                          <span className="text-xs text-muted-foreground">Retell AI-powered conversations</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="sms">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">SMS Messaging</span>
+                          <span className="text-xs text-muted-foreground">Text message campaigns</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="inbound">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">Inbound Only</span>
+                          <span className="text-xs text-muted-foreground">Receiving calls and messages</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {purpose === 'sip_broadcast' && (
+                    <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3" />
+                      Numbers will be automatically added to the broadcast rotator
+                    </p>
+                  )}
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="area-code">Area Code *</Label>
@@ -360,7 +403,11 @@ const PhoneNumberPurchasing = () => {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Retell AI recommended for AI calling
+                      {purpose === 'sip_broadcast'
+                        ? 'Twilio recommended for voice broadcasts'
+                        : purpose === 'voice_ai'
+                        ? 'Retell AI recommended for AI calling'
+                        : 'Select based on your needs'}
                     </p>
                   </div>
                 </div>
