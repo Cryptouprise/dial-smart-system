@@ -82,6 +82,9 @@ interface TwilioNumberDetail {
   twilio_sid?: string;
   // Tags for filtering
   tags?: string[];
+  // Number purpose from new schema
+  allowed_uses?: string[];
+  sip_trunk_config_id?: string;
 }
 
 const GHL_WEBHOOK_URL = 'https://services.msgsndr.com/conversations/providers/twilio/inbound_message';
@@ -135,10 +138,10 @@ const TwilioNumbersOverview: React.FC = () => {
 
       if (twilioError) throw twilioError;
 
-      // Get numbers that are in our database with verification status
+      // Get numbers that are in our database with verification status and allowed_uses
       const { data: dbNumbers } = await supabase
         .from('phone_numbers')
-        .select('number, twilio_verified, twilio_verified_at, twilio_sid');
+        .select('number, twilio_verified, twilio_verified_at, twilio_sid, allowed_uses, sip_trunk_config_id');
 
       const dbNumberMap = new Map((dbNumbers || []).map(n => [n.number, n]));
 
@@ -179,6 +182,8 @@ const TwilioNumbersOverview: React.FC = () => {
           twilio_verified_at: dbInfo?.twilio_verified_at,
           twilio_sid: dbInfo?.twilio_sid,
           tags: [],
+          allowed_uses: dbInfo?.allowed_uses || [],
+          sip_trunk_config_id: dbInfo?.sip_trunk_config_id,
         };
       });
 
@@ -999,7 +1004,7 @@ const TwilioNumbersOverview: React.FC = () => {
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>Phone Number</TableHead>
-                    <TableHead>Tags</TableHead>
+                    <TableHead>Purpose</TableHead>
                     <TableHead>Verified</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>SMS Webhook</TableHead>
@@ -1027,15 +1032,43 @@ const TwilioNumbersOverview: React.FC = () => {
                           {formatPhoneNumber(num.phone_number)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-1 flex-wrap max-w-32">
-                            {(num.tags || []).length > 0 ? (
-                              (num.tags || []).map((tag: string) => (
-                                <Badge key={tag} variant="secondary" className="text-xs">
-                                  {tag}
-                                </Badge>
-                              ))
+                          <div className="flex gap-1 flex-wrap max-w-48">
+                            {(num.allowed_uses || []).length > 0 ? (
+                              (num.allowed_uses || []).map((use: string) => {
+                                // Map use types to colors and labels
+                                const useConfig: Record<string, { label: string; className: string }> = {
+                                  'sip_broadcast': { label: 'SIP Broadcast', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+                                  'voice_ai': { label: 'Voice AI', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' },
+                                  'sms': { label: 'SMS', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+                                  'inbound': { label: 'Inbound', className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' },
+                                  'programmable_voice': { label: 'Prog Voice', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+                                };
+                                const config = useConfig[use] || { label: use, className: '' };
+                                return (
+                                  <Badge key={use} className={`text-xs ${config.className}`}>
+                                    {config.label}
+                                  </Badge>
+                                );
+                              })
                             ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
+                              <Badge variant="outline" className="text-xs text-muted-foreground">
+                                Not Configured
+                              </Badge>
+                            )}
+                            {num.sip_trunk_config_id && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <Badge variant="outline" className="text-xs gap-1">
+                                      <Server className="h-3 w-3" />
+                                      Trunk
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Assigned to SIP Trunk</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             )}
                           </div>
                         </TableCell>

@@ -680,18 +680,20 @@ serve(async (req) => {
             continue;
           }
 
-          // Get phone numbers for this user
+          // Get phone numbers for this user - filter by allowed_uses for broadcasts
+          // Use the new schema: only numbers with 'sip_broadcast' in allowed_uses array
           const { data: phoneNumbers, error: numbersError } = await supabase
             .from('phone_numbers')
             .select('*')
             .eq('user_id', broadcast.user_id)
             .eq('status', 'active')
             .eq('is_spam', false)
-            .eq('rotation_enabled', true);
+            .eq('rotation_enabled', true)
+            .contains('allowed_uses', ['sip_broadcast']);
 
           if (numbersError || !phoneNumbers || phoneNumbers.length === 0) {
-            console.error(`[Broadcast Engine] No phone numbers for ${broadcast.name}`);
-            results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No active phone numbers'] });
+            console.error(`[Broadcast Engine] No SIP broadcast numbers for ${broadcast.name}. Ensure numbers have allowed_uses=['sip_broadcast']`);
+            results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No SIP broadcast numbers available. Configure numbers in Phone Settings.'] });
             continue;
           }
 
@@ -705,21 +707,16 @@ serve(async (req) => {
             continue;
           }
 
-          // Filter to Twilio numbers for audio broadcasts (exclude retell_native)
-          const hasAudioUrl = !!broadcast.audio_url;
+          // When SIP trunk is requested, only use numbers with trunk assignment
           let rotationNumbers = availableNumbers;
-          if (hasAudioUrl) {
-            rotationNumbers = availableNumbers.filter(n => {
-              if (n.carrier_name?.toLowerCase().includes('telnyx') || n.provider === 'telnyx') return true;
-              if (!n.retell_phone_id || n.provider === 'twilio') return true;
-              if (n.provider === 'retell_native') return false;
-              return true;
-            });
+          if (broadcast.use_sip_trunk === true) {
+            rotationNumbers = availableNumbers.filter(n => n.sip_trunk_config_id != null);
             if (rotationNumbers.length === 0) {
-              console.error(`[Broadcast Engine] No Twilio/Telnyx numbers for audio broadcast ${broadcast.name}`);
-              results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No Twilio/Telnyx numbers for audio broadcast'] });
+              console.error(`[Broadcast Engine] No numbers assigned to SIP trunk for ${broadcast.name}`);
+              results.push({ broadcastId: broadcast.id, name: broadcast.name, processed: 0, errors: ['No numbers assigned to SIP trunk. Assign numbers in SIP Trunk Settings.'] });
               continue;
             }
+            console.log(`[Broadcast Engine] Using ${rotationNumbers.length} SIP trunk numbers for broadcast ${broadcast.name}`);
           }
 
           // Track number usage for rotation within this batch
@@ -729,9 +726,33 @@ serve(async (req) => {
           const broadcastErrors: string[] = [];
           let processedCount = 0;
 
-          // Check for SIP trunk config if broadcast requests it
-          let sipConfig: SipTrunkConfig | null = null;
+          // Pre-load SIP trunk configs for rotation numbers
+          // Build a map of trunk config ID -> config for quick lookup
+          const sipConfigMap = new Map<string, SipTrunkConfig>();
           if (broadcast.use_sip_trunk === true) {
+            const trunkConfigIds = [...new Set(rotationNumbers
+              .map(n => n.sip_trunk_config_id)
+              .filter((id): id is string => id != null))];
+
+            if (trunkConfigIds.length > 0) {
+              const { data: sipConfigs } = await supabase
+                .from('sip_trunk_configs')
+                .select('*')
+                .in('id', trunkConfigIds)
+                .eq('is_active', true);
+
+              sipConfigs?.forEach(config => sipConfigMap.set(config.id, config as SipTrunkConfig));
+              console.log(`[Broadcast Engine] Loaded ${sipConfigMap.size} SIP trunk configs for ${rotationNumbers.length} numbers`);
+            }
+
+            if (sipConfigMap.size === 0) {
+              console.log(`[Broadcast Engine] Warning: SIP trunk requested but no active configs found for rotation numbers`);
+            }
+          }
+
+          // Legacy: fall back to user's default SIP config if numbers don't have specific configs
+          let defaultSipConfig: SipTrunkConfig | null = null;
+          if (broadcast.use_sip_trunk === true && sipConfigMap.size === 0) {
             const { data: sipConfigs } = await supabase
               .from('sip_trunk_configs')
               .select('*')
@@ -739,11 +760,9 @@ serve(async (req) => {
               .eq('is_active', true)
               .order('is_default', { ascending: false });
 
-            sipConfig = sipConfigs?.[0] || null;
-            if (sipConfig) {
-              console.log(`[Broadcast Engine] SIP trunk enabled: ${sipConfig.provider_type} - ${sipConfig.twilio_trunk_sid}`);
-            } else {
-              console.log(`[Broadcast Engine] SIP trunk requested but none configured, using direct API`);
+            defaultSipConfig = sipConfigs?.[0] || null;
+            if (defaultSipConfig) {
+              console.log(`[Broadcast Engine] Using default SIP trunk: ${defaultSipConfig.provider_type} - ${defaultSipConfig.twilio_trunk_sid}`);
             }
           }
 
@@ -802,6 +821,11 @@ serve(async (req) => {
               };
 
               let callResult: CallResult;
+
+              // Get SIP config for this specific caller number (or fall back to default)
+              const sipConfig = callerNumber.sip_trunk_config_id
+                ? sipConfigMap.get(callerNumber.sip_trunk_config_id)
+                : defaultSipConfig;
 
               // Use SIP trunk if configured, otherwise direct Twilio API
               if (sipConfig && sipConfig.twilio_trunk_sid && sipConfig.twilio_termination_uri) {
