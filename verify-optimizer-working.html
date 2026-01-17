@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Verify Script Optimizer is Working</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1000px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .result {
+      margin: 15px 0;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px 10px 0;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+    .loading {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 400px;
+    }
+    .info-box {
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    .step {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #2196F3;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>✅ Verify Script Optimizer is Working</h1>
+
+    <div class="info-box">
+      <strong>📋 You're right - if you're already using Retell and AI features, the API keys should be configured!</strong><br><br>
+      Let's verify your Script Optimizer is already working by running a live test.
+    </div>
+
+    <div class="step">
+      <h2>Step 1: Check Your Call Data</h2>
+      <p>Let's see if you have calls with transcripts that we can analyze.</p>
+      <button onclick="checkCalls()">Check My Calls</button>
+      <div id="calls-result"></div>
+    </div>
+
+    <div class="step">
+      <h2>Step 2: Test Script Analysis (Live Test)</h2>
+      <p>This will test the actual AI script analysis with a sample script and transcript.</p>
+      <button onclick="testAnalysis()">Run Live Analysis Test</button>
+      <div id="analysis-result"></div>
+    </div>
+
+    <div class="step">
+      <h2>Step 3: Check Retell Agents</h2>
+      <p>Let's verify your Retell agents are accessible for script import.</p>
+      <button onclick="checkRetellAgents()">Check Retell Agents</button>
+      <div id="retell-result"></div>
+    </div>
+
+    <div class="step" style="background: #e8f5e9; border-left-color: #4CAF50;">
+      <h2>🎯 How to Use Your Script Optimizer</h2>
+      <div id="instructions">
+        <p>Once tests pass, here's how to use it in your app:</p>
+        <ol>
+          <li><strong>Go to:</strong> Transcript Analyzer page in your app</li>
+          <li><strong>Click:</strong> "Script Analysis" tab</li>
+          <li><strong>Select:</strong> Your Retell agent from dropdown</li>
+          <li><strong>Click:</strong> "Import Script" button</li>
+          <li><strong>Click:</strong> "Compare & Generate Improvements"</li>
+          <li><strong>Review:</strong> AI-generated improvements with priorities</li>
+          <li><strong>Apply:</strong> Click "Apply" on improvements you like</li>
+          <li><strong>Save:</strong> Click "Save All to Agent" to push to Retell</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://emonjusymdripmkvtttc.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtb25qdXN5bWRyaXBta3Z0dHRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3MzYyNDcsImV4cCI6MjA2NDMxMjI0N30.NPmcCmeJwR_vNymUZp73G9PqbsiPJ7KSTA9x8xG6Soc';
+
+    async function checkCalls() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Checking...<span class="loading"></span>';
+
+      const resultDiv = document.getElementById('calls-result');
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/call_logs?select=id,transcript,created_at,agent_name,duration_seconds&transcript=not.is.null&order=created_at.desc&limit=10`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+
+        if (response.ok) {
+          const calls = await response.json();
+          const withGoodTranscripts = calls.filter(c => c.transcript && c.transcript.length > 100);
+
+          if (withGoodTranscripts.length > 0) {
+            resultDiv.innerHTML = `
+              <div class="result success">
+                ✅ Found ${withGoodTranscripts.length} calls with transcripts!<br><br>
+                <strong>Most Recent Call:</strong><br>
+                • Date: ${new Date(withGoodTranscripts[0].created_at).toLocaleString()}<br>
+                • Agent: ${withGoodTranscripts[0].agent_name || 'Unknown'}<br>
+                • Duration: ${withGoodTranscripts[0].duration_seconds || 0}s<br>
+                • Transcript Length: ${withGoodTranscripts[0].transcript.length} chars<br><br>
+                <small>You have ${withGoodTranscripts.length} calls ready to analyze!</small>
+              </div>
+            `;
+          } else if (calls.length > 0) {
+            resultDiv.innerHTML = `
+              <div class="result info">
+                ℹ️ Found ${calls.length} calls but transcripts are short.<br>
+                <small>Make some longer test calls (30+ seconds) to get better transcripts.</small>
+              </div>
+            `;
+          } else {
+            resultDiv.innerHTML = `
+              <div class="result info">
+                ℹ️ No calls with transcripts yet.<br>
+                <small>Make some test calls using your Retell agents to generate transcripts.</small>
+              </div>
+            `;
+          }
+        } else {
+          resultDiv.innerHTML = `<div class="result error">❌ Query failed: ${response.status} ${response.statusText}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="result error">❌ Error: ${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Check My Calls';
+      }
+    }
+
+    async function testAnalysis() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Testing (this may take 10-20 seconds)...<span class="loading"></span>';
+
+      const resultDiv = document.getElementById('analysis-result');
+
+      try {
+        // Test with a realistic sample
+        const testScript = `You are a friendly solar sales agent.
+
+Opening:
+- Introduce yourself warmly
+- Confirm you're speaking with the homeowner
+- Ask if now is a good time to talk
+
+Qualification:
+- Ask about their current electricity bill
+- Confirm they own their home
+- Ask about roof condition and sun exposure
+
+Value Proposition:
+- Explain 30% federal tax credit
+- Mention typical savings ($1200-2000/year)
+- Emphasize $0 down payment options
+
+Objection Handling:
+- Cost concerns: Emphasize $0 down and immediate savings
+- Not interested: Ask about rising electricity rates
+- Need to think: Offer free roof analysis, no obligation
+
+Closing:
+- Offer free consultation and roof assessment
+- Book appointment for solar evaluation
+- Confirm contact information`;
+
+        const testTranscripts = [
+          {
+            callId: 'test-1',
+            transcript: 'Agent: Hi this is John from Solar Solutions, is this a good time? Lead: Sure, what is this about? Agent: I wanted to talk to you about potentially saving money on your electricity bill through solar panels. Lead: Oh interesting, how much does it cost? Agent: Well the great news is we have $0 down options and with the 30% federal tax credit you could start saving immediately. What are you currently paying for electricity? Lead: Around $200 a month. Agent: Perfect, based on that you could save around $1500 per year. Would you like to schedule a free consultation?',
+            sentiment: 'positive',
+            outcome: 'interested',
+            duration: 120
+          },
+          {
+            callId: 'test-2',
+            transcript: 'Agent: Hello, this is Sarah from Solar Solutions. Lead: I already have solar panels. Agent: Oh wonderful! Are you happy with them? Lead: Yes very much. Agent: Great to hear! Have a wonderful day.',
+            sentiment: 'neutral',
+            outcome: 'not_interested',
+            duration: 30
+          }
+        ];
+
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-call-transcript`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            action: 'compare_to_script',
+            script: testScript,
+            transcripts: testTranscripts
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.script_adherence_score !== undefined) {
+          let improvementsHtml = '';
+          if (data.improvements && data.improvements.length > 0) {
+            improvementsHtml = '<br><br><strong>Sample Improvements Found:</strong><ul>';
+            data.improvements.slice(0, 3).forEach(imp => {
+              improvementsHtml += `<li><strong>${imp.priority}:</strong> ${imp.title}</li>`;
+            });
+            improvementsHtml += '</ul>';
+          }
+
+          resultDiv.innerHTML = `
+            <div class="result success">
+              ✅ <strong>SCRIPT OPTIMIZER IS WORKING!</strong><br><br>
+              <strong>Test Results:</strong><br>
+              • Script Adherence Score: ${Math.round(data.script_adherence_score * 100)}%<br>
+              • Improvements Found: ${data.improvements?.length || 0}<br>
+              • Common Deviations: ${data.common_deviations?.length || 0}<br>
+              • Best Practices: ${data.best_practices?.length || 0}
+              ${improvementsHtml}
+              <br><br>
+              <small>🎉 Your Script Optimizer is fully functional! You can start using it now.</small>
+            </div>
+            <details>
+              <summary>View Full Response (click to expand)</summary>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            </details>
+          `;
+        } else if (data.error) {
+          if (data.error.includes('LOVABLE_API_KEY')) {
+            resultDiv.innerHTML = `
+              <div class="result error">
+                ❌ Missing LOVABLE_API_KEY<br>
+                <small>The API key needs to be configured in Supabase Dashboard → Edge Functions → Secrets</small>
+              </div>
+            `;
+          } else {
+            resultDiv.innerHTML = `
+              <div class="result error">
+                ❌ Analysis failed: ${data.error}<br>
+                <small>${data.details || ''}</small>
+              </div>
+            `;
+          }
+        } else {
+          resultDiv.innerHTML = `
+            <div class="result error">
+              ❌ Unexpected response format<br>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            </div>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="result error">❌ Error: ${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Run Live Analysis Test';
+      }
+    }
+
+    async function checkRetellAgents() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Checking...<span class="loading"></span>';
+
+      const resultDiv = document.getElementById('retell-result');
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/phone_numbers?select=id,number,retell_agent_id&retell_agent_id=not.is.null&limit=10`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+
+        if (response.ok) {
+          const numbers = await response.json();
+          const agentIds = [...new Set(numbers.map(n => n.retell_agent_id).filter(Boolean))];
+
+          if (agentIds.length > 0) {
+            resultDiv.innerHTML = `
+              <div class="result success">
+                ✅ Found ${agentIds.length} Retell agent(s) configured!<br><br>
+                <strong>Agent IDs:</strong><br>
+                ${agentIds.map(id => `• ${id}`).join('<br>')}
+                <br><br>
+                <small>These agents are available in the Script Analysis dropdown.</small>
+              </div>
+            `;
+          } else {
+            resultDiv.innerHTML = `
+              <div class="result info">
+                ℹ️ No Retell agents found on phone numbers.<br>
+                <small>Configure Retell agents on your phone numbers to use script import.</small>
+              </div>
+            `;
+          }
+        } else {
+          resultDiv.innerHTML = `<div class="result error">❌ Query failed: ${response.status}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="result error">❌ Error: ${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Check Retell Agents';
+      }
+    }
+  </script>
+</body>
+</html>
