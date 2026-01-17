@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🧪 Test Your Script Optimizer RIGHT NOW</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 30px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+    }
+    .subtitle {
+      color: #666;
+      font-size: 1.2em;
+      margin-bottom: 30px;
+    }
+    .big-button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 20px 40px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 15px 0;
+      width: 100%;
+      transition: transform 0.2s;
+    }
+    .big-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+    .big-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .result {
+      margin: 20px 0;
+      padding: 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .success {
+      background: #d4edda;
+      border-left: 5px solid #28a745;
+      color: #155724;
+    }
+    .error {
+      background: #f8d7da;
+      border-left: 5px solid #dc3545;
+      color: #721c24;
+    }
+    .info {
+      background: #d1ecf1;
+      border-left: 5px solid #17a2b8;
+      color: #0c5460;
+    }
+    .warning {
+      background: #fff3cd;
+      border-left: 5px solid #ffc107;
+      color: #856404;
+    }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      max-height: 500px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .metric {
+      display: inline-block;
+      background: #f8f9fa;
+      padding: 15px 25px;
+      border-radius: 8px;
+      margin: 10px;
+      text-align: center;
+      border: 2px solid #e9ecef;
+    }
+    .metric-value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #667eea;
+    }
+    .metric-label {
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 5px;
+    }
+    details {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #667eea;
+      padding: 5px;
+    }
+    summary:hover {
+      color: #764ba2;
+    }
+    .status-emoji {
+      font-size: 3em;
+      margin: 20px 0;
+      display: block;
+      text-align: center;
+    }
+    .improvement-item {
+      background: white;
+      padding: 15px;
+      margin: 10px 0;
+      border-left: 4px solid #667eea;
+      border-radius: 4px;
+    }
+    .priority-critical {
+      border-left-color: #dc3545;
+    }
+    .priority-important {
+      border-left-color: #ffc107;
+    }
+    .priority-nice {
+      border-left-color: #28a745;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Test Your Script Optimizer</h1>
+    <p class="subtitle">Live test with real AI analysis in 20 seconds</p>
+
+    <div class="info result">
+      <strong>📋 What This Test Does:</strong><br>
+      • Sends a sample solar sales script to your system<br>
+      • Analyzes 3 sample call transcripts<br>
+      • Returns real AI-generated improvements<br>
+      • Proves your Script Optimizer is working
+    </div>
+
+    <button class="big-button" onclick="runTest()" id="testBtn">
+      ▶️ RUN TEST NOW
+    </button>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://emonjusymdripmkvtttc.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtb25qdXN5bWRyaXBta3Z0dHRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3MzYyNDcsImV4cCI6MjA2NDMxMjI0N30.NPmcCmeJwR_vNymUZp73G9PqbsiPJ7KSTA9x8xG6Soc';
+
+    async function runTest() {
+      const btn = document.getElementById('testBtn');
+      const resultDiv = document.getElementById('result');
+
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Testing... (this may take 10-30 seconds)<span class="loading"></span>';
+
+      resultDiv.innerHTML = '<div class="info result">🔄 Sending request to your Script Optimizer edge function...</div>';
+
+      try {
+        const testPayload = {
+          action: 'compare_to_script',
+          script: `You are a professional solar sales representative for a residential solar company.
+
+OPENING (First 30 seconds):
+- Warmly introduce yourself by first name
+- Confirm you're speaking with the homeowner by name
+- Ask permission: "Do you have 2-3 minutes to discuss reducing your electricity costs?"
+- If busy: "When would be a better time to call back?"
+
+QUALIFICATION PHASE:
+Ask these key questions early:
+1. "What's your average monthly electricity bill?" (Target: $150+)
+2. "Do you own your home?" (Must be yes)
+3. "Does your roof get good sun exposure?" (Need adequate sunlight)
+4. "Are you the primary decision maker, or would your spouse also need to be involved?"
+
+VALUE PROPOSITION:
+Present benefits in this order:
+1. Immediate savings: "$1,500-2,000 per year on average"
+2. Federal tax credit: "30% tax credit - that's like getting 30% off"
+3. No money down: "$0 down payment options available"
+4. Home value increase: "Solar adds $15,000-20,000 to home value"
+
+OBJECTION HANDLING:
+Cost concerns: "I understand solar feels like a big investment. That's why we offer $0 down - you start saving immediately without any upfront cost."
+Not interested: "I hear you. Can I ask - have you noticed your electricity rates going up? Most homeowners see 3-5% increases every year."
+Need to think: "Of course! How about I schedule a free roof assessment - no obligation - so you have real numbers to think about?"
+Already got quotes: "Great! That means you know solar works. Mind if I ask what held you back from moving forward?"
+
+CLOSING:
+- Offer specific value: "Free solar assessment and exact savings calculation"
+- Create urgency (if true): "The 30% tax credit may not last forever"
+- Get commitment: "I have Thursday at 2pm or Friday at 10am - which works better?"
+- Confirm contact info: "Best phone number to reach you? And email?"
+
+CALL DURATION TARGET: 3-5 minutes
+- If over 5 minutes and no interest: Politely close and move on
+- If interested: Can extend to gather more details`,
+
+          transcripts: [
+            {
+              callId: 'test-call-1',
+              transcript: `Agent: Hi, this is Mike from Solar Solutions. Am I speaking with John Smith?
+Lead: Yes this is John.
+Agent: Great! Do you have a couple minutes to talk about reducing your electric bills with solar?
+Lead: Um, sure I guess. What is this about exactly?
+Agent: We help homeowners like yourself go solar and save thousands per year on electricity. Let me ask - what's your current monthly electric bill running?
+Lead: It's usually around $250 a month, sometimes more in summer.
+Agent: Wow, that's pretty high! With solar you could cut that down significantly, maybe save $2000 per year. Plus there's a 30% federal tax credit right now. Do you own your home?
+Lead: Yes I own it. But how much does solar cost though? That's my concern.
+Agent: That's the great news - we have $0 down payment options, so you can start saving immediately without any money out of pocket. You'd basically stop paying the utility company and start paying us a lower amount.
+Lead: Hmm, that's interesting. But I'd need to talk to my wife about this.
+Agent: Absolutely, that makes total sense. Are you guys the decision makers together?
+Lead: Yes.
+Agent: Perfect. How about I schedule a free solar assessment where we come out, look at your roof, and give you exact numbers? No obligation at all. Then you and your wife can review real data. I have Thursday at 2pm or Friday morning - which works better?
+Lead: Thursday could work.
+Agent: Great! And what's the best number to reach you both at?`,
+              sentiment: 'positive',
+              outcome: 'appointment_set',
+              duration: 180
+            },
+            {
+              callId: 'test-call-2',
+              transcript: `Agent: Hello, this is Sarah calling about solar panels for your home.
+Lead: Not interested.
+Agent: Can I ask why you're not interested? Is it the cost?
+Lead: I already installed solar panels last year.
+Agent: Oh that's wonderful! How's that working out for you so far?
+Lead: Really good actually, my bills are way down.
+Agent: That's awesome to hear! Well you're all set then. Have a great day!
+Lead: Thanks, you too.`,
+              sentiment: 'neutral',
+              outcome: 'not_interested',
+              duration: 35
+            },
+            {
+              callId: 'test-call-3',
+              transcript: `Agent: Hi there, this is Tom with SolarCo calling about solar panels. Is this the homeowner?
+Lead: Yes, what is this about?
+Agent: I wanted to talk to you about solar energy and how you can save money. A lot of your neighbors have been switching to solar and saving big.
+Lead: How much money are we talking about?
+Agent: Well it depends on your bill, but typically $1500 to $2000 per year in savings.
+Lead: That sounds nice but I just don't think we can afford it right now. Solar panels are expensive.
+Agent: I totally get that concern. But here's the thing - with the 30% federal tax credit and our $0 down financing, most people actually start saving money from day one. You wouldn't need any cash upfront.
+Lead: Really? How does that work?
+Agent: So instead of paying like $200 a month to the power company, you might pay us $140 for the solar system, and your electric bill drops to almost nothing. Net result is you're paying less overall.
+Lead: Interesting. Let me think about it and talk to my wife.
+Agent: Of course. Would it help if I sent you some information to review together?
+Lead: Yeah that would be good.
+Agent: Perfect. What's your email address? And best phone number?`,
+              sentiment: 'positive',
+              outcome: 'callback',
+              duration: 165
+            }
+          ]
+        };
+
+        console.log('Sending test request...');
+
+        const startTime = Date.now();
+
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-call-transcript`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify(testPayload)
+        });
+
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        console.log('Response status:', response.status);
+
+        const data = await response.json();
+        console.log('Response data:', data);
+
+        if (response.ok && data.script_adherence_score !== undefined) {
+          // SUCCESS!
+          displaySuccess(data, elapsed);
+        } else if (data.error) {
+          displayError(data);
+        } else {
+          displayUnexpected(data);
+        }
+
+      } catch (error) {
+        console.error('Test error:', error);
+        resultDiv.innerHTML = `
+          <div class="error result">
+            <strong>❌ Test Failed</strong><br><br>
+            Error: ${error.message}<br><br>
+            <strong>Possible Causes:</strong><br>
+            • Network connectivity issue<br>
+            • Edge function not deployed<br>
+            • API keys not configured<br><br>
+            <strong>Next Steps:</strong><br>
+            1. Check your internet connection<br>
+            2. Verify edge function is deployed in Supabase<br>
+            3. Check browser console (F12) for more details
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '▶️ RUN TEST AGAIN';
+      }
+    }
+
+    function displaySuccess(data, elapsed) {
+      const resultDiv = document.getElementById('result');
+
+      const adherenceScore = Math.round(data.script_adherence_score * 100);
+      const improvements = data.improvements || [];
+      const criticalCount = improvements.filter(i => i.priority === 'critical').length;
+      const importantCount = improvements.filter(i => i.priority === 'important').length;
+
+      let html = `
+        <div class="success result">
+          <span class="status-emoji">🎉</span>
+          <h2 style="margin-top: 0; color: #28a745;">✅ YOUR SCRIPT OPTIMIZER IS WORKING!</h2>
+          <p style="font-size: 1.1em;">Analysis completed in ${elapsed} seconds</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <div class="metric">
+            <div class="metric-value">${adherenceScore}%</div>
+            <div class="metric-label">Script Adherence</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value">${improvements.length}</div>
+            <div class="metric-label">Improvements Found</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value">${criticalCount}</div>
+            <div class="metric-label">Critical Priority</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value">${importantCount}</div>
+            <div class="metric-label">Important Priority</div>
+          </div>
+        </div>
+
+        <div class="info result">
+          <h3>📊 What This Means:</h3>
+          <p>Your Script Optimizer just:</p>
+          <ul>
+            <li>✅ Analyzed your test script against 3 call transcripts</li>
+            <li>✅ Calculated a ${adherenceScore}% adherence score</li>
+            <li>✅ Generated ${improvements.length} AI-powered improvement suggestions</li>
+            <li>✅ Identified ${criticalCount} critical issues that need attention</li>
+          </ul>
+          <p><strong>This is the EXACT same analysis you get in your app!</strong></p>
+        </div>
+      `;
+
+      if (improvements.length > 0) {
+        html += '<h3>🎯 Sample Improvements Generated:</h3>';
+        improvements.slice(0, 3).forEach(imp => {
+          const priorityClass = `priority-${imp.priority === 'critical' ? 'critical' : imp.priority === 'important' ? 'important' : 'nice'}`;
+          html += `
+            <div class="improvement-item ${priorityClass}">
+              <strong style="text-transform: uppercase; font-size: 0.85em; color: #666;">
+                ${imp.priority || 'normal'} ${imp.section ? `• ${imp.section}` : ''}
+              </strong>
+              <h4 style="margin: 10px 0; color: #333;">${imp.title}</h4>
+              <p style="color: #666; margin: 10px 0;">${imp.suggestion}</p>
+              ${imp.example ? `<p style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-style: italic; margin: 10px 0;">"${imp.example}"</p>` : ''}
+              ${imp.ai_voice_notes ? `<p style="color: #667eea; font-size: 0.9em; margin: 10px 0;">🎙️ ${imp.ai_voice_notes}</p>` : ''}
+            </div>
+          `;
+        });
+      }
+
+      html += `
+        <details>
+          <summary>📄 View Full JSON Response (click to expand)</summary>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        </details>
+
+        <div class="success result" style="margin-top: 30px;">
+          <h3>🚀 Ready to Use It for Real?</h3>
+          <ol style="line-height: 1.8;">
+            <li>Run your app: <code>npm run dev</code></li>
+            <li>Navigate to: <strong>Transcript Analyzer</strong></li>
+            <li>Click the: <strong>"Script Analysis"</strong> tab</li>
+            <li>Select your Retell agent from the dropdown</li>
+            <li>Click: <strong>"Import Script"</strong></li>
+            <li>Click: <strong>"Compare & Generate Improvements"</strong></li>
+            <li>Review improvements and click <strong>"Save All to Agent"</strong></li>
+          </ol>
+          <p style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #c3e6cb;">
+            <strong>💰 Cost Savings:</strong> This analysis costs ~$0.01 per 20 calls vs $400+ for manual optimization on Assistable!
+          </p>
+        </div>
+      `;
+
+      resultDiv.innerHTML = html;
+    }
+
+    function displayError(data) {
+      const resultDiv = document.getElementById('result');
+
+      if (data.error.includes('LOVABLE_API_KEY')) {
+        resultDiv.innerHTML = `
+          <div class="error result">
+            <strong>❌ Missing LOVABLE_API_KEY</strong><br><br>
+            The edge function needs this API key to work.<br><br>
+            <strong>To Fix:</strong><br>
+            1. Go to: <a href="https://supabase.com/dashboard/project/emonjusymdripmkvtttc/settings/functions" target="_blank">Supabase Dashboard → Edge Functions</a><br>
+            2. Click "Add new secret"<br>
+            3. Name: <code>LOVABLE_API_KEY</code><br>
+            4. Value: Get from <a href="https://lovable.dev/dashboard" target="_blank">Lovable Dashboard</a><br>
+            5. Save and redeploy edge functions<br><br>
+            Then run this test again!
+          </div>
+        `;
+      } else {
+        resultDiv.innerHTML = `
+          <div class="error result">
+            <strong>❌ Error: ${data.error}</strong><br><br>
+            ${data.details || 'No additional details provided'}<br><br>
+            Check the browser console (F12) for more information.
+          </div>
+        `;
+      }
+    }
+
+    function displayUnexpected(data) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = `
+        <div class="warning result">
+          <strong>⚠️ Unexpected Response Format</strong><br><br>
+          The edge function returned data but not in the expected format.<br><br>
+          <details>
+            <summary>View Response</summary>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          </details>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
