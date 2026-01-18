@@ -336,23 +336,20 @@ serve(async (req) => {
             console.log(`[GHL] Search page ${page} meta:`, JSON.stringify(pageData.meta || pageData.pagination || 'no meta'));
             console.log(`[GHL] Search page ${page} total in response:`, pageData.total || pageData.count || 'unknown');
 
-            // Check if there are more pages using multiple methods:
-            // 1. Check meta.total or total field if available
+            // Check if there are more pages
+            // NOTE: Do NOT trust totalFromApi - GHL caps it at 10,000 even when there are more contacts
+            // The only reliable indicator is getting fewer than PAGE_SIZE contacts
             const totalFromApi = pageData.meta?.total || pageData.total || pageData.count;
-            if (totalFromApi && contacts.length >= totalFromApi) {
-              console.log(`[GHL] Reached total contacts (${totalFromApi}), stopping`);
-              hasMore = false;
-            }
-            // 2. Check meta.nextPage or similar
-            else if (pageData.meta?.nextPage === false || pageData.meta?.hasMore === false) {
-              console.log('[GHL] API indicates no more pages');
-              hasMore = false;
-            }
-            // 3. Fall back to checking if we got a full page
-            else if (pageContacts.length < PAGE_SIZE) {
+            console.log(`[GHL] API reports total: ${totalFromApi || 'unknown'} (may be capped, ignoring)`);
+
+            if (pageContacts.length < PAGE_SIZE) {
               console.log(`[GHL] Got ${pageContacts.length} contacts (less than ${PAGE_SIZE}), no more pages`);
               hasMore = false;
+            } else if (pageContacts.length === 0) {
+              console.log('[GHL] Got 0 contacts, stopping');
+              hasMore = false;
             } else {
+              // Got a full page, keep going
               hasMore = true;
             }
 
