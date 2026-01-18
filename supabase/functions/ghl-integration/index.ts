@@ -281,7 +281,7 @@ serve(async (req) => {
         if (direction === 'import' || direction === 'bidirectional') {
           let contacts: any[] = [];
           const PAGE_SIZE = 100; // GHL max per page
-          const MAX_PAGES = 200; // Safety limit: 200 pages * 100 = 20,000 contacts max
+          const MAX_PAGES = 1000; // Safety limit: 1000 pages * 100 = 100,000 contacts max
 
           console.log('[GHL] Starting contact sync with pagination...');
           console.log('[GHL] Import filters:', JSON.stringify(importFilters || 'none'));
@@ -295,18 +295,15 @@ serve(async (req) => {
           let searchFailed = false;
 
           while (hasMore && page <= MAX_PAGES) {
-            // GHL search endpoint - try both limit and pageLimit for compatibility
+            // GHL search endpoint - only use pageLimit (not limit or tags - they cause 422 errors)
             const searchBody: any = {
               locationId,
               page,
-              limit: PAGE_SIZE,
               pageLimit: PAGE_SIZE
             };
 
-            // Add tag filter if specified
-            if (importFilters?.tags?.length) {
-              searchBody.tags = importFilters.tags;
-            }
+            // NOTE: Do NOT add tags here - GHL API returns 422 error
+            // Tags will be filtered client-side after fetching all contacts
 
             console.log(`[GHL] Search page ${page} request:`, JSON.stringify(searchBody));
 
@@ -431,7 +428,17 @@ serve(async (req) => {
           }
           
           console.log(`[GHL] Total contacts fetched: ${contacts.length}`);
-          
+
+          // Apply client-side tag include filter (API doesn't accept tags parameter - returns 422)
+          if (importFilters?.tags?.length) {
+            const includeSet = new Set(importFilters.tags.map(t => t.toLowerCase()));
+            contacts = contacts.filter((c: any) => {
+              const contactTags = (c.tags || []).map((t: string) => t.toLowerCase());
+              return contactTags.some((t: string) => includeSet.has(t));
+            });
+            console.log('[GHL] After include tag filter:', contacts.length, 'contacts');
+          }
+
           // Apply client-side filters for excludeTags (not supported by API)
           if (importFilters?.excludeTags?.length) {
             const excludeSet = new Set(importFilters.excludeTags.map(t => t.toLowerCase()));
@@ -979,7 +986,7 @@ serve(async (req) => {
 
         let contacts: any[] = [];
         const PAGE_SIZE = 100;
-        const MAX_PREVIEW_PAGES = 100; // Limit preview to 10,000 contacts
+        const MAX_PREVIEW_PAGES = 1000; // Limit preview to 100,000 contacts
         let pageNum = 1;
         let stoppedReason = 'complete';
         let paginationMethod = 'unknown';
