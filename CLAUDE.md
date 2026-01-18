@@ -341,12 +341,15 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 ## Recent Fixes Log
 
 ### January 17, 2026
-- **GHL Contact Import Fix (REGRESSION - Fixed Twice!)**: `ghl-integration` sync_contacts now properly imports all contacts, not just 100
-  - **Root Cause**: GHL API returns 422 error when `limit` or `tags` parameters are sent in the search body
-  - **Fix**: Removed `limit` and `tags` from search body; only use `pageLimit` and `locationId`
+- **GHL Contact Import Fix (Fixed Multiple Times!)**: `ghl-integration` sync_contacts now properly imports ALL contacts
+  - **Issue 1**: GHL API returns 422 error when `limit` or `tags` parameters are sent in the search body
+  - **Fix 1**: Removed `limit` and `tags` from search body; only use `pageLimit` and `locationId`
+  - **Issue 2**: GHL API caps the `total` field at 10,000 even when there are more contacts (e.g., 29,000)
+  - **Fix 2**: Ignore `totalFromApi` - only stop pagination when we get fewer than 100 contacts per page
   - **Tags Filter**: Now applied client-side AFTER fetching all contacts (GHL API doesn't support server-side tag filtering)
-  - **CRITICAL**: Do NOT add `limit: PAGE_SIZE` or `tags: [...]` to the search endpoint body - this causes 422 errors and fallback pagination issues
-  - **File**: `supabase/functions/ghl-integration/index.ts` lines 297-307
+  - **CRITICAL**: Do NOT trust the `total` field from GHL API - it's capped at 10,000
+  - **CRITICAL**: Do NOT add `limit: PAGE_SIZE` or `tags: [...]` to the search endpoint body - this causes 422 errors
+  - **File**: `supabase/functions/ghl-integration/index.ts` lines 297-354
   - **Pagination**: Uses search endpoint with page-based pagination (page: 1, 2, 3...) not cursor-based
   - **Max Contacts**: 100,000 (1000 pages * 100 per page)
 
