@@ -10,8 +10,17 @@ const corsHeaders = {
 const MAX_CONCURRENT_CALLS = 100; // Maximum calls in 'calling' status at once
 const ERROR_RATE_PAUSE_THRESHOLD = 0.25; // 25% error rate triggers pause
 const ERROR_RATE_ALERT_THRESHOLD = 0.10; // 10% error rate triggers alert
-const CALL_DELAY_MS = 100; // Delay between individual calls to avoid API hammering
+const MIN_CALL_DELAY_MS = 100; // Minimum delay between calls to avoid API hammering
+const DEFAULT_CALLS_PER_MINUTE = 50; // Default pacing if not specified
 const MAX_RETRIES_ON_429 = 3; // Max retries on rate limit errors
+
+// Calculate the delay needed between calls to achieve target calls per minute
+// Returns delay in milliseconds, ensuring we never go below MIN_CALL_DELAY_MS
+function calculatePacingDelay(callsPerMinute: number): number {
+  const targetCallsPerMinute = Math.max(1, callsPerMinute || DEFAULT_CALLS_PER_MINUTE);
+  const calculatedDelay = Math.floor(60000 / targetCallsPerMinute); // ms per call
+  return Math.max(MIN_CALL_DELAY_MS, calculatedDelay);
+}
 
 interface ProviderConfig {
   retellKey?: string;
@@ -886,8 +895,9 @@ serve(async (req) => {
 
               processedCount++;
 
-              // Small delay between calls
-              await sleep(CALL_DELAY_MS);
+              // Pacing delay - calculated from calls_per_minute setting
+              const pacingDelay = calculatePacingDelay(broadcast.calls_per_minute);
+              await sleep(pacingDelay);
 
             } catch (itemError: any) {
               console.error(`[Broadcast Engine] Error processing item ${item.id}:`, itemError);
@@ -1322,8 +1332,12 @@ serve(async (req) => {
         const availableConcurrency = MAX_CONCURRENT_CALLS - currentConcurrent;
         const maxBatchSize = isTestMode ? testBatchSize : (broadcast.calls_per_minute || 50);
         const batchSize = Math.min(maxBatchSize, pendingCount, availableConcurrency);
-        
-        console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency}${isTestMode ? `, test limit: ${testBatchSize}` : ''})`);
+
+        // Calculate pacing delay for this broadcast
+        const pacingDelayMs = calculatePacingDelay(broadcast.calls_per_minute);
+        const effectiveCallsPerMinute = Math.floor(60000 / pacingDelayMs);
+
+        console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency}, pacing: ${effectiveCallsPerMinute}/min with ${pacingDelayMs}ms delay${isTestMode ? `, test limit: ${testBatchSize}` : ''})`);
         
         const { data: queueItems, error: queueError } = await supabase
           .from('broadcast_queue')
@@ -1598,10 +1612,9 @@ serve(async (req) => {
               throw new Error(callResult.error || 'Call failed');
             }
 
-            // Add delay between calls to avoid hammering APIs
-            if (CALL_DELAY_MS > 0) {
-              await sleep(CALL_DELAY_MS);
-            }
+            // Pacing delay - calculated from calls_per_minute setting
+            const pacingDelay = calculatePacingDelay(broadcast.calls_per_minute);
+            await sleep(pacingDelay);
 
           } catch (callError: any) {
             console.error(`Error dispatching call to ${item.phone_number}:`, callError);

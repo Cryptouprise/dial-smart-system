@@ -203,6 +203,24 @@ Additionally:
 - Error rate > 10%: Triggers warning alert
 - Stuck calls (>5 min in 'calling'): Auto-marked as failed
 
+### 7. Call Pacing (Fixed Jan 17, 2026)
+The `calls_per_minute` setting now properly controls call pacing:
+
+**How it works:**
+- `calculatePacingDelay()` function at lines 17-23 calculates delay between calls
+- Formula: `delay_ms = 60000 / calls_per_minute`
+- Minimum delay: 100ms (to avoid API hammering)
+
+**Examples:**
+| calls_per_minute | Delay Between Calls | Actual Rate |
+|-----------------|---------------------|-------------|
+| 50 | 1,200ms | 50/min |
+| 100 | 600ms | 100/min |
+| 200 | 300ms | 200/min |
+| 600+ | 100ms (minimum) | 600/min max |
+
+**Previous bug**: Before this fix, `calls_per_minute` was only used as batch size, not actual rate limiting. Calls were dispatched with only 100ms delay regardless of setting.
+
 ### Quick Diagnostic SQL
 ```sql
 -- Check broadcast status and errors
@@ -317,5 +335,23 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 
 ---
 
-**Last Updated**: January 10, 2026
+**Last Updated**: January 17, 2026
 **Audit Confidence**: Very High (comprehensive codebase analysis)
+
+## Recent Fixes Log
+
+### January 17, 2026
+- **GHL Contact Import Fix (REGRESSION - Fixed Twice!)**: `ghl-integration` sync_contacts now properly imports all contacts, not just 100
+  - **Root Cause**: GHL API returns 422 error when `limit` or `tags` parameters are sent in the search body
+  - **Fix**: Removed `limit` and `tags` from search body; only use `pageLimit` and `locationId`
+  - **Tags Filter**: Now applied client-side AFTER fetching all contacts (GHL API doesn't support server-side tag filtering)
+  - **CRITICAL**: Do NOT add `limit: PAGE_SIZE` or `tags: [...]` to the search endpoint body - this causes 422 errors and fallback pagination issues
+  - **File**: `supabase/functions/ghl-integration/index.ts` lines 297-307
+  - **Pagination**: Uses search endpoint with page-based pagination (page: 1, 2, 3...) not cursor-based
+  - **Max Contacts**: 20,000 (200 pages * 100 per page)
+
+- **Call Pacing Fix**: `voice-broadcast-engine` now properly enforces `calls_per_minute` setting
+  - Added `calculatePacingDelay()` function for dynamic delay calculation
+  - Previous: 100ms fixed delay (600 calls/min regardless of setting)
+  - Now: Delay calculated as `60000 / calls_per_minute` with 100ms minimum
+  - Logs show actual pacing: "pacing: 50/min with 1200ms delay"
