@@ -348,7 +348,7 @@ Check `git log --oneline -20` for recent changes. Common patterns:
   - **CRITICAL**: Do NOT add `limit: PAGE_SIZE` or `tags: [...]` to the search endpoint body - this causes 422 errors and fallback pagination issues
   - **File**: `supabase/functions/ghl-integration/index.ts` lines 297-307
   - **Pagination**: Uses search endpoint with page-based pagination (page: 1, 2, 3...) not cursor-based
-  - **Max Contacts**: 20,000 (200 pages * 100 per page)
+  - **Max Contacts**: 100,000 (1000 pages * 100 per page)
 
 - **Call Pacing Fix**: `voice-broadcast-engine` now properly enforces `calls_per_minute` setting
   - Added `calculatePacingDelay()` function for dynamic delay calculation
