@@ -9,7 +9,7 @@
 > 4. Deployment status
 > 5. Any gotchas or lessons learned
 >
-> This is NON-NEGOTIABLE. Charles (the user) is 65 and shouldn't have to re-explain context. Document everything so future sessions have full history.
+> This is NON-NEGOTIABLE. Charles shouldn't have to re-explain context. Document everything so future sessions have full history.
 
 ---
 
