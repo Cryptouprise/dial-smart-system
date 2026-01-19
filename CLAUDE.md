@@ -1,5 +1,18 @@
 # CLAUDE.md - Dial Smart System
 
+> **GOLDEN RULE - READ THIS FIRST**
+>
+> After completing ANY task, you MUST update this file or AGENT.md with:
+> 1. What was built/fixed/changed
+> 2. Key files modified
+> 3. Database changes made
+> 4. Deployment status
+> 5. Any gotchas or lessons learned
+>
+> This is NON-NEGOTIABLE. Charles (the user) is 65 and shouldn't have to re-explain context. Document everything so future sessions have full history.
+
+---
+
 This file provides persistent context for Claude Code when working with the dial-smart-system codebase.
 
 ## Voice Broadcast Playbook (ACTIVE)
@@ -355,19 +368,6 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 - npm audit: 7 vulnerabilities (mostly dev dependencies)
 - RLS: Enabled on all tables
 - Auth: Supabase Auth with JWT
-
----
-
-## Golden Rule: Always Document Learnings
-
-**IMPORTANT**: After completing ANY task, ALWAYS update this file or AGENT.md with:
-1. What was built/fixed/changed
-2. Key files modified
-3. Database changes made
-4. Deployment status
-5. Any gotchas or lessons learned
-
-This ensures continuous learning and prevents repeating explanations across sessions.
 
 ---
 
