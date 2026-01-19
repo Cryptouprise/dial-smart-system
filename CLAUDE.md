@@ -358,10 +358,50 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 
 ---
 
-**Last Updated**: January 17, 2026
+## Golden Rule: Always Document Learnings
+
+**IMPORTANT**: After completing ANY task, ALWAYS update this file or AGENT.md with:
+1. What was built/fixed/changed
+2. Key files modified
+3. Database changes made
+4. Deployment status
+5. Any gotchas or lessons learned
+
+This ensures continuous learning and prevents repeating explanations across sessions.
+
+---
+
+**Last Updated**: January 18, 2026
 **Audit Confidence**: Very High (comprehensive codebase analysis)
 
 ## Recent Fixes Log
+
+### January 18, 2026
+
+- **Script Analytics Dashboard Integration**: Added `ScriptAnalyticsDashboard` to 5 UI locations:
+  1. Analytics page → Reports tab (`src/pages/Analytics.tsx`)
+  2. TranscriptAnalyzer → Script Insights tab (`src/components/TranscriptAnalyzer.tsx`)
+  3. CallAnalytics component (`src/components/CallAnalytics.tsx`)
+  4. RetellAIManager → Analytics tab (`src/components/RetellAIManager.tsx`)
+  5. AutonomousAgentDashboard → Analytics tab (`src/components/AutonomousAgentDashboard.tsx`)
+
+- **Database Migration Applied**: `20260118_script_analytics_enhancement.sql`
+  - **Tables**: `opener_analytics`, `call_opener_logs`, `voicemail_analytics`, `voicemail_callback_tracking`
+  - **Views**: `top_openers`, `time_wasted_summary`, `voicemail_performance`
+  - **Functions**: `calculate_time_wasted_score`, `extract_opener_from_transcript`, `normalize_opener_text`, `update_opener_analytics`, `update_voicemail_analytics`
+  - **RLS**: Enabled on all new tables
+
+- **Edge Functions Deployed**:
+  - `analyze-call-transcript` (v453) - Now tracks opener effectiveness and time wasted
+  - `call-tracking-webhook` (v459) - Now detects voicemail callbacks
+
+- **New Files Created**:
+  - `src/components/ScriptAnalyticsDashboard.tsx` - Main analytics UI component
+  - `AGENT.md` - AI learning file for script/opener patterns
+  - `LEARNINGS.md` - Campaign history and learnings
+  - `scripts/campaign-analyzer/` - SQL and playbook for campaign analysis
+
+- **Git Commit**: `bd67050` - "feat: Add ScriptAnalyticsDashboard to 5 UI locations"
 
 ### January 17, 2026
 - **GHL Contact Import Fix (Fixed Multiple Times!)**: `ghl-integration` sync_contacts now properly imports ALL contacts
