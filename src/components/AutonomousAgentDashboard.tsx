@@ -7,11 +7,11 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
-import { 
-  Brain, 
-  Zap, 
-  Target, 
-  TrendingUp, 
+import {
+  Brain,
+  Zap,
+  Target,
+  TrendingUp,
   Activity,
   CheckCircle2,
   XCircle,
@@ -24,8 +24,10 @@ import {
   Lightbulb,
   Phone,
   MessageSquare,
-  Calendar
+  Calendar,
+  FileBarChart
 } from 'lucide-react';
+import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
 import { useAutonomousPrioritization } from '@/hooks/useAutonomousPrioritization';
@@ -219,9 +221,13 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="decisions">Decisions</TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-1">
+            <FileBarChart className="h-4 w-4" />
+            <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
           <TabsTrigger value="goals">Goals</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
@@ -405,6 +411,23 @@ const AutonomousAgentDashboard: React.FC = () => {
                   )}
                 </div>
               </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileBarChart className="h-5 w-5" />
+                Script & Performance Analytics
+              </CardTitle>
+              <CardDescription>
+                Analyze opener effectiveness, time wasted patterns, and voicemail callback performance
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScriptAnalyticsDashboard />
             </CardContent>
           </Card>
         </TabsContent>

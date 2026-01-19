@@ -12,9 +12,10 @@ import { useTranscriptAnalysis } from '@/hooks/useTranscriptAnalysis';
 import { useCallHistory, CallRecord } from '@/hooks/useCallHistory';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import TranscriptAnalyzerErrorBoundary from '@/components/TranscriptAnalyzer/ErrorBoundary';
+import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle, 
+import {
+  Brain, Upload, Sparkles, TrendingUp, MessageSquare, AlertTriangle,
   Filter, History, Lightbulb, Play, ChevronDown, ChevronUp, Calendar,
   Bot, Download, FileText, Clock, Mic, ExternalLink, BarChart3, Wand2,
   Plus, Save, CheckCircle2, AlertCircle, Info, RefreshCw, Database
@@ -388,22 +389,31 @@ const TranscriptAnalyzer = () => {
     <TranscriptAnalyzerErrorBoundary>
       <div className="space-y-6">
         <Tabs defaultValue="history" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="h-4 w-4" />
-              Call History
+              <span className="hidden sm:inline">Call History</span>
+              <span className="sm:hidden">Calls</span>
             </TabsTrigger>
             <TabsTrigger value="script-compare" className="flex items-center gap-2">
               <Wand2 className="h-4 w-4" />
-              Script Analysis
+              <span className="hidden sm:inline">Script Analysis</span>
+              <span className="sm:hidden">Script</span>
+            </TabsTrigger>
+            <TabsTrigger value="script-insights" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden sm:inline">Script Insights</span>
+              <span className="sm:hidden">Insights</span>
             </TabsTrigger>
             <TabsTrigger value="insights" className="flex items-center gap-2">
               <Lightbulb className="h-4 w-4" />
-              Insights
+              <span className="hidden sm:inline">Call Insights</span>
+              <span className="sm:hidden">Data</span>
             </TabsTrigger>
             <TabsTrigger value="manual" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
-              Manual
+              <span className="hidden sm:inline">Manual</span>
+              <span className="sm:hidden">Upload</span>
             </TabsTrigger>
           </TabsList>
 
@@ -935,6 +945,11 @@ const TranscriptAnalyzer = () => {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* Script Insights Tab - Aggregate Analytics */}
+          <TabsContent value="script-insights" className="space-y-4">
+            <ScriptAnalyticsDashboard />
           </TabsContent>
 
           {/* Insights Tab */}

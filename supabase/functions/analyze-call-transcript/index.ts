@@ -7,6 +7,108 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// ============================================================================
+// SCRIPT ANALYTICS HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Calculate time wasted score for a call
+ * Returns a score (0-100) and reason for time waste
+ */
+function calculateTimeWastedScore(
+  duration: number,
+  amdResult: string | null,
+  outcome: string | null,
+  autoDisposition: string | null,
+  answeredAt: string | null,
+  createdAt: string | null
+): { score: number; reason: string | null } {
+  let score = 0;
+  let reason: string | null = null;
+
+  // Calculate time to answer
+  let timeToAnswer = 0;
+  if (answeredAt && createdAt) {
+    timeToAnswer = (new Date(answeredAt).getTime() - new Date(createdAt).getTime()) / 1000;
+  }
+
+  // Scenario 1: Hit voicemail after 30+ seconds of ringing (wasted 30s waiting)
+  if (amdResult?.startsWith('machine') && timeToAnswer > 30) {
+    score = 70;
+    reason = 'vm_too_late';
+  }
+  // Scenario 2: Short call with no outcome (< 15s, likely immediate hangup or wrong number)
+  else if (duration < 15 && (!outcome || ['no_answer', 'failed', 'unknown'].includes(outcome))) {
+    score = 40;
+    reason = 'short_no_outcome';
+  }
+  // Scenario 3: Long call with no conversion (> 5 min, no appointment)
+  else if (duration > 300 && !['appointment_booked', 'interested', 'callback', 'Appointment Booked', 'Hot Lead', 'Interested', 'Callback Requested'].includes(autoDisposition || '')) {
+    score = 60;
+    reason = 'long_no_conversion';
+  }
+  // Scenario 4: Voicemail left but message too long (implied by duration > 60s on VM)
+  else if (amdResult?.startsWith('machine') && duration > 60) {
+    score = 50;
+    reason = 'vm_message_too_long';
+  }
+  // Scenario 5: Human answered but hung up quickly (< 20s)
+  else if (amdResult === 'human' && duration < 20) {
+    score = 55;
+    reason = 'quick_hangup';
+  }
+  // Scenario 6: Failed/busy calls (infrastructure waste)
+  else if (outcome && ['failed', 'busy'].includes(outcome)) {
+    score = 30;
+    reason = 'call_failed';
+  }
+
+  return { score, reason };
+}
+
+/**
+ * Extract the opener (first few agent lines) from a transcript
+ */
+function extractOpenerFromTranscript(transcript: string): string | null {
+  if (!transcript || transcript.length < 10) {
+    return null;
+  }
+
+  const lines = transcript.split('\n');
+  let agentLines = '';
+  let count = 0;
+
+  for (const line of lines) {
+    // Look for agent speech patterns
+    const isAgentLine = /^(agent|assistant|ai|bot|rep):/i.test(line) ||
+                        (count === 0 && line.length > 10 && !line.startsWith('Customer:') && !line.startsWith('Prospect:'));
+
+    if (isAgentLine) {
+      agentLines += ' ' + line;
+      count++;
+      if (count >= 3) break;
+    }
+  }
+
+  // If no agent lines found, take first 500 chars
+  if (agentLines.length < 10) {
+    return transcript.substring(0, 500);
+  }
+
+  return agentLines.trim().substring(0, 500);
+}
+
+/**
+ * Normalize opener text for comparison (lowercase, trim, remove extra spaces)
+ */
+function normalizeOpenerText(opener: string): string {
+  if (!opener) return '';
+  return opener.toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s.]/g, '')
+    .trim();
+}
+
 // Map AI disposition names to valid database outcome values
 // DB constraint allows: interested, not_interested, callback, callback_requested, converted, do_not_call, contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
 function mapDispositionToOutcome(disposition: string): string {
@@ -342,6 +444,33 @@ Respond with a JSON object containing:
       throw new Error('Failed to parse AI analysis response');
     }
 
+    // Get existing call data for analytics calculations
+    const { data: existingCall } = await supabaseAdmin
+      .from('call_logs')
+      .select('duration_seconds, amd_result, created_at, answered_at, agent_id, retell_agent_name')
+      .eq('id', callId)
+      .maybeSingle();
+
+    const callDuration = existingCall?.duration_seconds || 0;
+    const amdResult = existingCall?.amd_result || null;
+    const createdAt = existingCall?.created_at || null;
+    const answeredAt = existingCall?.answered_at || null;
+
+    // Calculate time wasted score
+    const timeWasted = calculateTimeWastedScore(
+      callDuration,
+      amdResult,
+      mapDispositionToOutcome(aiAnalysis.disposition),
+      aiAnalysis.disposition,
+      answeredAt,
+      createdAt
+    );
+
+    // Extract opener from transcript
+    const extractedOpener = extractOpenerFromTranscript(transcript);
+
+    console.log(`[Analyze Transcript] Analytics - Time Wasted: ${timeWasted.score} (${timeWasted.reason}), Opener extracted: ${extractedOpener?.length || 0} chars`);
+
     // Update call log with analysis including all new columns
     // Use mapDispositionToOutcome for the outcome column to satisfy DB constraint
     const { error: updateError } = await supabaseAdmin
@@ -353,13 +482,112 @@ Respond with a JSON object containing:
         confidence_score: aiAnalysis.confidence,
         sentiment: aiAnalysis.sentiment || null,
         call_summary: aiAnalysis.key_points?.join('. ') || null,
-        outcome: mapDispositionToOutcome(aiAnalysis.disposition)
+        outcome: mapDispositionToOutcome(aiAnalysis.disposition),
+        // New analytics columns
+        time_wasted_score: timeWasted.score,
+        time_wasted_reason: timeWasted.reason,
+        opener_extracted: extractedOpener
       })
       .eq('id', callId)
       .eq('user_id', userId)
 
     if (updateError) {
       throw updateError
+    }
+
+    // ========================================================================
+    // SCRIPT ANALYTICS: Update opener analytics if opener was extracted
+    // ========================================================================
+    if (extractedOpener && extractedOpener.length > 10) {
+      try {
+        const wasAnswered = amdResult === 'human' || callDuration > 10;
+        const wasEngaged = callDuration > 30 && amdResult === 'human';
+        const wasConverted = ['Appointment Booked', 'Hot Lead', 'Interested'].includes(aiAnalysis.disposition);
+
+        // Call the database function to update opener analytics
+        const { error: openerError } = await supabaseAdmin.rpc('update_opener_analytics', {
+          p_user_id: userId,
+          p_agent_id: existingCall?.agent_id || null,
+          p_agent_name: existingCall?.retell_agent_name || 'Unknown Agent',
+          p_opener_text: extractedOpener,
+          p_was_answered: wasAnswered,
+          p_was_engaged: wasEngaged,
+          p_was_converted: wasConverted,
+          p_call_duration: callDuration,
+          p_call_id: callId
+        });
+
+        if (openerError) {
+          console.error('[Analyze Transcript] Failed to update opener analytics:', openerError);
+        } else {
+          console.log('[Analyze Transcript] ✅ Opener analytics updated');
+        }
+      } catch (openerAnalyticsError) {
+        console.error('[Analyze Transcript] Opener analytics error:', openerAnalyticsError);
+        // Don't fail the main operation
+      }
+    }
+
+    // ========================================================================
+    // SCRIPT ANALYTICS: Update voicemail analytics if this was a voicemail
+    // ========================================================================
+    if (amdResult?.startsWith('machine')) {
+      try {
+        // Check if we have broadcast info
+        const { data: queueItem } = await supabaseAdmin
+          .from('broadcast_queue')
+          .select('broadcast_id, voice_broadcasts(voicemail_audio_url)')
+          .eq('call_id', callId)
+          .maybeSingle();
+
+        if (queueItem?.broadcast_id) {
+          const vmAudioUrl = (queueItem.voice_broadcasts as any)?.voicemail_audio_url || null;
+
+          // Call the database function to update voicemail analytics
+          const { error: vmError } = await supabaseAdmin.rpc('update_voicemail_analytics', {
+            p_user_id: userId,
+            p_broadcast_id: queueItem.broadcast_id,
+            p_voicemail_audio_url: vmAudioUrl,
+            p_voicemail_duration: callDuration,
+            p_is_callback: false,
+            p_callback_within_1h: false,
+            p_callback_within_24h: false,
+            p_resulted_in_appointment: false
+          });
+
+          if (vmError) {
+            console.error('[Analyze Transcript] Failed to update voicemail analytics:', vmError);
+          } else {
+            console.log('[Analyze Transcript] ✅ Voicemail analytics updated');
+          }
+
+          // Create callback tracking record so we can match future callbacks
+          const { data: callLogData } = await supabaseAdmin
+            .from('call_logs')
+            .select('lead_id, to_number')
+            .eq('id', callId)
+            .maybeSingle();
+
+          if (callLogData?.lead_id) {
+            await supabaseAdmin
+              .from('voicemail_callback_tracking')
+              .insert({
+                user_id: userId,
+                voicemail_call_id: callId,
+                voicemail_left_at: new Date().toISOString(),
+                lead_id: callLogData.lead_id,
+                phone_number: callLogData.to_number || '',
+                broadcast_id: queueItem.broadcast_id,
+                status: 'waiting',
+                expired_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() // 48 hours
+              });
+            console.log('[Analyze Transcript] ✅ Voicemail callback tracking created');
+          }
+        }
+      } catch (vmAnalyticsError) {
+        console.error('[Analyze Transcript] Voicemail analytics error:', vmAnalyticsError);
+        // Don't fail the main operation
+      }
     }
 
     // Get the lead associated with this call

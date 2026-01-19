@@ -14,10 +14,11 @@ import { useRetellLLM } from '@/hooks/useRetellLLM';
 import { RetellAISetupWizard } from './RetellAISetupWizard';
 import { AgentEditDialog } from './AgentEditDialog';
 import { RetellCalendarSetup } from './RetellCalendarSetup';
-import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine, Download, Database, History } from 'lucide-react';
+import { Trash2, Edit, RefreshCw, Sparkles, Plus, Webhook, CheckCircle, Calendar, CalendarCheck, CalendarX, Loader2, ArrowDownToLine, Download, Database, History, BarChart3 } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useNumberSync } from '@/hooks/useNumberSync';
 import { AgentImprovementHistory } from './AgentImprovementHistory';
+import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -394,7 +395,7 @@ const RetellAIManager = () => {
           setCalendarStatusLoaded(true);
         }
       }}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="wizard">
             <Sparkles className="h-4 w-4 mr-2" />
             Setup Wizard
@@ -402,6 +403,10 @@ const RetellAIManager = () => {
           <TabsTrigger value="llms">LLMs ({llms.length})</TabsTrigger>
           <TabsTrigger value="agents">Agents ({agents.length})</TabsTrigger>
           <TabsTrigger value="numbers">Phone Numbers ({retellNumbers.length})</TabsTrigger>
+          <TabsTrigger value="analytics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="history">
             <History className="h-4 w-4 mr-2" />
             History
@@ -871,6 +876,21 @@ const RetellAIManager = () => {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Script Analytics Tab */}
+        <TabsContent value="analytics">
+          <Card>
+            <CardHeader>
+              <CardTitle>Script & Opener Analytics</CardTitle>
+              <CardDescription>
+                Track opener effectiveness, time wasted patterns, and voicemail performance across all agents
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScriptAnalyticsDashboard />
             </CardContent>
           </Card>
         </TabsContent>

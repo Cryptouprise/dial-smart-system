@@ -2,6 +2,29 @@
 
 This file provides persistent context for Claude Code when working with the dial-smart-system codebase.
 
+## Voice Broadcast Playbook (ACTIVE)
+
+**Trigger Phrases → Automatic Actions:**
+
+| User Says | I Do |
+|-----------|------|
+| "Let's get started on our test campaign" | Run pre-launch checklist (numbers, deploy, verify) |
+| "Buy X numbers" | Purchase via Twilio MCP |
+| "I'm launching" | Final checks, confirm go |
+| "Status" / "How's it going?" | Live campaign stats |
+| "Analyze [campaign]" | Full analysis + update LEARNINGS.md |
+| "What's next?" | Scaling recommendations |
+
+**Key Files:**
+- `LEARNINGS.md` - Campaign history & learnings (UPDATE AFTER EACH CAMPAIGN)
+- `scripts/campaign-analyzer/PLAYBOOK.md` - Full playbook details
+- `scripts/campaign-analyzer/analyze-campaign.sql` - Analysis queries
+
+**Current Test Campaign:** Test 1.18 (January 18, 2026)
+- Target: 5,000 calls
+- Settings: 50 calls/min, max_attempts=3, retry_delay=60min
+- Need: ~50 phone numbers minimum
+
 ## Project Overview
 
 **Dial Smart System** is an enterprise-grade AI-powered predictive dialer platform comparable to VICIdial, Five9, and Caller.io.
@@ -358,3 +381,29 @@ Check `git log --oneline -20` for recent changes. Common patterns:
   - Previous: 100ms fixed delay (600 calls/min regardless of setting)
   - Now: Delay calculated as `60000 / calls_per_minute` with 100ms minimum
   - Logs show actual pacing: "pacing: 50/min with 1200ms delay"
+
+- **Retry Logic for no_answer/busy/failed Calls**: `call-tracking-webhook` now automatically schedules retries
+  - **Issue**: Calls ending as no_answer, busy, or failed were marked final with no retry
+  - **Analysis from Chase 1.15 campaign**:
+    - 28 no_answer calls (could have been retried)
+    - 8 busy calls (could have been retried)
+    - 12 failed calls (could have been retried)
+    - Total: 48 calls that could benefit from retry = 23% of campaign
+  - **Fix**: Added retry logic at lines 373-400 in `call-tracking-webhook/index.ts`
+  - **How it works**:
+    1. When call ends as no_answer/busy/failed, check if `attempts < max_attempts`
+    2. If retry eligible: set status='pending', increment attempts, schedule retry
+    3. Retry scheduled for `retry_delay_minutes` later (default: 60 minutes)
+    4. Only counts as final outcome when max_attempts reached
+  - **Configuration**: Set `max_attempts` > 1 on voice_broadcasts to enable retries
+  - **Example**: max_attempts=3, retry_delay_minutes=60 = up to 3 calls, 1 hour apart
+  - **File**: `supabase/functions/call-tracking-webhook/index.ts` lines 373-435
+  - **NEEDS DEPLOYMENT**: Run `supabase functions deploy call-tracking-webhook`
+
+- **Campaign Analysis Summary (Chase 1.15)**:
+  - 203 total leads, 176 calls made
+  - 29 answered (16.5% answer rate)
+  - 126 voicemail (81.3% - AMD working correctly)
+  - 28 no_answer, 8 busy, 12 failed (48 retry candidates)
+  - Phone rotation: 13 numbers configured, all used (daily_calls distributed)
+  - DTMF: Working (1x "1", 1x "2" captured)

@@ -368,7 +368,38 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     } else if (callStatus === 'failed' || callStatus === 'canceled') {
       finalStatus = 'failed';
       updateBroadcastStats = true;
-    } else if (callStatus === 'in-progress') {
+    }
+
+    // RETRY LOGIC: Check if call should be retried for no_answer, busy, or failed
+    const retryEligibleStatuses = ['no_answer', 'busy', 'failed'];
+    if (retryEligibleStatuses.includes(finalStatus)) {
+      const currentAttempts = (queueItem.attempts || 0) + 1; // This call counts as an attempt
+      const maxAttempts = queueItem.max_attempts || queueItem.voice_broadcasts?.max_attempts || 1;
+      const retryDelayMinutes = queueItem.voice_broadcasts?.retry_delay_minutes || 60;
+
+      if (currentAttempts < maxAttempts) {
+        // Schedule retry - set status back to pending with scheduled_at in the future
+        const scheduledAt = new Date();
+        scheduledAt.setMinutes(scheduledAt.getMinutes() + retryDelayMinutes);
+
+        console.log(`[Twilio Webhook] Retry eligible: attempt ${currentAttempts}/${maxAttempts}, scheduling retry for ${scheduledAt.toISOString()}`);
+
+        // Override status to pending for retry
+        finalStatus = 'pending';
+        updateBroadcastStats = false; // Don't count as final outcome yet
+        shouldUpdateLead = false; // Don't update lead until final attempt
+
+        // These will be added to queueUpdate below
+        (queueItem as any)._retryScheduledAt = scheduledAt.toISOString();
+        (queueItem as any)._retryAttempts = currentAttempts;
+      } else {
+        console.log(`[Twilio Webhook] Max attempts reached (${currentAttempts}/${maxAttempts}), marking as ${finalStatus}`);
+        // Update attempts count on final status
+        (queueItem as any)._retryAttempts = currentAttempts;
+      }
+    }
+
+    if (callStatus === 'in-progress') {
       finalStatus = 'in_progress';
     } else if (callStatus === 'ringing') {
       finalStatus = 'calling';
@@ -392,6 +423,15 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     if (callPrice !== null && callPrice !== 0) {
       queueUpdate.call_cost = Math.abs(callPrice); // Twilio sends negative values
       console.log(`[Twilio Webhook] Captured call cost: $${Math.abs(callPrice).toFixed(4)}`);
+    }
+
+    // Add retry scheduling fields if set
+    if ((queueItem as any)._retryScheduledAt) {
+      queueUpdate.scheduled_at = (queueItem as any)._retryScheduledAt;
+      queueUpdate.call_sid = null; // Clear call_sid for new call
+    }
+    if ((queueItem as any)._retryAttempts !== undefined) {
+      queueUpdate.attempts = (queueItem as any)._retryAttempts;
     }
 
     const { error: updateError } = await supabase
@@ -490,6 +530,105 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
     }
   } else {
     console.log(`[Twilio Webhook] No matching queue item found for CallSid=${callSid}, To=${to}`);
+  }
+
+  // ========================================================================
+  // VOICEMAIL CALLBACK DETECTION
+  // Check if this is an inbound call that could be a callback from a voicemail
+  // ========================================================================
+  const callDirection = payload.Direction;
+  const isInbound = callDirection === 'inbound' || (!queueItem && from);
+
+  if (isInbound && from && callStatus === 'completed' && duration > 0) {
+    console.log(`[Twilio Webhook] Checking for voicemail callback from ${from}`);
+
+    try {
+      // Normalize the From number for matching
+      let cleanFrom = from.replace(/[^\d+]/g, '');
+      if (!cleanFrom.startsWith('+')) {
+        cleanFrom = cleanFrom.length === 10 ? `+1${cleanFrom}` : `+${cleanFrom}`;
+      }
+
+      const phoneVariants = [
+        cleanFrom,
+        cleanFrom.replace('+', ''),
+        cleanFrom.replace(/^\+1/, ''),
+      ];
+
+      // Look for waiting voicemail callback records for this phone number
+      const { data: callbackTracking, error: trackingError } = await supabase
+        .from('voicemail_callback_tracking')
+        .select('*, voicemail_analytics(*)')
+        .eq('status', 'waiting')
+        .or(phoneVariants.map(p => `phone_number.eq.${p}`).join(','))
+        .order('voicemail_left_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (trackingError) {
+        console.error('[Twilio Webhook] Error finding callback tracking:', trackingError);
+      } else if (callbackTracking) {
+        // Found a matching voicemail! This is a callback
+        const vmLeftAt = new Date(callbackTracking.voicemail_left_at);
+        const callbackAt = new Date();
+        const minutesSinceVM = Math.floor((callbackAt.getTime() - vmLeftAt.getTime()) / 60000);
+        const withinOneHour = minutesSinceVM <= 60;
+        const within24Hours = minutesSinceVM <= 1440;
+
+        console.log(`[Twilio Webhook] 🎉 CALLBACK DETECTED! VM left ${minutesSinceVM} minutes ago`);
+
+        // Update the callback tracking record
+        const { error: updateTrackingError } = await supabase
+          .from('voicemail_callback_tracking')
+          .update({
+            status: 'callback_received',
+            callback_received_at: callbackAt.toISOString(),
+            time_to_callback_minutes: minutesSinceVM,
+            callback_outcome: 'received' // Will be updated by analyze-call-transcript
+          })
+          .eq('id', callbackTracking.id);
+
+        if (updateTrackingError) {
+          console.error('[Twilio Webhook] Error updating callback tracking:', updateTrackingError);
+        }
+
+        // Update voicemail analytics with the callback
+        if (callbackTracking.voicemail_analytics_id) {
+          const { error: vmAnalyticsError } = await supabase.rpc('update_voicemail_analytics', {
+            p_user_id: callbackTracking.user_id,
+            p_broadcast_id: callbackTracking.broadcast_id,
+            p_voicemail_audio_url: callbackTracking.voicemail_analytics?.voicemail_audio_url || null,
+            p_voicemail_duration: callbackTracking.voicemail_analytics?.voicemail_duration_seconds || 0,
+            p_is_callback: true,
+            p_callback_within_1h: withinOneHour,
+            p_callback_within_24h: within24Hours,
+            p_resulted_in_appointment: false // Will be updated if appointment is booked
+          });
+
+          if (vmAnalyticsError) {
+            console.error('[Twilio Webhook] Error updating voicemail analytics:', vmAnalyticsError);
+          } else {
+            console.log(`[Twilio Webhook] ✅ Voicemail analytics updated: callback ${withinOneHour ? 'within 1h' : within24Hours ? 'within 24h' : 'after 24h'}`);
+          }
+        }
+
+        // Update the lead to mark as callback received
+        if (callbackTracking.lead_id) {
+          await supabase
+            .from('leads')
+            .update({
+              status: 'callback_received',
+              last_contacted_at: callbackAt.toISOString(),
+              notes: `Callback received ${minutesSinceVM} minutes after voicemail`
+            })
+            .eq('id', callbackTracking.lead_id);
+          console.log(`[Twilio Webhook] Lead ${callbackTracking.lead_id} marked as callback_received`);
+        }
+      }
+    } catch (callbackError) {
+      console.error('[Twilio Webhook] Callback detection error:', callbackError);
+      // Don't fail the main webhook response
+    }
   }
 
   // Return TwiML empty response for Twilio

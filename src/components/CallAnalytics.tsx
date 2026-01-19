@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Phone, AlertTriangle, RotateCw } from 'lucide-react';
 import { useDemoData } from '@/hooks/useDemoData';
+import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 
 interface CallAnalyticsProps {
   numbers: any[];
@@ -193,6 +194,9 @@ const CallAnalytics = ({ numbers }: CallAnalyticsProps) => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Script Analytics Section */}
+      <ScriptAnalyticsDashboard />
     </div>
   );
 };
