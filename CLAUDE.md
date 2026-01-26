@@ -371,10 +371,277 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 
 ---
 
-**Last Updated**: January 18, 2026
+## White-Label Credit System (v2.0 - January 24, 2026)
+
+**Enterprise-grade** prepaid credit system for white-label reselling of Retell AI voice services. Enables agencies to resell AI voice minutes at markup with full auditability and race-condition prevention.
+
+### Business Model
+
+| Component | Description |
+|-----------|-------------|
+| **Your Cost** | Retell AI @ $0.05-0.07/min (enterprise) |
+| **Customer Price** | $0.12-0.18/min (your markup) |
+| **Margin** | 70-200% per minute |
+| **Revenue Model** | Prepaid credits, auto-recharge ready |
+
+### Enterprise Features (v2.0)
+
+1. **Credit Reservation System** - Reserves credits BEFORE call starts, prevents overspending
+2. **Idempotent Operations** - All operations use idempotency keys, safe to retry
+3. **Race Condition Prevention** - PostgreSQL `FOR UPDATE` locking on all balance changes
+4. **Actual Cost Sync** - Fetches real cost from Retell API after each call
+5. **Enterprise Accounts** - Configurable negative balance limits for trusted clients
+6. **Full Audit Trail** - Every credit operation logged with before/after balances
+
+### Credit Flow (How It Works)
+
+```
+1. User initiates call
+   │
+   ▼
+2. outbound-calling checks billing_enabled
+   │ NO → Proceed normally (backward compatible)
+   │ YES ↓
+   ▼
+3. check_credit_balance() - Is there enough?
+   │ NO → Return error, block call
+   │ YES ↓
+   ▼
+4. reserve_credits(15c) - Lock estimated amount
+   │
+   ▼
+5. Call proceeds via Retell API
+   │
+   ▼
+6. Call ends → retell-call-webhook fires
+   │
+   ▼
+7. Fetch actual cost from Retell GET /get-call
+   │
+   ▼
+8. finalize_call_cost() - Release reservation, deduct actual
+   │
+   ▼
+9. Check low balance alerts / auto-recharge triggers
+```
+
+### Files Created/Modified
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `migrations/20260124_white_label_credits.sql` | 583 | Base tables, functions, RLS |
+| `migrations/20260124_white_label_credits_v2_enhanced.sql` | 789 | Reservation system, idempotency |
+| `functions/credit-management/index.ts` | 575 | Credit API (10 actions, v2.0) |
+| `functions/_shared/credit-helpers.ts` | 592 | Helper functions |
+| `functions/outbound-calling/index.ts` | +80 | Pre-call credit check + reservation |
+| `functions/retell-call-webhook/index.ts` | +120 | Post-call finalization |
+| `WHITE_LABEL_SYSTEM.md` | 630 | Master documentation |
+
+### Database Functions (All Idempotent)
+
+| Function | Purpose | Locking |
+|----------|---------|---------|
+| `check_credit_balance(org, mins)` | Pre-call check | No |
+| `reserve_credits(org, cents, call_id, retell_id)` | Reserve before call | FOR UPDATE |
+| `finalize_call_cost(org, call_id, retell_id, mins, cost)` | Deduct after call | FOR UPDATE |
+| `add_credits(org, cents, type, desc, stripe_id)` | Add credits | FOR UPDATE |
+| `check_auto_recharge(org)` | Check recharge needed | No |
+
+### Backward Compatibility
+
+**CRITICAL**: All features gated by `organizations.billing_enabled`:
+- `false` → All calls proceed normally (no checks, no deductions)
+- `true` → Full credit system activates
+
+### Quick Enable for Organization
+
+```sql
+-- 1. Enable billing
+UPDATE organizations SET billing_enabled = true WHERE id = '<org_id>';
+
+-- 2. Create credit record
+INSERT INTO organization_credits (
+  organization_id, balance_cents, cost_per_minute_cents, retell_cost_per_minute_cents
+) VALUES ('<org_id>', 5000, 15, 7);  -- $50 at $0.15/min, cost $0.07/min
+
+-- 3. Ensure call_logs has organization_id column
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id);
+```
+
+### Implementation Status
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1. Credit System Core | ✅ Complete | Tables, functions, RLS, views |
+| 2. Reservation System | ✅ Complete | Pre-call lock, post-call release |
+| 3. Idempotency | ✅ Complete | All operations retry-safe |
+| 4. Cost Tracking | ✅ Complete | Fetches from Retell API |
+| 5. outbound-calling Integration | ✅ Complete | Check + reserve before call |
+| 6. Webhook Integration | ✅ Complete | Finalize after call |
+| 7. Client Portal | ⏳ Pending | Sub-account dashboard |
+| 8. Stripe Integration | ⏳ Pending | Auto-recharge payments |
+
+### Deployment Commands
+
+```bash
+# Deploy all credit-related functions
+cd C:/Users/charl/dial-smart-system
+supabase functions deploy credit-management
+supabase functions deploy outbound-calling
+supabase functions deploy retell-call-webhook
+
+# Health check
+curl -X POST https://emonjusymdripmkvtttc.supabase.co/functions/v1/credit-management \
+  -H "Authorization: Bearer <token>" \
+  -d '{"action": "health_check"}'
+```
+
+### Full Documentation
+
+See `WHITE_LABEL_SYSTEM.md` for:
+- Complete file audit with line counts
+- Deployment checklist
+- Testing procedures
+- Troubleshooting guide
+- Known limitations and future work
+
+---
+
+**Last Updated**: January 24, 2026
 **Audit Confidence**: Very High (comprehensive codebase analysis)
+**Credit System Version**: 2.0.0
 
 ## Recent Fixes Log
+
+### January 26, 2026 - UI Consolidation & New Features (LOCALHOST ONLY)
+
+> **DEPLOYMENT STATUS: LOCAL ONLY - NOT DEPLOYED TO PRODUCTION**
+> All changes below are in localhost only. Run `npm run dev` to test at http://localhost:8080
+> User will decide whether to merge/deploy these changes.
+
+**AI Dashboard Consolidation:**
+Merged AI Engine, AI Manager, and Agent Activity into the Autonomous Agent dashboard as sub-tabs.
+
+| Original Tab | New Location | Status |
+|--------------|--------------|--------|
+| AI Engine | Autonomous Agent → AI Engine tab | ✅ Merged |
+| AI Manager (Pipeline) | Autonomous Agent → Pipeline tab | ✅ Merged |
+| Agent Activity | Autonomous Agent → Activity tab | ✅ Merged |
+| Agent Builder | Standalone (unchanged) | ✅ Not touched |
+| Retell AI | Standalone (unchanged) | ✅ Not touched |
+| AI Workflows | Standalone (unchanged) | ✅ Not touched |
+
+**Files Modified:**
+- `src/components/AutonomousAgentDashboard.tsx` - Added lazy imports for AIDecisionEngine, AIPipelineManager, AgentActivityDashboard; added 3 new tabs; added phone number fetching for AI Engine
+- `src/components/DashboardSidebar.tsx` - Removed AI Engine, AI Manager, Agent Activity from sidebar (now in Autonomous Agent)
+- `src/components/AIBrainChat.tsx` - DELETED (duplicate of AIAssistantChat)
+- `src/components/AIPipelineManager.tsx` - Added pipeline dropdown selector to choose which pipeline to analyze
+
+**New Features:**
+1. **Pipeline Dropdown in AI Pipeline Manager** - Users can now select which pipeline to analyze instead of analyzing all leads
+2. **Call History Table** - Enhanced with disposition filters, agent filters, Retell custom attributes
+3. **Client Portal** - White-label customer self-service dashboard (credits, usage, Stripe checkout)
+4. **Stripe Webhook Handler** - `supabase/functions/stripe-webhook/index.ts` for payment processing
+
+**Chat Component Merge:**
+- Deleted `AIBrainChat.tsx` (unused duplicate)
+- `AIAssistantChat.tsx` is the single chat component with voice, hands-free mode, tool status
+
+**URLs to Test:**
+- Autonomous Agent (consolidated): http://localhost:8080/?tab=autonomous-agent
+- Call History: http://localhost:8080/?tab=call-history
+- Client Portal: http://localhost:8080/?tab=client-portal
+- Credits Dashboard: http://localhost:8080/?tab=credits
+
+**Pending Deployment:**
+These edge functions were created/modified but NOT deployed:
+- `stripe-webhook` - New function for Stripe payment webhooks
+- `credit-management` - Updated with checkout session and settings actions
+
+**Known Issues:**
+- Client Portal may show blank if edge functions not deployed (falls back to demo data)
+- Call History needs Retell API key configured for agent list
+
+---
+
+### January 24, 2026 - White-Label Credit System v2.0 (MAJOR)
+
+**Implemented enterprise-grade prepaid credit system for white-label Retell AI reselling:**
+
+**Database Migrations Created:**
+- `20260124_white_label_credits.sql` (583 lines) - Base tables, functions, RLS
+- `20260124_white_label_credits_v2_enhanced.sql` (789 lines) - Enterprise enhancements
+
+**New Tables:**
+- `organization_credits` - Balance, rates, thresholds, auto-recharge settings
+- `credit_transactions` - Full audit log with idempotency keys
+- `usage_summaries` - Aggregated reporting by period
+
+**New PostgreSQL Functions:**
+- `check_credit_balance()` - Pre-call balance verification
+- `reserve_credits()` - Lock credits before call (FOR UPDATE)
+- `finalize_call_cost()` - Release reservation, deduct actual (FOR UPDATE)
+- `add_credits()` - Deposits with idempotency
+- `check_auto_recharge()` - Auto-recharge detection
+
+**Edge Function Updates:**
+- `credit-management/index.ts` (575 lines) - 10 API actions, v2.0
+- `_shared/credit-helpers.ts` (592 lines) - Reservation/finalization helpers
+- `outbound-calling/index.ts` - Added credit check (line 252) + reservation (line 298)
+- `retell-call-webhook/index.ts` - Added finalization (line 1385) + Retell cost fetch
+
+**Key Features:**
+- Credit reservation prevents overspending during concurrent calls
+- Idempotency keys prevent duplicate transactions
+- FOR UPDATE locking prevents race conditions
+- Actual Retell cost fetched via GET /get-call API
+- Low balance alerts (24h cooldown)
+- Auto-recharge trigger detection (Stripe integration ready)
+- Enterprise accounts can go negative (configurable limit)
+
+**Backward Compatible:**
+- All features gated by `organizations.billing_enabled`
+- When false: calls proceed normally, no credit checks
+- When true: full credit system activates
+
+**Documentation:**
+- `WHITE_LABEL_SYSTEM.md` - Complete master documentation (630 lines)
+- Includes deployment checklist, testing procedures, troubleshooting
+
+---
+
+### January 24, 2026 - Voice AI Campaign Pre-Launch Verification
+
+**Verified for Retell AI Voice Campaign launch:**
+
+- **12 Retell Phone Numbers**: All active, daily_calls=0 (ready)
+  - `rotation_enabled=false` is CORRECT for Retell-native (Retell handles internally)
+
+- **Retell Agents**:
+  - Active: `agent_f65b8bcd726f0b045eb1615d8b` (aTest Campaign - Call 3 Times)
+  - Campaign settings: 5 calls/min, max_attempts=3, retry_delay=5min
+
+- **Edge Functions** (all deployed and active):
+  - `outbound-calling` v466
+  - `retell-call-webhook` v326 (verify_jwt=false for webhooks)
+  - `call-tracking-webhook` v463
+  - `retell-agent-management` v468
+
+- **Calendar Integration**:
+  - `calendar_preference: "both"` - pulls availability from BOTH Google AND GHL
+  - Merges busy times from: Google Calendar + GHL Calendar + Local DB appointments
+  - GHL Calendar: `TkQdLhTuaDjmUvAYD2TH` (Mathew Hickey's Personal Calendar)
+  - Logic: `calendar-integration/index.ts` lines 908-1024
+
+- **GHL Sync**: Enabled with full field mappings, tag rules, pipeline stage mappings
+
+- **Leads**: 1,110 available (1,020 new + 90 contacted)
+
+**Manual verification needed in Retell Dashboard:**
+1. Webhook URL: `https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook`
+2. RETELL_AI_API_KEY set in Supabase secrets
+
+---
 
 ### January 18, 2026
 

@@ -184,6 +184,197 @@ This file is automatically updated by the Dial Smart System as it analyzes calls
 
 ## Development Log
 
+### January 24, 2026 - Voice AI Campaign Pre-Launch Verification
+
+**Campaign Type:** Retell AI Voice Campaign
+**Twilio SIP Trunk:** Reserved for Voice Broadcasts (separate)
+
+#### Retell Phone Numbers (12 Total) ✅
+
+| Number | Status | Daily Calls | Rotation |
+|--------|--------|-------------|----------|
+| +12013304540 | active | 0 | Retell-native |
+| +14752343837 | active | 0 | Retell-native |
+| +14752344348 | active | 0 | Retell-native |
+| +14752344589 | active | 0 | Retell-native |
+| +14752429282 | active | 0 | Retell-native |
+| +14752429450 | active | 0 | Retell-native |
+| +14752691576 | active | 0 | Retell-native |
+| +14752702920 | active | 0 | Retell-native |
+| +14753288598 | active | 0 | Retell-native |
+| +14755587988 | active | 0 | Retell-native |
+| +19704658473 | active | 0 | Retell-native |
+| +19704995507 | active | 0 | Retell-native |
+
+**Note:** `rotation_enabled=false` is CORRECT for Retell-native numbers (Retell handles rotation internally)
+
+#### Retell Agents Configured
+
+| Agent ID | Campaign | Status |
+|----------|----------|--------|
+| `agent_f65b8bcd726f0b045eb1615d8b` | aTest Campaign - Call 3 Times | **ACTIVE** |
+| `agent_0756c35b6a913892ac052812fd` | Sms, test, 1st go | paused |
+| `agent_e242e664f491a6281bde53659a` | Chase mainly looking | paused |
+
+#### Active Campaign Settings
+
+- **Campaign:** aTest Campaign - Call 3 Times
+- **Agent:** `agent_f65b8bcd726f0b045eb1615d8b`
+- **Calls/min:** 5
+- **Max Attempts:** 3 ✅
+- **Retry Delay:** 5 minutes
+
+#### Edge Functions Status ✅
+
+| Function | Version | Status | Purpose |
+|----------|---------|--------|---------|
+| outbound-calling | v466 | ACTIVE | Creates Retell calls |
+| retell-call-webhook | v326 | ACTIVE | Handles Retell callbacks (verify_jwt=false) |
+| call-tracking-webhook | v463 | ACTIVE | Tracks call status |
+| retell-agent-management | v468 | ACTIVE | Manages Retell agents |
+
+#### Calendar Availability System ✅
+
+- **calendar_preference:** `"both"` (syncs Google + GHL)
+- **GHL Calendar:** `TkQdLhTuaDjmUvAYD2TH` (Mathew Hickey's Personal Calendar)
+- **Availability Logic:** Merges busy times from:
+  1. Google Calendar events
+  2. GHL Calendar events
+  3. Local database appointments
+- **File:** `calendar-integration/index.ts` lines 908-1024
+
+#### GHL Sync Settings ✅
+
+| Setting | Value |
+|---------|-------|
+| sync_enabled | true |
+| default_pipeline_id | KMi6o1nPVUv71iZihFBG |
+| auto_create_opportunities | false |
+| calendar_preference | both |
+| Field mappings | Configured (outcome, notes, duration, etc.) |
+| Tag rules | Configured (interested, not_interested, callback, etc.) |
+| Pipeline stage mappings | Configured |
+
+#### Leads Available
+
+- **New leads:** 1,020
+- **Contacted:** 90
+- **Total:** 1,110
+
+#### Pre-Launch Checklist Summary
+
+| Item | Status |
+|------|--------|
+| Retell numbers ready | ✅ 12 active |
+| Daily calls reset | ✅ All at 0 |
+| Retell agent configured | ✅ agent_f65b8bcd726f0b045eb1615d8b |
+| Edge functions deployed | ✅ All active |
+| Retry logic enabled | ✅ max_attempts=3 |
+| Calendar sync | ✅ Both Google + GHL |
+| GHL integration | ✅ Enabled with mappings |
+| Leads available | ✅ 1,110 |
+
+#### Manual Verification Needed (Retell Dashboard)
+
+1. **Webhook URL** on agent should be: `https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook`
+2. **RETELL_AI_API_KEY** is set in Supabase secrets
+3. **Agent prompt/voice** configured as desired
+
+---
+
+### January 24, 2026 - White-Label Credit System
+
+**Summary:** Implemented the core white-label system to enable reselling Retell AI voice services with prepaid credits and margin tracking.
+
+**Features Built:**
+
+1. **Credit Balance System** ✅
+   - Prepaid credit tracking per organization
+   - Configurable markup rate (`cost_per_minute_cents` vs `retell_cost_per_minute_cents`)
+   - Low balance and cutoff thresholds
+   - Auto-recharge configuration (ready for Stripe integration)
+   - Database table: `organization_credits`
+
+2. **Transaction Audit Log** ✅
+   - Full history of deposits, deductions, refunds, adjustments
+   - Tracks balance before/after for each transaction
+   - Links to call_logs for deductions
+   - Links to Stripe payment IDs for deposits
+   - Database table: `credit_transactions`
+
+3. **Usage Summaries** ✅
+   - Aggregated usage by period (daily/weekly/monthly)
+   - Tracks: total_calls, total_minutes, cost, margin
+   - Breakdown by outcome (completed, voicemail, no_answer, failed)
+   - Auto-updated via database trigger
+   - Database table: `usage_summaries`
+
+4. **Pre-Call Balance Check** ✅
+   - Database function: `check_credit_balance(org_id, minutes_needed)`
+   - Returns: has_balance, billing_enabled, current_balance, required_amount
+   - Backward compatible: Returns true if billing not enabled
+   - Shared helper: `checkCreditBalance()` in `_shared/credit-helpers.ts`
+
+5. **Post-Call Credit Deduction** ✅
+   - Database function: `deduct_call_credits(org_id, call_log_id, minutes, retell_cost)`
+   - Atomic balance update with transaction logging
+   - Calculates margin (billed - actual cost)
+   - Shared helper: `deductCallCredits()` in `_shared/credit-helpers.ts`
+
+6. **Credit Management Edge Function** ✅
+   - Actions: get_balance, check_balance, add_credits, deduct_credits, get_transactions, get_usage, health_check
+   - Full CORS support
+   - Auth via Bearer token (user or service role)
+   - File: `supabase/functions/credit-management/index.ts`
+
+**Database Changes:**
+
+New Tables:
+- `organization_credits` - Balance and rate config per org
+- `credit_transactions` - Audit log of all credit operations
+- `usage_summaries` - Aggregated usage metrics
+
+New Columns on `call_logs`:
+- `retell_cost_cents` - Actual Retell API cost
+- `billed_cost_cents` - Amount charged to customer
+- `cost_breakdown` - Detailed cost JSON
+- `token_usage` - LLM token usage
+- `credit_deducted` - Whether credit was deducted
+
+New Columns on `organizations`:
+- `billing_enabled` - Feature flag for white-label
+- `stripe_customer_id` - For payment integration
+- `billing_email` - Billing contact
+
+New Database Functions:
+- `check_credit_balance()` - Pre-call check
+- `deduct_call_credits()` - Post-call deduction
+- `add_credits()` - Add credits with transaction log
+
+New View:
+- `organization_credit_status` - Convenient balance status view
+
+**Files Created:**
+- `supabase/migrations/20260124_white_label_credits.sql` (650+ lines)
+- `supabase/functions/credit-management/index.ts` (~420 lines)
+- `supabase/functions/_shared/credit-helpers.ts` (~210 lines)
+- `WHITE_LABEL_SYSTEM.md` - Master documentation
+
+**Backward Compatibility:**
+All features gated by `organizations.billing_enabled`:
+- `false` (default): No credit checks, calls proceed normally
+- `true`: Credit checks and deductions activate
+
+**Still Needed:**
+- [ ] Integrate credit check into `outbound-calling` edge function
+- [ ] Integrate credit deduction into `retell-call-webhook` edge function
+- [ ] Implement Retell list-calls API sync for actual cost data
+- [ ] Build client sub-account portal UI
+- [ ] Add Stripe payment integration
+- [ ] Build visual agent flow builder
+
+---
+
 ### January 18, 2026 - Script Analytics Enhancement
 
 **Features Built:**

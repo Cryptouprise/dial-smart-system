@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Brain,
   Zap,
@@ -25,55 +26,121 @@ import {
   Phone,
   MessageSquare,
   Calendar,
-  FileBarChart
+  FileBarChart,
+  Bot,
+  Workflow,
+  Users
 } from 'lucide-react';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
 import { useAutonomousPrioritization } from '@/hooks/useAutonomousPrioritization';
 import { useAutonomousCampaignOptimizer } from '@/hooks/useAutonomousCampaignOptimizer';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 
+// Phone number type for AI Engine
+interface PhoneNumber {
+  id: string;
+  number: string;
+  status: string;
+  daily_calls: number;
+  area_code: string;
+  is_spam: boolean;
+  spam_score: number;
+  last_used: string | null;
+}
+
+// Lazy load the merged components
+const AIDecisionEngine = lazy(() => import('@/components/AIDecisionEngine'));
+const AIPipelineManager = lazy(() => import('@/components/AIPipelineManager'));
+const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDashboard'));
+
+// Loading fallback for lazy components
+const TabLoader = () => (
+  <div className="space-y-4 p-4">
+    <Skeleton className="h-8 w-1/3" />
+    <Skeleton className="h-4 w-1/2" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+      <Skeleton className="h-32" />
+      <Skeleton className="h-32" />
+    </div>
+  </div>
+);
+
 const AutonomousAgentDashboard: React.FC = () => {
-  const { 
-    settings, 
-    updateSettings, 
-    decisions, 
+  const {
+    settings,
+    updateSettings,
+    decisions,
     isExecuting,
-    loadDecisionHistory 
+    loadDecisionHistory
   } = useAutonomousAgent();
-  
-  const { 
-    currentGoal, 
-    progress, 
-    updateGoalTargets, 
-    getAdaptiveRecommendation 
+
+  const {
+    currentGoal,
+    progress,
+    updateGoalTargets,
+    getAdaptiveRecommendation
   } = useAutonomousGoals();
-  
-  const { 
-    priorityScores, 
-    isCalculating, 
-    runPrioritization, 
+
+  const {
+    priorityScores,
+    isCalculating,
+    runPrioritization,
     startPrioritizationLoop,
     settings: prioritizationSettings,
     updateSettings: updatePrioritizationSettings
   } = useAutonomousPrioritization();
-  
-  const { 
-    metrics, 
-    recentActions, 
-    startOptimizer, 
+
+  const {
+    metrics,
+    recentActions,
+    startOptimizer,
     forceOptimize,
     settings: optimizerSettings,
     updateSettings: updateOptimizerSettings
   } = useAutonomousCampaignOptimizer();
 
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
+  const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   const recommendation = getAdaptiveRecommendation();
+
+  // Load phone numbers for AI Engine tab
+  const loadPhoneNumbers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPhoneNumbers(data || []);
+    } catch (error) {
+      console.error('Error loading phone numbers:', error);
+    }
+  }, []);
+
+  const refreshPhoneNumbers = useCallback(async () => {
+    await loadPhoneNumbers();
+    toast({
+      title: 'Numbers Refreshed',
+      description: 'Phone numbers have been refreshed.',
+    });
+  }, [loadPhoneNumbers, toast]);
 
   useEffect(() => {
     loadDecisionHistory(100);
   }, [loadDecisionHistory]);
+
+  // Load phone numbers when AI Engine tab is selected
+  useEffect(() => {
+    if (activeTab === 'ai-engine' && phoneNumbers.length === 0) {
+      loadPhoneNumbers();
+    }
+  }, [activeTab, phoneNumbers.length, loadPhoneNumbers]);
 
   const renderGoalProgress = (label: string, data: GoalProgress['calls'] | undefined, icon: React.ReactNode) => {
     if (!data) return null;
@@ -221,11 +288,23 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="decisions">Decisions</TabsTrigger>
+          <TabsTrigger value="ai-engine" className="flex items-center gap-1">
+            <Lightbulb className="h-3 w-3" />
+            <span className="hidden sm:inline">AI Engine</span>
+          </TabsTrigger>
+          <TabsTrigger value="pipeline" className="flex items-center gap-1">
+            <Workflow className="h-3 w-3" />
+            <span className="hidden sm:inline">Pipeline</span>
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="flex items-center gap-1">
+            <Bot className="h-3 w-3" />
+            <span className="hidden sm:inline">Activity</span>
+          </TabsTrigger>
           <TabsTrigger value="analytics" className="flex items-center gap-1">
-            <FileBarChart className="h-4 w-4" />
+            <FileBarChart className="h-3 w-3" />
             <span className="hidden sm:inline">Analytics</span>
           </TabsTrigger>
           <TabsTrigger value="goals">Goals</TabsTrigger>
@@ -640,6 +719,27 @@ const AutonomousAgentDashboard: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* AI Engine Tab - Number pool recommendations */}
+        <TabsContent value="ai-engine" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <AIDecisionEngine numbers={phoneNumbers} onRefreshNumbers={refreshPhoneNumbers} />
+          </Suspense>
+        </TabsContent>
+
+        {/* Pipeline Manager Tab - Lead nurturing AI */}
+        <TabsContent value="pipeline" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <AIPipelineManager />
+          </Suspense>
+        </TabsContent>
+
+        {/* Agent Activity Tab - Performance monitoring */}
+        <TabsContent value="activity" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <AgentActivityDashboard />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>

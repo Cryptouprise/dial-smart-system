@@ -5,13 +5,20 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Brain, 
-  TrendingUp, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  Phone, 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Brain,
+  TrendingUp,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Phone,
   MessageSquare,
   Mail,
   User,
@@ -23,7 +30,8 @@ import {
   History,
   FileText,
   Play,
-  Pause
+  Pause,
+  Layers
 } from 'lucide-react';
 import { useAIPipelineManager, useCallTracking } from '@/hooks/useCallTracking';
 import { useAutonomousAgent } from '@/hooks/useAutonomousAgent';
@@ -31,6 +39,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import ScriptManager from './ScriptManager';
 import GuardianStatusWidget from '@/components/GuardianStatusWidget';
+
+interface PipelineBoard {
+  id: string;
+  name: string;
+  description?: string;
+  stages?: any[];
+}
 
 const AIPipelineManager: React.FC = () => {
   const { 
@@ -59,29 +74,81 @@ const AIPipelineManager: React.FC = () => {
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [executingId, setExecutingId] = useState<string | null>(null);
 
+  // Pipeline selection state
+  const [pipelines, setPipelines] = useState<PipelineBoard[]>([]);
+  const [selectedPipeline, setSelectedPipeline] = useState<string>('all');
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+
+  // Load pipelines on mount
   useEffect(() => {
+    loadPipelines();
     loadLeads();
   }, []);
+
+  // Reload leads when pipeline changes
+  useEffect(() => {
+    if (selectedPipeline) {
+      loadLeads();
+      // Clear previous recommendations when pipeline changes
+      setRecommendations([]);
+      setDailyPlan(null);
+    }
+  }, [selectedPipeline]);
+
+  const loadPipelines = async () => {
+    setLoadingPipelines(true);
+    try {
+      const { data, error } = await supabase
+        .from('pipeline_boards')
+        .select('id, name, description')
+        .order('position', { ascending: true });
+
+      if (error) throw error;
+      setPipelines(data || []);
+    } catch (error) {
+      console.error('Error loading pipelines:', error);
+      // Set demo pipelines if table doesn't exist
+      setPipelines([
+        { id: 'demo-1', name: 'Sales Pipeline', description: 'Main sales pipeline' },
+        { id: 'demo-2', name: 'Appointment Setting', description: 'Appointment booking flow' },
+        { id: 'demo-3', name: 'Follow-up Pipeline', description: 'Re-engagement pipeline' },
+      ]);
+    } finally {
+      setLoadingPipelines(false);
+    }
+  };
 
   const loadLeads = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('leads')
-        .select('*')
+        .select('*, lead_pipeline_positions(pipeline_board_id)')
         .eq('user_id', user.id)
         .in('status', ['new', 'contacted', 'qualified'])
         .order('priority', { ascending: false })
         .limit(50);
 
+      const { data, error } = await query;
+
       if (error) throw error;
-      setLeads(data || []);
+
+      // Filter by selected pipeline if not "all"
+      let filteredLeads = data || [];
+      if (selectedPipeline && selectedPipeline !== 'all') {
+        filteredLeads = filteredLeads.filter(lead => {
+          const positions = lead.lead_pipeline_positions || [];
+          return positions.some((p: any) => p.pipeline_board_id === selectedPipeline);
+        });
+      }
+
+      setLeads(filteredLeads);
 
       // Load call stats for all leads
-      if (data && data.length > 0) {
-        const leadIds = data.map(l => l.id);
+      if (filteredLeads.length > 0) {
+        const leadIds = filteredLeads.map(l => l.id);
         const stats = await getBatchCallStats(leadIds);
         setCallStats(stats);
       }
@@ -258,7 +325,7 @@ const AIPipelineManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <Brain className="h-6 w-6 text-purple-600" />
@@ -274,7 +341,24 @@ const AIPipelineManager: React.FC = () => {
             Your AI sales manager - getting leads across the finish line
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Pipeline Selector */}
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedPipeline} onValueChange={setSelectedPipeline}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select Pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Pipelines</SelectItem>
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant={showSettings ? "default" : "outline"}
             onClick={() => setShowSettings(!showSettings)}
@@ -310,6 +394,25 @@ const AIPipelineManager: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Pipeline Info Card */}
+      {selectedPipeline !== 'all' && (
+        <Card className="bg-purple-50 dark:bg-purple-900/20 border-purple-200">
+          <CardContent className="py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-purple-600" />
+                <span className="font-medium">
+                  Analyzing: {pipelines.find(p => p.id === selectedPipeline)?.name || 'Selected Pipeline'}
+                </span>
+              </div>
+              <Badge variant="outline">
+                {leads.length} leads in pipeline
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Guardian Error Shield */}
       <GuardianStatusWidget />

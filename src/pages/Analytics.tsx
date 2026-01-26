@@ -6,7 +6,8 @@ import Navigation from '@/components/Navigation';
 import TranscriptAnalyzer from '@/components/TranscriptAnalyzer';
 import PipelineKanban from '@/components/PipelineKanban';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
-import { Brain, BarChart3, Workflow, TrendingUp } from 'lucide-react';
+import CreditDashboard from '@/components/CreditDashboard';
+import { Brain, BarChart3, Workflow, TrendingUp, Wallet } from 'lucide-react';
 
 const Analytics = () => {
   return (
@@ -22,7 +23,7 @@ const Analytics = () => {
 
         <Tabs defaultValue="transcript-analyzer" className="space-y-6">
           <div className="flex justify-center">
-            <TabsList className="grid grid-cols-3 w-full max-w-2xl">
+            <TabsList className="grid grid-cols-4 w-full max-w-3xl">
               <TabsTrigger value="transcript-analyzer" className="flex items-center gap-2">
                 <Brain className="h-4 w-4" />
                 <span className="hidden sm:inline">AI Analysis</span>
@@ -34,6 +35,10 @@ const Analytics = () => {
               <TabsTrigger value="reports" className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
                 <span className="hidden sm:inline">Reports</span>
+              </TabsTrigger>
+              <TabsTrigger value="credits" className="flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                <span className="hidden sm:inline">Credits</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -48,6 +53,10 @@ const Analytics = () => {
 
           <TabsContent value="reports" className="space-y-6">
             <ScriptAnalyticsDashboard />
+          </TabsContent>
+
+          <TabsContent value="credits" className="space-y-6">
+            <CreditDashboard />
           </TabsContent>
         </Tabs>
       </div>

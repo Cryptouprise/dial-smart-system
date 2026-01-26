@@ -56,6 +56,10 @@ const OnboardingWizard = lazy(() => import('@/components/ai-configuration/Onboar
 const AISetupAssistant = lazy(() => import('@/components/ai-configuration/AISetupAssistant').then(m => ({ default: m.AISetupAssistant })));
 const CalendarIntegrationManager = lazy(() => import('@/components/CalendarIntegrationManager').then(m => ({ default: m.CalendarIntegrationManager })));
 const AutonomousAgentDashboard = lazy(() => import('@/components/AutonomousAgentDashboard'));
+const AgentFlowBuilder = lazy(() => import('@/components/AgentFlowBuilder'));
+const CreditDashboard = lazy(() => import('@/components/CreditDashboard'));
+const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
+const ClientPortal = lazy(() => import('@/components/ClientPortal'));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -432,6 +436,14 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Calendar"><Suspense fallback={<TabLoader />}><CalendarIntegrationManager /></Suspense></TabErrorBoundary>;
       case 'autonomous-agent':
         return <TabErrorBoundary tabName="Autonomous Agent"><Suspense fallback={<TabLoader />}><AutonomousAgentDashboard /></Suspense></TabErrorBoundary>;
+      case 'agent-builder':
+        return <TabErrorBoundary tabName="Agent Flow Builder"><Suspense fallback={<TabLoader />}><AgentFlowBuilder /></Suspense></TabErrorBoundary>;
+      case 'credits':
+        return <TabErrorBoundary tabName="Credits"><Suspense fallback={<TabLoader />}><CreditDashboard /></Suspense></TabErrorBoundary>;
+      case 'call-history':
+        return <TabErrorBoundary tabName="Call History"><Suspense fallback={<TabLoader />}><CallHistoryTable /></Suspense></TabErrorBoundary>;
+      case 'client-portal':
+        return <TabErrorBoundary tabName="Client Portal"><Suspense fallback={<TabLoader />}><ClientPortal /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }

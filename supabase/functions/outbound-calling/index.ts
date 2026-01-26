@@ -249,6 +249,88 @@ serve(async (req) => {
 
         console.log('[Outbound Calling] Call log created:', callLog.id);
 
+        // ========================================================================
+        // CREDIT SYSTEM: Pre-call balance check and reservation
+        // ========================================================================
+        let organizationId: string | null = null;
+        let creditReserved = false;
+
+        try {
+          // Get organization from user
+          const { data: orgUser } = await supabaseAdmin
+            .from('organization_users')
+            .select('organization_id')
+            .eq('user_id', userId)
+            .limit(1)
+            .maybeSingle();
+
+          organizationId = orgUser?.organization_id || null;
+
+          if (organizationId) {
+            // Check credit balance (estimated 1 minute)
+            const { data: balanceCheck, error: balanceError } = await supabaseAdmin
+              .rpc('check_credit_balance', {
+                p_organization_id: organizationId,
+                p_minutes_needed: 1
+              });
+
+            if (!balanceError && balanceCheck?.[0]) {
+              const check = balanceCheck[0];
+
+              // If billing is enabled, verify credits
+              if (check.billing_enabled) {
+                console.log(`[Outbound Calling] Credit check: balance=${check.available_balance_cents}c, required=${check.required_cents}c`);
+
+                if (!check.has_balance) {
+                  // Insufficient credits - fail the call
+                  await supabaseAdmin
+                    .from('call_logs')
+                    .update({
+                      status: 'failed',
+                      ended_at: new Date().toISOString(),
+                      notes: `Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`
+                    })
+                    .eq('id', callLog.id);
+
+                  throw new Error(`Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}. Please add credits to continue making calls.`);
+                }
+
+                // Reserve credits for this call (15 cents = ~1 minute)
+                const estimatedCents = check.cost_per_minute_cents || 15;
+                const { data: reservation, error: reserveError } = await supabaseAdmin
+                  .rpc('reserve_credits', {
+                    p_organization_id: organizationId,
+                    p_amount_cents: estimatedCents,
+                    p_call_log_id: callLog.id,
+                    p_retell_call_id: null // Will be updated after Retell responds
+                  });
+
+                if (!reserveError && reservation?.[0]?.success) {
+                  creditReserved = true;
+                  console.log(`[Outbound Calling] Reserved ${estimatedCents}c. Remaining: ${reservation[0].available_balance_cents}c`);
+                } else {
+                  console.warn('[Outbound Calling] Credit reservation failed:', reserveError || reservation?.[0]?.error_message);
+                  // Continue anyway - finalization will handle deduction
+                }
+              }
+            }
+
+            // Store organization_id in call log for webhook processing
+            await supabaseAdmin
+              .from('call_logs')
+              .update({ organization_id: organizationId })
+              .eq('id', callLog.id);
+          }
+        } catch (creditError: any) {
+          // If it's an insufficient credits error, propagate it
+          if (creditError.message?.includes('Insufficient credits')) {
+            throw creditError;
+          }
+          // Otherwise log and continue (fail open for backward compatibility)
+          console.error('[Outbound Calling] Credit check error (continuing):', creditError);
+        }
+        // ========================================================================
+
         // Create outbound call via Retell AI
         console.log('[Outbound Calling] Initiating Retell AI call:', {
           from: callerId,
@@ -558,7 +640,8 @@ serve(async (req) => {
                     campaign_id: campaignId,
                     lead_id: leadId,
                     call_log_id: callLog.id,
-                    user_id: userId
+                    user_id: userId,
+                    organization_id: organizationId // For credit deduction in webhook
                   }
                 }),
               }, 30000);

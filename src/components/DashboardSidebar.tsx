@@ -30,6 +30,10 @@ import {
   AlertCircle,
   DollarSign,
   Users,
+  Wallet,
+  GitBranch,
+  History,
+  UserCircle,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -108,12 +112,10 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
+      { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch, simpleMode: true },
       { title: 'Retell AI', value: 'retell', icon: Settings },
       { title: 'Workflows', value: 'workflows', icon: Zap },
-      { title: 'AI Engine', value: 'ai-engine', icon: Brain },
       { title: 'Automation', value: 'automation', icon: Calendar },
-      { title: 'AI Manager', value: 'ai-manager', icon: Brain },
-      { title: 'Agent Activity', value: 'agent-activity', icon: Bot },
       { title: 'AI Workflows', value: 'ai-workflows', icon: Sparkles },
       { title: 'Reachability', value: 'reachability', icon: TrendingUp },
       { title: 'AI Error Handler', value: 'ai-errors', icon: AlertCircle },
@@ -125,11 +127,14 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { title: 'Campaign Results', value: 'campaign-results', icon: BarChart3, simpleMode: true },
+      { title: 'Call History', value: 'call-history', icon: History, simpleMode: true },
       { title: 'Call Analytics', value: 'analytics', icon: BarChart3 },
       { title: 'Daily Reports', value: 'reports', icon: FileText },
       { title: 'Live Monitor', value: 'live-monitor', icon: Activity },
       { title: 'A/B Testing', value: 'ab-testing', icon: Beaker },
       { title: 'Budget Manager', value: 'budget', icon: DollarSign },
+      { title: 'Credits & Billing', value: 'credits', icon: Wallet, simpleMode: true },
+      { title: 'Client Portal', value: 'client-portal', icon: UserCircle, simpleMode: true },
     ],
   },
   {
