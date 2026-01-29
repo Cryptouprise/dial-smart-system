@@ -34,6 +34,7 @@ import {
   GitBranch,
   History,
   UserCircle,
+  Lock,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -57,6 +58,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { Badge } from '@/components/ui/badge';
+import { useIsOrganizationAdmin } from '@/contexts/OrganizationContext';
 
 interface NavItem {
   title: string;
@@ -64,6 +66,7 @@ interface NavItem {
   icon: React.ElementType;
   simpleMode?: boolean; // If true, show in simple mode
   route?: string; // If set, navigates to this route instead of setting tab
+  adminOnly?: boolean; // If true, only show for admin/owner users
 }
 
 interface NavGroup {
@@ -144,21 +147,32 @@ const navigationGroups: NavGroup[] = [
       { title: 'System Testing', value: 'system-testing', icon: Beaker, simpleMode: true, route: '/system-testing' },
       { title: 'System Health', value: 'health', icon: Activity },
       { title: 'Settings', value: 'settings', icon: Settings },
+      { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
     ],
   },
 ];
 
-// Filter navigation for simple mode
-const getFilteredNavigation = (isSimpleMode: boolean): NavGroup[] => {
-  if (!isSimpleMode) return navigationGroups;
-  
-  return navigationGroups
-    .map(group => ({
-      ...group,
-      label: group.simpleModeLabel || group.label,
-      items: group.items.filter(item => item.simpleMode),
-    }))
-    .filter(group => group.items.length > 0);
+// Filter navigation for simple mode and admin-only items
+const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): NavGroup[] => {
+  let groups = navigationGroups;
+
+  // Filter out admin-only items if not admin
+  groups = groups.map(group => ({
+    ...group,
+    items: group.items.filter(item => !item.adminOnly || isAdmin),
+  }));
+
+  // Apply simple mode filtering
+  if (isSimpleMode) {
+    groups = groups
+      .map(group => ({
+        ...group,
+        label: group.simpleModeLabel || group.label,
+        items: group.items.filter(item => item.simpleMode),
+      }));
+  }
+
+  return groups.filter(group => group.items.length > 0);
 };
 
 interface DashboardSidebarProps {
@@ -170,8 +184,9 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
   const { toggleSidebar } = useSidebar();
   const { isSimpleMode, toggleMode } = useSimpleMode();
   const navigate = useNavigate();
-  
-  const filteredNavigation = getFilteredNavigation(isSimpleMode);
+  const isAdmin = useIsOrganizationAdmin();
+
+  const filteredNavigation = getFilteredNavigation(isSimpleMode, isAdmin);
 
   const handleNavigate = (route: string) => {
     navigate(route);

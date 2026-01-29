@@ -507,17 +507,77 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ---
 
-**Last Updated**: January 24, 2026
+**Last Updated**: January 28, 2026
 **Audit Confidence**: Very High (comprehensive codebase analysis)
-**Credit System Version**: 2.0.0
+**Credit System Version**: 3.0.0 (Agent-Specific Pricing)
 
 ## Recent Fixes Log
 
-### January 26, 2026 - UI Consolidation & New Features (LOCALHOST ONLY)
+### January 28, 2026 - Admin Settings & Agent-Specific Pricing (DEPLOYED)
 
-> **DEPLOYMENT STATUS: LOCAL ONLY - NOT DEPLOYED TO PRODUCTION**
-> All changes below are in localhost only. Run `npm run dev` to test at http://localhost:8080
-> User will decide whether to merge/deploy these changes.
+> **DEPLOYMENT STATUS: PRODUCTION** ✅
+> - Edge functions deployed via MCP:
+>   - `outbound-calling` v468 ✅ (agent-specific pricing lookup)
+>   - `retell-call-webhook` v328 ✅ (agent_id for finalization)
+
+**New Admin Settings Tab (Admin-Only):**
+- Location: Sidebar → System & Settings → Admin Settings (🔒 Lock icon)
+- Only visible to organization owners and admins
+- Simple ON/OFF toggle for credit system
+
+**Agent-Specific Pricing System:**
+Per-agent pricing based on actual Retell costs. No more flat-rate guessing.
+
+| Component | What It Does |
+|-----------|--------------|
+| `pricing_tiers` table | Stores Retell's base rates (LLM, Voice, Telephony, Add-ons) |
+| `agent_pricing` table | Per-agent pricing with custom markup |
+| `AgentPricingManager` component | UI to sync agents and set markup |
+
+**Pre-Loaded Retell Rates:**
+- GPT-4o Mini: $0.006/min | GPT-4o: $0.05/min | Claude 3.5 Sonnet: $0.06/min
+- ElevenLabs: $0.07/min | Deepgram: $0.02/min
+- Telephony: $0.015/min | Knowledge Base: $0.005/min
+
+**How It Works:**
+1. Sync agents from Retell (detects LLM + Voice)
+2. Auto-calculates base cost per agent
+3. Set your markup per agent
+4. Customer price = Base + Markup
+5. Actual Retell cost fetched after each call
+6. Real margin tracked per transaction
+
+**New Database Functions:**
+- `check_credit_balance()` - Pre-call balance verification
+- `reserve_credits()` - Lock credits before call
+- `finalize_call_cost()` - Release reservation, deduct actual, calculate margin
+- `calculate_agent_base_cost()` - Sum LLM + Voice + Telephony costs
+- `get_agent_customer_price()` - Look up agent-specific rate
+
+**Files Created:**
+- `src/components/AdminSettings.tsx` - Admin settings panel
+- `src/components/AgentPricingManager.tsx` - Agent pricing configuration
+
+**Files Modified:**
+- `src/components/DashboardSidebar.tsx` - Added Admin Settings (admin-only)
+- `src/components/Dashboard.tsx` - Added AdminSettings tab
+- `supabase/functions/outbound-calling/index.ts` - Agent-specific pricing lookup
+- `supabase/functions/retell-call-webhook/index.ts` - Pass agent_id for finalization
+
+**URL to Test:**
+- Admin Settings: http://localhost:8080/?tab=admin-settings
+
+---
+
+### January 26, 2026 - UI Consolidation & New Features (DEPLOYED)
+
+> **DEPLOYMENT STATUS: PRODUCTION** ✅ ALL COMPLETE
+> - Git push: commit 6d15f8e (20 files, 7,922 insertions, 477 deletions)
+> - Edge functions deployed via MCP:
+>   - `credit-management` v1 ✅
+>   - `stripe-webhook` v1 ✅
+>   - `outbound-calling` v467 ✅ (credit check + reservation)
+>   - `retell-call-webhook` v327 ✅ (finalize_call_cost + credit deduction)
 
 **AI Dashboard Consolidation:**
 Merged AI Engine, AI Manager, and Agent Activity into the Autonomous Agent dashboard as sub-tabs.

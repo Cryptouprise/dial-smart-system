@@ -1445,6 +1445,7 @@ serve(async (req) => {
         }
 
         // Finalize the cost (releases reservation and deducts actual)
+        // Pass agent_id for agent-specific pricing lookup
         const { data: finalizeResult, error: finalizeError } = await supabase
           .rpc('finalize_call_cost', {
             p_organization_id: webhookOrganizationId,
@@ -1452,7 +1453,8 @@ serve(async (req) => {
             p_retell_call_id: call.call_id,
             p_actual_minutes: Math.ceil((durationSeconds / 60) * 10) / 10, // Round to 0.1 min
             p_retell_cost_cents: retellActualCostCents,
-            p_idempotency_key: `finalize_${call.call_id}`
+            p_idempotency_key: `finalize_${call.call_id}`,
+            p_agent_id: call.agent_id || null // For agent-specific pricing
           });
 
         if (finalizeError) {

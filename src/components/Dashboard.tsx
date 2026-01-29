@@ -60,6 +60,7 @@ const AgentFlowBuilder = lazy(() => import('@/components/AgentFlowBuilder'));
 const CreditDashboard = lazy(() => import('@/components/CreditDashboard'));
 const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
 const ClientPortal = lazy(() => import('@/components/ClientPortal'));
+const AdminSettings = lazy(() => import('@/components/AdminSettings'));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -444,6 +445,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Call History"><Suspense fallback={<TabLoader />}><CallHistoryTable /></Suspense></TabErrorBoundary>;
       case 'client-portal':
         return <TabErrorBoundary tabName="Client Portal"><Suspense fallback={<TabLoader />}><ClientPortal /></Suspense></TabErrorBoundary>;
+      case 'admin-settings':
+        return <TabErrorBoundary tabName="Admin Settings"><Suspense fallback={<TabLoader />}><AdminSettings /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }

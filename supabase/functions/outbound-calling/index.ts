@@ -279,9 +279,28 @@ serve(async (req) => {
 
               // If billing is enabled, verify credits
               if (check.billing_enabled) {
-                console.log(`[Outbound Calling] Credit check: balance=${check.available_balance_cents}c, required=${check.required_cents}c`);
+                // Look up agent-specific pricing first
+                let costPerMinuteCents = check.cost_per_minute_cents || 15;
 
-                if (!check.has_balance) {
+                const { data: agentPricing } = await supabaseAdmin
+                  .from('agent_pricing')
+                  .select('customer_price_per_min_cents')
+                  .eq('organization_id', organizationId)
+                  .eq('retell_agent_id', agentId)
+                  .eq('is_active', true)
+                  .maybeSingle();
+
+                if (agentPricing?.customer_price_per_min_cents) {
+                  costPerMinuteCents = Math.round(agentPricing.customer_price_per_min_cents);
+                  console.log(`[Outbound Calling] Using agent-specific pricing: ${costPerMinuteCents}c/min for agent ${agentId}`);
+                } else {
+                  console.log(`[Outbound Calling] Using default org pricing: ${costPerMinuteCents}c/min`);
+                }
+
+                console.log(`[Outbound Calling] Credit check: balance=${check.available_balance_cents}c, required=${costPerMinuteCents}c`);
+
+                // Check if balance covers the cost
+                if (check.available_balance_cents < costPerMinuteCents) {
                   // Insufficient credits - fail the call
                   await supabaseAdmin
                     .from('call_logs')
@@ -295,19 +314,18 @@ serve(async (req) => {
                   throw new Error(`Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}. Please add credits to continue making calls.`);
                 }
 
-                // Reserve credits for this call (15 cents = ~1 minute)
-                const estimatedCents = check.cost_per_minute_cents || 15;
+                // Reserve credits for this call using agent-specific rate
                 const { data: reservation, error: reserveError } = await supabaseAdmin
                   .rpc('reserve_credits', {
                     p_organization_id: organizationId,
-                    p_amount_cents: estimatedCents,
+                    p_amount_cents: costPerMinuteCents,
                     p_call_log_id: callLog.id,
                     p_retell_call_id: null // Will be updated after Retell responds
                   });
 
                 if (!reserveError && reservation?.[0]?.success) {
                   creditReserved = true;
-                  console.log(`[Outbound Calling] Reserved ${estimatedCents}c. Remaining: ${reservation[0].available_balance_cents}c`);
+                  console.log(`[Outbound Calling] Reserved ${costPerMinuteCents}c. Remaining: ${reservation[0].available_balance_cents}c`);
                 } else {
                   console.warn('[Outbound Calling] Credit reservation failed:', reserveError || reservation?.[0]?.error_message);
                   // Continue anyway - finalization will handle deduction
