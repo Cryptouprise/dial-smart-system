@@ -205,6 +205,71 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_pricing: {
+        Row: {
+          agent_name: string | null
+          base_cost_per_min_cents: number | null
+          created_at: string | null
+          customer_price_per_min_cents: number | null
+          has_knowledge_base: boolean | null
+          id: string
+          is_active: boolean | null
+          last_synced_at: string | null
+          llm_model: string | null
+          markup_cents: number | null
+          markup_percentage: number | null
+          markup_type: string | null
+          organization_id: string
+          retell_agent_id: string
+          updated_at: string | null
+          voice_provider: string | null
+        }
+        Insert: {
+          agent_name?: string | null
+          base_cost_per_min_cents?: number | null
+          created_at?: string | null
+          customer_price_per_min_cents?: number | null
+          has_knowledge_base?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          last_synced_at?: string | null
+          llm_model?: string | null
+          markup_cents?: number | null
+          markup_percentage?: number | null
+          markup_type?: string | null
+          organization_id: string
+          retell_agent_id: string
+          updated_at?: string | null
+          voice_provider?: string | null
+        }
+        Update: {
+          agent_name?: string | null
+          base_cost_per_min_cents?: number | null
+          created_at?: string | null
+          customer_price_per_min_cents?: number | null
+          has_knowledge_base?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          last_synced_at?: string | null
+          llm_model?: string | null
+          markup_cents?: number | null
+          markup_percentage?: number | null
+          markup_type?: string | null
+          organization_id?: string
+          retell_agent_id?: string
+          updated_at?: string | null
+          voice_provider?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_pricing_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_chatbot_settings: {
         Row: {
           ai_actions_enabled: boolean | null
@@ -666,6 +731,8 @@ export type Database = {
           callback_scheduled_at: string | null
           created_at: string | null
           dtmf_pressed: string | null
+          error_code: string | null
+          error_message: string | null
           id: string
           lead_id: string | null
           lead_name: string | null
@@ -688,6 +755,8 @@ export type Database = {
           callback_scheduled_at?: string | null
           created_at?: string | null
           dtmf_pressed?: string | null
+          error_code?: string | null
+          error_message?: string | null
           id?: string
           lead_id?: string | null
           lead_name?: string | null
@@ -710,6 +779,8 @@ export type Database = {
           callback_scheduled_at?: string | null
           created_at?: string | null
           dtmf_pressed?: string | null
+          error_code?: string | null
+          error_message?: string | null
           id?: string
           lead_id?: string | null
           lead_name?: string | null
@@ -1086,12 +1157,16 @@ export type Database = {
           id: string
           lead_id: string | null
           notes: string | null
+          opener_extracted: string | null
+          opener_score: number | null
           outcome: string | null
           phone_number: string
           recording_url: string | null
           retell_call_id: string | null
           sentiment: string | null
           status: string
+          time_wasted_reason: string | null
+          time_wasted_score: number | null
           transcript: string | null
           user_id: string
         }
@@ -1112,12 +1187,16 @@ export type Database = {
           id?: string
           lead_id?: string | null
           notes?: string | null
+          opener_extracted?: string | null
+          opener_score?: number | null
           outcome?: string | null
           phone_number: string
           recording_url?: string | null
           retell_call_id?: string | null
           sentiment?: string | null
           status: string
+          time_wasted_reason?: string | null
+          time_wasted_score?: number | null
           transcript?: string | null
           user_id: string
         }
@@ -1138,12 +1217,16 @@ export type Database = {
           id?: string
           lead_id?: string | null
           notes?: string | null
+          opener_extracted?: string | null
+          opener_score?: number | null
           outcome?: string | null
           phone_number?: string
           recording_url?: string | null
           retell_call_id?: string | null
           sentiment?: string | null
           status?: string
+          time_wasted_reason?: string | null
+          time_wasted_score?: number | null
           transcript?: string | null
           user_id?: string
         }
@@ -1160,6 +1243,70 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call_opener_logs: {
+        Row: {
+          call_duration: number | null
+          call_id: string | null
+          created_at: string | null
+          id: string
+          opener_id: string | null
+          opener_text_used: string | null
+          time_to_engagement: number | null
+          user_id: string
+          was_answered: boolean | null
+          was_converted: boolean | null
+          was_engaged: boolean | null
+        }
+        Insert: {
+          call_duration?: number | null
+          call_id?: string | null
+          created_at?: string | null
+          id?: string
+          opener_id?: string | null
+          opener_text_used?: string | null
+          time_to_engagement?: number | null
+          user_id: string
+          was_answered?: boolean | null
+          was_converted?: boolean | null
+          was_engaged?: boolean | null
+        }
+        Update: {
+          call_duration?: number | null
+          call_id?: string | null
+          created_at?: string | null
+          id?: string
+          opener_id?: string | null
+          opener_text_used?: string | null
+          time_to_engagement?: number | null
+          user_id?: string
+          was_answered?: boolean | null
+          was_converted?: boolean | null
+          was_engaged?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_opener_logs_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_opener_logs_opener_id_fkey"
+            columns: ["opener_id"]
+            isOneToOne: false
+            referencedRelation: "opener_analytics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_opener_logs_opener_id_fkey"
+            columns: ["opener_id"]
+            isOneToOne: false
+            referencedRelation: "top_openers"
             referencedColumns: ["id"]
           },
         ]
@@ -1431,6 +1578,62 @@ export type Database = {
             columns: ["workflow_id"]
             isOneToOne: false
             referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_transactions: {
+        Row: {
+          amount_cents: number
+          balance_after_cents: number
+          balance_before_cents: number
+          call_log_id: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          idempotency_key: string | null
+          margin_cents: number | null
+          organization_id: string
+          retell_call_id: string | null
+          stripe_payment_id: string | null
+          transaction_type: string
+        }
+        Insert: {
+          amount_cents: number
+          balance_after_cents: number
+          balance_before_cents: number
+          call_log_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          idempotency_key?: string | null
+          margin_cents?: number | null
+          organization_id: string
+          retell_call_id?: string | null
+          stripe_payment_id?: string | null
+          transaction_type: string
+        }
+        Update: {
+          amount_cents?: number
+          balance_after_cents?: number
+          balance_before_cents?: number
+          call_log_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          idempotency_key?: string | null
+          margin_cents?: number | null
+          organization_id?: string
+          retell_call_id?: string | null
+          stripe_payment_id?: string | null
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -2697,6 +2900,137 @@ export type Database = {
         }
         Relationships: []
       }
+      opener_analytics: {
+        Row: {
+          agent_id: string | null
+          agent_name: string | null
+          answer_rate: number | null
+          avg_call_duration: number | null
+          avg_engagement_duration: number | null
+          calls_answered: number | null
+          calls_converted: number | null
+          calls_engaged: number | null
+          conversion_rate: number | null
+          created_at: string | null
+          effectiveness_score: number | null
+          engagement_rate: number | null
+          first_used_at: string | null
+          id: string
+          last_used_at: string | null
+          opener_normalized: string
+          opener_text: string
+          total_uses: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          agent_name?: string | null
+          answer_rate?: number | null
+          avg_call_duration?: number | null
+          avg_engagement_duration?: number | null
+          calls_answered?: number | null
+          calls_converted?: number | null
+          calls_engaged?: number | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          effectiveness_score?: number | null
+          engagement_rate?: number | null
+          first_used_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          opener_normalized: string
+          opener_text: string
+          total_uses?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          agent_name?: string | null
+          answer_rate?: number | null
+          avg_call_duration?: number | null
+          avg_engagement_duration?: number | null
+          calls_answered?: number | null
+          calls_converted?: number | null
+          calls_engaged?: number | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          effectiveness_score?: number | null
+          engagement_rate?: number | null
+          first_used_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          opener_normalized?: string
+          opener_text?: string
+          total_uses?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      organization_credits: {
+        Row: {
+          auto_recharge_amount_cents: number | null
+          auto_recharge_enabled: boolean | null
+          auto_recharge_trigger_cents: number | null
+          balance_cents: number
+          cost_per_minute_cents: number
+          created_at: string | null
+          cutoff_threshold_cents: number | null
+          id: string
+          last_deduction_at: string | null
+          last_low_balance_alert_at: string | null
+          last_recharge_at: string | null
+          low_balance_threshold_cents: number | null
+          organization_id: string
+          retell_cost_per_minute_cents: number
+          updated_at: string | null
+        }
+        Insert: {
+          auto_recharge_amount_cents?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_trigger_cents?: number | null
+          balance_cents?: number
+          cost_per_minute_cents?: number
+          created_at?: string | null
+          cutoff_threshold_cents?: number | null
+          id?: string
+          last_deduction_at?: string | null
+          last_low_balance_alert_at?: string | null
+          last_recharge_at?: string | null
+          low_balance_threshold_cents?: number | null
+          organization_id: string
+          retell_cost_per_minute_cents?: number
+          updated_at?: string | null
+        }
+        Update: {
+          auto_recharge_amount_cents?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_trigger_cents?: number | null
+          balance_cents?: number
+          cost_per_minute_cents?: number
+          created_at?: string | null
+          cutoff_threshold_cents?: number | null
+          id?: string
+          last_deduction_at?: string | null
+          last_low_balance_alert_at?: string | null
+          last_recharge_at?: string | null
+          low_balance_threshold_cents?: number | null
+          organization_id?: string
+          retell_cost_per_minute_cents?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_credits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_users: {
         Row: {
           id: string
@@ -2731,6 +3065,8 @@ export type Database = {
       }
       organizations: {
         Row: {
+          billing_email: string | null
+          billing_enabled: boolean | null
           created_at: string
           id: string
           max_campaigns: number | null
@@ -2740,12 +3076,15 @@ export type Database = {
           name: string
           settings: Json | null
           slug: string
+          stripe_customer_id: string | null
           subscription_status: string
           subscription_tier: string
           trial_ends_at: string | null
           updated_at: string
         }
         Insert: {
+          billing_email?: string | null
+          billing_enabled?: boolean | null
           created_at?: string
           id?: string
           max_campaigns?: number | null
@@ -2755,12 +3094,15 @@ export type Database = {
           name: string
           settings?: Json | null
           slug: string
+          stripe_customer_id?: string | null
           subscription_status?: string
           subscription_tier?: string
           trial_ends_at?: string | null
           updated_at?: string
         }
         Update: {
+          billing_email?: string | null
+          billing_enabled?: boolean | null
           created_at?: string
           id?: string
           max_campaigns?: number | null
@@ -2770,6 +3112,7 @@ export type Database = {
           name?: string
           settings?: Json | null
           slug?: string
+          stripe_customer_id?: string | null
           subscription_status?: string
           subscription_tier?: string
           trial_ends_at?: string | null
@@ -2777,8 +3120,42 @@ export type Database = {
         }
         Relationships: []
       }
+      phone_number_use_types: {
+        Row: {
+          code: string
+          color: string | null
+          created_at: string | null
+          description: string | null
+          icon: string | null
+          is_active: boolean | null
+          label: string
+          sort_order: number | null
+        }
+        Insert: {
+          code: string
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
+          is_active?: boolean | null
+          label: string
+          sort_order?: number | null
+        }
+        Update: {
+          code?: string
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
+          is_active?: boolean | null
+          label?: string
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
       phone_numbers: {
         Row: {
+          allowed_uses: string[] | null
           area_code: string
           caller_name: string | null
           capabilities: Json | null
@@ -2791,6 +3168,7 @@ export type Database = {
           is_spam: boolean
           is_stationary: boolean | null
           is_voip: boolean | null
+          last_call_at: string | null
           last_daily_reset: string | null
           last_lookup_at: string | null
           last_used: string | null
@@ -2803,6 +3181,7 @@ export type Database = {
           retell_phone_id: string | null
           rotation_enabled: boolean | null
           sip_trunk_config: Json | null
+          sip_trunk_config_id: string | null
           sip_trunk_provider: string | null
           status: string
           stir_shaken_attestation: string | null
@@ -2814,6 +3193,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          allowed_uses?: string[] | null
           area_code: string
           caller_name?: string | null
           capabilities?: Json | null
@@ -2826,6 +3206,7 @@ export type Database = {
           is_spam?: boolean
           is_stationary?: boolean | null
           is_voip?: boolean | null
+          last_call_at?: string | null
           last_daily_reset?: string | null
           last_lookup_at?: string | null
           last_used?: string | null
@@ -2838,6 +3219,7 @@ export type Database = {
           retell_phone_id?: string | null
           rotation_enabled?: boolean | null
           sip_trunk_config?: Json | null
+          sip_trunk_config_id?: string | null
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
@@ -2849,6 +3231,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          allowed_uses?: string[] | null
           area_code?: string
           caller_name?: string | null
           capabilities?: Json | null
@@ -2861,6 +3244,7 @@ export type Database = {
           is_spam?: boolean
           is_stationary?: boolean | null
           is_voip?: boolean | null
+          last_call_at?: string | null
           last_daily_reset?: string | null
           last_lookup_at?: string | null
           last_used?: string | null
@@ -2873,6 +3257,7 @@ export type Database = {
           retell_phone_id?: string | null
           rotation_enabled?: boolean | null
           sip_trunk_config?: Json | null
+          sip_trunk_config_id?: string | null
           sip_trunk_provider?: string | null
           status?: string
           stir_shaken_attestation?: string | null
@@ -2883,7 +3268,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "phone_numbers_sip_trunk_config_id_fkey"
+            columns: ["sip_trunk_config_id"]
+            isOneToOne: false
+            referencedRelation: "sip_trunk_configs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phone_providers: {
         Row: {
@@ -3014,6 +3407,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pricing_tiers: {
+        Row: {
+          base_cost_per_min_cents: number
+          created_at: string | null
+          display_name: string
+          id: string
+          is_active: boolean | null
+          tier_name: string
+          tier_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          base_cost_per_min_cents: number
+          created_at?: string | null
+          display_name: string
+          id?: string
+          is_active?: boolean | null
+          tier_name: string
+          tier_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          base_cost_per_min_cents?: number
+          created_at?: string | null
+          display_name?: string
+          id?: string
+          is_active?: boolean | null
+          tier_name?: string
+          tier_type?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       reachability_events: {
         Row: {
@@ -4238,6 +4664,165 @@ export type Database = {
         }
         Relationships: []
       }
+      voicemail_analytics: {
+        Row: {
+          appointment_conversion_rate: number | null
+          appointments_from_callbacks: number | null
+          broadcast_id: string | null
+          callback_rate: number | null
+          callback_rate_24h: number | null
+          callbacks_received: number | null
+          callbacks_within_1h: number | null
+          callbacks_within_24h: number | null
+          campaign_id: string | null
+          created_at: string | null
+          effectiveness_score: number | null
+          first_used_at: string | null
+          id: string
+          last_used_at: string | null
+          total_voicemails_left: number | null
+          updated_at: string | null
+          user_id: string
+          voicemail_audio_url: string | null
+          voicemail_duration_seconds: number | null
+          voicemail_message_text: string | null
+        }
+        Insert: {
+          appointment_conversion_rate?: number | null
+          appointments_from_callbacks?: number | null
+          broadcast_id?: string | null
+          callback_rate?: number | null
+          callback_rate_24h?: number | null
+          callbacks_received?: number | null
+          callbacks_within_1h?: number | null
+          callbacks_within_24h?: number | null
+          campaign_id?: string | null
+          created_at?: string | null
+          effectiveness_score?: number | null
+          first_used_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          total_voicemails_left?: number | null
+          updated_at?: string | null
+          user_id: string
+          voicemail_audio_url?: string | null
+          voicemail_duration_seconds?: number | null
+          voicemail_message_text?: string | null
+        }
+        Update: {
+          appointment_conversion_rate?: number | null
+          appointments_from_callbacks?: number | null
+          broadcast_id?: string | null
+          callback_rate?: number | null
+          callback_rate_24h?: number | null
+          callbacks_received?: number | null
+          callbacks_within_1h?: number | null
+          callbacks_within_24h?: number | null
+          campaign_id?: string | null
+          created_at?: string | null
+          effectiveness_score?: number | null
+          first_used_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          total_voicemails_left?: number | null
+          updated_at?: string | null
+          user_id?: string
+          voicemail_audio_url?: string | null
+          voicemail_duration_seconds?: number | null
+          voicemail_message_text?: string | null
+        }
+        Relationships: []
+      }
+      voicemail_callback_tracking: {
+        Row: {
+          broadcast_id: string | null
+          callback_call_id: string | null
+          callback_outcome: string | null
+          callback_received_at: string | null
+          created_at: string | null
+          expired_at: string | null
+          id: string
+          lead_id: string | null
+          phone_number: string
+          status: string | null
+          time_to_callback_minutes: number | null
+          user_id: string
+          voicemail_analytics_id: string | null
+          voicemail_call_id: string | null
+          voicemail_left_at: string
+        }
+        Insert: {
+          broadcast_id?: string | null
+          callback_call_id?: string | null
+          callback_outcome?: string | null
+          callback_received_at?: string | null
+          created_at?: string | null
+          expired_at?: string | null
+          id?: string
+          lead_id?: string | null
+          phone_number: string
+          status?: string | null
+          time_to_callback_minutes?: number | null
+          user_id: string
+          voicemail_analytics_id?: string | null
+          voicemail_call_id?: string | null
+          voicemail_left_at: string
+        }
+        Update: {
+          broadcast_id?: string | null
+          callback_call_id?: string | null
+          callback_outcome?: string | null
+          callback_received_at?: string | null
+          created_at?: string | null
+          expired_at?: string | null
+          id?: string
+          lead_id?: string | null
+          phone_number?: string
+          status?: string | null
+          time_to_callback_minutes?: number | null
+          user_id?: string
+          voicemail_analytics_id?: string | null
+          voicemail_call_id?: string | null
+          voicemail_left_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voicemail_callback_tracking_callback_call_id_fkey"
+            columns: ["callback_call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voicemail_callback_tracking_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voicemail_callback_tracking_voicemail_analytics_id_fkey"
+            columns: ["voicemail_analytics_id"]
+            isOneToOne: false
+            referencedRelation: "voicemail_analytics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voicemail_callback_tracking_voicemail_analytics_id_fkey"
+            columns: ["voicemail_analytics_id"]
+            isOneToOne: false
+            referencedRelation: "voicemail_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voicemail_callback_tracking_voicemail_call_id_fkey"
+            columns: ["voicemail_call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workflow_steps: {
         Row: {
           created_at: string | null
@@ -4356,19 +4941,205 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      time_wasted_summary: {
+        Row: {
+          avg_waste_score: number | null
+          call_count: number | null
+          time_wasted_reason: string | null
+          total_seconds_wasted: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      top_openers: {
+        Row: {
+          agent_name: string | null
+          answer_rate: number | null
+          avg_call_duration: number | null
+          calls_answered: number | null
+          calls_converted: number | null
+          calls_engaged: number | null
+          conversion_rate: number | null
+          effectiveness_score: number | null
+          engagement_rate: number | null
+          first_used_at: string | null
+          id: string | null
+          last_used_at: string | null
+          opener_text: string | null
+          total_uses: number | null
+          user_id: string | null
+        }
+        Insert: {
+          agent_name?: string | null
+          answer_rate?: number | null
+          avg_call_duration?: number | null
+          calls_answered?: number | null
+          calls_converted?: number | null
+          calls_engaged?: number | null
+          conversion_rate?: number | null
+          effectiveness_score?: number | null
+          engagement_rate?: number | null
+          first_used_at?: string | null
+          id?: string | null
+          last_used_at?: string | null
+          opener_text?: string | null
+          total_uses?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          agent_name?: string | null
+          answer_rate?: number | null
+          avg_call_duration?: number | null
+          calls_answered?: number | null
+          calls_converted?: number | null
+          calls_engaged?: number | null
+          conversion_rate?: number | null
+          effectiveness_score?: number | null
+          engagement_rate?: number | null
+          first_used_at?: string | null
+          id?: string | null
+          last_used_at?: string | null
+          opener_text?: string | null
+          total_uses?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      voicemail_performance: {
+        Row: {
+          appointment_conversion_rate: number | null
+          appointments_from_callbacks: number | null
+          broadcast_id: string | null
+          callback_rate: number | null
+          callback_rate_24h: number | null
+          callbacks_received: number | null
+          callbacks_within_24h: number | null
+          effectiveness_score: number | null
+          first_used_at: string | null
+          id: string | null
+          last_used_at: string | null
+          total_voicemails_left: number | null
+          user_id: string | null
+          voicemail_audio_url: string | null
+          voicemail_duration_seconds: number | null
+        }
+        Insert: {
+          appointment_conversion_rate?: number | null
+          appointments_from_callbacks?: number | null
+          broadcast_id?: string | null
+          callback_rate?: number | null
+          callback_rate_24h?: number | null
+          callbacks_received?: number | null
+          callbacks_within_24h?: number | null
+          effectiveness_score?: number | null
+          first_used_at?: string | null
+          id?: string | null
+          last_used_at?: string | null
+          total_voicemails_left?: number | null
+          user_id?: string | null
+          voicemail_audio_url?: string | null
+          voicemail_duration_seconds?: number | null
+        }
+        Update: {
+          appointment_conversion_rate?: number | null
+          appointments_from_callbacks?: number | null
+          broadcast_id?: string | null
+          callback_rate?: number | null
+          callback_rate_24h?: number | null
+          callbacks_received?: number | null
+          callbacks_within_24h?: number | null
+          effectiveness_score?: number | null
+          first_used_at?: string | null
+          id?: string | null
+          last_used_at?: string | null
+          total_voicemails_left?: number | null
+          user_id?: string | null
+          voicemail_audio_url?: string | null
+          voicemail_duration_seconds?: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      check_and_reset_daily_calls: { Args: never; Returns: undefined }
-      cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
-      decrement_daily_calls: {
-        Args: { phone_last_10: string }
-        Returns: undefined
+      add_credits: {
+        Args: {
+          p_amount_cents: number
+          p_description?: string
+          p_idempotency_key?: string
+          p_organization_id: string
+          p_transaction_type?: string
+        }
+        Returns: {
+          error_message: string
+          new_balance_cents: number
+          success: boolean
+          transaction_id: string
+        }[]
       }
-      get_effective_daily_calls: {
-        Args: { phone_number_id: string }
+      calculate_agent_base_cost: {
+        Args: {
+          p_has_knowledge_base?: boolean
+          p_llm_model: string
+          p_voice_provider: string
+        }
         Returns: number
       }
+      calculate_time_wasted_score: {
+        Args: {
+          p_amd_result: string
+          p_answered_at: string
+          p_auto_disposition: string
+          p_created_at: string
+          p_duration: number
+          p_outcome: string
+        }
+        Returns: {
+          reason: string
+          score: number
+        }[]
+      }
+      check_and_reset_daily_calls: { Args: never; Returns: undefined }
+      check_credit_balance: {
+        Args: { p_minutes_needed?: number; p_organization_id: string }
+        Returns: {
+          available_balance_cents: number
+          billing_enabled: boolean
+          cost_per_minute_cents: number
+          has_balance: boolean
+          required_cents: number
+        }[]
+      }
+      cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
+      decrement_daily_calls:
+        | { Args: { phone_id: string }; Returns: undefined }
+        | { Args: { phone_last_10: string }; Returns: undefined }
+      extract_opener_from_transcript: {
+        Args: { p_transcript: string }
+        Returns: string
+      }
+      finalize_call_cost: {
+        Args: {
+          p_actual_minutes?: number
+          p_agent_id?: string
+          p_call_log_id?: string
+          p_idempotency_key?: string
+          p_organization_id: string
+          p_retell_call_id?: string
+          p_retell_cost_cents?: number
+        }
+        Returns: {
+          amount_deducted_cents: number
+          error_message: string
+          margin_cents: number
+          new_balance_cents: number
+          success: boolean
+        }[]
+      }
+      get_agent_customer_price: {
+        Args: { p_organization_id: string; p_retell_agent_id: string }
+        Returns: number
+      }
+      get_effective_daily_calls: { Args: { phone_id: string }; Returns: number }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -4378,14 +5149,56 @@ export type Database = {
         Returns: boolean
       }
       increment_daily_calls_with_reset: {
-        Args: { phone_number_id: string }
+        Args: { target_phone_id: string }
         Returns: number
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
-      reset_all_daily_calls: { Args: never; Returns: number }
+      normalize_opener_text: { Args: { p_opener: string }; Returns: string }
+      reserve_credits: {
+        Args: {
+          p_amount_cents: number
+          p_call_log_id?: string
+          p_organization_id: string
+          p_retell_call_id?: string
+        }
+        Returns: {
+          available_balance_cents: number
+          error_message: string
+          reservation_id: string
+          success: boolean
+        }[]
+      }
+      reset_all_daily_calls: { Args: never; Returns: undefined }
       reset_stale_daily_calls: {
-        Args: { target_user_id?: string }
-        Returns: number
+        Args: { target_user_id: string }
+        Returns: undefined
+      }
+      update_opener_analytics: {
+        Args: {
+          p_agent_id: string
+          p_agent_name: string
+          p_call_duration: number
+          p_call_id: string
+          p_opener_text: string
+          p_user_id: string
+          p_was_answered: boolean
+          p_was_converted: boolean
+          p_was_engaged: boolean
+        }
+        Returns: string
+      }
+      update_voicemail_analytics: {
+        Args: {
+          p_broadcast_id: string
+          p_callback_within_1h?: boolean
+          p_callback_within_24h?: boolean
+          p_is_callback?: boolean
+          p_resulted_in_appointment?: boolean
+          p_user_id: string
+          p_voicemail_audio_url: string
+          p_voicemail_duration: number
+        }
+        Returns: string
       }
       upgrade_user_tier: {
         Args: {

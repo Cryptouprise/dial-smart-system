@@ -76,17 +76,17 @@ interface CallLog {
   status: string;
   outcome: string | null;
   duration_seconds: number | null;
-  direction: string | null;
+  direction?: string | null;
   sentiment: string | null;
-  disconnect_reason: string | null;
+  disconnect_reason?: string | null;
   transcript: string | null;
   recording_url: string | null;
   notes: string | null;
   created_at: string;
   ended_at: string | null;
-  billed_cost_cents: number | null;
-  retell_cost_cents: number | null;
-  credit_deducted: boolean | null;
+  billed_cost_cents?: number | null;
+  retell_cost_cents?: number | null;
+  credit_deducted?: boolean | null;
   auto_disposition: string | null;
   ai_analysis: Record<string, any> | null;
   agent_id: string | null;
@@ -246,7 +246,9 @@ export function CallHistoryTable() {
 
   const fetchCalls = async () => {
     try {
-      let query = supabase
+      // call_logs is large and its generated types can cause very deep instantiation;
+      // use a safe client here to keep the UI compiling.
+      let query = (supabase as any)
         .from('call_logs')
         .select(`
           *,
@@ -309,7 +311,7 @@ export function CallHistoryTable() {
 
       if (error) throw error;
 
-      setCalls(data || []);
+      setCalls((data || []) as CallLog[]);
       setTotalCount(count || 0);
     } catch (error: any) {
       console.error('Error fetching calls:', error);

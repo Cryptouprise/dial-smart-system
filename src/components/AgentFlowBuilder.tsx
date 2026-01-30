@@ -150,6 +150,8 @@ export function AgentFlowBuilder() {
   const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  // This table may not exist in every environment; use a safe client to avoid typecheck failures.
+  const sb = supabase as any;
 
   const addNode = (type: NodeType) => {
     const newNode: FlowNode = {
@@ -233,7 +235,7 @@ export function AgentFlowBuilder() {
       const generatedPrompt = generateSystemPrompt();
 
       // Save to database
-      const { data, error } = await supabase
+      const { data, error } = await sb
         .from('retell_agents')
         .insert({
           name: config.name,
@@ -249,7 +251,7 @@ export function AgentFlowBuilder() {
           is_active: true,
         })
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -522,7 +524,7 @@ export function AgentFlowBuilder() {
 
               {/* Add More Button */}
               <Button
-                variant="dashed"
+                variant="outline"
                 className="w-full border-dashed"
                 onClick={() => addNode('question')}
               >

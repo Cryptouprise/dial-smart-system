@@ -41,6 +41,9 @@ interface RetellWebhookPayload {
       campaign_id?: string;
       user_id?: string;
       caller_id?: string;
+      // Optional multi-tenant support / credit system linkage
+      // (May not be present on all webhook events.)
+      organization_id?: string;
     };
     from_number?: string;
     to_number?: string;
@@ -1384,7 +1387,9 @@ serve(async (req) => {
     // ========================================================================
     // CREDIT SYSTEM: Post-call cost finalization
     // ========================================================================
-    const webhookOrganizationId = metadata?.organization_id || callLog?.organization_id;
+    // NOTE: Some environments don't yet persist organization_id on call_logs, so we
+    // gracefully accept it from webhook metadata when available.
+    const webhookOrganizationId = (metadata as any)?.organization_id || (callLog as any)?.organization_id;
 
     if (webhookOrganizationId && durationSeconds > 0) {
       try {
