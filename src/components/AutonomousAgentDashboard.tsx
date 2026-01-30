@@ -117,7 +117,21 @@ const AutonomousAgentDashboard: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPhoneNumbers(data || []);
+
+      // Normalize DB rows into the shape the AI Engine expects.
+      // (Some environments store spam score as external_spam_score instead of spam_score.)
+      const normalized: PhoneNumber[] = (data || []).map((row: any) => ({
+        id: row.id,
+        number: row.number,
+        status: row.status ?? 'unknown',
+        daily_calls: row.daily_calls ?? 0,
+        area_code: row.area_code ?? '',
+        is_spam: row.is_spam ?? false,
+        spam_score: row.spam_score ?? row.external_spam_score ?? 0,
+        last_used: row.last_used ?? row.last_used_at ?? null,
+      }));
+
+      setPhoneNumbers(normalized);
     } catch (error) {
       console.error('Error loading phone numbers:', error);
     }
