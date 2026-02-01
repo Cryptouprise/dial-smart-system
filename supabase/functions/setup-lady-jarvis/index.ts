@@ -168,7 +168,31 @@ serve(async (req) => {
     const agentId = agentData.agent_id;
     console.log('✅ Agent created:', agentId);
 
-    // Step 3: Update demo_agent_config with the new IDs
+    // Step 3: Link agent to phone number in Retell
+    console.log('🔗 Linking Lady Jarvis to phone number in Retell...');
+
+    const phoneUpdateResponse = await fetch(
+      `https://api.retellai.com/update-phone-number/${encodeURIComponent(LADY_JARVIS_DEMO_PHONE)}`,
+      {
+        method: 'PATCH',
+        headers: retellHeaders,
+        body: JSON.stringify({
+          outbound_agent_id: agentId,
+          inbound_agent_id: agentId,
+          nickname: 'Lady Jarvis Demo Line',
+        }),
+      }
+    );
+
+    if (!phoneUpdateResponse.ok) {
+      const errorText = await phoneUpdateResponse.text();
+      console.error('Failed to link agent to phone:', errorText);
+      console.warn('⚠️ Agent created but phone link failed - may need manual assignment in Retell dashboard');
+    } else {
+      console.log('✅ Lady Jarvis linked to phone number for outbound calls');
+    }
+
+    // Step 4: Update demo_agent_config with the new IDs
     console.log('💾 Updating demo_agent_config...');
 
     // First check if config exists
@@ -211,7 +235,7 @@ serve(async (req) => {
     }
     console.log('✅ demo_agent_config updated');
 
-    // Step 4: Update phone_numbers friendly_name
+    // Step 5: Update phone_numbers friendly_name
     console.log('📱 Updating phone number friendly name...');
     
     const { error: phoneUpdateError } = await supabase
