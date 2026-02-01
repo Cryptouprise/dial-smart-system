@@ -81,9 +81,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (!phoneNum?.retell_agent_id) {
+        console.log('⚠️ No Retell agent found in phone_numbers table');
         return new Response(
-          JSON.stringify({ success: false, error: 'No Retell agent configured. Please set up an agent in Settings > Phone Numbers.' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ 
+            success: false, 
+            error: 'Demo not available yet. Our AI calling system is being configured. Please try again later or contact us for a personalized demo.',
+            setupRequired: true 
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
