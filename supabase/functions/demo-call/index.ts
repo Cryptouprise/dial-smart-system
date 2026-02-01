@@ -72,16 +72,17 @@ Deno.serve(async (req) => {
 
     if (!agentId || agentId === 'PENDING_SETUP') {
       // Fetch first active Retell phone number from platform
+      // Note: column is 'number' not 'phone_number'
       const { data: phoneNum } = await supabase
         .from('phone_numbers')
-        .select('phone_number, retell_phone_id, retell_agent_id')
+        .select('number, retell_phone_id')
         .eq('status', 'active')
         .not('retell_phone_id', 'is', null)
         .limit(1)
         .maybeSingle();
 
-      if (!phoneNum?.retell_agent_id) {
-        console.log('⚠️ No Retell agent found in phone_numbers table');
+      if (!phoneNum?.retell_phone_id) {
+        console.log('⚠️ No Retell phone number found in phone_numbers table');
         return new Response(
           JSON.stringify({ 
             success: false, 
@@ -92,9 +93,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      agentId = phoneNum.retell_agent_id;
-      fromNumber = phoneNum.phone_number;
-      console.log('📱 Using platform agent:', agentId, 'from:', fromNumber);
+      // Use the configured demo agent if available, otherwise this requires setup
+      fromNumber = phoneNum.number;
+      console.log('📱 Using Retell phone:', fromNumber);
     }
 
     if (!fromNumber) {
@@ -129,16 +130,19 @@ Deno.serve(async (req) => {
       formattedPhone = `+${formattedPhone}`;
     }
 
-    // Build personalized prompt
-    const personalizedPrompt = config.base_prompt
-      .replace(/\{\{business_name\}\}/g, businessInfo.business_name || 'your company')
-      .replace(/\{\{products_services\}\}/g, businessInfo.products_services || 'products and services')
-      .replace(/\{\{campaign_type\}\}/g, effectiveCampaignType);
+    // Build personalized prompt (only if config has base_prompt)
+    let personalizedPrompt = '';
+    if (config?.base_prompt) {
+      personalizedPrompt = config.base_prompt
+        .replace(/\{\{business_name\}\}/g, businessInfo.business_name || 'your company')
+        .replace(/\{\{products_services\}\}/g, businessInfo.products_services || 'products and services')
+        .replace(/\{\{campaign_type\}\}/g, effectiveCampaignType);
+    }
 
     console.log('🎯 Demo call for:', businessInfo.business_name, 'Campaign:', effectiveCampaignType);
 
     // Update the LLM with personalized prompt (only if demo config has LLM ID)
-    if (llmId && llmId !== 'PENDING_SETUP' && basePrompt) {
+    if (llmId && llmId !== 'PENDING_SETUP' && personalizedPrompt) {
       try {
         const llmUpdateResponse = await fetch(`https://api.retellai.com/update-retell-llm/${llmId}`, {
           method: 'PATCH',
@@ -154,7 +158,7 @@ Deno.serve(async (req) => {
         if (!llmUpdateResponse.ok) {
           console.warn('LLM update warning:', await llmUpdateResponse.text());
         } else {
-          console.log('✅ LLM prompt updated');
+          console.log('✅ LLM prompt updated with personalization');
         }
       } catch (e) {
         console.warn('LLM update failed:', e);
@@ -212,6 +216,36 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .eq('id', sessionId);
+
+    // Send SMS confirmation to demonstrate the appointment reminder workflow
+    if (effectiveCampaignType === 'appointment_setter' || effectiveCampaignType === 'database_reactivation') {
+      try {
+        const smsMessage = `Hey! Just confirming your demo with ${businessInfo.business_name || 'Call Boss'}. Pretty cool seeing Lady Jarvis in action, right? 💜 Reply FULL to see the complete platform.`;
+        
+        // Use Supabase function invoke to send SMS
+        const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'send_sms',
+            to: formattedPhone,
+            from: fromNumber,
+            message: smsMessage,
+          }),
+        });
+
+        if (smsResponse.ok) {
+          console.log('📱 Demo SMS confirmation sent');
+        } else {
+          console.warn('SMS send warning:', await smsResponse.text());
+        }
+      } catch (smsErr) {
+        console.warn('Demo SMS confirmation failed:', smsErr);
+      }
+    }
 
     return new Response(
       JSON.stringify({

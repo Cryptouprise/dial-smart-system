@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, ArrowRight, Phone, Target, DollarSign, Brain, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Phone, Target, DollarSign, Brain, Info, Wand2 } from 'lucide-react';
 
 interface SimulationConfig {
   leadCount: number;
@@ -203,6 +203,15 @@ export const DemoCampaignSetup = ({
               result in voicemails. Calling a few thousand people typically costs less than $150.
             </p>
           </div>
+        </div>
+
+        {/* Customization Callout */}
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
+          <Wand2 className="h-5 w-5 text-primary flex-shrink-0" />
+          <p className="text-sm text-left">
+            <strong>Fully Customizable:</strong> Lady Jarvis's personality, voice, 
+            scripts, and conversation style can be tailored to match your brand perfectly.
+          </p>
         </div>
 
         {/* Continue Button */}
