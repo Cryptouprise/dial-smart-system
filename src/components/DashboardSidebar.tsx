@@ -35,6 +35,7 @@ import {
   History,
   UserCircle,
   Lock,
+  Play,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -82,6 +83,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
+      { title: 'Try Demo', value: 'demo', icon: Play, simpleMode: true, route: '/demo' },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
       { title: 'AI Setup', value: 'ai-setup', icon: Sparkles, simpleMode: true },
     ],
