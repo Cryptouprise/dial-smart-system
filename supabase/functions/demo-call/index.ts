@@ -233,34 +233,41 @@ Deno.serve(async (req) => {
       })
       .eq('id', sessionId);
 
-    // Send SMS confirmation to demonstrate the appointment reminder workflow
-    if (effectiveCampaignType === 'appointment_setter' || effectiveCampaignType === 'database_reactivation') {
-      try {
-        const smsMessage = `Hey! Just confirming your demo with ${businessInfo.business_name || 'Call Boss'}. Pretty cool seeing Lady Jarvis in action, right? 💜 Reply FULL to see the complete platform.`;
-        
-        // Use Supabase function invoke to send SMS
-        const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'send_sms',
-            to: formattedPhone,
-            from: fromNumber,
-            message: smsMessage,
-          }),
-        });
+    // Send SMS confirmation tailored to campaign type
+    try {
+      const campaignMessages: Record<string, string> = {
+        database_reactivation: `Hey! This is Lady Jarvis from ${businessInfo.business_name || 'Call Boss'} 💜 Great chatting with you! We help businesses re-engage old leads and turn them into revenue. Reply DEMO for the full platform tour!`,
+        speed_to_lead: `⚡ That was fast, right? Lady Jarvis here from ${businessInfo.business_name || 'Call Boss'}! Our AI responds to new leads in under 60 seconds, 24/7. Want to see how? Reply SHOW ME!`,
+        appointment_setter: `📅 Great call! Lady Jarvis from ${businessInfo.business_name || 'Call Boss'} here. I book appointments while you focus on closing. Reply BOOK to see our calendar integration!`,
+        lead_qualification: `✅ Thanks for chatting! Lady Jarvis from ${businessInfo.business_name || 'Call Boss'}. I qualify leads so your team only talks to hot prospects. Reply QUALIFY to see how!`,
+        customer_service: `💬 Hope that helped! Lady Jarvis from ${businessInfo.business_name || 'Call Boss'} here. I handle customer calls 24/7 so you never miss a beat. Reply SUPPORT to learn more!`,
+      };
+      
+      const smsMessage = campaignMessages[effectiveCampaignType] || 
+        `Hey! Lady Jarvis from ${businessInfo.business_name || 'Call Boss'} 💜 Thanks for the demo! Reply FULL to see the complete platform.`;
+      
+      // Use Supabase function invoke to send SMS
+      const smsResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'send_sms',
+          to: formattedPhone,
+          from: fromNumber,
+          message: smsMessage,
+        }),
+      });
 
-        if (smsResponse.ok) {
-          console.log('📱 Demo SMS confirmation sent');
-        } else {
-          console.warn('SMS send warning:', await smsResponse.text());
-        }
-      } catch (smsErr) {
-        console.warn('Demo SMS confirmation failed:', smsErr);
+      if (smsResponse.ok) {
+        console.log('📱 Demo SMS sent for campaign type:', effectiveCampaignType);
+      } else {
+        console.warn('SMS send warning:', await smsResponse.text());
       }
+    } catch (smsErr) {
+      console.warn('Demo SMS failed:', smsErr);
     }
 
     return new Response(
