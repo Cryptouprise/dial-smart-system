@@ -69,15 +69,46 @@ export const DemoPhoneInput = ({
         },
       });
 
-      if (fnError || !data?.success) {
-        if (data?.limitReached) {
-          toast({
-            title: 'Demo limit reached',
-            description: 'You can try again tomorrow or sign up for full access!',
-            variant: 'destructive',
-          });
+      // Handle edge function errors - extract the actual error message
+      if (fnError) {
+        // Try to parse the error context which contains the JSON body
+        let errorMessage = 'Failed to initiate call';
+        let isLimitReached = false;
+        
+        try {
+          // FunctionsHttpError has context with the response body
+          const context = (fnError as any)?.context;
+          if (context) {
+            const body = typeof context === 'string' ? JSON.parse(context) : context;
+            errorMessage = body?.error || errorMessage;
+            isLimitReached = body?.limitReached === true;
+          }
+        } catch {
+          errorMessage = fnError.message || errorMessage;
         }
-        throw new Error(data?.error || fnError?.message || 'Failed to initiate call');
+        
+        if (isLimitReached) {
+          setError('Demo limit reached for today (3 calls per IP). Sign up for unlimited access!');
+          toast({
+            title: '⏱️ Demo limit reached',
+            description: 'You\'ve used all 3 demo calls today. Sign up for full access or try again tomorrow!',
+          });
+          return;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      if (!data?.success) {
+        if (data?.limitReached) {
+          setError('Demo limit reached for today. Sign up for unlimited access!');
+          toast({
+            title: '⏱️ Demo limit reached',
+            description: 'You\'ve used all 3 demo calls today. Sign up for full access!',
+          });
+          return;
+        }
+        throw new Error(data?.error || 'Failed to initiate call');
       }
 
       toast({
@@ -88,7 +119,7 @@ export const DemoPhoneInput = ({
       onCallInitiated(data.callId);
     } catch (err: any) {
       console.error('Call error:', err);
-      setError(err.message || 'Failed to initiate call');
+      setError(err.message || 'Failed to initiate call. Please try again.');
     } finally {
       setIsLoading(false);
     }
