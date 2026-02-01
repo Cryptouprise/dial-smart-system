@@ -1710,6 +1710,173 @@ export type Database = {
         }
         Relationships: []
       }
+      demo_agent_config: {
+        Row: {
+          base_prompt: string
+          created_at: string | null
+          demo_phone_number: string
+          id: string
+          is_active: boolean | null
+          max_calls_per_day: number | null
+          max_calls_per_ip_per_day: number | null
+          retell_agent_id: string
+          retell_llm_id: string
+          retell_phone_id: string | null
+          updated_at: string | null
+          voice_id: string | null
+        }
+        Insert: {
+          base_prompt: string
+          created_at?: string | null
+          demo_phone_number: string
+          id?: string
+          is_active?: boolean | null
+          max_calls_per_day?: number | null
+          max_calls_per_ip_per_day?: number | null
+          retell_agent_id: string
+          retell_llm_id: string
+          retell_phone_id?: string | null
+          updated_at?: string | null
+          voice_id?: string | null
+        }
+        Update: {
+          base_prompt?: string
+          created_at?: string | null
+          demo_phone_number?: string
+          id?: string
+          is_active?: boolean | null
+          max_calls_per_day?: number | null
+          max_calls_per_ip_per_day?: number | null
+          retell_agent_id?: string
+          retell_llm_id?: string
+          retell_phone_id?: string | null
+          updated_at?: string | null
+          voice_id?: string | null
+        }
+        Relationships: []
+      }
+      demo_call_logs: {
+        Row: {
+          call_duration_seconds: number | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          ip_address: string
+          phone_number: string
+          retell_call_id: string | null
+          session_id: string | null
+          status: string | null
+        }
+        Insert: {
+          call_duration_seconds?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          ip_address: string
+          phone_number: string
+          retell_call_id?: string | null
+          session_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          call_duration_seconds?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          ip_address?: string
+          phone_number?: string
+          retell_call_id?: string | null
+          session_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demo_call_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "demo_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demo_sessions: {
+        Row: {
+          call_completed: boolean | null
+          call_duration_seconds: number | null
+          call_initiated: boolean | null
+          call_recording_url: string | null
+          campaign_type: string | null
+          converted_to_signup: boolean | null
+          created_at: string | null
+          cta_clicked: string | null
+          id: string
+          ip_address: string | null
+          projected_annual_savings: number | null
+          prospect_email: string | null
+          prospect_name: string | null
+          prospect_phone: string | null
+          retell_call_id: string | null
+          roi_viewed: boolean | null
+          scraped_data: Json | null
+          simulation_completed: boolean | null
+          simulation_config: Json | null
+          simulation_started: boolean | null
+          updated_at: string | null
+          user_agent: string | null
+          website_url: string | null
+        }
+        Insert: {
+          call_completed?: boolean | null
+          call_duration_seconds?: number | null
+          call_initiated?: boolean | null
+          call_recording_url?: string | null
+          campaign_type?: string | null
+          converted_to_signup?: boolean | null
+          created_at?: string | null
+          cta_clicked?: string | null
+          id?: string
+          ip_address?: string | null
+          projected_annual_savings?: number | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          retell_call_id?: string | null
+          roi_viewed?: boolean | null
+          scraped_data?: Json | null
+          simulation_completed?: boolean | null
+          simulation_config?: Json | null
+          simulation_started?: boolean | null
+          updated_at?: string | null
+          user_agent?: string | null
+          website_url?: string | null
+        }
+        Update: {
+          call_completed?: boolean | null
+          call_duration_seconds?: number | null
+          call_initiated?: boolean | null
+          call_recording_url?: string | null
+          campaign_type?: string | null
+          converted_to_signup?: boolean | null
+          created_at?: string | null
+          cta_clicked?: string | null
+          id?: string
+          ip_address?: string | null
+          projected_annual_savings?: number | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          retell_call_id?: string | null
+          roi_viewed?: boolean | null
+          scraped_data?: Json | null
+          simulation_completed?: boolean | null
+          simulation_config?: Json | null
+          simulation_started?: boolean | null
+          updated_at?: string | null
+          user_agent?: string | null
+          website_url?: string | null
+        }
+        Relationships: []
+      }
       dialing_queues: {
         Row: {
           attempts: number
