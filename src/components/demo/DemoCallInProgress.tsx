@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Phone, PhoneOff, Mic, Volume2, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Volume2, Loader2, MessageSquare, CheckCircle } from 'lucide-react';
 
 interface DemoCallInProgressProps {
   callId: string | null;
@@ -19,11 +19,16 @@ export const DemoCallInProgress = ({
   const [status, setStatus] = useState<'ringing' | 'connected' | 'ended'>('ringing');
   const [duration, setDuration] = useState(0);
   const [waveformBars, setWaveformBars] = useState<number[]>(new Array(12).fill(0.2));
+  const [showSmsNotification, setShowSmsNotification] = useState(false);
 
   // Simulate call progression
   useEffect(() => {
     const timeout1 = setTimeout(() => setStatus('connected'), 3000);
-    const timeout2 = setTimeout(() => {
+    
+    // Show SMS notification after 20 seconds of connected call
+    const timeout2 = setTimeout(() => setShowSmsNotification(true), 23000);
+    
+    const timeout3 = setTimeout(() => {
       setStatus('ended');
       setTimeout(onCallComplete, 2000);
     }, 45000); // 45 second demo call
@@ -31,6 +36,7 @@ export const DemoCallInProgress = ({
     return () => {
       clearTimeout(timeout1);
       clearTimeout(timeout2);
+      clearTimeout(timeout3);
     };
   }, [onCallComplete]);
 
@@ -107,9 +113,29 @@ export const DemoCallInProgress = ({
 
                     {/* Business info */}
                     <div className="text-sm text-zinc-400">
-                      <p>Calling about</p>
+                      <p>Lady Jarvis calling</p>
                       <p className="text-white font-medium">{scrapedData?.business_name}</p>
                     </div>
+
+                    {/* SMS Notification */}
+                    {showSmsNotification && (
+                      <div className="animate-in slide-in-from-bottom-4 duration-500 mt-4 space-y-2">
+                        <div className="bg-zinc-800 rounded-2xl p-3 text-left">
+                          <div className="flex items-center gap-2 mb-1">
+                            <MessageSquare className="h-3 w-3 text-green-400" />
+                            <span className="text-xs text-green-400">Text Message</span>
+                          </div>
+                          <p className="text-xs text-zinc-300 leading-relaxed">
+                            Hey! Just confirming your demo with {scrapedData?.business_name || 'Call Boss'}. 
+                            Pretty cool seeing Lady Jarvis in action, right? 💜
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-1.5 text-xs text-green-400">
+                          <CheckCircle className="h-3 w-3" />
+                          <span>Added to Appointment Reminder campaign</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

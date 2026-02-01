@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Zap, Phone, Users, TrendingUp, Bot, Sparkles } from 'lucide-react';
+import { Zap, Phone, Users, TrendingUp, Bot, Sparkles, Wand2 } from 'lucide-react';
 
 interface DemoLandingProps {
   onStart: (url: string) => void;
@@ -76,6 +76,15 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
               </Button>
             </form>
           </Card>
+
+          {/* Customization Callout */}
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20 max-w-xl mx-auto">
+            <Wand2 className="h-5 w-5 text-primary flex-shrink-0" />
+            <p className="text-sm text-left">
+              <strong>Fully Customizable:</strong> Lady Jarvis's personality, voice, 
+              scripts, and conversation style can be tailored to match your brand perfectly.
+            </p>
+          </div>
 
           {/* Feature Pills */}
           <div className="flex flex-wrap justify-center gap-3">
