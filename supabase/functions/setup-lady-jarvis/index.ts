@@ -140,6 +140,7 @@ serve(async (req) => {
     console.log('✅ LLM created:', llmId);
 
     // Step 2: Create the Agent linked to the LLM
+    // Using 11labs-Myra - a warm female voice from Retell's voice library
     console.log('🤖 Creating Lady Jarvis Agent...');
     
     const agentResponse = await fetch('https://api.retellai.com/create-agent', {
@@ -147,7 +148,7 @@ serve(async (req) => {
       headers: retellHeaders,
       body: JSON.stringify({
         agent_name: 'Lady Jarvis Demo',
-        voice_id: '11labs-Sarah',
+        voice_id: '11labs-Myra', // Warm female voice
         response_engine: {
           type: 'retell-llm',
           llm_id: llmId,
