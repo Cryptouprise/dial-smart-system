@@ -215,3 +215,9 @@ verify_jwt = true
 
 [functions.validate-phone-numbers]
 verify_jwt = true
+
+[functions.demo-scrape-website]
+verify_jwt = false
+
+[functions.demo-call]
+verify_jwt = false

@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Lazy load all route components for faster initial load
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
+const Demo = lazy(() => import("./pages/Demo"));
 const Settings = lazy(() => import("./pages/Settings"));
 const ApiKeys = lazy(() => import("./pages/ApiKeys"));
 const HelpPage = lazy(() => import("./pages/HelpPage"));
@@ -77,8 +78,9 @@ const App = () => (
                       <AIBrainProvider>
                         <Suspense fallback={<PageLoader />}>
                           <Routes>
-                            {/* Public route */}
+                            {/* Public routes */}
                             <Route path="/auth" element={<Auth />} />
+                            <Route path="/demo" element={<Demo />} />
                             
                             {/* Protected routes */}
                             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
