@@ -96,85 +96,81 @@ export const DemoSimulationDashboard = ({
     simulationRef.current = setInterval(() => {
       setCallsMade(prev => {
         const next = Math.min(prev + callsPerUpdate, targetCalls);
+        const callsThisTick = Math.round(callsPerUpdate);
         
-        // REALISTIC SIMULATION:
-        // 10% pickup rate
-        if (Math.random() < 0.10) {
-          setConnected(c => c + 1);
+        // REALISTIC SIMULATION - process each call in this batch
+        for (let i = 0; i < callsThisTick; i++) {
+          const rand = Math.random();
           
-          // 60% of pickups are "call dropped" (< 30 sec, hung up)
-          if (Math.random() < 0.60) {
-            setDispositions(d => ({ ...d, callDropped: d.callDropped + 1 }));
-            setPipelineLeads(leads => [
-              { stage: 'dropped', name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon: 'dropped' },
-              ...leads.slice(0, 24),
-            ]);
-          } else {
-            // 40% of pickups are real conversations - distribute across dispositions
-            const rand = Math.random();
-            let disposition: keyof DispositionCounts;
-            let stage: string;
-            let icon: string;
+          // 10% pickup rate
+          if (rand < 0.10) {
+            setConnected(c => c + 1);
             
-            if (rand < 0.08) {
-              // 8% → Appointment booked!
-              disposition = 'appointment';
-              stage = '🎉 APPOINTMENT';
-              icon = 'appointment';
-            } else if (rand < 0.18) {
-              // 10% → Hot Lead
-              disposition = 'hotLead';
-              stage = '🔥 Hot Lead';
-              icon = 'hot';
-            } else if (rand < 0.30) {
-              // 12% → Potential Prospect
-              disposition = 'potentialProspect';
-              stage = 'Potential Prospect';
-              icon = 'prospect';
-            } else if (rand < 0.42) {
-              // 12% → Follow Up
-              disposition = 'followUp';
-              stage = 'Follow Up';
-              icon = 'followup';
-            } else if (rand < 0.52) {
-              // 10% → Send Info
-              disposition = 'sendInfo';
-              stage = 'Send Info';
-              icon = 'info';
-            } else if (rand < 0.60) {
-              // 8% → Want Human
-              disposition = 'wantHuman';
-              stage = 'Transfer Requested';
-              icon = 'human';
-            } else if (rand < 0.75) {
-              // 15% → Not Interested
-              disposition = 'notInterested';
-              stage = 'Not Interested';
-              icon = 'no';
-            } else if (rand < 0.85) {
-              // 10% → DNC
-              disposition = 'dnc';
-              stage = 'DNC';
-              icon = 'dnc';
+            // 60% of pickups are "call dropped" (< 30 sec, hung up)
+            if (Math.random() < 0.60) {
+              setDispositions(d => ({ ...d, callDropped: d.callDropped + 1 }));
+              setPipelineLeads(leads => [
+                { stage: 'dropped', name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon: 'dropped' },
+                ...leads.slice(0, 24),
+              ]);
             } else {
-              // 15% → Wrong Number
-              disposition = 'wrongNumber';
-              stage = 'Wrong Number';
-              icon = 'wrong';
+              // 40% of pickups are real conversations - distribute across dispositions
+              const dispRand = Math.random();
+              let disposition: keyof DispositionCounts;
+              let stage: string;
+              let icon: string;
+              
+              if (dispRand < 0.08) {
+                disposition = 'appointment';
+                stage = '🎉 APPOINTMENT';
+                icon = 'appointment';
+              } else if (dispRand < 0.18) {
+                disposition = 'hotLead';
+                stage = '🔥 Hot Lead';
+                icon = 'hot';
+              } else if (dispRand < 0.30) {
+                disposition = 'potentialProspect';
+                stage = 'Potential Prospect';
+                icon = 'prospect';
+              } else if (dispRand < 0.42) {
+                disposition = 'followUp';
+                stage = 'Follow Up';
+                icon = 'followup';
+              } else if (dispRand < 0.52) {
+                disposition = 'sendInfo';
+                stage = 'Send Info';
+                icon = 'info';
+              } else if (dispRand < 0.60) {
+                disposition = 'wantHuman';
+                stage = 'Transfer Requested';
+                icon = 'human';
+              } else if (dispRand < 0.75) {
+                disposition = 'notInterested';
+                stage = 'Not Interested';
+                icon = 'no';
+              } else if (dispRand < 0.85) {
+                disposition = 'dnc';
+                stage = 'DNC';
+                icon = 'dnc';
+              } else {
+                disposition = 'wrongNumber';
+                stage = 'Wrong Number';
+                icon = 'wrong';
+              }
+              
+              setDispositions(d => ({ ...d, [disposition]: d[disposition] + 1 }));
+              setPipelineLeads(leads => [
+                { stage, name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon },
+                ...leads.slice(0, 24),
+              ]);
             }
-            
-            setDispositions(d => ({ ...d, [disposition]: d[disposition] + 1 }));
-            setPipelineLeads(leads => [
-              { stage, name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon },
-              ...leads.slice(0, 24),
-            ]);
+          } else if (rand < 0.45) {
+            // 35% voicemail (0.10 to 0.45)
+            setVoicemails(v => v + 1);
+          } else {
+            // 55% no answer (0.45 to 1.0)
+            setNoAnswer(n => n + 1);
           }
-        } else if (Math.random() < 0.35) {
-          // 35% voicemail
-          setVoicemails(v => v + 1);
-        } else {
-          // 55% no answer
-          setNoAnswer(n => n + 1);
         }
         
         // Update cost (~$0.07 per call attempt)
