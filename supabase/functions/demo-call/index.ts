@@ -124,10 +124,26 @@ Deno.serve(async (req) => {
 
     // Format phone number to E.164
     let formattedPhone = phoneNumber.replace(/\D/g, '');
-    if (formattedPhone.length === 10) {
+    
+    // Handle US numbers: strip leading 1 if present and normalize to +1
+    if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) {
+      // User entered 1XXXXXXXXXX - strip the 1 and add +1
+      formattedPhone = `+1${formattedPhone.substring(1)}`;
+    } else if (formattedPhone.length === 10) {
+      // Standard 10-digit US number
       formattedPhone = `+1${formattedPhone}`;
-    } else if (!formattedPhone.startsWith('+')) {
+    } else if (formattedPhone.length > 11) {
+      // International number - just add + if not present
       formattedPhone = `+${formattedPhone}`;
+    } else {
+      // Invalid length
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Invalid phone number. Please enter a 10-digit US number (e.g., 214-555-1234) or include the country code for international.` 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Build personalized prompt (only if config has base_prompt)
