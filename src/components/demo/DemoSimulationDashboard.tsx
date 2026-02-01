@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Phone, Users, DollarSign, Clock, TrendingUp, CheckCircle, Voicemail, PhoneOff, Calendar } from 'lucide-react';
+import { 
+  Phone, Users, DollarSign, Clock, TrendingUp, CheckCircle, Voicemail, PhoneOff, Calendar,
+  UserX, MessageSquare, ThumbsDown, Ban, Flame, Send, HelpCircle, PhoneMissed
+} from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 interface SimulationConfig {
@@ -21,6 +24,20 @@ interface SimulationResults {
   durationMinutes: number;
 }
 
+// Realistic disposition buckets
+interface DispositionCounts {
+  callDropped: number;      // 60% of connected - hung up quick
+  notInterested: number;    // Not a fit
+  dnc: number;              // Do Not Call
+  followUp: number;         // Schedule callback
+  wantHuman: number;        // Transfer request
+  potentialProspect: number;// Warm lead
+  hotLead: number;          // Ready to buy
+  sendInfo: number;         // Send more info
+  wrongNumber: number;      // Bad number
+  appointment: number;      // Booked!
+}
+
 interface DemoSimulationDashboardProps {
   config: SimulationConfig;
   campaignType: string;
@@ -38,26 +55,38 @@ export const DemoSimulationDashboard = ({
   const [connected, setConnected] = useState(0);
   const [voicemails, setVoicemails] = useState(0);
   const [noAnswer, setNoAnswer] = useState(0);
-  const [appointments, setAppointments] = useState(0);
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
   const [totalCost, setTotalCost] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
-  const [pipelineLeads, setPipelineLeads] = useState<{ stage: string; name: string }[]>([]);
+  const [pipelineLeads, setPipelineLeads] = useState<{ stage: string; name: string; icon?: string }[]>([]);
+  
+  // Realistic disposition tracking
+  const [dispositions, setDispositions] = useState<DispositionCounts>({
+    callDropped: 0,
+    notInterested: 0,
+    dnc: 0,
+    followUp: 0,
+    wantHuman: 0,
+    potentialProspect: 0,
+    hotLead: 0,
+    sendInfo: 0,
+    wrongNumber: 0,
+    appointment: 0,
+  });
   
   const simulationRef = useRef<NodeJS.Timeout | null>(null);
-  const timeRef = useRef<NodeJS.Timeout | null>(null);
 
-  const stages = ['new', 'follow_up', 'interested', 'hot_lead', 'appointment'];
   const fakeNames = [
     'John S.', 'Sarah M.', 'Mike D.', 'Emily R.', 'Chris T.',
     'Amanda L.', 'David K.', 'Jessica H.', 'Robert P.', 'Lisa N.',
     'James W.', 'Michelle B.', 'Kevin C.', 'Ashley G.', 'Brian F.',
+    'Nicole V.', 'Andrew Z.', 'Rachel Q.', 'Tyler O.', 'Megan I.',
   ];
 
   useEffect(() => {
     const targetCalls = config.leadCount;
-    const simulationDuration = 15000; // 15 seconds real time for full simulation
-    const updateInterval = 100; // Update every 100ms
+    const simulationDuration = 20000; // 20 seconds for full simulation
+    const updateInterval = 80; // Update every 80ms for smooth animation
     const callsPerUpdate = targetCalls / (simulationDuration / updateInterval);
     
     // Time progression (4x time-lapse)
@@ -68,25 +97,83 @@ export const DemoSimulationDashboard = ({
       setCallsMade(prev => {
         const next = Math.min(prev + callsPerUpdate, targetCalls);
         
-        // Simulate outcomes
-        if (Math.random() < 0.10) { // 10% answer rate
+        // REALISTIC SIMULATION:
+        // 10% pickup rate
+        if (Math.random() < 0.10) {
           setConnected(c => c + 1);
-          if (Math.random() < 0.15) { // 15% of answers = appointment
-            setAppointments(a => a + 1);
+          
+          // 60% of pickups are "call dropped" (< 30 sec, hung up)
+          if (Math.random() < 0.60) {
+            setDispositions(d => ({ ...d, callDropped: d.callDropped + 1 }));
             setPipelineLeads(leads => [
-              { stage: 'appointment', name: fakeNames[Math.floor(Math.random() * fakeNames.length)] },
-              ...leads.slice(0, 19),
+              { stage: 'dropped', name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon: 'dropped' },
+              ...leads.slice(0, 24),
             ]);
-          } else if (Math.random() < 0.4) {
-            const stage = stages[Math.floor(Math.random() * 4)];
+          } else {
+            // 40% of pickups are real conversations - distribute across dispositions
+            const rand = Math.random();
+            let disposition: keyof DispositionCounts;
+            let stage: string;
+            let icon: string;
+            
+            if (rand < 0.08) {
+              // 8% → Appointment booked!
+              disposition = 'appointment';
+              stage = '🎉 APPOINTMENT';
+              icon = 'appointment';
+            } else if (rand < 0.18) {
+              // 10% → Hot Lead
+              disposition = 'hotLead';
+              stage = '🔥 Hot Lead';
+              icon = 'hot';
+            } else if (rand < 0.30) {
+              // 12% → Potential Prospect
+              disposition = 'potentialProspect';
+              stage = 'Potential Prospect';
+              icon = 'prospect';
+            } else if (rand < 0.42) {
+              // 12% → Follow Up
+              disposition = 'followUp';
+              stage = 'Follow Up';
+              icon = 'followup';
+            } else if (rand < 0.52) {
+              // 10% → Send Info
+              disposition = 'sendInfo';
+              stage = 'Send Info';
+              icon = 'info';
+            } else if (rand < 0.60) {
+              // 8% → Want Human
+              disposition = 'wantHuman';
+              stage = 'Transfer Requested';
+              icon = 'human';
+            } else if (rand < 0.75) {
+              // 15% → Not Interested
+              disposition = 'notInterested';
+              stage = 'Not Interested';
+              icon = 'no';
+            } else if (rand < 0.85) {
+              // 10% → DNC
+              disposition = 'dnc';
+              stage = 'DNC';
+              icon = 'dnc';
+            } else {
+              // 15% → Wrong Number
+              disposition = 'wrongNumber';
+              stage = 'Wrong Number';
+              icon = 'wrong';
+            }
+            
+            setDispositions(d => ({ ...d, [disposition]: d[disposition] + 1 }));
             setPipelineLeads(leads => [
-              { stage, name: fakeNames[Math.floor(Math.random() * fakeNames.length)] },
-              ...leads.slice(0, 19),
+              { stage, name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon },
+              ...leads.slice(0, 24),
             ]);
           }
-        } else if (Math.random() < 0.25) { // 25% voicemail
+        } else if (Math.random() < 0.35) {
+          // 35% voicemail
           setVoicemails(v => v + 1);
         } else {
+          // 55% no answer
           setNoAnswer(n => n + 1);
         }
         
@@ -106,7 +193,6 @@ export const DemoSimulationDashboard = ({
 
     return () => {
       if (simulationRef.current) clearInterval(simulationRef.current);
-      if (timeRef.current) clearInterval(timeRef.current);
     };
   }, [config.leadCount]);
 
@@ -115,14 +201,15 @@ export const DemoSimulationDashboard = ({
       callsMade: Math.round(callsMade),
       connected,
       voicemails,
-      appointments,
+      appointments: dispositions.appointment,
       totalCost: Math.round(totalCost * 100) / 100,
       durationMinutes: Math.round(elapsedMinutes),
     });
   };
 
   const progress = (callsMade / config.leadCount) * 100;
-  const costPerAppointment = appointments > 0 ? totalCost / appointments : 0;
+  const positiveOutcomes = dispositions.appointment + dispositions.hotLead + dispositions.potentialProspect + dispositions.followUp + dispositions.sendInfo;
+  const costPerAppointment = dispositions.appointment > 0 ? totalCost / dispositions.appointment : 0;
 
   const formatTime = (minutes: number) => {
     const h = Math.floor(minutes / 60);
@@ -130,9 +217,25 @@ export const DemoSimulationDashboard = ({
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
+  const getIconForStage = (icon?: string) => {
+    switch (icon) {
+      case 'appointment': return <Calendar className="h-3 w-3 text-primary" />;
+      case 'hot': return <Flame className="h-3 w-3 text-orange-500" />;
+      case 'prospect': return <Users className="h-3 w-3 text-blue-500" />;
+      case 'followup': return <Clock className="h-3 w-3 text-yellow-500" />;
+      case 'info': return <Send className="h-3 w-3 text-cyan-500" />;
+      case 'human': return <MessageSquare className="h-3 w-3 text-purple-500" />;
+      case 'no': return <ThumbsDown className="h-3 w-3 text-muted-foreground" />;
+      case 'dnc': return <Ban className="h-3 w-3 text-red-500" />;
+      case 'wrong': return <HelpCircle className="h-3 w-3 text-muted-foreground" />;
+      case 'dropped': return <PhoneMissed className="h-3 w-3 text-muted-foreground" />;
+      default: return <CheckCircle className="h-3 w-3" />;
+    }
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-background to-primary/5">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -160,84 +263,113 @@ export const DemoSimulationDashboard = ({
           </div>
         </Card>
 
-        {/* Tri-Panel Dashboard */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          {/* Stats Panel */}
-          <Card className="p-4 space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
+        {/* Main Dashboard Grid */}
+        <div className="grid gap-4 lg:grid-cols-12">
+          {/* Call Stats - Compact */}
+          <Card className="p-4 lg:col-span-3">
+            <h3 className="font-semibold flex items-center gap-2 mb-3">
+              <Phone className="h-4 w-4 text-primary" />
+              Call Stats
+            </h3>
+            <div className="space-y-2">
+              <StatRow icon={Phone} label="Total Calls" value={Math.round(callsMade)} color="text-blue-500" />
+              <StatRow icon={CheckCircle} label="Connected" value={connected} color="text-green-500" subtext={`${((connected / Math.max(callsMade, 1)) * 100).toFixed(1)}% pickup`} />
+              <StatRow icon={Voicemail} label="Voicemails" value={voicemails} color="text-yellow-500" />
+              <StatRow icon={PhoneOff} label="No Answer" value={noAnswer} color="text-muted-foreground" />
+            </div>
+          </Card>
+
+          {/* Disposition Buckets - The Star of the Show */}
+          <Card className="p-4 lg:col-span-5">
+            <h3 className="font-semibold flex items-center gap-2 mb-3">
               <TrendingUp className="h-4 w-4 text-primary" />
-              Live Stats
+              Disposition Breakdown
+              <span className="ml-auto text-xs text-muted-foreground font-normal">Real-time outcomes</span>
             </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <StatBox icon={Phone} label="Calls Made" value={Math.round(callsMade)} color="text-blue-500" />
-              <StatBox icon={CheckCircle} label="Connected" value={connected} color="text-green-500" />
-              <StatBox icon={Voicemail} label="Voicemails" value={voicemails} color="text-yellow-500" />
-              <StatBox icon={PhoneOff} label="No Answer" value={noAnswer} color="text-muted-foreground" />
-              <StatBox icon={Calendar} label="Appointments" value={appointments} color="text-primary" highlighted />
-              <StatBox icon={Users} label="Positive" value={connected} color="text-green-500" />
+            <div className="grid grid-cols-2 gap-2">
+              {/* Positive outcomes - highlighted */}
+              <DispositionBox icon={Calendar} label="Appointments" value={dispositions.appointment} color="bg-primary/20 text-primary ring-1 ring-primary/30" />
+              <DispositionBox icon={Flame} label="Hot Leads" value={dispositions.hotLead} color="bg-orange-500/20 text-orange-600" />
+              <DispositionBox icon={Users} label="Prospects" value={dispositions.potentialProspect} color="bg-blue-500/20 text-blue-600" />
+              <DispositionBox icon={Clock} label="Follow Ups" value={dispositions.followUp} color="bg-yellow-500/20 text-yellow-600" />
+              <DispositionBox icon={Send} label="Send Info" value={dispositions.sendInfo} color="bg-cyan-500/20 text-cyan-600" />
+              <DispositionBox icon={MessageSquare} label="Want Human" value={dispositions.wantHuman} color="bg-purple-500/20 text-purple-600" />
+              
+              {/* Neutral/negative - muted */}
+              <DispositionBox icon={PhoneMissed} label="Call Dropped" value={dispositions.callDropped} color="bg-muted/50 text-muted-foreground" />
+              <DispositionBox icon={ThumbsDown} label="Not Interested" value={dispositions.notInterested} color="bg-muted/50 text-muted-foreground" />
+              <DispositionBox icon={Ban} label="DNC" value={dispositions.dnc} color="bg-red-500/10 text-red-500" />
+              <DispositionBox icon={HelpCircle} label="Wrong Number" value={dispositions.wrongNumber} color="bg-muted/50 text-muted-foreground" />
+            </div>
+            
+            {/* Positive outcomes summary */}
+            <div className="mt-3 pt-3 border-t flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">Total Positive Outcomes</span>
+              <span className="text-xl font-bold text-green-500">{positiveOutcomes}</span>
             </div>
           </Card>
 
-          {/* Cost Tracker */}
-          <Card className="p-4 space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-primary" />
-              Cost Tracker
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                <span className="text-sm">Total Spent</span>
-                <span className="text-2xl font-bold">${totalCost.toFixed(2)}</span>
+          {/* Right Panel - Cost & Pipeline */}
+          <div className="lg:col-span-4 space-y-4">
+            {/* Cost Tracker */}
+            <Card className="p-4">
+              <h3 className="font-semibold flex items-center gap-2 mb-3">
+                <DollarSign className="h-4 w-4 text-primary" />
+                Cost Tracker
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
+                  <span className="text-sm">Total Spent</span>
+                  <span className="text-xl font-bold">${totalCost.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
+                  <span className="text-sm">Cost per Appt</span>
+                  <span className={`text-lg font-bold ${costPerAppointment <= config.costPerAppointmentTarget ? 'text-green-500' : 'text-yellow-500'}`}>
+                    ${costPerAppointment.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
+                  <span className="text-sm">Cost per Positive</span>
+                  <span className="text-lg font-medium">
+                    ${positiveOutcomes > 0 ? (totalCost / positiveOutcomes).toFixed(2) : '0.00'}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                <span className="text-sm">Cost per Appointment</span>
-                <span className={`text-xl font-bold ${costPerAppointment <= config.costPerAppointmentTarget ? 'text-green-500' : 'text-yellow-500'}`}>
-                  ${costPerAppointment.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                <span className="text-sm">Cost per Connect</span>
-                <span className="text-lg font-medium">
-                  ${connected > 0 ? (totalCost / connected).toFixed(2) : '0.00'}
-                </span>
-              </div>
-            </div>
-          </Card>
+            </Card>
 
-          {/* Pipeline Preview */}
-          <Card className="p-4 space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              Pipeline Updates
-            </h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {pipelineLeads.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Waiting for leads...
-                </p>
-              ) : (
-                pipelineLeads.map((lead, i) => (
-                  <div 
-                    key={i} 
-                    className={`flex items-center gap-2 p-2 rounded text-sm animate-in slide-in-from-left-2 ${
-                      lead.stage === 'appointment' ? 'bg-primary/20 text-primary' : 'bg-muted/50'
-                    }`}
-                    style={{ animationDelay: `${i * 50}ms` }}
-                  >
-                    {lead.stage === 'appointment' ? (
-                      <Calendar className="h-3 w-3" />
-                    ) : (
-                      <CheckCircle className="h-3 w-3" />
-                    )}
-                    <span className="font-medium">{lead.name}</span>
-                    <span className="text-xs text-muted-foreground ml-auto capitalize">
-                      {lead.stage.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
+            {/* Live Pipeline Feed */}
+            <Card className="p-4">
+              <h3 className="font-semibold flex items-center gap-2 mb-3">
+                <Users className="h-4 w-4 text-primary" />
+                Live Feed
+              </h3>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {pipelineLeads.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Waiting for calls...
+                  </p>
+                ) : (
+                  pipelineLeads.slice(0, 12).map((lead, i) => (
+                    <div 
+                      key={i} 
+                      className={`flex items-center gap-2 p-1.5 rounded text-xs animate-in slide-in-from-left-2 ${
+                        lead.icon === 'appointment' ? 'bg-primary/20' : 
+                        lead.icon === 'hot' ? 'bg-orange-500/10' :
+                        'bg-muted/30'
+                      }`}
+                      style={{ animationDelay: `${i * 30}ms` }}
+                    >
+                      {getIconForStage(lead.icon)}
+                      <span className="font-medium truncate">{lead.name}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto truncate">
+                        {lead.stage}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
         </div>
 
         {/* Complete Button */}
@@ -246,6 +378,9 @@ export const DemoSimulationDashboard = ({
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-500">
               <CheckCircle className="h-5 w-5" />
               <span className="font-medium">Campaign Complete!</span>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {positiveOutcomes} positive outcomes from {config.leadCount.toLocaleString()} leads
             </div>
             <div>
               <Button size="lg" onClick={handleComplete} className="gap-2">
@@ -260,25 +395,48 @@ export const DemoSimulationDashboard = ({
   );
 };
 
-const StatBox = ({ 
+const StatRow = ({ 
   icon: Icon, 
   label, 
   value, 
   color,
-  highlighted = false,
+  subtext,
 }: { 
   icon: any; 
   label: string; 
   value: number;
   color: string;
-  highlighted?: boolean;
+  subtext?: string;
 }) => (
-  <div className={`p-3 rounded-lg ${highlighted ? 'bg-primary/10 ring-1 ring-primary/20' : 'bg-muted/50'}`}>
-    <div className="flex items-center gap-2 mb-1">
+  <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+    <div className="flex items-center gap-2">
       <Icon className={`h-4 w-4 ${color}`} />
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm">{label}</span>
     </div>
-    <div className={`text-2xl font-bold ${highlighted ? 'text-primary' : ''}`}>
+    <div className="text-right">
+      <span className="font-bold">{value.toLocaleString()}</span>
+      {subtext && <span className="text-xs text-muted-foreground ml-1">{subtext}</span>}
+    </div>
+  </div>
+);
+
+const DispositionBox = ({ 
+  icon: Icon, 
+  label, 
+  value, 
+  color,
+}: { 
+  icon: any; 
+  label: string; 
+  value: number;
+  color: string;
+}) => (
+  <div className={`p-2 rounded-lg ${color} transition-all`}>
+    <div className="flex items-center gap-1.5 mb-0.5">
+      <Icon className="h-3 w-3" />
+      <span className="text-xs font-medium truncate">{label}</span>
+    </div>
+    <div className="text-xl font-bold">
       {value.toLocaleString()}
     </div>
   </div>
