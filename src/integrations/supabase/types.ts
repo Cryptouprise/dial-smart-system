@@ -1713,6 +1713,7 @@ export type Database = {
       demo_agent_config: {
         Row: {
           base_prompt: string
+          campaign_prompts: Json | null
           created_at: string | null
           demo_phone_number: string
           id: string
@@ -1722,11 +1723,13 @@ export type Database = {
           retell_agent_id: string
           retell_llm_id: string
           retell_phone_id: string | null
+          sms_confirmation_enabled: boolean | null
           updated_at: string | null
           voice_id: string | null
         }
         Insert: {
           base_prompt: string
+          campaign_prompts?: Json | null
           created_at?: string | null
           demo_phone_number: string
           id?: string
@@ -1736,11 +1739,13 @@ export type Database = {
           retell_agent_id: string
           retell_llm_id: string
           retell_phone_id?: string | null
+          sms_confirmation_enabled?: boolean | null
           updated_at?: string | null
           voice_id?: string | null
         }
         Update: {
           base_prompt?: string
+          campaign_prompts?: Json | null
           created_at?: string | null
           demo_phone_number?: string
           id?: string
@@ -1750,6 +1755,7 @@ export type Database = {
           retell_agent_id?: string
           retell_llm_id?: string
           retell_phone_id?: string | null
+          sms_confirmation_enabled?: boolean | null
           updated_at?: string | null
           voice_id?: string | null
         }
