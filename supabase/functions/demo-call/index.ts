@@ -57,24 +57,44 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get demo agent config
+    // Get demo agent config - uses existing platform agents/numbers
     const { data: config, error: configError } = await supabase
       .from('demo_agent_config')
       .select('*')
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
-    if (configError || !config) {
-      console.error('Demo agent config error:', configError);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Demo agent not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // If no demo config, try to use first available Retell agent + phone number
+    let agentId = config?.retell_agent_id;
+    let fromNumber = config?.demo_phone_number;
+    let llmId = config?.retell_llm_id;
+    let basePrompt = config?.base_prompt;
+
+    if (!agentId || agentId === 'PENDING_SETUP') {
+      // Fetch first active Retell phone number from platform
+      const { data: phoneNum } = await supabase
+        .from('phone_numbers')
+        .select('phone_number, retell_phone_id, retell_agent_id')
+        .eq('status', 'active')
+        .not('retell_phone_id', 'is', null)
+        .limit(1)
+        .maybeSingle();
+
+      if (!phoneNum?.retell_agent_id) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'No Retell agent configured. Please set up an agent in Settings > Phone Numbers.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      agentId = phoneNum.retell_agent_id;
+      fromNumber = phoneNum.phone_number;
+      console.log('📱 Using platform agent:', agentId, 'from:', fromNumber);
     }
 
-    if (config.retell_agent_id === 'PENDING_SETUP') {
+    if (!fromNumber) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Demo agent pending setup. Please configure in Retell dashboard.' }),
+        JSON.stringify({ success: false, error: 'No outbound phone number configured for demos' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -112,10 +132,10 @@ Deno.serve(async (req) => {
 
     console.log('🎯 Demo call for:', businessInfo.business_name, 'Campaign:', effectiveCampaignType);
 
-    // Update the LLM with personalized prompt (if LLM ID is configured)
-    if (config.retell_llm_id && config.retell_llm_id !== 'PENDING_SETUP') {
+    // Update the LLM with personalized prompt (only if demo config has LLM ID)
+    if (llmId && llmId !== 'PENDING_SETUP' && basePrompt) {
       try {
-        const llmUpdateResponse = await fetch(`https://api.retellai.com/update-retell-llm/${config.retell_llm_id}`, {
+        const llmUpdateResponse = await fetch(`https://api.retellai.com/update-retell-llm/${llmId}`, {
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${retellApiKey}`,
@@ -136,7 +156,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Make the call via Retell
+    // Make the call via Retell using platform agent
     const callResponse = await fetch('https://api.retellai.com/v2/create-phone-call', {
       method: 'POST',
       headers: {
@@ -144,9 +164,9 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from_number: config.demo_phone_number,
+        from_number: fromNumber,
         to_number: formattedPhone,
-        agent_id: config.retell_agent_id,
+        agent_id: agentId,
         metadata: {
           demo_session_id: sessionId,
           campaign_type: effectiveCampaignType,
