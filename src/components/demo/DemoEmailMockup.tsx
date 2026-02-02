@@ -83,14 +83,16 @@ Sent automatically by your AI sales assistant.`,
   const emailContent = getEmailContent();
 
   // Keyboard key component
-  const Key = ({ children, wide = false, extraWide = false }: { children?: React.ReactNode; wide?: boolean; extraWide?: boolean }) => (
-    <div className={cn(
-      "h-[10px] rounded-[2px] bg-gradient-to-b from-[#4a4a4c] to-[#3a3a3c] border border-[#2a2a2c] flex items-center justify-center shadow-[0_1px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]",
-      wide ? "w-[20px]" : extraWide ? "w-[55px]" : "w-[14px]"
-    )}>
-      {children && <span className="text-[4px] text-white/30 font-medium">{children}</span>}
-    </div>
-  );
+  const Key = ({ children, wide = false, extraWide = false }: { children?: React.ReactNode; wide?: boolean; extraWide?: boolean }): JSX.Element => {
+    return (
+      <div className={cn(
+        "h-[10px] rounded-[2px] bg-gradient-to-b from-[#4a4a4c] to-[#3a3a3c] border border-[#2a2a2c] flex items-center justify-center shadow-[0_1px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]",
+        wide ? "w-[20px]" : extraWide ? "w-[55px]" : "w-[14px]"
+      )}>
+        {children && <span className="text-[4px] text-white/30 font-medium">{children}</span>}
+      </div>
+    );
+  };
 
   return (
     <div className="relative w-full max-w-[600px]">
