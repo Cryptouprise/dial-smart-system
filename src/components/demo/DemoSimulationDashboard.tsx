@@ -400,6 +400,7 @@ export const DemoSimulationDashboard = ({
       case 'dropped': return <PhoneMissed className="h-3 w-3 text-muted-foreground" />;
       case 'callback': return <PhoneIncoming className="h-3 w-3 text-cyan-500" />;
       default: return <CheckCircle className="h-3 w-3" />;
+    }
   };
 
   return (
@@ -748,3 +749,5 @@ const DispositionBox = ({
     </div>
   </div>
 );
+
+export default DemoSimulationDashboard;
