@@ -353,19 +353,32 @@ export const DemoSimulationDashboard = ({
   };
 
   return (
-    <div className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-background via-background to-primary/5">
+    <div className="min-h-screen p-4 md:p-8 bg-background">
       <div className="max-w-[1600px] mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Campaign Simulation</h1>
-            <p className="text-muted-foreground">
-              {scrapedData?.business_name} - {campaignType.replace(/_/g, ' ')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary">
-            <Clock className="h-4 w-4" />
-            <span className="font-mono text-sm">4x Time-lapse</span>
+        {/* Premium Header */}
+        <div className="relative mb-8">
+          <div className="absolute -inset-4 bg-gradient-to-r from-violet-500/10 via-primary/5 to-cyan-500/10 rounded-3xl blur-2xl" />
+          
+          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30">
+                  <Phone className="h-5 w-5 text-primary" />
+                </div>
+                Campaign Simulation
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                <span className="bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent font-semibold">
+                  {scrapedData?.business_name}
+                </span>
+                {' '}- {campaignType.replace(/_/g, ' ')}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-cyan-500/10 border border-primary/20 text-primary shadow-lg shadow-primary/5">
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <Clock className="h-4 w-4" />
+              <span className="font-mono text-sm font-medium">4x Time-lapse</span>
+            </div>
           </div>
         </div>
 
@@ -373,128 +386,158 @@ export const DemoSimulationDashboard = ({
         <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
           {/* Left: Dashboard Content */}
           <div className="space-y-6">
-            {/* Progress */}
-            <Card className="p-4 glass-card">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Campaign Progress</span>
-                <span className="font-mono">
-                  <AnimatedCounter value={Math.round(callsMade)} duration={300} /> / {config.leadCount.toLocaleString()}
-                </span>
+            {/* Progress - Premium Card */}
+            <div className="relative">
+              <div className="absolute -inset-[1px] bg-gradient-to-r from-primary/50 via-violet-500/50 to-cyan-500/50 rounded-2xl blur-sm opacity-50" />
+              <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-primary/30">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-muted-foreground">Campaign Progress</span>
+                  <span className="font-mono text-lg font-bold bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent">
+                    <AnimatedCounter value={Math.round(callsMade)} duration={300} /> / {config.leadCount.toLocaleString()}
+                  </span>
+                </div>
+                <Progress value={progress} className="h-3" />
+                <div className="flex justify-between mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    Elapsed: <span className="font-medium text-foreground">{formatTime(elapsedMinutes)}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5" />
+                    Cost: <span className="font-medium text-primary">$<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={300} decimals={2} /></span>
+                  </span>
+                </div>
               </div>
-              <Progress value={progress} className="h-3" />
-              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                <span>Elapsed: {formatTime(elapsedMinutes)}</span>
-                <span>Cost: $<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={300} decimals={2} /></span>
-              </div>
-            </Card>
+            </div>
 
             {/* Stats Grid */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {/* Call Stats */}
-              <Card className="p-4 glass-card">
-                <h3 className="font-semibold flex items-center gap-2 mb-3">
-                  <Phone className="h-4 w-4 text-primary" />
-                  Call Stats
-                </h3>
-                <div className="space-y-2">
-                  <StatRow icon={Phone} label="Total Calls" value={Math.round(callsMade)} color="text-primary" />
-                  <StatRow icon={CheckCircle} label="Connected" value={connected} color="text-green-500" subtext={`${((connected / Math.max(callsMade, 1)) * 100).toFixed(1)}% pickup`} />
-                  <StatRow icon={Voicemail} label="Voicemails" value={voicemails} color="text-amber-500" />
-                  <StatRow icon={PhoneOff} label="No Answer" value={noAnswer} color="text-muted-foreground" />
+              {/* Call Stats - Premium */}
+              <div className="relative group">
+                <div className="absolute -inset-[1px] bg-gradient-to-r from-emerald-500/50 to-green-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
+                <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-emerald-500/30 hover:border-emerald-500/50 transition-all">
+                  <h3 className="font-semibold flex items-center gap-2 mb-4">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/20">
+                      <Phone className="h-4 w-4 text-emerald-500" />
+                    </div>
+                    Call Stats
+                  </h3>
+                  <div className="space-y-2">
+                    <StatRow icon={Phone} label="Total Calls" value={Math.round(callsMade)} color="text-primary" />
+                    <StatRow icon={CheckCircle} label="Connected" value={connected} color="text-emerald-500" subtext={`${((connected / Math.max(callsMade, 1)) * 100).toFixed(1)}% pickup`} />
+                    <StatRow icon={Voicemail} label="Voicemails" value={voicemails} color="text-amber-500" />
+                    <StatRow icon={PhoneOff} label="No Answer" value={noAnswer} color="text-muted-foreground" />
+                  </div>
                 </div>
-              </Card>
+              </div>
 
-              {/* Cost Tracker */}
-              <Card className="p-4 glass-card">
-                <h3 className="font-semibold flex items-center gap-2 mb-3">
-                  <DollarSign className="h-4 w-4 text-primary" />
-                  Cost Tracker
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
-                    <span className="text-sm">Total Spent</span>
-                    <span className="text-xl font-bold">$<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={400} decimals={2} /></span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
-                    <span className="text-sm">Cost per Appt</span>
-                    <span className={`text-lg font-bold ${costPerAppointment <= config.costPerAppointmentTarget ? 'text-green-500' : 'text-amber-500'}`}>
-                      $<AnimatedCounter value={Math.round(costPerAppointment * 100) / 100} duration={400} decimals={2} />
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
-                    <span className="text-sm">Cost per Positive</span>
-                    <span className="text-lg font-medium">
-                      $<AnimatedCounter value={positiveOutcomes > 0 ? Math.round((totalCost / positiveOutcomes) * 100) / 100 : 0} duration={400} decimals={2} />
-                    </span>
+              {/* Cost Tracker - Premium */}
+              <div className="relative group">
+                <div className="absolute -inset-[1px] bg-gradient-to-r from-amber-500/50 to-yellow-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
+                <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-amber-500/30 hover:border-amber-500/50 transition-all">
+                  <h3 className="font-semibold flex items-center gap-2 mb-4">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500/20 to-yellow-500/20 border border-amber-500/20">
+                      <DollarSign className="h-4 w-4 text-amber-500" />
+                    </div>
+                    Cost Tracker
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30 border border-border/30">
+                      <span className="text-sm">Total Spent</span>
+                      <span className="text-xl font-bold text-amber-500">$<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={400} decimals={2} /></span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30 border border-border/30">
+                      <span className="text-sm">Cost per Appt</span>
+                      <span className={`text-lg font-bold ${costPerAppointment <= config.costPerAppointmentTarget ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        $<AnimatedCounter value={Math.round(costPerAppointment * 100) / 100} duration={400} decimals={2} />
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30 border border-border/30">
+                      <span className="text-sm">Cost per Positive</span>
+                      <span className="text-lg font-medium">
+                        $<AnimatedCounter value={positiveOutcomes > 0 ? Math.round((totalCost / positiveOutcomes) * 100) / 100 : 0} duration={400} decimals={2} />
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </Card>
+              </div>
 
-              {/* Live Feed */}
-              <Card className="p-4 glass-card">
-                <h3 className="font-semibold flex items-center gap-2 mb-3">
-                  <Users className="h-4 w-4 text-primary" />
-                  Live Feed
-                </h3>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {pipelineLeads.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      Waiting for calls...
-                    </p>
-                  ) : (
-                    pipelineLeads.slice(0, 8).map((lead, i) => (
-                      <div 
-                        key={i} 
-                        className={`flex items-center gap-2 p-1.5 rounded text-xs animate-in slide-in-from-left-2 ${
-                          lead.icon === 'appointment' ? 'bg-primary/20' : 
-                          lead.icon === 'hot' ? 'bg-orange-500/10' :
-                          'bg-muted/30'
-                        }`}
-                        style={{ animationDelay: `${i * 30}ms` }}
-                      >
-                        {getIconForStage(lead.icon)}
-                        <span className="font-medium truncate">{lead.name}</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto truncate">
-                          {lead.stage}
-                        </span>
-                      </div>
-                    ))
-                  )}
+              {/* Live Feed - Premium */}
+              <div className="relative group">
+                <div className="absolute -inset-[1px] bg-gradient-to-r from-violet-500/50 to-purple-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
+                <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-violet-500/30 hover:border-violet-500/50 transition-all">
+                  <h3 className="font-semibold flex items-center gap-2 mb-4">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/20">
+                      <Users className="h-4 w-4 text-violet-500" />
+                    </div>
+                    Live Feed
+                    <div className="ml-auto w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+                  </h3>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {pipelineLeads.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Waiting for calls...
+                      </p>
+                    ) : (
+                      pipelineLeads.slice(0, 8).map((lead, i) => (
+                        <div 
+                          key={i} 
+                          className={`flex items-center gap-2 p-2 rounded-lg text-xs animate-in slide-in-from-left-2 border ${
+                            lead.icon === 'appointment' ? 'bg-primary/10 border-primary/30' : 
+                            lead.icon === 'hot' ? 'bg-orange-500/10 border-orange-500/30' :
+                            'bg-muted/20 border-border/30'
+                          }`}
+                          style={{ animationDelay: `${i * 30}ms` }}
+                        >
+                          {getIconForStage(lead.icon)}
+                          <span className="font-medium truncate">{lead.name}</span>
+                          <span className="text-[10px] text-muted-foreground ml-auto truncate">
+                            {lead.stage}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </Card>
+              </div>
             </div>
 
-            {/* Disposition Breakdown - Full Width */}
-            <Card className="p-4 glass-card">
-              <h3 className="font-semibold flex items-center gap-2 mb-3">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                Disposition Breakdown
-                <span className="ml-auto text-xs text-muted-foreground font-normal">Real-time outcomes</span>
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                {/* Positive outcomes - highlighted */}
-                <DispositionBox icon={Calendar} label="Appointments" value={dispositions.appointment} color="bg-primary/20 text-primary glow-border" />
-                <DispositionBox icon={Flame} label="Hot Leads" value={dispositions.hotLead} color="bg-orange-500/20 text-orange-600" />
-                <DispositionBox icon={Users} label="Prospects" value={dispositions.potentialProspect} color="bg-blue-500/20 text-blue-600" />
-                <DispositionBox icon={Clock} label="Follow Ups" value={dispositions.followUp} color="bg-amber-500/20 text-amber-600" />
-                <DispositionBox icon={Send} label="Send Info" value={dispositions.sendInfo} color="bg-cyan-500/20 text-cyan-600" />
-                <DispositionBox icon={MessageSquare} label="Want Human" value={dispositions.wantHuman} color="bg-purple-500/20 text-purple-600" />
+            {/* Disposition Breakdown - Premium Full Width */}
+            <div className="relative">
+              <div className="absolute -inset-[1px] bg-gradient-to-r from-primary/30 via-violet-500/30 to-cyan-500/30 rounded-2xl blur-sm opacity-50" />
+              <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-primary/20">
+                <h3 className="font-semibold flex items-center gap-2 mb-4">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-cyan-500/20 border border-primary/20">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                  </div>
+                  Disposition Breakdown
+                  <span className="ml-auto text-xs text-muted-foreground font-normal px-2 py-1 rounded-full bg-muted/50">Real-time outcomes</span>
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                  {/* Positive outcomes - highlighted */}
+                  <DispositionBox icon={Calendar} label="Appointments" value={dispositions.appointment} color="bg-gradient-to-br from-primary/20 to-violet-500/20 text-primary border-2 border-primary/40" />
+                  <DispositionBox icon={Flame} label="Hot Leads" value={dispositions.hotLead} color="bg-gradient-to-br from-orange-500/20 to-amber-500/20 text-orange-500 border-2 border-orange-500/40" />
+                  <DispositionBox icon={Users} label="Prospects" value={dispositions.potentialProspect} color="bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-500 border-2 border-blue-500/40" />
+                  <DispositionBox icon={Clock} label="Follow Ups" value={dispositions.followUp} color="bg-gradient-to-br from-amber-500/20 to-yellow-500/20 text-amber-500 border-2 border-amber-500/40" />
+                  <DispositionBox icon={Send} label="Send Info" value={dispositions.sendInfo} color="bg-gradient-to-br from-cyan-500/20 to-teal-500/20 text-cyan-500 border-2 border-cyan-500/40" />
+                  <DispositionBox icon={MessageSquare} label="Want Human" value={dispositions.wantHuman} color="bg-gradient-to-br from-purple-500/20 to-violet-500/20 text-purple-500 border-2 border-purple-500/40" />
+                  
+                  {/* Neutral/negative - muted */}
+                  <DispositionBox icon={PhoneMissed} label="Call Dropped" value={dispositions.callDropped} color="bg-muted/30 text-muted-foreground border border-border/30" />
+                  <DispositionBox icon={ThumbsDown} label="Not Interested" value={dispositions.notInterested} color="bg-muted/30 text-muted-foreground border border-border/30" />
+                  <DispositionBox icon={Ban} label="DNC" value={dispositions.dnc} color="bg-destructive/10 text-destructive border border-destructive/30" />
+                  <DispositionBox icon={HelpCircle} label="Wrong Number" value={dispositions.wrongNumber} color="bg-muted/30 text-muted-foreground border border-border/30" />
+                </div>
                 
-                {/* Neutral/negative - muted */}
-                <DispositionBox icon={PhoneMissed} label="Call Dropped" value={dispositions.callDropped} color="bg-muted/50 text-muted-foreground" />
-                <DispositionBox icon={ThumbsDown} label="Not Interested" value={dispositions.notInterested} color="bg-muted/50 text-muted-foreground" />
-                <DispositionBox icon={Ban} label="DNC" value={dispositions.dnc} color="bg-destructive/10 text-destructive" />
-                <DispositionBox icon={HelpCircle} label="Wrong Number" value={dispositions.wrongNumber} color="bg-muted/50 text-muted-foreground" />
+                {/* Positive outcomes summary */}
+                <div className="mt-5 pt-4 border-t border-border/30 flex items-center justify-between">
+                  <span className="text-sm font-medium text-muted-foreground">Total Positive Outcomes</span>
+                  <span className="text-3xl font-bold bg-gradient-to-r from-emerald-500 to-green-500 bg-clip-text text-transparent">
+                    <AnimatedCounter value={positiveOutcomes} duration={500} />
+                  </span>
+                </div>
               </div>
-              
-              {/* Positive outcomes summary */}
-              <div className="mt-4 pt-3 border-t flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">Total Positive Outcomes</span>
-                <span className="text-2xl font-bold text-green-500">
-                  <AnimatedCounter value={positiveOutcomes} duration={500} />
-                </span>
-              </div>
-            </Card>
+            </div>
 
             {/* Secondary Campaign Callout */}
             <DemoSecondaryCampaignCallout 
@@ -533,12 +576,12 @@ export const DemoSimulationDashboard = ({
             )}
           </div>
 
-          {/* Right: Docked Phone Panel */}
+          {/* Right: Docked Phone Panel - Premium */}
           <div className="xl:sticky xl:top-4 xl:self-start">
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="text-center">
-                <h3 className="font-semibold text-sm">Live SMS Conversation</h3>
-                <p className="text-xs text-muted-foreground">Try replying to Lady Jarvis!</p>
+                <h3 className="font-semibold text-base bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent">Live SMS Conversation</h3>
+                <p className="text-xs text-muted-foreground mt-1">Try replying to Lady Jarvis!</p>
               </div>
               <DemoPhoneMockup
                 campaignType={campaignType}
@@ -546,9 +589,11 @@ export const DemoSimulationDashboard = ({
                 prospectName={prospectName}
                 onSendMessage={handleSendMessage}
               />
-              <p className="text-xs text-center text-muted-foreground">
-                💡 This is exactly how your leads would interact
-              </p>
+              <div className="text-center p-3 rounded-xl bg-gradient-to-r from-primary/5 via-violet-500/5 to-cyan-500/5 border border-primary/20">
+                <p className="text-xs text-muted-foreground">
+                  💡 This is exactly how your leads would interact
+                </p>
+              </div>
             </div>
           </div>
         </div>

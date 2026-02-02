@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Send, Phone, Wifi, Battery, Signal } from 'lucide-react';
+import { Send, Phone, Wifi, Battery, Signal, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Message {
@@ -142,106 +141,134 @@ export const DemoPhoneMockup = ({
   };
 
   return (
-    <Card className="w-full max-w-[320px] mx-auto bg-zinc-900 rounded-[2.5rem] p-2 shadow-2xl border-zinc-800">
-      {/* Phone Frame */}
-      <div className="relative bg-black rounded-[2rem] overflow-hidden">
-        {/* Status Bar */}
-        <div className="flex items-center justify-between px-6 py-2 text-white text-xs">
-          <span className="font-semibold">9:41</span>
-          <div className="absolute left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-full" />
-          <div className="flex items-center gap-1">
-            <Signal className="h-3.5 w-3.5" />
-            <Wifi className="h-3.5 w-3.5" />
-            <Battery className="h-3.5 w-3.5" />
-          </div>
-        </div>
-
-        {/* Messages Header */}
-        <div className="bg-zinc-900/80 backdrop-blur px-4 py-3 border-b border-zinc-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center">
-              <Phone className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <p className="text-white font-semibold text-sm">Lady Jarvis</p>
-              <p className="text-zinc-400 text-xs">{getCampaignSubtitle(campaignType)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Messages Container */}
-        <div className="h-[320px] overflow-y-auto bg-zinc-950 p-3 space-y-3">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                'flex',
-                message.sender === 'user' ? 'justify-end' : 'justify-start'
-              )}
-            >
-              <div
-                className={cn(
-                  'max-w-[85%] px-3 py-2 rounded-2xl text-sm animate-in slide-in-from-bottom-2',
-                  message.sender === 'user'
-                    ? 'bg-primary text-primary-foreground rounded-br-md'
-                    : 'bg-zinc-800 text-zinc-100 rounded-bl-md'
-                )}
-              >
-                <p className="whitespace-pre-wrap">{message.text}</p>
-                <p className={cn(
-                  'text-[10px] mt-1',
-                  message.sender === 'user' ? 'text-primary-foreground/70' : 'text-zinc-500'
-                )}>
-                  {formatTime(message.timestamp)}
-                </p>
+    <div className="relative w-full max-w-[340px] mx-auto">
+      {/* Outer glow effect */}
+      <div className="absolute -inset-3 bg-gradient-to-r from-violet-500/20 via-primary/20 to-cyan-500/20 rounded-[3rem] blur-xl opacity-60" />
+      
+      {/* Phone outer frame - titanium style */}
+      <div className="relative bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-900 rounded-[2.8rem] p-[3px] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8),0_0_40px_rgba(139,92,246,0.15)]">
+        {/* Inner bezel */}
+        <div className="bg-black rounded-[2.6rem] p-2">
+          {/* Screen bezel */}
+          <div className="relative bg-zinc-950 rounded-[2.2rem] overflow-hidden border border-zinc-800/50">
+            
+            {/* Status Bar */}
+            <div className="relative flex items-center justify-between px-8 py-3 text-white text-xs bg-black/80 backdrop-blur-sm">
+              <span className="font-semibold text-sm">9:41</span>
+              {/* Dynamic Island */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-2 w-28 h-7 bg-black rounded-full flex items-center justify-center gap-2 shadow-lg">
+                <div className="w-2 h-2 rounded-full bg-zinc-800" />
+                <div className="w-3 h-3 rounded-full bg-zinc-900 ring-1 ring-zinc-700" />
               </div>
-            </div>
-          ))}
-          
-          {/* Typing indicator */}
-          {isSending && (
-            <div className="flex justify-start">
-              <div className="bg-zinc-800 px-4 py-3 rounded-2xl rounded-bl-md">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="flex items-center gap-1.5">
+                <Signal className="h-4 w-4" />
+                <Wifi className="h-4 w-4" />
+                <div className="flex items-center">
+                  <Battery className="h-4 w-4" />
                 </div>
               </div>
             </div>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </div>
 
-        {/* Input Area */}
-        <div className="bg-zinc-900 p-3 border-t border-zinc-800">
-          <div className="flex gap-2">
-            <Input
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a reply..."
-              className="flex-1 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 rounded-full text-sm"
-              disabled={isSending || isLoading}
-            />
-            <Button
-              size="icon"
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isSending || isLoading}
-              className="rounded-full shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            {/* Messages Header - Premium style */}
+            <div className="bg-gradient-to-b from-zinc-900/95 to-zinc-900/80 backdrop-blur-xl px-4 py-3 border-b border-zinc-800/50">
+              <div className="flex items-center gap-3">
+                {/* Premium avatar with glow */}
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-violet-500 to-cyan-500 blur-md opacity-50" />
+                  <div className="relative w-11 h-11 rounded-full bg-gradient-to-br from-violet-500 via-primary to-cyan-500 flex items-center justify-center ring-2 ring-primary/30 shadow-lg">
+                    <Bot className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-zinc-900" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white font-semibold text-sm">Lady Jarvis</p>
+                  <p className="text-zinc-400 text-xs flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {getCampaignSubtitle(campaignType)}
+                  </p>
+                </div>
+                <Phone className="h-5 w-5 text-primary" />
+              </div>
+            </div>
+
+            {/* Messages Container */}
+            <div className="h-[300px] overflow-y-auto bg-gradient-to-b from-zinc-950 to-black p-4 space-y-3">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={cn(
+                    'flex',
+                    message.sender === 'user' ? 'justify-end' : 'justify-start'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'max-w-[85%] px-4 py-2.5 rounded-2xl text-sm animate-in slide-in-from-bottom-2 shadow-lg',
+                      message.sender === 'user'
+                        ? 'bg-gradient-to-br from-primary to-primary/80 text-primary-foreground rounded-br-md'
+                        : 'bg-gradient-to-br from-zinc-800 to-zinc-800/80 text-zinc-100 rounded-bl-md border border-zinc-700/50'
+                    )}
+                  >
+                    <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                    <p className={cn(
+                      'text-[10px] mt-1.5 opacity-70',
+                      message.sender === 'user' ? 'text-right' : ''
+                    )}>
+                      {formatTime(message.timestamp)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Typing indicator */}
+              {isSending && (
+                <div className="flex justify-start">
+                  <div className="bg-gradient-to-br from-zinc-800 to-zinc-800/80 px-4 py-3 rounded-2xl rounded-bl-md border border-zinc-700/50 shadow-lg">
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="bg-gradient-to-b from-zinc-900/95 to-zinc-900 p-3 border-t border-zinc-800/50">
+              <div className="flex gap-2">
+                <Input
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="iMessage"
+                  className="flex-1 bg-zinc-800/80 border-zinc-700/50 text-white placeholder:text-zinc-500 rounded-full text-sm h-10 focus:ring-primary/50"
+                  disabled={isSending || isLoading}
+                />
+                <Button
+                  size="icon"
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || isSending || isLoading}
+                  className="rounded-full shrink-0 h-10 w-10 bg-gradient-to-br from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Home Indicator */}
+            <div className="flex justify-center py-2 bg-black">
+              <div className="w-36 h-1.5 bg-zinc-600 rounded-full" />
+            </div>
           </div>
         </div>
-
-        {/* Home Indicator */}
-        <div className="flex justify-center py-2 bg-black">
-          <div className="w-32 h-1 bg-zinc-600 rounded-full" />
-        </div>
       </div>
-    </Card>
+      
+      {/* Reflection underneath */}
+      <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-[80%] h-8 bg-gradient-to-b from-primary/10 to-transparent rounded-full blur-xl" />
+    </div>
   );
 };
