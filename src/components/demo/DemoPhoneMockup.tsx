@@ -15,6 +15,7 @@ interface Message {
 interface DemoPhoneMockupProps {
   campaignType: string;
   businessName?: string;
+  prospectName?: string;
   onSendMessage?: (message: string) => Promise<string>;
   initialMessage?: string;
   isLoading?: boolean;
@@ -38,18 +39,19 @@ const getCampaignSubtitle = (campaignType: string): string => {
 };
 
 // Opening messages per campaign type
-const getCampaignOpeningMessage = (campaignType: string, businessName: string): string => {
+const getCampaignOpeningMessage = (campaignType: string, businessName: string, prospectName?: string): string => {
+  const greeting = prospectName ? `Hey ${prospectName}!` : 'Hey!';
   const messages: Record<string, string> = {
-    database_reactivation: `Hey! This is Lady Jarvis from ${businessName} 💜 Great chatting with you! I noticed you checked us out a while back. Is that still something you're looking for, or has that ship sailed?`,
-    speed_to_lead: `⚡ That was fast, right? Lady Jarvis here from ${businessName}! I saw you just checked us out online. What specific problem are you trying to solve?`,
-    appointment_setter: `📅 Hey! Lady Jarvis from ${businessName} here. I help people get time with our team. What's the main thing you're hoping to accomplish?`,
-    lead_qualification: `✅ Hi there! Lady Jarvis from ${businessName}. I'm here to see if we're a good fit for each other. What's your biggest challenge right now?`,
-    customer_service: `💬 Hey! Lady Jarvis from ${businessName} support. How can I help you today?`,
-    appointment_reminder: `🔔 Hey! Lady Jarvis from ${businessName} here. Quick reminder - you've got an appointment coming up. You still good for that?`,
-    cross_sell: `🎁 Hey! Lady Jarvis from ${businessName}. Thanks for being a customer! How's everything going with what you have?`,
-    cold_outreach: `👋 Hi! Lady Jarvis here from ${businessName}. I noticed you might be a great fit for what we do. Got a quick sec?`,
-    survey_feedback: `📊 Hey! Lady Jarvis from ${businessName}. We'd love to hear how your experience has been. Mind sharing some quick feedback?`,
-    win_back: `💔 Hey there! Lady Jarvis from ${businessName}. We miss you! I wanted to check in and see if there's anything we can do to help.`,
+    database_reactivation: `${greeting} This is Lady Jarvis from ${businessName} 💜 Great chatting with you! I noticed you checked us out a while back. Is that still something you're looking for, or has that ship sailed?`,
+    speed_to_lead: `⚡ That was fast, right? ${prospectName ? `${prospectName}, ` : ''}Lady Jarvis here from ${businessName}! I saw you just checked us out online. What specific problem are you trying to solve?`,
+    appointment_setter: `📅 ${greeting} Lady Jarvis from ${businessName} here. I help people get time with our team. What's the main thing you're hoping to accomplish?`,
+    lead_qualification: `✅ ${prospectName ? `Hi ${prospectName}!` : 'Hi there!'} Lady Jarvis from ${businessName}. I'm here to see if we're a good fit for each other. What's your biggest challenge right now?`,
+    customer_service: `💬 ${greeting} Lady Jarvis from ${businessName} support. How can I help you today?`,
+    appointment_reminder: `🔔 ${greeting} Lady Jarvis from ${businessName} here. Quick reminder - you've got an appointment coming up. You still good for that?`,
+    cross_sell: `🎁 ${greeting} Lady Jarvis from ${businessName}. Thanks for being a customer! How's everything going with what you have?`,
+    cold_outreach: `👋 ${prospectName ? `Hi ${prospectName}!` : 'Hi!'} Lady Jarvis here from ${businessName}. I noticed you might be a great fit for what we do. Got a quick sec?`,
+    survey_feedback: `📊 ${greeting} Lady Jarvis from ${businessName}. We'd love to hear how your experience has been. Mind sharing some quick feedback?`,
+    win_back: `💔 ${prospectName ? `Hey ${prospectName}!` : 'Hey there!'} Lady Jarvis from ${businessName}. We miss you! I wanted to check in and see if there's anything we can do to help.`,
   };
   
   return messages[campaignType] || messages.database_reactivation;
@@ -58,6 +60,7 @@ const getCampaignOpeningMessage = (campaignType: string, businessName: string): 
 export const DemoPhoneMockup = ({
   campaignType,
   businessName = 'Call Boss',
+  prospectName,
   onSendMessage,
   initialMessage,
   isLoading = false,
@@ -70,7 +73,7 @@ export const DemoPhoneMockup = ({
 
   // Initialize with opening message
   useEffect(() => {
-    const opening = initialMessage || getCampaignOpeningMessage(campaignType, businessName);
+    const opening = initialMessage || getCampaignOpeningMessage(campaignType, businessName, prospectName);
     setMessages([
       {
         id: '1',
@@ -79,7 +82,7 @@ export const DemoPhoneMockup = ({
         timestamp: new Date(),
       },
     ]);
-  }, [campaignType, businessName, initialMessage]);
+  }, [campaignType, businessName, prospectName, initialMessage]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
