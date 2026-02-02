@@ -374,28 +374,6 @@ export const DemoSimulationDashboard = ({
                 {' '}- {campaignType.replace(/_/g, ' ')}
               </p>
             </div>
-            {/* HIGHLIGHTED 4x Time-lapse Indicator */}
-            <div className="relative">
-              {/* Animated glow rings */}
-              <div className="absolute -inset-3 bg-gradient-to-r from-amber-500/40 via-orange-500/40 to-red-500/40 rounded-full blur-xl animate-pulse" />
-              <div className="absolute -inset-2 bg-gradient-to-r from-amber-500/30 via-orange-500/30 to-red-500/30 rounded-full blur-md animate-pulse" style={{ animationDelay: '150ms' }} />
-              
-              <div className="relative flex items-center gap-3 px-5 py-3 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white shadow-[0_0_30px_rgba(251,146,60,0.5),0_0_60px_rgba(251,146,60,0.3)] animate-pulse">
-                {/* Pulsing dot */}
-                <div className="relative">
-                  <div className="absolute inset-0 w-3 h-3 rounded-full bg-white animate-ping" />
-                  <div className="relative w-3 h-3 rounded-full bg-white" />
-                </div>
-                <Clock className="h-5 w-5" />
-                <span className="font-mono text-base font-bold tracking-wide">1 DAY PER MINUTE</span>
-                {/* Speed lines effect */}
-                <div className="flex gap-0.5">
-                  <div className="w-1 h-4 bg-white/60 rounded-full animate-pulse" />
-                  <div className="w-1 h-5 bg-white/80 rounded-full animate-pulse" style={{ animationDelay: '100ms' }} />
-                  <div className="w-1 h-3 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -403,10 +381,54 @@ export const DemoSimulationDashboard = ({
         <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
           {/* Left: Dashboard Content */}
           <div className="space-y-6">
-            {/* Progress - Premium Card */}
+            {/* Progress - Premium Card with MASSIVE Time-lapse Indicator */}
             <div className="relative">
               <div className="absolute -inset-[1px] bg-gradient-to-r from-primary/50 via-violet-500/50 to-cyan-500/50 rounded-2xl blur-sm opacity-50" />
               <div className="relative p-5 rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-primary/30">
+                {/* HUGE Time-lapse Banner at top of progress card */}
+                <div className="relative mb-4 -mx-5 -mt-5 overflow-hidden rounded-t-2xl">
+                  {/* Animated background */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 animate-pulse" />
+                  <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_linear_infinite]" />
+                  
+                  <div className="relative flex items-center justify-center gap-4 px-6 py-4 text-white">
+                    {/* Pulsing recording dot */}
+                    <div className="relative">
+                      <div className="absolute inset-0 w-4 h-4 rounded-full bg-white animate-ping" />
+                      <div className="relative w-4 h-4 rounded-full bg-white shadow-lg" />
+                    </div>
+                    
+                    {/* Speed indicator icon */}
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-4 bg-white/80 rounded-full" />
+                      <div className="w-1.5 h-6 bg-white rounded-full" />
+                      <div className="w-1.5 h-8 bg-white rounded-full" />
+                      <div className="w-1.5 h-6 bg-white rounded-full" />
+                      <div className="w-1.5 h-4 bg-white/80 rounded-full" />
+                    </div>
+                    
+                    <div className="text-center">
+                      <span className="font-black text-xl md:text-2xl tracking-tight drop-shadow-lg">
+                        ⚡ SIMULATING FULL DAY ⚡
+                      </span>
+                      <p className="text-xs md:text-sm font-medium text-white/90 mt-0.5">
+                        Watch a complete workday unfold in real-time
+                      </p>
+                    </div>
+                    
+                    {/* Speed indicator icon (mirrored) */}
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-4 bg-white/80 rounded-full" />
+                      <div className="w-1.5 h-6 bg-white rounded-full" />
+                      <div className="w-1.5 h-8 bg-white rounded-full" />
+                      <div className="w-1.5 h-6 bg-white rounded-full" />
+                      <div className="w-1.5 h-4 bg-white/80 rounded-full" />
+                    </div>
+                    
+                    <Clock className="h-6 w-6 animate-spin" style={{ animationDuration: '3s' }} />
+                  </div>
+                </div>
+                
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-muted-foreground">Campaign Progress</span>
                   <span className="font-mono text-lg font-bold bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent">
