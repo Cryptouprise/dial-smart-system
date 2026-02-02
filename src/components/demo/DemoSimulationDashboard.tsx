@@ -302,8 +302,8 @@ export const DemoSimulationDashboard = ({
                   { stage: '📞 CALLBACK', name: leadName, icon: 'callback' },
                   ...leads.slice(0, 24),
                 ]);
-                // 25% of callbacks convert to appointments
-                if (Math.random() < 0.25) {
+                // ~2.6% of callbacks convert to appointments (4 out of 155)
+                if (Math.random() < 0.026) {
                   setCallbackAppointments(a => a + 1);
                   setDispositions(d => ({ ...d, appointment: d.appointment + 1 }));
                   setEmailCount(c => c + 1);
@@ -328,8 +328,8 @@ export const DemoSimulationDashboard = ({
                   { stage: '📞 CALLBACK', name: leadName, icon: 'callback' },
                   ...leads.slice(0, 24),
                 ]);
-                // 25% of callbacks convert to appointments
-                if (Math.random() < 0.25) {
+                // ~2.6% of callbacks convert to appointments (4 out of 155)
+                if (Math.random() < 0.026) {
                   setCallbackAppointments(a => a + 1);
                   setDispositions(d => ({ ...d, appointment: d.appointment + 1 }));
                   setEmailCount(c => c + 1);
