@@ -523,7 +523,7 @@ export const DemoSimulationDashboard = ({
                         label="Callbacks" 
                         value={callbacks} 
                         color="text-cyan-500" 
-                        subtext={callbackAppointments > 0 ? `${callbackAppointments} → appts` : undefined}
+                        subtext={`${callbackAppointments} out of ${callbacks} → appts`}
                       />
                     )}
                   </div>
