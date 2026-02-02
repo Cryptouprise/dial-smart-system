@@ -14,7 +14,8 @@ interface DemoPhoneInputProps {
   scrapedData: any;
   prospectName: string;
   prospectCompany: string;
-  onProspectInfoChange: (name: string, company: string) => void;
+  prospectEmail: string;
+  onProspectInfoChange: (name: string, company: string, email: string) => void;
   onCallInitiated: (callId: string) => void;
   onSkipCall: () => void;
   onBack: () => void;
@@ -26,6 +27,7 @@ export const DemoPhoneInput = ({
   scrapedData,
   prospectName,
   prospectCompany,
+  prospectEmail,
   onProspectInfoChange,
   onCallInitiated,
   onSkipCall,
@@ -168,7 +170,7 @@ export const DemoPhoneInput = ({
                   type="text"
                   placeholder="John"
                   value={prospectName}
-                  onChange={(e) => onProspectInfoChange(e.target.value, prospectCompany)}
+                  onChange={(e) => onProspectInfoChange(e.target.value, prospectCompany, prospectEmail)}
                   className="h-12"
                 />
               </div>
@@ -179,10 +181,22 @@ export const DemoPhoneInput = ({
                   type="text"
                   placeholder="Acme Inc"
                   value={prospectCompany}
-                  onChange={(e) => onProspectInfoChange(prospectName, e.target.value)}
+                  onChange={(e) => onProspectInfoChange(prospectName, e.target.value, prospectEmail)}
                   className="h-12"
                 />
               </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="john@acme.com"
+                value={prospectEmail}
+                onChange={(e) => onProspectInfoChange(prospectName, prospectCompany, e.target.value)}
+                className="h-12"
+              />
             </div>
             
             <div className="space-y-2">

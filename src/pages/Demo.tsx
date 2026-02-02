@@ -38,6 +38,7 @@ export interface DemoState {
   prospectPhone: string;
   prospectName: string;
   prospectCompany: string;
+  prospectEmail: string;
   callId: string | null;
   callCompleted: boolean;
   simulationResults: {
@@ -65,6 +66,7 @@ const initialState: DemoState = {
   prospectPhone: '',
   prospectName: '',
   prospectCompany: '',
+  prospectEmail: '',
   callId: null,
   callCompleted: false,
   simulationResults: null,
@@ -130,7 +132,8 @@ const Demo = () => {
             scrapedData={state.scrapedData}
             prospectName={state.prospectName}
             prospectCompany={state.prospectCompany}
-            onProspectInfoChange={(name, company) => updateState({ prospectName: name, prospectCompany: company })}
+            prospectEmail={state.prospectEmail}
+            onProspectInfoChange={(name, company, email) => updateState({ prospectName: name, prospectCompany: company, prospectEmail: email })}
             onCallInitiated={(callId) => {
               updateState({ callId });
               setStep('call-in-progress');
