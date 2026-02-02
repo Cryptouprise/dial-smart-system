@@ -74,8 +74,12 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
             {/* Option 2: AI Employee (Solution) */}
             <OptionCard variant="solution">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-full bg-primary/20 animate-glow-pulse">
-                  <Bot className="h-6 w-6 text-primary" />
+                {/* Premium AI Avatar */}
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500 via-primary to-cyan-500 rounded-full blur-md opacity-60 animate-pulse" />
+                  <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 via-primary to-cyan-500 flex items-center justify-center shadow-lg">
+                    <Bot className="h-6 w-6 text-white" />
+                  </div>
                 </div>
                 <h2 className="text-xl md:text-2xl font-bold">Option 2: AI Sales Employee</h2>
               </div>
@@ -237,7 +241,7 @@ const BenefitPoint = ({
   </div>
 );
 
-// Demo Step Item Component
+// Demo Step Item Component - Premium gradient cards
 const DemoStepItem = ({ 
   step, 
   icon: Icon, 
@@ -248,18 +252,58 @@ const DemoStepItem = ({
   icon: React.ComponentType<{ className?: string }>; 
   title: string; 
   description: string;
-}) => (
-  <div className="relative p-4 rounded-lg bg-muted/50 border border-border hover:border-primary/30 transition-colors">
-    <div className="absolute -top-3 -left-2 w-6 h-6 rounded-full bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center">
-      {step}
+}) => {
+  // Each step gets a unique gradient accent
+  const gradients = [
+    'from-violet-500/20 via-purple-500/10 to-fuchsia-500/20',
+    'from-cyan-500/20 via-blue-500/10 to-indigo-500/20',
+    'from-emerald-500/20 via-teal-500/10 to-cyan-500/20',
+    'from-amber-500/20 via-orange-500/10 to-rose-500/20',
+  ];
+  
+  const iconBgs = [
+    'bg-gradient-to-br from-violet-500 to-fuchsia-600',
+    'bg-gradient-to-br from-cyan-500 to-blue-600',
+    'bg-gradient-to-br from-emerald-500 to-teal-600',
+    'bg-gradient-to-br from-amber-500 to-orange-600',
+  ];
+
+  return (
+    <div className={`
+      relative p-5 rounded-xl 
+      bg-gradient-to-br ${gradients[step - 1]}
+      border border-white/10
+      backdrop-blur-sm
+      hover:scale-[1.03] hover:shadow-xl hover:shadow-primary/10
+      transition-all duration-300 group
+    `}>
+      {/* Step badge */}
+      <div className={`
+        absolute -top-3 -left-2 w-7 h-7 rounded-full 
+        ${iconBgs[step - 1]}
+        text-white text-sm font-bold 
+        flex items-center justify-center
+        shadow-lg
+      `}>
+        {step}
+      </div>
+      
+      {/* Content */}
+      <div className="flex flex-col items-center text-center space-y-3 pt-2">
+        {/* Icon container with glow */}
+        <div className={`
+          p-3 rounded-xl ${iconBgs[step - 1]}
+          shadow-lg group-hover:shadow-xl
+          transition-shadow duration-300
+        `}>
+          <Icon className="h-6 w-6 text-white" />
+        </div>
+        <h3 className="font-bold text-foreground">{title}</h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+      </div>
     </div>
-    <div className="flex flex-col items-center text-center space-y-2 pt-2">
-      <Icon className="h-8 w-8 text-primary" />
-      <h3 className="font-semibold text-sm">{title}</h3>
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </div>
-  </div>
-);
+  );
+};
 
 // Stat Item Component with AnimatedCounter
 const StatItem = ({ value, label, prefix = '', suffix = '' }: { value: number; label: string; prefix?: string; suffix?: string }) => (
