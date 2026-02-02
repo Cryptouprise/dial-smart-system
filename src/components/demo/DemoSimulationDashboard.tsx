@@ -374,10 +374,27 @@ export const DemoSimulationDashboard = ({
                 {' '}- {campaignType.replace(/_/g, ' ')}
               </p>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-cyan-500/10 border border-primary/20 text-primary shadow-lg shadow-primary/5">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <Clock className="h-4 w-4" />
-              <span className="font-mono text-sm font-medium">4x Time-lapse</span>
+            {/* HIGHLIGHTED 4x Time-lapse Indicator */}
+            <div className="relative">
+              {/* Animated glow rings */}
+              <div className="absolute -inset-3 bg-gradient-to-r from-amber-500/40 via-orange-500/40 to-red-500/40 rounded-full blur-xl animate-pulse" />
+              <div className="absolute -inset-2 bg-gradient-to-r from-amber-500/30 via-orange-500/30 to-red-500/30 rounded-full blur-md animate-pulse" style={{ animationDelay: '150ms' }} />
+              
+              <div className="relative flex items-center gap-3 px-5 py-3 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white shadow-[0_0_30px_rgba(251,146,60,0.5),0_0_60px_rgba(251,146,60,0.3)] animate-pulse">
+                {/* Pulsing dot */}
+                <div className="relative">
+                  <div className="absolute inset-0 w-3 h-3 rounded-full bg-white animate-ping" />
+                  <div className="relative w-3 h-3 rounded-full bg-white" />
+                </div>
+                <Clock className="h-5 w-5" />
+                <span className="font-mono text-base font-bold tracking-wide">4x TIME-LAPSE</span>
+                {/* Speed lines effect */}
+                <div className="flex gap-0.5">
+                  <div className="w-1 h-4 bg-white/60 rounded-full animate-pulse" />
+                  <div className="w-1 h-5 bg-white/80 rounded-full animate-pulse" style={{ animationDelay: '100ms' }} />
+                  <div className="w-1 h-3 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
