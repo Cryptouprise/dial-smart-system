@@ -44,6 +44,8 @@ interface DemoSimulationDashboardProps {
   config: SimulationConfig;
   campaignType: string;
   scrapedData: any;
+  prospectName?: string;
+  prospectCompany?: string;
   onComplete: (results: SimulationResults) => void;
 }
 
@@ -51,6 +53,8 @@ export const DemoSimulationDashboard = ({
   config,
   campaignType,
   scrapedData,
+  prospectName,
+  prospectCompany,
   onComplete,
 }: DemoSimulationDashboardProps) => {
   const [callsMade, setCallsMade] = useState(0);
@@ -87,6 +91,8 @@ export const DemoSimulationDashboard = ({
           message,
           campaignType,
           businessName: scrapedData?.business_name || 'Call Boss',
+          prospectName: prospectName || undefined,
+          prospectCompany: prospectCompany || undefined,
           conversationHistory,
         },
       });
@@ -430,6 +436,7 @@ export const DemoSimulationDashboard = ({
               <DemoPhoneMockup
                 campaignType={campaignType}
                 businessName={scrapedData?.business_name}
+                prospectName={prospectName}
                 onSendMessage={handleSendMessage}
               />
               <p className="text-xs text-center text-muted-foreground">

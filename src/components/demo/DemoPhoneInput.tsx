@@ -12,6 +12,9 @@ interface DemoPhoneInputProps {
   sessionId: string | null;
   campaignType: string;
   scrapedData: any;
+  prospectName: string;
+  prospectCompany: string;
+  onProspectInfoChange: (name: string, company: string) => void;
   onCallInitiated: (callId: string) => void;
   onSkipCall: () => void;
   onBack: () => void;
@@ -21,6 +24,9 @@ export const DemoPhoneInput = ({
   sessionId,
   campaignType,
   scrapedData,
+  prospectName,
+  prospectCompany,
+  onProspectInfoChange,
   onCallInitiated,
   onSkipCall,
   onBack,
@@ -154,6 +160,31 @@ export const DemoPhoneInput = ({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="name">Your Name</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="John"
+                  value={prospectName}
+                  onChange={(e) => onProspectInfoChange(e.target.value, prospectCompany)}
+                  className="h-12"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="company">Company Name</Label>
+                <Input
+                  id="company"
+                  type="text"
+                  placeholder="Acme Inc"
+                  value={prospectCompany}
+                  onChange={(e) => onProspectInfoChange(prospectName, e.target.value)}
+                  className="h-12"
+                />
+              </div>
+            </div>
+            
             <div className="space-y-2">
               <Label htmlFor="phone">Phone Number</Label>
               <div className="relative">

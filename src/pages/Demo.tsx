@@ -36,6 +36,8 @@ export interface DemoState {
     enablePredictiveDialing: boolean;
   };
   prospectPhone: string;
+  prospectName: string;
+  prospectCompany: string;
   callId: string | null;
   callCompleted: boolean;
   simulationResults: {
@@ -61,6 +63,8 @@ const initialState: DemoState = {
     enablePredictiveDialing: true,
   },
   prospectPhone: '',
+  prospectName: '',
+  prospectCompany: '',
   callId: null,
   callCompleted: false,
   simulationResults: null,
@@ -124,6 +128,9 @@ const Demo = () => {
             sessionId={state.sessionId}
             campaignType={state.campaignType}
             scrapedData={state.scrapedData}
+            prospectName={state.prospectName}
+            prospectCompany={state.prospectCompany}
+            onProspectInfoChange={(name, company) => updateState({ prospectName: name, prospectCompany: company })}
             onCallInitiated={(callId) => {
               updateState({ callId });
               setStep('call-in-progress');
@@ -150,6 +157,8 @@ const Demo = () => {
             config={state.simulationConfig}
             campaignType={state.campaignType}
             scrapedData={state.scrapedData}
+            prospectName={state.prospectName}
+            prospectCompany={state.prospectCompany}
             onComplete={(results) => {
               updateState({ simulationResults: results });
               setStep('roi');

@@ -6,7 +6,14 @@ const corsHeaders = {
 };
 
 // Lady Jarvis persona prompts per campaign type
-const getCampaignSystemPrompt = (campaignType: string, businessName: string): string => {
+const getCampaignSystemPrompt = (
+  campaignType: string, 
+  businessName: string,
+  prospectName?: string,
+  prospectCompany?: string
+): string => {
+  const nameGreeting = prospectName ? `You're texting with ${prospectName}${prospectCompany ? ` from ${prospectCompany}` : ''}.` : '';
+  
   const basePersonality = `You are Lady Jarvis, an AI sales specialist. You're a badass who's also deeply empathetic - you use psychology to guide conversations naturally. You make people feel like they're winning.
 
 PERSONALITY:
@@ -15,8 +22,9 @@ PERSONALITY:
 - Celebrate small wins: "That's perfect!" "Love it!" "I totally get that."
 - Keep responses SHORT - 1-2 sentences max.
 - Use emojis sparingly but naturally 💜
+${prospectName ? `- Address them by name occasionally (${prospectName}) to make it personal.` : ''}
 
-You're texting on behalf of ${businessName}.`;
+You're texting on behalf of ${businessName}.${nameGreeting ? ` ${nameGreeting}` : ''}`;
 
   const campaignContexts: Record<string, string> = {
     database_reactivation: `
@@ -139,7 +147,7 @@ serve(async (req) => {
   }
 
   try {
-    const { message, campaignType, businessName, conversationHistory } = await req.json();
+    const { message, campaignType, businessName, prospectName, prospectCompany, conversationHistory } = await req.json();
 
     if (!message) {
       return new Response(
@@ -156,13 +164,18 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          reply: getFallbackReply(message, campaignType),
+          reply: getFallbackReply(message, campaignType, prospectName),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const systemPrompt = getCampaignSystemPrompt(campaignType || 'database_reactivation', businessName || 'Call Boss');
+    const systemPrompt = getCampaignSystemPrompt(
+      campaignType || 'database_reactivation', 
+      businessName || 'Call Boss',
+      prospectName,
+      prospectCompany
+    );
 
     // Build conversation messages
     const messages = [
@@ -204,7 +217,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({ 
             success: true, 
-            reply: getFallbackReply(message, campaignType),
+            reply: getFallbackReply(message, campaignType, prospectName),
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -215,14 +228,14 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          reply: getFallbackReply(message, campaignType),
+          reply: getFallbackReply(message, campaignType, prospectName),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || getFallbackReply(message, campaignType);
+    const reply = data.choices?.[0]?.message?.content || getFallbackReply(message, campaignType, prospectName);
 
     console.log('✅ Lady Jarvis reply generated');
 
@@ -245,12 +258,13 @@ serve(async (req) => {
 });
 
 // Fallback scripted replies when AI is unavailable
-function getFallbackReply(message: string, campaignType: string): string {
+function getFallbackReply(message: string, campaignType: string, prospectName?: string): string {
   const lowerMessage = message.toLowerCase();
+  const namePrefix = prospectName ? `${prospectName}, ` : '';
   
   // Common intents
   if (lowerMessage.includes('yes') || lowerMessage.includes('interested') || lowerMessage.includes('sure')) {
-    return "Perfect! 💜 I'd love to get you connected with someone who can walk you through everything. What's the best time to reach you?";
+    return `${namePrefix}Perfect! 💜 I'd love to get you connected with someone who can walk you through everything. What's the best time to reach you?`;
   }
   
   if (lowerMessage.includes('no') || lowerMessage.includes('not interested')) {
