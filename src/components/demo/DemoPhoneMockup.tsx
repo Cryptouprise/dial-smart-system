@@ -20,6 +20,23 @@ interface DemoPhoneMockupProps {
   isLoading?: boolean;
 }
 
+// Campaign type to subtitle mapping
+const getCampaignSubtitle = (campaignType: string): string => {
+  const subtitles: Record<string, string> = {
+    database_reactivation: 'Database Reactivation',
+    speed_to_lead: 'Speed to Lead',
+    appointment_setter: 'Appointment Setter',
+    lead_qualification: 'Lead Qualification',
+    customer_service: 'Customer Service',
+    appointment_reminder: 'Appointment Reminder',
+    cross_sell: 'Cross-Sell Campaign',
+    cold_outreach: 'Cold Outreach',
+    survey_feedback: 'Survey & Feedback',
+    win_back: 'Win-Back Campaign',
+  };
+  return subtitles[campaignType] || 'AI Sales Assistant';
+};
+
 // Opening messages per campaign type
 const getCampaignOpeningMessage = (campaignType: string, businessName: string): string => {
   const messages: Record<string, string> = {
@@ -140,11 +157,11 @@ export const DemoPhoneMockup = ({
         <div className="bg-zinc-900/80 backdrop-blur px-4 py-3 border-b border-zinc-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center">
-              <Phone className="h-5 w-5 text-white" />
+              <Phone className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
               <p className="text-white font-semibold text-sm">Lady Jarvis</p>
-              <p className="text-zinc-400 text-xs">AI Sales Assistant</p>
+              <p className="text-zinc-400 text-xs">{getCampaignSubtitle(campaignType)}</p>
             </div>
           </div>
         </div>
