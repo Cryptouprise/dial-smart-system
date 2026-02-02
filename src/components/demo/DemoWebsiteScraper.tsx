@@ -38,8 +38,26 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
           body: { url: websiteUrl },
         });
 
-        if (fnError || !data?.success) {
-          throw new Error(data?.error || fnError?.message || 'Failed to scrape website');
+        // Handle errors - check both fnError and data.error
+        if (fnError) {
+          // Try to extract error from the response context
+          let errorMessage = 'Failed to scrape website';
+          try {
+            const errorData = await fnError.context?.json?.();
+            if (errorData?.error) {
+              errorMessage = errorData.error;
+            }
+          } catch {
+            // If we can't parse, use the message
+            if (fnError.message && !fnError.message.includes('non-2xx')) {
+              errorMessage = fnError.message;
+            }
+          }
+          throw new Error(errorMessage);
+        }
+        
+        if (!data?.success) {
+          throw new Error(data?.error || 'Failed to scrape website');
         }
 
         setProgress(100);
