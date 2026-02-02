@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
   Phone, Users, DollarSign, Clock, TrendingUp, CheckCircle, Voicemail, PhoneOff, Calendar,
-  UserX, MessageSquare, ThumbsDown, Ban, Flame, Send, HelpCircle, PhoneMissed
+  UserX, MessageSquare, ThumbsDown, Ban, Flame, Send, HelpCircle, PhoneMissed, PhoneIncoming
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { DemoPhoneMockup } from './DemoPhoneMockup';
@@ -113,6 +113,10 @@ export const DemoSimulationDashboard = ({
   
   // Email notification state
   const [emailCount, setEmailCount] = useState(0);
+  
+  // Callback tracking (leads who call back after voicemail/no answer)
+  const [callbacks, setCallbacks] = useState(0);
+  const [callbackAppointments, setCallbackAppointments] = useState(0);
   
   // SMS Sent tracking (outbound)
   const [smsSent, setSmsSent] = useState(0);
@@ -289,9 +293,55 @@ export const DemoSimulationDashboard = ({
           } else if (rand < 0.45) {
             // 35% voicemail (0.10 to 0.45)
             setVoicemails(v => v + 1);
+            
+            // 15% of voicemails result in callbacks
+            if (Math.random() < 0.15) {
+              setTimeout(() => {
+                setCallbacks(c => c + 1);
+                setPipelineLeads(leads => [
+                  { stage: '📞 CALLBACK', name: leadName, icon: 'callback' },
+                  ...leads.slice(0, 24),
+                ]);
+                // 25% of callbacks convert to appointments
+                if (Math.random() < 0.25) {
+                  setCallbackAppointments(a => a + 1);
+                  setDispositions(d => ({ ...d, appointment: d.appointment + 1 }));
+                  setEmailCount(c => c + 1);
+                  setSmsSent(s => s + 2);
+                  generateSmsReply('appointment', leadName);
+                  setPipelineLeads(leads => [
+                    { stage: '🎉 APPOINTMENT (callback)', name: leadName, icon: 'appointment' },
+                    ...leads.slice(0, 24),
+                  ]);
+                }
+              }, Math.random() * 3000 + 500); // Staggered callback timing
+            }
           } else {
             // 55% no answer (0.45 to 1.0)
             setNoAnswer(n => n + 1);
+            
+            // 5% of no-answers call back (lower rate than voicemails)
+            if (Math.random() < 0.05) {
+              setTimeout(() => {
+                setCallbacks(c => c + 1);
+                setPipelineLeads(leads => [
+                  { stage: '📞 CALLBACK', name: leadName, icon: 'callback' },
+                  ...leads.slice(0, 24),
+                ]);
+                // 25% of callbacks convert to appointments
+                if (Math.random() < 0.25) {
+                  setCallbackAppointments(a => a + 1);
+                  setDispositions(d => ({ ...d, appointment: d.appointment + 1 }));
+                  setEmailCount(c => c + 1);
+                  setSmsSent(s => s + 2);
+                  generateSmsReply('appointment', leadName);
+                  setPipelineLeads(leads => [
+                    { stage: '🎉 APPOINTMENT (callback)', name: leadName, icon: 'appointment' },
+                    ...leads.slice(0, 24),
+                  ]);
+                }
+              }, Math.random() * 4000 + 1000); // Staggered callback timing
+            }
           }
         }
         
@@ -348,8 +398,8 @@ export const DemoSimulationDashboard = ({
       case 'dnc': return <Ban className="h-3 w-3 text-red-500" />;
       case 'wrong': return <HelpCircle className="h-3 w-3 text-muted-foreground" />;
       case 'dropped': return <PhoneMissed className="h-3 w-3 text-muted-foreground" />;
+      case 'callback': return <PhoneIncoming className="h-3 w-3 text-cyan-500" />;
       default: return <CheckCircle className="h-3 w-3" />;
-    }
   };
 
   return (
@@ -466,6 +516,15 @@ export const DemoSimulationDashboard = ({
                     <StatRow icon={CheckCircle} label="Connected" value={connected} color="text-emerald-500" subtext={`${((connected / Math.max(callsMade, 1)) * 100).toFixed(1)}% pickup`} />
                     <StatRow icon={Voicemail} label="Voicemails" value={voicemails} color="text-amber-500" />
                     <StatRow icon={PhoneOff} label="No Answer" value={noAnswer} color="text-muted-foreground" />
+                    {callbacks > 0 && (
+                      <StatRow 
+                        icon={PhoneIncoming} 
+                        label="Callbacks" 
+                        value={callbacks} 
+                        color="text-cyan-500" 
+                        subtext={callbackAppointments > 0 ? `${callbackAppointments} → appts` : undefined}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
