@@ -74,12 +74,21 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
             {/* Option 2: AI Employee (Solution) */}
             <OptionCard variant="solution">
               <div className="flex items-center gap-3 mb-6">
-                {/* Premium AI Avatar */}
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500 via-primary to-cyan-500 rounded-full blur-md opacity-60 animate-pulse" />
-                  <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 via-primary to-cyan-500 flex items-center justify-center shadow-lg">
-                    <Bot className="h-6 w-6 text-white" />
+                {/* ✨ STUNNING AI Avatar - Multi-ring animated orb */}
+                <div className="relative w-16 h-16">
+                  {/* Outer rotating ring */}
+                  <div className="absolute inset-0 rounded-full border-2 border-dashed border-cyan-400/50 animate-spin" style={{ animationDuration: '8s' }} />
+                  {/* Middle pulsing glow */}
+                  <div className="absolute inset-1 rounded-full bg-gradient-to-r from-violet-500 via-cyan-400 to-emerald-400 blur-lg opacity-60 animate-pulse" />
+                  {/* Inner rotating ring */}
+                  <div className="absolute inset-2 rounded-full border border-violet-400/60 animate-spin" style={{ animationDuration: '4s', animationDirection: 'reverse' }} />
+                  {/* Core orb with gradient */}
+                  <div className="absolute inset-3 rounded-full bg-gradient-to-br from-violet-500 via-primary to-cyan-500 flex items-center justify-center shadow-[0_0_30px_rgba(139,92,246,0.5)]">
+                    <Bot className="h-5 w-5 text-white drop-shadow-lg" />
                   </div>
+                  {/* Sparkle effects */}
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-400 rounded-full animate-ping" style={{ animationDuration: '2s' }} />
+                  <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-violet-400 rounded-full animate-ping" style={{ animationDuration: '3s' }} />
                 </div>
                 <h2 className="text-xl md:text-2xl font-bold">Option 2: AI Sales Employee</h2>
               </div>
@@ -142,36 +151,48 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
             </p>
           </div>
 
-          {/* Section 3: URL Input CTA */}
-          <Card className="p-6 md:p-8 max-w-xl mx-auto glass-card-glow border-primary/30">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-lg font-semibold text-left block">
-                  Drop your website below—let's get started
-                </label>
-                <p className="text-sm text-muted-foreground">
-                  We'll become a semi-expert on your product, then show you exactly what a campaign would look like.
-                </p>
-                <Input
-                  type="text"
-                  placeholder="https://yourcompany.com"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="h-12 text-lg"
-                  autoFocus
-                />
-              </div>
-              <Button 
-                type="submit" 
-                size="lg" 
-                className="w-full h-12 text-lg gap-2 glow-border transition-all hover:scale-[1.02]"
-                disabled={!url.trim()}
-              >
-                <Zap className="h-5 w-5" />
-                Show Me What's Possible
-              </Button>
-            </form>
-          </Card>
+          {/* Section 3: URL Input CTA - Premium styled */}
+          <div className="relative max-w-xl mx-auto">
+            {/* Animated gradient border */}
+            <div className="absolute -inset-[2px] bg-gradient-to-r from-violet-500 via-primary to-cyan-500 rounded-2xl opacity-75 blur-sm animate-pulse" />
+            <div className="absolute -inset-[1px] bg-gradient-to-r from-violet-500 via-primary to-cyan-500 rounded-2xl" />
+            
+            <Card className="relative p-6 md:p-8 bg-background/95 backdrop-blur-xl rounded-2xl border-0">
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-3">
+                  {/* Glowing header */}
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-cyan-500">
+                      <Globe className="h-5 w-5 text-white" />
+                    </div>
+                    <label className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
+                      Drop your website below—let's get started
+                    </label>
+                  </div>
+                  <p className="text-sm text-muted-foreground pl-12">
+                    We'll become a semi-expert on your product, then show you exactly what a campaign would look like.
+                  </p>
+                  <Input
+                    type="text"
+                    placeholder="https://yourcompany.com"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="h-14 text-lg bg-muted/50 border-2 border-primary/20 focus:border-primary/50 rounded-xl transition-all"
+                    autoFocus
+                  />
+                </div>
+                <Button 
+                  type="submit" 
+                  size="lg" 
+                  className="w-full h-14 text-lg gap-2 bg-gradient-to-r from-primary via-violet-500 to-cyan-500 hover:opacity-90 transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 rounded-xl font-bold"
+                  disabled={!url.trim()}
+                >
+                  <Zap className="h-5 w-5" />
+                  Show Me What's Possible
+                </Button>
+              </form>
+            </Card>
+          </div>
         </div>
       </div>
 
@@ -201,8 +222,8 @@ const OptionCard = ({
   return (
     <Card className={`p-6 transition-all duration-300 ${
       isPain 
-        ? 'bg-destructive/5 border-destructive/20 hover:border-destructive/40' 
-        : 'bg-primary/5 border-primary/30 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 glow-border animate-float'
+        ? 'bg-destructive/5 border-2 border-red-500/40 hover:border-red-500/60 shadow-[0_0_15px_-3px_rgba(239,68,68,0.2)] hover:shadow-[0_0_25px_-3px_rgba(239,68,68,0.3)]' 
+        : 'bg-primary/5 border-2 border-primary/40 hover:border-primary/60 hover:shadow-lg hover:shadow-primary/20 glow-border animate-float'
     }`}>
       {children}
     </Card>
@@ -253,37 +274,53 @@ const DemoStepItem = ({
   title: string; 
   description: string;
 }) => {
-  // Each step gets a unique gradient accent
-  const gradients = [
-    'from-violet-500/20 via-purple-500/10 to-fuchsia-500/20',
-    'from-cyan-500/20 via-blue-500/10 to-indigo-500/20',
-    'from-emerald-500/20 via-teal-500/10 to-cyan-500/20',
-    'from-amber-500/20 via-orange-500/10 to-rose-500/20',
+  // Each step gets a unique gradient accent + visible colored border
+  const configs = [
+    { 
+      gradient: 'from-violet-500/20 via-purple-500/10 to-fuchsia-500/20',
+      iconBg: 'bg-gradient-to-br from-violet-500 to-fuchsia-600',
+      border: 'border-violet-500/40 hover:border-violet-400/70',
+      shadow: 'shadow-violet-500/20 hover:shadow-violet-500/30'
+    },
+    { 
+      gradient: 'from-cyan-500/20 via-blue-500/10 to-indigo-500/20',
+      iconBg: 'bg-gradient-to-br from-cyan-500 to-blue-600',
+      border: 'border-cyan-500/40 hover:border-cyan-400/70',
+      shadow: 'shadow-cyan-500/20 hover:shadow-cyan-500/30'
+    },
+    { 
+      gradient: 'from-emerald-500/20 via-teal-500/10 to-cyan-500/20',
+      iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+      border: 'border-emerald-500/40 hover:border-emerald-400/70',
+      shadow: 'shadow-emerald-500/20 hover:shadow-emerald-500/30'
+    },
+    { 
+      gradient: 'from-amber-500/20 via-orange-500/10 to-rose-500/20',
+      iconBg: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      border: 'border-amber-500/40 hover:border-amber-400/70',
+      shadow: 'shadow-amber-500/20 hover:shadow-amber-500/30'
+    },
   ];
   
-  const iconBgs = [
-    'bg-gradient-to-br from-violet-500 to-fuchsia-600',
-    'bg-gradient-to-br from-cyan-500 to-blue-600',
-    'bg-gradient-to-br from-emerald-500 to-teal-600',
-    'bg-gradient-to-br from-amber-500 to-orange-600',
-  ];
+  const config = configs[step - 1];
 
   return (
     <div className={`
       relative p-5 rounded-xl 
-      bg-gradient-to-br ${gradients[step - 1]}
-      border border-white/10
+      bg-gradient-to-br ${config.gradient}
+      border-2 ${config.border}
       backdrop-blur-sm
-      hover:scale-[1.03] hover:shadow-xl hover:shadow-primary/10
+      shadow-lg ${config.shadow}
+      hover:scale-[1.03] hover:shadow-xl
       transition-all duration-300 group
     `}>
       {/* Step badge */}
       <div className={`
-        absolute -top-3 -left-2 w-7 h-7 rounded-full 
-        ${iconBgs[step - 1]}
+        absolute -top-3 -left-2 w-8 h-8 rounded-full 
+        ${config.iconBg}
         text-white text-sm font-bold 
         flex items-center justify-center
-        shadow-lg
+        shadow-lg ring-2 ring-background
       `}>
         {step}
       </div>
@@ -292,7 +329,7 @@ const DemoStepItem = ({
       <div className="flex flex-col items-center text-center space-y-3 pt-2">
         {/* Icon container with glow */}
         <div className={`
-          p-3 rounded-xl ${iconBgs[step - 1]}
+          p-3 rounded-xl ${config.iconBg}
           shadow-lg group-hover:shadow-xl
           transition-shadow duration-300
         `}>
