@@ -179,3 +179,50 @@
     }
   }
 }
+
+/* Premium glassmorphism utilities */
+@layer utilities {
+  .glass {
+    background: hsl(var(--background) / 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--foreground) / 0.08);
+  }
+  
+  .glass-card {
+    @apply glass rounded-xl shadow-xl;
+  }
+  
+  .glass-card-glow {
+    @apply glass-card;
+    box-shadow: 
+      0 8px 32px hsl(var(--background) / 0.3),
+      0 0 40px -10px hsl(var(--primary) / 0.25);
+  }
+  
+  .glow-border {
+    @apply ring-1 ring-primary/30;
+    box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.4);
+  }
+  
+  .glow-text {
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+  
+  .gradient-border {
+    position: relative;
+  }
+  
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.5), transparent, hsl(var(--primary) / 0.3));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}

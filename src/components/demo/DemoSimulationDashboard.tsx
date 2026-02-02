@@ -10,6 +10,8 @@ import { DemoPhoneMockup } from './DemoPhoneMockup';
 import { DemoSmsRepliesPanel, SmsReply } from './DemoSmsRepliesPanel';
 import { DemoEmailMockup } from './DemoEmailMockup';
 import { DemoSecondaryCampaignCallout } from './DemoSecondaryCampaignCallout';
+import { DemoCampaignSummary } from './DemoCampaignSummary';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
 import { supabase } from '@/integrations/supabase/client';
 
 interface SimulationConfig {
@@ -111,6 +113,9 @@ export const DemoSimulationDashboard = ({
   
   // Email notification state
   const [emailCount, setEmailCount] = useState(0);
+  
+  // SMS Sent tracking (outbound)
+  const [smsSent, setSmsSent] = useState(0);
   
   // Realistic disposition tracking
   const [dispositions, setDispositions] = useState<DispositionCounts>({
@@ -230,6 +235,8 @@ export const DemoSimulationDashboard = ({
                 icon = 'appointment';
                 // Increment email count for appointments
                 setEmailCount(c => c + 1);
+                // Appointments trigger 2 SMS (confirmation + reminder)
+                setSmsSent(s => s + 2);
               } else if (dispRand < 0.18) {
                 disposition = 'hotLead';
                 stage = '🔥 Hot Lead';
@@ -273,6 +280,10 @@ export const DemoSimulationDashboard = ({
               // Generate SMS reply for positive dispositions
               if (['appointment', 'hotLead', 'followUp', 'sendInfo', 'potentialProspect'].includes(disposition)) {
                 generateSmsReply(disposition, leadName);
+                // Track outbound SMS (1 for follow-up message)
+                if (disposition !== 'appointment') {
+                  setSmsSent(s => s + 1);
+                }
               }
             }
           } else if (rand < 0.45) {
@@ -342,7 +353,7 @@ export const DemoSimulationDashboard = ({
   };
 
   return (
-    <div className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-background to-primary/5">
+    <div className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-[1600px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -363,22 +374,24 @@ export const DemoSimulationDashboard = ({
           {/* Left: Dashboard Content */}
           <div className="space-y-6">
             {/* Progress */}
-            <Card className="p-4">
+            <Card className="p-4 glass-card">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Campaign Progress</span>
-                <span className="font-mono">{Math.round(callsMade).toLocaleString()} / {config.leadCount.toLocaleString()}</span>
+                <span className="font-mono">
+                  <AnimatedCounter value={Math.round(callsMade)} duration={300} /> / {config.leadCount.toLocaleString()}
+                </span>
               </div>
               <Progress value={progress} className="h-3" />
               <div className="flex justify-between mt-2 text-xs text-muted-foreground">
                 <span>Elapsed: {formatTime(elapsedMinutes)}</span>
-                <span>Cost: ${totalCost.toFixed(2)}</span>
+                <span>Cost: $<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={300} decimals={2} /></span>
               </div>
             </Card>
 
             {/* Stats Grid */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {/* Call Stats */}
-              <Card className="p-4">
+              <Card className="p-4 glass-card">
                 <h3 className="font-semibold flex items-center gap-2 mb-3">
                   <Phone className="h-4 w-4 text-primary" />
                   Call Stats
@@ -392,7 +405,7 @@ export const DemoSimulationDashboard = ({
               </Card>
 
               {/* Cost Tracker */}
-              <Card className="p-4">
+              <Card className="p-4 glass-card">
                 <h3 className="font-semibold flex items-center gap-2 mb-3">
                   <DollarSign className="h-4 w-4 text-primary" />
                   Cost Tracker
@@ -400,25 +413,25 @@ export const DemoSimulationDashboard = ({
                 <div className="space-y-2">
                   <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
                     <span className="text-sm">Total Spent</span>
-                    <span className="text-xl font-bold">${totalCost.toFixed(2)}</span>
+                    <span className="text-xl font-bold">$<AnimatedCounter value={Math.round(totalCost * 100) / 100} duration={400} decimals={2} /></span>
                   </div>
                   <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
                     <span className="text-sm">Cost per Appt</span>
                     <span className={`text-lg font-bold ${costPerAppointment <= config.costPerAppointmentTarget ? 'text-green-500' : 'text-amber-500'}`}>
-                      ${costPerAppointment.toFixed(2)}
+                      $<AnimatedCounter value={Math.round(costPerAppointment * 100) / 100} duration={400} decimals={2} />
                     </span>
                   </div>
                   <div className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
                     <span className="text-sm">Cost per Positive</span>
                     <span className="text-lg font-medium">
-                      ${positiveOutcomes > 0 ? (totalCost / positiveOutcomes).toFixed(2) : '0.00'}
+                      $<AnimatedCounter value={positiveOutcomes > 0 ? Math.round((totalCost / positiveOutcomes) * 100) / 100 : 0} duration={400} decimals={2} />
                     </span>
                   </div>
                 </div>
               </Card>
 
               {/* Live Feed */}
-              <Card className="p-4">
+              <Card className="p-4 glass-card">
                 <h3 className="font-semibold flex items-center gap-2 mb-3">
                   <Users className="h-4 w-4 text-primary" />
                   Live Feed
@@ -452,7 +465,7 @@ export const DemoSimulationDashboard = ({
             </div>
 
             {/* Disposition Breakdown - Full Width */}
-            <Card className="p-4">
+            <Card className="p-4 glass-card">
               <h3 className="font-semibold flex items-center gap-2 mb-3">
                 <TrendingUp className="h-4 w-4 text-primary" />
                 Disposition Breakdown
@@ -460,7 +473,7 @@ export const DemoSimulationDashboard = ({
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                 {/* Positive outcomes - highlighted */}
-                <DispositionBox icon={Calendar} label="Appointments" value={dispositions.appointment} color="bg-primary/20 text-primary ring-1 ring-primary/30" />
+                <DispositionBox icon={Calendar} label="Appointments" value={dispositions.appointment} color="bg-primary/20 text-primary glow-border" />
                 <DispositionBox icon={Flame} label="Hot Leads" value={dispositions.hotLead} color="bg-orange-500/20 text-orange-600" />
                 <DispositionBox icon={Users} label="Prospects" value={dispositions.potentialProspect} color="bg-blue-500/20 text-blue-600" />
                 <DispositionBox icon={Clock} label="Follow Ups" value={dispositions.followUp} color="bg-amber-500/20 text-amber-600" />
@@ -470,14 +483,16 @@ export const DemoSimulationDashboard = ({
                 {/* Neutral/negative - muted */}
                 <DispositionBox icon={PhoneMissed} label="Call Dropped" value={dispositions.callDropped} color="bg-muted/50 text-muted-foreground" />
                 <DispositionBox icon={ThumbsDown} label="Not Interested" value={dispositions.notInterested} color="bg-muted/50 text-muted-foreground" />
-                <DispositionBox icon={Ban} label="DNC" value={dispositions.dnc} color="bg-red-500/10 text-red-500" />
+                <DispositionBox icon={Ban} label="DNC" value={dispositions.dnc} color="bg-destructive/10 text-destructive" />
                 <DispositionBox icon={HelpCircle} label="Wrong Number" value={dispositions.wrongNumber} color="bg-muted/50 text-muted-foreground" />
               </div>
               
               {/* Positive outcomes summary */}
               <div className="mt-4 pt-3 border-t flex items-center justify-between">
                 <span className="text-sm font-medium text-muted-foreground">Total Positive Outcomes</span>
-                <span className="text-2xl font-bold text-green-500">{positiveOutcomes}</span>
+                <span className="text-2xl font-bold text-green-500">
+                  <AnimatedCounter value={positiveOutcomes} duration={500} />
+                </span>
               </div>
             </Card>
 
@@ -506,21 +521,15 @@ export const DemoSimulationDashboard = ({
 
             {/* Complete Button */}
             {isComplete && (
-              <div className="text-center space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-500">
-                  <CheckCircle className="h-5 w-5" />
-                  <span className="font-medium">Campaign Complete!</span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {positiveOutcomes} positive outcomes from {config.leadCount.toLocaleString()} leads
-                </div>
-                <div>
-                  <Button size="lg" onClick={handleComplete} className="gap-2">
-                    <TrendingUp className="h-4 w-4" />
-                    See ROI Analysis
-                  </Button>
-                </div>
-              </div>
+              <DemoCampaignSummary
+                callsMade={Math.round(callsMade)}
+                voicemails={voicemails}
+                smsSent={smsSent}
+                emailsSent={emailCount}
+                totalCost={totalCost}
+                positiveOutcomes={positiveOutcomes}
+                onContinue={handleComplete}
+              />
             )}
           </div>
 
@@ -567,7 +576,7 @@ const StatRow = ({
       <span className="text-sm">{label}</span>
     </div>
     <div className="text-right">
-      <span className="font-bold">{value.toLocaleString()}</span>
+      <span className="font-bold"><AnimatedCounter value={value} duration={400} /></span>
       {subtext && <span className="text-xs text-muted-foreground ml-1">{subtext}</span>}
     </div>
   </div>
@@ -584,13 +593,13 @@ const DispositionBox = ({
   value: number;
   color: string;
 }) => (
-  <div className={`p-2 rounded-lg ${color} transition-all`}>
+  <div className={`p-2 rounded-lg ${color} transition-all hover:scale-105`}>
     <div className="flex items-center gap-1.5 mb-0.5">
       <Icon className="h-3 w-3" />
       <span className="text-xs font-medium truncate">{label}</span>
     </div>
     <div className="text-xl font-bold">
-      {value.toLocaleString()}
+      <AnimatedCounter value={value} duration={400} />
     </div>
   </div>
 );
