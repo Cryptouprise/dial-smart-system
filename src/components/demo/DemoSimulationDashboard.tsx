@@ -387,7 +387,7 @@ export const DemoSimulationDashboard = ({
                   <div className="relative w-3 h-3 rounded-full bg-white" />
                 </div>
                 <Clock className="h-5 w-5" />
-                <span className="font-mono text-base font-bold tracking-wide">FULL DAY IN MINUTES</span>
+                <span className="font-mono text-base font-bold tracking-wide">1 DAY PER MINUTE</span>
                 {/* Speed lines effect */}
                 <div className="flex gap-0.5">
                   <div className="w-1 h-4 bg-white/60 rounded-full animate-pulse" />
