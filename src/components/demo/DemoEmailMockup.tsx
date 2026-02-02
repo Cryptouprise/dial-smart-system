@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Monitor, Mail, X, CheckCircle, Calendar, Sparkles, ChevronUp } from 'lucide-react';
+import { Mail, X, CheckCircle, Calendar, Sparkles, ChevronUp, Power, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -90,93 +90,110 @@ Sent automatically by your AI sales assistant.`,
         hasEmail 
           ? 'border-primary/40 hover:border-primary/60 shadow-lg shadow-primary/10' 
           : 'border-border/30 hover:border-border/50',
-        isExpanded ? 'p-0' : 'p-6'
+        isExpanded ? 'p-0' : 'p-4'
       )}
     >
-      {/* Collapsed State - Laptop View */}
+      {/* Collapsed State - MacBook View */}
       {!isExpanded && (
         <div 
           className="cursor-pointer"
           onClick={() => hasEmail && setIsExpanded(true)}
+          style={{ perspective: '800px' }}
         >
-          {/* Laptop Frame with realistic 3D perspective */}
-          <div className="flex flex-col items-center" style={{ perspective: '1200px' }}>
-            {/* Screen with 3D tilt and premium styling */}
-            <div 
-              className="relative w-full aspect-[16/10] rounded-t-lg overflow-hidden"
-              style={{ 
-                transform: 'rotateX(8deg)',
-                transformOrigin: 'bottom center'
-              }}
-            >
-              {/* Screen bezel - dark aluminum */}
-              <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-800 rounded-t-lg p-[6px]">
-                {/* Inner screen border */}
-                <div className="absolute inset-[3px] rounded-t-md bg-black">
-                  {/* Webcam dot */}
-                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-zinc-800 ring-1 ring-zinc-700" />
+          {/* MacBook Pro Frame */}
+          <div 
+            className="relative"
+            style={{ 
+              transform: 'rotateX(12deg)',
+              transformOrigin: 'bottom center',
+              transformStyle: 'preserve-3d'
+            }}
+          >
+            {/* Screen Lid */}
+            <div className="relative">
+              {/* Outer aluminum frame */}
+              <div className="bg-gradient-to-b from-[#c4c4c6] via-[#a8a8aa] to-[#8e8e90] rounded-t-xl p-[2px] shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+                {/* Inner black bezel */}
+                <div className="bg-[#0a0a0a] rounded-t-[10px] p-[6px] pb-[8px]">
+                  {/* Camera notch area */}
+                  <div className="flex justify-center mb-1">
+                    <div className="flex items-center gap-2 px-3 py-0.5 bg-black rounded-full">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#1a1a1c]">
+                        <div className="w-0.5 h-0.5 rounded-full bg-[#2a2a2c] mt-[2px] ml-[2px]" />
+                      </div>
+                      <div className="w-1 h-1 rounded-full bg-emerald-500/50" />
+                    </div>
+                  </div>
                   
-                  {/* Screen Reflection - glossy glass effect */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] via-transparent to-transparent pointer-events-none rounded-t-md" />
-                  
-                  {/* Screen Content */}
-                  <div className={`absolute inset-2 top-4 rounded-sm bg-gradient-to-br from-zinc-950 to-black flex items-center justify-center ${
-                    hasEmail ? 'shadow-[inset_0_0_40px_rgba(139,92,246,0.15)]' : ''
-                  }`}>
-                    {hasEmail ? (
-                      <div className="text-center p-4 animate-in fade-in duration-500">
-                        {/* Glowing mail icon */}
-                        <div className="relative inline-block mb-3">
-                          <div className="absolute inset-0 bg-primary/30 rounded-full blur-xl animate-pulse" />
-                          <div className="relative p-4 rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30">
-                            <Mail className="h-10 w-10 text-primary" />
+                  {/* Screen with content */}
+                  <div className={cn(
+                    "relative aspect-[16/10] rounded-sm overflow-hidden",
+                    "bg-gradient-to-br from-[#1a1a1c] to-[#0a0a0a]",
+                    hasEmail && "shadow-[inset_0_0_60px_rgba(139,92,246,0.1)]"
+                  )}>
+                    {/* Screen reflection */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent pointer-events-none" />
+                    
+                    {/* Content */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      {hasEmail ? (
+                        <div className="text-center animate-in fade-in duration-500">
+                          {/* Glowing mail notification */}
+                          <div className="relative inline-block mb-3">
+                            <div className="absolute inset-0 bg-primary/40 rounded-2xl blur-2xl animate-pulse" />
+                            <div className="relative p-5 rounded-2xl bg-gradient-to-br from-primary/30 to-violet-500/30 border border-primary/40 backdrop-blur-sm">
+                              <Mail className="h-12 w-12 text-primary" />
+                            </div>
+                            {/* Notification Badge */}
+                            <span className="absolute -top-2 -right-2 flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-xs font-bold animate-bounce shadow-lg shadow-red-500/50 ring-2 ring-[#0a0a0a]">
+                              {emailCount}
+                            </span>
                           </div>
-                          {/* Notification Badge with premium glow */}
-                          <span className="absolute -top-2 -right-2 flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-xs font-bold animate-pulse shadow-lg shadow-red-500/50 ring-2 ring-black">
-                            {emailCount}
-                          </span>
+                          <p className="text-primary font-semibold">
+                            {emailCount} New Email{emailCount > 1 ? 's' : ''}
+                          </p>
+                          <p className="text-white/40 text-xs mt-1.5 flex items-center justify-center gap-1.5">
+                            <ChevronUp className="h-3.5 w-3.5 animate-bounce" />
+                            Click to open laptop
+                          </p>
                         </div>
-                        <p className="text-primary font-semibold text-sm">
-                          {emailCount} New Email{emailCount > 1 ? 's' : ''}
-                        </p>
-                        <p className="text-zinc-500 text-xs mt-1 flex items-center justify-center gap-1">
-                          <ChevronUp className="h-3 w-3 animate-bounce" />
-                          Click to open
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center p-4">
-                        <div className="p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/50 inline-block mb-2">
-                          <Monitor className="h-8 w-8 text-zinc-600" />
+                      ) : (
+                        <div className="text-center p-4">
+                          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 inline-block mb-2">
+                            <Monitor className="h-10 w-10 text-white/30" />
+                          </div>
+                          <p className="text-white/40 text-sm">
+                            Awaiting appointments...
+                          </p>
                         </div>
-                        <p className="text-zinc-500 text-xs">
-                          Awaiting appointments...
-                        </p>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            {/* Laptop Base - premium aluminum hinge */}
-            <div className="relative w-[115%]">
-              {/* Hinge detail */}
-              <div className="h-2 bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-700 rounded-t-sm flex items-center justify-center shadow-inner">
-                <div className="w-16 h-0.5 bg-zinc-600 rounded-full" />
-              </div>
-              {/* Base/trackpad area */}
-              <div className="h-4 bg-gradient-to-b from-zinc-800 to-zinc-900 rounded-b-xl flex items-center justify-center shadow-xl">
-                <div className="w-20 h-1 bg-zinc-700/50 rounded-full" />
+              
+              {/* Hinge */}
+              <div className="relative h-[6px] bg-gradient-to-b from-[#8e8e90] via-[#6e6e70] to-[#5a5a5c] rounded-b-[2px] shadow-md">
+                <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               </div>
             </div>
             
-            {/* Shadow/reflection under laptop */}
-            <div className="w-[90%] h-4 bg-gradient-to-b from-black/30 via-primary/5 to-transparent rounded-full mt-2 blur-md" />
+            {/* Base/Keyboard area */}
+            <div className="relative">
+              <div className="h-[14px] bg-gradient-to-b from-[#a8a8aa] via-[#c4c4c6] to-[#d0d0d2] rounded-b-xl shadow-[0_8px_20px_-4px_rgba(0,0,0,0.4)]">
+                {/* Trackpad indent */}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-1 w-16 h-[3px] bg-gradient-to-b from-[#9a9a9c] to-[#b0b0b2] rounded-full" />
+                {/* Front edge highlight */}
+                <div className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-b from-transparent to-[#e0e0e2] rounded-b-xl" />
+              </div>
+            </div>
           </div>
+          
+          {/* Shadow under laptop */}
+          <div className="w-[85%] mx-auto h-6 bg-gradient-to-b from-black/30 via-primary/5 to-transparent rounded-full mt-3 blur-lg" />
 
           {/* Label */}
-          <div className="mt-5 text-center">
+          <div className="mt-4 text-center">
             <h4 className="font-semibold text-sm flex items-center justify-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               Automated Email Confirmations
@@ -191,70 +208,74 @@ Sent automatically by your AI sales assistant.`,
         </div>
       )}
 
-      {/* Expanded State - Email Open on Laptop Screen */}
+      {/* Expanded State - MacBook Open with Email */}
       {isExpanded && (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-          {/* Laptop Frame - Expanded */}
-          <div className="flex flex-col items-center p-4" style={{ perspective: '1200px' }}>
-            {/* Screen - Now showing email content */}
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 p-4">
+          <div style={{ perspective: '800px' }}>
+            {/* MacBook Frame - Open Position */}
             <div 
-              className="relative w-full rounded-t-lg overflow-hidden"
+              className="relative"
               style={{ 
                 transform: 'rotateX(3deg)',
                 transformOrigin: 'bottom center'
               }}
             >
-              {/* Screen bezel - dark aluminum */}
-              <div className="bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-800 rounded-t-lg p-[6px]">
-                {/* Inner screen border */}
-                <div className="rounded-t-md bg-black p-1">
-                  {/* Webcam dot & close button */}
-                  <div className="flex items-center justify-between px-2 py-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-800 ring-1 ring-zinc-700" />
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => setIsExpanded(false)}
-                      className="h-6 px-2 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800"
-                    >
-                      <X className="h-3 w-3 mr-1" />
-                      Close
-                    </Button>
+              {/* Screen */}
+              <div className="bg-gradient-to-b from-[#c4c4c6] via-[#a8a8aa] to-[#8e8e90] rounded-t-xl p-[2px]">
+                <div className="bg-[#0a0a0a] rounded-t-[10px] p-1">
+                  {/* Menu bar */}
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#1a1a1c]/90 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1.5">
+                        <button 
+                          onClick={() => setIsExpanded(false)}
+                          className="w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 transition-colors flex items-center justify-center group"
+                        >
+                          <X className="h-2 w-2 text-[#990000] opacity-0 group-hover:opacity-100" />
+                        </button>
+                        <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
+                        <div className="w-3 h-3 rounded-full bg-[#28c840]" />
+                      </div>
+                      <span className="text-[10px] text-white/50 ml-2">Mail</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-white/50">
+                      <span>Today 9:41 AM</span>
+                    </div>
                   </div>
                   
-                  {/* Email Content on Screen */}
-                  <div className="bg-gradient-to-br from-zinc-950 to-black rounded-sm p-3 max-h-[350px] overflow-y-auto">
+                  {/* Email Content */}
+                  <div className="bg-[#1a1a1c] max-h-[320px] overflow-y-auto">
                     {/* Email Header */}
-                    <div className="bg-zinc-900/80 rounded-lg p-3 space-y-2 border border-zinc-800 mb-3">
+                    <div className="bg-[#252528] p-3 space-y-1.5 border-b border-white/5">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-zinc-500 w-10">From:</span>
-                        <span className="text-xs font-medium text-zinc-300">
+                        <span className="text-[10px] text-white/40 w-10">From:</span>
+                        <span className="text-xs font-medium text-white/90">
                           Lady Jarvis &lt;no-reply@dialboss.ai&gt;
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-zinc-500 w-10">To:</span>
-                        <span className="text-xs text-zinc-400">
+                        <span className="text-[10px] text-white/40 w-10">To:</span>
+                        <span className="text-xs text-white/70">
                           {prospectEmail || `${(prospectName || 'lead').toLowerCase().replace(' ', '.')}@example.com`}
                         </span>
                       </div>
                       <div className="flex items-start gap-2">
-                        <span className="text-[10px] text-zinc-500 w-10 pt-0.5">Subject:</span>
+                        <span className="text-[10px] text-white/40 w-10 pt-0.5">Subject:</span>
                         <span className="text-xs font-semibold text-primary">{emailContent.subject}</span>
                       </div>
                     </div>
 
                     {/* Email Body */}
-                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
-                      <pre className="whitespace-pre-wrap text-xs font-sans leading-relaxed text-zinc-300">
+                    <div className="p-4">
+                      <pre className="whitespace-pre-wrap text-xs font-sans leading-relaxed text-white/80">
                         {emailContent.body}
                       </pre>
                     </div>
 
-                    {/* Status Footer */}
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-3 mt-3 border-t border-zinc-800">
+                    {/* Footer */}
+                    <div className="flex items-center justify-between text-[10px] text-white/40 p-3 border-t border-white/5">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1 text-emerald-500">
+                        <span className="flex items-center gap-1 text-emerald-400">
                           <CheckCircle className="h-3 w-3" />
                           Delivered
                         </span>
@@ -267,18 +288,21 @@ Sent automatically by your AI sales assistant.`,
                   </div>
                 </div>
               </div>
-            </div>
-            
-            {/* Laptop Base */}
-            <div className="relative w-[105%]">
-              <div className="h-2 bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-700 rounded-t-sm flex items-center justify-center shadow-inner">
-                <div className="w-16 h-0.5 bg-zinc-600 rounded-full" />
-              </div>
-              <div className="h-4 bg-gradient-to-b from-zinc-800 to-zinc-900 rounded-b-xl flex items-center justify-center shadow-xl">
-                <div className="w-20 h-1 bg-zinc-700/50 rounded-full" />
+              
+              {/* Hinge */}
+              <div className="h-[6px] bg-gradient-to-b from-[#8e8e90] to-[#6e6e70] rounded-b-[2px]" />
+              
+              {/* Base */}
+              <div className="h-[14px] bg-gradient-to-b from-[#a8a8aa] via-[#c4c4c6] to-[#d0d0d2] rounded-b-xl">
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-1 w-16 h-[3px] bg-gradient-to-b from-[#9a9a9c] to-[#b0b0b2] rounded-full" />
               </div>
             </div>
           </div>
+          
+          {/* Close hint */}
+          <p className="text-center text-xs text-muted-foreground mt-3">
+            Click the red button to close
+          </p>
         </div>
       )}
     </div>
