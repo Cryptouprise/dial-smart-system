@@ -1,6 +1,7 @@
 import { MessageSquare, MessageCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
 
 export interface SmsReply {
   id: string;
@@ -24,7 +25,7 @@ export const DemoSmsRepliesPanel = ({ replies }: DemoSmsRepliesPanelProps) => {
   };
 
   return (
-    <Card className="p-4 h-full">
+    <Card className="p-4 h-full glass-card">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold flex items-center gap-2">
           <MessageCircle className="h-4 w-4 text-primary" />
@@ -35,7 +36,7 @@ export const DemoSmsRepliesPanel = ({ replies }: DemoSmsRepliesPanelProps) => {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
           </span>
-          {replies.length} received
+          <AnimatedCounter value={replies.length} duration={300} /> received
         </div>
       </div>
       

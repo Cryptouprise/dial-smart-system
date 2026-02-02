@@ -87,27 +87,36 @@ Sent automatically by your AI sales assistant.`,
   return (
     <>
       <Card 
-        className={`relative p-4 transition-all cursor-pointer hover:shadow-lg ${
-          hasEmail ? 'ring-2 ring-primary/50 animate-pulse-subtle' : ''
+        className={`relative p-4 transition-all cursor-pointer hover:shadow-lg glass-card ${
+          hasEmail ? 'glow-border animate-pulse-subtle' : ''
         }`}
         onClick={() => hasEmail && setIsOpen(true)}
       >
-        {/* Laptop Frame */}
-        <div className="flex flex-col items-center">
-          {/* Screen */}
-          <div className="relative w-full aspect-video bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border-4 border-slate-700 overflow-hidden">
+        {/* Laptop Frame with 3D perspective */}
+        <div className="flex flex-col items-center" style={{ perspective: '1000px' }}>
+          {/* Screen with 3D tilt */}
+          <div 
+            className="relative w-full aspect-video bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border-4 border-slate-700 overflow-hidden shadow-2xl"
+            style={{ 
+              transform: 'rotateX(5deg)',
+              transformOrigin: 'bottom center'
+            }}
+          >
+            {/* Screen Reflection */}
+            <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent pointer-events-none" />
+            
             {/* Screen Content */}
-            <div className="absolute inset-2 bg-slate-950 rounded flex items-center justify-center">
+            <div className={`absolute inset-2 bg-slate-950 rounded flex items-center justify-center ${hasEmail ? 'shadow-[inset_0_0_30px_rgba(var(--primary),0.2)]' : ''}`}>
               {hasEmail ? (
                 <div className="text-center p-4">
                   <div className="relative inline-block">
                     <Mail className="h-12 w-12 text-primary animate-bounce" />
-                    {/* Notification Badge */}
-                    <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold animate-pulse">
+                    {/* Notification Badge with glow */}
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center h-6 w-6 rounded-full bg-red-500 text-white text-xs font-bold animate-pulse shadow-lg shadow-red-500/50">
                       {emailCount}
                     </span>
                   </div>
-                  <p className="text-primary font-medium mt-2 text-sm">
+                  <p className="text-primary font-medium mt-2 text-sm glow-text">
                     {emailCount} New Email{emailCount > 1 ? 's' : ''}
                   </p>
                   <p className="text-slate-400 text-xs mt-1">Click to open</p>
@@ -123,10 +132,13 @@ Sent automatically by your AI sales assistant.`,
             </div>
           </div>
           
-          {/* Laptop Base */}
-          <div className="w-[110%] h-3 bg-slate-700 rounded-b-xl -mt-0.5 flex items-center justify-center">
+          {/* Laptop Base with shadow */}
+          <div className="w-[110%] h-3 bg-gradient-to-b from-slate-700 to-slate-800 rounded-b-xl -mt-0.5 flex items-center justify-center shadow-lg">
             <div className="w-12 h-1 bg-slate-600 rounded-full"></div>
           </div>
+          
+          {/* Reflection under laptop */}
+          <div className="w-[90%] h-2 bg-gradient-to-b from-slate-900/30 to-transparent rounded-full mt-1 blur-sm" />
         </div>
 
         {/* Label */}

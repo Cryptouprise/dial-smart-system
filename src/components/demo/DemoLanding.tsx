@@ -18,8 +18,11 @@ import {
   DollarSign,
   Flame,
   Brain,
-  Rocket
+  Rocket,
+  AlertTriangle
 } from 'lucide-react';
+import { DemoDoTheMath } from './DemoDoTheMath';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
 
 interface DemoLandingProps {
   onStart: (url: string) => void;
@@ -45,7 +48,7 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
             <h1 className="text-3xl md:text-5xl font-bold tracking-tight">
               When it comes to AI outbound at scale,
               <br />
-              <span className="text-primary">you've got two options...</span>
+              <span className="text-primary glow-text">you've got two options...</span>
             </h1>
           </div>
 
@@ -60,31 +63,34 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
                 <h2 className="text-xl md:text-2xl font-bold">Option 1: Human Sales Team</h2>
               </div>
               <div className="space-y-4">
-                <PainPoint icon={TrendingDown} text="50-150 calls/day max per human" />
-                <PainPoint icon={DollarSign} text="$50-$250/day per rep (plus overhead)" />
+                <PainPoint icon={TrendingDown} text="50-150 calls/day per human (that's 20 reps to hit 2,000)" />
+                <PainPoint icon={DollarSign} text="$120/day MINIMUM per rep (plus taxes, benefits, overhead)" />
                 <PainPoint icon={Flame} text="Churn. Burn. Theft. Bad attitudes." />
-                <PainPoint icon={Users} text="They poison the crew when they leave" />
-                <PainPoint icon={Clock} text="Constant hiring. Endless training." />
+                <PainPoint icon={AlertTriangle} text="35% annual turnover = constant rehiring" />
+                <PainPoint icon={Clock} text="2-4 weeks training before they're productive" />
               </div>
             </OptionCard>
 
             {/* Option 2: AI Employee (Solution) */}
             <OptionCard variant="solution">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-full bg-primary/20">
+                <div className="p-2 rounded-full bg-primary/20 animate-glow-pulse">
                   <Bot className="h-6 w-6 text-primary" />
                 </div>
                 <h2 className="text-xl md:text-2xl font-bold">Option 2: AI Sales Employee</h2>
               </div>
               <div className="space-y-4">
                 <BenefitPoint icon={TrendingUp} text="2,000+ calls/day, 24/7" />
-                <BenefitPoint icon={DollarSign} text="Fraction of the cost" />
-                <BenefitPoint icon={Check} text="Never quits. Never complains." />
+                <BenefitPoint icon={DollarSign} text="~$140 total (not per rep, TOTAL)" />
+                <BenefitPoint icon={Check} text="Never quits. Never complains. Never calls in sick." />
                 <BenefitPoint icon={Brain} text="Gets better over time (compounds)" />
                 <BenefitPoint icon={Rocket} text="Deploy once, scales forever" />
               </div>
             </OptionCard>
           </div>
+
+          {/* NEW: Do The Math Section */}
+          <DemoDoTheMath />
 
           {/* Section 2: What This Demo Shows */}
           <div className="space-y-6 pt-8 border-t border-border">
@@ -133,7 +139,7 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
           </div>
 
           {/* Section 3: URL Input CTA */}
-          <Card className="p-6 md:p-8 max-w-xl mx-auto bg-card/50 backdrop-blur border-primary/20">
+          <Card className="p-6 md:p-8 max-w-xl mx-auto glass-card-glow border-primary/30">
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-lg font-semibold text-left block">
@@ -154,7 +160,7 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
               <Button 
                 type="submit" 
                 size="lg" 
-                className="w-full h-12 text-lg gap-2"
+                className="w-full h-12 text-lg gap-2 glow-border transition-all hover:scale-[1.02]"
                 disabled={!url.trim()}
               >
                 <Zap className="h-5 w-5" />
@@ -168,10 +174,10 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
       {/* Section 4: Footer Stats */}
       <div className="border-t bg-muted/30 py-6">
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatItem value="2+ Years" label="Battle-Tested" />
-          <StatItem value="50K+" label="Calls/Day Platform" />
-          <StatItem value="97%" label="Cost Reduction" />
-          <StatItem value="~3 Min" label="Demo Time" />
+          <StatItem value={2} suffix="+ Years" label="Battle-Tested" />
+          <StatItem value={50} suffix="K+" label="Calls/Day Platform" />
+          <StatItem value={97} suffix="%" label="Cost Reduction" />
+          <StatItem value={3} prefix="~" suffix=" Min" label="Demo Time" />
         </div>
       </div>
     </div>
@@ -192,7 +198,7 @@ const OptionCard = ({
     <Card className={`p-6 transition-all duration-300 ${
       isPain 
         ? 'bg-destructive/5 border-destructive/20 hover:border-destructive/40' 
-        : 'bg-primary/5 border-primary/30 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10'
+        : 'bg-primary/5 border-primary/30 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 glow-border animate-float'
     }`}>
       {children}
     </Card>
@@ -255,10 +261,12 @@ const DemoStepItem = ({
   </div>
 );
 
-// Stat Item Component
-const StatItem = ({ value, label }: { value: string; label: string }) => (
+// Stat Item Component with AnimatedCounter
+const StatItem = ({ value, label, prefix = '', suffix = '' }: { value: number; label: string; prefix?: string; suffix?: string }) => (
   <div className="text-center">
-    <div className="text-2xl md:text-3xl font-bold text-primary">{value}</div>
+    <div className="text-2xl md:text-3xl font-bold text-primary">
+      {prefix}<AnimatedCounter value={value} duration={1800} />{suffix}
+    </div>
     <div className="text-xs md:text-sm text-muted-foreground">{label}</div>
   </div>
 );
