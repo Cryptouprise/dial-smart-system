@@ -86,7 +86,7 @@ export const DemoCampaignSetup = ({
           {/* Lead Count - Premium Card */}
           <div className="relative group">
             <div className="absolute -inset-[1px] bg-gradient-to-r from-primary/50 to-cyan-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-border/50 rounded-2xl hover:border-primary/30 transition-all">
+            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-2 border-primary/30 rounded-2xl hover:border-primary/60 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/20">
@@ -122,7 +122,7 @@ export const DemoCampaignSetup = ({
           {/* Daily Goal - Premium Card */}
           <div className="relative group">
             <div className="absolute -inset-[1px] bg-gradient-to-r from-emerald-500/50 to-green-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-border/50 rounded-2xl hover:border-emerald-500/30 transition-all">
+            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-2 border-emerald-500/30 rounded-2xl hover:border-emerald-500/60 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/20">
@@ -153,7 +153,7 @@ export const DemoCampaignSetup = ({
           {/* Cost Target - Premium Card */}
           <div className="relative group">
             <div className="absolute -inset-[1px] bg-gradient-to-r from-amber-500/50 to-yellow-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-border/50 rounded-2xl hover:border-amber-500/30 transition-all">
+            <Card className="relative p-6 space-y-4 bg-background/80 backdrop-blur-sm border-2 border-amber-500/30 rounded-2xl hover:border-amber-500/60 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 border border-amber-500/20">
@@ -184,7 +184,7 @@ export const DemoCampaignSetup = ({
           {/* Phone Numbers Info - Premium Card */}
           <div className="relative group">
             <div className="absolute -inset-[1px] bg-gradient-to-r from-blue-500/50 to-cyan-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-            <Card className="relative p-6 bg-background/80 backdrop-blur-sm border-border/50 rounded-2xl hover:border-blue-500/30 transition-all">
+            <Card className="relative p-6 bg-background/80 backdrop-blur-sm border-2 border-blue-500/30 rounded-2xl hover:border-blue-500/60 transition-all">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/20">
                   <Phone className="h-5 w-5 text-blue-500" />
@@ -206,7 +206,7 @@ export const DemoCampaignSetup = ({
           {/* Predictive Dialing Toggle - Premium Card */}
           <div className="relative group">
             <div className="absolute -inset-[1px] bg-gradient-to-r from-violet-500/50 to-purple-500/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-            <Card className="relative p-6 bg-background/80 backdrop-blur-sm border-border/50 rounded-2xl hover:border-violet-500/30 transition-all">
+            <Card className="relative p-6 bg-background/80 backdrop-blur-sm border-2 border-violet-500/30 rounded-2xl hover:border-violet-500/60 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/20">
