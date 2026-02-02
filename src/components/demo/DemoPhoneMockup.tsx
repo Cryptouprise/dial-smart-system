@@ -141,7 +141,7 @@ export const DemoPhoneMockup = ({
   };
 
   return (
-    <div className="relative w-full max-w-[320px] mx-auto" style={{ perspective: '1000px' }}>
+    <div className="relative w-full max-w-[380px] mx-auto" style={{ perspective: '1000px' }}>
       {/* Dramatic outer glow */}
       <div className="absolute -inset-6 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4rem] blur-2xl opacity-70 animate-pulse" />
       <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-cyan-500/20 rounded-[3.5rem] blur-xl opacity-50" />
