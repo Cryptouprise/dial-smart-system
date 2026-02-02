@@ -647,19 +647,25 @@ export const DemoSimulationDashboard = ({
             {/* SMS Replies Panel - Full Width */}
             <DemoSmsRepliesPanel replies={smsReplies} />
             
-            {/* Phone + Laptop Side by Side */}
+            {/* Phone + Laptop Side by Side - LARGE */}
             <div className="relative">
-              <div className="absolute -inset-4 bg-gradient-to-r from-violet-500/10 via-primary/10 to-cyan-500/10 rounded-3xl blur-2xl" />
-              <div className="relative p-6 rounded-2xl bg-background/50 backdrop-blur-sm border border-primary/20">
-                <h3 className="font-semibold text-center mb-6 text-lg flex items-center justify-center gap-2">
-                  <Phone className="h-5 w-5 text-primary" />
-                  Real-Time Lead Communication
-                  <MessageSquare className="h-5 w-5 text-primary" />
+              <div className="absolute -inset-8 bg-gradient-to-r from-violet-500/15 via-primary/15 to-cyan-500/15 rounded-[3rem] blur-3xl" />
+              <div className="relative p-8 md:p-12 rounded-3xl bg-gradient-to-br from-background/80 via-background/60 to-background/80 backdrop-blur-xl border border-primary/30 shadow-2xl">
+                <h3 className="font-bold text-center mb-8 text-xl md:text-2xl flex items-center justify-center gap-3">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30">
+                    <Phone className="h-5 w-5 text-primary" />
+                  </div>
+                  <span className="bg-gradient-to-r from-primary via-violet-500 to-cyan-500 bg-clip-text text-transparent">
+                    Real-Time Lead Communication
+                  </span>
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500/20 to-primary/20 border border-cyan-500/30">
+                    <MessageSquare className="h-5 w-5 text-cyan-500" />
+                  </div>
                 </h3>
                 
-                <div className="flex flex-col lg:flex-row items-end justify-center gap-8 lg:gap-12">
-                  {/* Phone Mockup - Scaled Down */}
-                  <div className="transform scale-[0.85] origin-bottom">
+                <div className="flex flex-col xl:flex-row items-end justify-center gap-10 xl:gap-16">
+                  {/* Phone Mockup - Full Size */}
+                  <div className="flex-shrink-0">
                     <DemoPhoneMockup
                       campaignType={campaignType}
                       businessName={scrapedData?.business_name}
@@ -668,7 +674,7 @@ export const DemoSimulationDashboard = ({
                     />
                   </div>
                   
-                  {/* Laptop Mockup */}
+                  {/* Laptop Mockup - Full Size */}
                   <div className="flex-shrink-0">
                     <DemoEmailMockup
                       hasEmail={emailCount > 0}
@@ -681,6 +687,10 @@ export const DemoSimulationDashboard = ({
                     />
                   </div>
                 </div>
+                
+                <p className="text-center text-sm text-muted-foreground mt-8">
+                  💡 This is exactly how your leads will interact with Lady Jarvis
+                </p>
               </div>
             </div>
 
