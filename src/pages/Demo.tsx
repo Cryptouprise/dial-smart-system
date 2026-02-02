@@ -162,6 +162,7 @@ const Demo = () => {
             scrapedData={state.scrapedData}
             prospectName={state.prospectName}
             prospectCompany={state.prospectCompany}
+            prospectEmail={state.prospectEmail}
             onComplete={(results) => {
               updateState({ simulationResults: results });
               setStep('roi');
