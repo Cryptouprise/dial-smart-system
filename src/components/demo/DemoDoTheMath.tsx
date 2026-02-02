@@ -15,7 +15,7 @@ export const DemoDoTheMath = () => {
 
       <div className="grid md:grid-cols-2 gap-6">
         {/* Human Side - Pain */}
-        <Card className="p-6 bg-destructive/5 border-destructive/20 relative overflow-hidden">
+        <Card className="p-6 bg-destructive/5 border-2 border-red-500/50 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)] relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-destructive/10 rounded-full blur-3xl -mr-16 -mt-16" />
           
           <div className="flex items-center gap-3 mb-6 relative">
@@ -82,13 +82,27 @@ export const DemoDoTheMath = () => {
             <h3 className="text-xl font-bold">With AI</h3>
           </div>
 
-          {/* Single AI Visual */}
+          {/* ✨ STUNNING AI Visual - Animated orb with rings */}
           <div className="flex justify-center items-center mb-4 py-6">
-            <div className="relative">
-              <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center text-4xl animate-glow-pulse">
-                🤖
+            <div className="relative w-28 h-28">
+              {/* Outer rotating ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-dashed border-cyan-400/50 animate-spin" style={{ animationDuration: '10s' }} />
+              {/* Pulsing glow halo */}
+              <div className="absolute inset-2 rounded-full bg-gradient-to-r from-violet-500 via-cyan-400 to-emerald-400 blur-xl opacity-50 animate-pulse" />
+              {/* Middle rotating ring */}
+              <div className="absolute inset-4 rounded-full border-2 border-violet-400/40 animate-spin" style={{ animationDuration: '6s', animationDirection: 'reverse' }} />
+              {/* Inner glow */}
+              <div className="absolute inset-6 rounded-full bg-gradient-to-br from-violet-600 via-primary to-cyan-500 shadow-[0_0_40px_rgba(139,92,246,0.6)]" />
+              {/* Core icon */}
+              <div className="absolute inset-6 rounded-full flex items-center justify-center">
+                <Bot className="h-8 w-8 text-white drop-shadow-lg" />
               </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-bold whitespace-nowrap">
+              {/* Sparkle effects */}
+              <div className="absolute top-0 right-2 w-2 h-2 bg-cyan-400 rounded-full animate-ping" style={{ animationDuration: '2s' }} />
+              <div className="absolute bottom-2 left-0 w-1.5 h-1.5 bg-violet-400 rounded-full animate-ping" style={{ animationDuration: '3s' }} />
+              <div className="absolute top-4 left-2 w-1 h-1 bg-emerald-400 rounded-full animate-ping" style={{ animationDuration: '2.5s' }} />
+              {/* Label */}
+              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-primary to-cyan-500 text-white text-xs font-bold whitespace-nowrap shadow-lg">
                 1 AI Agent
               </div>
             </div>
