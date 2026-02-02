@@ -95,7 +95,7 @@ Sent automatically by your AI sales assistant.`,
   };
 
   return (
-    <div className="relative w-full max-w-[600px]">
+    <div className="relative w-full max-w-[700px]">
       {/* Collapsed State - MacBook View */}
       {!isExpanded && (
         <div 

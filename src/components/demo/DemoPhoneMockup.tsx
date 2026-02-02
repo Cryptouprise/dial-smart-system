@@ -15,6 +15,7 @@ interface DemoPhoneMockupProps {
   campaignType: string;
   businessName?: string;
   prospectName?: string;
+  prospectCompany?: string;
   onSendMessage?: (message: string) => Promise<string>;
   initialMessage?: string;
   isLoading?: boolean;
@@ -38,19 +39,20 @@ const getCampaignSubtitle = (campaignType: string): string => {
 };
 
 // Opening messages per campaign type
-const getCampaignOpeningMessage = (campaignType: string, businessName: string, prospectName?: string): string => {
+const getCampaignOpeningMessage = (campaignType: string, businessName: string, prospectName?: string, prospectCompany?: string): string => {
   const greeting = prospectName ? `Hey ${prospectName}!` : 'Hey!';
+  const companyMention = prospectCompany ? ` at ${prospectCompany}` : '';
   const messages: Record<string, string> = {
-    database_reactivation: `${greeting} This is Lady Jarvis from ${businessName} 💜 Great chatting with you! I noticed you checked us out a while back. Is that still something you're looking for, or has that ship sailed?`,
-    speed_to_lead: `⚡ That was fast, right? ${prospectName ? `${prospectName}, ` : ''}Lady Jarvis here from ${businessName}! I saw you just checked us out online. What specific problem are you trying to solve?`,
-    appointment_setter: `📅 ${greeting} Lady Jarvis from ${businessName} here. I help people get time with our team. What's the main thing you're hoping to accomplish?`,
-    lead_qualification: `✅ ${prospectName ? `Hi ${prospectName}!` : 'Hi there!'} Lady Jarvis from ${businessName}. I'm here to see if we're a good fit for each other. What's your biggest challenge right now?`,
-    customer_service: `💬 ${greeting} Lady Jarvis from ${businessName} support. How can I help you today?`,
-    appointment_reminder: `🔔 ${greeting} Lady Jarvis from ${businessName} here. Quick reminder - you've got an appointment coming up. You still good for that?`,
-    cross_sell: `🎁 ${greeting} Lady Jarvis from ${businessName}. Thanks for being a customer! How's everything going with what you have?`,
-    cold_outreach: `👋 ${prospectName ? `Hi ${prospectName}!` : 'Hi!'} Lady Jarvis here from ${businessName}. I noticed you might be a great fit for what we do. Got a quick sec?`,
-    survey_feedback: `📊 ${greeting} Lady Jarvis from ${businessName}. We'd love to hear how your experience has been. Mind sharing some quick feedback?`,
-    win_back: `💔 ${prospectName ? `Hey ${prospectName}!` : 'Hey there!'} Lady Jarvis from ${businessName}. We miss you! I wanted to check in and see if there's anything we can do to help.`,
+    database_reactivation: `${greeting} This is Lady Jarvis from ${businessName} 💜 Great chatting with you${companyMention}! I noticed you checked us out a while back. Is that still something you're looking for, or has that ship sailed?`,
+    speed_to_lead: `⚡ That was fast, right? ${prospectName ? `${prospectName}` : 'there'}${companyMention}, Lady Jarvis here from ${businessName}! I saw you just checked us out online. What specific problem are you trying to solve?`,
+    appointment_setter: `📅 ${greeting} Lady Jarvis from ${businessName} here. I help people${companyMention ? ` like ${prospectCompany}` : ''} get time with our team. What's the main thing you're hoping to accomplish?`,
+    lead_qualification: `✅ ${prospectName ? `Hi ${prospectName}!` : 'Hi there!'} Lady Jarvis from ${businessName}. I'm here to see if we're a good fit for ${prospectCompany || 'your business'}. What's your biggest challenge right now?`,
+    customer_service: `💬 ${greeting} Lady Jarvis from ${businessName} support${companyMention ? ` here for ${prospectCompany}` : ''}. How can I help you today?`,
+    appointment_reminder: `🔔 ${greeting} Lady Jarvis from ${businessName} here${companyMention ? ` reaching out to ${prospectCompany}` : ''}. Quick reminder - you've got an appointment coming up. You still good for that?`,
+    cross_sell: `🎁 ${greeting} Lady Jarvis from ${businessName}. Thanks for being a customer${companyMention ? ` - we love working with ${prospectCompany}` : ''}! How's everything going with what you have?`,
+    cold_outreach: `👋 ${prospectName ? `Hi ${prospectName}!` : 'Hi!'} Lady Jarvis here from ${businessName}. I noticed ${prospectCompany || 'you'} might be a great fit for what we do. Got a quick sec?`,
+    survey_feedback: `📊 ${greeting} Lady Jarvis from ${businessName}. We'd love to hear how ${prospectCompany ? `${prospectCompany}'s` : 'your'} experience has been. Mind sharing some quick feedback?`,
+    win_back: `💔 ${prospectName ? `Hey ${prospectName}!` : 'Hey there!'} Lady Jarvis from ${businessName}. We miss ${prospectCompany || 'you'}! I wanted to check in and see if there's anything we can do to help.`,
   };
   
   return messages[campaignType] || messages.database_reactivation;
@@ -60,6 +62,7 @@ export const DemoPhoneMockup = ({
   campaignType,
   businessName = 'Call Boss',
   prospectName,
+  prospectCompany,
   onSendMessage,
   initialMessage,
   isLoading = false,
@@ -72,7 +75,7 @@ export const DemoPhoneMockup = ({
 
   // Initialize with opening message
   useEffect(() => {
-    const opening = initialMessage || getCampaignOpeningMessage(campaignType, businessName, prospectName);
+    const opening = initialMessage || getCampaignOpeningMessage(campaignType, businessName, prospectName, prospectCompany);
     setMessages([
       {
         id: '1',
@@ -81,7 +84,7 @@ export const DemoPhoneMockup = ({
         timestamp: new Date(),
       },
     ]);
-  }, [campaignType, businessName, prospectName, initialMessage]);
+  }, [campaignType, businessName, prospectName, prospectCompany, initialMessage]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -141,9 +144,9 @@ export const DemoPhoneMockup = ({
   };
 
   return (
-    <div className="relative w-full max-w-[380px] mx-auto" style={{ perspective: '1000px' }}>
+    <div className="relative w-full max-w-[440px] mx-auto" style={{ perspective: '1000px' }}>
       {/* Dramatic outer glow */}
-      <div className="absolute -inset-6 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4rem] blur-2xl opacity-70 animate-pulse" />
+      <div className="absolute -inset-8 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4.5rem] blur-2xl opacity-70 animate-pulse" />
       <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-cyan-500/20 rounded-[3.5rem] blur-xl opacity-50" />
       
       {/* iPhone 15 Pro Frame - Titanium */}
@@ -171,11 +174,11 @@ export const DemoPhoneMockup = ({
               <div className="relative m-[3px] rounded-[2.6rem] overflow-hidden bg-black">
                 
                 {/* Dynamic Island */}
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20">
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
                   <div className="relative">
                     {/* Glow effect when active */}
                     <div className="absolute -inset-1 bg-primary/20 rounded-full blur-md opacity-50 animate-pulse" />
-                    <div className="relative w-[100px] h-[32px] bg-black rounded-full flex items-center justify-center shadow-lg">
+                    <div className="relative w-[120px] h-[36px] bg-black rounded-full flex items-center justify-center shadow-lg">
                       {/* Camera cutout */}
                       <div className="absolute left-4 w-3 h-3 rounded-full bg-[#1a1a1c] ring-[0.5px] ring-[#2a2a2c]">
                         <div className="absolute inset-[2px] rounded-full bg-gradient-to-br from-[#2d2d30] to-[#0a0a0a]" />
@@ -230,7 +233,7 @@ export const DemoPhoneMockup = ({
                 </div>
 
                 {/* Messages Container - iOS Style */}
-                <div className="h-[280px] overflow-y-auto bg-black p-3 space-y-2.5">
+                <div className="h-[340px] overflow-y-auto bg-black p-3 space-y-2.5">
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -275,9 +278,9 @@ export const DemoPhoneMockup = ({
                 </div>
 
                 {/* Input Area - iOS Style */}
-                <div className="bg-[#1c1c1e] p-2 border-t border-white/5">
+                <div className="bg-[#1c1c1e] p-3 border-t border-white/5">
                   <div className="flex items-center gap-2">
-                    <button className="p-2 text-primary">
+                    <button className="p-2 text-primary" type="button">
                       <Camera className="h-5 w-5" />
                     </button>
                     <div className="flex-1 relative">
@@ -287,17 +290,19 @@ export const DemoPhoneMockup = ({
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="iMessage"
-                        className="w-full bg-[#2c2c2e] border-0 text-white placeholder:text-white/30 rounded-full text-[15px] h-9 px-4 focus:ring-0 focus:ring-offset-0"
+                        className="w-full bg-[#2c2c2e] border-0 text-white placeholder:text-white/30 rounded-full text-[15px] h-10 px-4 focus:outline-none focus:ring-2 focus:ring-primary/50"
                         disabled={isSending || isLoading}
+                        autoComplete="off"
                       />
                     </div>
                     <Button
                       size="icon"
+                      type="button"
                       onClick={handleSend}
                       disabled={!inputValue.trim() || isSending || isLoading}
-                      className="rounded-full shrink-0 h-8 w-8 bg-primary hover:bg-primary/90 shadow-lg disabled:opacity-30"
+                      className="rounded-full shrink-0 h-9 w-9 bg-primary hover:bg-primary/90 shadow-lg disabled:opacity-30"
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      <Send className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
