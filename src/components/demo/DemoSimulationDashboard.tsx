@@ -378,7 +378,7 @@ export const DemoSimulationDashboard = ({
         </div>
 
         {/* Main Layout: Dashboard + Phone */}
-        <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div className="space-y-6">
           {/* Left: Dashboard Content */}
           <div className="space-y-6">
             {/* Progress - Premium Card with MASSIVE Time-lapse Indicator */}
@@ -584,21 +584,44 @@ export const DemoSimulationDashboard = ({
               estimatedAdditionalAppointments={estimatedAdditionalAppointments}
             />
 
-            {/* SMS Replies + Email Mockup Row */}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* SMS Replies Panel */}
-              <DemoSmsRepliesPanel replies={smsReplies} />
-              
-              {/* Email Mockup */}
-              <DemoEmailMockup
-                hasEmail={emailCount > 0}
-                emailCount={emailCount}
-                prospectName={prospectName}
-                prospectCompany={prospectCompany}
-                prospectEmail={prospectEmail}
-                businessName={scrapedData?.business_name}
-                campaignType={campaignType}
-              />
+            {/* SMS Replies Panel - Full Width */}
+            <DemoSmsRepliesPanel replies={smsReplies} />
+            
+            {/* Phone + Laptop Side by Side */}
+            <div className="relative">
+              <div className="absolute -inset-4 bg-gradient-to-r from-violet-500/10 via-primary/10 to-cyan-500/10 rounded-3xl blur-2xl" />
+              <div className="relative p-6 rounded-2xl bg-background/50 backdrop-blur-sm border border-primary/20">
+                <h3 className="font-semibold text-center mb-6 text-lg flex items-center justify-center gap-2">
+                  <Phone className="h-5 w-5 text-primary" />
+                  Real-Time Lead Communication
+                  <MessageSquare className="h-5 w-5 text-primary" />
+                </h3>
+                
+                <div className="flex flex-col lg:flex-row items-end justify-center gap-8 lg:gap-12">
+                  {/* Phone Mockup - Scaled Down */}
+                  <div className="transform scale-[0.85] origin-bottom">
+                    <DemoPhoneMockup
+                      campaignType={campaignType}
+                      businessName={scrapedData?.business_name}
+                      prospectName={prospectName}
+                      onSendMessage={handleSendMessage}
+                    />
+                  </div>
+                  
+                  {/* Laptop Mockup */}
+                  <div className="flex-shrink-0">
+                    <DemoEmailMockup
+                      hasEmail={emailCount > 0}
+                      emailCount={emailCount}
+                      prospectName={prospectName}
+                      prospectCompany={prospectCompany}
+                      prospectEmail={prospectEmail}
+                      businessName={scrapedData?.business_name}
+                      campaignType={campaignType}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Complete Button */}
@@ -613,27 +636,6 @@ export const DemoSimulationDashboard = ({
                 onContinue={handleComplete}
               />
             )}
-          </div>
-
-          {/* Right: Docked Phone Panel - Premium */}
-          <div className="xl:sticky xl:top-4 xl:self-start">
-            <div className="space-y-4">
-              <div className="text-center">
-                <h3 className="font-semibold text-base bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent">Live SMS Conversation</h3>
-                <p className="text-xs text-muted-foreground mt-1">Try replying to Lady Jarvis!</p>
-              </div>
-              <DemoPhoneMockup
-                campaignType={campaignType}
-                businessName={scrapedData?.business_name}
-                prospectName={prospectName}
-                onSendMessage={handleSendMessage}
-              />
-              <div className="text-center p-3 rounded-xl bg-gradient-to-r from-primary/5 via-violet-500/5 to-cyan-500/5 border border-primary/20">
-                <p className="text-xs text-muted-foreground">
-                  💡 This is exactly how your leads would interact
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </div>

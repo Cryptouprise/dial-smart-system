@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Mail, X, CheckCircle, Calendar, Sparkles, ChevronUp, Power, Monitor } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Mail, X, CheckCircle, Calendar, Sparkles, ChevronUp, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DemoEmailMockupProps {
@@ -83,28 +82,35 @@ Sent automatically by your AI sales assistant.`,
 
   const emailContent = getEmailContent();
 
+  // Keyboard key component
+  const Key = ({ children, wide = false, extraWide = false }: { children?: React.ReactNode; wide?: boolean; extraWide?: boolean }) => (
+    <div className={cn(
+      "h-[8px] rounded-[2px] bg-gradient-to-b from-[#4a4a4c] to-[#3a3a3c] border border-[#2a2a2c] flex items-center justify-center shadow-[0_1px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]",
+      wide ? "w-[16px]" : extraWide ? "w-[40px]" : "w-[10px]"
+    )}>
+      {children && <span className="text-[3px] text-white/30 font-medium">{children}</span>}
+    </div>
+  );
+
   return (
-    <div 
-      className={cn(
-        "relative rounded-2xl transition-all bg-background/50 backdrop-blur-sm border-2 overflow-hidden",
-        hasEmail 
-          ? 'border-primary/40 hover:border-primary/60 shadow-lg shadow-primary/10' 
-          : 'border-border/30 hover:border-border/50',
-        isExpanded ? 'p-0' : 'p-4'
-      )}
-    >
+    <div className="relative w-full max-w-[380px]">
       {/* Collapsed State - MacBook View */}
       {!isExpanded && (
         <div 
           className="cursor-pointer"
           onClick={() => hasEmail && setIsExpanded(true)}
-          style={{ perspective: '800px' }}
+          style={{ perspective: '1000px' }}
         >
+          {/* Outer glow */}
+          {hasEmail && (
+            <div className="absolute -inset-4 bg-gradient-to-b from-primary/20 via-violet-500/10 to-transparent rounded-3xl blur-xl opacity-60 animate-pulse" />
+          )}
+          
           {/* MacBook Pro Frame */}
           <div 
             className="relative"
             style={{ 
-              transform: 'rotateX(12deg)',
+              transform: 'rotateX(8deg)',
               transformOrigin: 'bottom center',
               transformStyle: 'preserve-3d'
             }}
@@ -112,57 +118,57 @@ Sent automatically by your AI sales assistant.`,
             {/* Screen Lid */}
             <div className="relative">
               {/* Outer aluminum frame */}
-              <div className="bg-gradient-to-b from-[#c4c4c6] via-[#a8a8aa] to-[#8e8e90] rounded-t-xl p-[2px] shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+              <div className="bg-gradient-to-b from-[#d4d4d6] via-[#b8b8ba] to-[#a0a0a2] rounded-t-[12px] p-[3px] shadow-[0_-8px_30px_rgba(0,0,0,0.25)]">
                 {/* Inner black bezel */}
-                <div className="bg-[#0a0a0a] rounded-t-[10px] p-[6px] pb-[8px]">
+                <div className="bg-[#0a0a0a] rounded-t-[9px] p-[5px] pb-[6px]">
                   {/* Camera notch area */}
-                  <div className="flex justify-center mb-1">
-                    <div className="flex items-center gap-2 px-3 py-0.5 bg-black rounded-full">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#1a1a1c]">
-                        <div className="w-0.5 h-0.5 rounded-full bg-[#2a2a2c] mt-[2px] ml-[2px]" />
+                  <div className="flex justify-center mb-1.5">
+                    <div className="flex items-center gap-2 px-4 py-0.5">
+                      <div className="w-2 h-2 rounded-full bg-[#1a1a1c] ring-[0.5px] ring-[#2a2a2c]">
+                        <div className="w-0.5 h-0.5 rounded-full bg-[#3a3a3c] mt-[3px] ml-[3px]" />
                       </div>
-                      <div className="w-1 h-1 rounded-full bg-emerald-500/50" />
+                      <div className="w-1 h-1 rounded-full bg-emerald-500/40" />
                     </div>
                   </div>
                   
                   {/* Screen with content */}
                   <div className={cn(
-                    "relative aspect-[16/10] rounded-sm overflow-hidden",
-                    "bg-gradient-to-br from-[#1a1a1c] to-[#0a0a0a]",
-                    hasEmail && "shadow-[inset_0_0_60px_rgba(139,92,246,0.1)]"
+                    "relative aspect-[16/10] rounded-[2px] overflow-hidden",
+                    "bg-gradient-to-br from-[#1a1a1c] to-[#0d0d0d]",
+                    hasEmail && "shadow-[inset_0_0_60px_rgba(139,92,246,0.15)]"
                   )}>
                     {/* Screen reflection */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] via-transparent to-transparent pointer-events-none" />
                     
                     {/* Content */}
                     <div className="absolute inset-0 flex items-center justify-center">
                       {hasEmail ? (
                         <div className="text-center animate-in fade-in duration-500">
                           {/* Glowing mail notification */}
-                          <div className="relative inline-block mb-3">
-                            <div className="absolute inset-0 bg-primary/40 rounded-2xl blur-2xl animate-pulse" />
-                            <div className="relative p-5 rounded-2xl bg-gradient-to-br from-primary/30 to-violet-500/30 border border-primary/40 backdrop-blur-sm">
-                              <Mail className="h-12 w-12 text-primary" />
+                          <div className="relative inline-block mb-2">
+                            <div className="absolute inset-0 bg-primary/40 rounded-xl blur-xl animate-pulse" />
+                            <div className="relative p-4 rounded-xl bg-gradient-to-br from-primary/30 to-violet-500/30 border border-primary/40 backdrop-blur-sm">
+                              <Mail className="h-8 w-8 text-primary" />
                             </div>
                             {/* Notification Badge */}
-                            <span className="absolute -top-2 -right-2 flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-xs font-bold animate-bounce shadow-lg shadow-red-500/50 ring-2 ring-[#0a0a0a]">
+                            <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center h-5 w-5 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-[10px] font-bold animate-bounce shadow-lg shadow-red-500/50 ring-2 ring-[#0a0a0a]">
                               {emailCount}
                             </span>
                           </div>
-                          <p className="text-primary font-semibold">
+                          <p className="text-primary font-semibold text-sm">
                             {emailCount} New Email{emailCount > 1 ? 's' : ''}
                           </p>
-                          <p className="text-white/40 text-xs mt-1.5 flex items-center justify-center gap-1.5">
-                            <ChevronUp className="h-3.5 w-3.5 animate-bounce" />
-                            Click to open laptop
+                          <p className="text-white/40 text-[10px] mt-1 flex items-center justify-center gap-1">
+                            <ChevronUp className="h-3 w-3 animate-bounce" />
+                            Click to open
                           </p>
                         </div>
                       ) : (
-                        <div className="text-center p-4">
-                          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 inline-block mb-2">
-                            <Monitor className="h-10 w-10 text-white/30" />
+                        <div className="text-center p-3">
+                          <div className="p-3 rounded-xl bg-white/5 border border-white/10 inline-block mb-1.5">
+                            <Monitor className="h-6 w-6 text-white/30" />
                           </div>
-                          <p className="text-white/40 text-sm">
+                          <p className="text-white/40 text-xs">
                             Awaiting appointments...
                           </p>
                         </div>
@@ -172,25 +178,97 @@ Sent automatically by your AI sales assistant.`,
                 </div>
               </div>
               
-              {/* Hinge */}
-              <div className="relative h-[6px] bg-gradient-to-b from-[#8e8e90] via-[#6e6e70] to-[#5a5a5c] rounded-b-[2px] shadow-md">
-                <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+              {/* Hinge - realistic groove */}
+              <div className="relative h-[4px] bg-gradient-to-b from-[#8e8e90] via-[#7e7e80] to-[#6e6e70]">
+                <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-[1px] bg-black/30" />
               </div>
             </div>
             
-            {/* Base/Keyboard area */}
-            <div className="relative">
-              <div className="h-[14px] bg-gradient-to-b from-[#a8a8aa] via-[#c4c4c6] to-[#d0d0d2] rounded-b-xl shadow-[0_8px_20px_-4px_rgba(0,0,0,0.4)]">
-                {/* Trackpad indent */}
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-1 w-16 h-[3px] bg-gradient-to-b from-[#9a9a9c] to-[#b0b0b2] rounded-full" />
-                {/* Front edge highlight */}
-                <div className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-b from-transparent to-[#e0e0e2] rounded-b-xl" />
+            {/* Base/Keyboard area - angled and detailed */}
+            <div 
+              className="relative"
+              style={{
+                transform: 'rotateX(-25deg)',
+                transformOrigin: 'top center',
+              }}
+            >
+              {/* Aluminum base with keyboard cutout */}
+              <div className="bg-gradient-to-b from-[#c8c8ca] via-[#d0d0d2] to-[#d8d8da] rounded-b-[8px] pt-[3px] pb-[8px] px-[6px] shadow-[0_12px_25px_-8px_rgba(0,0,0,0.5)]">
+                {/* Keyboard area - recessed */}
+                <div className="bg-gradient-to-b from-[#2a2a2c] to-[#1a1a1c] rounded-[4px] p-[4px] shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]">
+                  {/* Keyboard rows */}
+                  <div className="space-y-[2px]">
+                    {/* Function row */}
+                    <div className="flex gap-[2px] justify-center">
+                      {[...Array(14)].map((_, i) => (
+                        <div key={i} className="w-[10px] h-[6px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                      ))}
+                    </div>
+                    {/* Number row */}
+                    <div className="flex gap-[2px] justify-center">
+                      {['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='].map((k, i) => (
+                        <Key key={i}>{k}</Key>
+                      ))}
+                      <Key wide>⌫</Key>
+                    </div>
+                    {/* QWERTY row */}
+                    <div className="flex gap-[2px] justify-center">
+                      <Key wide>⇥</Key>
+                      {['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'].map((k, i) => (
+                        <Key key={i}>{k}</Key>
+                      ))}
+                    </div>
+                    {/* ASDF row */}
+                    <div className="flex gap-[2px] justify-center">
+                      <Key wide>⇪</Key>
+                      {['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'"].map((k, i) => (
+                        <Key key={i}>{k}</Key>
+                      ))}
+                      <Key wide>⏎</Key>
+                    </div>
+                    {/* ZXCV row */}
+                    <div className="flex gap-[2px] justify-center">
+                      <Key wide>⇧</Key>
+                      {['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'].map((k, i) => (
+                        <Key key={i}>{k}</Key>
+                      ))}
+                      <Key wide>⇧</Key>
+                    </div>
+                    {/* Bottom row with spacebar */}
+                    <div className="flex gap-[2px] justify-center items-center">
+                      <Key>fn</Key>
+                      <Key>⌃</Key>
+                      <Key>⌥</Key>
+                      <Key wide>⌘</Key>
+                      <Key extraWide />
+                      <Key wide>⌘</Key>
+                      <Key>⌥</Key>
+                      {/* Arrow keys */}
+                      <div className="flex flex-col gap-[1px]">
+                        <div className="w-[10px] h-[3px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                        <div className="flex gap-[1px]">
+                          <div className="w-[10px] h-[4px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                          <div className="w-[10px] h-[4px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Trackpad */}
+                <div className="mt-[4px] mx-auto w-[70%] h-[35px] bg-gradient-to-b from-[#c0c0c2] to-[#b8b8ba] rounded-[4px] border border-[#a0a0a2] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.1)]">
+                  <div className="w-full h-full rounded-[3px] border border-white/10" />
+                </div>
               </div>
+              
+              {/* Front edge lip */}
+              <div className="h-[2px] bg-gradient-to-b from-[#e0e0e2] to-[#d0d0d2] rounded-b-[8px]" />
             </div>
           </div>
           
           {/* Shadow under laptop */}
-          <div className="w-[85%] mx-auto h-6 bg-gradient-to-b from-black/30 via-primary/5 to-transparent rounded-full mt-3 blur-lg" />
+          <div className="w-[90%] mx-auto h-5 bg-gradient-to-b from-black/25 via-primary/5 to-transparent rounded-full mt-2 blur-md" />
 
           {/* Label */}
           <div className="mt-4 text-center">
@@ -200,101 +278,76 @@ Sent automatically by your AI sales assistant.`,
             </h4>
             <p className="text-xs text-muted-foreground mt-1">
               {hasEmail 
-                ? 'Click to preview the email your leads receive'
-                : 'Emails are sent when appointments are booked'
+                ? 'Click laptop to preview email'
+                : 'Emails sent when appointments book'
               }
             </p>
           </div>
         </div>
       )}
 
-      {/* Expanded State - MacBook Open with Email */}
+      {/* Expanded State - Email View */}
       {isExpanded && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 p-4">
-          <div style={{ perspective: '800px' }}>
-            {/* MacBook Frame - Open Position */}
-            <div 
-              className="relative"
-              style={{ 
-                transform: 'rotateX(3deg)',
-                transformOrigin: 'bottom center'
-              }}
-            >
-              {/* Screen */}
-              <div className="bg-gradient-to-b from-[#c4c4c6] via-[#a8a8aa] to-[#8e8e90] rounded-t-xl p-[2px]">
-                <div className="bg-[#0a0a0a] rounded-t-[10px] p-1">
-                  {/* Menu bar */}
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#1a1a1c]/90 rounded-t-lg">
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1.5">
-                        <button 
-                          onClick={() => setIsExpanded(false)}
-                          className="w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 transition-colors flex items-center justify-center group"
-                        >
-                          <X className="h-2 w-2 text-[#990000] opacity-0 group-hover:opacity-100" />
-                        </button>
-                        <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
-                        <div className="w-3 h-3 rounded-full bg-[#28c840]" />
-                      </div>
-                      <span className="text-[10px] text-white/50 ml-2">Mail</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-white/50">
-                      <span>Today 9:41 AM</span>
-                    </div>
-                  </div>
-                  
-                  {/* Email Content */}
-                  <div className="bg-[#1a1a1c] max-h-[320px] overflow-y-auto">
-                    {/* Email Header */}
-                    <div className="bg-[#252528] p-3 space-y-1.5 border-b border-white/5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-white/40 w-10">From:</span>
-                        <span className="text-xs font-medium text-white/90">
-                          Lady Jarvis &lt;no-reply@dialboss.ai&gt;
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-white/40 w-10">To:</span>
-                        <span className="text-xs text-white/70">
-                          {prospectEmail || `${(prospectName || 'lead').toLowerCase().replace(' ', '.')}@example.com`}
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] text-white/40 w-10 pt-0.5">Subject:</span>
-                        <span className="text-xs font-semibold text-primary">{emailContent.subject}</span>
-                      </div>
-                    </div>
-
-                    {/* Email Body */}
-                    <div className="p-4">
-                      <pre className="whitespace-pre-wrap text-xs font-sans leading-relaxed text-white/80">
-                        {emailContent.body}
-                      </pre>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between text-[10px] text-white/40 p-3 border-t border-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1 text-emerald-400">
-                          <CheckCircle className="h-3 w-3" />
-                          Delivered
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Just now
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 p-4 rounded-2xl bg-background/80 backdrop-blur-sm border border-primary/30">
+          {/* macOS Window Chrome */}
+          <div className="rounded-lg overflow-hidden shadow-2xl border border-white/10">
+            {/* Title bar */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c]">
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setIsExpanded(false)}
+                  className="w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 transition-colors flex items-center justify-center group"
+                >
+                  <X className="h-2 w-2 text-[#990000] opacity-0 group-hover:opacity-100" />
+                </button>
+                <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
+                <div className="w-3 h-3 rounded-full bg-[#28c840]" />
+              </div>
+              <span className="text-[11px] text-white/60 font-medium">Mail — {emailCount} unread</span>
+              <div className="w-14" />
+            </div>
+            
+            {/* Email Content */}
+            <div className="bg-[#1a1a1c] max-h-[350px] overflow-y-auto">
+              {/* Email Header */}
+              <div className="bg-[#252528] p-3 space-y-1.5 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-white/40 w-10">From:</span>
+                  <span className="text-xs font-medium text-white/90">
+                    Lady Jarvis &lt;no-reply@dialboss.ai&gt;
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-white/40 w-10">To:</span>
+                  <span className="text-xs text-white/70">
+                    {prospectEmail || `${(prospectName || 'lead').toLowerCase().replace(' ', '.')}@example.com`}
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-[10px] text-white/40 w-10 pt-0.5">Subject:</span>
+                  <span className="text-xs font-semibold text-primary">{emailContent.subject}</span>
                 </div>
               </div>
-              
-              {/* Hinge */}
-              <div className="h-[6px] bg-gradient-to-b from-[#8e8e90] to-[#6e6e70] rounded-b-[2px]" />
-              
-              {/* Base */}
-              <div className="h-[14px] bg-gradient-to-b from-[#a8a8aa] via-[#c4c4c6] to-[#d0d0d2] rounded-b-xl">
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-1 w-16 h-[3px] bg-gradient-to-b from-[#9a9a9c] to-[#b0b0b2] rounded-full" />
+
+              {/* Email Body */}
+              <div className="p-4">
+                <pre className="whitespace-pre-wrap text-xs font-sans leading-relaxed text-white/80">
+                  {emailContent.body}
+                </pre>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between text-[10px] text-white/40 p-3 border-t border-white/5">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <CheckCircle className="h-3 w-3" />
+                    Delivered
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    Just now
+                  </span>
+                </div>
               </div>
             </div>
           </div>
