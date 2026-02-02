@@ -670,6 +670,7 @@ export const DemoSimulationDashboard = ({
                       campaignType={campaignType}
                       businessName={scrapedData?.business_name}
                       prospectName={prospectName}
+                      prospectCompany={prospectCompany}
                       onSendMessage={handleSendMessage}
                     />
                   </div>
