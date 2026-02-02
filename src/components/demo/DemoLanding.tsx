@@ -181,15 +181,30 @@ export const DemoLanding = ({ onStart }: DemoLandingProps) => {
                     autoFocus
                   />
                 </div>
-                <Button 
-                  type="submit" 
-                  size="lg" 
-                  className="w-full h-14 text-lg gap-2 bg-gradient-to-r from-primary via-violet-500 to-cyan-500 hover:opacity-90 transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 rounded-xl font-bold"
-                  disabled={!url.trim()}
-                >
-                  <Zap className="h-5 w-5" />
-                  Show Me What's Possible
-                </Button>
+                {/* ✨ STUNNING Button with spinning rings like AI orb */}
+                <div className="relative">
+                  {/* Outer rotating ring */}
+                  <div className="absolute -inset-[3px] rounded-2xl border-2 border-dashed border-cyan-400/50 animate-spin" style={{ animationDuration: '8s' }} />
+                  {/* Pulsing glow halo */}
+                  <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-r from-violet-500 via-cyan-400 to-emerald-400 blur-md opacity-60 animate-pulse" />
+                  {/* Inner rotating ring */}
+                  <div className="absolute -inset-[1px] rounded-xl border border-violet-400/60 animate-spin" style={{ animationDuration: '4s', animationDirection: 'reverse' }} />
+                  
+                  <Button 
+                    type="submit" 
+                    size="lg" 
+                    className="relative w-full h-14 text-lg gap-2 bg-gradient-to-r from-violet-600 via-primary to-cyan-500 hover:opacity-90 transition-all hover:scale-[1.02] shadow-[0_0_30px_rgba(139,92,246,0.5)] rounded-xl font-bold border-0"
+                    disabled={!url.trim()}
+                  >
+                    <Zap className="h-5 w-5" />
+                    Show Me What's Possible
+                  </Button>
+                  
+                  {/* Sparkle effects */}
+                  <div className="absolute -top-1 right-4 w-2 h-2 bg-cyan-400 rounded-full animate-ping" style={{ animationDuration: '2s' }} />
+                  <div className="absolute -bottom-1 left-8 w-1.5 h-1.5 bg-violet-400 rounded-full animate-ping" style={{ animationDuration: '3s' }} />
+                  <div className="absolute top-2 -left-1 w-1 h-1 bg-emerald-400 rounded-full animate-ping" style={{ animationDuration: '2.5s' }} />
+                </div>
               </form>
             </Card>
           </div>
