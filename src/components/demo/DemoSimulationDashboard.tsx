@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { DemoPhoneMockup } from './DemoPhoneMockup';
+import { DemoSmsRepliesPanel, SmsReply } from './DemoSmsRepliesPanel';
+import { DemoEmailMockup } from './DemoEmailMockup';
+import { DemoSecondaryCampaignCallout } from './DemoSecondaryCampaignCallout';
 import { supabase } from '@/integrations/supabase/client';
 
 interface SimulationConfig {
@@ -46,8 +49,43 @@ interface DemoSimulationDashboardProps {
   scrapedData: any;
   prospectName?: string;
   prospectCompany?: string;
+  prospectEmail?: string;
   onComplete: (results: SimulationResults) => void;
 }
+
+// SMS reply templates for different dispositions
+const smsReplyTemplates: Record<string, string[]> = {
+  appointment: [
+    "Perfect, see you then!",
+    "Confirmed! Looking forward to it.",
+    "Great, I'll be ready!",
+    "Sounds good, thanks for setting this up!",
+  ],
+  hotLead: [
+    "Yes I'm interested!",
+    "When can we talk?",
+    "This sounds exactly like what we need",
+    "Send me more details please",
+  ],
+  followUp: [
+    "Call me back tomorrow",
+    "Let's reconnect next week",
+    "Not a good time, try me Friday",
+    "I'll be available after 2pm",
+  ],
+  sendInfo: [
+    "Send me the details",
+    "Email me the info please",
+    "Can you text me a link?",
+    "What's your website?",
+  ],
+  potentialProspect: [
+    "Interesting, tell me more",
+    "How does this work exactly?",
+    "What's the pricing like?",
+    "I might be interested",
+  ],
+};
 
 export const DemoSimulationDashboard = ({
   config,
@@ -55,6 +93,7 @@ export const DemoSimulationDashboard = ({
   scrapedData,
   prospectName,
   prospectCompany,
+  prospectEmail,
   onComplete,
 }: DemoSimulationDashboardProps) => {
   const [callsMade, setCallsMade] = useState(0);
@@ -66,6 +105,12 @@ export const DemoSimulationDashboard = ({
   const [isComplete, setIsComplete] = useState(false);
   const [pipelineLeads, setPipelineLeads] = useState<{ stage: string; name: string; icon?: string }[]>([]);
   const [conversationHistory, setConversationHistory] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
+  
+  // SMS Replies state
+  const [smsReplies, setSmsReplies] = useState<SmsReply[]>([]);
+  
+  // Email notification state
+  const [emailCount, setEmailCount] = useState(0);
   
   // Realistic disposition tracking
   const [dispositions, setDispositions] = useState<DispositionCounts>({
@@ -111,7 +156,7 @@ export const DemoSimulationDashboard = ({
       console.error('SMS reply error:', err);
       return "Got it! Let me look into that for you. Want me to have someone reach out?";
     }
-  }, [campaignType, scrapedData?.business_name, conversationHistory]);
+  }, [campaignType, scrapedData?.business_name, conversationHistory, prospectName, prospectCompany]);
 
   const fakeNames = [
     'John S.', 'Sarah M.', 'Mike D.', 'Emily R.', 'Chris T.',
@@ -119,6 +164,27 @@ export const DemoSimulationDashboard = ({
     'James W.', 'Michelle B.', 'Kevin C.', 'Ashley G.', 'Brian F.',
     'Nicole V.', 'Andrew Z.', 'Rachel Q.', 'Tyler O.', 'Megan I.',
   ];
+
+  // Function to generate SMS reply
+  const generateSmsReply = useCallback((disposition: string, leadName: string) => {
+    const templates = smsReplyTemplates[disposition];
+    if (!templates) return;
+    
+    // 30% chance to generate SMS reply for positive dispositions
+    if (Math.random() < 0.30) {
+      const message = templates[Math.floor(Math.random() * templates.length)];
+      setSmsReplies(prev => [
+        {
+          id: `sms-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          from: leadName,
+          message,
+          timestamp: new Date(),
+          disposition,
+        },
+        ...prev.slice(0, 49), // Keep max 50 replies
+      ]);
+    }
+  }, []);
 
   useEffect(() => {
     const targetCalls = config.leadCount;
@@ -138,6 +204,7 @@ export const DemoSimulationDashboard = ({
         // REALISTIC SIMULATION - process each call in this batch
         for (let i = 0; i < callsThisTick; i++) {
           const rand = Math.random();
+          const leadName = fakeNames[Math.floor(Math.random() * fakeNames.length)];
           
           // 10% pickup rate
           if (rand < 0.10) {
@@ -147,7 +214,7 @@ export const DemoSimulationDashboard = ({
             if (Math.random() < 0.60) {
               setDispositions(d => ({ ...d, callDropped: d.callDropped + 1 }));
               setPipelineLeads(leads => [
-                { stage: 'dropped', name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon: 'dropped' },
+                { stage: 'dropped', name: leadName, icon: 'dropped' },
                 ...leads.slice(0, 24),
               ]);
             } else {
@@ -161,6 +228,8 @@ export const DemoSimulationDashboard = ({
                 disposition = 'appointment';
                 stage = '🎉 APPOINTMENT';
                 icon = 'appointment';
+                // Increment email count for appointments
+                setEmailCount(c => c + 1);
               } else if (dispRand < 0.18) {
                 disposition = 'hotLead';
                 stage = '🔥 Hot Lead';
@@ -197,9 +266,14 @@ export const DemoSimulationDashboard = ({
               
               setDispositions(d => ({ ...d, [disposition]: d[disposition] + 1 }));
               setPipelineLeads(leads => [
-                { stage, name: fakeNames[Math.floor(Math.random() * fakeNames.length)], icon },
+                { stage, name: leadName, icon },
                 ...leads.slice(0, 24),
               ]);
+              
+              // Generate SMS reply for positive dispositions
+              if (['appointment', 'hotLead', 'followUp', 'sendInfo', 'potentialProspect'].includes(disposition)) {
+                generateSmsReply(disposition, leadName);
+              }
             }
           } else if (rand < 0.45) {
             // 35% voicemail (0.10 to 0.45)
@@ -227,7 +301,7 @@ export const DemoSimulationDashboard = ({
     return () => {
       if (simulationRef.current) clearInterval(simulationRef.current);
     };
-  }, [config.leadCount]);
+  }, [config.leadCount, generateSmsReply]);
 
   const handleComplete = () => {
     onComplete({
@@ -243,6 +317,7 @@ export const DemoSimulationDashboard = ({
   const progress = (callsMade / config.leadCount) * 100;
   const positiveOutcomes = dispositions.appointment + dispositions.hotLead + dispositions.potentialProspect + dispositions.followUp + dispositions.sendInfo;
   const costPerAppointment = dispositions.appointment > 0 ? totalCost / dispositions.appointment : 0;
+  const estimatedAdditionalAppointments = Math.round(positiveOutcomes * 0.20); // ~20% of positive outcomes become appointments from secondary campaign
 
   const formatTime = (minutes: number) => {
     const h = Math.floor(minutes / 60);
@@ -405,6 +480,29 @@ export const DemoSimulationDashboard = ({
                 <span className="text-2xl font-bold text-green-500">{positiveOutcomes}</span>
               </div>
             </Card>
+
+            {/* Secondary Campaign Callout */}
+            <DemoSecondaryCampaignCallout 
+              positiveOutcomes={positiveOutcomes}
+              estimatedAdditionalAppointments={estimatedAdditionalAppointments}
+            />
+
+            {/* SMS Replies + Email Mockup Row */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* SMS Replies Panel */}
+              <DemoSmsRepliesPanel replies={smsReplies} />
+              
+              {/* Email Mockup */}
+              <DemoEmailMockup
+                hasEmail={emailCount > 0}
+                emailCount={emailCount}
+                prospectName={prospectName}
+                prospectCompany={prospectCompany}
+                prospectEmail={prospectEmail}
+                businessName={scrapedData?.business_name}
+                campaignType={campaignType}
+              />
+            </div>
 
             {/* Complete Button */}
             {isComplete && (
