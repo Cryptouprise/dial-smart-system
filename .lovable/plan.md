@@ -1,94 +1,135 @@
 
-# Fix: Link Lady Jarvis Agent to Phone Number in Retell
+
+# Redesign: Scroll-Stopping Demo Landing Page
 
 ## The Problem
 
-You got a "solar agent" instead of Lady Jarvis because:
-
-1. The `setup-lady-jarvis` function created a new Lady Jarvis agent (`agent_b6fe1afb3185d05441093ca788`) and LLM
-2. It updated your local database (`demo_agent_config`) with the new IDs
-3. It updated the LLM prompt before each call
-4. **BUT** it never told Retell to use Lady Jarvis for outbound calls from `+14752429282`
-
-In Retell's system, each phone number has an `outbound_agent_id` property. Your phone is still pointing to your original solar agent.
+The current landing page is too generic—"Experience AI Outbound Calling" doesn't create urgency or curiosity. We need to psychologically hook visitors by:
+1. **Presenting the painful reality** of Option 1 (human teams)
+2. **Teasing the breakthrough** of Option 2 (AI sales employee)
+3. **Making them curious** about what the demo will reveal
 
 ---
 
-## The Fix
+## The New Structure
 
-Add a Retell API call to update the phone number's `outbound_agent_id`:
+### Section 1: The Reality Check (Above the Fold)
 
-```
-PATCH https://api.retellai.com/update-phone-number/{phone_number}
-{
-  "outbound_agent_id": "agent_b6fe1afb3185d05441093ca788"
-}
-```
+**Bold opening statement:**
+> "When it comes to AI outbound at scale, you've got two options..."
 
----
+**Side-by-side comparison cards:**
 
-## Implementation Changes
+| **Option 1: Human Sales Team** | **Option 2: AI Sales Employee** |
+|--------------------------------|--------------------------------|
+| 50-150 calls/day per human | 2,000+ calls/day, every day |
+| $50-$250/day per rep | Fraction of the cost |
+| Churn. Burn. Theft. | Never quits. Never complains. |
+| Bad attitudes poisoning the crew | Learns & improves over time |
+| Constant hiring/training loop | Deploy once, scales forever |
 
-### File: `supabase/functions/setup-lady-jarvis/index.ts`
-
-Add Step 3.5 after creating the agent - update Retell phone number assignment:
-
-```typescript
-// Step 3.5: Link agent to phone number in Retell
-console.log('🔗 Linking Lady Jarvis to phone number in Retell...');
-
-const phoneUpdateResponse = await fetch(
-  `https://api.retellai.com/update-phone-number/${encodeURIComponent(LADY_JARVIS_DEMO_PHONE)}`,
-  {
-    method: 'PATCH',
-    headers: retellHeaders,
-    body: JSON.stringify({
-      outbound_agent_id: agentId,
-      inbound_agent_id: agentId, // Also handle inbound if someone calls back
-      nickname: 'Lady Jarvis Demo Line',
-    }),
-  }
-);
-
-if (!phoneUpdateResponse.ok) {
-  const errorText = await phoneUpdateResponse.text();
-  console.error('Failed to link agent to phone:', errorText);
-  // Don't throw - agent was created, just phone link failed
-  console.warn('⚠️ Agent created but phone link failed - may need manual assignment');
-} else {
-  console.log('✅ Lady Jarvis linked to phone number for outbound calls');
-}
-```
+Visual treatment: Option 1 has a muted/red tint (pain), Option 2 glows with primary color (solution).
 
 ---
 
-## Why This Happens
+### Section 2: What This Demo Actually Shows
 
-Retell has two levels of agent assignment:
+**Headline:**
+> "See Option 2 in Action—Personalized for Your Business"
 
-| Level | What it controls | Current state |
-|-------|-----------------|---------------|
-| Phone Number → `outbound_agent_id` | Which agent answers when you call FROM this number | Still your solar agent |
-| API call → `agent_id` parameter | Overrides phone-level agent (sometimes) | Lady Jarvis |
+**The 4-step promise (numbered, visual icons):**
 
-The safest approach is to update the phone number's `outbound_agent_id` to ensure Lady Jarvis is always used.
+1. **We scrape your website** → Become a semi-expert on your product in 60 seconds
+2. **You choose your campaign type** → Database reactivation, cross-sell, appointment setting, etc.
+3. **You get a real AI call** → Experience Lady Jarvis's psychology-driven sales approach
+4. **We simulate a full campaign** → See realistic numbers: calls, connects, appointments, ROI
 
----
-
-## After Implementation
-
-1. Deploy the updated `setup-lady-jarvis` function
-2. Run it once to update the phone number in Retell
-3. Test a new demo call - you should hear Lady Jarvis
+**Trust line:**
+> "The numbers we show you aren't hype—they're typical results from 2 years of perfecting this."
 
 ---
 
-## Optional: Quick Manual Fix
+### Section 3: The URL Input (CTA)
 
-If you want to fix this immediately without code changes:
-- Go to your Retell dashboard
-- Navigate to Phone Numbers
-- Find `+14752429282`
-- Change the outbound agent to "Lady Jarvis Demo" (`agent_b6fe1afb3185d05441093ca788`)
+Keep the existing card design but update the copy:
+- Label: **"Drop your website below—let's get started"**
+- Button: **"Show Me What's Possible"** (with Zap icon)
 
-This would instantly fix the issue while we deploy the code fix.
+---
+
+### Section 4: Footer Stats
+
+Update to more punchy stats that reinforce the promise:
+- **2+ Years** → Battle-tested
+- **50K+ Calls/Day** → Platform scale
+- **97% Cost Reduction** → Typical savings
+- **~3 Min Demo** → Time investment
+
+---
+
+## Visual & Psychological Elements
+
+| Element | Purpose |
+|---------|---------|
+| Red/muted styling on human team pain | Creates visceral "I hate this" feeling |
+| Glowing primary on AI option | Creates "I want this" attraction |
+| Numbered steps | Reduces anxiety—they know exactly what happens next |
+| "2 years of perfecting" | Credibility—this isn't vaporware |
+| "Realistic numbers" emphasis | Overcomes skepticism before it forms |
+
+---
+
+## Technical Implementation
+
+### File Changes
+
+**`src/components/demo/DemoLanding.tsx`**
+- Restructure into 3 clear sections (hero comparison, demo promise, CTA)
+- Add `OptionCard` component for the side-by-side comparison
+- Add `DemoStepItem` component for the 4-step promise
+- Keep existing URL input form logic
+- Update button text to "Show Me What's Possible"
+
+### New Icons to Import
+- `X` (for pain points)
+- `Check` (for AI benefits)
+- `Globe`, `Target`, `PhoneCall`, `BarChart3` (for the 4 steps)
+
+### No Backend Changes
+- This is purely frontend copy/layout
+
+---
+
+## Copy Highlights
+
+**Opening hook:**
+> "When it comes to AI outbound at scale, you've got two options..."
+
+**Human team pain points:**
+- 50-150 calls/day max
+- $50-$250/day per human (plus overhead)
+- Churn. Burn. Theft. Bad attitudes.
+- Constant hiring. Endless training.
+- They poison the crew when they leave
+
+**AI employee benefits:**
+- 2,000+ calls/day, 24/7
+- Fraction of the cost
+- Never quits. Never complains.
+- Gets better over time (compounds)
+- Scales instantly
+
+**Demo promise:**
+> "We've spent 2 years perfecting the AI sales employee. This demo lets you experience it—personalized to your business—in about 3 minutes."
+
+**CTA:**
+> "Drop your website below. We'll become a semi-expert on your product, then show you exactly what a campaign would look like."
+
+---
+
+## Mobile Considerations
+
+- Stack the two option cards vertically on mobile
+- Keep the 4-step icons compact
+- Ensure the URL input is prominent and easy to tap
+
