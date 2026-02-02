@@ -85,15 +85,15 @@ Sent automatically by your AI sales assistant.`,
   // Keyboard key component
   const Key = ({ children, wide = false, extraWide = false }: { children?: React.ReactNode; wide?: boolean; extraWide?: boolean }) => (
     <div className={cn(
-      "h-[8px] rounded-[2px] bg-gradient-to-b from-[#4a4a4c] to-[#3a3a3c] border border-[#2a2a2c] flex items-center justify-center shadow-[0_1px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]",
-      wide ? "w-[16px]" : extraWide ? "w-[40px]" : "w-[10px]"
+      "h-[10px] rounded-[2px] bg-gradient-to-b from-[#4a4a4c] to-[#3a3a3c] border border-[#2a2a2c] flex items-center justify-center shadow-[0_1px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]",
+      wide ? "w-[20px]" : extraWide ? "w-[55px]" : "w-[14px]"
     )}>
-      {children && <span className="text-[3px] text-white/30 font-medium">{children}</span>}
+      {children && <span className="text-[4px] text-white/30 font-medium">{children}</span>}
     </div>
   );
 
   return (
-    <div className="relative w-full max-w-[480px]">
+    <div className="relative w-full max-w-[600px]">
       {/* Collapsed State - MacBook View */}
       {!isExpanded && (
         <div 
@@ -141,34 +141,34 @@ Sent automatically by your AI sales assistant.`,
                     <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] via-transparent to-transparent pointer-events-none" />
                     
                     {/* Content */}
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
                       {hasEmail ? (
-                        <div className="text-center animate-in fade-in duration-500">
+                        <div className="text-center animate-in fade-in duration-500 w-full">
                           {/* Glowing mail notification */}
-                          <div className="relative inline-block mb-2">
+                          <div className="relative inline-block mb-3">
                             <div className="absolute inset-0 bg-primary/40 rounded-xl blur-xl animate-pulse" />
-                            <div className="relative p-4 rounded-xl bg-gradient-to-br from-primary/30 to-violet-500/30 border border-primary/40 backdrop-blur-sm">
-                              <Mail className="h-8 w-8 text-primary" />
+                            <div className="relative p-5 rounded-xl bg-gradient-to-br from-primary/30 to-violet-500/30 border border-primary/40 backdrop-blur-sm">
+                              <Mail className="h-10 w-10 text-primary" />
                             </div>
                             {/* Notification Badge */}
-                            <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center h-5 w-5 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-[10px] font-bold animate-bounce shadow-lg shadow-red-500/50 ring-2 ring-[#0a0a0a]">
+                            <span className="absolute -top-2 -right-2 flex items-center justify-center h-6 w-6 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white text-xs font-bold animate-bounce shadow-lg shadow-red-500/50 ring-2 ring-[#0a0a0a]">
                               {emailCount}
                             </span>
                           </div>
-                          <p className="text-primary font-semibold text-sm">
+                          <p className="text-primary font-semibold text-base">
                             {emailCount} New Email{emailCount > 1 ? 's' : ''}
                           </p>
-                          <p className="text-white/40 text-[10px] mt-1 flex items-center justify-center gap-1">
-                            <ChevronUp className="h-3 w-3 animate-bounce" />
+                          <p className="text-white/40 text-xs mt-1.5 flex items-center justify-center gap-1">
+                            <ChevronUp className="h-4 w-4 animate-bounce" />
                             Click to open
                           </p>
                         </div>
                       ) : (
-                        <div className="text-center p-3">
-                          <div className="p-3 rounded-xl bg-white/5 border border-white/10 inline-block mb-1.5">
-                            <Monitor className="h-6 w-6 text-white/30" />
+                        <div className="text-center p-4">
+                          <div className="p-4 rounded-xl bg-white/5 border border-white/10 inline-block mb-2">
+                            <Monitor className="h-8 w-8 text-white/30" />
                           </div>
-                          <p className="text-white/40 text-xs">
+                          <p className="text-white/40 text-sm">
                             Awaiting appointments...
                           </p>
                         </div>
@@ -194,33 +194,33 @@ Sent automatically by your AI sales assistant.`,
               }}
             >
               {/* Aluminum base with keyboard cutout */}
-              <div className="bg-gradient-to-b from-[#c8c8ca] via-[#d0d0d2] to-[#d8d8da] rounded-b-[8px] pt-[3px] pb-[8px] px-[6px] shadow-[0_12px_25px_-8px_rgba(0,0,0,0.5)]">
+              <div className="bg-gradient-to-b from-[#c8c8ca] via-[#d0d0d2] to-[#d8d8da] rounded-b-[10px] pt-[4px] pb-[10px] px-[8px] shadow-[0_12px_25px_-8px_rgba(0,0,0,0.5)]">
                 {/* Keyboard area - recessed */}
-                <div className="bg-gradient-to-b from-[#2a2a2c] to-[#1a1a1c] rounded-[4px] p-[4px] shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]">
+                <div className="bg-gradient-to-b from-[#2a2a2c] to-[#1a1a1c] rounded-[5px] p-[6px] shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]">
                   {/* Keyboard rows */}
-                  <div className="space-y-[2px]">
+                  <div className="space-y-[3px]">
                     {/* Function row */}
-                    <div className="flex gap-[2px] justify-center">
+                    <div className="flex gap-[3px] justify-center">
                       {[...Array(14)].map((_, i) => (
-                        <div key={i} className="w-[10px] h-[6px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                        <div key={i} className="w-[14px] h-[8px] rounded-[2px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
                       ))}
                     </div>
                     {/* Number row */}
-                    <div className="flex gap-[2px] justify-center">
+                    <div className="flex gap-[3px] justify-center">
                       {['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='].map((k, i) => (
                         <Key key={i}>{k}</Key>
                       ))}
                       <Key wide>⌫</Key>
                     </div>
                     {/* QWERTY row */}
-                    <div className="flex gap-[2px] justify-center">
+                    <div className="flex gap-[3px] justify-center">
                       <Key wide>⇥</Key>
                       {['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'].map((k, i) => (
                         <Key key={i}>{k}</Key>
                       ))}
                     </div>
                     {/* ASDF row */}
-                    <div className="flex gap-[2px] justify-center">
+                    <div className="flex gap-[3px] justify-center">
                       <Key wide>⇪</Key>
                       {['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'"].map((k, i) => (
                         <Key key={i}>{k}</Key>
@@ -228,7 +228,7 @@ Sent automatically by your AI sales assistant.`,
                       <Key wide>⏎</Key>
                     </div>
                     {/* ZXCV row */}
-                    <div className="flex gap-[2px] justify-center">
+                    <div className="flex gap-[3px] justify-center">
                       <Key wide>⇧</Key>
                       {['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'].map((k, i) => (
                         <Key key={i}>{k}</Key>
@@ -236,7 +236,7 @@ Sent automatically by your AI sales assistant.`,
                       <Key wide>⇧</Key>
                     </div>
                     {/* Bottom row with spacebar */}
-                    <div className="flex gap-[2px] justify-center items-center">
+                    <div className="flex gap-[3px] justify-center items-center">
                       <Key>fn</Key>
                       <Key>⌃</Key>
                       <Key>⌥</Key>
@@ -246,10 +246,10 @@ Sent automatically by your AI sales assistant.`,
                       <Key>⌥</Key>
                       {/* Arrow keys */}
                       <div className="flex flex-col gap-[1px]">
-                        <div className="w-[10px] h-[3px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                        <div className="w-[14px] h-[4px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
                         <div className="flex gap-[1px]">
-                          <div className="w-[10px] h-[4px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
-                          <div className="w-[10px] h-[4px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                          <div className="w-[14px] h-[5px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
+                          <div className="w-[14px] h-[5px] rounded-[1px] bg-gradient-to-b from-[#3a3a3c] to-[#2a2a2c] border border-[#222]" />
                         </div>
                       </div>
                     </div>
@@ -257,13 +257,13 @@ Sent automatically by your AI sales assistant.`,
                 </div>
                 
                 {/* Trackpad */}
-                <div className="mt-[4px] mx-auto w-[70%] h-[35px] bg-gradient-to-b from-[#c0c0c2] to-[#b8b8ba] rounded-[4px] border border-[#a0a0a2] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.1)]">
-                  <div className="w-full h-full rounded-[3px] border border-white/10" />
+                <div className="mt-[6px] mx-auto w-[70%] h-[45px] bg-gradient-to-b from-[#c0c0c2] to-[#b8b8ba] rounded-[5px] border border-[#a0a0a2] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.1)]">
+                  <div className="w-full h-full rounded-[4px] border border-white/10" />
                 </div>
               </div>
               
               {/* Front edge lip */}
-              <div className="h-[2px] bg-gradient-to-b from-[#e0e0e2] to-[#d0d0d2] rounded-b-[8px]" />
+              <div className="h-[3px] bg-gradient-to-b from-[#e0e0e2] to-[#d0d0d2] rounded-b-[10px]" />
             </div>
           </div>
           
