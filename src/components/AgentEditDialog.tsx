@@ -1240,11 +1240,6 @@ AFTER LEAVING THE MESSAGE:
                       </Button>
                     )}
                   </div>
-                  {VOICE_SAMPLES[config.voice_id] && (
-                    <p className="text-xs text-muted-foreground">
-                      ✓ Pre-recorded sample available for {config.voice_id}
-                    </p>
-                  )}
                 </CardContent>
               </Card>
 
