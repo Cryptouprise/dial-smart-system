@@ -1307,39 +1307,30 @@ AFTER LEAVING THE MESSAGE:
                     <SelectValue placeholder="Select a voice" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px]">
-                    {/* ElevenLabs Male Voices - Sales Optimized */}
-                    <SelectItem value="11labs-George">George (Male, Authoritative Sales)</SelectItem>
-                    <SelectItem value="11labs-Brian">Brian (Male, Deep Professional)</SelectItem>
-                    <SelectItem value="11labs-Daniel">Daniel (Male, British Sophisticated)</SelectItem>
-                    <SelectItem value="11labs-Eric">Eric (Male, Friendly American)</SelectItem>
-                    <SelectItem value="11labs-Chris">Chris (Male, Warm Conversational)</SelectItem>
-                    <SelectItem value="11labs-Liam">Liam (Male, Clear Articulate)</SelectItem>
-                    <SelectItem value="11labs-Roger">Roger (Male, Confident Executive)</SelectItem>
-                    <SelectItem value="11labs-Callum">Callum (Male, Energetic Persuasive)</SelectItem>
-                    <SelectItem value="11labs-Will">Will (Male, Young Professional)</SelectItem>
-                    <SelectItem value="11labs-Bill">Bill (Male, Mature Trustworthy)</SelectItem>
-                    <SelectItem value="11labs-Charlie">Charlie (Male, Casual Approachable)</SelectItem>
-                    <SelectItem value="11labs-Adrian">Adrian (Male, Classic)</SelectItem>
+                    {/* ElevenLabs Voices - Retell Built-in (verified available) */}
+                    <SelectItem value="11labs-Adrian">Adrian (Male, American, Young)</SelectItem>
+                    <SelectItem value="11labs-Rachel">Rachel (Female, American, Classic)</SelectItem>
                     
-                    {/* ElevenLabs Female Voices - Sales Optimized */}
-                    <SelectItem value="11labs-Sarah">Sarah (Female, Warm Professional)</SelectItem>
-                    <SelectItem value="11labs-Laura">Laura (Female, Upbeat Friendly)</SelectItem>
-                    <SelectItem value="11labs-Jessica">Jessica (Female, Clear Energetic)</SelectItem>
-                    <SelectItem value="11labs-Alice">Alice (Female, British Confident)</SelectItem>
-                    <SelectItem value="11labs-Matilda">Matilda (Female, Warm Engaging)</SelectItem>
-                    <SelectItem value="11labs-Lily">Lily (Female, Youthful Enthusiastic)</SelectItem>
-                    <SelectItem value="11labs-River">River (Female, Calm Reassuring)</SelectItem>
-                    <SelectItem value="11labs-Rachel">Rachel (Female, Classic American)</SelectItem>
-                    <SelectItem value="11labs-Dorothy">Dorothy (Female, Mature Trustworthy)</SelectItem>
-                    <SelectItem value="11labs-Freya">Freya (Female, Nordic Professional)</SelectItem>
+                    {/* OpenAI Voices - Retell Built-in */}
+                    <SelectItem value="openai-Alloy">OpenAI - Alloy (Neutral)</SelectItem>
+                    <SelectItem value="openai-Echo">OpenAI - Echo (Male)</SelectItem>
+                    <SelectItem value="openai-Fable">OpenAI - Fable (British)</SelectItem>
+                    <SelectItem value="openai-Nova">OpenAI - Nova (Female)</SelectItem>
+                    <SelectItem value="openai-Onyx">OpenAI - Onyx (Deep Male)</SelectItem>
+                    <SelectItem value="openai-Shimmer">OpenAI - Shimmer (Female)</SelectItem>
                     
-                    {/* OpenAI Voices */}
-                    <SelectItem value="openai-Alloy">OpenAI - Alloy</SelectItem>
-                    <SelectItem value="openai-Echo">OpenAI - Echo</SelectItem>
-                    <SelectItem value="openai-Fable">OpenAI - Fable</SelectItem>
-                    <SelectItem value="openai-Onyx">OpenAI - Onyx</SelectItem>
-                    <SelectItem value="openai-Nova">OpenAI - Nova</SelectItem>
-                    <SelectItem value="openai-Shimmer">OpenAI - Shimmer</SelectItem>
+                    {/* Deepgram Voices - Retell Built-in */}
+                    <SelectItem value="deepgram-Angus">Deepgram - Angus (Male, Irish)</SelectItem>
+                    <SelectItem value="deepgram-Athena">Deepgram - Athena (Female, British)</SelectItem>
+                    <SelectItem value="deepgram-Arcas">Deepgram - Arcas (Male, American)</SelectItem>
+                    <SelectItem value="deepgram-Helios">Deepgram - Helios (Male, British)</SelectItem>
+                    <SelectItem value="deepgram-Hera">Deepgram - Hera (Female, American)</SelectItem>
+                    <SelectItem value="deepgram-Luna">Deepgram - Luna (Female, American)</SelectItem>
+                    <SelectItem value="deepgram-Orion">Deepgram - Orion (Male, American)</SelectItem>
+                    <SelectItem value="deepgram-Orpheus">Deepgram - Orpheus (Male, American)</SelectItem>
+                    <SelectItem value="deepgram-Perseus">Deepgram - Perseus (Male, American)</SelectItem>
+                    <SelectItem value="deepgram-Stella">Deepgram - Stella (Female, American)</SelectItem>
+                    <SelectItem value="deepgram-Zeus">Deepgram - Zeus (Male, American)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
