@@ -38,6 +38,33 @@ const VOICE_SAMPLES: Record<string, string> = {
   'openai-Shimmer': 'https://cdn.openai.com/API/docs/audio/shimmer.wav',
 };
 
+// Map Retell-style voice IDs (stored in agent config) to ElevenLabs voice IDs (used for local preview playback)
+// NOTE: Retell uses the `11labs-Name` format; ElevenLabs TTS requires the actual voice UUID.
+const ELEVENLABS_VOICE_ID_BY_RETELL_VOICE_ID: Record<string, string> = {
+  '11labs-George': 'JBFqnCBsd6RMkjVDRZzb',
+  '11labs-Brian': 'nPczCjzI2devNBz1zQrb',
+  '11labs-Daniel': 'onwK4e9ZLuTAKqWW03F9',
+  '11labs-Eric': 'cjVigY5qzO86Huf0OWal',
+  '11labs-Chris': 'iP95p4xoKVk53GoZ742B',
+  '11labs-Liam': 'TX3LPaxmHKxFdv7VOQHJ',
+  '11labs-Roger': 'CwhRBWXzGAHq8TQ4Fs17',
+  '11labs-Callum': 'N2lVS1w4EtoT3dr4eOWO',
+  '11labs-Will': 'bIHbv24MWmeRgasZH58o',
+  '11labs-Bill': 'pqHfZKP75CvOlQylNhV4',
+  '11labs-Charlie': 'IKne3meq5aSn9XLyUdCD',
+  '11labs-Sarah': 'EXAVITQu4vr4xnSDxMaL',
+  '11labs-Laura': 'FGY2WhTYpPnrIDTdsKH5',
+  '11labs-Jessica': 'cgSgspJ2msm6clMCkdW9',
+  '11labs-Alice': 'Xb7hH8MSUJpSbSDYk0k2',
+  '11labs-Matilda': 'XrExE9yKIg1WjnnlVkGX',
+  '11labs-Lily': 'pFZP5JQG7iQjIQuC4Bku',
+  '11labs-River': 'SAz9YHcvj6GT2YYXdXww',
+  // Retell ships a generic "Rachel" preset; for ElevenLabs preview we map to the common Rachel voice
+  '11labs-Rachel': '21m00Tcm4TlvDq8ikWAM',
+  '11labs-Dorothy': 'ThT5KcBeYPX3keUQqHPh',
+  '11labs-Freya': 'jsCqWAovK2LkecY7zXl4',
+};
+
 // Pricing data based on Retell AI's pricing page
 const PRICING = {
   voice: {
@@ -611,31 +638,61 @@ AFTER LEAVING THE MESSAGE:
       setIsPlayingVoice(true);
       await audioRef.current.play();
     } else {
-      // Generate preview via Retell API
+      // Generate preview locally via our ElevenLabs TTS edge function (so the user can actually *hear* it)
+      // Support both:
+      // 1) Retell-style IDs: "11labs-George" (mapped to ElevenLabs UUID)
+      // 2) Raw ElevenLabs voice UUIDs (for custom/cloned voices)
+      let elevenlabsVoiceId: string | null = null;
+      if (voiceId.startsWith('11labs-')) {
+        elevenlabsVoiceId = ELEVENLABS_VOICE_ID_BY_RETELL_VOICE_ID[voiceId] ?? null;
+      } else if (voiceId && !voiceId.startsWith('openai-')) {
+        elevenlabsVoiceId = voiceId;
+      }
+
+      if (!elevenlabsVoiceId) {
+        toast({
+          title: 'Preview unavailable',
+          description: 'Pick an ElevenLabs voice to preview (OpenAI voices use pre-recorded samples only).',
+          variant: 'default'
+        });
+        return;
+      }
+
       setIsPlayingVoice(true);
       try {
-        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+        }
+
+        const { data, error } = await supabase.functions.invoke('elevenlabs-tts', {
           body: {
-            action: 'preview_voice',
-            voiceId: voiceId,
             text: voicePreviewText,
-            voiceModel: config.voice_model
+            voiceId: elevenlabsVoiceId,
           }
         });
-        
+
         if (error) throw error;
-        
-        if (data?.audio_url) {
-          audioRef.current = new Audio(data.audio_url);
-          audioRef.current.onended = () => setIsPlayingVoice(false);
-          await audioRef.current.play();
-        } else {
-          toast({ title: 'Voice Preview', description: 'Voice preview generated. Check Retell dashboard for audio.', variant: 'default' });
-          setIsPlayingVoice(false);
+        if (!data?.audioContent) {
+          throw new Error('No audio returned from TTS');
         }
+
+        const audioUrl = `data:audio/mpeg;base64,${data.audioContent}`;
+        audioRef.current = new Audio(audioUrl);
+        audioRef.current.onended = () => setIsPlayingVoice(false);
+        audioRef.current.onerror = () => {
+          setIsPlayingVoice(false);
+          toast({ title: 'Error', description: 'Could not play voice preview', variant: 'destructive' });
+        };
+
+        await audioRef.current.play();
       } catch (error: any) {
         console.error('Voice preview error:', error);
-        toast({ title: 'Error', description: 'Could not generate voice preview', variant: 'destructive' });
+        toast({
+          title: 'Voice Preview Failed',
+          description: error?.message || 'Could not generate voice preview. Check ElevenLabs API key setup.',
+          variant: 'destructive'
+        });
         setIsPlayingVoice(false);
       }
     }

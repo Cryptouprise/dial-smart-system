@@ -513,6 +513,22 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 3, 2026 - Agent Voice Preview Plays In-App (NOT PUBLISHED)
+
+**Summary:** Fixed the Agent Settings → Voice tab so clicking **Play Voice Sample** actually plays audio in the browser (instead of showing “check Retell dashboard”).
+
+**What Changed:**
+- Agent voice IDs remain **Retell-compatible** (`11labs-George`, etc.) for saving to Retell.
+- Voice preview now calls our **`elevenlabs-tts` edge function** to generate a short MP3 and plays it immediately via a data-URI.
+- Keeps existing pre-recorded samples for `11labs-Adrian`, `11labs-Rachel`, and OpenAI voices.
+
+**Key Files Modified:**
+- `src/components/AgentEditDialog.tsx`
+
+**Database Changes:** None
+
+**Gotchas:** Preview requires `ELEVENLABS_API_KEY` to be configured in Supabase secrets.
+
 ### January 28, 2026 - Admin Settings & Agent-Specific Pricing (DEPLOYED)
 
 > **DEPLOYMENT STATUS: PRODUCTION** ✅
