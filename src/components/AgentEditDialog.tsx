@@ -1250,30 +1250,31 @@ AFTER LEAVING THE MESSAGE:
                     <SelectValue placeholder="Select a voice" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px]">
-                    {/* Male Voices - Sales Optimized */}
-                    <SelectItem value="JBFqnCBsd6RMkjVDRZzb">George (Male, Authoritative Sales)</SelectItem>
-                    <SelectItem value="nPczCjzI2devNBz1zQrb">Brian (Male, Deep Professional)</SelectItem>
-                    <SelectItem value="onwK4e9ZLuTAKqWW03F9">Daniel (Male, British Sophisticated)</SelectItem>
-                    <SelectItem value="cjVigY5qzO86Huf0OWal">Eric (Male, Friendly American)</SelectItem>
-                    <SelectItem value="iP95p4xoKVk53GoZ742B">Chris (Male, Warm Conversational)</SelectItem>
-                    <SelectItem value="TX3LPaxmHKxFdv7VOQHJ">Liam (Male, Clear Articulate)</SelectItem>
-                    <SelectItem value="CwhRBWXzGAHq8TQ4Fs17">Roger (Male, Confident Executive)</SelectItem>
-                    <SelectItem value="N2lVS1w4EtoT3dr4eOWO">Callum (Male, Energetic Persuasive)</SelectItem>
-                    <SelectItem value="bIHbv24MWmeRgasZH58o">Will (Male, Young Professional)</SelectItem>
-                    <SelectItem value="pqHfZKP75CvOlQylNhV4">Bill (Male, Mature Trustworthy)</SelectItem>
-                    <SelectItem value="IKne3meq5aSn9XLyUdCD">Charlie (Male, Casual Approachable)</SelectItem>
+                    {/* ElevenLabs Male Voices - Sales Optimized */}
+                    <SelectItem value="11labs-George">George (Male, Authoritative Sales)</SelectItem>
+                    <SelectItem value="11labs-Brian">Brian (Male, Deep Professional)</SelectItem>
+                    <SelectItem value="11labs-Daniel">Daniel (Male, British Sophisticated)</SelectItem>
+                    <SelectItem value="11labs-Eric">Eric (Male, Friendly American)</SelectItem>
+                    <SelectItem value="11labs-Chris">Chris (Male, Warm Conversational)</SelectItem>
+                    <SelectItem value="11labs-Liam">Liam (Male, Clear Articulate)</SelectItem>
+                    <SelectItem value="11labs-Roger">Roger (Male, Confident Executive)</SelectItem>
+                    <SelectItem value="11labs-Callum">Callum (Male, Energetic Persuasive)</SelectItem>
+                    <SelectItem value="11labs-Will">Will (Male, Young Professional)</SelectItem>
+                    <SelectItem value="11labs-Bill">Bill (Male, Mature Trustworthy)</SelectItem>
+                    <SelectItem value="11labs-Charlie">Charlie (Male, Casual Approachable)</SelectItem>
+                    <SelectItem value="11labs-Adrian">Adrian (Male, Classic)</SelectItem>
                     
-                    {/* Female Voices - Sales Optimized */}
-                    <SelectItem value="EXAVITQu4vr4xnSDxMaL">Sarah (Female, Warm Professional)</SelectItem>
-                    <SelectItem value="FGY2WhTYpPnrIDTdsKH5">Laura (Female, Upbeat Friendly)</SelectItem>
-                    <SelectItem value="cgSgspJ2msm6clMCkdW9">Jessica (Female, Clear Energetic)</SelectItem>
-                    <SelectItem value="Xb7hH8MSUJpSbSDYk0k2">Alice (Female, British Confident)</SelectItem>
-                    <SelectItem value="XrExE9yKIg1WjnnlVkGX">Matilda (Female, Warm Engaging)</SelectItem>
-                    <SelectItem value="pFZP5JQG7iQjIQuC4Bku">Lily (Female, Youthful Enthusiastic)</SelectItem>
-                    <SelectItem value="SAz9YHcvj6GT2YYXdXww">River (Female, Calm Reassuring)</SelectItem>
-                    <SelectItem value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, Classic American)</SelectItem>
-                    <SelectItem value="ThT5KcBeYPX3keUQqHPh">Dorothy (Female, Mature Trustworthy)</SelectItem>
-                    <SelectItem value="jsCqWAovK2LkecY7zXl4">Freya (Female, Nordic Professional)</SelectItem>
+                    {/* ElevenLabs Female Voices - Sales Optimized */}
+                    <SelectItem value="11labs-Sarah">Sarah (Female, Warm Professional)</SelectItem>
+                    <SelectItem value="11labs-Laura">Laura (Female, Upbeat Friendly)</SelectItem>
+                    <SelectItem value="11labs-Jessica">Jessica (Female, Clear Energetic)</SelectItem>
+                    <SelectItem value="11labs-Alice">Alice (Female, British Confident)</SelectItem>
+                    <SelectItem value="11labs-Matilda">Matilda (Female, Warm Engaging)</SelectItem>
+                    <SelectItem value="11labs-Lily">Lily (Female, Youthful Enthusiastic)</SelectItem>
+                    <SelectItem value="11labs-River">River (Female, Calm Reassuring)</SelectItem>
+                    <SelectItem value="11labs-Rachel">Rachel (Female, Classic American)</SelectItem>
+                    <SelectItem value="11labs-Dorothy">Dorothy (Female, Mature Trustworthy)</SelectItem>
+                    <SelectItem value="11labs-Freya">Freya (Female, Nordic Professional)</SelectItem>
                     
                     {/* OpenAI Voices */}
                     <SelectItem value="openai-Alloy">OpenAI - Alloy</SelectItem>
