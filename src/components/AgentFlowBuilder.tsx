@@ -93,15 +93,32 @@ const NODE_TEMPLATES: Record<NodeType, { icon: any; color: string; label: string
   end: { icon: Target, color: 'bg-red-500', label: 'End Call' },
 };
 
+// Top ElevenLabs voices optimized for sales/retail - organized by gender
 const VOICE_OPTIONS = [
-  { value: '11labs-Adrian', label: 'Adrian (Male, Professional)' },
-  { value: '11labs-Rachel', label: 'Rachel (Female, Friendly)' },
-  { value: '11labs-Domi', label: 'Domi (Female, Professional)' },
-  { value: '11labs-Bella', label: 'Bella (Female, Warm)' },
-  { value: '11labs-Antoni', label: 'Antoni (Male, Conversational)' },
-  { value: '11labs-Josh', label: 'Josh (Male, Deep)' },
-  { value: '11labs-Arnold', label: 'Arnold (Male, Authoritative)' },
-  { value: '11labs-Sam', label: 'Sam (Male, Casual)' },
+  // === MALE VOICES - Sales Optimized ===
+  { value: 'JBFqnCBsd6RMkjVDRZzb', label: 'George (Male, Authoritative Sales)' },
+  { value: 'nPczCjzI2devNBz1zQrb', label: 'Brian (Male, Deep Professional)' },
+  { value: 'onwK4e9ZLuTAKqWW03F9', label: 'Daniel (Male, British Sophisticated)' },
+  { value: 'cjVigY5qzO86Huf0OWal', label: 'Eric (Male, Friendly American)' },
+  { value: 'iP95p4xoKVk53GoZ742B', label: 'Chris (Male, Warm Conversational)' },
+  { value: 'TX3LPaxmHKxFdv7VOQHJ', label: 'Liam (Male, Clear Articulate)' },
+  { value: 'CwhRBWXzGAHq8TQ4Fs17', label: 'Roger (Male, Confident Executive)' },
+  { value: 'N2lVS1w4EtoT3dr4eOWO', label: 'Callum (Male, Energetic Persuasive)' },
+  { value: 'bIHbv24MWmeRgasZH58o', label: 'Will (Male, Young Professional)' },
+  { value: 'pqHfZKP75CvOlQylNhV4', label: 'Bill (Male, Mature Trustworthy)' },
+  { value: 'IKne3meq5aSn9XLyUdCD', label: 'Charlie (Male, Casual Approachable)' },
+  
+  // === FEMALE VOICES - Sales Optimized ===
+  { value: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah (Female, Warm Professional)' },
+  { value: 'FGY2WhTYpPnrIDTdsKH5', label: 'Laura (Female, Upbeat Friendly)' },
+  { value: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica (Female, Clear Energetic)' },
+  { value: 'Xb7hH8MSUJpSbSDYk0k2', label: 'Alice (Female, British Confident)' },
+  { value: 'XrExE9yKIg1WjnnlVkGX', label: 'Matilda (Female, Warm Engaging)' },
+  { value: 'pFZP5JQG7iQjIQuC4Bku', label: 'Lily (Female, Youthful Enthusiastic)' },
+  { value: 'SAz9YHcvj6GT2YYXdXww', label: 'River (Female, Calm Reassuring)' },
+  { value: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel (Female, Classic American)' },
+  { value: 'ThT5KcBeYPX3keUQqHPh', label: 'Dorothy (Female, Mature Trustworthy)' },
+  { value: 'jsCqWAovK2LkecY7zXl4', label: 'Freya (Female, Nordic Professional)' },
 ];
 
 const ACTION_OPTIONS = [
@@ -117,7 +134,7 @@ const ACTION_OPTIONS = [
 const DEFAULT_CONFIG: AgentConfig = {
   name: 'New Agent',
   description: '',
-  voice: '11labs-Rachel',
+  voice: 'EXAVITQu4vr4xnSDxMaL', // Sarah (Female, Warm Professional)
   language: 'en-US',
   firstMessage: 'Hi {{first_name}}, this is Sarah from {{company}}. How are you doing today?',
   systemPrompt: `You are a friendly and professional AI assistant making outbound calls.
