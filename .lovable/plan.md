@@ -1,46 +1,76 @@
-# GHL Workflow ↔ Voice Broadcast Integration - COMPLETED
 
-**Status: ✅ IMPLEMENTED (February 4, 2026)**
 
-## What Was Built
+# Add GHL Webhook Config to the UI
 
-### Phase 1: Database ✅
-- Added `broadcast_webhook_key` to `ghl_sync_settings`
-- Added `ghl_contact_id`, `ghl_callback_status` to `broadcast_queue`
-- Created `ghl_pending_updates` table with RLS
-- Created `generate_webhook_key()` function
+## The Problem
 
-### Phase 2: ghl-webhook-trigger ✅
-- `supabase/functions/ghl-webhook-trigger/index.ts`
-- Webhook key authentication
-- Rate limiting (100 req/min)
-- DNC checking
-- Phone normalization
+The `GHLWebhookConfig` component was created but never added to the UI. The component file exists at `src/components/settings/GHLWebhookConfig.tsx`, but it's not imported or rendered anywhere.
 
-### Phase 3: ghl-batch-callback ✅
-- `supabase/functions/ghl-batch-callback/index.ts`
-- Batched GHL updates (50 per batch)
-- Tags, custom fields, activity notes
+## The Solution
 
-### Phase 4: Existing Functions ✅
-- `call-tracking-webhook` - Inserts GHL pending updates
+Add the `GHLWebhookConfig` component to the `GoHighLevelManager.tsx` as a new **"Webhooks"** tab.
 
-### Phase 5: Frontend ✅
-- `src/components/settings/GHLWebhookConfig.tsx`
-- Webhook key generation/testing UI
+---
 
-### Phase 6: Documentation ✅
-- `GHL_WORKFLOW_INTEGRATION.md` - Full API reference
-- `AGENT.md` - Updated with integration details
+## Changes Required
 
-## Files Summary
+### File: `src/components/GoHighLevelManager.tsx`
 
-| File | Status |
+**1. Add import at the top (around line 14):**
+```typescript
+import GHLFieldMappingTab from './GHLFieldMappingTab';
+import { GHLWebhookConfig } from './settings/GHLWebhookConfig';  // ADD THIS
+```
+
+**2. Update TabsList to include 6 columns (line 388):**
+```typescript
+<TabsList className="grid w-full grid-cols-6">  // Change from 5 to 6
+  <TabsTrigger value="contacts">Contacts</TabsTrigger>
+  <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
+  <TabsTrigger value="sync">Sync & Import</TabsTrigger>
+  <TabsTrigger value="field-mapping" className="flex items-center gap-1">
+    <Database className="h-3 w-3" />
+    Field Mapping
+  </TabsTrigger>
+  <TabsTrigger value="webhooks">Webhooks</TabsTrigger>  // ADD THIS
+  <TabsTrigger value="automation">Automation</TabsTrigger>
+</TabsList>
+```
+
+**3. Add new TabsContent (after field-mapping, before automation, around line 905):**
+```typescript
+<TabsContent value="webhooks">
+  <GHLWebhookConfig isConnected={isConnected} />
+</TabsContent>
+```
+
+---
+
+## What You'll See After This Change
+
+When you go to **Settings → Integrations → Go High Level** (while connected), you'll see a new **"Webhooks"** tab with:
+
+1. **Webhook URL** - The endpoint GHL workflows will call
+2. **Webhook Key** - Generate/regenerate your secret key
+3. **Test Webhook** button - Verify connectivity
+4. **GHL Configuration Template** - Copy-paste JSON for your GHL workflow's HTTP Request step
+
+---
+
+## Files Modified
+
+| File | Change |
 |------|--------|
-| `supabase/functions/ghl-webhook-trigger/index.ts` | ✅ Created |
-| `supabase/functions/ghl-batch-callback/index.ts` | ✅ Created |
-| `src/components/settings/GHLWebhookConfig.tsx` | ✅ Created |
-| `supabase/config.toml` | ✅ Updated |
-| `supabase/functions/call-tracking-webhook/index.ts` | ✅ Updated |
-| `GHL_WORKFLOW_INTEGRATION.md` | ✅ Created |
-| `AGENT.md` | ✅ Updated |
+| `src/components/GoHighLevelManager.tsx` | Import `GHLWebhookConfig`, add "Webhooks" tab |
+
+---
+
+## After Implementation
+
+Once added, navigate to:
+1. **Settings** → **Integrations** → **Go High Level** tab
+2. Make sure you're connected to GHL
+3. Click the **"Webhooks"** tab
+4. Click **"Generate Key"** to create your webhook authentication key
+5. Copy the webhook URL and JSON template into your GHL workflow
+
