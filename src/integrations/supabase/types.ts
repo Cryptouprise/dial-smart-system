@@ -733,6 +733,8 @@ export type Database = {
           dtmf_pressed: string | null
           error_code: string | null
           error_message: string | null
+          ghl_callback_status: string | null
+          ghl_contact_id: string | null
           id: string
           lead_id: string | null
           lead_name: string | null
@@ -757,6 +759,8 @@ export type Database = {
           dtmf_pressed?: string | null
           error_code?: string | null
           error_message?: string | null
+          ghl_callback_status?: string | null
+          ghl_contact_id?: string | null
           id?: string
           lead_id?: string | null
           lead_name?: string | null
@@ -781,6 +785,8 @@ export type Database = {
           dtmf_pressed?: string | null
           error_code?: string | null
           error_message?: string | null
+          ghl_callback_status?: string | null
+          ghl_contact_id?: string | null
           id?: string
           lead_id?: string | null
           lead_name?: string | null
@@ -2228,9 +2234,85 @@ export type Database = {
           },
         ]
       }
+      ghl_pending_updates: {
+        Row: {
+          broadcast_id: string | null
+          broadcast_name: string | null
+          call_duration_seconds: number | null
+          call_outcome: string
+          call_timestamp: string | null
+          callback_requested: boolean | null
+          callback_time: string | null
+          created_at: string | null
+          dtmf_pressed: string | null
+          error_message: string | null
+          ghl_contact_id: string
+          id: string
+          processed_at: string | null
+          queue_item_id: string | null
+          retry_count: number | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          broadcast_id?: string | null
+          broadcast_name?: string | null
+          call_duration_seconds?: number | null
+          call_outcome: string
+          call_timestamp?: string | null
+          callback_requested?: boolean | null
+          callback_time?: string | null
+          created_at?: string | null
+          dtmf_pressed?: string | null
+          error_message?: string | null
+          ghl_contact_id: string
+          id?: string
+          processed_at?: string | null
+          queue_item_id?: string | null
+          retry_count?: number | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          broadcast_id?: string | null
+          broadcast_name?: string | null
+          call_duration_seconds?: number | null
+          call_outcome?: string
+          call_timestamp?: string | null
+          callback_requested?: boolean | null
+          callback_time?: string | null
+          created_at?: string | null
+          dtmf_pressed?: string | null
+          error_message?: string | null
+          ghl_contact_id?: string
+          id?: string
+          processed_at?: string | null
+          queue_item_id?: string | null
+          retry_count?: number | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ghl_pending_updates_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "voice_broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ghl_pending_updates_queue_item_id_fkey"
+            columns: ["queue_item_id"]
+            isOneToOne: false
+            referencedRelation: "broadcast_queue"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ghl_sync_settings: {
         Row: {
           auto_create_opportunities: boolean | null
+          broadcast_webhook_key: string | null
           calendar_preference: string | null
           created_at: string | null
           default_opportunity_value: number | null
@@ -2248,6 +2330,7 @@ export type Database = {
         }
         Insert: {
           auto_create_opportunities?: boolean | null
+          broadcast_webhook_key?: string | null
           calendar_preference?: string | null
           created_at?: string | null
           default_opportunity_value?: number | null
@@ -2265,6 +2348,7 @@ export type Database = {
         }
         Update: {
           auto_create_opportunities?: boolean | null
+          broadcast_webhook_key?: string | null
           calendar_preference?: string | null
           created_at?: string | null
           default_opportunity_value?: number | null
@@ -5308,6 +5392,7 @@ export type Database = {
           success: boolean
         }[]
       }
+      generate_webhook_key: { Args: never; Returns: string }
       get_agent_customer_price: {
         Args: { p_organization_id: string; p_retell_agent_id: string }
         Returns: number
