@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
 import { Link, RefreshCw, Users, ArrowLeftRight, Zap, Plus, Search, Database, Filter, Eye, X, Tag, Loader2 } from 'lucide-react';
 import GHLFieldMappingTab from './GHLFieldMappingTab';
+import { GHLWebhookConfig } from './settings/GHLWebhookConfig';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -385,7 +386,7 @@ const GoHighLevelManager = () => {
 
       {isConnected && (
         <Tabs defaultValue="contacts" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="contacts">Contacts</TabsTrigger>
             <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
             <TabsTrigger value="sync">Sync & Import</TabsTrigger>
@@ -393,6 +394,7 @@ const GoHighLevelManager = () => {
               <Database className="h-3 w-3" />
               Field Mapping
             </TabsTrigger>
+            <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
           </TabsList>
 
@@ -902,6 +904,10 @@ const GoHighLevelManager = () => {
 
           <TabsContent value="field-mapping">
             <GHLFieldMappingTab isConnected={isConnected} />
+          </TabsContent>
+
+          <TabsContent value="webhooks">
+            <GHLWebhookConfig isConnected={isConnected} />
           </TabsContent>
 
           <TabsContent value="automation">
