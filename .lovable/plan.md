@@ -1,246 +1,312 @@
 
+# GHL Workflow ↔ Voice Broadcast Integration - Implementation Plan
 
-# Premium Demo Overhaul: Pain Amplification + Campaign Summary + Visual Polish
+## Overview
 
-## Understanding Your Goal
-
-You want visitors to immediately **feel the weight** of Option 1 (human team) - the sheer impossibility of manually making 2,000+ calls efficiently. Right now the comparison is good, but it's not visceral enough. We need to make them *feel* the spreadsheet of pain.
-
-Then when the simulation completes, we need a clear "Here's what you got" summary that makes the value undeniable.
-
----
-
-## Part 1: Amplify the Pain on Landing Page
-
-### Current Problem
-The landing page says "50-150 calls/day per human" but doesn't connect the dots to the scale of what we're about to show them.
-
-### The Fix: Add a "Do The Math" Section
-
-After the two option cards, we'll add a visual math breakdown:
-
-**"To make 2,000 calls in one day..."**
-
-| With Humans | With AI |
-|-------------|---------|
-| 20 reps x 100 calls each | 1 AI agent |
-| 20 x $120/day = $2,400 | ~$140 total |
-| + 2 supervisors @ $200/day | + $0 management |
-| + Benefits, overhead (+30%) | + No overhead |
-| + Training, turnover, sick days | + Never sleeps |
-| **= $3,500+ per day** | **= $140 flat** |
-
-Visual design: Animated number tickers that count up to show the human cost stacking, while the AI cost stays small.
-
-### Copy Enhancements to Option 1 Card
-
-Make the pain points more specific and visceral:
-- "50-150 calls/day max per human" → "50-150 calls/day per human (that's 20 reps to hit 2,000)"
-- "$50-$250/day per rep" → "$120/day MINIMUM per rep (plus taxes, benefits, overhead)"
-- "Churn. Burn. Theft. Bad attitudes." → Keep this (it's already visceral)
-- Add: "35% annual turnover = constant rehiring"
-- Add: "Training costs: 2-4 weeks before they're productive"
+This plan implements a complete integration between GoHighLevel workflows and Dial Smart voice broadcasts, enabling:
+- GHL workflows to trigger voice broadcasts via webhook
+- Dial Smart to send call outcomes back to GHL contacts
+- One-click setup for all required GHL custom fields
 
 ---
 
-## Part 2: Campaign Completion Summary
+## Phase 1: Database Schema Changes
 
-### When Simulation Ends, Show What Was Delivered
+### 1.1 Add webhook key and GHL columns to existing tables
 
-Create a new `DemoCampaignSummary` component that appears when `isComplete` is true:
+```sql
+-- Add webhook_key to ghl_sync_settings
+ALTER TABLE ghl_sync_settings ADD COLUMN broadcast_webhook_key TEXT UNIQUE;
 
-**"YOUR CAMPAIGN DELIVERED"**
+-- Add GHL tracking columns to broadcast_queue  
+ALTER TABLE broadcast_queue 
+  ADD COLUMN ghl_contact_id TEXT,
+  ADD COLUMN ghl_callback_status TEXT DEFAULT 'pending' 
+    CHECK (ghl_callback_status IN ('pending', 'queued', 'sent', 'skipped', 'failed'));
 
-| Icon | Metric | Value |
-|------|--------|-------|
-| Phone | Calls Made | 2,000 |
-| Voicemail | Voicemails Dropped | 712 |
-| MessageSquare | SMS Sent | 142 |
-| Mail | Emails Sent | 38 |
+-- Create index for GHL contact lookups
+CREATE INDEX idx_broadcast_queue_ghl_contact ON broadcast_queue(ghl_contact_id) 
+  WHERE ghl_contact_id IS NOT NULL;
+```
 
-**Cost Comparison Panel:**
+### 1.2 Create new table: `ghl_pending_updates`
 
-| AI Cost | Human Equivalent |
-|---------|------------------|
-| $140.00 | $2,400+ |
-| (this campaign) | (20 reps x $120/day) |
+Stores call outcomes waiting to be sent back to GHL in batches:
 
-All numbers use `AnimatedCounter` for dramatic effect.
-
-### SMS Tracking Logic
-
-Currently we only track `smsReplies` (inbound). We need to also track `smsSent` (outbound):
-- Every positive outcome triggers 1 outbound SMS (follow-up)
-- Appointments trigger 2 SMS (confirmation + reminder)
-- Add `smsSent` state and increment during simulation
+```sql
+CREATE TABLE ghl_pending_updates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id),
+  ghl_contact_id TEXT NOT NULL,
+  broadcast_id UUID REFERENCES voice_broadcasts(id),
+  queue_item_id UUID REFERENCES broadcast_queue(id),
+  broadcast_name TEXT,
+  call_outcome TEXT NOT NULL,
+  call_duration_seconds INTEGER,
+  call_timestamp TIMESTAMPTZ,
+  dtmf_pressed TEXT,
+  callback_requested BOOLEAN DEFAULT FALSE,
+  callback_time TIMESTAMPTZ,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'sent', 'failed')),
+  retry_count INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  processed_at TIMESTAMPTZ
+);
+```
 
 ---
 
-## Part 3: Premium Visual Polish
+## Phase 2: New Edge Function - `ghl-webhook-trigger`
 
-### Glassmorphism Utilities
+### Purpose
+Receive webhooks from GHL workflows and add contacts to voice broadcast queues.
 
-Add new CSS utilities to `src/index.css`:
+### Location
+`supabase/functions/ghl-webhook-trigger/index.ts`
 
-```css
-.glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
+### Authentication
+- Uses `webhook_key` instead of JWT (external callers)
+- Validates key against `ghl_sync_settings.broadcast_webhook_key`
 
-.glass-card {
-  @apply glass rounded-xl shadow-xl;
-}
-
-.glass-glow {
-  box-shadow: 0 0 30px -5px hsl(var(--primary) / 0.3);
-}
-
-.glow-border {
-  @apply ring-1 ring-primary/30 shadow-[0_0_15px_-3px_hsl(var(--primary)/0.4)];
+### Request Format
+```json
+{
+  "action": "add_to_broadcast",
+  "webhook_key": "user-secret-key",
+  "broadcast_id": "uuid-of-broadcast",
+  "phone": "+15551234567",
+  "name": "John Smith",
+  "ghl_contact_id": "ghl-contact-id-here"
 }
 ```
 
-### New Tailwind Animations
+### Key Logic
+1. Validate webhook_key against stored keys
+2. Find user by webhook_key
+3. Verify broadcast exists and belongs to user
+4. Normalize phone to E.164 format
+5. Check DNC list
+6. Insert into `broadcast_queue` with `ghl_contact_id`
+7. Return queue position
 
-Add to `tailwind.config.ts`:
+### Config
+Add to `supabase/config.toml`:
+```toml
+[functions.ghl-webhook-trigger]
+verify_jwt = false  # External webhook
+```
 
-```javascript
-keyframes: {
-  'glow-pulse': {
-    '0%, 100%': { boxShadow: '0 0 15px -5px hsl(var(--primary) / 0.3)' },
-    '50%': { boxShadow: '0 0 25px -5px hsl(var(--primary) / 0.5)' },
-  },
-  'float': {
-    '0%, 100%': { transform: 'translateY(0)' },
-    '50%': { transform: 'translateY(-5px)' },
-  },
-  'shimmer': {
-    '0%': { backgroundPosition: '-200% 0' },
-    '100%': { backgroundPosition: '200% 0' },
-  },
-  'count-up': {
-    '0%': { transform: 'translateY(20px)', opacity: '0' },
-    '100%': { transform: 'translateY(0)', opacity: '1' },
-  },
-},
-animation: {
-  'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
-  'float': 'float 3s ease-in-out infinite',
-  'shimmer': 'shimmer 3s ease-in-out infinite',
-  'count-up': 'count-up 0.5s ease-out',
+---
+
+## Phase 3: New Edge Function - `ghl-batch-callback`
+
+### Purpose
+Process pending GHL updates in batches and send call outcomes back to GHL contacts.
+
+### Location
+`supabase/functions/ghl-batch-callback/index.ts`
+
+### Triggers
+- Called when a broadcast completes
+- Can be called manually or on schedule
+
+### Request Format
+```json
+{
+  "action": "process_broadcast",
+  "broadcast_id": "uuid-of-completed-broadcast"
 }
 ```
 
-### Apply to Components
+### GHL Updates Per Contact
+**Tags Added:**
+- `broadcast_answered`
+- `broadcast_voicemail_left`
+- `broadcast_no_answer`
+- `broadcast_busy`
+- `broadcast_failed`
 
-**DemoLanding.tsx:**
-- Option 1 card: Red gradient border glow on hover
-- Option 2 card: Primary glow border, subtle float animation
-- Stats footer: AnimatedCounter for all numbers
-- CTA button: Glow effect on hover
+**Custom Fields Updated:**
+- `last_broadcast_date` (DATE)
+- `broadcast_outcome` (TEXT)
+- `broadcast_name` (TEXT)
+- `broadcast_dtmf_pressed` (TEXT)
+- `broadcast_callback_requested` (TEXT)
+- `broadcast_callback_time` (DATE)
 
-**DemoSimulationDashboard.tsx:**
-- Stats cards: Glass effect backgrounds
-- Disposition boxes: AnimatedCounter for all values
-- Progress bar: Gradient fill with shimmer effect
-- Cost tracker: AnimatedCounter with dramatic count-up
+**Notes Added:**
+Activity note with call summary
 
-**DemoEmailMockup.tsx:**
-- 3D laptop perspective with reflection
-- Screen glow effect when notification appears
-- Enhanced notification badge animation
+### Key Logic
+1. Query `ghl_pending_updates` where status = 'pending'
+2. Group by user_id
+3. For each user: get GHL credentials
+4. Process in batches of 50
+5. Update GHL contacts via API
+6. Mark updates as 'sent' or 'failed'
 
-**DemoROIDashboard.tsx:**
-- All monetary values: AnimatedCounter with prefix="$"
-- Savings boxes: Glow border with pulse effect
-- Human rep grid: Staggered fade-in animation
-
----
-
-## File Changes Summary
-
-| File | Action | Description |
-|------|--------|-------------|
-| `src/components/demo/DemoLanding.tsx` | Edit | Add "Do The Math" section, enhanced pain points, AnimatedCounter stats, glass effects |
-| `src/components/demo/DemoCampaignSummary.tsx` | Create | Campaign completion summary with animated stats |
-| `src/components/demo/DemoSimulationDashboard.tsx` | Edit | Add smsSent tracking, integrate summary, AnimatedCounter on all values, glass styles |
-| `src/components/demo/DemoEmailMockup.tsx` | Edit | 3D laptop styling, enhanced glow animations |
-| `src/components/demo/DemoSmsRepliesPanel.tsx` | Edit | AnimatedCounter for reply count, glass styling |
-| `src/components/demo/DemoROIDashboard.tsx` | Edit | AnimatedCounter for all numbers, enhanced visual effects |
-| `src/index.css` | Edit | Add glass utility classes |
-| `tailwind.config.ts` | Edit | Add new keyframes (glow-pulse, float, shimmer, count-up) |
-
----
-
-## Technical Details
-
-### "Do The Math" Visual Component
-
-```text
-+----------------------------------------------------------+
-| "Here's what it takes to make 2,000 calls in a day..."   |
-+----------------------------------------------------------+
-|                                                           |
-| 👤👤👤👤👤👤👤👤👤👤        vs        🤖                 |
-| 👤👤👤👤👤👤👤👤👤👤                                     |
-|                                                           |
-| 20 REPS NEEDED              1 AI AGENT                    |
-| $2,400/day payroll          $140 total                    |
-| + $400 supervision          + $0 management               |
-| + 30% overhead              + 0% overhead                 |
-| ────────────────            ────────────────              |
-| $3,640+ per day             $140 flat                     |
-+----------------------------------------------------------+
+### Config
+Add to `supabase/config.toml`:
+```toml
+[functions.ghl-batch-callback]
+verify_jwt = true  # Internal use only
 ```
 
-### Campaign Summary Structure
+---
 
+## Phase 4: Modify Existing Edge Functions
+
+### 4.1 Modify `call-tracking-webhook`
+
+**Location:** Lines ~436-450 after queue item status update
+
+**Add Logic:**
+When a broadcast call completes, if `queueItem.ghl_contact_id` exists:
+1. Determine callback requested based on DTMF
+2. Insert record into `ghl_pending_updates`
+3. Update `broadcast_queue.ghl_callback_status = 'queued'`
+
+### 4.2 Modify `voice-broadcast-engine`
+
+**Location:** When broadcast status changes to 'completed'
+
+**Add Logic:**
+Invoke `ghl-batch-callback` to process all pending updates for this broadcast:
 ```typescript
-interface CampaignSummary {
-  callsMade: number;      // Total calls
-  voicemails: number;     // VM drops
-  smsSent: number;        // Outbound SMS (calculated)
-  emailsSent: number;     // Emails triggered
-  totalCost: number;      // AI cost
-  humanEquivalent: number; // What humans would cost
-}
+await supabase.functions.invoke('ghl-batch-callback', {
+  body: { action: 'process_broadcast', broadcast_id: broadcast.id }
+});
 ```
 
-### SMS Sent Calculation
+---
 
+## Phase 5: Frontend UI Components
+
+### 5.1 New Component: `GHLWebhookConfig.tsx`
+
+**Location:** `src/components/settings/GHLWebhookConfig.tsx`
+
+**Features:**
+- Generate/regenerate webhook key button
+- Display copyable webhook URL
+- Show GHL workflow configuration template
+- Test webhook endpoint button
+- View recent webhook activity (optional)
+
+### 5.2 Add Broadcast Fields Setup Section
+
+**Location:** Modify `src/components/GHLFieldMappingTab.tsx`
+
+**Add to SYSTEM_FIELDS:**
 ```typescript
-// In DemoSimulationDashboard
-const [smsSent, setSmsSent] = useState(0);
-
-// When positive outcome occurs:
-if (disposition === 'appointment') {
-  setSmsSent(prev => prev + 2); // Confirmation + reminder
-} else if (['hotLead', 'followUp', 'sendInfo', 'potentialProspect'].includes(disposition)) {
-  setSmsSent(prev => prev + 1); // Follow-up SMS
+broadcastData: {
+  label: 'Voice Broadcast',
+  fields: [
+    { key: 'lastBroadcastDate', label: 'Last Broadcast Date', ... },
+    { key: 'broadcastOutcome', label: 'Broadcast Outcome', ... },
+    { key: 'broadcastName', label: 'Broadcast Name', ... },
+    { key: 'broadcastDtmf', label: 'DTMF Pressed', ... },
+    { key: 'broadcastCallbackRequested', label: 'Callback Requested', ... },
+    { key: 'broadcastCallbackTime', label: 'Callback Time', ... },
+  ]
 }
 ```
 
----
-
-## Psychological Impact
-
-| Element | Effect |
-|---------|--------|
-| "20 reps" visual grid | Makes the scale of human effort tangible |
-| Stacking cost animation | Creates anxiety about human team costs |
-| AnimatedCounter ticking up | Creates excitement as value accumulates |
-| Glass effects | Signals premium, cutting-edge product |
-| Campaign summary | Clear "this is what you got" moment |
-| Cost comparison | Undeniable ROI visualization |
+**Add "Setup Broadcast Fields" Button:**
+- Detects which fields already exist in GHL
+- Creates missing fields with one click
+- Shows progress during creation
 
 ---
 
-## Mobile Considerations
+## Phase 6: Documentation Updates
 
-- "Do The Math" section stacks vertically on mobile
-- Human rep grid reduces to 2 rows with "+X more" indicator
-- Glass effects work on all modern browsers
-- Campaign summary cards stack in 2x2 grid on mobile
+### 6.1 Update AGENT.md
 
+Add new section documenting the GHL workflow integration:
+- How webhooks work
+- Available custom fields
+- Callback data mapping
+- Troubleshooting guide
+
+### 6.2 Create GHL_WORKFLOW_INTEGRATION.md
+
+Comprehensive guide with:
+- Architecture diagrams
+- Setup instructions
+- GHL workflow configuration steps
+- API reference
+
+---
+
+## File Summary
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `supabase/functions/ghl-webhook-trigger/index.ts` | Receive GHL workflow webhooks |
+| `supabase/functions/ghl-batch-callback/index.ts` | Send outcomes back to GHL |
+| `src/components/settings/GHLWebhookConfig.tsx` | Webhook configuration UI |
+| `GHL_WORKFLOW_INTEGRATION.md` | Documentation |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `supabase/config.toml` | Add new function configs |
+| `supabase/functions/call-tracking-webhook/index.ts` | Insert GHL pending updates |
+| `supabase/functions/voice-broadcast-engine/index.ts` | Trigger batch callback |
+| `src/components/GHLFieldMappingTab.tsx` | Add broadcast fields + setup button |
+| `AGENT.md` | Add integration documentation |
+
+### Database Migration
+
+Single migration file with:
+- `broadcast_webhook_key` column on `ghl_sync_settings`
+- `ghl_contact_id` and `ghl_callback_status` columns on `broadcast_queue`
+- New `ghl_pending_updates` table with RLS policies
+
+---
+
+## Security Considerations
+
+1. **Webhook Authentication:** Unique key per user, validated on every request
+2. **Rate Limiting:** Max 100 requests/minute per webhook key
+3. **Input Validation:** Phone E.164 format, UUID validation
+4. **DNC Check:** Contacts checked before adding to queue
+5. **No sensitive data in logs:** Mask webhook keys in logs
+
+---
+
+## Testing Plan
+
+1. **Unit Tests:**
+   - Webhook key validation
+   - Phone number normalization
+   - DNC check logic
+
+2. **Integration Tests:**
+   - End-to-end webhook → broadcast queue flow
+   - GHL API mocking for batch callbacks
+
+3. **Manual Tests:**
+   - Configure webhook in GHL workflow
+   - Send test contact through workflow
+   - Verify contact added to broadcast
+   - Verify GHL contact updated after call
+
+---
+
+## Estimated Implementation Time
+
+| Phase | Effort |
+|-------|--------|
+| Phase 1: Database Migration | 30 min |
+| Phase 2: ghl-webhook-trigger | 1.5 hours |
+| Phase 3: ghl-batch-callback | 2 hours |
+| Phase 4: Modify existing functions | 1 hour |
+| Phase 5: Frontend UI | 2 hours |
+| Phase 6: Documentation | 1 hour |
+| **Total** | **8 hours** |
