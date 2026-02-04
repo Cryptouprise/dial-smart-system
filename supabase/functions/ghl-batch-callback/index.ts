@@ -40,7 +40,51 @@ interface PendingUpdate {
   callback_requested: boolean;
   callback_time: string | null;
   retry_count: number;
+  queue_item_id?: string;
 }
+
+interface FieldMapping {
+  enabled: boolean;
+  ghl_field_key: string | null;
+}
+
+interface BroadcastFieldMappings {
+  enabled: boolean;
+  fields: {
+    last_broadcast_date: FieldMapping;
+    broadcast_outcome: FieldMapping;
+    broadcast_name: FieldMapping;
+    broadcast_dtmf_pressed: FieldMapping;
+    broadcast_callback_requested: FieldMapping;
+    broadcast_callback_time: FieldMapping;
+  };
+  tags: {
+    add_outcome_tags: boolean;
+    tag_prefix: string;
+  };
+  notes: {
+    add_activity_notes: boolean;
+  };
+}
+
+const DEFAULT_MAPPINGS: BroadcastFieldMappings = {
+  enabled: true,
+  fields: {
+    last_broadcast_date: { enabled: true, ghl_field_key: null },
+    broadcast_outcome: { enabled: true, ghl_field_key: null },
+    broadcast_name: { enabled: true, ghl_field_key: null },
+    broadcast_dtmf_pressed: { enabled: true, ghl_field_key: null },
+    broadcast_callback_requested: { enabled: true, ghl_field_key: null },
+    broadcast_callback_time: { enabled: true, ghl_field_key: null }
+  },
+  tags: {
+    add_outcome_tags: true,
+    tag_prefix: 'broadcast_'
+  },
+  notes: {
+    add_activity_notes: true
+  }
+};
 
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -72,112 +116,162 @@ async function getGHLCredentials(supabase: any, userId: string): Promise<GHLCred
   };
 }
 
+// Get field mappings for a user
+async function getFieldMappings(supabase: any, userId: string): Promise<BroadcastFieldMappings> {
+  const { data, error } = await supabase
+    .from('ghl_sync_settings')
+    .select('broadcast_field_mappings')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data?.broadcast_field_mappings) {
+    console.log(`[GHL Batch] Using default field mappings for user ${userId}`);
+    return DEFAULT_MAPPINGS;
+  }
+
+  return { ...DEFAULT_MAPPINGS, ...data.broadcast_field_mappings } as BroadcastFieldMappings;
+}
+
 // Update a GHL contact with broadcast outcome
 async function updateGHLContact(
   credentials: GHLCredentials,
-  update: PendingUpdate
+  update: PendingUpdate,
+  mappings: BroadcastFieldMappings
 ): Promise<{ success: boolean; error?: string }> {
-  const { access_token, location_id } = credentials;
+  const { access_token } = credentials;
   const contactId = update.ghl_contact_id;
 
-  try {
-    // 1. Add tag for the outcome
-    const tagToAdd = OUTCOME_TO_TAG[update.call_outcome] || 'broadcast_completed';
-    
-    const tagResponse = await fetch(
-      `https://services.leadconnectorhq.com/contacts/${contactId}/tags`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-          'Version': '2021-07-28',
-        },
-        body: JSON.stringify({ tags: [tagToAdd] }),
-      }
-    );
+  // Check if callbacks are enabled at all
+  if (!mappings.enabled) {
+    console.log(`[GHL Batch] Callbacks disabled for user, skipping contact ${contactId}`);
+    return { success: true };
+  }
 
-    if (!tagResponse.ok) {
-      const errorText = await tagResponse.text();
-      console.error(`[GHL Batch] Failed to add tag: ${errorText}`);
-      // Don't fail completely - continue with custom fields
-    } else {
-      console.log(`[GHL Batch] Added tag ${tagToAdd} to contact ${contactId}`);
+  try {
+    // 1. Add tag for the outcome (if enabled)
+    if (mappings.tags.add_outcome_tags) {
+      const tagPrefix = mappings.tags.tag_prefix || 'broadcast_';
+      const outcomeTag = `${tagPrefix}${update.call_outcome}`;
+      
+      const tagResponse = await fetch(
+        `https://services.leadconnectorhq.com/contacts/${contactId}/tags`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+          },
+          body: JSON.stringify({ tags: [outcomeTag] }),
+        }
+      );
+
+      if (!tagResponse.ok) {
+        const errorText = await tagResponse.text();
+        console.error(`[GHL Batch] Failed to add tag: ${errorText}`);
+        // Don't fail completely - continue with custom fields
+      } else {
+        console.log(`[GHL Batch] Added tag ${outcomeTag} to contact ${contactId}`);
+      }
     }
 
-    // 2. Update custom fields
-    const customFields: Record<string, string> = {
-      'last_broadcast_date': update.call_timestamp || new Date().toISOString(),
-      'broadcast_outcome': update.call_outcome,
+    // 2. Update custom fields based on mappings
+    const customFields: Record<string, string> = {};
+    const fields = mappings.fields;
+
+    // Helper to get the field key (custom mapping or default)
+    const getFieldKey = (defaultKey: string, mapping: FieldMapping): string | null => {
+      if (!mapping.enabled) return null;
+      return mapping.ghl_field_key || defaultKey;
     };
 
-    if (update.broadcast_name) {
-      customFields['broadcast_name'] = update.broadcast_name;
+    // Add enabled fields
+    const dateKey = getFieldKey('last_broadcast_date', fields.last_broadcast_date);
+    if (dateKey) {
+      customFields[dateKey] = update.call_timestamp || new Date().toISOString();
     }
 
-    if (update.dtmf_pressed) {
-      customFields['broadcast_dtmf_pressed'] = update.dtmf_pressed;
+    const outcomeKey = getFieldKey('broadcast_outcome', fields.broadcast_outcome);
+    if (outcomeKey) {
+      customFields[outcomeKey] = update.call_outcome;
     }
 
-    if (update.callback_requested !== undefined) {
-      customFields['broadcast_callback_requested'] = update.callback_requested ? 'true' : 'false';
+    const nameKey = getFieldKey('broadcast_name', fields.broadcast_name);
+    if (nameKey && update.broadcast_name) {
+      customFields[nameKey] = update.broadcast_name;
     }
 
-    if (update.callback_time) {
-      customFields['broadcast_callback_time'] = update.callback_time;
+    const dtmfKey = getFieldKey('broadcast_dtmf_pressed', fields.broadcast_dtmf_pressed);
+    if (dtmfKey && update.dtmf_pressed) {
+      customFields[dtmfKey] = update.dtmf_pressed;
     }
 
-    const updateResponse = await fetch(
-      `https://services.leadconnectorhq.com/contacts/${contactId}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-          'Version': '2021-07-28',
-        },
-        body: JSON.stringify({ customFields }),
+    const callbackReqKey = getFieldKey('broadcast_callback_requested', fields.broadcast_callback_requested);
+    if (callbackReqKey && update.callback_requested !== undefined) {
+      customFields[callbackReqKey] = update.callback_requested ? 'true' : 'false';
+    }
+
+    const callbackTimeKey = getFieldKey('broadcast_callback_time', fields.broadcast_callback_time);
+    if (callbackTimeKey && update.callback_time) {
+      customFields[callbackTimeKey] = update.callback_time;
+    }
+
+    // Only update if we have fields to update
+    if (Object.keys(customFields).length > 0) {
+      const updateResponse = await fetch(
+        `https://services.leadconnectorhq.com/contacts/${contactId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+          },
+          body: JSON.stringify({ customFields }),
+        }
+      );
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error(`[GHL Batch] Failed to update custom fields: ${errorText}`);
+        return { success: false, error: `Custom fields update failed: ${errorText}` };
       }
-    );
-
-    if (!updateResponse.ok) {
-      const errorText = await updateResponse.text();
-      console.error(`[GHL Batch] Failed to update custom fields: ${errorText}`);
-      return { success: false, error: `Custom fields update failed: ${errorText}` };
     }
 
-    // 3. Add activity note
-    const durationText = update.call_duration_seconds 
-      ? `${Math.floor(update.call_duration_seconds / 60)}m ${update.call_duration_seconds % 60}s`
-      : 'N/A';
+    // 3. Add activity note (if enabled)
+    if (mappings.notes.add_activity_notes) {
+      const durationText = update.call_duration_seconds 
+        ? `${Math.floor(update.call_duration_seconds / 60)}m ${update.call_duration_seconds % 60}s`
+        : 'N/A';
 
-    const noteBody = [
-      `🎙️ Voice Broadcast: ${update.broadcast_name || 'Unnamed'}`,
-      `📊 Outcome: ${update.call_outcome}`,
-      update.dtmf_pressed ? `📱 DTMF Pressed: ${update.dtmf_pressed}` : null,
-      update.callback_requested ? `📞 Callback Requested: Yes` : null,
-      update.callback_time ? `🕐 Callback Time: ${new Date(update.callback_time).toLocaleString()}` : null,
-      `⏱️ Duration: ${durationText}`,
-      `📅 Date: ${update.call_timestamp ? new Date(update.call_timestamp).toLocaleString() : 'N/A'}`,
-    ].filter(Boolean).join('\n');
+      const noteBody = [
+        `🎙️ Voice Broadcast: ${update.broadcast_name || 'Unnamed'}`,
+        `📊 Outcome: ${update.call_outcome}`,
+        update.dtmf_pressed ? `📱 DTMF Pressed: ${update.dtmf_pressed}` : null,
+        update.callback_requested ? `📞 Callback Requested: Yes` : null,
+        update.callback_time ? `🕐 Callback Time: ${new Date(update.callback_time).toLocaleString()}` : null,
+        `⏱️ Duration: ${durationText}`,
+        `📅 Date: ${update.call_timestamp ? new Date(update.call_timestamp).toLocaleString() : 'N/A'}`,
+      ].filter(Boolean).join('\n');
 
-    const noteResponse = await fetch(
-      `https://services.leadconnectorhq.com/contacts/${contactId}/notes`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-          'Version': '2021-07-28',
-        },
-        body: JSON.stringify({ body: noteBody }),
+      const noteResponse = await fetch(
+        `https://services.leadconnectorhq.com/contacts/${contactId}/notes`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+          },
+          body: JSON.stringify({ body: noteBody }),
+        }
+      );
+
+      if (!noteResponse.ok) {
+        const errorText = await noteResponse.text();
+        console.warn(`[GHL Batch] Failed to add note (non-critical): ${errorText}`);
+        // Notes are non-critical, still mark as success
       }
-    );
-
-    if (!noteResponse.ok) {
-      const errorText = await noteResponse.text();
-      console.warn(`[GHL Batch] Failed to add note (non-critical): ${errorText}`);
-      // Notes are non-critical, still mark as success
     }
 
     console.log(`[GHL Batch] ✅ Updated contact ${contactId} with outcome ${update.call_outcome}`);
@@ -267,8 +361,9 @@ serve(async (req) => {
         const errors: string[] = [];
 
         for (const [userId, updates] of updatesByUser) {
-          // Get GHL credentials for this user
+          // Get GHL credentials and field mappings for this user
           const credentials = await getGHLCredentials(supabase, userId);
+          const mappings = await getFieldMappings(supabase, userId);
           
           if (!credentials) {
             // Mark all updates for this user as failed
@@ -288,7 +383,7 @@ serve(async (req) => {
 
           // Process each update
           for (const update of updates) {
-            const result = await updateGHLContact(credentials, update);
+            const result = await updateGHLContact(credentials, update, mappings);
             
             await supabase
               .from('ghl_pending_updates')
@@ -380,6 +475,7 @@ serve(async (req) => {
 
         for (const [userId, updates] of updatesByUser) {
           const credentials = await getGHLCredentials(supabase, userId);
+          const mappings = await getFieldMappings(supabase, userId);
           
           if (!credentials) {
             await supabase
@@ -396,7 +492,7 @@ serve(async (req) => {
           }
 
           for (const update of updates) {
-            const result = await updateGHLContact(credentials, update);
+            const result = await updateGHLContact(credentials, update, mappings);
             
             await supabase
               .from('ghl_pending_updates')

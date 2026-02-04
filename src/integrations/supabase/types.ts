@@ -2312,6 +2312,7 @@ export type Database = {
       ghl_sync_settings: {
         Row: {
           auto_create_opportunities: boolean | null
+          broadcast_field_mappings: Json | null
           broadcast_webhook_key: string | null
           calendar_preference: string | null
           created_at: string | null
@@ -2330,6 +2331,7 @@ export type Database = {
         }
         Insert: {
           auto_create_opportunities?: boolean | null
+          broadcast_field_mappings?: Json | null
           broadcast_webhook_key?: string | null
           calendar_preference?: string | null
           created_at?: string | null
@@ -2348,6 +2350,7 @@ export type Database = {
         }
         Update: {
           auto_create_opportunities?: boolean | null
+          broadcast_field_mappings?: Json | null
           broadcast_webhook_key?: string | null
           calendar_preference?: string | null
           created_at?: string | null

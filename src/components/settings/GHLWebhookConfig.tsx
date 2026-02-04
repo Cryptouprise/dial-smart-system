@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Copy, RefreshCw, CheckCircle, Webhook, ExternalLink, Play, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { GHLBroadcastFieldMapping } from './GHLBroadcastFieldMapping';
 
 interface GHLWebhookConfigProps {
   isConnected: boolean;
@@ -199,6 +201,7 @@ export const GHLWebhookConfig: React.FC<GHLWebhookConfigProps> = ({ isConnected 
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -378,11 +381,17 @@ export const GHLWebhookConfig: React.FC<GHLWebhookConfigProps> = ({ isConnected 
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Make sure to create these custom fields in GHL first using the "Setup Broadcast Fields" button in the Field Mapping tab.
+            Configure field mappings in the section below.
           </p>
         </div>
       </CardContent>
     </Card>
+
+    <Separator className="my-6" />
+
+    {/* Broadcast Field Mapping Section */}
+    <GHLBroadcastFieldMapping isConnected={isConnected} />
+    </>
   );
 };
 
