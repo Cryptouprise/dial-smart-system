@@ -224,3 +224,13 @@ verify_jwt = false
 
 [functions.setup-lady-jarvis]
 verify_jwt = false
+
+# =============================================
+# GHL WORKFLOW INTEGRATION
+# =============================================
+
+[functions.ghl-webhook-trigger]
+verify_jwt = false  # External webhook from GHL workflows
+
+[functions.ghl-batch-callback]
+verify_jwt = true  # Internal use only

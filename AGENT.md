@@ -462,6 +462,54 @@ All features gated by `organizations.billing_enabled`:
 
 ---
 
+### February 4, 2026 - GHL Workflow ↔ Voice Broadcast Integration
+
+**Summary:** Implemented full bidirectional integration between GHL workflows and Dial Smart voice broadcasts.
+
+**Features Built:**
+
+1. **GHL → Dial Smart Webhooks** ✅
+   - New edge function: `ghl-webhook-trigger`
+   - GHL workflows can add contacts to broadcasts via HTTP webhook
+   - Webhook key authentication (unique per user)
+   - Rate limiting: 100 requests/minute per key
+   - DNC list checking before adding
+   - Phone number normalization to E.164
+
+2. **Dial Smart → GHL Callbacks** ✅
+   - New edge function: `ghl-batch-callback`
+   - Batched updates (50 per batch) to respect GHL API limits
+   - Tags: broadcast_answered, broadcast_voicemail_left, broadcast_no_answer, etc.
+   - Custom fields: last_broadcast_date, broadcast_outcome, broadcast_dtmf_pressed
+   - Activity notes with call summary
+
+3. **Database Changes** ✅
+   - New table: `ghl_pending_updates` - stores call outcomes for GHL sync
+   - New column: `ghl_sync_settings.broadcast_webhook_key`
+   - New columns: `broadcast_queue.ghl_contact_id`, `broadcast_queue.ghl_callback_status`
+   - New function: `generate_webhook_key()`
+
+4. **Frontend UI** ✅
+   - New component: `GHLWebhookConfig.tsx` - webhook key management
+   - Generate/regenerate webhook key
+   - Copy webhook URL and JSON body for GHL
+   - Test webhook endpoint
+
+**Files Created:**
+- `supabase/functions/ghl-webhook-trigger/index.ts`
+- `supabase/functions/ghl-batch-callback/index.ts`
+- `src/components/settings/GHLWebhookConfig.tsx`
+- `GHL_WORKFLOW_INTEGRATION.md`
+
+**Files Modified:**
+- `supabase/config.toml` - Added new function configs
+- `supabase/functions/call-tracking-webhook/index.ts` - Insert GHL pending updates
+
+**Documentation:**
+- See `GHL_WORKFLOW_INTEGRATION.md` for full API reference and setup instructions
+
+---
+
 *This file is updated by Claude Code during development sessions. Always check here first when investigating issues.*
 
 ---

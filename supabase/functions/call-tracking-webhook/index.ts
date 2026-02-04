@@ -528,6 +528,58 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
         console.error('[Twilio Webhook] Pipeline update error:', pipelineErr);
       }
     }
+
+    // ========================================================================
+    // GHL PENDING UPDATE - Queue GHL callback if ghl_contact_id exists
+    // ========================================================================
+    if (queueItem.ghl_contact_id && ['answered', 'voicemail', 'no_answer', 'busy', 'failed', 'completed'].includes(finalStatus)) {
+      try {
+        const broadcast = queueItem.voice_broadcasts;
+        const dtmfPressed = queueItem.dtmf_pressed;
+        // DTMF "1" or "9" typically means callback requested (configurable per broadcast)
+        const callbackRequested = dtmfPressed === '1' || dtmfPressed === '9';
+        
+        // Calculate callback time (next business day 10am if requested)
+        let callbackTime = null;
+        if (callbackRequested) {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(10, 0, 0, 0);
+          callbackTime = tomorrow.toISOString();
+        }
+
+        const { error: ghlInsertError } = await supabase
+          .from('ghl_pending_updates')
+          .insert({
+            user_id: broadcast?.user_id,
+            ghl_contact_id: queueItem.ghl_contact_id,
+            broadcast_id: queueItem.broadcast_id,
+            queue_item_id: queueItem.id,
+            broadcast_name: broadcast?.name || null,
+            call_outcome: finalStatus,
+            call_duration_seconds: duration || 0,
+            call_timestamp: new Date().toISOString(),
+            dtmf_pressed: dtmfPressed || null,
+            callback_requested: callbackRequested,
+            callback_time: callbackTime,
+            status: 'pending',
+          });
+
+        if (ghlInsertError) {
+          console.error('[Twilio Webhook] Error inserting GHL pending update:', ghlInsertError);
+        } else {
+          console.log(`[Twilio Webhook] ✅ Queued GHL update for contact ${queueItem.ghl_contact_id}`);
+          
+          // Update broadcast_queue ghl_callback_status
+          await supabase
+            .from('broadcast_queue')
+            .update({ ghl_callback_status: 'queued' })
+            .eq('id', queueItem.id);
+        }
+      } catch (ghlErr) {
+        console.error('[Twilio Webhook] GHL pending update error:', ghlErr);
+      }
+    }
   } else {
     console.log(`[Twilio Webhook] No matching queue item found for CallSid=${callSid}, To=${to}`);
   }
