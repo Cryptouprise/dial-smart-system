@@ -21,11 +21,12 @@ const SYSTEM_KNOWLEDGE = `You are LJ (Lady Jarvis), the Smart Dialer AI assistan
 - Just tell them what you did or what you need
 
 ## GOLDEN RULES
-1. **Do it, then confirm** - Don't ask permission, just do what they ask and tell them you did it
+1. **Confirm before spending** - Always ask for confirmation before purchases or bulk sends
 2. **One sentence answers** when possible. Two max.
 3. **Natural language** - Say "Done! Bought 5 numbers in 214" not "I have successfully completed your request for phone numbers"
 4. **Ask naturally** - "Which area code?" not "Please specify the area code parameter"
 5. **Be specific** - "Check the Campaign Manager tab" not "navigate to the appropriate section"
+6. **When user confirms** a purchase or bulk send, include `confirmed: true` in the tool call arguments
 
 ## EXAMPLES OF GOOD RESPONSES
 User: "buy me 5 phone numbers in dallas"
@@ -240,7 +241,8 @@ const TOOLS = [
           lead_filter: { type: "string", description: "Filter leads: 'all', 'new', 'contacted', 'qualified', or 'tag:tagname' (default: all)" },
           from_number: { type: "string", description: "Phone number to send from (optional, will auto-select if not provided)" },
           limit: { type: "number", description: "Maximum number of leads to send to (default: 100)" },
-          test_mode: { type: "boolean", description: "If true, only shows what would be sent without actually sending" }
+          test_mode: { type: "boolean", description: "If true, only shows what would be sent without actually sending" },
+          confirmed: { type: "boolean", description: "Set true ONLY after user explicitly confirms sending" }
         },
         required: ["message"]
       }
@@ -611,7 +613,8 @@ const TOOLS = [
         type: "object",
         properties: {
           area_code: { type: "string", description: "3-digit area code (e.g., '214' for Dallas, '512' for Austin)" },
-          quantity: { type: "number", description: "Number of phone numbers to purchase (1-10 recommended)" }
+          quantity: { type: "number", description: "Number of phone numbers to purchase (1-10 recommended)" },
+          confirmed: { type: "boolean", description: "Set true ONLY after user explicitly confirms purchase" }
         },
         required: ["area_code", "quantity"]
       }
@@ -1125,7 +1128,11 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         return { success: false, message: '❌ Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.' };
       }
       
-      const { message, lead_filter = 'all', from_number, limit = 100, test_mode = false } = args;
+      const { message, lead_filter = 'all', from_number, limit = 100, test_mode = false, confirmed = false } = args;
+      
+      if (!test_mode && !confirmed) {
+        return { success: false, message: '⚠️ Confirmation required before sending. Reply "confirm" to proceed, or run in test_mode first.' };
+      }
       
       // Normalize phone number function
       const normalizePhone = (phone: string): string => {
@@ -2535,10 +2542,14 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'buy_phone_numbers': {
-      const { area_code, quantity } = args;
+      const { area_code, quantity, confirmed = false } = args;
       
       if (!area_code || !quantity) {
         return { success: false, message: '❌ Need area code and quantity. Example: "Buy 5 phone numbers in area code 214"' };
+      }
+      
+      if (!confirmed) {
+        return { success: false, message: '⚠️ Confirmation required before purchase. Reply "confirm" to proceed.' };
       }
       
       if (quantity > 10) {
@@ -2800,7 +2811,13 @@ serve(async (req) => {
   }
 
   try {
-    const { message, conversationHistory = [], userId } = await req.json();
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const { message, conversationHistory = [], userId: requestedUserId } = await req.json();
     if (!message) {
       return new Response(JSON.stringify({ error: 'Message required' }), 
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -2821,8 +2838,22 @@ serve(async (req) => {
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const token = authHeader.replace('Bearer ', '');
 
-    const analytics = await fetchAnalytics(supabase, userId || '');
+    let effectiveUserId: string | null = null;
+    if (token === supabaseKey && requestedUserId) {
+      // Internal service-to-service call
+      effectiveUserId = requestedUserId;
+    } else {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      effectiveUserId = user.id;
+    }
+
+    const analytics = await fetchAnalytics(supabase, effectiveUserId || '');
     const context = `\n\nCURRENT STATS: ${analytics.totalCalls} calls, ${analytics.totalLeads} leads, ${analytics.activeCampaigns} active campaigns, ${analytics.automationRules} automation rules`;
 
     console.log('[AI Assistant] Processing:', message.substring(0, 100));
@@ -2857,10 +2888,33 @@ serve(async (req) => {
     
     if (choice?.message?.tool_calls?.length > 0) {
       const results: string[] = [];
+      const riskyTools = new Set(['buy_phone_numbers', 'send_sms_blast']);
+      const pendingActions: Array<{ tool: string; arguments: any }> = [];
+
+      for (const tc of choice.message.tool_calls) {
+        let args: any = {};
+        try {
+          args = JSON.parse(tc.function.arguments || '{}');
+        } catch {
+          args = {};
+        }
+
+        if (riskyTools.has(tc.function.name) && !args.confirmed) {
+          pendingActions.push({ tool: tc.function.name, arguments: args });
+        }
+      }
+
+      if (pendingActions.length > 0) {
+        return new Response(JSON.stringify({
+          response: 'I can do that, but I need your confirmation first. Reply "confirm" and I will proceed.',
+          pending_actions: pendingActions,
+          analytics
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       
       for (const tc of choice.message.tool_calls) {
         try {
-          const result = await executeToolCall(supabase, tc.function.name, JSON.parse(tc.function.arguments || '{}'), userId || '');
+          const result = await executeToolCall(supabase, tc.function.name, JSON.parse(tc.function.arguments || '{}'), effectiveUserId || '');
           results.push(`✅ ${tc.function.name}: ${result.message}`);
         } catch (e: any) {
           results.push(`❌ ${tc.function.name}: ${e.message}`);

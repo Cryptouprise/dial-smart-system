@@ -345,7 +345,8 @@ const TOOLS = [
           message: { type: "string", description: "The SMS message to send" },
           lead_ids: { type: "array", items: { type: "string" }, description: "Specific lead IDs to send to" },
           filter: { type: "object", description: "Filter criteria for leads (e.g., status, tags)" },
-          from_number: { type: "string", description: "Phone number to send from" }
+          from_number: { type: "string", description: "Phone number to send from" },
+          confirmed: { type: "boolean", description: "Set true ONLY after user explicitly confirms sending" }
         },
         required: ["message"]
       }
@@ -1519,10 +1520,13 @@ async function executeToolCall(
         return { success: true, result: { campaign: data, message: 'Campaign updated' }, location: LOCATION_MAP.campaigns.route };
       }
 
-      case 'send_sms_blast': {
-        // Normalize phone numbers to E.164 format
-        const normalizePhone = (phone: string): string => {
-          const digits = phone.replace(/\D/g, '');
+    case 'send_sms_blast': {
+      if (!args.confirmed) {
+        return { success: false, result: { error: 'Confirmation required before sending. Ask the user to confirm.' } };
+      }
+      // Normalize phone numbers to E.164 format
+      const normalizePhone = (phone: string): string => {
+        const digits = phone.replace(/\D/g, '');
           if (digits.length === 10) return '+1' + digits;
           if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
           if (!phone.startsWith('+')) return '+' + digits;

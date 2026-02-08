@@ -515,3 +515,37 @@ All features gated by `organizations.billing_enabled`:
 ---
 
 *This file is updated by the `analyze-call-transcript` and `call-tracking-webhook` edge functions.*
+
+---
+
+### February 4, 2026 - AI Safety & Auth Fixes (Pre-Deploy)
+
+**Goal:** Close critical safety gaps in AI actions and fix SMS provider behavior.
+
+**Changes Made:**
+
+1. **AI Assistant Auth Hardened** ✅  
+   - `ai-assistant` now derives user from JWT and only allows body `userId` for **service-to-service** calls using the service role key.  
+   - Prevents cross-tenant access when a user passes another `userId`.
+
+2. **Confirmation Gate Added (Spend/Bulk Actions)** ✅  
+   - `buy_phone_numbers` and `send_sms_blast` now require `confirmed: true` in tool args.  
+   - If not confirmed, function returns a warning and does **not** execute.
+
+3. **Retell SMS Provider Fallback** ✅  
+   - `ai-sms-processor` no longer returns the placeholder response for Retell.  
+   - If Retell SMS provider is selected, it logs and falls back to Lovable AI.
+
+**Files Updated:**
+- `supabase/functions/ai-assistant/index.ts`
+- `supabase/functions/ai-brain/index.ts`
+- `supabase/functions/ai-sms-processor/index.ts`
+
+**Deployment Needed:**
+- `supabase functions deploy ai-assistant`
+- `supabase functions deploy ai-brain`
+- `supabase functions deploy ai-sms-processor`
+
+**Notes:**
+- UI/clients should pass `confirmed: true` only after explicit user approval.
+- This does **not** change existing business logic; it blocks unsafe executions.

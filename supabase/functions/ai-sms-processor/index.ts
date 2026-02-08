@@ -1014,40 +1014,12 @@ Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'flex
   try {
     const aiProvider = settings?.ai_provider || 'lovable';
 
-    if (aiProvider === 'retell' && retellApiKey && settings?.retell_llm_id) {
-      // Use Retell AI
-      console.log('[AI SMS] Using Retell AI for response generation');
-      
-      const retellResponse = await fetch('https://api.retellai.com/v2/create-web-call', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${retellApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          agent_id: settings.retell_llm_id,
-          audio_encoding: 'pcm',
-          audio_websocket_protocol: 'web',
-          sample_rate: 24000,
-          metadata: {
-            conversation_id: conversationId,
-            user_message: currentContent,
-            context: JSON.stringify(conversationHistory.slice(-5)), // Last 5 messages
-          },
-        }),
-      });
+    if (aiProvider === 'retell') {
+      console.log('[AI SMS] Retell SMS provider not supported yet, falling back to Lovable AI');
+    }
 
-      if (!retellResponse.ok) {
-        console.error('[AI SMS] Retell API error:', await retellResponse.text());
-        throw new Error('Retell AI failed, falling back to Lovable AI');
-      }
-
-      const retellData = await retellResponse.json();
-      return retellData.access_token ? 'Response generated via Retell AI' : 'I apologize, but I was unable to generate a response.';
-
-    } else {
-      // Use Lovable AI (default)
-      console.log('[AI SMS] Using Lovable AI for response generation');
+    // Use Lovable AI (default)
+    console.log('[AI SMS] Using Lovable AI for response generation');
       
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -1075,7 +1047,6 @@ Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'flex
       generatedContent = cleanRepeatedText(generatedContent);
       
       return generatedContent;
-    }
   } catch (error) {
     console.error('[AI SMS] Response generation failed:', error);
     throw error;

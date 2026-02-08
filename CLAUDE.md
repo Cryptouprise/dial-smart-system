@@ -790,3 +790,25 @@ These edge functions were created/modified but NOT deployed:
   - 28 no_answer, 8 busy, 12 failed (48 retry candidates)
   - Phone rotation: 13 numbers configured, all used (daily_calls distributed)
   - DTMF: Working (1x "1", 1x "2" captured)
+
+---
+
+## February 4, 2026 - AI Safety & Auth Fixes (Pre-Deploy)
+
+**Summary**
+- Hardened AI assistant auth to prevent cross-tenant access.
+- Added confirmation gates for purchase and bulk SMS actions.
+- Retell SMS provider path now falls back to Lovable AI (no placeholder responses).
+
+**Files Changed**
+- `supabase/functions/ai-assistant/index.ts`
+- `supabase/functions/ai-brain/index.ts`
+- `supabase/functions/ai-sms-processor/index.ts`
+
+**Deployment Required**
+- `supabase functions deploy ai-assistant`
+- `supabase functions deploy ai-brain`
+- `supabase functions deploy ai-sms-processor`
+
+**Notes**
+- Clients must send `confirmed: true` for `buy_phone_numbers` and `send_sms_blast` after explicit user approval.
