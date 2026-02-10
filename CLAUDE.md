@@ -513,6 +513,103 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 (Part 4) - AI Intelligence Upgrade: 4/10 → 8/10 (NOT DEPLOYED)
+
+**Summary:** 8 upgrades that give the AI real intelligence about the game being played at scale: funnel thinking, disposition value awareness, number health prediction, LLM intent extraction, cost/ROI tracking, campaign type differentiation, and self-optimizing playbook rules.
+
+**What Changed:**
+
+**1. OpenRouter Integration** (`_shared/openrouter.ts`)
+- Shared LLM helper with model tiers: fast (Gemini Flash), balanced (Claude Sonnet), premium (Claude Sonnet)
+- Falls back to Lovable AI gateway if no OpenRouter key configured
+- JSON mode support, temperature/max_tokens control
+- Requires `OPENROUTER_API_KEY` in Supabase secrets (optional - degrades gracefully)
+
+**2. Disposition Value Weighting** (`disposition_values` table)
+- Maps each call outcome to conversion probability and priority boost
+- `talk_to_human` (0.60 probability, +40 priority) > `callback` (0.35, +30) > `contacted` (0.10, +5)
+- Auto-seeded via `seed_disposition_values()` function with 18 default mappings
+- Integrated into journey engine interest level computation
+
+**3. Funnel Intelligence** (`analyzeFunnel()` in autonomous engine)
+- Portfolio-level thinking: "42 warm leads are worth more than 2,000 cold dials"
+- Daily funnel snapshots: stage counts, conversion rates, cost per appointment
+- Detects: fresh leads piling up, stalled leads leaking value, high-value leads needing priority
+- Saves to `funnel_snapshots` table for trend analysis
+
+**4. Transcript Intent Parser** (`extractTranscriptIntents()`)
+- LLM extracts structured signals from call transcripts: timeline, budget, decision maker, buying signals, objections, specific dates mentioned
+- Saves to `lead_intent_signals` table
+- Auto-boosts lead interest when high intent detected
+- Processes max 5 transcripts per engine run to control costs
+- Uses OpenRouter fast tier (Gemini Flash)
+
+**5. Cost-Per-Lead Tracking** (columns on `lead_journey_state`)
+- Tracks `total_cost_cents`, `call_cost_cents`, `sms_cost_cents` per lead
+- Computes `estimated_value_cents` from disposition conversion probability
+- `roi_score`: estimated value / total cost invested
+- Engine knows when to stop investing in a lead (diminishing returns)
+
+**6. Campaign Type Playbooks** (`campaign_type` column on `followup_playbook` + `lead_journey_state`)
+- Rules can target: `cold_outreach`, `database_reactivation`, `speed_to_lead`, `inbound_followup`, or `all`
+- Journey engine filters rules by campaign type when matching
+- Same sequence structure, different messaging for each type
+
+**7. Number Health Prediction** (`predictNumberHealth()` + `number_health_metrics` table)
+- `recalculate_number_health()` PG function analyzes velocity, answer rates, voicemail rates
+- Predicted spam risk formula: high velocity + low answer rate + high voicemail rate = risk
+- Health score 0-100, proactive rest recommendations
+- Auto-quarantines numbers with health < 20, reduces daily limits for health < 50
+- Catches numbers BEFORE they get spam-flagged, not after
+
+**8. Self-Optimizing Playbook** (`optimizePlaybook()`)
+- Tracks every playbook rule's performance: times fired, response rate, appointment rate
+- `playbook_performance` table with computed `performance_score`
+- Rules with 20+ fires and <2% response rate flagged as underperformers
+- Rules with 15+ fires and >15% response rate highlighted as top performers
+- Daily LLM analysis (balanced tier) generates specific optimization recommendations
+- All optimizations logged to `playbook_optimization_log` with reasoning and data basis
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/functions/_shared/openrouter.ts` | 160 | OpenRouter LLM integration helper |
+| `supabase/migrations/20260210_ai_intelligence_upgrade.sql` | 433 | All tables, functions, seed data |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +600 lines: analyzeFunnel(), predictNumberHealth(), extractTranscriptIntents(), optimizePlaybook(), loadDispositionValues(), disposition-aware interest computation, campaign type rule filtering, cost/ROI tracking |
+
+**New Database Tables:**
+- `disposition_values` - Conversion probability and priority boost per outcome
+- `lead_intent_signals` - LLM-extracted buying signals per call
+- `number_health_metrics` - Per-number health scores and spam risk prediction
+- `playbook_performance` - Rule effectiveness tracking
+- `funnel_snapshots` - Daily portfolio-level state
+- `playbook_optimization_log` - AI playbook rewrite audit trail
+
+**New Database Functions:**
+- `seed_disposition_values(user_id)` - Seeds 18 default disposition weights
+- `recalculate_number_health(user_id)` - Recalculates all number health metrics from call data
+
+**New Columns:**
+- `lead_journey_state`: total_cost_cents, call_cost_cents, sms_cost_cents, estimated_value_cents, roi_score, last_disposition, campaign_type
+- `followup_playbook`: campaign_type
+
+**Deployment Required:**
+```bash
+# Run migration
+# Set OpenRouter key (optional but recommended):
+supabase secrets set OPENROUTER_API_KEY=your_key_here
+# Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Build Validation:** Both `npx tsc --noEmit` and `npx vite build` pass clean.
+
+---
+
 ### February 10, 2026 (Part 3) - Lead Journey Intelligence System (NOT DEPLOYED)
 
 **Summary:** The missing brain that actively manages every lead through their sales journey. Replaces the fake AIPipelineManager heuristics with a real server-side engine that tracks journey stages, applies sales psychology-based follow-up rules, respects explicit callback requests, learns preferred contact times/channels, and queues intelligent follow-up actions.
