@@ -513,6 +513,205 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 (Part 5) - Campaign Strategist: 8/10 → 10/10 (NOT DEPLOYED)
+
+**Summary:** Two features that take the AI from execution-focused to strategist-level. The AI now plans entire days like a campaign manager (resource allocation across competing priorities) and discovers cross-dimensional patterns humans would miss (timing correlations, source effectiveness, decay curves, sequence optimization).
+
+**What Changed:**
+
+**1. Campaign Resource Allocator (9/10 Feature) — "Daily War Room"**
+- `planDay()` function generates a complete battle plan each morning
+- Gathers resource inventory: phone numbers (healthy vs resting), lead inventory by stage, budget, yesterday's performance, optimal calling windows, top playbook rules
+- Feeds everything to premium LLM (Claude Sonnet) which generates:
+  - Executive summary ("What's the play today?")
+  - Priority order (callbacks → hot → engaged → stalled → fresh)
+  - Budget allocation percentages per lead tier
+  - Number allocation (best numbers → highest-value leads)
+  - Time-blocked schedule with pace per hour and channel (call vs SMS)
+  - Risk factors and expected outcomes (appointments, conversations, cost)
+- Rule-based fallback when LLM unavailable (proportional allocation)
+- End-of-day adherence scoring: compares plan vs actual outcomes
+- Plans stored in `daily_battle_plans` table
+
+**2. Strategic Pattern Detective (10/10 Feature) — "The AI That Sees What You Can't"**
+- Runs 6 statistical pattern detection algorithms daily:
+  1. **Timing Patterns**: Day × Hour conversion analysis. "Thursday 2pm converts 3.2x vs Monday 10am"
+  2. **Attempt Gap Patterns**: Optimal retry timing. "24-48h gap converts 2.1x vs <2h gap"
+  3. **Sequence Patterns**: Channel order effects. "SMS-before-call leads answer 1.8x more"
+  4. **Source Patterns**: Lead origin effectiveness. "Facebook leads convert 2.5x vs web form"
+  5. **Decay Patterns**: Value half-life. "Lead value drops 50% after 3-7 days of no contact"
+  6. **Number Patterns**: Area code effectiveness. "555 area code gets 2x answer rate vs 212"
+- Cross-dimensional LLM analysis: feeds all pattern data to premium LLM for non-obvious correlations
+- All insights stored with: confidence score, sample size, effect magnitude, recommended action
+- **Auto-rule creation**: High-confidence insights (>75%) with 30+ samples auto-generate new playbook rules
+- Rule types: timing overrides, retry delay optimization, SMS-before-call channel preference
+- All generated rules tracked in `insight_generated_rules` table with performance monitoring
+
+**3. Strategic Briefings**
+- Daily/weekly briefings auto-generated when insights are discovered
+- Headline, executive summary, wins, concerns, recommendations, action items
+- Compares current period vs previous period (appointments, conversion rate, cost per appointment)
+- Stored in `strategic_briefings` table
+
+**4. Campaign Strategist Dashboard (CampaignStrategistDashboard.tsx)**
+- New "Strategist" tab in Autonomous Agent dashboard (tab 2, right after Overview)
+- Three sub-tabs:
+  - **Battle Plan**: Executive summary, resource cards, priority order, budget allocation bars, time blocks, risk factors
+  - **Patterns**: Scrollable insight cards with confidence badges, effect magnitudes, recommended actions, auto-rule indicators
+  - **Briefings**: Strategic briefings with wins/concerns/action items
+- Auto-refreshes every 60 seconds
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_campaign_strategist.sql` | ~230 | All tables, views, functions |
+| `src/components/CampaignStrategistDashboard.tsx` | ~430 | Strategist dashboard UI |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +~700 lines: planDay(), generateRuleBasedPlan(), scorePlanAdherence(), detectStrategicPatterns(), 6 pattern detectors, runCrossDimensionalAnalysis(), saveInsight(), createRuleFromInsight(), generateBriefing(), new EngineResult fields, steps 16-17 in runForUser |
+| `src/components/AutonomousAgentDashboard.tsx` | Added CampaignStrategistDashboard lazy import, Strategist tab (grid 10→11 columns) |
+
+**New Database Tables:**
+- `daily_battle_plans` — Daily resource allocation with time blocks, budget splits, expected outcomes, adherence tracking
+- `strategic_insights` — Discovered patterns with confidence, effect magnitude, statistical backing
+- `insight_generated_rules` — Rules auto-created from high-confidence insights
+- `strategic_briefings` — Daily/weekly strategic summaries with wins/concerns/actions
+
+**New Database View:**
+- `call_outcome_dimensions` — Cross-dimensional join of call_logs + leads + lead_journey_state for fast pattern queries
+
+**New Database Function:**
+- `get_funnel_trend(user_id, days)` — Returns daily funnel snapshots for trend analysis
+
+**New autonomous_settings Columns:**
+- `enable_daily_planning` (BOOLEAN, default false) — Master toggle for daily battle plans
+- `enable_strategic_insights` (BOOLEAN, default false) — Master toggle for pattern detection
+- `daily_budget_cents` (INTEGER, default 50000) — Daily budget constraint ($500)
+- `auto_create_rules_from_insights` (BOOLEAN, default false) — Auto-generate rules from patterns
+- `insight_confidence_threshold` (NUMERIC, default 0.75) — Minimum confidence for auto-rule creation
+- `briefing_frequency` (TEXT, default 'daily') — How often to generate briefings
+
+**Engine Steps (now 19 total):**
+```
+1-15: [unchanged from Part 4]
+16. Campaign Resource Allocator (NEW) — daily battle plan generation
+17. Strategic Pattern Detective (NEW) — cross-dimensional pattern discovery + auto-rules + briefings
+18. Save operational memory (was 16)
+19. Update last_engine_run (was 17)
+```
+
+**Deployment Required:**
+```bash
+# Run migration
+# Set OpenRouter key (required for premium features):
+supabase secrets set OPENROUTER_API_KEY=your_key_here
+# Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Build Validation:** Both `npx tsc --noEmit` and `npx vite build` pass clean.
+
+---
+
+### February 10, 2026 (Part 4) - AI Intelligence Upgrade: 4/10 → 8/10 (NOT DEPLOYED)
+
+**Summary:** 8 upgrades that give the AI real intelligence about the game being played at scale: funnel thinking, disposition value awareness, number health prediction, LLM intent extraction, cost/ROI tracking, campaign type differentiation, and self-optimizing playbook rules.
+
+**What Changed:**
+
+**1. OpenRouter Integration** (`_shared/openrouter.ts`)
+- Shared LLM helper with model tiers: fast (Gemini Flash), balanced (Claude Sonnet), premium (Claude Sonnet)
+- Falls back to Lovable AI gateway if no OpenRouter key configured
+- JSON mode support, temperature/max_tokens control
+- Requires `OPENROUTER_API_KEY` in Supabase secrets (optional - degrades gracefully)
+
+**2. Disposition Value Weighting** (`disposition_values` table)
+- Maps each call outcome to conversion probability and priority boost
+- `talk_to_human` (0.60 probability, +40 priority) > `callback` (0.35, +30) > `contacted` (0.10, +5)
+- Auto-seeded via `seed_disposition_values()` function with 18 default mappings
+- Integrated into journey engine interest level computation
+
+**3. Funnel Intelligence** (`analyzeFunnel()` in autonomous engine)
+- Portfolio-level thinking: "42 warm leads are worth more than 2,000 cold dials"
+- Daily funnel snapshots: stage counts, conversion rates, cost per appointment
+- Detects: fresh leads piling up, stalled leads leaking value, high-value leads needing priority
+- Saves to `funnel_snapshots` table for trend analysis
+
+**4. Transcript Intent Parser** (`extractTranscriptIntents()`)
+- LLM extracts structured signals from call transcripts: timeline, budget, decision maker, buying signals, objections, specific dates mentioned
+- Saves to `lead_intent_signals` table
+- Auto-boosts lead interest when high intent detected
+- Processes max 5 transcripts per engine run to control costs
+- Uses OpenRouter fast tier (Gemini Flash)
+
+**5. Cost-Per-Lead Tracking** (columns on `lead_journey_state`)
+- Tracks `total_cost_cents`, `call_cost_cents`, `sms_cost_cents` per lead
+- Computes `estimated_value_cents` from disposition conversion probability
+- `roi_score`: estimated value / total cost invested
+- Engine knows when to stop investing in a lead (diminishing returns)
+
+**6. Campaign Type Playbooks** (`campaign_type` column on `followup_playbook` + `lead_journey_state`)
+- Rules can target: `cold_outreach`, `database_reactivation`, `speed_to_lead`, `inbound_followup`, or `all`
+- Journey engine filters rules by campaign type when matching
+- Same sequence structure, different messaging for each type
+
+**7. Number Health Prediction** (`predictNumberHealth()` + `number_health_metrics` table)
+- `recalculate_number_health()` PG function analyzes velocity, answer rates, voicemail rates
+- Predicted spam risk formula: high velocity + low answer rate + high voicemail rate = risk
+- Health score 0-100, proactive rest recommendations
+- Auto-quarantines numbers with health < 20, reduces daily limits for health < 50
+- Catches numbers BEFORE they get spam-flagged, not after
+
+**8. Self-Optimizing Playbook** (`optimizePlaybook()`)
+- Tracks every playbook rule's performance: times fired, response rate, appointment rate
+- `playbook_performance` table with computed `performance_score`
+- Rules with 20+ fires and <2% response rate flagged as underperformers
+- Rules with 15+ fires and >15% response rate highlighted as top performers
+- Daily LLM analysis (balanced tier) generates specific optimization recommendations
+- All optimizations logged to `playbook_optimization_log` with reasoning and data basis
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/functions/_shared/openrouter.ts` | 160 | OpenRouter LLM integration helper |
+| `supabase/migrations/20260210_ai_intelligence_upgrade.sql` | 433 | All tables, functions, seed data |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +600 lines: analyzeFunnel(), predictNumberHealth(), extractTranscriptIntents(), optimizePlaybook(), loadDispositionValues(), disposition-aware interest computation, campaign type rule filtering, cost/ROI tracking |
+
+**New Database Tables:**
+- `disposition_values` - Conversion probability and priority boost per outcome
+- `lead_intent_signals` - LLM-extracted buying signals per call
+- `number_health_metrics` - Per-number health scores and spam risk prediction
+- `playbook_performance` - Rule effectiveness tracking
+- `funnel_snapshots` - Daily portfolio-level state
+- `playbook_optimization_log` - AI playbook rewrite audit trail
+
+**New Database Functions:**
+- `seed_disposition_values(user_id)` - Seeds 18 default disposition weights
+- `recalculate_number_health(user_id)` - Recalculates all number health metrics from call data
+
+**New Columns:**
+- `lead_journey_state`: total_cost_cents, call_cost_cents, sms_cost_cents, estimated_value_cents, roi_score, last_disposition, campaign_type
+- `followup_playbook`: campaign_type
+
+**Deployment Required:**
+```bash
+# Run migration
+# Set OpenRouter key (optional but recommended):
+supabase secrets set OPENROUTER_API_KEY=your_key_here
+# Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Build Validation:** Both `npx tsc --noEmit` and `npx vite build` pass clean.
+
+---
+
 ### February 10, 2026 (Part 3) - Lead Journey Intelligence System (NOT DEPLOYED)
 
 **Summary:** The missing brain that actively manages every lead through their sales journey. Replaces the fake AIPipelineManager heuristics with a real server-side engine that tracks journey stages, applies sales psychology-based follow-up rules, respects explicit callback requests, learns preferred contact times/channels, and queues intelligent follow-up actions.

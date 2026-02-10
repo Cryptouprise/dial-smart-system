@@ -59,6 +59,7 @@ const AIPipelineManager = lazy(() => import('@/components/AIPipelineManager'));
 const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDashboard'));
 const ActionQueuePanel = lazy(() => import('@/components/ActionQueuePanel'));
 const LeadJourneyDashboard = lazy(() => import('@/components/LeadJourneyDashboard'));
+const CampaignStrategistDashboard = lazy(() => import('@/components/CampaignStrategistDashboard'));
 
 // Loading fallback for lazy components
 const TabLoader = () => (
@@ -305,8 +306,12 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-10 gap-1">
+        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-11 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="strategist" className="flex items-center gap-1">
+            <Target className="h-3 w-3" />
+            <span className="hidden sm:inline">Strategist</span>
+          </TabsTrigger>
           <TabsTrigger value="journeys" className="flex items-center gap-1">
             <Users className="h-3 w-3" />
             <span className="hidden sm:inline">Journeys</span>
@@ -464,6 +469,12 @@ const AutonomousAgentDashboard: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="strategist" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <CampaignStrategistDashboard />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="journeys" className="mt-4">
