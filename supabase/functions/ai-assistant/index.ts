@@ -21,7 +21,7 @@ const SYSTEM_KNOWLEDGE = `You are LJ (Lady Jarvis), the Smart Dialer AI assistan
 - Just tell them what you did or what you need
 
 ## GOLDEN RULES
-1. **Confirm before spending** - Always ask for confirmation before purchases or bulk sends
+1. **Confirm before high-impact actions** - ALWAYS ask for confirmation before: purchases, bulk sends, launching campaigns/broadcasts, deleting workflows, bulk lead updates, or reconfiguring phone numbers
 2. **One sentence answers** when possible. Two max.
 3. **Natural language** - Say "Done! Bought 5 numbers in 214" not "I have successfully completed your request for phone numbers"
 4. **Ask naturally** - "Which area code?" not "Please specify the area code parameter"
@@ -2856,6 +2856,39 @@ serve(async (req) => {
     const analytics = await fetchAnalytics(supabase, effectiveUserId || '');
     const context = `\n\nCURRENT STATS: ${analytics.totalCalls} calls, ${analytics.totalLeads} leads, ${analytics.activeCampaigns} active campaigns, ${analytics.automationRules} automation rules`;
 
+    // Load operational memories for richer context
+    let memoryContext = '';
+    try {
+      const { data: memories } = await supabase
+        .from('ai_operational_memory')
+        .select('memory_type, subject, content, importance')
+        .eq('user_id', effectiveUserId)
+        .order('importance', { ascending: false })
+        .order('last_accessed', { ascending: false })
+        .limit(10);
+
+      if (memories && memories.length > 0) {
+        memoryContext = '\n\nOPERATIONAL MEMORY:\n';
+        for (const mem of memories) {
+          const val = typeof mem.content === 'string' ? mem.content : JSON.stringify(mem.content);
+          memoryContext += `- [${mem.memory_type}] ${mem.subject}: ${val}\n`;
+        }
+      }
+    } catch { /* non-critical */ }
+
+    // Load pending action queue count
+    let queueContext = '';
+    try {
+      const { count } = await supabase
+        .from('ai_action_queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', effectiveUserId)
+        .eq('status', 'pending');
+      if (count && count > 0) {
+        queueContext = `\n${count} action(s) are pending your approval in the Action Queue (Autonomous Agent tab).`;
+      }
+    } catch { /* non-critical */ }
+
     console.log('[AI Assistant] Processing:', message.substring(0, 100));
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -2867,7 +2900,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: SYSTEM_KNOWLEDGE + context },
+          { role: 'system', content: SYSTEM_KNOWLEDGE + context + memoryContext + queueContext },
           ...conversationHistory.slice(-10),
           { role: 'user', content: message }
         ],
@@ -2888,7 +2921,15 @@ serve(async (req) => {
     
     if (choice?.message?.tool_calls?.length > 0) {
       const results: string[] = [];
-      const riskyTools = new Set(['buy_phone_numbers', 'send_sms_blast']);
+      // Safety Tiers: Critical actions ALWAYS require confirmation regardless of autonomy level
+      const riskyTools = new Set([
+        'buy_phone_numbers',       // Costs money
+        'send_sms_blast',          // Bulk sends to many people
+        'launch_now',              // Starts live calls to real people
+        'bulk_update_leads',       // Mass changes to lead data
+        'delete_workflow',         // Irreversible deletion
+        'classify_phone_number',   // Modifies SIP/Retell infrastructure
+      ]);
       const pendingActions: Array<{ tool: string; arguments: any }> = [];
 
       for (const tc of choice.message.tool_calls) {
@@ -2906,18 +2947,61 @@ serve(async (req) => {
 
       if (pendingActions.length > 0) {
         return new Response(JSON.stringify({
-          response: 'I can do that, but I need your confirmation first. Reply "confirm" and I will proceed.',
+          response: `Hold up -- this is a big action that I need your OK on before I proceed. Here's what I want to do:\n\n${pendingActions.map(a => `• **${a.tool}**: ${JSON.stringify(a.arguments)}`).join('\n')}\n\nReply "confirm" and I'll execute.`,
           pending_actions: pendingActions,
           analytics
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       
+      // Track which significant actions were executed for memory saving
+      const significantActions = new Set([
+        'create_campaign', 'launch_now', 'quick_voice_broadcast', 'quick_ai_campaign',
+        'buy_phone_numbers', 'send_sms_blast', 'create_workflow', 'delete_workflow',
+        'classify_phone_number', 'quarantine_number',
+      ]);
+
       for (const tc of choice.message.tool_calls) {
         try {
           const result = await executeToolCall(supabase, tc.function.name, JSON.parse(tc.function.arguments || '{}'), effectiveUserId || '');
           results.push(`✅ ${tc.function.name}: ${result.message}`);
+
+          // Auto-save significant actions to operational memory
+          if (significantActions.has(tc.function.name) && effectiveUserId) {
+            try {
+              await supabase.from('ai_operational_memory').insert({
+                user_id: effectiveUserId,
+                memory_type: tc.function.name.includes('campaign') || tc.function.name.includes('broadcast')
+                  ? 'campaign_result' : 'system_state',
+                subject: `${tc.function.name}_${new Date().toISOString().split('T')[0]}`,
+                content: {
+                  tool: tc.function.name,
+                  args: JSON.parse(tc.function.arguments || '{}'),
+                  result: result.message,
+                  timestamp: new Date().toISOString(),
+                },
+                importance: tc.function.name === 'launch_now' ? 8 : 5,
+              });
+            } catch { /* non-critical memory save */ }
+          }
         } catch (e: any) {
           results.push(`❌ ${tc.function.name}: ${e.message}`);
+
+          // Save errors to memory too so she learns what went wrong
+          if (effectiveUserId) {
+            try {
+              await supabase.from('ai_operational_memory').insert({
+                user_id: effectiveUserId,
+                memory_type: 'error_pattern',
+                subject: `${tc.function.name}_error`,
+                content: {
+                  tool: tc.function.name,
+                  error: e.message,
+                  timestamp: new Date().toISOString(),
+                },
+                importance: 6,
+              });
+            } catch { /* non-critical */ }
+          }
         }
       }
 

@@ -513,6 +513,258 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 (Part 3) - Lead Journey Intelligence System (NOT DEPLOYED)
+
+**Summary:** The missing brain that actively manages every lead through their sales journey. Replaces the fake AIPipelineManager heuristics with a real server-side engine that tracks journey stages, applies sales psychology-based follow-up rules, respects explicit callback requests, learns preferred contact times/channels, and queues intelligent follow-up actions.
+
+**What Changed:**
+
+**1. Journey Engine (manageLeadJourneys function in ai-autonomous-engine)**
+- Syncs all leads into `lead_journey_state` table on each run
+- Recomputes interaction counts from real `call_logs` and `sms_messages` data
+- Auto-computes journey stage: fresh → attempting → engaged → hot → nurturing → stalled → dormant → callback_set → booked → closed
+- Detects interest signals: call duration > 2min = buying signal, SMS replies, sentiment trends
+- Learns best hour to call from answered call patterns
+- Learns preferred channel (call vs SMS) from response data
+- CRITICAL: Explicit callback requests (`call me Tuesday at 2pm`) are NEVER overridden - they get exact-time execution + 1hr advance reminder
+- Matches leads against `followup_playbook` rules (highest-priority matching rule wins)
+- Respects calling windows (9am-9pm) for scheduled actions
+- Channel rotation tracking (alternates call/SMS when preference unknown)
+- Daily touch cap prevents over-contacting (default 200/day)
+- All actions flow through `ai_action_queue` for the configured autonomy level
+
+**2. Sales Psychology Playbook (18 default rules)**
+- Speed-to-lead: Call fresh leads within 5 minutes (Harvard study: 100x more likely to connect)
+- Multi-channel: SMS within 2 min of unanswered call (+25% connect rate)
+- Escalation: 3 call attempts with time-varied spacing, then value-driven AI SMS
+- Engaged follow-up: Recap SMS within 1 hour, follow-up call at 36 hours
+- Hot lead compression: Same-day call + morning check-in SMS
+- Nurture drip: Value SMS at 1 week, 3 weeks, monthly (not a pitch)
+- Stalled re-engagement: Curiosity-based SMS, then "breakup text" as last resort
+- Callback honoring: Reminder 1hr before, call at exact requested time
+- Booked confirmation: Immediate confirmation + day-before + morning-of reminders
+
+**3. Journey Dashboard (LeadJourneyDashboard.tsx)**
+- New "Journeys" tab in Autonomous Agent dashboard
+- Stage distribution with clickable funnel visualization
+- Click any stage to see all leads in that stage with interest levels, touch counts, preferred channels
+- Upcoming actions panel (next 24 hours of scheduled follow-ups)
+- Journey event log (audit trail of stage changes, rules fired, actions queued)
+- Journey engine toggle (enable/disable independently)
+- Auto-refreshes every 60 seconds
+
+**4. New Action Types in Engine**
+- `journey_call`: Calls lead via outbound-calling edge function
+- `journey_ai_sms`: Generates and sends AI-written SMS via ai-sms-processor
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_lead_journey_intelligence.sql` | ~255 | Tables, playbook rules, seed function |
+| `src/components/LeadJourneyDashboard.tsx` | ~400 | Journey visualization dashboard |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +~350 lines: manageLeadJourneys(), queueJourneyAction(), journey_call/journey_ai_sms action types, wired into runForUser step 9 |
+| `src/components/AutonomousAgentDashboard.tsx` | Added Journeys tab with LeadJourneyDashboard, grid 9→10 columns |
+
+**New Database Tables:**
+- `lead_journey_state` - One row per lead. Journey stage, interaction counts, timing intelligence, interest level, sentiment, next action, preferred channel/hour
+- `followup_playbook` - Configurable per-stage rules with conditions and timing
+- `journey_event_log` - Audit trail of every journey engine decision
+
+**New Database Functions:**
+- `seed_default_playbook(user_id)` - Seeds 18 sales psychology-based default rules
+
+**New autonomous_settings Columns:**
+- `manage_lead_journeys` (BOOLEAN, default false) - Master toggle
+- `journey_max_daily_touches` (INTEGER, default 200) - Daily cap
+
+**Key Design Decisions:**
+- Explicit callbacks are SACRED - the engine will NEVER override a lead who said "call me Tuesday at 2pm"
+- Interest level computed from real signals: call outcomes, duration, SMS replies, sentiment scores
+- Best contact hour learned from actual answered calls, not guessed
+- Channel preference learned from which channel gets responses
+- Stage transitions are computed fresh each run (not incrementally) so they self-correct
+- All actions go through ai_action_queue so the configured autonomy level (full_auto/approval_required/suggestions_only) is respected
+
+**Deployment Required:**
+```bash
+# Run migration first
+# Then deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+---
+
+### February 10, 2026 - Autonomous Engine Upgrade & AI Safety Tiers (NOT DEPLOYED)
+
+**Summary:** Major upgrade to make the AI assistant truly autonomous with server-side execution, safety guardrails, persistent memory, and an action approval queue.
+
+**What Changed:**
+
+**1. Server-Side Autonomous Engine (NEW)**
+- New `ai-autonomous-engine` edge function replaces all browser-side autonomous hooks
+- Runs every 5 min via pg_cron (not browser setInterval)
+- Goal assessment: checks daily call/appointment/conversation targets vs progress
+- Lead scoring: server-side rescoring with engagement/recency/answer rate/status weights
+- Pacing analysis: auto-adjusts calls_per_minute based on error rate and answer rate
+- Decision making: queues actions (lead calling, follow-up SMS, number quarantine, pacing changes)
+- Respects autonomy_level: full_auto (auto-approve), approval_required (queue for user), suggestions_only (log only)
+- Daily action cap enforced server-side (default 50)
+- Saves operational memories after significant events
+
+**2. Safety Tiers (CRITICAL FIX)**
+- **ai-assistant**: `riskyTools` expanded from 2 to 6: `buy_phone_numbers`, `send_sms_blast`, `launch_now`, `bulk_update_leads`, `delete_workflow`, `classify_phone_number`
+- **ai-brain**: Added global `criticalTools` confirmation gate (didn't have one before!): `launch_now`, `purchase_retell_numbers`, `send_sms_blast`, `delete_lead`, `delete_workflow`, `bulk_update_leads`, `classify_phone_number`, `delete_phone_number`
+- Both functions now show exactly what action + params before confirming
+- System prompts updated to list all high-impact actions requiring confirmation
+
+**3. Operational Memory System (NEW)**
+- `ai_operational_memory` table: persistent structured memory (campaigns, lessons, errors, patterns)
+- Both AI functions now inject up to 10-15 recent memories into system prompt
+- Auto-saves after significant tool executions (campaigns, launches, deletes, errors)
+- Memory decays by importance and access frequency
+- Enables real context between conversations (not goldfish memory)
+
+**4. Action Queue & Approval UI (NEW)**
+- `ai_action_queue` table with status flow: pending → approved → executing → completed/failed
+- `ActionQueuePanel` component added to Autonomous Agent dashboard → Actions tab
+- Approve/reject individual actions or batch approve all
+- Shows reasoning, parameters, priority, source, timestamps
+- Actions auto-expire after 24h if not approved
+- Polls for updates every 30 seconds
+
+**5. Calling Time Optimization (DB Foundation)**
+- `optimal_calling_windows` table with per-user, per-day, per-hour aggregation
+- `recalculate_calling_windows()` PostgreSQL function analyzes last 30 days of call data
+- Scoring: answer_rate + 3x appointment_rate per time slot
+- `lead_score_outcomes` table tracks score-at-call-time for feedback loop
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_autonomous_engine_upgrade.sql` | ~250 | New tables, functions, indexes, RLS, pg_cron |
+| `supabase/functions/ai-autonomous-engine/index.ts` | ~530 | Server-side autonomous brain |
+| `src/components/ActionQueuePanel.tsx` | ~240 | Action queue approval UI |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-assistant/index.ts` | Safety tiers (2→6 risky tools), operational memory injection, auto-save after tool execution |
+| `supabase/functions/ai-brain/index.ts` | Safety tiers (0→8 critical tools), operational memory injection, action queue awareness, auto-save |
+| `src/components/AutonomousAgentDashboard.tsx` | Added Actions tab with ActionQueuePanel |
+
+**New Database Tables:**
+- `ai_action_queue` - Server-side action queue with approval flow
+- `ai_operational_memory` - Persistent structured AI memory
+- `optimal_calling_windows` - Learned best calling times
+- `lead_score_outcomes` - Score-at-call-time tracking for feedback
+
+**New Database Functions:**
+- `expire_old_actions()` - Auto-expire stale pending actions
+- `save_operational_memory()` - Upsert memory entries
+- `recalculate_calling_windows()` - Aggregate call outcomes into time slots
+
+**New autonomous_settings Columns:**
+- `last_engine_run` - When engine last ran
+- `engine_interval_minutes` - Configurable interval (default 5)
+- `auto_optimize_calling_times` - Enable time slot learning
+- `auto_adjust_pacing` - Enable auto pacing adjustment
+
+**Deployment Required:**
+```bash
+# Run migration first
+# Then deploy edge functions:
+supabase functions deploy ai-autonomous-engine
+supabase functions deploy ai-assistant
+supabase functions deploy ai-brain
+```
+
+**Gotchas:**
+- pg_cron job for ai-autonomous-engine uses `current_setting('app.supabase_url')` -- may need manual setup if app settings not configured
+- Operational memory queries add ~50-100ms to each AI call (non-blocking)
+- `supabase.raw('access_count + 1')` in ai-brain memory touch may not work in all Supabase client versions -- silently fails (non-critical)
+
+### February 10, 2026 (Part 2) - Phases 5-8: Learning Systems (NOT DEPLOYED)
+
+**Summary:** Four learning systems that make the AI genuinely smarter over time based on real call outcome data.
+
+**Phase 5: Calling Time Optimizer**
+- `automation-scheduler` now checks `optimal_calling_windows` table before queueing leads
+- If current time slot has score < 0.15 (bottom 20%), skips queueing entirely
+- Only activates when user has `auto_optimize_calling_times = true` in autonomous_settings
+- Requires 10+ calls in a time slot before making decisions (no premature optimization)
+- `ai-autonomous-engine` recalculates windows from last 30 days of call data every run
+
+**Phase 6: Lead Score Weight Feedback Loop**
+- `lead_scoring_weights` table stores per-user calibrated weights (replaces hardcoded 0.3/0.25/0.25/0.2)
+- `calibrate_lead_scoring_weights()` PG function analyzes `lead_score_outcomes` table
+- Compares component scores for answered vs missed calls → adjusts weights toward predictive factors
+- `lead_score_outcomes` populated when automation-scheduler queues a call (score at queue time)
+- `retell-call-webhook` updates outcomes when calls complete
+- `ai-autonomous-engine` reads calibrated weights during lead rescoring
+- Calibration runs weekly (needs 50+ outcomes to activate)
+
+**Phase 7: Script A/B Testing**
+- `agent_script_variants` table stores multiple script versions per Retell agent
+- `call_variant_assignments` tracks which variant was used for each call
+- `select_script_variant()` PG function does weighted random selection (Thompson Sampling style)
+- `update_variant_stats()` PG function updates success/appointment rates after each call
+- `rebalance_variant_weights()` PG function shifts traffic toward winners (UCB1 algorithm)
+- `outbound-calling` selects a variant before each call, injects into dynamic variables
+- `retell-call-webhook` updates variant stats after call ends
+- `ai-autonomous-engine` rebalances weights every 5 min run
+- Minimum 10% traffic to every active variant (prevents premature exploitation)
+
+**Phase 8: Pacing Adaptation**
+- `adaptive_pacing` table stores optimal pace per broadcast/campaign
+- `pacing_history` table logs every pacing change with error_rate, answer_rate, trigger
+- `voice-broadcast-engine` checks `adaptive_pacing` before using broadcast's `calls_per_minute`
+- All 3 pacing delay points in voice-broadcast-engine now use adaptive pace
+- `ai-autonomous-engine` writes to `adaptive_pacing` when it decides to change pace
+
+**Files Created:**
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/20260210_phases_5_8_learning.sql` | All tables, functions, indexes for phases 5-8 |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | Calibrated weights in rescoring, weekly calibration, A/B rebalancing, pacing DB write |
+| `supabase/functions/automation-scheduler/index.ts` | Calling window check, lead score recording at queue time |
+| `supabase/functions/outbound-calling/index.ts` | A/B variant selection + assignment before call |
+| `supabase/functions/retell-call-webhook/index.ts` | Variant stats update + lead score outcome update after call |
+| `supabase/functions/voice-broadcast-engine/index.ts` | Adaptive pacing read from DB at all 3 delay points |
+
+**New Database Tables:**
+- `agent_script_variants` - Script versions per agent with performance stats
+- `call_variant_assignments` - Which variant was used per call
+- `lead_scoring_weights` - Per-user calibrated scoring weights
+- `adaptive_pacing` - Current optimal pace per broadcast
+- `pacing_history` - Audit trail of all pacing changes
+
+**New Database Functions:**
+- `select_script_variant()` - Weighted random variant selection
+- `update_variant_stats()` - Incremental variant stat updates
+- `rebalance_variant_weights()` - UCB1 traffic rebalancing
+- `calibrate_lead_scoring_weights()` - Outcome-correlation weight calibration
+
+**Deployment Required:**
+```bash
+# Run migration for phases 5-8
+# Then deploy all modified edge functions:
+supabase functions deploy ai-autonomous-engine
+supabase functions deploy automation-scheduler
+supabase functions deploy outbound-calling
+supabase functions deploy retell-call-webhook
+supabase functions deploy voice-broadcast-engine
+```
+
+---
+
 ### February 3, 2026 - Agent Voice Preview Plays In-App (NOT PUBLISHED)
 
 **Summary:** Fixed the Agent Settings → Voice tab so clicking **Play Voice Sample** actually plays audio in the browser (instead of showing “check Retell dashboard”).

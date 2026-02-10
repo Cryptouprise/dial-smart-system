@@ -952,6 +952,51 @@ serve(async (req) => {
       console.error('[Retell Webhook] Call log error:', callLogError);
     }
 
+    // Phase 7: Update A/B variant stats if variant_id present in metadata
+    if (metadata.variant_id && callLog?.id) {
+      try {
+        const isAppointment = outcome === 'appointment_set' || outcome === 'converted';
+        // Update variant stats via DB function
+        await supabase.rpc('update_variant_stats', {
+          p_variant_id: metadata.variant_id,
+          p_outcome: outcome,
+          p_duration: durationSeconds || 0,
+          p_appointment: isAppointment,
+        });
+        // Update the assignment record with outcome
+        await supabase
+          .from('call_variant_assignments')
+          .update({
+            outcome,
+            duration_seconds: durationSeconds || 0,
+            appointment_set: isAppointment,
+            recorded_at: new Date().toISOString(),
+          })
+          .eq('call_id', callLog.id);
+        console.log(`[Retell Webhook] A/B variant ${metadata.variant_id} stats updated (outcome: ${outcome})`);
+      } catch (variantErr: any) {
+        console.error('[Retell Webhook] A/B variant update error:', variantErr.message);
+      }
+    }
+
+    // Phase 6: Update lead_score_outcomes with actual outcome
+    if (callLog?.id && leadId) {
+      try {
+        const scoreOutcome = ['completed', 'answered', 'interested', 'callback', 'appointment_set', 'converted'].includes(outcome)
+          ? (outcome === 'appointment_set' || outcome === 'converted' ? 'appointment' : 'answered')
+          : outcome === 'voicemail' ? 'voicemail'
+          : outcome === 'busy' ? 'busy'
+          : outcome === 'no_answer' ? 'no_answer'
+          : 'failed';
+
+        await supabase
+          .from('lead_score_outcomes')
+          .update({ outcome: scoreOutcome })
+          .eq('lead_id', leadId)
+          .eq('outcome', 'pending');
+      } catch { /* non-critical */ }
+    }
+
     // 2. If we have a transcript and it's a call_ended/call_analyzed event, analyze it
     let dispositionResult = null;
     if (formattedTranscript && formattedTranscript.length > 50) {

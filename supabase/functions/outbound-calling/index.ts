@@ -642,6 +642,37 @@ serve(async (req) => {
           console.log('[Outbound Calling] No lead found, using empty dynamic variables');
         }
 
+        // Phase 7: A/B variant selection - inject variant prompt into dynamic variables
+        let selectedVariantId: string | null = null;
+        try {
+          const { data: variant } = await supabaseAdmin.rpc('select_script_variant', {
+            p_user_id: userId,
+            p_agent_id: agentId,
+          });
+          if (variant && variant.length > 0) {
+            const v = variant[0];
+            selectedVariantId = v.variant_id;
+            // Inject variant prompt as a dynamic variable the LLM can reference
+            if (v.general_prompt) {
+              dynamicVariables['script_variant'] = v.variant_name;
+              dynamicVariables['variant_prompt_override'] = v.general_prompt;
+            }
+            if (v.begin_message) {
+              dynamicVariables['variant_begin_message'] = v.begin_message;
+            }
+            console.log(`[Outbound Calling] A/B variant selected: ${v.variant_name} (${selectedVariantId})`);
+
+            // Record assignment
+            await supabaseAdmin.from('call_variant_assignments').insert({
+              call_id: callLog.id,
+              variant_id: selectedVariantId,
+              agent_id: agentId,
+            });
+          }
+        } catch (variantError: any) {
+          console.error('[Outbound Calling] A/B variant selection error (continuing):', variantError.message);
+        }
+
         try {
           response = await retryWithBackoff(
             async () => {
@@ -659,7 +690,8 @@ serve(async (req) => {
                     lead_id: leadId,
                     call_log_id: callLog.id,
                     user_id: userId,
-                    organization_id: organizationId // For credit deduction in webhook
+                    organization_id: organizationId, // For credit deduction in webhook
+                    variant_id: selectedVariantId, // For A/B tracking in webhook
                   }
                 }),
               }, 30000);

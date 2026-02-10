@@ -644,6 +644,17 @@ serve(async (req) => {
       const results: Array<{ broadcastId: string; name: string; processed: number; errors: string[] }> = [];
 
       for (const broadcast of uniqueBroadcasts) {
+        // Phase 8: Look up adaptive pacing for this broadcast
+        let broadcastPace = broadcast.calls_per_minute || DEFAULT_CALLS_PER_MINUTE;
+        try {
+          const { data: ap } = await supabase
+            .from('adaptive_pacing')
+            .select('optimal_pace')
+            .eq('broadcast_id', broadcast.id)
+            .maybeSingle();
+          if (ap?.optimal_pace) broadcastPace = ap.optimal_pace;
+        } catch { /* use default */ }
+
         try {
           // Process this broadcast by invoking the same function with 'start' action
           // but we'll inline the processing here to avoid auth issues
@@ -896,7 +907,7 @@ serve(async (req) => {
               processedCount++;
 
               // Pacing delay - calculated from calls_per_minute setting
-              const pacingDelay = calculatePacingDelay(broadcast.calls_per_minute);
+              const pacingDelay = calculatePacingDelay(broadcastPace);
               await sleep(pacingDelay);
 
             } catch (itemError: any) {
@@ -1328,13 +1339,27 @@ serve(async (req) => {
           }
         }
 
+        // Phase 8: Check adaptive_pacing table for AI-optimized pace override
+        let adaptivePace = broadcast.calls_per_minute || 50;
+        try {
+          const { data: pacing } = await supabase
+            .from('adaptive_pacing')
+            .select('optimal_pace')
+            .eq('broadcast_id', broadcast.id)
+            .maybeSingle();
+          if (pacing?.optimal_pace) {
+            console.log(`[Broadcast Engine] Adaptive pacing override: ${pacing.optimal_pace}/min (broadcast default: ${broadcast.calls_per_minute})`);
+            adaptivePace = pacing.optimal_pace;
+          }
+        } catch { /* use broadcast default */ }
+
         // Calculate actual batch size accounting for concurrent limit and test mode
         const availableConcurrency = MAX_CONCURRENT_CALLS - currentConcurrent;
-        const maxBatchSize = isTestMode ? testBatchSize : (broadcast.calls_per_minute || 50);
+        const maxBatchSize = isTestMode ? testBatchSize : adaptivePace;
         const batchSize = Math.min(maxBatchSize, pendingCount, availableConcurrency);
 
         // Calculate pacing delay for this broadcast
-        const pacingDelayMs = calculatePacingDelay(broadcast.calls_per_minute);
+        const pacingDelayMs = calculatePacingDelay(adaptivePace);
         const effectiveCallsPerMinute = Math.floor(60000 / pacingDelayMs);
 
         console.log(`Dispatching batch of ${batchSize} calls (pending: ${pendingCount}, available slots: ${availableConcurrency}, pacing: ${effectiveCallsPerMinute}/min with ${pacingDelayMs}ms delay${isTestMode ? `, test limit: ${testBatchSize}` : ''})`);
@@ -1612,8 +1637,8 @@ serve(async (req) => {
               throw new Error(callResult.error || 'Call failed');
             }
 
-            // Pacing delay - calculated from calls_per_minute setting
-            const pacingDelay = calculatePacingDelay(broadcast.calls_per_minute);
+            // Pacing delay - uses adaptive pace if available
+            const pacingDelay = calculatePacingDelay(adaptivePace);
             await sleep(pacingDelay);
 
           } catch (callError: any) {

@@ -51,7 +51,7 @@ You are inspired by JARVIS from Iron Man - calm, confident, competent, and conve
 - When users call you "LJ" or "Lady Jarvis", respond warmly
 - Be helpful but efficient - don't over-explain unless asked
 - Use emojis sparingly but effectively (✅ ⚠️ 📞 🎯 🤖)
-- Always confirm before taking significant actions
+- ALWAYS confirm before high-impact actions: launching campaigns/broadcasts, purchases, bulk sends, deletions, bulk lead updates, or reconfiguring phone numbers/SIP
 
 ## YOUR INTERNAL TEAM (Manager Hierarchy)
 When handling complex requests, you coordinate specialized internal systems:
@@ -4315,13 +4315,69 @@ serve(async (req) => {
 
     // Get user preferences for context
     const preferences = await getUserPreferences(supabase, user.id);
-    
+
+    // Load operational memories for richer context
+    let operationalMemoryContext = '';
+    try {
+      const { data: memories } = await supabase
+        .from('ai_operational_memory')
+        .select('memory_type, subject, content, importance')
+        .eq('user_id', user.id)
+        .order('importance', { ascending: false })
+        .order('last_accessed', { ascending: false })
+        .limit(15);
+
+      if (memories && memories.length > 0) {
+        // Touch access timestamps
+        const memoryIds = memories.map((m: any) => m.id).filter(Boolean);
+        if (memoryIds.length > 0) {
+          await supabase
+            .from('ai_operational_memory')
+            .update({ last_accessed: new Date().toISOString(), access_count: supabase.raw('access_count + 1') })
+            .in('id', memoryIds);
+        }
+
+        const grouped: Record<string, string[]> = {};
+        for (const mem of memories) {
+          const type = mem.memory_type || 'general';
+          if (!grouped[type]) grouped[type] = [];
+          grouped[type].push(`- ${mem.subject}: ${typeof mem.content === 'string' ? mem.content : JSON.stringify(mem.content)}`);
+        }
+        operationalMemoryContext = '\n\n## OPERATIONAL MEMORY (What I Remember)\n';
+        for (const [type, entries] of Object.entries(grouped)) {
+          operationalMemoryContext += `### ${type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n`;
+          operationalMemoryContext += entries.join('\n') + '\n';
+        }
+      }
+    } catch (memErr) {
+      console.error('[AI Brain] Error loading operational memory:', memErr);
+    }
+
+    // Load pending action queue count for awareness
+    let actionQueueContext = '';
+    try {
+      const { count: pendingActions } = await supabase
+        .from('ai_action_queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'pending');
+      if (pendingActions && pendingActions > 0) {
+        actionQueueContext = `\n- ${pendingActions} pending action(s) waiting for user approval in the Action Queue`;
+      }
+    } catch { /* non-critical */ }
+
     // Build context-aware system prompt
     let contextPrompt = SYSTEM_KNOWLEDGE;
     contextPrompt += `\n\n## CURRENT CONTEXT\n`;
     contextPrompt += `- User is on: ${currentRoute || 'unknown page'}\n`;
     if (Object.keys(preferences).length > 0) {
       contextPrompt += `- User preferences: ${JSON.stringify(preferences)}\n`;
+    }
+    if (actionQueueContext) {
+      contextPrompt += actionQueueContext + '\n';
+    }
+    if (operationalMemoryContext) {
+      contextPrompt += operationalMemoryContext;
     }
 
     // Build messages
@@ -4377,7 +4433,51 @@ serve(async (req) => {
     // Handle tool calls
     if (assistantMessage.tool_calls) {
       const toolResults = [];
-      
+
+      // Safety Tiers: Critical actions ALWAYS require confirmation
+      const criticalTools = new Set([
+        'launch_now',              // Starts live calls to real people
+        'purchase_retell_numbers', // Costs money
+        'send_sms_blast',         // Bulk sends to many people
+        'delete_lead',            // Irreversible
+        'delete_workflow',        // Irreversible
+        'bulk_update_leads',      // Mass changes
+        'classify_phone_number',  // Modifies SIP/Retell infrastructure
+        'delete_phone_number',    // Removes number from system
+      ]);
+
+      const pendingActions: Array<{ tool: string; arguments: any }> = [];
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        let parsedArgs: any = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch { /* handled below */ }
+
+        if (criticalTools.has(toolCall.function.name) && !parsedArgs.confirmed) {
+          pendingActions.push({ tool: toolCall.function.name, arguments: parsedArgs });
+        }
+      }
+
+      if (pendingActions.length > 0) {
+        const actionList = pendingActions.map(a => `• **${a.tool}**: ${JSON.stringify(a.arguments)}`).join('\n');
+        return new Response(JSON.stringify({
+          response: `Hold on -- I need your go-ahead before I do this:\n\n${actionList}\n\nSay "confirm" and I'll proceed.`,
+          pending_actions: pendingActions,
+          requires_confirmation: true,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Actions worth remembering in operational memory
+      const memorableActions = new Set([
+        'create_campaign', 'launch_now', 'quick_voice_broadcast', 'quick_ai_campaign',
+        'purchase_retell_numbers', 'send_sms_blast', 'create_workflow', 'delete_workflow',
+        'classify_phone_number', 'delete_phone_number', 'delete_lead', 'quarantine_number',
+        'stop_broadcast', 'pause_broadcast',
+      ]);
+
       for (const toolCall of assistantMessage.tool_calls) {
         let args;
         try {
@@ -4387,16 +4487,40 @@ serve(async (req) => {
           continue; // Skip this tool call
         }
         const result = await executeToolCall(
-          supabase, 
-          user.id, 
+          supabase,
+          user.id,
           sessionId || 'default',
-          toolCall.function.name, 
+          toolCall.function.name,
           args
         );
-        
+
         // Learn from tool execution
         await learnFromSuccess(supabase, user.id, toolCall.function.name, args, result);
-        
+
+        // Auto-save significant actions to operational memory
+        if (memorableActions.has(toolCall.function.name)) {
+          try {
+            const isCampaign = toolCall.function.name.includes('campaign') ||
+                              toolCall.function.name.includes('broadcast') ||
+                              toolCall.function.name === 'launch_now';
+            await supabase.from('ai_operational_memory').insert({
+              user_id: user.id,
+              memory_type: isCampaign ? 'campaign_result' : result.success ? 'system_state' : 'error_pattern',
+              subject: `${toolCall.function.name}_${new Date().toISOString().split('T')[0]}`,
+              content: {
+                tool: toolCall.function.name,
+                args,
+                success: result.success,
+                summary: result.result?.message || JSON.stringify(result.result).substring(0, 200),
+                timestamp: new Date().toISOString(),
+              },
+              importance: toolCall.function.name === 'launch_now' ? 8
+                : toolCall.function.name.includes('delete') ? 7
+                : result.success ? 5 : 6,
+            });
+          } catch { /* non-critical memory save */ }
+        }
+
         toolResults.push({
           tool_call_id: toolCall.id,
           role: 'tool',

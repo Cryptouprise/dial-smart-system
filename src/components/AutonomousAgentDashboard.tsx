@@ -29,7 +29,8 @@ import {
   FileBarChart,
   Bot,
   Workflow,
-  Users
+  Users,
+  Shield
 } from 'lucide-react';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
@@ -56,6 +57,8 @@ interface PhoneNumber {
 const AIDecisionEngine = lazy(() => import('@/components/AIDecisionEngine'));
 const AIPipelineManager = lazy(() => import('@/components/AIPipelineManager'));
 const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDashboard'));
+const ActionQueuePanel = lazy(() => import('@/components/ActionQueuePanel'));
+const LeadJourneyDashboard = lazy(() => import('@/components/LeadJourneyDashboard'));
 
 // Loading fallback for lazy components
 const TabLoader = () => (
@@ -302,8 +305,12 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8 gap-1">
+        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-10 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="journeys" className="flex items-center gap-1">
+            <Users className="h-3 w-3" />
+            <span className="hidden sm:inline">Journeys</span>
+          </TabsTrigger>
           <TabsTrigger value="decisions">Decisions</TabsTrigger>
           <TabsTrigger value="ai-engine" className="flex items-center gap-1">
             <Lightbulb className="h-3 w-3" />
@@ -320,6 +327,10 @@ const AutonomousAgentDashboard: React.FC = () => {
           <TabsTrigger value="analytics" className="flex items-center gap-1">
             <FileBarChart className="h-3 w-3" />
             <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
+          <TabsTrigger value="action-queue" className="flex items-center gap-1">
+            <Shield className="h-3 w-3" />
+            <span className="hidden sm:inline">Actions</span>
           </TabsTrigger>
           <TabsTrigger value="goals">Goals</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -455,6 +466,12 @@ const AutonomousAgentDashboard: React.FC = () => {
           </Card>
         </TabsContent>
 
+        <TabsContent value="journeys" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <LeadJourneyDashboard />
+          </Suspense>
+        </TabsContent>
+
         <TabsContent value="decisions" className="mt-4">
           <Card>
             <CardHeader>
@@ -523,6 +540,12 @@ const AutonomousAgentDashboard: React.FC = () => {
               <ScriptAnalyticsDashboard />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="action-queue" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <ActionQueuePanel />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="goals" className="mt-4">
