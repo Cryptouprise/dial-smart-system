@@ -513,6 +513,91 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 (Part 3) - Lead Journey Intelligence System (NOT DEPLOYED)
+
+**Summary:** The missing brain that actively manages every lead through their sales journey. Replaces the fake AIPipelineManager heuristics with a real server-side engine that tracks journey stages, applies sales psychology-based follow-up rules, respects explicit callback requests, learns preferred contact times/channels, and queues intelligent follow-up actions.
+
+**What Changed:**
+
+**1. Journey Engine (manageLeadJourneys function in ai-autonomous-engine)**
+- Syncs all leads into `lead_journey_state` table on each run
+- Recomputes interaction counts from real `call_logs` and `sms_messages` data
+- Auto-computes journey stage: fresh → attempting → engaged → hot → nurturing → stalled → dormant → callback_set → booked → closed
+- Detects interest signals: call duration > 2min = buying signal, SMS replies, sentiment trends
+- Learns best hour to call from answered call patterns
+- Learns preferred channel (call vs SMS) from response data
+- CRITICAL: Explicit callback requests (`call me Tuesday at 2pm`) are NEVER overridden - they get exact-time execution + 1hr advance reminder
+- Matches leads against `followup_playbook` rules (highest-priority matching rule wins)
+- Respects calling windows (9am-9pm) for scheduled actions
+- Channel rotation tracking (alternates call/SMS when preference unknown)
+- Daily touch cap prevents over-contacting (default 200/day)
+- All actions flow through `ai_action_queue` for the configured autonomy level
+
+**2. Sales Psychology Playbook (18 default rules)**
+- Speed-to-lead: Call fresh leads within 5 minutes (Harvard study: 100x more likely to connect)
+- Multi-channel: SMS within 2 min of unanswered call (+25% connect rate)
+- Escalation: 3 call attempts with time-varied spacing, then value-driven AI SMS
+- Engaged follow-up: Recap SMS within 1 hour, follow-up call at 36 hours
+- Hot lead compression: Same-day call + morning check-in SMS
+- Nurture drip: Value SMS at 1 week, 3 weeks, monthly (not a pitch)
+- Stalled re-engagement: Curiosity-based SMS, then "breakup text" as last resort
+- Callback honoring: Reminder 1hr before, call at exact requested time
+- Booked confirmation: Immediate confirmation + day-before + morning-of reminders
+
+**3. Journey Dashboard (LeadJourneyDashboard.tsx)**
+- New "Journeys" tab in Autonomous Agent dashboard
+- Stage distribution with clickable funnel visualization
+- Click any stage to see all leads in that stage with interest levels, touch counts, preferred channels
+- Upcoming actions panel (next 24 hours of scheduled follow-ups)
+- Journey event log (audit trail of stage changes, rules fired, actions queued)
+- Journey engine toggle (enable/disable independently)
+- Auto-refreshes every 60 seconds
+
+**4. New Action Types in Engine**
+- `journey_call`: Calls lead via outbound-calling edge function
+- `journey_ai_sms`: Generates and sends AI-written SMS via ai-sms-processor
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_lead_journey_intelligence.sql` | ~255 | Tables, playbook rules, seed function |
+| `src/components/LeadJourneyDashboard.tsx` | ~400 | Journey visualization dashboard |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +~350 lines: manageLeadJourneys(), queueJourneyAction(), journey_call/journey_ai_sms action types, wired into runForUser step 9 |
+| `src/components/AutonomousAgentDashboard.tsx` | Added Journeys tab with LeadJourneyDashboard, grid 9→10 columns |
+
+**New Database Tables:**
+- `lead_journey_state` - One row per lead. Journey stage, interaction counts, timing intelligence, interest level, sentiment, next action, preferred channel/hour
+- `followup_playbook` - Configurable per-stage rules with conditions and timing
+- `journey_event_log` - Audit trail of every journey engine decision
+
+**New Database Functions:**
+- `seed_default_playbook(user_id)` - Seeds 18 sales psychology-based default rules
+
+**New autonomous_settings Columns:**
+- `manage_lead_journeys` (BOOLEAN, default false) - Master toggle
+- `journey_max_daily_touches` (INTEGER, default 200) - Daily cap
+
+**Key Design Decisions:**
+- Explicit callbacks are SACRED - the engine will NEVER override a lead who said "call me Tuesday at 2pm"
+- Interest level computed from real signals: call outcomes, duration, SMS replies, sentiment scores
+- Best contact hour learned from actual answered calls, not guessed
+- Channel preference learned from which channel gets responses
+- Stage transitions are computed fresh each run (not incrementally) so they self-correct
+- All actions go through ai_action_queue so the configured autonomy level (full_auto/approval_required/suggestions_only) is respected
+
+**Deployment Required:**
+```bash
+# Run migration first
+# Then deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+---
+
 ### February 10, 2026 - Autonomous Engine Upgrade & AI Safety Tiers (NOT DEPLOYED)
 
 **Summary:** Major upgrade to make the AI assistant truly autonomous with server-side execution, safety guardrails, persistent memory, and an action approval queue.
