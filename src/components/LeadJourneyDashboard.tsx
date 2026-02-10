@@ -35,28 +35,23 @@ import { formatDistanceToNow } from 'date-fns';
 // ---------------------------------------------------------------------------
 
 interface StageCount {
-  journey_stage: string;
+  current_stage: string;
   count: number;
 }
 
 interface JourneyLead {
   id: string;
   lead_id: string;
-  journey_stage: string;
+  current_stage: string;
   total_touches: number;
-  call_attempts: number;
-  calls_answered: number;
-  sms_received: number;
-  interest_level: number;
-  sentiment_trend: string;
-  next_action_type: string | null;
-  next_action_at: string | null;
-  next_action_reason: string | null;
-  last_touch_at: string | null;
-  explicit_callback_at: string | null;
-  best_hour_to_call: number | null;
-  preferred_channel: string;
-  days_in_current_stage: number;
+  total_calls: number;
+  total_sms: number;
+  engagement_score: number | null;
+  sentiment_score: number | null;
+  journey_health: string;
+  next_recommended_action: string | null;
+  next_action_scheduled_at: string | null;
+  stale_since: string | null;
   updated_at: string;
   leads: {
     first_name: string | null;
@@ -70,10 +65,10 @@ interface JourneyEvent {
   id: string;
   lead_id: string;
   event_type: string;
+  event_source: string;
   from_stage: string | null;
   to_stage: string | null;
-  rule_name: string | null;
-  details: any;
+  event_data: any;
   created_at: string;
 }
 
@@ -190,23 +185,23 @@ const LeadJourneyDashboard: React.FC = () => {
         // Stage distribution
         (supabase as any)
           .from('lead_journey_state')
-          .select('journey_stage')
-          .then(({ data }) => {
+          .select('current_stage')
+          .then(({ data }: any) => {
             if (!data) return [];
             const counts: Record<string, number> = {};
             data.forEach((row: any) => {
-              counts[row.journey_stage] = (counts[row.journey_stage] || 0) + 1;
+              counts[row.current_stage] = (counts[row.current_stage] || 0) + 1;
             });
-            return Object.entries(counts).map(([journey_stage, count]) => ({ journey_stage, count }));
+            return Object.entries(counts).map(([current_stage, count]) => ({ current_stage, count }));
           }),
 
         // Upcoming actions (next 24 hours)
         (supabase as any)
           .from('lead_journey_state')
           .select('*, leads!inner(first_name, last_name, phone_number, status)')
-          .not('next_action_at', 'is', null)
-          .lte('next_action_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
-          .order('next_action_at', { ascending: true })
+          .not('next_action_scheduled_at', 'is', null)
+          .lte('next_action_scheduled_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
+          .order('next_action_scheduled_at', { ascending: true })
           .limit(20),
 
         // Recent events
@@ -251,8 +246,8 @@ const LeadJourneyDashboard: React.FC = () => {
       const { data } = await (supabase as any)
         .from('lead_journey_state')
         .select('*, leads!inner(first_name, last_name, phone_number, status)')
-        .eq('journey_stage', selectedStage)
-        .order('interest_level', { ascending: false })
+        .eq('current_stage', selectedStage)
+        .order('engagement_score', { ascending: false, nullsFirst: false })
         .limit(50);
       setStageLeads((data as JourneyLead[]) || []);
     };
@@ -280,18 +275,18 @@ const LeadJourneyDashboard: React.FC = () => {
 
   const totalLeads = stageCounts.reduce((s, c) => s + c.count, 0);
   const activeLeads = stageCounts
-    .filter(c => ACTIVE_STAGES.includes(c.journey_stage))
+    .filter(c => ACTIVE_STAGES.includes(c.current_stage))
     .reduce((s, c) => s + c.count, 0);
-  const hotLeads = stageCounts.find(c => c.journey_stage === 'hot')?.count || 0;
+  const hotLeads = stageCounts.find(c => c.current_stage === 'hot')?.count || 0;
   const pendingActions = upcomingActions.filter(a =>
-    a.next_action_at && new Date(a.next_action_at) <= new Date(Date.now() + 60 * 60 * 1000)
+    a.next_action_scheduled_at && new Date(a.next_action_scheduled_at) <= new Date(Date.now() + 60 * 60 * 1000)
   ).length;
 
-  const getSentimentIcon = (trend: string) => {
-    switch (trend) {
-      case 'warming': return <TrendingUp className="h-3 w-3 text-green-500" />;
-      case 'cooling': return <TrendingDown className="h-3 w-3 text-red-500" />;
-      case 'stable': return <Minus className="h-3 w-3 text-gray-400" />;
+  const getSentimentIcon = (health: string) => {
+    switch (health) {
+      case 'positive': return <TrendingUp className="h-3 w-3 text-green-500" />;
+      case 'negative': return <TrendingDown className="h-3 w-3 text-red-500" />;
+      case 'neutral': return <Minus className="h-3 w-3 text-gray-400" />;
       default: return null;
     }
   };
@@ -383,7 +378,7 @@ const LeadJourneyDashboard: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
             {ACTIVE_STAGES.map(stage => {
               const cfg = STAGE_CONFIG[stage];
-              const count = stageCounts.find(c => c.journey_stage === stage)?.count || 0;
+              const count = stageCounts.find(c => c.current_stage === stage)?.count || 0;
               const pct = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
               const isSelected = selectedStage === stage;
               return (
@@ -411,7 +406,7 @@ const LeadJourneyDashboard: React.FC = () => {
           <div className="flex gap-4 mt-3 pt-3 border-t">
             {['closed_won', 'closed_lost', 'dormant'].map(stage => {
               const cfg = STAGE_CONFIG[stage];
-              const count = stageCounts.find(c => c.journey_stage === stage)?.count || 0;
+              const count = stageCounts.find(c => c.current_stage === stage)?.count || 0;
               return (
                 <div key={stage} className="flex items-center gap-1.5 text-xs">
                   <span className={cfg.color}>{cfg.icon}</span>
@@ -451,32 +446,26 @@ const LeadJourneyDashboard: React.FC = () => {
                           {lead.leads?.first_name || 'Unknown'} {lead.leads?.last_name || ''}
                         </span>
                         <span className="text-xs text-muted-foreground">{lead.leads?.phone_number}</span>
-                        {getSentimentIcon(lead.sentiment_trend)}
+                        {getSentimentIcon(lead.journey_health)}
                       </div>
                       <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                        <span>Interest: {lead.interest_level}/10</span>
+                        <span>Score: {lead.engagement_score ?? 'N/A'}</span>
                         <span>Touches: {lead.total_touches}</span>
-                        <span>Calls: {lead.calls_answered}/{lead.call_attempts}</span>
-                        {lead.best_hour_to_call != null && <span>Best hr: {lead.best_hour_to_call}:00</span>}
-                        {lead.preferred_channel !== 'unknown' && <span>Prefers: {lead.preferred_channel}</span>}
+                        <span>Calls: {lead.total_calls}</span>
+                        <span>SMS: {lead.total_sms}</span>
                       </div>
-                      {lead.next_action_reason && (
+                      {lead.next_recommended_action && (
                         <p className="text-xs text-muted-foreground mt-1 truncate">
-                          Next: {lead.next_action_reason}
+                          Next: {lead.next_recommended_action}
                         </p>
                       )}
                     </div>
                     <div className="text-right shrink-0 ml-2">
-                      {lead.next_action_at && (
+                      {lead.next_action_scheduled_at && (
                         <div className="flex items-center gap-1 text-xs">
-                          {getActionIcon(lead.next_action_type)}
-                          <span>{formatDistanceToNow(new Date(lead.next_action_at), { addSuffix: true })}</span>
+                          {getActionIcon(lead.next_recommended_action)}
+                          <span>{formatDistanceToNow(new Date(lead.next_action_scheduled_at), { addSuffix: true })}</span>
                         </div>
-                      )}
-                      {lead.explicit_callback_at && (
-                        <Badge variant="outline" className="text-[10px] mt-1 bg-cyan-500/10 text-cyan-600">
-                          Callback: {new Date(lead.explicit_callback_at).toLocaleDateString()}
-                        </Badge>
                       )}
                     </div>
                   </div>
@@ -500,29 +489,29 @@ const LeadJourneyDashboard: React.FC = () => {
             <ScrollArea className="h-[300px]">
               <div className="space-y-2">
                 {upcomingActions.map(action => {
-                  const stageCfg = STAGE_CONFIG[action.journey_stage];
-                  const isPast = action.next_action_at && new Date(action.next_action_at) < new Date();
+                  const stageCfg = STAGE_CONFIG[action.current_stage];
+                  const isPast = action.next_action_scheduled_at && new Date(action.next_action_scheduled_at) < new Date();
                   return (
                     <div key={action.id} className={`p-2 rounded border ${isPast ? 'border-yellow-500/50 bg-yellow-500/5' : ''}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          {getActionIcon(action.next_action_type)}
+                          {getActionIcon(action.next_recommended_action)}
                           <span className="font-medium text-sm">
                             {action.leads?.first_name || 'Unknown'}
                           </span>
                           <Badge variant="outline" className={`text-[10px] ${stageCfg?.bgColor || ''}`}>
-                            {stageCfg?.label || action.journey_stage}
+                            {stageCfg?.label || action.current_stage}
                           </Badge>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {action.next_action_at
-                            ? formatDistanceToNow(new Date(action.next_action_at), { addSuffix: true })
+                          {action.next_action_scheduled_at
+                            ? formatDistanceToNow(new Date(action.next_action_scheduled_at), { addSuffix: true })
                             : 'Pending'}
                         </span>
                       </div>
-                      {action.next_action_reason && (
+                      {action.next_recommended_action && (
                         <p className="text-xs text-muted-foreground mt-1 truncate">
-                          {action.next_action_reason}
+                          {action.next_recommended_action}
                         </p>
                       )}
                     </div>
@@ -562,12 +551,12 @@ const LeadJourneyDashboard: React.FC = () => {
                       )}
                       {event.event_type === 'action_queued' && (
                         <Badge variant="outline" className="bg-blue-500/10 text-blue-600">
-                          {event.rule_name?.replace(/_/g, ' ') || 'Action queued'}
+                          {(event.event_data as any)?.action || 'Action queued'}
                         </Badge>
                       )}
                       {event.event_type === 'rule_fired' && (
                         <Badge variant="outline" className="bg-purple-500/10 text-purple-600">
-                          {event.rule_name?.replace(/_/g, ' ') || 'Rule fired'}
+                          {(event.event_data as any)?.rule || 'Rule fired'}
                         </Badge>
                       )}
                       {event.event_type === 'signal_detected' && (
@@ -576,8 +565,8 @@ const LeadJourneyDashboard: React.FC = () => {
                         </Badge>
                       )}
                     </div>
-                    {event.details?.reason && (
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{event.details.reason}</p>
+                    {(event.event_data as any)?.reason && (
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{(event.event_data as any).reason}</p>
                     )}
                     <p className="text-[10px] text-muted-foreground mt-1">
                       {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}

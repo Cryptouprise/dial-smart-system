@@ -77,6 +77,56 @@ export type Database = {
           },
         ]
       }
+      adaptive_pacing: {
+        Row: {
+          actual_answer_rate: number | null
+          adjustment_reason: string | null
+          campaign_id: string | null
+          created_at: string
+          current_cpm: number | null
+          id: string
+          last_adjusted_at: string | null
+          target_answer_rate: number | null
+          updated_at: string
+          user_id: string
+          window_size_minutes: number | null
+        }
+        Insert: {
+          actual_answer_rate?: number | null
+          adjustment_reason?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          current_cpm?: number | null
+          id?: string
+          last_adjusted_at?: string | null
+          target_answer_rate?: number | null
+          updated_at?: string
+          user_id: string
+          window_size_minutes?: number | null
+        }
+        Update: {
+          actual_answer_rate?: number | null
+          adjustment_reason?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          current_cpm?: number | null
+          id?: string
+          last_adjusted_at?: string | null
+          target_answer_rate?: number | null
+          updated_at?: string
+          user_id?: string
+          window_size_minutes?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "adaptive_pacing_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       advanced_dialer_settings: {
         Row: {
           amd_sensitivity: string | null
@@ -270,6 +320,126 @@ export type Database = {
           },
         ]
       }
+      agent_script_variants: {
+        Row: {
+          agent_id: string
+          alpha: number | null
+          avg_duration_seconds: number | null
+          avg_sentiment_score: number | null
+          beta: number | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          is_control: boolean | null
+          prompt_patch: Json
+          total_calls: number | null
+          total_conversions: number | null
+          updated_at: string
+          user_id: string
+          variant_label: string | null
+          variant_name: string
+          weight: number | null
+        }
+        Insert: {
+          agent_id: string
+          alpha?: number | null
+          avg_duration_seconds?: number | null
+          avg_sentiment_score?: number | null
+          beta?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          is_control?: boolean | null
+          prompt_patch?: Json
+          total_calls?: number | null
+          total_conversions?: number | null
+          updated_at?: string
+          user_id: string
+          variant_label?: string | null
+          variant_name: string
+          weight?: number | null
+        }
+        Update: {
+          agent_id?: string
+          alpha?: number | null
+          avg_duration_seconds?: number | null
+          avg_sentiment_score?: number | null
+          beta?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          is_control?: boolean | null
+          prompt_patch?: Json
+          total_calls?: number | null
+          total_conversions?: number | null
+          updated_at?: string
+          user_id?: string
+          variant_label?: string | null
+          variant_name?: string
+          weight?: number | null
+        }
+        Relationships: []
+      }
+      ai_action_queue: {
+        Row: {
+          action_payload: Json | null
+          action_type: string
+          approved_at: string | null
+          created_at: string
+          description: string | null
+          error_message: string | null
+          executed_at: string | null
+          expires_at: string | null
+          id: string
+          priority: string
+          result: Json | null
+          status: string
+          target_entity_id: string | null
+          target_entity_type: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action_payload?: Json | null
+          action_type: string
+          approved_at?: string | null
+          created_at?: string
+          description?: string | null
+          error_message?: string | null
+          executed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          priority?: string
+          result?: Json | null
+          status?: string
+          target_entity_id?: string | null
+          target_entity_type?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action_payload?: Json | null
+          action_type?: string
+          approved_at?: string | null
+          created_at?: string
+          description?: string | null
+          error_message?: string | null
+          executed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          priority?: string
+          result?: Json | null
+          status?: string
+          target_entity_id?: string | null
+          target_entity_type?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_chatbot_settings: {
         Row: {
           ai_actions_enabled: boolean | null
@@ -418,6 +588,45 @@ export type Database = {
           pattern_type?: string
           pattern_value?: Json
           success_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ai_operational_memory: {
+        Row: {
+          access_count: number | null
+          confidence: number | null
+          created_at: string
+          id: string
+          last_accessed_at: string | null
+          memory_key: string
+          memory_type: string
+          memory_value: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_count?: number | null
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          last_accessed_at?: string | null
+          memory_key: string
+          memory_type: string
+          memory_value?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_count?: number | null
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          last_accessed_at?: string | null
+          memory_key?: string
+          memory_type?: string
+          memory_value?: Json
           updated_at?: string
           user_id?: string
         }
@@ -649,6 +858,7 @@ export type Database = {
       }
       autonomous_settings: {
         Row: {
+          auto_adjust_pacing: boolean | null
           auto_approve_script_changes: boolean | null
           auto_execute_recommendations: boolean | null
           auto_optimize_campaigns: boolean | null
@@ -660,9 +870,11 @@ export type Database = {
           daily_goal_calls: number | null
           daily_goal_conversations: number | null
           decision_tracking_enabled: boolean | null
+          enable_script_ab_testing: boolean | null
           enabled: boolean | null
           id: string
           learning_enabled: boolean | null
+          manage_lead_journeys: boolean | null
           max_auto_script_changes_per_day: number | null
           max_daily_autonomous_actions: number | null
           require_approval_for_high_priority: boolean | null
@@ -672,6 +884,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
           auto_optimize_campaigns?: boolean | null
@@ -683,9 +896,11 @@ export type Database = {
           daily_goal_calls?: number | null
           daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
+          enable_script_ab_testing?: boolean | null
           enabled?: boolean | null
           id?: string
           learning_enabled?: boolean | null
+          manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
@@ -695,6 +910,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
           auto_optimize_campaigns?: boolean | null
@@ -706,9 +922,11 @@ export type Database = {
           daily_goal_calls?: number | null
           daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
+          enable_script_ab_testing?: boolean | null
           enabled?: boolean | null
           id?: string
           learning_enabled?: boolean | null
+          manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
           require_approval_for_high_priority?: boolean | null
@@ -1313,6 +1531,64 @@ export type Database = {
             columns: ["opener_id"]
             isOneToOne: false
             referencedRelation: "top_openers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call_variant_assignments: {
+        Row: {
+          call_id: string | null
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          lead_id: string | null
+          outcome: string | null
+          sentiment_score: number | null
+          user_id: string
+          variant_id: string
+        }
+        Insert: {
+          call_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          sentiment_score?: number | null
+          user_id: string
+          variant_id: string
+        }
+        Update: {
+          call_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          sentiment_score?: number | null
+          user_id?: string
+          variant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_variant_assignments_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_variant_assignments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_variant_assignments_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "agent_script_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -2234,6 +2510,45 @@ export type Database = {
           },
         ]
       }
+      followup_playbook: {
+        Row: {
+          actions: Json
+          conditions: Json | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          name: string
+          priority: number | null
+          trigger_stage: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actions?: Json
+          conditions?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          priority?: number | null
+          trigger_stage: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actions?: Json
+          conditions?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          priority?: number | null
+          trigger_stage?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ghl_pending_updates: {
         Row: {
           broadcast_id: string | null
@@ -2431,6 +2746,134 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      journey_event_log: {
+        Row: {
+          created_at: string
+          event_data: Json | null
+          event_source: string
+          event_type: string
+          from_stage: string | null
+          id: string
+          journey_state_id: string | null
+          lead_id: string
+          to_stage: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_data?: Json | null
+          event_source?: string
+          event_type: string
+          from_stage?: string | null
+          id?: string
+          journey_state_id?: string | null
+          lead_id: string
+          to_stage?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_data?: Json | null
+          event_source?: string
+          event_type?: string
+          from_stage?: string | null
+          id?: string
+          journey_state_id?: string | null
+          lead_id?: string
+          to_stage?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journey_event_log_journey_state_id_fkey"
+            columns: ["journey_state_id"]
+            isOneToOne: false
+            referencedRelation: "lead_journey_state"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "journey_event_log_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_journey_state: {
+        Row: {
+          created_at: string
+          current_stage: string
+          engagement_score: number | null
+          id: string
+          journey_health: string | null
+          lead_id: string
+          metadata: Json | null
+          next_action_scheduled_at: string | null
+          next_recommended_action: string | null
+          previous_stage: string | null
+          sentiment_score: number | null
+          stage_entered_at: string
+          stale_since: string | null
+          total_calls: number | null
+          total_emails: number | null
+          total_sms: number | null
+          total_touches: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_stage?: string
+          engagement_score?: number | null
+          id?: string
+          journey_health?: string | null
+          lead_id: string
+          metadata?: Json | null
+          next_action_scheduled_at?: string | null
+          next_recommended_action?: string | null
+          previous_stage?: string | null
+          sentiment_score?: number | null
+          stage_entered_at?: string
+          stale_since?: string | null
+          total_calls?: number | null
+          total_emails?: number | null
+          total_sms?: number | null
+          total_touches?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_stage?: string
+          engagement_score?: number | null
+          id?: string
+          journey_health?: string | null
+          lead_id?: string
+          metadata?: Json | null
+          next_action_scheduled_at?: string | null
+          next_recommended_action?: string | null
+          previous_stage?: string | null
+          sentiment_score?: number | null
+          stage_entered_at?: string
+          stale_since?: string | null
+          total_calls?: number | null
+          total_emails?: number | null
+          total_sms?: number | null
+          total_touches?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_journey_state_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lead_list_memberships: {
         Row: {
@@ -2711,6 +3154,47 @@ export type Database = {
           },
         ]
       }
+      lead_score_outcomes: {
+        Row: {
+          converted: boolean | null
+          created_at: string
+          factors_at_contact: Json | null
+          id: string
+          lead_id: string | null
+          outcome: string | null
+          score_at_contact: number | null
+          user_id: string
+        }
+        Insert: {
+          converted?: boolean | null
+          created_at?: string
+          factors_at_contact?: Json | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          score_at_contact?: number | null
+          user_id: string
+        }
+        Update: {
+          converted?: boolean | null
+          created_at?: string
+          factors_at_contact?: Json | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          score_at_contact?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_score_outcomes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_scoring_settings: {
         Row: {
           callback_request_bonus: number
@@ -2792,6 +3276,39 @@ export type Database = {
           weight_recency?: number
           weight_response_rate?: number
           weight_sentiment?: number
+        }
+        Relationships: []
+      }
+      lead_scoring_weights: {
+        Row: {
+          calibrated_at: string | null
+          created_at: string
+          factor_name: string
+          id: string
+          sample_size: number | null
+          updated_at: string
+          user_id: string
+          weight: number | null
+        }
+        Insert: {
+          calibrated_at?: string | null
+          created_at?: string
+          factor_name: string
+          id?: string
+          sample_size?: number | null
+          updated_at?: string
+          user_id: string
+          weight?: number | null
+        }
+        Update: {
+          calibrated_at?: string | null
+          created_at?: string
+          factor_name?: string
+          id?: string
+          sample_size?: number | null
+          updated_at?: string
+          user_id?: string
+          weight?: number | null
         }
         Relationships: []
       }
@@ -3229,6 +3746,48 @@ export type Database = {
         }
         Relationships: []
       }
+      optimal_calling_windows: {
+        Row: {
+          answer_rate: number | null
+          answered_calls: number | null
+          conversion_rate: number | null
+          converted_calls: number | null
+          day_of_week: number
+          hour_of_day: number
+          id: string
+          score: number | null
+          total_calls: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          answer_rate?: number | null
+          answered_calls?: number | null
+          conversion_rate?: number | null
+          converted_calls?: number | null
+          day_of_week: number
+          hour_of_day: number
+          id?: string
+          score?: number | null
+          total_calls?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          answer_rate?: number | null
+          answered_calls?: number | null
+          conversion_rate?: number | null
+          converted_calls?: number | null
+          day_of_week?: number
+          hour_of_day?: number
+          id?: string
+          score?: number | null
+          total_calls?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       organization_credits: {
         Row: {
           auto_recharge_amount_cents: number | null
@@ -3379,6 +3938,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      pacing_history: {
+        Row: {
+          answer_rate: number | null
+          calls_in_window: number | null
+          created_at: string
+          id: string
+          new_cpm: number | null
+          old_cpm: number | null
+          pacing_id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          answer_rate?: number | null
+          calls_in_window?: number | null
+          created_at?: string
+          id?: string
+          new_cpm?: number | null
+          old_cpm?: number | null
+          pacing_id: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          answer_rate?: number | null
+          calls_in_window?: number | null
+          created_at?: string
+          id?: string
+          new_cpm?: number | null
+          old_cpm?: number | null
+          pacing_id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pacing_history_pacing_id_fkey"
+            columns: ["pacing_id"]
+            isOneToOne: false
+            referencedRelation: "adaptive_pacing"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phone_number_use_types: {
         Row: {
