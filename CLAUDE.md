@@ -513,6 +513,97 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 - Autonomous Engine Upgrade & AI Safety Tiers (NOT DEPLOYED)
+
+**Summary:** Major upgrade to make the AI assistant truly autonomous with server-side execution, safety guardrails, persistent memory, and an action approval queue.
+
+**What Changed:**
+
+**1. Server-Side Autonomous Engine (NEW)**
+- New `ai-autonomous-engine` edge function replaces all browser-side autonomous hooks
+- Runs every 5 min via pg_cron (not browser setInterval)
+- Goal assessment: checks daily call/appointment/conversation targets vs progress
+- Lead scoring: server-side rescoring with engagement/recency/answer rate/status weights
+- Pacing analysis: auto-adjusts calls_per_minute based on error rate and answer rate
+- Decision making: queues actions (lead calling, follow-up SMS, number quarantine, pacing changes)
+- Respects autonomy_level: full_auto (auto-approve), approval_required (queue for user), suggestions_only (log only)
+- Daily action cap enforced server-side (default 50)
+- Saves operational memories after significant events
+
+**2. Safety Tiers (CRITICAL FIX)**
+- **ai-assistant**: `riskyTools` expanded from 2 to 6: `buy_phone_numbers`, `send_sms_blast`, `launch_now`, `bulk_update_leads`, `delete_workflow`, `classify_phone_number`
+- **ai-brain**: Added global `criticalTools` confirmation gate (didn't have one before!): `launch_now`, `purchase_retell_numbers`, `send_sms_blast`, `delete_lead`, `delete_workflow`, `bulk_update_leads`, `classify_phone_number`, `delete_phone_number`
+- Both functions now show exactly what action + params before confirming
+- System prompts updated to list all high-impact actions requiring confirmation
+
+**3. Operational Memory System (NEW)**
+- `ai_operational_memory` table: persistent structured memory (campaigns, lessons, errors, patterns)
+- Both AI functions now inject up to 10-15 recent memories into system prompt
+- Auto-saves after significant tool executions (campaigns, launches, deletes, errors)
+- Memory decays by importance and access frequency
+- Enables real context between conversations (not goldfish memory)
+
+**4. Action Queue & Approval UI (NEW)**
+- `ai_action_queue` table with status flow: pending → approved → executing → completed/failed
+- `ActionQueuePanel` component added to Autonomous Agent dashboard → Actions tab
+- Approve/reject individual actions or batch approve all
+- Shows reasoning, parameters, priority, source, timestamps
+- Actions auto-expire after 24h if not approved
+- Polls for updates every 30 seconds
+
+**5. Calling Time Optimization (DB Foundation)**
+- `optimal_calling_windows` table with per-user, per-day, per-hour aggregation
+- `recalculate_calling_windows()` PostgreSQL function analyzes last 30 days of call data
+- Scoring: answer_rate + 3x appointment_rate per time slot
+- `lead_score_outcomes` table tracks score-at-call-time for feedback loop
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_autonomous_engine_upgrade.sql` | ~250 | New tables, functions, indexes, RLS, pg_cron |
+| `supabase/functions/ai-autonomous-engine/index.ts` | ~530 | Server-side autonomous brain |
+| `src/components/ActionQueuePanel.tsx` | ~240 | Action queue approval UI |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-assistant/index.ts` | Safety tiers (2→6 risky tools), operational memory injection, auto-save after tool execution |
+| `supabase/functions/ai-brain/index.ts` | Safety tiers (0→8 critical tools), operational memory injection, action queue awareness, auto-save |
+| `src/components/AutonomousAgentDashboard.tsx` | Added Actions tab with ActionQueuePanel |
+
+**New Database Tables:**
+- `ai_action_queue` - Server-side action queue with approval flow
+- `ai_operational_memory` - Persistent structured AI memory
+- `optimal_calling_windows` - Learned best calling times
+- `lead_score_outcomes` - Score-at-call-time tracking for feedback
+
+**New Database Functions:**
+- `expire_old_actions()` - Auto-expire stale pending actions
+- `save_operational_memory()` - Upsert memory entries
+- `recalculate_calling_windows()` - Aggregate call outcomes into time slots
+
+**New autonomous_settings Columns:**
+- `last_engine_run` - When engine last ran
+- `engine_interval_minutes` - Configurable interval (default 5)
+- `auto_optimize_calling_times` - Enable time slot learning
+- `auto_adjust_pacing` - Enable auto pacing adjustment
+
+**Deployment Required:**
+```bash
+# Run migration first
+# Then deploy edge functions:
+supabase functions deploy ai-autonomous-engine
+supabase functions deploy ai-assistant
+supabase functions deploy ai-brain
+```
+
+**Gotchas:**
+- pg_cron job for ai-autonomous-engine uses `current_setting('app.supabase_url')` -- may need manual setup if app settings not configured
+- Operational memory queries add ~50-100ms to each AI call (non-blocking)
+- `supabase.raw('access_count + 1')` in ai-brain memory touch may not work in all Supabase client versions -- silently fails (non-critical)
+
+---
+
 ### February 3, 2026 - Agent Voice Preview Plays In-App (NOT PUBLISHED)
 
 **Summary:** Fixed the Agent Settings → Voice tab so clicking **Play Voice Sample** actually plays audio in the browser (instead of showing “check Retell dashboard”).
