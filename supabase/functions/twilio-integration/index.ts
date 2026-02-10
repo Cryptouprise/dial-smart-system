@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface TwilioImportRequest {
-  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook' | 'create_sip_trunk' | 'list_sip_trunks' | 'delete_sip_trunk' | 'update_sip_trunk' | 'list_trunk_phone_numbers' | 'add_phone_to_trunk' | 'remove_phone_from_trunk';
+  action: 'list_numbers' | 'import_number' | 'sync_all' | 'check_a2p_status' | 'add_number_to_campaign' | 'configure_sms_webhook' | 'configure_selected_webhooks' | 'clear_selected_webhooks' | 'set_custom_webhook' | 'configure_voice_webhook' | 'create_sip_trunk' | 'list_sip_trunks' | 'delete_sip_trunk' | 'update_sip_trunk' | 'list_trunk_phone_numbers' | 'add_phone_to_trunk' | 'remove_phone_from_trunk' | 'release_phone_number';
   phoneNumberSid?: string;
   phoneNumber?: string;
   phoneNumbers?: string[]; // For configuring selected numbers
@@ -92,11 +92,11 @@ serve(async (req) => {
 
       // Fetch all pages
       while (nextPageUri) {
-        const fullUrl = nextPageUri.startsWith('http')
+        const fullUrl: string = nextPageUri.startsWith('http')
           ? nextPageUri
           : `https://api.twilio.com${nextPageUri}`;
 
-        const response = await fetch(fullUrl, {
+        const response: Response = await fetch(fullUrl, {
           headers: {
             'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
@@ -108,7 +108,7 @@ serve(async (req) => {
           throw new Error(`Failed to fetch Twilio numbers: ${response.status} - ${errorText}`);
         }
 
-        const data = await response.json();
+        const data: any = await response.json();
         const pageNumbers = data.incoming_phone_numbers || [];
         allNumbers.push(...pageNumbers);
 
@@ -397,18 +397,18 @@ serve(async (req) => {
       let nextPageUri: string | null = `/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PageSize=1000`;
 
       while (nextPageUri) {
-        const fullUrl = nextPageUri.startsWith('http')
+        const fullUrl: string = nextPageUri.startsWith('http')
           ? nextPageUri
           : `https://api.twilio.com${nextPageUri}`;
 
-        const numbersResponse = await fetch(fullUrl, {
+        const numbersResponse: Response = await fetch(fullUrl, {
           headers: {
             'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken)
           }
         });
 
         if (numbersResponse.ok) {
-          const numbersData = await numbersResponse.json();
+          const numbersData: any = await numbersResponse.json();
           const pageNumbers = numbersData.incoming_phone_numbers || [];
           allNumbers.push(...pageNumbers);
           console.log(`📞 A2P check: Fetched ${pageNumbers.length} numbers (total: ${allNumbers.length})`);

@@ -53,7 +53,7 @@ const ActionQueuePanel: React.FC = () => {
 
   const loadActions = useCallback(async () => {
     try {
-      let query = supabase
+      let query = (supabase as any)
         .from('ai_action_queue')
         .select('*')
         .order('created_at', { ascending: false })
@@ -81,7 +81,7 @@ const ActionQueuePanel: React.FC = () => {
   }, [loadActions]);
 
   const handleApprove = async (actionId: string) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('ai_action_queue')
       .update({ status: 'approved', approved_at: new Date().toISOString() })
       .eq('id', actionId);
@@ -95,7 +95,7 @@ const ActionQueuePanel: React.FC = () => {
   };
 
   const handleReject = async (actionId: string) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('ai_action_queue')
       .update({ status: 'rejected' })
       .eq('id', actionId);
@@ -112,7 +112,7 @@ const ActionQueuePanel: React.FC = () => {
     const pendingIds = actions.filter(a => a.status === 'pending').map(a => a.id);
     if (pendingIds.length === 0) return;
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('ai_action_queue')
       .update({ status: 'approved', approved_at: new Date().toISOString() })
       .in('id', pendingIds);

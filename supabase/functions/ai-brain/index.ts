@@ -4333,7 +4333,7 @@ serve(async (req) => {
         if (memoryIds.length > 0) {
           await supabase
             .from('ai_operational_memory')
-            .update({ last_accessed: new Date().toISOString(), access_count: supabase.raw('access_count + 1') })
+            .update({ last_accessed: new Date().toISOString() })
             .in('id', memoryIds);
         }
 

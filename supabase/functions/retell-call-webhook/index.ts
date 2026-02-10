@@ -44,6 +44,7 @@ interface RetellWebhookPayload {
       // Optional multi-tenant support / credit system linkage
       // (May not be present on all webhook events.)
       organization_id?: string;
+      variant_id?: string;
     };
     from_number?: string;
     to_number?: string;
