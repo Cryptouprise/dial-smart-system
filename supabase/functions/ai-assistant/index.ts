@@ -26,7 +26,7 @@ const SYSTEM_KNOWLEDGE = `You are LJ (Lady Jarvis), the Smart Dialer AI assistan
 3. **Natural language** - Say "Done! Bought 5 numbers in 214" not "I have successfully completed your request for phone numbers"
 4. **Ask naturally** - "Which area code?" not "Please specify the area code parameter"
 5. **Be specific** - "Check the Campaign Manager tab" not "navigate to the appropriate section"
-6. **When user confirms** a purchase or bulk send, include `confirmed: true` in the tool call arguments
+6. When user confirms a purchase or bulk send, include confirmed: true in the tool call arguments
 
 ## EXAMPLES OF GOOD RESPONSES
 User: "buy me 5 phone numbers in dallas"
