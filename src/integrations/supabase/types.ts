@@ -861,6 +861,7 @@ export type Database = {
           auto_adjust_pacing: boolean | null
           auto_approve_script_changes: boolean | null
           auto_execute_recommendations: boolean | null
+          auto_optimize_calling_times: boolean | null
           auto_optimize_campaigns: boolean | null
           auto_prioritize_leads: boolean | null
           auto_script_optimization: boolean | null
@@ -872,7 +873,10 @@ export type Database = {
           decision_tracking_enabled: boolean | null
           enable_script_ab_testing: boolean | null
           enabled: boolean | null
+          engine_interval_minutes: number | null
           id: string
+          journey_max_daily_touches: number | null
+          last_engine_run: string | null
           learning_enabled: boolean | null
           manage_lead_journeys: boolean | null
           max_auto_script_changes_per_day: number | null
@@ -887,6 +891,7 @@ export type Database = {
           auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
+          auto_optimize_calling_times?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
           auto_script_optimization?: boolean | null
@@ -898,7 +903,10 @@ export type Database = {
           decision_tracking_enabled?: boolean | null
           enable_script_ab_testing?: boolean | null
           enabled?: boolean | null
+          engine_interval_minutes?: number | null
           id?: string
+          journey_max_daily_touches?: number | null
+          last_engine_run?: string | null
           learning_enabled?: boolean | null
           manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
@@ -913,6 +921,7 @@ export type Database = {
           auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
           auto_execute_recommendations?: boolean | null
+          auto_optimize_calling_times?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
           auto_script_optimization?: boolean | null
@@ -924,7 +933,10 @@ export type Database = {
           decision_tracking_enabled?: boolean | null
           enable_script_ab_testing?: boolean | null
           enabled?: boolean | null
+          engine_interval_minutes?: number | null
           id?: string
+          journey_max_daily_touches?: number | null
+          last_engine_run?: string | null
           learning_enabled?: boolean | null
           manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
@@ -5961,6 +5973,10 @@ export type Database = {
           score: number
         }[]
       }
+      calibrate_lead_scoring_weights: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       check_and_reset_daily_calls: { Args: never; Returns: undefined }
       check_credit_balance: {
         Args: { p_minutes_needed?: number; p_organization_id: string }
@@ -5976,6 +5992,7 @@ export type Database = {
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
         | { Args: { phone_last_10: string }; Returns: undefined }
+      expire_old_actions: { Args: never; Returns: number }
       extract_opener_from_transcript: {
         Args: { p_transcript: string }
         Returns: string
@@ -6018,6 +6035,14 @@ export type Database = {
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
       normalize_opener_text: { Args: { p_opener: string }; Returns: string }
+      rebalance_variant_weights: {
+        Args: { p_agent_id: string; p_user_id: string }
+        Returns: Json
+      }
+      recalculate_calling_windows: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       reserve_credits: {
         Args: {
           p_amount_cents: number
@@ -6037,6 +6062,26 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: undefined
       }
+      save_operational_memory: {
+        Args: {
+          p_content: Json
+          p_importance?: number
+          p_memory_type: string
+          p_subject: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      seed_default_playbook: { Args: { p_user_id: string }; Returns: number }
+      select_script_variant: {
+        Args: { p_agent_id: string; p_user_id: string }
+        Returns: {
+          prompt_patch: Json
+          variant_id: string
+          variant_label: string
+          variant_name: string
+        }[]
+      }
       update_opener_analytics: {
         Args: {
           p_agent_id: string
@@ -6050,6 +6095,15 @@ export type Database = {
           p_was_engaged: boolean
         }
         Returns: string
+      }
+      update_variant_stats: {
+        Args: {
+          p_converted?: boolean
+          p_duration: number
+          p_outcome: string
+          p_variant_id: string
+        }
+        Returns: undefined
       }
       update_voicemail_analytics: {
         Args: {
