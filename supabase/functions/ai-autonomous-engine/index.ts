@@ -648,6 +648,521 @@ async function saveRunMemory(
 }
 
 // ---------------------------------------------------------------------------
+// Disposition Value Loading
+// ---------------------------------------------------------------------------
+
+async function loadDispositionValues(supabase: any, userId: string): Promise<Map<string, any>> {
+  // Seed defaults if none exist
+  try { await supabase.rpc('seed_disposition_values', { p_user_id: userId }); } catch { /* already seeded */ }
+
+  const { data } = await supabase
+    .from('disposition_values')
+    .select('*')
+    .eq('user_id', userId);
+
+  const map = new Map();
+  for (const dv of (data || [])) {
+    map.set(dv.disposition_name, dv);
+    // Also map common aliases
+    map.set(dv.disposition_name.toLowerCase(), dv);
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Funnel Intelligence — Portfolio-level thinking
+// "Those 42 warm leads are worth more than the next 2,000 cold dials"
+// ---------------------------------------------------------------------------
+
+async function analyzeFunnel(
+  supabase: any,
+  userId: string,
+  settings: AutonomousSettings
+): Promise<{ decisions: string[]; snapshot_saved: boolean }> {
+  const decisions: string[] = [];
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get stage distribution
+  const { data: stages } = await supabase
+    .from('lead_journey_state')
+    .select('journey_stage')
+    .eq('user_id', userId);
+
+  if (!stages || stages.length === 0) return { decisions, snapshot_saved: false };
+
+  const counts: Record<string, number> = {};
+  stages.forEach((s: any) => { counts[s.journey_stage] = (counts[s.journey_stage] || 0) + 1; });
+
+  const hotCount = counts['hot'] || 0;
+  const callbackCount = counts['callback_set'] || 0;
+  const engagedCount = counts['engaged'] || 0;
+  const bookedCount = counts['booked'] || 0;
+  const stalledCount = counts['stalled'] || 0;
+  const freshCount = counts['fresh'] || 0;
+  const attemptingCount = counts['attempting'] || 0;
+
+  // High-value leads that should be prioritized over cold calling
+  const highValueLeads = hotCount + callbackCount + engagedCount;
+
+  // Get today's activity numbers
+  const [callsRes, smsRes, apptsRes] = await Promise.all([
+    supabase.from('call_logs').select('*', { count: 'exact', head: true })
+      .eq('user_id', userId).gte('created_at', `${today}T00:00:00`),
+    supabase.from('sms_messages').select('*', { count: 'exact', head: true })
+      .eq('user_id', userId).eq('direction', 'outbound').gte('created_at', `${today}T00:00:00`),
+    supabase.from('call_logs').select('*', { count: 'exact', head: true })
+      .eq('user_id', userId).eq('outcome', 'appointment_set').gte('created_at', `${today}T00:00:00`),
+  ]);
+
+  const callsMade = callsRes.count || 0;
+  const smsSentToday = smsRes.count || 0;
+  const apptsToday = apptsRes.count || 0;
+
+  // Calculate cost per appointment (rough estimate: $0.07/min avg call, $0.01/SMS)
+  const estCallCost = callsMade * 7; // ~7 cents per call attempt
+  const estSmsCost = smsSentToday * 1; // ~1 cent per SMS
+  const totalSpend = estCallCost + estSmsCost;
+  const costPerAppt = apptsToday > 0 ? Math.round(totalSpend / apptsToday) : 0;
+
+  // Conversion rates
+  const { count: conversations } = await supabase.from('call_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId).gte('created_at', `${today}T00:00:00`)
+    .in('outcome', ['completed', 'answered', 'appointment_set', 'interested', 'callback']);
+
+  const convos = conversations || 0;
+  const callToConvo = callsMade > 0 ? convos / callsMade : 0;
+  const convoToAppt = convos > 0 ? apptsToday / convos : 0;
+
+  // --- PORTFOLIO DECISIONS ---
+
+  // Decision: If we have hot/callback/engaged leads, they should be contacted BEFORE cold leads
+  if (highValueLeads > 0) {
+    decisions.push(`[FUNNEL] ${highValueLeads} high-value leads (${hotCount} hot, ${callbackCount} callbacks, ${engagedCount} engaged) should be prioritized over ${freshCount} fresh leads`);
+  }
+
+  // Decision: Stalled leads are leaking value
+  if (stalledCount > 10) {
+    decisions.push(`[FUNNEL] ${stalledCount} stalled leads need re-engagement. These were engaged and went silent — higher conversion potential than cold.`);
+  }
+
+  // Decision: Fresh leads piling up = not processing fast enough
+  if (freshCount > 200 && attemptingCount < freshCount * 0.1) {
+    decisions.push(`[FUNNEL] ${freshCount} fresh leads untouched. Speed-to-lead degrading. Consider increasing pace.`);
+  }
+
+  // Save daily funnel snapshot
+  await supabase.from('funnel_snapshots').upsert({
+    user_id: userId,
+    snapshot_date: today,
+    total_leads: stages.length,
+    fresh_count: freshCount,
+    attempting_count: attemptingCount,
+    engaged_count: engagedCount,
+    hot_count: hotCount,
+    nurturing_count: counts['nurturing'] || 0,
+    stalled_count: stalledCount,
+    callback_count: callbackCount,
+    booked_count: bookedCount,
+    won_count: counts['closed_won'] || 0,
+    lost_count: counts['closed_lost'] || 0,
+    calls_made: callsMade,
+    sms_sent: smsSentToday,
+    appointments_booked: apptsToday,
+    total_spend_cents: totalSpend,
+    cost_per_appointment_cents: costPerAppt,
+    cost_per_conversation_cents: convos > 0 ? Math.round(totalSpend / convos) : 0,
+    call_to_conversation_rate: callToConvo,
+    conversation_to_appointment_rate: convoToAppt,
+    overall_conversion_rate: callsMade > 0 ? apptsToday / callsMade : 0,
+  }, { onConflict: 'user_id,snapshot_date' });
+
+  return { decisions, snapshot_saved: true };
+}
+
+// ---------------------------------------------------------------------------
+// Number Health Prediction — Proactive rotation before numbers burn
+// ---------------------------------------------------------------------------
+
+async function predictNumberHealth(
+  supabase: any,
+  userId: string,
+  settings: AutonomousSettings
+): Promise<{ decisions: string[]; numbers_rested: number }> {
+  const decisions: string[] = [];
+  let numbersRested = 0;
+
+  // Recalculate health metrics from call data
+  const { data: healthCount } = await supabase.rpc('recalculate_number_health', { p_user_id: userId });
+
+  // Get numbers that need attention
+  const { data: unhealthyNumbers } = await supabase
+    .from('number_health_metrics')
+    .select('*')
+    .eq('user_id', userId)
+    .lt('health_score', 50)
+    .order('health_score', { ascending: true });
+
+  if (!unhealthyNumbers || unhealthyNumbers.length === 0) {
+    return { decisions, numbers_rested: 0 };
+  }
+
+  for (const num of unhealthyNumbers) {
+    // Critical: health < 20, needs immediate rest
+    if (num.health_score < 20 && num.recommended_rest_until) {
+      // Queue quarantine action
+      const autoApprove = settings.autonomy_level === 'full_auto';
+      await supabase.from('ai_action_queue').insert({
+        user_id: userId,
+        action_type: 'quarantine_number',
+        action_params: {
+          phone_number: num.phone_number,
+          reason: `Health score ${num.health_score}/100. Spam risk ${(num.predicted_spam_risk * 100).toFixed(0)}%. ${num.calls_last_24h} calls in 24h, ${((num.answer_rate_24h || 0) * 100).toFixed(1)}% answer rate. Resting until ${num.recommended_rest_until}.`,
+        },
+        priority: 1,
+        status: autoApprove ? 'approved' : 'pending',
+        requires_approval: settings.autonomy_level === 'approval_required',
+        reasoning: `[NUMBER HEALTH] ${num.phone_number} is burning. Health ${num.health_score}/100, spam risk ${(num.predicted_spam_risk * 100).toFixed(0)}%. Proactive rest to protect caller ID reputation.`,
+        source: 'number_health',
+        approved_at: autoApprove ? new Date().toISOString() : null,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      numbersRested++;
+      decisions.push(`[NUMBER HEALTH] ${num.phone_number}: health ${num.health_score}/100, resting until ${new Date(num.recommended_rest_until).toLocaleDateString()}`);
+    }
+    // Warning: health 20-50, reduce usage
+    else if (num.health_score < 50) {
+      decisions.push(`[NUMBER HEALTH] ${num.phone_number}: health ${num.health_score}/100, reducing max daily to ${num.max_safe_daily_calls}. Spam risk: ${(num.predicted_spam_risk * 100).toFixed(0)}%`);
+      // Update the number's max daily limit
+      await supabase.from('phone_numbers')
+        .update({ max_daily_calls: num.max_safe_daily_calls })
+        .eq('phone_number', num.phone_number)
+        .eq('user_id', userId);
+    }
+  }
+
+  return { decisions, numbers_rested: numbersRested };
+}
+
+// ---------------------------------------------------------------------------
+// Transcript Intent Extraction — LLM-powered buying signal detection
+// Called after calls complete (via webhook or batch)
+// ---------------------------------------------------------------------------
+
+async function extractTranscriptIntents(
+  supabase: any,
+  userId: string
+): Promise<{ processed: number; decisions: string[] }> {
+  const decisions: string[] = [];
+
+  // Find recent calls with transcripts but no intent signals yet
+  const { data: unprocessedCalls } = await supabase
+    .from('call_logs')
+    .select('id, lead_id, transcript, outcome, duration, sentiment_score')
+    .eq('user_id', userId)
+    .not('transcript', 'is', null)
+    .not('transcript', 'eq', '')
+    .gt('duration', 15) // Only process calls > 15 seconds
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (!unprocessedCalls || unprocessedCalls.length === 0) return { processed: 0, decisions };
+
+  // Filter out calls already analyzed
+  const callIds = unprocessedCalls.map((c: any) => c.id);
+  const { data: existing } = await supabase
+    .from('lead_intent_signals')
+    .select('call_id')
+    .in('call_id', callIds);
+
+  const existingIds = new Set((existing || []).map((e: any) => e.call_id));
+  const toProcess = unprocessedCalls.filter((c: any) => !existingIds.has(c.id));
+
+  if (toProcess.length === 0) return { processed: 0, decisions };
+
+  // Import OpenRouter (dynamic import for Deno)
+  let callLLMJson: any;
+  try {
+    const mod = await import('../_shared/openrouter.ts');
+    callLLMJson = mod.callLLMJson;
+  } catch {
+    // OpenRouter not available, skip intent extraction
+    return { processed: 0, decisions: ['[INTENT] OpenRouter module not available, skipping'] };
+  }
+
+  let processed = 0;
+  for (const call of toProcess.slice(0, 5)) { // Max 5 per run to control costs
+    try {
+      const { data: intentData } = await callLLMJson({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a sales intelligence AI. Analyze this call transcript and extract structured signals.
+Return JSON with these exact fields:
+{
+  "timeline": "immediate|this_week|this_month|exploring|not_now|unknown",
+  "budget_mentioned": boolean,
+  "budget_range": string or null,
+  "is_decision_maker": boolean,
+  "decision_maker_name": string or null,
+  "buying_signals": ["signal1", "signal2"],
+  "objections": ["objection1"],
+  "questions_asked": ["question1"],
+  "pain_points": ["pain1"],
+  "specific_dates_mentioned": ["Tuesday at 2pm", "next week"],
+  "competitor_mentions": ["competitor1"],
+  "call_interest_score": 1-10,
+  "reasoning": "brief explanation"
+}
+Score 1-3: not interested. 4-6: neutral/exploring. 7-8: interested. 9-10: ready to buy.`
+          },
+          { role: 'user', content: `Transcript:\n${call.transcript.substring(0, 3000)}` },
+        ],
+        tier: 'fast',
+        temperature: 0.1,
+      });
+
+      // Save intent signals
+      await supabase.from('lead_intent_signals').insert({
+        user_id: userId,
+        lead_id: call.lead_id,
+        call_id: call.id,
+        timeline: intentData.timeline || 'unknown',
+        budget_mentioned: intentData.budget_mentioned || false,
+        budget_range: intentData.budget_range,
+        is_decision_maker: intentData.is_decision_maker ?? true,
+        decision_maker_name: intentData.decision_maker_name,
+        buying_signals: intentData.buying_signals || [],
+        objections: intentData.objections || [],
+        questions_asked: intentData.questions_asked || [],
+        pain_points: intentData.pain_points || [],
+        specific_dates_mentioned: intentData.specific_dates_mentioned || [],
+        competitor_mentions: intentData.competitor_mentions || [],
+        call_interest_score: Math.min(10, Math.max(1, intentData.call_interest_score || 5)),
+        llm_reasoning: intentData.reasoning,
+        model_used: 'openrouter/fast',
+      });
+
+      // If LLM detected specific dates (e.g. "call me Tuesday at 2pm"), update journey
+      if (intentData.specific_dates_mentioned?.length > 0) {
+        decisions.push(`[INTENT] Lead ${call.lead_id.substring(0, 8)}: mentioned specific dates: ${intentData.specific_dates_mentioned.join(', ')}`);
+      }
+
+      // If high interest detected, boost the lead
+      if (intentData.call_interest_score >= 8) {
+        await supabase.from('lead_journey_state')
+          .update({
+            interest_level: intentData.call_interest_score,
+            last_positive_signal_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId)
+          .eq('lead_id', call.lead_id);
+        decisions.push(`[INTENT] Lead ${call.lead_id.substring(0, 8)}: HIGH interest (${intentData.call_interest_score}/10) — ${intentData.buying_signals?.join(', ') || 'positive signals detected'}`);
+      }
+
+      processed++;
+    } catch (err: any) {
+      decisions.push(`[INTENT] Error processing call ${call.id.substring(0, 8)}: ${err.message}`);
+    }
+  }
+
+  if (processed > 0) {
+    decisions.push(`[INTENT] Extracted intent signals from ${processed} call transcripts`);
+  }
+
+  return { processed, decisions };
+}
+
+// ---------------------------------------------------------------------------
+// Self-Optimizing Playbook — The 8/10 feature
+// Analyzes which playbook rules actually convert and rewrites the losers
+// ---------------------------------------------------------------------------
+
+async function optimizePlaybook(
+  supabase: any,
+  userId: string
+): Promise<{ decisions: string[]; optimizations: number }> {
+  const decisions: string[] = [];
+  let optimizations = 0;
+
+  // 1. Update playbook performance stats from journey events
+  const { data: rules } = await supabase
+    .from('followup_playbook')
+    .select('id, rule_name, journey_stage, action_type, delay_hours')
+    .eq('user_id', userId)
+    .eq('enabled', true);
+
+  if (!rules || rules.length === 0) return { decisions, optimizations: 0 };
+
+  for (const rule of rules) {
+    // Count times this rule fired
+    const { count: timesFired } = await supabase.from('journey_event_log')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('rule_name', rule.rule_name)
+      .eq('event_type', 'action_queued')
+      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+    if ((timesFired || 0) < 10) continue; // Need enough data
+
+    // Count leads that had a positive response within 48h of this rule firing
+    const { data: firedEvents } = await supabase.from('journey_event_log')
+      .select('lead_id, created_at')
+      .eq('user_id', userId)
+      .eq('rule_name', rule.rule_name)
+      .eq('event_type', 'action_queued')
+      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .limit(100);
+
+    let positiveResponses = 0;
+    let appointments = 0;
+
+    for (const event of (firedEvents || []).slice(0, 50)) {
+      // Check if lead had a positive signal within 48h
+      const windowEnd = new Date(new Date(event.created_at).getTime() + 48 * 60 * 60 * 1000).toISOString();
+      const { count: positive } = await supabase.from('call_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('lead_id', event.lead_id)
+        .in('outcome', ['completed', 'answered', 'appointment_set', 'interested', 'callback'])
+        .gte('created_at', event.created_at)
+        .lte('created_at', windowEnd);
+
+      if ((positive || 0) > 0) positiveResponses++;
+
+      const { count: appt } = await supabase.from('call_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('lead_id', event.lead_id)
+        .eq('outcome', 'appointment_set')
+        .gte('created_at', event.created_at)
+        .lte('created_at', windowEnd);
+
+      if ((appt || 0) > 0) appointments++;
+    }
+
+    const sampleSize = Math.min(50, firedEvents?.length || 0);
+    const responseRate = sampleSize > 0 ? positiveResponses / sampleSize : 0;
+    const apptRate = sampleSize > 0 ? appointments / sampleSize : 0;
+    const perfScore = responseRate + (apptRate * 3); // Appointments are 3x more valuable
+
+    // Upsert performance record
+    await supabase.from('playbook_performance').upsert({
+      user_id: userId,
+      rule_id: rule.id,
+      rule_name: rule.rule_name,
+      times_fired: timesFired || 0,
+      led_to_positive_response: positiveResponses,
+      led_to_appointment: appointments,
+      led_to_no_response: sampleSize - positiveResponses,
+      response_rate: responseRate,
+      appointment_rate: apptRate,
+      performance_score: perfScore,
+      last_calculated: new Date().toISOString(),
+    }, { onConflict: 'user_id,rule_id' });
+
+    // --- SELF-OPTIMIZATION ---
+    // If a rule has fired 20+ times with < 2% response rate, it's a loser
+    if ((timesFired || 0) >= 20 && responseRate < 0.02) {
+      decisions.push(`[OPTIMIZE] Rule "${rule.rule_name}" underperforming: ${(responseRate * 100).toFixed(1)}% response rate over ${timesFired} fires. Consider adjusting.`);
+
+      // Try to auto-adjust timing if the rule has enough data
+      // Check if similar rules at different times perform better
+      const { data: betterRules } = await supabase
+        .from('playbook_performance')
+        .select('rule_name, delay_hours:followup_playbook!inner(delay_hours), performance_score')
+        .eq('user_id', userId)
+        .gt('performance_score', perfScore * 2)
+        .limit(1);
+
+      if (betterRules && betterRules.length > 0) {
+        decisions.push(`[OPTIMIZE] Rule "${betterRules[0].rule_name}" performs ${((betterRules[0].performance_score / Math.max(0.001, perfScore)) - 1) * 100 | 0}% better. Consider replicating its timing/approach.`);
+      }
+
+      optimizations++;
+    }
+
+    // If a rule is a star performer (>15% response), log it
+    if ((timesFired || 0) >= 15 && responseRate > 0.15) {
+      decisions.push(`[OPTIMIZE] Rule "${rule.rule_name}" is a TOP PERFORMER: ${(responseRate * 100).toFixed(1)}% response, ${(apptRate * 100).toFixed(1)}% appointment rate over ${timesFired} fires`);
+    }
+  }
+
+  // 2. Use LLM to generate optimization recommendations (daily, not every 5 min)
+  // Check if we already optimized today
+  const todayStr = new Date().toISOString().split('T')[0];
+  const { count: optimizedToday } = await supabase.from('playbook_optimization_log')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', `${todayStr}T00:00:00`);
+
+  if ((optimizedToday || 0) === 0 && optimizations > 0) {
+    // Get all performance data
+    const { data: allPerf } = await supabase.from('playbook_performance')
+      .select('rule_name, times_fired, response_rate, appointment_rate, performance_score')
+      .eq('user_id', userId)
+      .gt('times_fired', 5)
+      .order('performance_score', { ascending: false });
+
+    if (allPerf && allPerf.length > 3) {
+      try {
+        let callLLMJson: any;
+        const mod = await import('../_shared/openrouter.ts');
+        callLLMJson = mod.callLLMJson;
+
+        const { data: recommendations } = await callLLMJson({
+          messages: [
+            {
+              role: 'system',
+              content: `You are a sales operations optimization AI. Analyze playbook rule performance data and suggest specific, actionable optimizations.
+
+Return JSON:
+{
+  "top_performers": ["rule_name"],
+  "underperformers": ["rule_name"],
+  "recommendations": [
+    {
+      "rule_name": "rule to change",
+      "type": "timing_adjusted|message_rewritten|priority_changed",
+      "current": "description of current",
+      "suggested": "specific change",
+      "reasoning": "why based on data"
+    }
+  ]
+}`
+            },
+            {
+              role: 'user',
+              content: `Playbook performance data (last 30 days):\n${JSON.stringify(allPerf, null, 2)}`
+            },
+          ],
+          tier: 'balanced',
+          temperature: 0.3,
+        });
+
+        // Log the optimization recommendations
+        for (const rec of (recommendations.recommendations || []).slice(0, 3)) {
+          await supabase.from('playbook_optimization_log').insert({
+            user_id: userId,
+            optimization_type: rec.type || 'timing_adjusted',
+            rule_name: rec.rule_name,
+            before_value: { description: rec.current },
+            after_value: { suggestion: rec.suggested },
+            reasoning: rec.reasoning,
+            data_basis: { performance_data: allPerf },
+            model_used: 'openrouter/balanced',
+          });
+          decisions.push(`[OPTIMIZE LLM] ${rec.rule_name}: ${rec.suggested} (${rec.reasoning})`);
+          optimizations++;
+        }
+      } catch (llmErr: any) {
+        decisions.push(`[OPTIMIZE] LLM analysis unavailable: ${llmErr.message}`);
+      }
+    }
+  }
+
+  return { decisions, optimizations };
+}
+
+// ---------------------------------------------------------------------------
 // Lead Journey Intelligence Engine
 // The brain that actively manages every lead through their lifecycle.
 // ---------------------------------------------------------------------------
@@ -715,7 +1230,7 @@ async function manageLeadJourneys(
   }
   let touchesRemaining = maxDailyTouches - (touchesToday || 0);
 
-  // 5. Load user's playbook rules (sorted by priority)
+  // 5. Load user's playbook rules (sorted by priority) and disposition values
   const { data: rules } = await supabase
     .from('followup_playbook')
     .select('*')
@@ -724,6 +1239,9 @@ async function manageLeadJourneys(
     .order('priority', { ascending: true });
 
   if (!rules || rules.length === 0) return result;
+
+  // Load disposition value map for interest boosting
+  const dispValues = await loadDispositionValues(supabase, userId);
 
   const now = new Date();
   const currentHour = now.getHours();
@@ -801,8 +1319,13 @@ async function manageLeadJourneys(
       // SMS replies are a strong signal
       const smsReplyBonus = smsReceived > 0 ? 2 : 0;
 
+      // Disposition value boost: "talk_to_human" is worth more than "contacted"
+      const lastOutcome = calls[0]?.outcome;
+      const dispValue = dispValues.get(lastOutcome);
+      const dispBonus = dispValue ? Math.floor((dispValue.value_weight - 5) / 2) : 0;
+
       interestLevel = Math.min(10, Math.max(1,
-        5 + (recentPositive * 2) - (recentNegative * 3) + longCallBonus + smsReplyBonus
+        5 + (recentPositive * 2) - (recentNegative * 3) + longCallBonus + smsReplyBonus + dispBonus
       ));
 
       // Sentiment trend
@@ -848,6 +1371,14 @@ async function manageLeadJourneys(
     // --- 6c. Compute correct journey stage ---
     let newStage = journey.journey_stage;
     const leadStatus = lead.status;
+    const lastDisposition = calls.length > 0 ? calls[0].outcome : null;
+
+    // Check if disposition value maps to a specific stage
+    const lastDispValue = lastDisposition ? dispValues.get(lastDisposition) : null;
+    if (lastDispValue?.maps_to_stage && lastDispValue.requires_immediate_followup) {
+      // High-value dispositions override stage computation
+      newStage = lastDispValue.maps_to_stage;
+    }
 
     // Explicit callback takes precedence over everything
     const explicitCallback = journey.explicit_callback_at || lead.next_callback_at;
@@ -912,8 +1443,16 @@ async function manageLeadJourneys(
       });
     }
 
-    // --- 6d. Update journey state ---
+    // --- 6d. Update journey state (including cost tracking and disposition) ---
     const longestGap = Math.max(journey.longest_gap_days || 0, daysSinceTouch);
+    // Estimate cost: ~7 cents per call attempt, ~1 cent per SMS
+    const estCallCost = callAttempts * 7;
+    const estSmsCost = smsSent * 1;
+    // Estimate value based on disposition conversion probability
+    const estValue = lastDispValue
+      ? Math.round(lastDispValue.conversion_probability * 10000) // cents, assuming $100 deal value
+      : Math.round((interestLevel / 10) * 5000);
+
     await supabase
       .from('lead_journey_state')
       .update({
@@ -937,6 +1476,15 @@ async function manageLeadJourneys(
         longest_gap_days: longestGap,
         updated_at: now.toISOString(),
         explicit_callback_at: explicitCallback || journey.explicit_callback_at,
+        // Cost and ROI tracking
+        total_cost_cents: estCallCost + estSmsCost,
+        call_cost_cents: estCallCost,
+        sms_cost_cents: estSmsCost,
+        estimated_value_cents: estValue,
+        roi_score: (estCallCost + estSmsCost) > 0
+          ? Math.round((estValue / (estCallCost + estSmsCost)) * 100) / 100
+          : 0,
+        last_disposition: lastDisposition,
       })
       .eq('id', journey.id);
 
@@ -997,6 +1545,7 @@ async function manageLeadJourneys(
     }
 
     // --- 6h. Match against playbook rules ---
+    const leadCampaignType = journey.campaign_type || 'cold_outreach';
     const stageRules = rules.filter((r: any) =>
       r.journey_stage === newStage &&
       totalTouches >= r.min_touches &&
@@ -1006,7 +1555,9 @@ async function manageLeadJourneys(
       interestLevel >= r.min_interest_level &&
       interestLevel <= r.max_interest_level &&
       // Don't fire rules that require no explicit callback when one exists
-      (!r.requires_no_explicit_callback || !explicitCallback)
+      (!r.requires_no_explicit_callback || !explicitCallback) &&
+      // Campaign type filter: 'all' matches everything, or must match exactly
+      (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType)
     );
 
     if (stageRules.length === 0) continue;
@@ -1398,10 +1949,47 @@ async function runForUser(
       }
     }
 
-    // 12. Save operational memory
+    // 12. Funnel Intelligence — portfolio-level thinking
+    if ((settings as any).manage_lead_journeys) {
+      try {
+        const funnelResult = await analyzeFunnel(supabase, userId, settings);
+        result.decisions.push(...funnelResult.decisions);
+      } catch (funnelErr: any) {
+        result.errors.push(`Funnel analysis: ${funnelErr.message}`);
+      }
+    }
+
+    // 13. Number Health Prediction — proactive rotation
+    try {
+      const healthResult = await predictNumberHealth(supabase, userId, settings);
+      result.decisions.push(...healthResult.decisions);
+      result.actions_queued += healthResult.numbers_rested;
+    } catch (healthErr: any) {
+      result.errors.push(`Number health: ${healthErr.message}`);
+    }
+
+    // 14. Transcript Intent Extraction — LLM-powered buying signals
+    try {
+      const intentResult = await extractTranscriptIntents(supabase, userId);
+      result.decisions.push(...intentResult.decisions);
+    } catch (intentErr: any) {
+      result.errors.push(`Intent extraction: ${intentErr.message}`);
+    }
+
+    // 15. Self-Optimizing Playbook — rewrite rules from data
+    if ((settings as any).manage_lead_journeys) {
+      try {
+        const optimizeResult = await optimizePlaybook(supabase, userId);
+        result.decisions.push(...optimizeResult.decisions);
+      } catch (optErr: any) {
+        result.errors.push(`Playbook optimization: ${optErr.message}`);
+      }
+    }
+
+    // 16. Save operational memory
     result.memories_saved = await saveRunMemory(supabase, userId, result);
 
-    // 13. Update last_engine_run timestamp
+    // 17. Update last_engine_run timestamp
     await supabase
       .from('autonomous_settings')
       .update({ last_engine_run: new Date().toISOString() })
