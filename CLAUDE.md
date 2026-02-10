@@ -602,6 +602,82 @@ supabase functions deploy ai-brain
 - Operational memory queries add ~50-100ms to each AI call (non-blocking)
 - `supabase.raw('access_count + 1')` in ai-brain memory touch may not work in all Supabase client versions -- silently fails (non-critical)
 
+### February 10, 2026 (Part 2) - Phases 5-8: Learning Systems (NOT DEPLOYED)
+
+**Summary:** Four learning systems that make the AI genuinely smarter over time based on real call outcome data.
+
+**Phase 5: Calling Time Optimizer**
+- `automation-scheduler` now checks `optimal_calling_windows` table before queueing leads
+- If current time slot has score < 0.15 (bottom 20%), skips queueing entirely
+- Only activates when user has `auto_optimize_calling_times = true` in autonomous_settings
+- Requires 10+ calls in a time slot before making decisions (no premature optimization)
+- `ai-autonomous-engine` recalculates windows from last 30 days of call data every run
+
+**Phase 6: Lead Score Weight Feedback Loop**
+- `lead_scoring_weights` table stores per-user calibrated weights (replaces hardcoded 0.3/0.25/0.25/0.2)
+- `calibrate_lead_scoring_weights()` PG function analyzes `lead_score_outcomes` table
+- Compares component scores for answered vs missed calls → adjusts weights toward predictive factors
+- `lead_score_outcomes` populated when automation-scheduler queues a call (score at queue time)
+- `retell-call-webhook` updates outcomes when calls complete
+- `ai-autonomous-engine` reads calibrated weights during lead rescoring
+- Calibration runs weekly (needs 50+ outcomes to activate)
+
+**Phase 7: Script A/B Testing**
+- `agent_script_variants` table stores multiple script versions per Retell agent
+- `call_variant_assignments` tracks which variant was used for each call
+- `select_script_variant()` PG function does weighted random selection (Thompson Sampling style)
+- `update_variant_stats()` PG function updates success/appointment rates after each call
+- `rebalance_variant_weights()` PG function shifts traffic toward winners (UCB1 algorithm)
+- `outbound-calling` selects a variant before each call, injects into dynamic variables
+- `retell-call-webhook` updates variant stats after call ends
+- `ai-autonomous-engine` rebalances weights every 5 min run
+- Minimum 10% traffic to every active variant (prevents premature exploitation)
+
+**Phase 8: Pacing Adaptation**
+- `adaptive_pacing` table stores optimal pace per broadcast/campaign
+- `pacing_history` table logs every pacing change with error_rate, answer_rate, trigger
+- `voice-broadcast-engine` checks `adaptive_pacing` before using broadcast's `calls_per_minute`
+- All 3 pacing delay points in voice-broadcast-engine now use adaptive pace
+- `ai-autonomous-engine` writes to `adaptive_pacing` when it decides to change pace
+
+**Files Created:**
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/20260210_phases_5_8_learning.sql` | All tables, functions, indexes for phases 5-8 |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | Calibrated weights in rescoring, weekly calibration, A/B rebalancing, pacing DB write |
+| `supabase/functions/automation-scheduler/index.ts` | Calling window check, lead score recording at queue time |
+| `supabase/functions/outbound-calling/index.ts` | A/B variant selection + assignment before call |
+| `supabase/functions/retell-call-webhook/index.ts` | Variant stats update + lead score outcome update after call |
+| `supabase/functions/voice-broadcast-engine/index.ts` | Adaptive pacing read from DB at all 3 delay points |
+
+**New Database Tables:**
+- `agent_script_variants` - Script versions per agent with performance stats
+- `call_variant_assignments` - Which variant was used per call
+- `lead_scoring_weights` - Per-user calibrated scoring weights
+- `adaptive_pacing` - Current optimal pace per broadcast
+- `pacing_history` - Audit trail of all pacing changes
+
+**New Database Functions:**
+- `select_script_variant()` - Weighted random variant selection
+- `update_variant_stats()` - Incremental variant stat updates
+- `rebalance_variant_weights()` - UCB1 traffic rebalancing
+- `calibrate_lead_scoring_weights()` - Outcome-correlation weight calibration
+
+**Deployment Required:**
+```bash
+# Run migration for phases 5-8
+# Then deploy all modified edge functions:
+supabase functions deploy ai-autonomous-engine
+supabase functions deploy automation-scheduler
+supabase functions deploy outbound-calling
+supabase functions deploy retell-call-webhook
+supabase functions deploy voice-broadcast-engine
+```
+
 ---
 
 ### February 3, 2026 - Agent Voice Preview Plays In-App (NOT PUBLISHED)

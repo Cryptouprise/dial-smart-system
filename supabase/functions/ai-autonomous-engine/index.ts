@@ -139,6 +139,24 @@ async function rescoreLeads(
 
   if (error || !leads) return 0;
 
+  // Phase 6: Load calibrated scoring weights (or use defaults)
+  let weights = { engagement: 0.30, recency: 0.25, answer_rate: 0.25, status: 0.20 };
+  try {
+    const { data: userWeights } = await supabase
+      .from('lead_scoring_weights')
+      .select('engagement_weight, recency_weight, answer_rate_weight, status_weight')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (userWeights) {
+      weights = {
+        engagement: userWeights.engagement_weight,
+        recency: userWeights.recency_weight,
+        answer_rate: userWeights.answer_rate_weight,
+        status: userWeights.status_weight,
+      };
+    }
+  } catch { /* use defaults */ }
+
   let scored = 0;
 
   for (const lead of leads) {
@@ -185,12 +203,12 @@ async function rescoreLeads(
       : lead.status === 'contacted' ? 50
       : 30;
 
-    // Weighted final score
+    // Weighted final score (using calibrated weights from Phase 6)
     const finalScore = (
-      engagementScore * 0.30 +
-      recencyScore * 0.25 +
-      answerRate * 0.25 +
-      statusScore * 0.20
+      engagementScore * weights.engagement +
+      recencyScore * weights.recency +
+      answerRate * weights.answer_rate +
+      statusScore * weights.status
     );
 
     // Update the lead's priority_score
@@ -212,7 +230,7 @@ async function rescoreLeads(
 async function analyzePacing(
   supabase: any,
   userId: string
-): Promise<{ should_adjust: boolean; recommendation: string; new_pace?: number }> {
+): Promise<{ should_adjust: boolean; recommendation: string; new_pace?: number; current_pace?: number; error_rate?: number; answer_rate?: number }> {
   // Get last hour of call data
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
@@ -245,36 +263,33 @@ async function analyzePacing(
   const currentPace = dialerSettings?.calls_per_minute || 50;
 
   if (errorRate > 0.25) {
-    // Emergency slowdown
     const newPace = Math.max(10, Math.floor(currentPace * 0.5));
     return {
       should_adjust: true,
       recommendation: `Error rate ${(errorRate * 100).toFixed(1)}% -- slowing from ${currentPace} to ${newPace}/min`,
-      new_pace: newPace,
+      new_pace: newPace, current_pace: currentPace, error_rate: errorRate, answer_rate: answerRate,
     };
   }
 
   if (errorRate > 0.10) {
-    // Moderate slowdown
     const newPace = Math.max(10, Math.floor(currentPace * 0.75));
     return {
       should_adjust: true,
       recommendation: `Error rate ${(errorRate * 100).toFixed(1)}% -- reducing from ${currentPace} to ${newPace}/min`,
-      new_pace: newPace,
+      new_pace: newPace, current_pace: currentPace, error_rate: errorRate, answer_rate: answerRate,
     };
   }
 
   if (errorRate < 0.03 && answerRate > 0.15 && currentPace < 100) {
-    // Things are going well, speed up
     const newPace = Math.min(100, Math.floor(currentPace * 1.25));
     return {
       should_adjust: true,
       recommendation: `Low errors (${(errorRate * 100).toFixed(1)}%), good answers (${(answerRate * 100).toFixed(1)}%) -- increasing from ${currentPace} to ${newPace}/min`,
-      new_pace: newPace,
+      new_pace: newPace, current_pace: currentPace, error_rate: errorRate, answer_rate: answerRate,
     };
   }
 
-  return { should_adjust: false, recommendation: `Pacing stable at ${currentPace}/min` };
+  return { should_adjust: false, recommendation: `Pacing stable at ${currentPace}/min`, current_pace: currentPace, error_rate: errorRate, answer_rate: answerRate };
 }
 
 // ---------------------------------------------------------------------------
@@ -692,10 +707,91 @@ async function runForUser(
       result.pacing_adjusted = decisions.some(d => d.action_type === 'adjust_pacing');
     }
 
-    // 9. Save operational memory
+    // 9. Phase 6: Calibrate lead scoring weights (weekly)
+    try {
+      const { data: weights } = await supabase
+        .from('lead_scoring_weights')
+        .select('last_calibrated')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const lastCalibrated = weights?.last_calibrated ? new Date(weights.last_calibrated) : null;
+      const needsCalibration = !lastCalibrated || (Date.now() - lastCalibrated.getTime() > 7 * 24 * 60 * 60 * 1000);
+
+      if (needsCalibration) {
+        const { data: calibrationResult } = await supabase.rpc('calibrate_lead_scoring_weights', { p_user_id: userId });
+        if (calibrationResult?.calibrated) {
+          result.decisions.push(`[CALIBRATION] Lead scoring weights updated: ${JSON.stringify(calibrationResult.weights)} (${calibrationResult.sample_size} samples)`);
+        }
+      }
+    } catch (calErr: any) {
+      result.errors.push(`Weight calibration: ${calErr.message}`);
+    }
+
+    // 10. Phase 7: Rebalance A/B variant traffic weights
+    try {
+      const { data: activeVariants } = await supabase
+        .from('agent_script_variants')
+        .select('agent_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+
+      if (activeVariants && activeVariants.length > 0) {
+        // Get unique agent_ids with active variants
+        const agentIds = [...new Set(activeVariants.map((v: any) => v.agent_id))];
+        for (const agentId of agentIds) {
+          const { data: rebalanceResult } = await supabase.rpc('rebalance_variant_weights', {
+            p_user_id: userId,
+            p_agent_id: agentId,
+          });
+          if (rebalanceResult?.rebalanced) {
+            result.decisions.push(`[A/B TEST] Variant weights rebalanced for agent ${agentId}: ${rebalanceResult.total_calls} total calls`);
+          }
+        }
+      }
+    } catch (abErr: any) {
+      result.errors.push(`A/B rebalancing: ${abErr.message}`);
+    }
+
+    // 11. Phase 8: Write pacing decisions to adaptive_pacing table
+    if (result.pacing_adjusted && pacingAnalysis.new_pace) {
+      try {
+        // Find active broadcasts to apply adaptive pacing
+        const { data: activeBroadcasts } = await supabase
+          .from('voice_broadcasts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+
+        for (const bc of (activeBroadcasts || [])) {
+          await supabase.from('adaptive_pacing').upsert({
+            user_id: userId,
+            broadcast_id: bc.id,
+            optimal_pace: pacingAnalysis.new_pace,
+            last_adjusted: new Date().toISOString(),
+            adjustment_reason: pacingAnalysis.recommendation,
+          }, { onConflict: 'user_id,broadcast_id' });
+        }
+
+        // Log to pacing history
+        await supabase.from('pacing_history').insert({
+          user_id: userId,
+          previous_pace: pacingAnalysis.current_pace || 50,
+          new_pace: pacingAnalysis.new_pace,
+          reason: pacingAnalysis.recommendation,
+          error_rate: pacingAnalysis.error_rate,
+          answer_rate: pacingAnalysis.answer_rate,
+          trigger: 'autonomous',
+        });
+      } catch (paceErr: any) {
+        result.errors.push(`Pacing write: ${paceErr.message}`);
+      }
+    }
+
+    // 12. Save operational memory
     result.memories_saved = await saveRunMemory(supabase, userId, result);
 
-    // 10. Update last_engine_run timestamp
+    // 13. Update last_engine_run timestamp
     await supabase
       .from('autonomous_settings')
       .update({ last_engine_run: new Date().toISOString() })

@@ -62,7 +62,7 @@ async function processRule(supabase: any, rule: AutomationRule) {
   // Get leads to process based on rule type and conditions
   let leadsQuery = supabase
     .from('leads')
-    .select('id, phone_number, status, last_contacted_at')
+    .select('id, phone_number, status, last_contacted_at, priority_score')
     .eq('user_id', rule.user_id)
     .eq('do_not_call', false)
     .in('status', ['new', 'contacted', 'callback']);
@@ -95,9 +95,47 @@ async function processRule(supabase: any, rule: AutomationRule) {
   // Apply conditions
   const maxCallsPerDay = rule.actions?.max_calls_per_day || 3;
   const noAnswerThreshold = rule.conditions?.no_answer_count || 10;
-  
+
+  // Phase 5: Check optimal calling windows for this user + current time slot
+  const currentHour = new Date().getHours();
+  const currentDow = new Date().getDay();
+  let windowScore = 1.0; // Default: always call
+  let useCallingWindows = false;
+
+  try {
+    // Check if user has auto_optimize_calling_times enabled
+    const { data: autoSettings } = await supabase
+      .from('autonomous_settings')
+      .select('auto_optimize_calling_times')
+      .eq('user_id', rule.user_id)
+      .maybeSingle();
+
+    if (autoSettings?.auto_optimize_calling_times) {
+      const { data: window } = await supabase
+        .from('optimal_calling_windows')
+        .select('score, total_calls')
+        .eq('user_id', rule.user_id)
+        .eq('day_of_week', currentDow)
+        .eq('hour_of_day', currentHour)
+        .maybeSingle();
+
+      if (window && window.total_calls >= 10) {
+        windowScore = window.score;
+        useCallingWindows = true;
+
+        // Skip this time slot if score is very low (bottom 20% performer)
+        if (windowScore < 0.15) {
+          console.log(`[Scheduler] Rule ${rule.name}: Low-performance time slot (score ${windowScore.toFixed(3)}, dow=${currentDow}, hour=${currentHour}). Skipping.`);
+          return { processed: 0, skipped: true, reason: 'low_performance_window' };
+        }
+      }
+    }
+  } catch (windowError: any) {
+    console.error('[Scheduler] Error checking calling windows:', windowError.message);
+  }
+
   let processed = 0;
-  
+
   for (const lead of leads) {
     // Check call count for today
     const today = new Date().toISOString().split('T')[0];
@@ -154,13 +192,33 @@ async function processRule(supabase: any, rule: AutomationRule) {
       
       if (!queueError) {
         processed++;
+
+        // Phase 6: Record lead score at queue-time for feedback loop
+        // This lets us later compare "what we predicted" vs "what happened"
+        try {
+          const leadScore = (lead as any).priority_score;
+          if (leadScore !== undefined && leadScore !== null) {
+            await supabase.from('lead_score_outcomes').insert({
+              user_id: rule.user_id,
+              lead_id: lead.id,
+              score_at_call: leadScore,
+              score_components: {
+                engagement: 0, // filled by rescoring engine
+                recency: 0,
+                answer_rate: 0,
+                status: 0,
+              },
+              outcome: 'pending', // updated by call-tracking-webhook
+            });
+          }
+        } catch { /* non-critical score tracking */ }
       } else {
         console.error(`[Scheduler] Error queuing lead ${lead.id}:`, queueError);
       }
     }
   }
-  
-  console.log(`[Scheduler] Rule ${rule.name} processed ${processed} leads`);
+
+  console.log(`[Scheduler] Rule ${rule.name} processed ${processed} leads${useCallingWindows ? ` (window score: ${windowScore.toFixed(3)})` : ''}`);
   return { processed, skipped: false };
 }
 
