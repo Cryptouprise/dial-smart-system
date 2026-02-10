@@ -249,7 +249,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message || 'Internal server error',
+        error: (error as Error).message || 'Internal server error',
         reply: "Got it! Let me look into that for you. Want me to have someone reach out?",
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -188,7 +188,7 @@ const LeadJourneyDashboard: React.FC = () => {
       // Load all in parallel
       const [countsRes, actionsRes, eventsRes, settingsRes] = await Promise.all([
         // Stage distribution
-        supabase
+        (supabase as any)
           .from('lead_journey_state')
           .select('journey_stage')
           .then(({ data }) => {
@@ -201,7 +201,7 @@ const LeadJourneyDashboard: React.FC = () => {
           }),
 
         // Upcoming actions (next 24 hours)
-        supabase
+        (supabase as any)
           .from('lead_journey_state')
           .select('*, leads!inner(first_name, last_name, phone_number, status)')
           .not('next_action_at', 'is', null)
@@ -210,14 +210,14 @@ const LeadJourneyDashboard: React.FC = () => {
           .limit(20),
 
         // Recent events
-        supabase
+        (supabase as any)
           .from('journey_event_log')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(30),
 
         // Journey settings
-        supabase
+        (supabase as any)
           .from('autonomous_settings')
           .select('manage_lead_journeys')
           .limit(1)
@@ -227,7 +227,7 @@ const LeadJourneyDashboard: React.FC = () => {
       setStageCounts(countsRes as StageCount[]);
       setUpcomingActions((actionsRes.data as JourneyLead[]) || []);
       setRecentEvents((eventsRes.data as JourneyEvent[]) || []);
-      setJourneyEnabled(settingsRes.data?.manage_lead_journeys || false);
+      setJourneyEnabled((settingsRes.data as any)?.manage_lead_journeys || false);
     } catch (err: any) {
       console.error('Error loading journey dashboard:', err);
     } finally {
@@ -248,7 +248,7 @@ const LeadJourneyDashboard: React.FC = () => {
       return;
     }
     const loadStageLeads = async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('lead_journey_state')
         .select('*, leads!inner(first_name, last_name, phone_number, status)')
         .eq('journey_stage', selectedStage)
@@ -260,7 +260,7 @@ const LeadJourneyDashboard: React.FC = () => {
   }, [selectedStage]);
 
   const toggleJourney = async (enabled: boolean) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('autonomous_settings')
       .update({ manage_lead_journeys: enabled })
       .not('user_id', 'is', null); // Updates for current user via RLS
