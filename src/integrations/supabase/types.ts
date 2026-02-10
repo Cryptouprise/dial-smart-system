@@ -393,6 +393,7 @@ export type Database = {
           id: string
           priority: string
           result: Json | null
+          source: string | null
           status: string
           target_entity_id: string | null
           target_entity_type: string | null
@@ -412,6 +413,7 @@ export type Database = {
           id?: string
           priority?: string
           result?: Json | null
+          source?: string | null
           status?: string
           target_entity_id?: string | null
           target_entity_type?: string | null
@@ -431,6 +433,7 @@ export type Database = {
           id?: string
           priority?: string
           result?: Json | null
+          source?: string | null
           status?: string
           target_entity_id?: string | null
           target_entity_type?: string | null
@@ -2382,6 +2385,45 @@ export type Database = {
           },
         ]
       }
+      disposition_values: {
+        Row: {
+          conversion_probability: number
+          created_at: string
+          custom_followup_delay_hours: number | null
+          disposition_name: string
+          id: string
+          maps_to_stage: string | null
+          priority_boost: number
+          requires_immediate_followup: boolean | null
+          user_id: string
+          value_weight: number
+        }
+        Insert: {
+          conversion_probability?: number
+          created_at?: string
+          custom_followup_delay_hours?: number | null
+          disposition_name: string
+          id?: string
+          maps_to_stage?: string | null
+          priority_boost?: number
+          requires_immediate_followup?: boolean | null
+          user_id: string
+          value_weight?: number
+        }
+        Update: {
+          conversion_probability?: number
+          created_at?: string
+          custom_followup_delay_hours?: number | null
+          disposition_name?: string
+          id?: string
+          maps_to_stage?: string | null
+          priority_boost?: number
+          requires_immediate_followup?: boolean | null
+          user_id?: string
+          value_weight?: number
+        }
+        Relationships: []
+      }
       dispositions: {
         Row: {
           auto_actions: Json | null
@@ -2525,6 +2567,7 @@ export type Database = {
       followup_playbook: {
         Row: {
           actions: Json
+          campaign_type: string | null
           conditions: Json | null
           created_at: string
           id: string
@@ -2537,6 +2580,7 @@ export type Database = {
         }
         Insert: {
           actions?: Json
+          campaign_type?: string | null
           conditions?: Json | null
           created_at?: string
           id?: string
@@ -2549,6 +2593,7 @@ export type Database = {
         }
         Update: {
           actions?: Json
+          campaign_type?: string | null
           conditions?: Json | null
           created_at?: string
           id?: string
@@ -2558,6 +2603,93 @@ export type Database = {
           trigger_stage?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      funnel_snapshots: {
+        Row: {
+          appointments_booked: number | null
+          attempting_count: number | null
+          booked_count: number | null
+          call_to_conversation_rate: number | null
+          callback_count: number | null
+          calls_made: number | null
+          conversation_to_appointment_rate: number | null
+          cost_per_appointment_cents: number | null
+          cost_per_conversation_cents: number | null
+          created_at: string
+          engaged_count: number | null
+          fresh_count: number | null
+          hot_count: number | null
+          id: string
+          lost_count: number | null
+          nurturing_count: number | null
+          overall_conversion_rate: number | null
+          recommendations: Json | null
+          sms_sent: number | null
+          snapshot_date: string
+          stalled_count: number | null
+          strategic_analysis: string | null
+          total_leads: number | null
+          total_spend_cents: number | null
+          user_id: string
+          won_count: number | null
+        }
+        Insert: {
+          appointments_booked?: number | null
+          attempting_count?: number | null
+          booked_count?: number | null
+          call_to_conversation_rate?: number | null
+          callback_count?: number | null
+          calls_made?: number | null
+          conversation_to_appointment_rate?: number | null
+          cost_per_appointment_cents?: number | null
+          cost_per_conversation_cents?: number | null
+          created_at?: string
+          engaged_count?: number | null
+          fresh_count?: number | null
+          hot_count?: number | null
+          id?: string
+          lost_count?: number | null
+          nurturing_count?: number | null
+          overall_conversion_rate?: number | null
+          recommendations?: Json | null
+          sms_sent?: number | null
+          snapshot_date: string
+          stalled_count?: number | null
+          strategic_analysis?: string | null
+          total_leads?: number | null
+          total_spend_cents?: number | null
+          user_id: string
+          won_count?: number | null
+        }
+        Update: {
+          appointments_booked?: number | null
+          attempting_count?: number | null
+          booked_count?: number | null
+          call_to_conversation_rate?: number | null
+          callback_count?: number | null
+          calls_made?: number | null
+          conversation_to_appointment_rate?: number | null
+          cost_per_appointment_cents?: number | null
+          cost_per_conversation_cents?: number | null
+          created_at?: string
+          engaged_count?: number | null
+          fresh_count?: number | null
+          hot_count?: number | null
+          id?: string
+          lost_count?: number | null
+          nurturing_count?: number | null
+          overall_conversion_rate?: number | null
+          recommendations?: Json | null
+          sms_sent?: number | null
+          snapshot_date?: string
+          stalled_count?: number | null
+          strategic_analysis?: string | null
+          total_leads?: number | null
+          total_spend_cents?: number | null
+          user_id?: string
+          won_count?: number | null
         }
         Relationships: []
       }
@@ -2813,22 +2945,95 @@ export type Database = {
           },
         ]
       }
+      lead_intent_signals: {
+        Row: {
+          budget_mentioned: boolean | null
+          budget_range: string | null
+          buying_signals: Json | null
+          call_id: string | null
+          call_interest_score: number | null
+          competitor_mentions: Json | null
+          created_at: string
+          decision_maker_name: string | null
+          id: string
+          is_decision_maker: boolean | null
+          lead_id: string
+          llm_reasoning: string | null
+          model_used: string | null
+          objections: Json | null
+          pain_points: Json | null
+          questions_asked: Json | null
+          specific_dates_mentioned: Json | null
+          timeline: string | null
+          user_id: string
+        }
+        Insert: {
+          budget_mentioned?: boolean | null
+          budget_range?: string | null
+          buying_signals?: Json | null
+          call_id?: string | null
+          call_interest_score?: number | null
+          competitor_mentions?: Json | null
+          created_at?: string
+          decision_maker_name?: string | null
+          id?: string
+          is_decision_maker?: boolean | null
+          lead_id: string
+          llm_reasoning?: string | null
+          model_used?: string | null
+          objections?: Json | null
+          pain_points?: Json | null
+          questions_asked?: Json | null
+          specific_dates_mentioned?: Json | null
+          timeline?: string | null
+          user_id: string
+        }
+        Update: {
+          budget_mentioned?: boolean | null
+          budget_range?: string | null
+          buying_signals?: Json | null
+          call_id?: string | null
+          call_interest_score?: number | null
+          competitor_mentions?: Json | null
+          created_at?: string
+          decision_maker_name?: string | null
+          id?: string
+          is_decision_maker?: boolean | null
+          lead_id?: string
+          llm_reasoning?: string | null
+          model_used?: string | null
+          objections?: Json | null
+          pain_points?: Json | null
+          questions_asked?: Json | null
+          specific_dates_mentioned?: Json | null
+          timeline?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       lead_journey_state: {
         Row: {
+          call_cost_cents: number | null
+          campaign_type: string | null
           created_at: string
           current_stage: string
           engagement_score: number | null
+          estimated_value_cents: number | null
           id: string
           journey_health: string | null
+          last_disposition: string | null
           lead_id: string
           metadata: Json | null
           next_action_scheduled_at: string | null
           next_recommended_action: string | null
           previous_stage: string | null
+          roi_score: number | null
           sentiment_score: number | null
+          sms_cost_cents: number | null
           stage_entered_at: string
           stale_since: string | null
           total_calls: number | null
+          total_cost_cents: number | null
           total_emails: number | null
           total_sms: number | null
           total_touches: number | null
@@ -2836,20 +3041,27 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          call_cost_cents?: number | null
+          campaign_type?: string | null
           created_at?: string
           current_stage?: string
           engagement_score?: number | null
+          estimated_value_cents?: number | null
           id?: string
           journey_health?: string | null
+          last_disposition?: string | null
           lead_id: string
           metadata?: Json | null
           next_action_scheduled_at?: string | null
           next_recommended_action?: string | null
           previous_stage?: string | null
+          roi_score?: number | null
           sentiment_score?: number | null
+          sms_cost_cents?: number | null
           stage_entered_at?: string
           stale_since?: string | null
           total_calls?: number | null
+          total_cost_cents?: number | null
           total_emails?: number | null
           total_sms?: number | null
           total_touches?: number | null
@@ -2857,20 +3069,27 @@ export type Database = {
           user_id: string
         }
         Update: {
+          call_cost_cents?: number | null
+          campaign_type?: string | null
           created_at?: string
           current_stage?: string
           engagement_score?: number | null
+          estimated_value_cents?: number | null
           id?: string
           journey_health?: string | null
+          last_disposition?: string | null
           lead_id?: string
           metadata?: Json | null
           next_action_scheduled_at?: string | null
           next_recommended_action?: string | null
           previous_stage?: string | null
+          roi_score?: number | null
           sentiment_score?: number | null
+          sms_cost_cents?: number | null
           stage_entered_at?: string
           stale_since?: string | null
           total_calls?: number | null
+          total_cost_cents?: number | null
           total_emails?: number | null
           total_sms?: number | null
           total_touches?: number | null
@@ -3650,6 +3869,66 @@ export type Database = {
           },
         ]
       }
+      number_health_metrics: {
+        Row: {
+          answer_rate_24h: number | null
+          answer_rate_30d: number | null
+          answer_rate_7d: number | null
+          calls_last_24h: number
+          calls_last_7d: number
+          calls_last_hour: number
+          health_score: number | null
+          id: string
+          last_calculated: string | null
+          max_safe_daily_calls: number | null
+          phone_number: string
+          phone_number_id: string | null
+          predicted_spam_risk: number | null
+          recommended_rest_until: string | null
+          spam_risk_factors: Json | null
+          user_id: string
+          voicemail_rate_24h: number | null
+        }
+        Insert: {
+          answer_rate_24h?: number | null
+          answer_rate_30d?: number | null
+          answer_rate_7d?: number | null
+          calls_last_24h?: number
+          calls_last_7d?: number
+          calls_last_hour?: number
+          health_score?: number | null
+          id?: string
+          last_calculated?: string | null
+          max_safe_daily_calls?: number | null
+          phone_number: string
+          phone_number_id?: string | null
+          predicted_spam_risk?: number | null
+          recommended_rest_until?: string | null
+          spam_risk_factors?: Json | null
+          user_id: string
+          voicemail_rate_24h?: number | null
+        }
+        Update: {
+          answer_rate_24h?: number | null
+          answer_rate_30d?: number | null
+          answer_rate_7d?: number | null
+          calls_last_24h?: number
+          calls_last_7d?: number
+          calls_last_hour?: number
+          health_score?: number | null
+          id?: string
+          last_calculated?: string | null
+          max_safe_daily_calls?: number | null
+          phone_number?: string
+          phone_number_id?: string | null
+          predicted_spam_risk?: number | null
+          recommended_rest_until?: string | null
+          spam_risk_factors?: Json | null
+          user_id?: string
+          voicemail_rate_24h?: number | null
+        }
+        Relationships: []
+      }
       number_orders: {
         Row: {
           area_code: string
@@ -4229,6 +4508,115 @@ export type Database = {
             columns: ["disposition_id"]
             isOneToOne: false
             referencedRelation: "dispositions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbook_optimization_log: {
+        Row: {
+          after_value: Json | null
+          before_value: Json | null
+          created_at: string
+          data_basis: Json | null
+          id: string
+          model_used: string | null
+          optimization_type: string
+          reasoning: string
+          rule_id: string | null
+          rule_name: string | null
+          user_id: string
+        }
+        Insert: {
+          after_value?: Json | null
+          before_value?: Json | null
+          created_at?: string
+          data_basis?: Json | null
+          id?: string
+          model_used?: string | null
+          optimization_type: string
+          reasoning: string
+          rule_id?: string | null
+          rule_name?: string | null
+          user_id: string
+        }
+        Update: {
+          after_value?: Json | null
+          before_value?: Json | null
+          created_at?: string
+          data_basis?: Json | null
+          id?: string
+          model_used?: string | null
+          optimization_type?: string
+          reasoning?: string
+          rule_id?: string | null
+          rule_name?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_optimization_log_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "followup_playbook"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbook_performance: {
+        Row: {
+          appointment_rate: number | null
+          avg_response_time_hours: number | null
+          id: string
+          last_calculated: string | null
+          led_to_appointment: number
+          led_to_no_response: number
+          led_to_positive_response: number
+          led_to_response: number
+          performance_score: number | null
+          response_rate: number | null
+          rule_id: string
+          rule_name: string
+          times_fired: number
+          user_id: string
+        }
+        Insert: {
+          appointment_rate?: number | null
+          avg_response_time_hours?: number | null
+          id?: string
+          last_calculated?: string | null
+          led_to_appointment?: number
+          led_to_no_response?: number
+          led_to_positive_response?: number
+          led_to_response?: number
+          performance_score?: number | null
+          response_rate?: number | null
+          rule_id: string
+          rule_name: string
+          times_fired?: number
+          user_id: string
+        }
+        Update: {
+          appointment_rate?: number | null
+          avg_response_time_hours?: number | null
+          id?: string
+          last_calculated?: string | null
+          led_to_appointment?: number
+          led_to_no_response?: number
+          led_to_positive_response?: number
+          led_to_response?: number
+          performance_score?: number | null
+          response_rate?: number | null
+          rule_id?: string
+          rule_name?: string
+          times_fired?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_performance_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "followup_playbook"
             referencedColumns: ["id"]
           },
         ]
@@ -6043,6 +6431,10 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      recalculate_number_health: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       reserve_credits: {
         Args: {
           p_amount_cents: number
@@ -6073,6 +6465,7 @@ export type Database = {
         Returns: string
       }
       seed_default_playbook: { Args: { p_user_id: string }; Returns: number }
+      seed_disposition_values: { Args: { p_user_id: string }; Returns: number }
       select_script_variant: {
         Args: { p_agent_id: string; p_user_id: string }
         Returns: {
