@@ -402,3 +402,40 @@ All autonomous systems work together harmoniously:
 - Audit trails for debugging
 - Graceful error handling
 - User can override anytime
+
+---
+
+## Infrastructure: Cron Jobs & Edge Function Security
+
+### Edge Function Security (`verify_jwt`)
+
+Every edge function has a `verify_jwt` setting in `supabase/config.toml` that controls whether Supabase validates a JWT (authentication token) before allowing execution.
+
+| Setting | Meaning | Used For |
+|---------|---------|----------|
+| `verify_jwt = true` | Requires a valid JWT in the `Authorization` header | Internal functions (AI engine, SMS processing, calling, etc.) |
+| `verify_jwt = false` | No JWT required — open to any caller | External webhooks (Twilio, Telnyx, Retell callbacks) |
+
+**Why some are `false`:** External services like Twilio and Retell send webhook callbacks to our edge functions but cannot provide a Supabase JWT. These functions use alternative security measures (e.g., webhook signature verification, request validation) instead.
+
+**When you'd change it:** Only when adding a new external webhook integration that receives callbacks from a third-party service. The AI handles this automatically during development — you should never need to edit `config.toml` manually.
+
+**Where it lives:** `supabase/config.toml` in the project root. This file is part of the source code and deploys automatically.
+
+### Cron Job Infrastructure
+
+Three background jobs run on a schedule using PostgreSQL's `pg_cron` extension. They trigger edge functions via `pg_net` HTTP POST requests.
+
+| Job Name | Schedule | Target Function | Purpose |
+|----------|----------|-----------------|---------|
+| `automation-scheduler-job` | Every 1 minute | `automation-scheduler` | Queues leads for automated calling based on campaign rules |
+| `voice-broadcast-processor` | Every 1 minute | `voice-broadcast-queue` | Processes pending voice broadcast campaigns |
+| `ai-autonomous-engine` | Every 5 minutes | `ai-autonomous-engine` | Runs the AI brain: goal tracking, lead scoring, pacing, journey management |
+
+**How they work:**
+1. `pg_cron` fires at the scheduled interval
+2. `pg_net` sends an HTTP POST to the edge function URL
+3. The request includes the project's **anon key** as a Bearer token (satisfies `verify_jwt = true`)
+4. No service role key is exposed in cron job code
+
+**Important:** These cron jobs are **Supabase infrastructure settings** stored in the database, not in application source files. They persist across deployments and are managed via SQL in the Supabase dashboard (SQL Editor → `cron.schedule()`). They do not appear in `git` or in any project files.
