@@ -513,6 +513,108 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 10, 2026 (Part 5) - Campaign Strategist: 8/10 → 10/10 (NOT DEPLOYED)
+
+**Summary:** Two features that take the AI from execution-focused to strategist-level. The AI now plans entire days like a campaign manager (resource allocation across competing priorities) and discovers cross-dimensional patterns humans would miss (timing correlations, source effectiveness, decay curves, sequence optimization).
+
+**What Changed:**
+
+**1. Campaign Resource Allocator (9/10 Feature) — "Daily War Room"**
+- `planDay()` function generates a complete battle plan each morning
+- Gathers resource inventory: phone numbers (healthy vs resting), lead inventory by stage, budget, yesterday's performance, optimal calling windows, top playbook rules
+- Feeds everything to premium LLM (Claude Sonnet) which generates:
+  - Executive summary ("What's the play today?")
+  - Priority order (callbacks → hot → engaged → stalled → fresh)
+  - Budget allocation percentages per lead tier
+  - Number allocation (best numbers → highest-value leads)
+  - Time-blocked schedule with pace per hour and channel (call vs SMS)
+  - Risk factors and expected outcomes (appointments, conversations, cost)
+- Rule-based fallback when LLM unavailable (proportional allocation)
+- End-of-day adherence scoring: compares plan vs actual outcomes
+- Plans stored in `daily_battle_plans` table
+
+**2. Strategic Pattern Detective (10/10 Feature) — "The AI That Sees What You Can't"**
+- Runs 6 statistical pattern detection algorithms daily:
+  1. **Timing Patterns**: Day × Hour conversion analysis. "Thursday 2pm converts 3.2x vs Monday 10am"
+  2. **Attempt Gap Patterns**: Optimal retry timing. "24-48h gap converts 2.1x vs <2h gap"
+  3. **Sequence Patterns**: Channel order effects. "SMS-before-call leads answer 1.8x more"
+  4. **Source Patterns**: Lead origin effectiveness. "Facebook leads convert 2.5x vs web form"
+  5. **Decay Patterns**: Value half-life. "Lead value drops 50% after 3-7 days of no contact"
+  6. **Number Patterns**: Area code effectiveness. "555 area code gets 2x answer rate vs 212"
+- Cross-dimensional LLM analysis: feeds all pattern data to premium LLM for non-obvious correlations
+- All insights stored with: confidence score, sample size, effect magnitude, recommended action
+- **Auto-rule creation**: High-confidence insights (>75%) with 30+ samples auto-generate new playbook rules
+- Rule types: timing overrides, retry delay optimization, SMS-before-call channel preference
+- All generated rules tracked in `insight_generated_rules` table with performance monitoring
+
+**3. Strategic Briefings**
+- Daily/weekly briefings auto-generated when insights are discovered
+- Headline, executive summary, wins, concerns, recommendations, action items
+- Compares current period vs previous period (appointments, conversion rate, cost per appointment)
+- Stored in `strategic_briefings` table
+
+**4. Campaign Strategist Dashboard (CampaignStrategistDashboard.tsx)**
+- New "Strategist" tab in Autonomous Agent dashboard (tab 2, right after Overview)
+- Three sub-tabs:
+  - **Battle Plan**: Executive summary, resource cards, priority order, budget allocation bars, time blocks, risk factors
+  - **Patterns**: Scrollable insight cards with confidence badges, effect magnitudes, recommended actions, auto-rule indicators
+  - **Briefings**: Strategic briefings with wins/concerns/action items
+- Auto-refreshes every 60 seconds
+
+**Files Created:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `supabase/migrations/20260210_campaign_strategist.sql` | ~230 | All tables, views, functions |
+| `src/components/CampaignStrategistDashboard.tsx` | ~430 | Strategist dashboard UI |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | +~700 lines: planDay(), generateRuleBasedPlan(), scorePlanAdherence(), detectStrategicPatterns(), 6 pattern detectors, runCrossDimensionalAnalysis(), saveInsight(), createRuleFromInsight(), generateBriefing(), new EngineResult fields, steps 16-17 in runForUser |
+| `src/components/AutonomousAgentDashboard.tsx` | Added CampaignStrategistDashboard lazy import, Strategist tab (grid 10→11 columns) |
+
+**New Database Tables:**
+- `daily_battle_plans` — Daily resource allocation with time blocks, budget splits, expected outcomes, adherence tracking
+- `strategic_insights` — Discovered patterns with confidence, effect magnitude, statistical backing
+- `insight_generated_rules` — Rules auto-created from high-confidence insights
+- `strategic_briefings` — Daily/weekly strategic summaries with wins/concerns/actions
+
+**New Database View:**
+- `call_outcome_dimensions` — Cross-dimensional join of call_logs + leads + lead_journey_state for fast pattern queries
+
+**New Database Function:**
+- `get_funnel_trend(user_id, days)` — Returns daily funnel snapshots for trend analysis
+
+**New autonomous_settings Columns:**
+- `enable_daily_planning` (BOOLEAN, default false) — Master toggle for daily battle plans
+- `enable_strategic_insights` (BOOLEAN, default false) — Master toggle for pattern detection
+- `daily_budget_cents` (INTEGER, default 50000) — Daily budget constraint ($500)
+- `auto_create_rules_from_insights` (BOOLEAN, default false) — Auto-generate rules from patterns
+- `insight_confidence_threshold` (NUMERIC, default 0.75) — Minimum confidence for auto-rule creation
+- `briefing_frequency` (TEXT, default 'daily') — How often to generate briefings
+
+**Engine Steps (now 19 total):**
+```
+1-15: [unchanged from Part 4]
+16. Campaign Resource Allocator (NEW) — daily battle plan generation
+17. Strategic Pattern Detective (NEW) — cross-dimensional pattern discovery + auto-rules + briefings
+18. Save operational memory (was 16)
+19. Update last_engine_run (was 17)
+```
+
+**Deployment Required:**
+```bash
+# Run migration
+# Set OpenRouter key (required for premium features):
+supabase secrets set OPENROUTER_API_KEY=your_key_here
+# Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Build Validation:** Both `npx tsc --noEmit` and `npx vite build` pass clean.
+
+---
+
 ### February 10, 2026 (Part 4) - AI Intelligence Upgrade: 4/10 → 8/10 (NOT DEPLOYED)
 
 **Summary:** 8 upgrades that give the AI real intelligence about the game being played at scale: funnel thinking, disposition value awareness, number health prediction, LLM intent extraction, cost/ROI tracking, campaign type differentiation, and self-optimizing playbook rules.
