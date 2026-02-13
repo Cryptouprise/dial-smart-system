@@ -96,7 +96,11 @@ const Demo = () => {
           <DemoWebsiteScraper
             websiteUrl={state.websiteUrl}
             onComplete={(sessionId, data) => {
-              updateState({ sessionId, scrapedData: data });
+              updateState({ 
+                sessionId, 
+                scrapedData: data,
+                prospectCompany: data?.business_name || '',
+              });
               setStep('campaign-type');
             }}
             onBack={() => setStep('landing')}
