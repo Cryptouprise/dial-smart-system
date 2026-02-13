@@ -1,37 +1,46 @@
 
+# Update OpenRouter Model Tiers with Free Fallbacks
 
-# Document verify_jwt and Cron Job Infrastructure in AUTONOMOUS_SYSTEM_FLOW.md
+## What We're Doing
+Updating `openrouter.ts` to use the best free OpenRouter models as primary defaults, with automatic fallback to paid models if the free ones fail (rate limited, etc.). This means the system **never stops working** even if credits run out.
 
-## What Changes
+## Model Strategy
 
-Add a new section to `AUTONOMOUS_SYSTEM_FLOW.md` (at the end, before or after the existing "Validation" section) covering:
+| Tier | Primary (Free) | Fallback (Paid) | Use Case |
+|------|----------------|-----------------|----------|
+| Fast | `deepseek/deepseek-r1-0528:free` | `google/gemini-2.5-flash` | Disposition classification, SMS generation, simple parsing |
+| Balanced | `meta-llama/llama-3.3-70b:free` | `anthropic/claude-sonnet-4-20250514` | Transcript analysis, intent extraction, playbook evaluation |
+| Premium | `deepseek/deepseek-r1-0528:free` | `anthropic/claude-sonnet-4-20250514` | Strategic analysis, battle plans, funnel optimization |
 
-1. **Edge Function Security (`verify_jwt`)** -- What it means, why some are `true` and others `false`, and that it lives in `supabase/config.toml`
-2. **Cron Job Infrastructure** -- All 3 active cron jobs, how they work via `pg_cron` + `pg_net`, and that the anon key is used for authentication
-3. **Quick reference table** of all cron jobs with their schedules
+## Changes to `supabase/functions/_shared/openrouter.ts`
 
-## Content to Add
+1. **Add free model tier map** alongside the existing paid models
+2. **Add retry-with-fallback logic** in `callLLM()`: try the free model first, and if it returns a 429 (rate limit) or 503 (overloaded), automatically retry with the paid model
+3. **Add logging** so you can see in edge function logs which model actually served each request
 
-A new section titled **"Infrastructure: Cron Jobs & Edge Function Security"** appended to the file, covering:
-
-- **verify_jwt explained**: `true` = requires valid JWT (used for internal/authenticated functions), `false` = open access (used for external webhooks like Twilio/Telnyx/Retell that can't send JWTs). Configured in `supabase/config.toml`.
-- **When you'd change it**: Only when adding a new external webhook integration. The AI handles this automatically during development.
-- **Active cron jobs table**:
+## How the Fallback Works
 
 ```text
-Job Name                    | Schedule        | Target Function
-----------------------------|-----------------|---------------------------
-automation-scheduler-job    | Every 1 minute  | automation-scheduler
-voice-broadcast-processor   | Every 1 minute  | voice-broadcast-queue
-ai-autonomous-engine        | Every 5 minutes | ai-autonomous-engine
+Request comes in (tier: "balanced")
+  |
+  Try FREE model (llama-3.3-70b:free)
+  |
+  Success? --> Return response
+  |
+  429/503? --> Log warning, retry with PAID model (claude-sonnet-4)
+               |
+               Success? --> Return response
+               |
+               Fail? --> Throw error
 ```
 
-- **How cron jobs work**: `pg_cron` triggers `pg_net` HTTP POST to the edge function URL using the anon key as a Bearer token. No service role key is exposed in code.
-- **Note**: These are Supabase infrastructure settings, not application code. They persist in the database and don't appear in source files.
+## Technical Details
 
-## File Changed
+- Only retries on 429 (rate limit) and 503 (overloaded) -- other errors throw immediately
+- Adds ~0 latency on success, only adds retry latency when free model is unavailable
+- Lovable AI gateway fallback still works as the final safety net if no OpenRouter key is set
+- No changes needed to any calling code -- the `callLLM`, `callLLMJson`, and `promptLLM` APIs stay identical
+- Will also update `CLAUDE.md` with the new model strategy
 
-- `AUTONOMOUS_SYSTEM_FLOW.md` -- append new section (approximately 50 lines of markdown)
-
-No other files need changes.
-
+## Edge Functions to Redeploy
+- `ai-autonomous-engine` (primary consumer of these tiers)
