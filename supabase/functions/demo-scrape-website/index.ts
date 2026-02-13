@@ -153,8 +153,17 @@ Deno.serve(async (req) => {
     const fullContent = homepageMarkdown + additionalContent;
 
     // Step 4: Use AI to extract business info AND build knowledge base
+    // Clean common title prefixes like "Home - ", "Home | ", "Welcome to "
+    const cleanBusinessName = (name: string): string => {
+      return name
+        .replace(/^(home|welcome|homepage)\s*[-–—|:]\s*/i, '')
+        .replace(/\s*[-–—|:]\s*(home|homepage|welcome|main)$/i, '')
+        .replace(/^welcome\s+to\s+/i, '')
+        .trim() || name.trim();
+    };
+
     let businessInfo: Record<string, any> = {
-      business_name: metadata.title || 'Unknown Business',
+      business_name: cleanBusinessName(metadata.title || 'Unknown Business'),
       products_services: 'products and services',
       target_audience: 'businesses',
       value_props: [],
@@ -213,7 +222,7 @@ Write the knowledge_base as a natural briefing document that an AI agent can ref
             try {
               const parsed = JSON.parse(content);
               businessInfo = {
-                business_name: parsed.business_name || businessInfo.business_name,
+                business_name: cleanBusinessName(parsed.business_name || businessInfo.business_name),
                 products_services: parsed.products_services || businessInfo.products_services,
                 target_audience: parsed.target_audience || businessInfo.target_audience,
                 value_props: parsed.value_props || businessInfo.value_props,
