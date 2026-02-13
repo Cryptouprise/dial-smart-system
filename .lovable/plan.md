@@ -1,46 +1,44 @@
 
-# Update OpenRouter Model Tiers with Free Fallbacks
 
-## What We're Doing
-Updating `openrouter.ts` to use the best free OpenRouter models as primary defaults, with automatic fallback to paid models if the free ones fail (rate limited, etc.). This means the system **never stops working** even if credits run out.
+# Fix Autonomous Engine: Broken Model ID + Missing Column
 
-## Model Strategy
+## What's Wrong (from the live test)
 
-| Tier | Primary (Free) | Fallback (Paid) | Use Case |
-|------|----------------|-----------------|----------|
-| Fast | `deepseek/deepseek-r1-0528:free` | `google/gemini-2.5-flash` | Disposition classification, SMS generation, simple parsing |
-| Balanced | `meta-llama/llama-3.3-70b:free` | `anthropic/claude-sonnet-4-20250514` | Transcript analysis, intent extraction, playbook evaluation |
-| Premium | `deepseek/deepseek-r1-0528:free` | `anthropic/claude-sonnet-4-20250514` | Strategic analysis, battle plans, funnel optimization |
+1. **Free model ID is wrong** -- `meta-llama/llama-3.3-70b:free` does not exist on OpenRouter. The correct ID is `meta-llama/llama-3.3-70b-instruct:free`. Every 5-minute run is failing on the free model and falling back to paid Claude Sonnet, costing real money.
 
-## Changes to `supabase/functions/_shared/openrouter.ts`
+2. **`plan_status` column missing** from `daily_battle_plans` table -- the engine code checks `existingPlan.plan_status` but the column was never created, so battle plan generation is skipped every run.
 
-1. **Add free model tier map** alongside the existing paid models
-2. **Add retry-with-fallback logic** in `callLLM()`: try the free model first, and if it returns a 429 (rate limit) or 503 (overloaded), automatically retry with the paid model
-3. **Add logging** so you can see in edge function logs which model actually served each request
+## Fix 1: Update Free Model IDs
 
-## How the Fallback Works
+**File:** `supabase/functions/_shared/openrouter.ts`
 
-```text
-Request comes in (tier: "balanced")
-  |
-  Try FREE model (llama-3.3-70b:free)
-  |
-  Success? --> Return response
-  |
-  429/503? --> Log warning, retry with PAID model (claude-sonnet-4)
-               |
-               Success? --> Return response
-               |
-               Fail? --> Throw error
+Change all three entries from `meta-llama/llama-3.3-70b:free` to `meta-llama/llama-3.3-70b-instruct:free`.
+
+Also add a faster alternative for the `fast` tier using `openai/gpt-oss-120b:free` (OpenAI's open-weight MoE model, fast with only 5.1B active params per pass).
+
+Updated config:
+- **fast:** `openai/gpt-oss-120b:free` -- lightweight, great for classification/SMS
+- **balanced:** `meta-llama/llama-3.3-70b-instruct:free` -- solid all-rounder
+- **premium:** `meta-llama/llama-3.3-70b-instruct:free` -- same fast model, avoids slow reasoning models
+
+## Fix 2: Add `plan_status` Column
+
+**Database migration** to add:
+```
+ALTER TABLE public.daily_battle_plans 
+ADD COLUMN IF NOT EXISTS plan_status TEXT DEFAULT 'draft';
 ```
 
-## Technical Details
+This unblocks the Daily Battle Plan generation step.
 
-- Only retries on 429 (rate limit) and 503 (overloaded) -- other errors throw immediately
-- Adds ~0 latency on success, only adds retry latency when free model is unavailable
-- Lovable AI gateway fallback still works as the final safety net if no OpenRouter key is set
-- No changes needed to any calling code -- the `callLLM`, `callLLMJson`, and `promptLLM` APIs stay identical
-- Will also update `CLAUDE.md` with the new model strategy
+## Fix 3: Redeploy
 
-## Edge Functions to Redeploy
-- `ai-autonomous-engine` (primary consumer of these tiers)
+Redeploy `ai-autonomous-engine` so it picks up the corrected model IDs.
+
+## Expected Result After Fix
+
+- Free model calls succeed (no more 400 errors)
+- No paid Claude fallback unless free models are rate-limited
+- Battle plans actually generate instead of being skipped
+- The summary line should show `plan=generated` instead of `plan=skipped`
+
