@@ -21,10 +21,10 @@ export const MODELS = {
 export const FREE_MODELS: Record<ModelTier, string> = {
   // Llama 3.3 70B: fast instruction-following, great for classification/SMS/simple parsing
   fast: 'meta-llama/llama-3.3-70b:free',
-  // Qwen3 235B MoE: large model, strong at analysis and structured extraction
-  balanced: 'qwen/qwen3-235b-a22b:free',
-  // DeepSeek R1: deep chain-of-thought reasoning, best for strategic/complex planning
-  premium: 'deepseek/deepseek-r1-0528:free',
+  // Llama 3.3 70B: same fast model for balanced — avoids slow MoE models
+  balanced: 'meta-llama/llama-3.3-70b:free',
+  // Llama 3.3 70B: same fast model for premium — avoids DeepSeek R1 timeouts
+  premium: 'meta-llama/llama-3.3-70b:free',
 };
 
 export type ModelTier = keyof typeof MODELS;
