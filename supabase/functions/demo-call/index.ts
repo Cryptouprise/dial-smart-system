@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
     if (config?.base_prompt) {
       personalizedPrompt = config.base_prompt
         .replace(/\{\{business_name\}\}/g, businessInfo.business_name || 'your company')
+        .replace(/\{\{prospect_name\}\}/g, businessInfo.prospect_name || '')
         .replace(/\{\{products_services\}\}/g, businessInfo.products_services || 'products and services')
         .replace(/\{\{campaign_type\}\}/g, effectiveCampaignType);
     }
@@ -200,6 +201,12 @@ Deno.serve(async (req) => {
         from_number: fromNumber,
         to_number: formattedPhone,
         agent_id: agentId,
+        retell_llm_dynamic_variables: {
+          business_name: businessInfo.business_name || 'your company',
+          prospect_name: businessInfo.prospect_name || '',
+          products_services: businessInfo.products_services || 'products and services',
+          campaign_type: effectiveCampaignType,
+        },
         metadata: {
           demo_session_id: sessionId,
           campaign_type: effectiveCampaignType,
