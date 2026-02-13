@@ -648,10 +648,10 @@ export const DemoSimulationDashboard = ({
             <DemoSmsRepliesPanel replies={smsReplies} />
             
             {/* Phone + Laptop Side by Side - LARGE */}
-            <div className="relative">
+            <div className="relative overflow-visible">
               <div className="absolute -inset-8 bg-gradient-to-r from-violet-500/15 via-primary/15 to-cyan-500/15 rounded-[3rem] blur-3xl" />
-              <div className="relative p-8 md:p-12 rounded-3xl bg-gradient-to-br from-background/80 via-background/60 to-background/80 backdrop-blur-xl border border-primary/30 shadow-2xl">
-                <h3 className="font-bold text-center mb-8 text-xl md:text-2xl flex items-center justify-center gap-3">
+              <div className="relative p-4 sm:p-8 md:p-12 rounded-3xl bg-gradient-to-br from-background/80 via-background/60 to-background/80 backdrop-blur-xl border border-primary/30 shadow-2xl overflow-visible">
+                <h3 className="font-bold text-center mb-8 text-xl md:text-2xl flex items-center justify-center gap-3 flex-wrap">
                   <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30">
                     <Phone className="h-5 w-5 text-primary" />
                   </div>
@@ -663,9 +663,9 @@ export const DemoSimulationDashboard = ({
                   </div>
                 </h3>
                 
-                <div className="flex flex-col xl:flex-row items-end justify-center gap-10 xl:gap-16">
+                <div className="flex flex-col lg:flex-row items-center lg:items-end justify-center gap-10 lg:gap-16 overflow-visible">
                   {/* Phone Mockup - Full Size */}
-                  <div className="flex-shrink-0">
+                  <div className="w-full max-w-[440px] flex-shrink-0">
                     <DemoPhoneMockup
                       campaignType={campaignType}
                       businessName={scrapedData?.business_name}
@@ -676,7 +676,7 @@ export const DemoSimulationDashboard = ({
                   </div>
                   
                   {/* Laptop Mockup - Full Size */}
-                  <div className="flex-shrink-0">
+                  <div className="w-full max-w-[700px] flex-shrink-0">
                     <DemoEmailMockup
                       hasEmail={emailCount > 0}
                       emailCount={emailCount}
