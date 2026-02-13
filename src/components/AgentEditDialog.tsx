@@ -132,6 +132,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [newKbContent, setNewKbContent] = useState('');
   const [isUploadingKb, setIsUploadingKb] = useState(false);
 
+  // Dynamic voice list from Retell
+  const [retellVoices, setRetellVoices] = useState<any[]>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+
   // Calendar test state
   const [calendarTestStatus, setCalendarTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [calendarTestMessage, setCalendarTestMessage] = useState('');
@@ -165,6 +169,36 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     };
     loadUserAndCheckCalendar();
   }, [agent]);
+
+  // Load available voices from Retell
+  useEffect(() => {
+    const loadVoices = async () => {
+      if (!open) return;
+      setIsLoadingVoices(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'list_voices' },
+        });
+        if (error) throw error;
+        if (data?.voices && Array.isArray(data.voices)) {
+          // Sort: elevenlabs first, then openai, then deepgram
+          const providerOrder: Record<string, number> = { elevenlabs: 0, openai: 1, deepgram: 2 };
+          const sorted = [...data.voices].sort((a: any, b: any) => {
+            const oa = providerOrder[a.provider] ?? 99;
+            const ob = providerOrder[b.provider] ?? 99;
+            if (oa !== ob) return oa - ob;
+            return (a.voice_name || '').localeCompare(b.voice_name || '');
+          });
+          setRetellVoices(sorted);
+        }
+      } catch (err) {
+        console.error('Failed to load voices:', err);
+      } finally {
+        setIsLoadingVoices(false);
+      }
+    };
+    loadVoices();
+  }, [open]);
 
   // Load available phone numbers for test calls
   useEffect(() => {
@@ -1332,36 +1366,34 @@ AFTER LEAVING THE MESSAGE:
                     <SelectValue placeholder="Select a voice" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[400px]">
-                    {/* ElevenLabs Voices - Retell Built-in Defaults */}
-                    <SelectItem value="11labs-Adrian">🎤 Adrian (Male, American, Young)</SelectItem>
-                    <SelectItem value="11labs-Brian">🎤 Brian (Male, Warm, Professional)</SelectItem>
-                    <SelectItem value="11labs-Sarah">🎤 Sarah (Female, Warm, Professional)</SelectItem>
-                    <SelectItem value="11labs-Rachel">🎤 Rachel (Female, American, Classic)</SelectItem>
-                    
-                    {/* OpenAI Voices - Retell Built-in */}
-                    <SelectItem value="openai-Alloy">OpenAI - Alloy (Neutral)</SelectItem>
-                    <SelectItem value="openai-Echo">OpenAI - Echo (Male)</SelectItem>
-                    <SelectItem value="openai-Fable">OpenAI - Fable (British)</SelectItem>
-                    <SelectItem value="openai-Nova">OpenAI - Nova (Female)</SelectItem>
-                    <SelectItem value="openai-Onyx">OpenAI - Onyx (Deep Male)</SelectItem>
-                    <SelectItem value="openai-Shimmer">OpenAI - Shimmer (Female)</SelectItem>
-                    
-                    {/* Deepgram Voices - Retell Built-in */}
-                    <SelectItem value="deepgram-Angus">Deepgram - Angus (Male, Irish)</SelectItem>
-                    <SelectItem value="deepgram-Athena">Deepgram - Athena (Female, British)</SelectItem>
-                    <SelectItem value="deepgram-Arcas">Deepgram - Arcas (Male, American)</SelectItem>
-                    <SelectItem value="deepgram-Helios">Deepgram - Helios (Male, British)</SelectItem>
-                    <SelectItem value="deepgram-Hera">Deepgram - Hera (Female, American)</SelectItem>
-                    <SelectItem value="deepgram-Luna">Deepgram - Luna (Female, American)</SelectItem>
-                    <SelectItem value="deepgram-Orion">Deepgram - Orion (Male, American)</SelectItem>
-                    <SelectItem value="deepgram-Orpheus">Deepgram - Orpheus (Male, American)</SelectItem>
-                    <SelectItem value="deepgram-Perseus">Deepgram - Perseus (Male, American)</SelectItem>
-                    <SelectItem value="deepgram-Stella">Deepgram - Stella (Female, American)</SelectItem>
-                    <SelectItem value="deepgram-Zeus">Deepgram - Zeus (Male, American)</SelectItem>
+                    {isLoadingVoices ? (
+                      <SelectItem value="_loading" disabled>Loading voices...</SelectItem>
+                    ) : retellVoices.length > 0 ? (
+                      retellVoices.map((voice: any) => {
+                        const providerIcon = voice.provider === 'elevenlabs' ? '🎤' : voice.provider === 'openai' ? '🤖' : '🔊';
+                        const genderLabel = voice.gender ? ` (${voice.gender})` : '';
+                        const accentLabel = voice.accent ? `, ${voice.accent}` : '';
+                        return (
+                          <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                            {providerIcon} {voice.voice_name}{genderLabel}{accentLabel}
+                          </SelectItem>
+                        );
+                      })
+                    ) : (
+                      <>
+                        {/* Fallback static list if API call fails */}
+                        <SelectItem value="11labs-Adrian">🎤 Adrian (Male)</SelectItem>
+                        <SelectItem value="11labs-Brian">🎤 Brian (Male)</SelectItem>
+                        <SelectItem value="openai-Alloy">🤖 Alloy (Neutral)</SelectItem>
+                        <SelectItem value="openai-Echo">🤖 Echo (Male)</SelectItem>
+                        <SelectItem value="openai-Nova">🤖 Nova (Female)</SelectItem>
+                        <SelectItem value="openai-Shimmer">🤖 Shimmer (Female)</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Only voices available in your Retell account are shown. To add more ElevenLabs voices, import them via the Retell Dashboard → Voices.
+                  Voices are loaded from your Retell account. To add more ElevenLabs voices, import them via the Retell Dashboard → Voices.
                 </p>
               </div>
 
