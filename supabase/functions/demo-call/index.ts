@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { sessionId, phoneNumber, campaignType } = await req.json();
+    const { sessionId, phoneNumber, campaignType, prospectName, prospectCompany } = await req.json();
 
     if (!sessionId || !phoneNumber) {
       return new Response(
@@ -121,6 +121,13 @@ Deno.serve(async (req) => {
     }
 
     const businessInfo = session.scraped_data || {};
+    // Use the user-entered company name if provided, otherwise fall back to scraped data
+    if (prospectCompany) {
+      businessInfo.business_name = prospectCompany;
+    }
+    if (prospectName) {
+      businessInfo.prospect_name = prospectName;
+    }
     const effectiveCampaignType = campaignType || session.campaign_type || 'database_reactivation';
 
     // Format phone number to E.164
