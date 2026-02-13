@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -187,6 +187,19 @@ const AuthPage = () => {
           <p className="text-xs text-center text-muted-foreground">
             Sign in with Google to enable Calendar integration
           </p>
+
+          <div className="relative mt-2">
+            <Separator />
+          </div>
+
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-2">Not a current customer?</p>
+            <Link to="/demo">
+              <Button variant="outline" className="w-full gap-2 border-primary/30 hover:border-primary/60 hover:bg-primary/5">
+                🚀 Check here to see a live demo
+              </Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
