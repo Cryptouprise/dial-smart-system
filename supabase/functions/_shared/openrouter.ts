@@ -4,20 +4,25 @@
  * Shared helper for making LLM calls via OpenRouter.
  * Supports model selection by task tier (cheap/medium/premium).
  * Falls back to Lovable AI gateway if OpenRouter key is missing.
+ *
+ * Strategy: Free models first → paid fallback on 429/503 → Lovable gateway as last resort.
  */
 
 // ---------------------------------------------------------------------------
-// Model tiers — pick the right tool for the job
+// Model tiers — Free-first with paid fallbacks
 // ---------------------------------------------------------------------------
 
 export const MODELS = {
-  // Fast + cheap: disposition classification, simple parsing, SMS generation
   fast: 'google/gemini-2.5-flash',
-  // Balanced: transcript analysis, intent extraction, playbook evaluation
   balanced: 'anthropic/claude-sonnet-4-20250514',
-  // Premium: strategic analysis, playbook rewriting, funnel optimization
   premium: 'anthropic/claude-sonnet-4-20250514',
 } as const;
+
+export const FREE_MODELS: Record<ModelTier, string> = {
+  fast: 'deepseek/deepseek-r1-0528:free',
+  balanced: 'meta-llama/llama-3.3-70b:free',
+  premium: 'deepseek/deepseek-r1-0528:free',
+};
 
 export type ModelTier = keyof typeof MODELS;
 
@@ -45,8 +50,59 @@ interface LLMCallOptions {
   json_mode?: boolean;
 }
 
+// Status codes that trigger automatic fallback to paid model
+const RETRYABLE_STATUSES = new Set([429, 503]);
+
 // ---------------------------------------------------------------------------
-// Core call function
+// Internal: single attempt against one model
+// ---------------------------------------------------------------------------
+
+async function attemptLLMCall(
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  temperature: number,
+  max_tokens: number,
+  json_mode: boolean,
+  isOpenRouter: boolean,
+): Promise<{ ok: true; data: LLMResponse } | { ok: false; status: number; errText: string }> {
+  const body: Record<string, unknown> = { model, messages, temperature, max_tokens };
+  if (json_mode) body.response_format = { type: 'json_object' };
+
+  const resp = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      ...(isOpenRouter ? { 'HTTP-Referer': 'https://dial-smart-system.com' } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => 'unknown');
+    return { ok: false, status: resp.status, errText };
+  }
+
+  const data = await resp.json();
+  const choice = data.choices?.[0];
+  if (!choice?.message?.content) {
+    return { ok: false, status: 0, errText: 'LLM returned empty response' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      content: choice.message.content,
+      model: data.model || model,
+      usage: data.usage,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Core call function — free first, paid fallback
 // ---------------------------------------------------------------------------
 
 export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
@@ -57,9 +113,9 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     json_mode = false,
   } = options;
 
-  const model = options.model || MODELS[options.tier || 'fast'];
+  const tier = options.tier || 'fast';
+  const paidModel = options.model || MODELS[tier];
 
-  // Try OpenRouter first, fall back to Lovable gateway
   const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
   const lovableKey = Deno.env.get('LOVABLE_API_KEY');
 
@@ -67,53 +123,50 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     throw new Error('No LLM API key configured. Set OPENROUTER_API_KEY or LOVABLE_API_KEY.');
   }
 
-  const useOpenRouter = !!openrouterKey;
-  const apiUrl = useOpenRouter
-    ? 'https://openrouter.ai/api/v1/chat/completions'
-    : 'https://ai.gateway.lovable.dev/v1/chat/completions';
-  const apiKey = useOpenRouter ? openrouterKey : lovableKey;
+  // --- Path A: OpenRouter available → try free model first, then paid ---
+  if (openrouterKey) {
+    const apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    const freeModel = options.model ? null : FREE_MODELS[tier]; // skip free if caller specified exact model
 
-  // If using Lovable gateway, force Gemini model
-  const effectiveModel = useOpenRouter ? model : 'google/gemini-2.5-flash';
+    if (freeModel) {
+      console.log(`[LLM] Trying FREE model: ${freeModel} (tier: ${tier})`);
+      const freeResult = await attemptLLMCall(apiUrl, openrouterKey, freeModel, messages, temperature, max_tokens, json_mode, true);
 
-  const body: Record<string, unknown> = {
-    model: effectiveModel,
-    messages,
-    temperature,
-    max_tokens,
-  };
+      if (freeResult.ok) {
+        console.log(`[LLM] ✅ FREE model succeeded: ${freeResult.data.model}`);
+        return freeResult.data;
+      }
 
-  if (json_mode) {
-    body.response_format = { type: 'json_object' };
+      if (RETRYABLE_STATUSES.has(freeResult.status)) {
+        console.warn(`[LLM] ⚠️ FREE model ${freeModel} returned ${freeResult.status}, falling back to paid: ${paidModel}`);
+      } else {
+        console.warn(`[LLM] ⚠️ FREE model ${freeModel} failed (${freeResult.status}): ${freeResult.errText.substring(0, 200)}, falling back to paid: ${paidModel}`);
+      }
+    }
+
+    // Paid fallback
+    console.log(`[LLM] Trying PAID model: ${paidModel}`);
+    const paidResult = await attemptLLMCall(apiUrl, openrouterKey, paidModel, messages, temperature, max_tokens, json_mode, true);
+
+    if (paidResult.ok) {
+      console.log(`[LLM] ✅ PAID model succeeded: ${paidResult.data.model}`);
+      return paidResult.data;
+    }
+
+    throw new Error(`LLM call failed (${paidResult.status}): ${paidResult.errText}`);
   }
 
-  const resp = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      ...(useOpenRouter ? { 'HTTP-Referer': 'https://dial-smart-system.com' } : {}),
-    },
-    body: JSON.stringify(body),
-  });
+  // --- Path B: Lovable gateway fallback (no OpenRouter key) ---
+  console.log(`[LLM] Using Lovable AI gateway (no OpenRouter key)`);
+  const gatewayResult = await attemptLLMCall(
+    'https://ai.gateway.lovable.dev/v1/chat/completions',
+    lovableKey!,
+    'google/gemini-2.5-flash',
+    messages, temperature, max_tokens, json_mode, false,
+  );
 
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => 'unknown');
-    throw new Error(`LLM call failed (${resp.status}): ${errText}`);
-  }
-
-  const data = await resp.json();
-  const choice = data.choices?.[0];
-
-  if (!choice?.message?.content) {
-    throw new Error('LLM returned empty response');
-  }
-
-  return {
-    content: choice.message.content,
-    model: data.model || effectiveModel,
-    usage: data.usage,
-  };
+  if (gatewayResult.ok) return gatewayResult.data;
+  throw new Error(`LLM call failed (${gatewayResult.status}): ${gatewayResult.errText}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +180,6 @@ export async function callLLMJson<T = Record<string, unknown>>(
 
   let parsed: T;
   try {
-    // Sometimes LLM wraps JSON in ```json ... ```
     let content = response.content.trim();
     if (content.startsWith('```')) {
       content = content.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
