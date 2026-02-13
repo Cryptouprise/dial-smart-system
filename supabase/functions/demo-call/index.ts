@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
       .eq('ip_address', clientIp)
       .gte('created_at', `${today}T00:00:00Z`);
 
-    // Rate limit: 10 calls per IP per day (increased for testing)
-    if ((callCount || 0) >= 10) {
+    // Rate limit: 1000 calls per IP per day (generous for demos)
+    if ((callCount || 0) >= 1000) {
       return new Response(
         JSON.stringify({ 
           success: false, 
