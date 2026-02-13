@@ -1535,6 +1535,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "call_opener_logs_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
             foreignKeyName: "call_opener_logs_opener_id_fkey"
             columns: ["opener_id"]
             isOneToOne: false
@@ -1591,6 +1598,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_logs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_variant_assignments_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
           },
           {
             foreignKeyName: "call_variant_assignments_lead_id_fkey"
@@ -2361,6 +2375,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_logs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "disposition_metrics_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
           },
           {
             foreignKeyName: "disposition_metrics_campaign_id_fkey"
@@ -3859,6 +3880,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_logs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_learning_data_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
           },
           {
             foreignKeyName: "ml_learning_data_lead_id_fkey"
@@ -5470,6 +5498,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "spending_logs_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
             foreignKeyName: "spending_logs_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
@@ -6057,6 +6092,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "voicemail_callback_tracking_callback_call_id_fkey"
+            columns: ["callback_call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
             foreignKeyName: "voicemail_callback_tracking_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
@@ -6083,6 +6125,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_logs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voicemail_callback_tracking_voicemail_call_id_fkey"
+            columns: ["voicemail_call_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
           },
         ]
       }
@@ -6204,6 +6253,48 @@ export type Database = {
       }
     }
     Views: {
+      call_outcome_dimensions: {
+        Row: {
+          call_attempts: number | null
+          call_id: string | null
+          campaign_id: string | null
+          campaign_type: string | null
+          created_at: string | null
+          day_of_week: number | null
+          duration: number | null
+          from_number: string | null
+          hour_of_day: number | null
+          interest_level: number | null
+          journey_stage: string | null
+          lead_id: string | null
+          lead_source: string | null
+          lead_status: string | null
+          lead_tags: string[] | null
+          month: number | null
+          outcome: string | null
+          outcome_category: string | null
+          preferred_channel: string | null
+          sentiment_score: string | null
+          total_touches: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       time_wasted_summary: {
         Row: {
           avg_waste_score: number | null
@@ -6409,6 +6500,23 @@ export type Database = {
         Returns: number
       }
       get_effective_daily_calls: { Args: { phone_id: string }; Returns: number }
+      get_funnel_trend: {
+        Args: { p_days?: number; p_user_id: string }
+        Returns: {
+          appointments_booked: number
+          booked_count: number
+          calls_made: number
+          cost_per_appointment_cents: number
+          engaged_count: number
+          hot_count: number
+          overall_conversion_rate: number
+          snapshot_date: string
+          stalled_count: number
+          total_leads: number
+          total_spend_cents: number
+          won_count: number
+        }[]
+      }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
       has_role: {
         Args: {
