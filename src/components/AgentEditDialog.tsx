@@ -1332,31 +1332,11 @@ AFTER LEAVING THE MESSAGE:
                     <SelectValue placeholder="Select a voice" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[400px]">
-                    {/* ElevenLabs Voices - Sales Optimized Males */}
-                    <SelectItem value="11labs-George">🎤 George (Male, Confident, Sales)</SelectItem>
-                    <SelectItem value="11labs-Brian">🎤 Brian (Male, Warm, Professional)</SelectItem>
-                    <SelectItem value="11labs-Daniel">🎤 Daniel (Male, Authoritative)</SelectItem>
-                    <SelectItem value="11labs-Eric">🎤 Eric (Male, Friendly)</SelectItem>
-                    <SelectItem value="11labs-Chris">🎤 Chris (Male, Energetic)</SelectItem>
-                    <SelectItem value="11labs-Liam">🎤 Liam (Male, Smooth)</SelectItem>
-                    <SelectItem value="11labs-Roger">🎤 Roger (Male, Deep)</SelectItem>
-                    <SelectItem value="11labs-Callum">🎤 Callum (Male, British)</SelectItem>
-                    <SelectItem value="11labs-Will">🎤 Will (Male, Casual)</SelectItem>
-                    <SelectItem value="11labs-Bill">🎤 Bill (Male, Mature)</SelectItem>
-                    <SelectItem value="11labs-Charlie">🎤 Charlie (Male, Australian)</SelectItem>
+                    {/* ElevenLabs Voices - Retell Built-in Defaults */}
                     <SelectItem value="11labs-Adrian">🎤 Adrian (Male, American, Young)</SelectItem>
-                    
-                    {/* ElevenLabs Voices - Sales Optimized Females */}
+                    <SelectItem value="11labs-Brian">🎤 Brian (Male, Warm, Professional)</SelectItem>
                     <SelectItem value="11labs-Sarah">🎤 Sarah (Female, Warm, Professional)</SelectItem>
-                    <SelectItem value="11labs-Laura">🎤 Laura (Female, Upbeat)</SelectItem>
-                    <SelectItem value="11labs-Jessica">🎤 Jessica (Female, Conversational)</SelectItem>
-                    <SelectItem value="11labs-Alice">🎤 Alice (Female, British, Polished)</SelectItem>
-                    <SelectItem value="11labs-Matilda">🎤 Matilda (Female, Warm)</SelectItem>
-                    <SelectItem value="11labs-Lily">🎤 Lily (Female, British, Soft)</SelectItem>
-                    <SelectItem value="11labs-River">🎤 River (Non-Binary, Neutral)</SelectItem>
                     <SelectItem value="11labs-Rachel">🎤 Rachel (Female, American, Classic)</SelectItem>
-                    <SelectItem value="11labs-Dorothy">🎤 Dorothy (Female, British, Mature)</SelectItem>
-                    <SelectItem value="11labs-Freya">🎤 Freya (Female, American, Soft)</SelectItem>
                     
                     {/* OpenAI Voices - Retell Built-in */}
                     <SelectItem value="openai-Alloy">OpenAI - Alloy (Neutral)</SelectItem>
@@ -1381,7 +1361,7 @@ AFTER LEAVING THE MESSAGE:
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  ElevenLabs: $0.07/min | OpenAI: $0.08/min
+                  Only voices available in your Retell account are shown. To add more ElevenLabs voices, import them via the Retell Dashboard → Voices.
                 </p>
               </div>
 
