@@ -74,6 +74,8 @@ export const DemoPhoneInput = ({
           sessionId,
           phoneNumber: `+1${phoneNumber}`,
           campaignType,
+          prospectName,
+          prospectCompany,
         },
       });
 
