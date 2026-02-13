@@ -162,6 +162,11 @@ Deno.serve(async (req) => {
         .replace(/\{\{prospect_name\}\}/g, businessInfo.prospect_name || '')
         .replace(/\{\{products_services\}\}/g, businessInfo.products_services || 'products and services')
         .replace(/\{\{campaign_type\}\}/g, effectiveCampaignType);
+      
+      // Append knowledge base if available
+      if (businessInfo.knowledge_base) {
+        personalizedPrompt += `\n\nBUSINESS KNOWLEDGE BASE (use this to answer questions about the company):\n${businessInfo.knowledge_base}\n\nIMPORTANT: When the prospect asks about the business (hours, services, history, pricing, location, etc.), use the knowledge base above. Be specific. If the answer isn't in the knowledge base, say you'll have someone follow up with the exact details.`;
+      }
     }
 
     console.log('🎯 Demo call for:', businessInfo.business_name, 'Campaign:', effectiveCampaignType);
@@ -206,6 +211,7 @@ Deno.serve(async (req) => {
           prospect_name: businessInfo.prospect_name || '',
           products_services: businessInfo.products_services || 'products and services',
           campaign_type: effectiveCampaignType,
+          knowledge_base: businessInfo.knowledge_base || '',
         },
         metadata: {
           demo_session_id: sessionId,

@@ -148,6 +148,7 @@ export const DemoSimulationDashboard = ({
           prospectName: prospectName || undefined,
           prospectCompany: prospectCompany || undefined,
           conversationHistory,
+          knowledgeBase: scrapedData?.knowledge_base || undefined,
         },
       });
 
