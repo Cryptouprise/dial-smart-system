@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Download, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -9,11 +9,13 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const InstallBanner = () => {
+  const location = useLocation();
   const [showBanner, setShowBanner] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    // Don't show if already installed
+    // Don't show on demo pages or if already installed
+    if (location.pathname.startsWith('/demo')) return;
     if (window.matchMedia('(display-mode: standalone)').matches) {
       return;
     }
@@ -46,7 +48,10 @@ const InstallBanner = () => {
       clearTimeout(timer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
-  }, []);
+  }, [location.pathname]);
+
+  // Hide on demo pages
+  if (location.pathname.startsWith('/demo')) return null;
 
   const handleDismiss = () => {
     setShowBanner(false);
