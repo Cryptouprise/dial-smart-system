@@ -649,7 +649,7 @@ export const DemoSimulationDashboard = ({
             
             {/* Phone + Laptop Side by Side - LARGE */}
             <div className="relative overflow-visible">
-              <div className="absolute -inset-8 bg-gradient-to-r from-violet-500/15 via-primary/15 to-cyan-500/15 rounded-[3rem] blur-3xl" />
+              <div className="absolute -inset-8 bg-gradient-to-r from-violet-500/15 via-primary/15 to-cyan-500/15 rounded-[3rem] blur-3xl pointer-events-none" />
               <div className="relative p-4 sm:p-8 md:p-12 rounded-3xl bg-gradient-to-br from-background/80 via-background/60 to-background/80 backdrop-blur-xl border border-primary/30 shadow-2xl overflow-visible">
                 <h3 className="font-bold text-center mb-8 text-xl md:text-2xl flex items-center justify-center gap-3 flex-wrap">
                   <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30">

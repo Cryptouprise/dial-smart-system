@@ -146,8 +146,8 @@ export const DemoPhoneMockup = ({
   return (
     <div className="relative w-full max-w-[440px] mx-auto" style={{ perspective: '1000px' }}>
       {/* Dramatic outer glow */}
-      <div className="absolute -inset-8 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4.5rem] blur-2xl opacity-70 animate-pulse" />
-      <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-cyan-500/20 rounded-[3.5rem] blur-xl opacity-50" />
+      <div className="absolute -inset-8 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4.5rem] blur-2xl opacity-70 animate-pulse pointer-events-none" />
+      <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-cyan-500/20 rounded-[3.5rem] blur-xl opacity-50 pointer-events-none" />
       
       {/* iPhone 15 Pro Frame - Titanium */}
       <div 
@@ -318,7 +318,7 @@ export const DemoPhoneMockup = ({
       </div>
       
       {/* Premium shadow and reflection */}
-      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-[70%] h-16 bg-gradient-to-b from-black/40 via-primary/10 to-transparent rounded-full blur-2xl" />
+      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-[70%] h-16 bg-gradient-to-b from-black/40 via-primary/10 to-transparent rounded-full blur-2xl pointer-events-none" />
     </div>
   );
 };
