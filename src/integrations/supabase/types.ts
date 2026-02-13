@@ -863,21 +863,27 @@ export type Database = {
         Row: {
           auto_adjust_pacing: boolean | null
           auto_approve_script_changes: boolean | null
+          auto_create_rules_from_insights: boolean | null
           auto_execute_recommendations: boolean | null
           auto_optimize_calling_times: boolean | null
           auto_optimize_campaigns: boolean | null
           auto_prioritize_leads: boolean | null
           auto_script_optimization: boolean | null
           autonomy_level: string | null
+          briefing_frequency: string | null
           created_at: string | null
+          daily_budget_cents: number | null
           daily_goal_appointments: number | null
           daily_goal_calls: number | null
           daily_goal_conversations: number | null
           decision_tracking_enabled: boolean | null
+          enable_daily_planning: boolean | null
           enable_script_ab_testing: boolean | null
+          enable_strategic_insights: boolean | null
           enabled: boolean | null
           engine_interval_minutes: number | null
           id: string
+          insight_confidence_threshold: number | null
           journey_max_daily_touches: number | null
           last_engine_run: string | null
           learning_enabled: boolean | null
@@ -893,21 +899,27 @@ export type Database = {
         Insert: {
           auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
+          auto_create_rules_from_insights?: boolean | null
           auto_execute_recommendations?: boolean | null
           auto_optimize_calling_times?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
           auto_script_optimization?: boolean | null
           autonomy_level?: string | null
+          briefing_frequency?: string | null
           created_at?: string | null
+          daily_budget_cents?: number | null
           daily_goal_appointments?: number | null
           daily_goal_calls?: number | null
           daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
+          enable_daily_planning?: boolean | null
           enable_script_ab_testing?: boolean | null
+          enable_strategic_insights?: boolean | null
           enabled?: boolean | null
           engine_interval_minutes?: number | null
           id?: string
+          insight_confidence_threshold?: number | null
           journey_max_daily_touches?: number | null
           last_engine_run?: string | null
           learning_enabled?: boolean | null
@@ -923,21 +935,27 @@ export type Database = {
         Update: {
           auto_adjust_pacing?: boolean | null
           auto_approve_script_changes?: boolean | null
+          auto_create_rules_from_insights?: boolean | null
           auto_execute_recommendations?: boolean | null
           auto_optimize_calling_times?: boolean | null
           auto_optimize_campaigns?: boolean | null
           auto_prioritize_leads?: boolean | null
           auto_script_optimization?: boolean | null
           autonomy_level?: string | null
+          briefing_frequency?: string | null
           created_at?: string | null
+          daily_budget_cents?: number | null
           daily_goal_appointments?: number | null
           daily_goal_calls?: number | null
           daily_goal_conversations?: number | null
           decision_tracking_enabled?: boolean | null
+          enable_daily_planning?: boolean | null
           enable_script_ab_testing?: boolean | null
+          enable_strategic_insights?: boolean | null
           enabled?: boolean | null
           engine_interval_minutes?: number | null
           id?: string
+          insight_confidence_threshold?: number | null
           journey_max_daily_touches?: number | null
           last_engine_run?: string | null
           learning_enabled?: boolean | null
@@ -1949,6 +1967,60 @@ export type Database = {
           },
         ]
       }
+      daily_battle_plans: {
+        Row: {
+          actual_outcomes: Json | null
+          adherence_score: number | null
+          budget_allocation: Json | null
+          created_at: string
+          executive_summary: string | null
+          expected_outcomes: Json | null
+          id: string
+          number_allocation: Json | null
+          plan_date: string
+          priority_order: Json | null
+          resource_inventory: Json | null
+          risk_factors: Json | null
+          time_blocks: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actual_outcomes?: Json | null
+          adherence_score?: number | null
+          budget_allocation?: Json | null
+          created_at?: string
+          executive_summary?: string | null
+          expected_outcomes?: Json | null
+          id?: string
+          number_allocation?: Json | null
+          plan_date?: string
+          priority_order?: Json | null
+          resource_inventory?: Json | null
+          risk_factors?: Json | null
+          time_blocks?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actual_outcomes?: Json | null
+          adherence_score?: number | null
+          budget_allocation?: Json | null
+          created_at?: string
+          executive_summary?: string | null
+          expected_outcomes?: Json | null
+          id?: string
+          number_allocation?: Json | null
+          plan_date?: string
+          priority_order?: Json | null
+          resource_inventory?: Json | null
+          risk_factors?: Json | null
+          time_blocks?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       daily_reports: {
         Row: {
           answer_rate: number | null
@@ -2911,6 +2983,53 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      insight_generated_rules: {
+        Row: {
+          created_at: string
+          id: string
+          insight_id: string | null
+          is_active: boolean | null
+          performance_score: number | null
+          rule_config: Json
+          rule_type: string
+          times_fired: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          insight_id?: string | null
+          is_active?: boolean | null
+          performance_score?: number | null
+          rule_config?: Json
+          rule_type: string
+          times_fired?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          insight_id?: string | null
+          is_active?: boolean | null
+          performance_score?: number | null
+          rule_config?: Json
+          rule_type?: string
+          times_fired?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_generated_rules_insight_id_fkey"
+            columns: ["insight_id"]
+            isOneToOne: false
+            referencedRelation: "strategic_insights"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       journey_event_log: {
         Row: {
@@ -5569,6 +5688,102 @@ export type Database = {
           },
         ]
       }
+      strategic_briefings: {
+        Row: {
+          action_items: Json | null
+          briefing_type: string
+          concerns: Json | null
+          created_at: string
+          executive_summary: string | null
+          headline: string | null
+          id: string
+          metrics_current: Json | null
+          metrics_previous: Json | null
+          period_end: string
+          period_start: string
+          recommendations: Json | null
+          user_id: string
+          wins: Json | null
+        }
+        Insert: {
+          action_items?: Json | null
+          briefing_type?: string
+          concerns?: Json | null
+          created_at?: string
+          executive_summary?: string | null
+          headline?: string | null
+          id?: string
+          metrics_current?: Json | null
+          metrics_previous?: Json | null
+          period_end: string
+          period_start: string
+          recommendations?: Json | null
+          user_id: string
+          wins?: Json | null
+        }
+        Update: {
+          action_items?: Json | null
+          briefing_type?: string
+          concerns?: Json | null
+          created_at?: string
+          executive_summary?: string | null
+          headline?: string | null
+          id?: string
+          metrics_current?: Json | null
+          metrics_previous?: Json | null
+          period_end?: string
+          period_start?: string
+          recommendations?: Json | null
+          user_id?: string
+          wins?: Json | null
+        }
+        Relationships: []
+      }
+      strategic_insights: {
+        Row: {
+          auto_rule_created: boolean | null
+          confidence: number
+          created_at: string
+          effect_magnitude: number | null
+          id: string
+          insight_type: string
+          pattern_description: string
+          recommended_action: string | null
+          sample_size: number
+          statistical_backing: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_rule_created?: boolean | null
+          confidence?: number
+          created_at?: string
+          effect_magnitude?: number | null
+          id?: string
+          insight_type: string
+          pattern_description: string
+          recommended_action?: string | null
+          sample_size?: number
+          statistical_backing?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_rule_created?: boolean | null
+          confidence?: number
+          created_at?: string
+          effect_magnitude?: number | null
+          id?: string
+          insight_type?: string
+          pattern_description?: string
+          recommended_action?: string | null
+          sample_size?: number
+          statistical_backing?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       system_alerts: {
         Row: {
           acknowledged: boolean | null
@@ -6255,27 +6470,20 @@ export type Database = {
     Views: {
       call_outcome_dimensions: {
         Row: {
-          call_attempts: number | null
+          agent_id: string | null
           call_id: string | null
+          call_time: string | null
           campaign_id: string | null
-          campaign_type: string | null
-          created_at: string | null
           day_of_week: number | null
-          duration: number | null
+          duration_seconds: number | null
           from_number: string | null
           hour_of_day: number | null
-          interest_level: number | null
-          journey_stage: string | null
           lead_id: string | null
           lead_source: string | null
           lead_status: string | null
-          lead_tags: string[] | null
-          month: number | null
           outcome: string | null
-          outcome_category: string | null
-          preferred_channel: string | null
-          sentiment_score: string | null
-          total_touches: number | null
+          sentiment: string | null
+          to_number: string | null
           user_id: string | null
         }
         Relationships: [
