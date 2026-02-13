@@ -144,19 +144,13 @@ export const DemoPhoneMockup = ({
   };
 
   return (
-    <div className="relative w-full max-w-[440px] mx-auto" style={{ perspective: '1000px' }}>
+    <div className="relative w-full max-w-[440px] mx-auto">
       {/* Dramatic outer glow */}
       <div className="absolute -inset-8 bg-gradient-to-b from-violet-500/30 via-primary/20 to-cyan-500/30 rounded-[4.5rem] blur-2xl opacity-70 animate-pulse pointer-events-none" />
       <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-cyan-500/20 rounded-[3.5rem] blur-xl opacity-50 pointer-events-none" />
       
       {/* iPhone 15 Pro Frame - Titanium */}
-      <div 
-        className="relative"
-        style={{ 
-          transform: 'rotateY(-2deg) rotateX(2deg)',
-          transformStyle: 'preserve-3d'
-        }}
-      >
+      <div className="relative">
         {/* Titanium outer frame with realistic bevels */}
         <div className="relative bg-gradient-to-br from-[#8a8a8f] via-[#6e6e73] to-[#48484a] rounded-[3rem] p-[2px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.1)]">
           {/* Inner titanium ring */}
