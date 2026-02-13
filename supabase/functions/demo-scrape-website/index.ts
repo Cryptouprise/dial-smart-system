@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     console.log('🔍 Scraping URL:', formattedUrl);
 
-    // Scrape website with Firecrawl
+    // Step 1: Scrape the homepage
     const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
@@ -66,20 +66,102 @@ Deno.serve(async (req) => {
       );
     }
 
-    const markdown = scrapeData.data?.markdown || scrapeData.markdown || '';
+    const homepageMarkdown = scrapeData.data?.markdown || scrapeData.markdown || '';
     const metadata = scrapeData.data?.metadata || scrapeData.metadata || {};
 
-    console.log('✅ Scraped content length:', markdown.length);
+    console.log('✅ Homepage scraped, length:', homepageMarkdown.length);
 
-    // Use Lovable AI to extract business info
-    let businessInfo = {
+    // Step 2: Map the site to discover key pages
+    let additionalContent = '';
+    try {
+      const mapResponse = await fetch('https://api.firecrawl.dev/v1/map', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${firecrawlApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: formattedUrl,
+          limit: 50,
+          includeSubdomains: false,
+        }),
+      });
+
+      const mapData = await mapResponse.json();
+
+      if (mapResponse.ok && mapData.success && mapData.links) {
+        console.log(`🗺️ Found ${mapData.links.length} pages on site`);
+
+        // Filter for high-value pages (about, services, contact, hours, team, FAQ, pricing)
+        const keyPagePatterns = [
+          /about/i, /team/i, /staff/i, /our-story/i, /history/i, /who-we-are/i,
+          /services/i, /what-we-do/i, /solutions/i, /products/i, /offerings/i,
+          /contact/i, /location/i, /hours/i, /schedule/i,
+          /faq/i, /questions/i,
+          /pricing/i, /rates/i, /plans/i,
+          /testimonial/i, /review/i, /clients/i,
+        ];
+
+        const keyPages = (mapData.links as string[])
+          .filter((link: string) => {
+            const path = link.replace(formattedUrl, '').toLowerCase();
+            // Skip the homepage (already scraped), anchors, and non-page URLs
+            if (!path || path === '/' || path.includes('#') || path.includes('?')) return false;
+            return keyPagePatterns.some(pattern => pattern.test(path));
+          })
+          .slice(0, 5); // Max 5 additional pages to keep it fast
+
+        console.log(`📄 Scraping ${keyPages.length} key pages:`, keyPages);
+
+        // Scrape key pages in parallel (batch of up to 5)
+        const pagePromises = keyPages.map(async (pageUrl: string) => {
+          try {
+            const pageResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${firecrawlApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                url: pageUrl,
+                formats: ['markdown'],
+                onlyMainContent: true,
+              }),
+            });
+
+            const pageData = await pageResponse.json();
+            if (pageResponse.ok && pageData.success) {
+              const content = pageData.data?.markdown || pageData.markdown || '';
+              const pageName = pageUrl.replace(formattedUrl, '').replace(/\//g, ' ').trim() || 'page';
+              return `\n\n--- ${pageName.toUpperCase()} PAGE ---\n${content.substring(0, 3000)}`;
+            }
+          } catch (e) {
+            console.warn(`Failed to scrape ${pageUrl}:`, e);
+          }
+          return '';
+        });
+
+        const pageResults = await Promise.all(pagePromises);
+        additionalContent = pageResults.join('');
+        console.log(`✅ Additional content collected: ${additionalContent.length} chars`);
+      }
+    } catch (e) {
+      console.warn('Map/multi-page scrape failed (non-fatal):', e);
+    }
+
+    // Step 3: Combine all content into a comprehensive knowledge base
+    const fullContent = homepageMarkdown + additionalContent;
+
+    // Step 4: Use AI to extract business info AND build knowledge base
+    let businessInfo: Record<string, any> = {
       business_name: metadata.title || 'Unknown Business',
       products_services: 'products and services',
       target_audience: 'businesses',
       value_props: [],
+      knowledge_base: '',
     };
 
-    if (lovableApiKey && markdown.length > 100) {
+    if (lovableApiKey && fullContent.length > 100) {
       try {
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -92,23 +174,35 @@ Deno.serve(async (req) => {
             messages: [
               {
                 role: 'system',
-                content: `You are an expert at analyzing business websites. Extract key business information from the website content.
-                
+                content: `You are an expert at analyzing business websites. Extract comprehensive business information that an AI sales agent would need to answer questions about this company.
+
 Return a JSON object with these fields:
 - business_name: The company/business name
-- products_services: A brief description of what they offer (1-2 sentences, be specific)
+- products_services: Brief description of what they offer (1-2 sentences)
 - target_audience: Who their customers are
 - value_props: Array of 2-3 key value propositions
+- knowledge_base: A comprehensive summary (300-500 words) covering ALL of the following that you can find:
+  * What the company does and their main offerings/services
+  * How long they've been in business / company history
+  * Business hours / hours of operation
+  * Location(s) and service areas
+  * Team size, key team members, or leadership
+  * Pricing info or pricing model (if available)
+  * What makes them different from competitors
+  * Customer testimonials or notable achievements
+  * Contact information (phone, email, address)
+  * Any certifications, awards, or credentials
+  * FAQ answers or common questions
 
-Be concise and accurate. If something is unclear, make a reasonable inference.`
+Write the knowledge_base as a natural briefing document that an AI agent can reference when answering questions. If information isn't available, skip it - don't make things up.`
               },
               {
                 role: 'user',
-                content: `Analyze this website content and extract business info:\n\n${markdown.substring(0, 8000)}`
+                content: `Analyze this website content and extract business info:\n\n${fullContent.substring(0, 15000)}`
               }
             ],
             response_format: { type: 'json_object' },
-            max_tokens: 500,
+            max_tokens: 1500,
           }),
         });
 
@@ -123,8 +217,9 @@ Be concise and accurate. If something is unclear, make a reasonable inference.`
                 products_services: parsed.products_services || businessInfo.products_services,
                 target_audience: parsed.target_audience || businessInfo.target_audience,
                 value_props: parsed.value_props || businessInfo.value_props,
+                knowledge_base: parsed.knowledge_base || '',
               };
-              console.log('✅ AI extracted:', businessInfo.business_name);
+              console.log('✅ AI extracted:', businessInfo.business_name, '| KB length:', (businessInfo.knowledge_base as string).length);
             } catch (e) {
               console.error('Failed to parse AI response:', e);
             }

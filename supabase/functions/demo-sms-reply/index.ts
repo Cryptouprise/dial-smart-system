@@ -10,7 +10,8 @@ const getCampaignSystemPrompt = (
   campaignType: string, 
   businessName: string,
   prospectName?: string,
-  prospectCompany?: string
+  prospectCompany?: string,
+  knowledgeBase?: string
 ): string => {
   const nameGreeting = prospectName ? `You're texting with ${prospectName}${prospectCompany ? ` from ${prospectCompany}` : ''}.` : '';
   
@@ -130,9 +131,17 @@ APPROACH:
 
   const campaignContext = campaignContexts[campaignType] || campaignContexts.database_reactivation;
 
+  const knowledgeSection = knowledgeBase ? `
+
+BUSINESS KNOWLEDGE BASE (use this to answer questions about the company):
+${knowledgeBase}
+
+IMPORTANT: When the prospect asks questions about the business (hours, services, history, pricing, location, etc.), answer using the knowledge base above. Be specific and accurate. If the answer isn't in the knowledge base, say something like "Great question! I'd want to make sure I give you the exact details - let me have someone from the team get back to you on that."` : '';
+
   return `${basePersonality}
 
 ${campaignContext}
+${knowledgeSection}
 
 DEMO CONTEXT:
 This is a DEMO conversation showing prospects how the AI works. After a few exchanges, you can mention:
@@ -147,7 +156,7 @@ serve(async (req) => {
   }
 
   try {
-    const { message, campaignType, businessName, prospectName, prospectCompany, conversationHistory } = await req.json();
+    const { message, campaignType, businessName, prospectName, prospectCompany, conversationHistory, knowledgeBase } = await req.json();
 
     if (!message) {
       return new Response(
@@ -174,7 +183,8 @@ serve(async (req) => {
       campaignType || 'database_reactivation', 
       businessName || 'Call Boss',
       prospectName,
-      prospectCompany
+      prospectCompany,
+      knowledgeBase
     );
 
     // Build conversation messages
