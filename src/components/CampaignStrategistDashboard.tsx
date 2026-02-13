@@ -108,16 +108,17 @@ const CampaignStrategistDashboard: React.FC = () => {
     try {
       const today = new Date().toISOString().split('T')[0];
 
+      const client = supabase as any;
       const [planRes, insightsRes, briefingsRes] = await Promise.all([
-        supabase.from('daily_battle_plans')
+        client.from('daily_battle_plans')
           .select('*')
           .eq('plan_date', today)
           .maybeSingle(),
-        supabase.from('strategic_insights')
+        client.from('strategic_insights')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(20),
-        supabase.from('strategic_briefings')
+        client.from('strategic_briefings')
           .select('*')
           .order('briefing_date', { ascending: false })
           .limit(10),
