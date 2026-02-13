@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 const MobileBottomNav = () => {
   const location = useLocation();
 
+  // Hide on demo pages - they need full screen real estate
+  if (location.pathname.startsWith('/demo')) return null;
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
     { path: '/sms-conversations', label: 'SMS', icon: MessageSquare },
