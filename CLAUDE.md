@@ -1263,3 +1263,74 @@ These edge functions were created/modified but NOT deployed:
 
 **Notes**
 - Clients must send `confirmed: true` for `buy_phone_numbers` and `send_sms_blast` after explicit user approval.
+
+---
+
+## February 13, 2026 - Migrations 4 & 5 Deployed: AI Intelligence + Campaign Strategist (DEPLOYED ✅)
+
+**Summary:** Successfully deployed the AI Intelligence Upgrade (Migration 4) and Campaign Strategist (Migration 5) to production. These were previously code-only (from GitHub PR merges) — now the database schema and edge functions are live.
+
+### What Was Deployed
+
+**Migration 4 — AI Intelligence Upgrade (8 features):**
+
+| Feature | What It Does | Key Table/Column |
+|---------|-------------|------------------|
+| OpenRouter Integration | Shared LLM helper with model tiers (fast/balanced/premium) | `_shared/openrouter.ts` |
+| Disposition Value Weighting | Maps call outcomes to conversion probability + priority boost | `disposition_values` |
+| Funnel Intelligence | Portfolio-level analysis: stage counts, conversion rates, cost/appointment | `funnel_snapshots` |
+| Transcript Intent Parser | LLM extracts buying signals from call transcripts | `lead_intent_signals` |
+| Cost-Per-Lead Tracking | Tracks total/call/SMS cost per lead with ROI scoring | `lead_journey_state` columns |
+| Campaign Type Playbooks | Rules can target cold_outreach, speed_to_lead, etc. | `followup_playbook.campaign_type` |
+| Number Health Prediction | Proactive spam risk detection before flagging | `number_health_metrics` |
+| Self-Optimizing Playbook | Tracks rule performance, flags underperformers | `playbook_performance` |
+
+**Migration 5 — Campaign Strategist (3 features):**
+
+| Feature | What It Does | Key Table |
+|---------|-------------|-----------|
+| Daily Battle Plan | AI generates complete daily resource allocation plan | `daily_battle_plans` |
+| Strategic Pattern Detective | 6 statistical pattern detection algorithms + auto-rule creation | `strategic_insights`, `insight_generated_rules` |
+| Strategic Briefings | Daily/weekly executive summaries with wins/concerns/actions | `strategic_briefings` |
+
+### New Database Objects Created
+
+**Tables (10):** `disposition_values`, `lead_intent_signals`, `number_health_metrics`, `playbook_performance`, `funnel_snapshots`, `playbook_optimization_log`, `daily_battle_plans`, `strategic_insights`, `insight_generated_rules`, `strategic_briefings`
+
+**View:** `call_outcome_dimensions` — Cross-dimensional join of call_logs + leads + lead_journey_state
+
+**Function:** `get_funnel_trend(p_user_id, p_days)` — Daily funnel snapshots for trend analysis
+
+### Schema Gotchas Discovered & Fixed
+- `leads` table uses `lead_source` not `source` — view corrected
+- `lead_journey_state` uses `current_stage`/`total_calls`/`engagement_score` not `journey_stage`/`call_attempts`/`interest_level` — view mappings corrected
+- New tables not in auto-generated `types.ts` — `CampaignStrategistDashboard.tsx` uses `supabase as any` cast
+
+### Edge Function Deployed
+- `ai-autonomous-engine` — Full deployment with all Migration 4+5 intelligence features
+
+### How To Use These Features
+
+**Prerequisites:** All tables created ✅ | Engine deployed ✅ | Optional: Add `OPENROUTER_API_KEY` for premium LLM features
+
+**Enable in autonomous_settings:**
+- `manage_lead_journeys = true` → Lead journey tracking
+- `auto_optimize_calling_times = true` → Time slot learning
+- `auto_adjust_pacing = true` → Adaptive call pacing
+- `enable_script_ab_testing = true` → Script A/B tests
+- `enable_daily_planning = true` → Daily battle plans
+- `enable_strategic_insights = true` → Pattern detection
+- `auto_create_rules_from_insights = true` → Auto-rule generation
+
+**View Results:** Autonomous Agent tab → "Strategist" sub-tab (Battle Plan | Patterns | Briefings)
+
+**Engine runs every 5 min** via pg_cron: goal assessment → lead scoring → pacing → journeys → funnel → health → transcripts → playbook → battle plan → patterns → memory
+
+### Key Notes
+1. All features gated by toggles — nothing activates unless turned on
+2. Without OpenRouter key, premium features fall back to rule-based logic
+3. Features need call history data to produce meaningful results
+4. OpenRouter costs ~$3-15/day at full premium (288 runs/day)
+5. `CampaignStrategistDashboard` uses `as any` casts (cosmetic, queries work fine)
+
+**Last Updated**: February 13, 2026
