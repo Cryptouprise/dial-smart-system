@@ -266,6 +266,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           llmId,
           generalPrompt: editablePrompt,
           beginMessage: editableBeginMessage,
+          model: llmData?.model,
         }
       });
 
@@ -1192,12 +1193,36 @@ AFTER LEAVING THE MESSAGE:
                         </p>
                       </div>
 
-                      {llmData.model && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-muted-foreground">Model:</span>
-                          <Badge variant="outline">{llmData.model}</Badge>
-                        </div>
-                      )}
+                      <div className="space-y-2">
+                        <Label>Language Model</Label>
+                        <Select 
+                          value={llmData.model || 'gpt-4o-mini'} 
+                          onValueChange={(v) => {
+                            setLlmData((prev: any) => ({ ...prev, model: v }));
+                            setHasUnsavedPromptChanges(true);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="gpt-4o-mini">GPT-4o Mini ($0.006/min)</SelectItem>
+                            <SelectItem value="gpt-4o">GPT-4o ($0.05/min)</SelectItem>
+                            <SelectItem value="gpt-4.1-mini">GPT-4.1 Mini ($0.016/min)</SelectItem>
+                            <SelectItem value="gpt-4.1-nano">GPT-4.1 Nano ($0.004/min)</SelectItem>
+                            <SelectItem value="gpt-5">GPT-5 ($0.04/min)</SelectItem>
+                            <SelectItem value="gpt-5-mini">GPT-5 Mini ($0.012/min)</SelectItem>
+                            <SelectItem value="gpt-5-nano">GPT-5 Nano ($0.003/min)</SelectItem>
+                            <SelectItem value="claude-4.5-sonnet">Claude 4.5 Sonnet ($0.08/min)</SelectItem>
+                            <SelectItem value="claude-4.5-haiku">Claude 4.5 Haiku ($0.025/min)</SelectItem>
+                            <SelectItem value="claude-3.7-sonnet">Claude 3.7 Sonnet ($0.06/min)</SelectItem>
+                            <SelectItem value="claude-3.5-haiku">Claude 3.5 Haiku ($0.02/min)</SelectItem>
+                            <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash ($0.006/min)</SelectItem>
+                            <SelectItem value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite ($0.003/min)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">The LLM that powers your agent's reasoning</p>
+                      </div>
 
                       <Button 
                         onClick={saveLlmChanges} 
@@ -1306,10 +1331,32 @@ AFTER LEAVING THE MESSAGE:
                   <SelectTrigger>
                     <SelectValue placeholder="Select a voice" />
                   </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {/* ElevenLabs Voices - Retell Built-in (verified available) */}
-                    <SelectItem value="11labs-Adrian">Adrian (Male, American, Young)</SelectItem>
-                    <SelectItem value="11labs-Rachel">Rachel (Female, American, Classic)</SelectItem>
+                  <SelectContent className="max-h-[400px]">
+                    {/* ElevenLabs Voices - Sales Optimized Males */}
+                    <SelectItem value="11labs-George">🎤 George (Male, Confident, Sales)</SelectItem>
+                    <SelectItem value="11labs-Brian">🎤 Brian (Male, Warm, Professional)</SelectItem>
+                    <SelectItem value="11labs-Daniel">🎤 Daniel (Male, Authoritative)</SelectItem>
+                    <SelectItem value="11labs-Eric">🎤 Eric (Male, Friendly)</SelectItem>
+                    <SelectItem value="11labs-Chris">🎤 Chris (Male, Energetic)</SelectItem>
+                    <SelectItem value="11labs-Liam">🎤 Liam (Male, Smooth)</SelectItem>
+                    <SelectItem value="11labs-Roger">🎤 Roger (Male, Deep)</SelectItem>
+                    <SelectItem value="11labs-Callum">🎤 Callum (Male, British)</SelectItem>
+                    <SelectItem value="11labs-Will">🎤 Will (Male, Casual)</SelectItem>
+                    <SelectItem value="11labs-Bill">🎤 Bill (Male, Mature)</SelectItem>
+                    <SelectItem value="11labs-Charlie">🎤 Charlie (Male, Australian)</SelectItem>
+                    <SelectItem value="11labs-Adrian">🎤 Adrian (Male, American, Young)</SelectItem>
+                    
+                    {/* ElevenLabs Voices - Sales Optimized Females */}
+                    <SelectItem value="11labs-Sarah">🎤 Sarah (Female, Warm, Professional)</SelectItem>
+                    <SelectItem value="11labs-Laura">🎤 Laura (Female, Upbeat)</SelectItem>
+                    <SelectItem value="11labs-Jessica">🎤 Jessica (Female, Conversational)</SelectItem>
+                    <SelectItem value="11labs-Alice">🎤 Alice (Female, British, Polished)</SelectItem>
+                    <SelectItem value="11labs-Matilda">🎤 Matilda (Female, Warm)</SelectItem>
+                    <SelectItem value="11labs-Lily">🎤 Lily (Female, British, Soft)</SelectItem>
+                    <SelectItem value="11labs-River">🎤 River (Non-Binary, Neutral)</SelectItem>
+                    <SelectItem value="11labs-Rachel">🎤 Rachel (Female, American, Classic)</SelectItem>
+                    <SelectItem value="11labs-Dorothy">🎤 Dorothy (Female, British, Mature)</SelectItem>
+                    <SelectItem value="11labs-Freya">🎤 Freya (Female, American, Soft)</SelectItem>
                     
                     {/* OpenAI Voices - Retell Built-in */}
                     <SelectItem value="openai-Alloy">OpenAI - Alloy (Neutral)</SelectItem>
