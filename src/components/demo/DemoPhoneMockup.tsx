@@ -240,9 +240,10 @@ export const DemoPhoneMockup = ({
                         className={cn(
                           'max-w-[82%] px-3.5 py-2 text-[15px] animate-in slide-in-from-bottom-1 duration-200',
                           message.sender === 'user'
-                            ? 'bg-primary text-white rounded-[20px] rounded-br-[4px]'
+                            ? 'text-white rounded-[20px] rounded-br-[4px]'
                             : 'bg-[#2c2c2e] text-white rounded-[20px] rounded-bl-[4px]'
                         )}
+                        style={message.sender === 'user' ? { backgroundColor: '#007AFF' } : undefined}
                       >
                         <p className="whitespace-pre-wrap leading-[1.35]">{message.text}</p>
                         <p className={cn(
