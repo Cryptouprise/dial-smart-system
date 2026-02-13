@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
+
 import { Button } from '@/components/ui/button';
 import { Send, Phone, Wifi, Battery, Signal, Bot, Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -88,7 +88,7 @@ export const DemoPhoneMockup = ({
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages]);
 
   const handleSend = async () => {
@@ -278,7 +278,7 @@ export const DemoPhoneMockup = ({
                       <Camera className="h-5 w-5" />
                     </button>
                     <div className="flex-1 relative">
-                      <Input
+                      <input
                         ref={inputRef}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
