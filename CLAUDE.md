@@ -1334,3 +1334,37 @@ These edge functions were created/modified but NOT deployed:
 5. `CampaignStrategistDashboard` uses `as any` casts (cosmetic, queries work fine)
 
 **Last Updated**: February 13, 2026
+
+---
+
+### February 18, 2026 - Solar Test Readiness Controls (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+- Added a one-click **“Apply 2,000-Call Solar Test Preset”** in Autonomous Agent settings.
+- Preset enables full-auto autonomous execution plus key automation toggles needed for today’s test run:
+  - lead journey auto-follow-ups
+  - script A/B testing
+  - calling-time optimization
+  - adaptive pacing
+  - daily battle planning
+  - strategic insights + auto-rule creation
+- Increased Settings/Goals UI slider ceilings from 500/200 to **5,000** to support high-volume test targets like 2,000 calls.
+- Extended `useAutonomousAgent` settings load/save mapping so newer autonomous settings are persisted in `autonomous_settings` when changed from UI.
+
+**Key files modified**
+- `src/components/AutonomousAgentDashboard.tsx`
+- `src/hooks/useAutonomousAgent.ts`
+- `src/lib/autonomousSettingsPresets.ts` (new)
+- `src/lib/__tests__/autonomousSettingsPresets.test.ts` (new)
+
+**Database changes made**
+- None (no new migrations, schema updates, or SQL function changes).
+
+**Deployment status**
+- Frontend code change only; not separately deployed from this session.
+- Local validation: targeted preset test passed and `npm run build` passed.
+
+**Gotchas / lessons learned**
+- The Autonomous Agent UI previously exposed only a subset of autonomous settings; several server-supported toggles existed in DB/function logic but were not persisted via `useAutonomousAgent`.
+- Full `npm run lint` and full `npm run test` currently have unrelated pre-existing failures in this repository baseline; use targeted validation for this change set.
+- Manual UI verification required a local fake session in browser storage because auth is enforced on `/`.

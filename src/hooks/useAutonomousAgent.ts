@@ -32,6 +32,13 @@ export interface AutonomousSettings {
   learning_enabled: boolean;
   auto_optimize_campaigns: boolean;
   auto_prioritize_leads: boolean;
+  manage_lead_journeys: boolean;
+  enable_script_ab_testing: boolean;
+  auto_optimize_calling_times: boolean;
+  auto_adjust_pacing: boolean;
+  enable_daily_planning: boolean;
+  enable_strategic_insights: boolean;
+  auto_create_rules_from_insights: boolean;
 }
 
 const DEFAULT_SETTINGS: AutonomousSettings = {
@@ -47,7 +54,14 @@ const DEFAULT_SETTINGS: AutonomousSettings = {
   daily_goal_conversations: 20,
   learning_enabled: true,
   auto_optimize_campaigns: false,
-  auto_prioritize_leads: true
+  auto_prioritize_leads: true,
+  manage_lead_journeys: false,
+  enable_script_ab_testing: false,
+  auto_optimize_calling_times: false,
+  auto_adjust_pacing: false,
+  enable_daily_planning: false,
+  enable_strategic_insights: false,
+  auto_create_rules_from_insights: false,
 };
 
 export const useAutonomousAgent = () => {
@@ -85,7 +99,14 @@ export const useAutonomousAgent = () => {
           daily_goal_conversations: data.daily_goal_conversations || 20,
           learning_enabled: data.learning_enabled ?? true,
           auto_optimize_campaigns: data.auto_optimize_campaigns || false,
-          auto_prioritize_leads: data.auto_prioritize_leads ?? true
+          auto_prioritize_leads: data.auto_prioritize_leads ?? true,
+          manage_lead_journeys: data.manage_lead_journeys ?? false,
+          enable_script_ab_testing: data.enable_script_ab_testing ?? false,
+          auto_optimize_calling_times: data.auto_optimize_calling_times ?? false,
+          auto_adjust_pacing: data.auto_adjust_pacing ?? false,
+          enable_daily_planning: data.enable_daily_planning ?? false,
+          enable_strategic_insights: data.enable_strategic_insights ?? false,
+          auto_create_rules_from_insights: data.auto_create_rules_from_insights ?? false,
         });
       }
     } catch (error) {
@@ -125,6 +146,13 @@ export const useAutonomousAgent = () => {
           learning_enabled: updatedSettings.learning_enabled,
           auto_optimize_campaigns: updatedSettings.auto_optimize_campaigns,
           auto_prioritize_leads: updatedSettings.auto_prioritize_leads,
+          manage_lead_journeys: updatedSettings.manage_lead_journeys,
+          enable_script_ab_testing: updatedSettings.enable_script_ab_testing,
+          auto_optimize_calling_times: updatedSettings.auto_optimize_calling_times,
+          auto_adjust_pacing: updatedSettings.auto_adjust_pacing,
+          enable_daily_planning: updatedSettings.enable_daily_planning,
+          enable_strategic_insights: updatedSettings.enable_strategic_insights,
+          auto_create_rules_from_insights: updatedSettings.auto_create_rules_from_insights,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
