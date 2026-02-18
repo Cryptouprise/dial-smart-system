@@ -37,6 +37,7 @@ import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
 import { useAutonomousPrioritization } from '@/hooks/useAutonomousPrioritization';
 import { useAutonomousCampaignOptimizer } from '@/hooks/useAutonomousCampaignOptimizer';
+import { getSolarTestSettingsPreset, SOLAR_TEST_CALL_TARGET } from '@/lib/autonomousSettingsPresets';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -186,6 +187,21 @@ const AutonomousAgentDashboard: React.FC = () => {
       case 'wait': return <Clock className="h-4 w-4 text-yellow-500" />;
       default: return <Activity className="h-4 w-4 text-muted-foreground" />;
     }
+  };
+
+  const applySolarReadinessPreset = async () => {
+    const preset = getSolarTestSettingsPreset();
+    const updated = await updateSettings(preset);
+    if (!updated) return;
+
+    await updateGoalTargets({
+      callsTarget: SOLAR_TEST_CALL_TARGET,
+    });
+
+    toast({
+      title: 'Solar Test Preset Applied',
+      description: '2,000-call automation, journeys, strategist insights, and script A/B testing are now enabled.',
+    });
   };
 
   return (
@@ -591,7 +607,7 @@ const AutonomousAgentDashboard: React.FC = () => {
                   <Slider
                     value={[currentGoal?.callsTarget || 100]}
                     min={10}
-                    max={500}
+                    max={5000}
                     step={10}
                     onValueChange={([value]) => updateGoalTargets({ callsTarget: value })}
                   />
@@ -656,6 +672,10 @@ const AutonomousAgentDashboard: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <Button variant="secondary" className="w-full" onClick={applySolarReadinessPreset}>
+                  Apply 2,000-Call Solar Test Preset
+                </Button>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">Auto-Execute Recommendations</p>
@@ -697,9 +717,31 @@ const AutonomousAgentDashboard: React.FC = () => {
                   <Slider
                     value={[settings.max_daily_autonomous_actions]}
                     min={10}
-                    max={200}
+                    max={5000}
                     step={10}
                     onValueChange={([value]) => updateSettings({ max_daily_autonomous_actions: value })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Auto Follow-Up Journeys</p>
+                    <p className="text-sm text-muted-foreground">Move leads automatically through stages and follow-ups</p>
+                  </div>
+                  <Switch
+                    checked={settings.manage_lead_journeys}
+                    onCheckedChange={(checked) => updateSettings({ manage_lead_journeys: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable Script A/B Testing</p>
+                    <p className="text-sm text-muted-foreground">Split traffic across agent script variants and learn winners</p>
+                  </div>
+                  <Switch
+                    checked={settings.enable_script_ab_testing}
+                    onCheckedChange={(checked) => updateSettings({ enable_script_ab_testing: checked })}
                   />
                 </div>
               </CardContent>
@@ -719,8 +761,19 @@ const AutonomousAgentDashboard: React.FC = () => {
                     <p className="text-sm text-muted-foreground">Optimize dial rate based on answer rate</p>
                   </div>
                   <Switch 
-                    checked={optimizerSettings.autoAdjustPacing}
-                    onCheckedChange={(checked) => updateOptimizerSettings({ autoAdjustPacing: checked })}
+                    checked={settings.auto_adjust_pacing}
+                    onCheckedChange={(checked) => updateSettings({ auto_adjust_pacing: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Auto Optimize Calling Times</p>
+                    <p className="text-sm text-muted-foreground">Use learned best-hour windows to improve answer rates</p>
+                  </div>
+                  <Switch
+                    checked={settings.auto_optimize_calling_times}
+                    onCheckedChange={(checked) => updateSettings({ auto_optimize_calling_times: checked })}
                   />
                 </div>
 
@@ -743,6 +796,39 @@ const AutonomousAgentDashboard: React.FC = () => {
                   <Switch 
                     checked={prioritizationSettings.enabled}
                     onCheckedChange={(enabled) => updatePrioritizationSettings({ enabled })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Daily Battle Planning</p>
+                    <p className="text-sm text-muted-foreground">Generate strategic day plans and budget allocation</p>
+                  </div>
+                  <Switch
+                    checked={settings.enable_daily_planning}
+                    onCheckedChange={(checked) => updateSettings({ enable_daily_planning: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Strategic Pattern Insights</p>
+                    <p className="text-sm text-muted-foreground">Detect winning patterns and auto-improve script rules</p>
+                  </div>
+                  <Switch
+                    checked={settings.enable_strategic_insights}
+                    onCheckedChange={(checked) => updateSettings({ enable_strategic_insights: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Auto-Create Rules from Insights</p>
+                    <p className="text-sm text-muted-foreground">Convert high-confidence insights into follow-up playbook rules</p>
+                  </div>
+                  <Switch
+                    checked={settings.auto_create_rules_from_insights}
+                    onCheckedChange={(checked) => updateSettings({ auto_create_rules_from_insights: checked })}
                   />
                 </div>
 
