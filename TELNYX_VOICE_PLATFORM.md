@@ -346,7 +346,10 @@ Connect to any Model Context Protocol server for external integrations.
 - Can store MCP server URL as integration secret
 
 ### 9. Skip Turn Tool
-Let the assistant skip its turn and wait for the user to speak.
+Let the assistant stay silent and wait for more user input. Useful when the user is thinking or providing extended information.
+
+### 10. Retrieval Tool (Knowledge Base / RAG)
+Search the assistant's uploaded knowledge base (PDFs, DOCX, TXT, URLs) for relevant information during the conversation. Powered by vector embeddings on Telnyx GPUs.
 
 ---
 
@@ -687,7 +690,68 @@ Seamlessly route conversations between specialized AI assistants:
 - **Escalation**: Sales AI → Manager AI → Human transfer
 
 ### How to Configure
-Add handoff tools to your assistant, referencing other assistant IDs. The handoff is transparent — shared context, no disruption to the caller.
+Add handoff tools to your assistant, referencing other assistant IDs. The handoff is transparent — shared context, no disruption to the caller. Visual workflow editor in portal shows flowchart of nodes (color-coded: purple=transfers, red=hangups, blue=other).
+
+---
+
+## Versioning, A/B Testing & Canary Deployments
+
+Built-in version management for assistants — no custom implementation needed:
+
+- **Multiple versions**: Create and manage different assistant versions
+- **Traffic splitting**: Percentage-based routing between versions (A/B testing)
+- **Canary deployments**: Route a small portion of traffic to a new version before full rollout
+- **Performance comparison**: Compare metrics across versions in real-world conditions
+- **Test without risk**: All changes testable without impacting production traffic
+
+### API Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/v2/ai/assistants/tests` | List assistant tests with pagination |
+| `POST` | `/v2/ai/assistants/tests` | Create a test case |
+| `POST` | `/v2/ai/assistants/tests/trigger` | Execute a test suite |
+| `GET` | `/v2/ai/assistants/tests/runs` | View test run results |
+
+---
+
+## Embeddable Web Widget
+
+Deploy AI agents as web widgets with a single code snippet:
+
+1. Navigate to AI Assistants in Mission Control Portal
+2. Select assistant > Edit > Widget tab
+3. Copy/paste embed code into your website
+
+**Features**:
+- Voice-based AI conversations in browser
+- Real-time transcript display for accessibility
+- Custom SIP headers via `X-*` prefix (mapped to dynamic variables)
+- Image upload support (with vision-capable LLMs like GPT-4o)
+- Built on Telnyx WebRTC infrastructure
+
+### Client SDKs
+| Platform | Package |
+|----------|---------|
+| React | `@telnyx/ai-agent-lib` |
+| iOS (SwiftUI) | Voice AI embeddable widget |
+| Android | Voice/video SDK |
+| Flutter | `flutter_telnyx_voice_ai_widget` |
+
+---
+
+## Background Audio & Noise Suppression
+
+### Background Audio
+- Add ambient noise during calls (e.g., "Office" environment)
+- Makes pauses during tool calls feel natural (caller hears office sounds, not silence)
+- Predefined options or custom public URL
+- Configured in Mission Control Portal > Voice tab
+
+### Noise Suppression
+- ML-based (Silero VAD) — distinguishes speech from background noise
+- Enabled by default for all AI agents
+- Toggle available in portal (disable for music/multi-speaker)
+- Improves STT accuracy significantly
 
 ---
 
