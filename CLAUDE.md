@@ -513,6 +513,62 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 23, 2026 - Telnyx Messaging Platform (SMS/MMS) Research & Documentation
+
+**Summary:** Comprehensive research and documentation of Telnyx's Messaging API (SMS/MMS). Created a complete technical reference covering send/receive SMS, MMS media support, messaging profiles, number pools, webhook payloads, 10DLC registration, toll-free verification, alphanumeric sender IDs, rate limits, pricing, Node.js SDK usage, webhook signature verification, and a 4-phase integration plan.
+
+**What Was Built:**
+- `TELNYX_MESSAGING_PLATFORM.md` -- 900+ line comprehensive technical reference covering:
+  - Send SMS/MMS: `POST /v2/messages` with full request/response body reference
+  - Alternative endpoints: `/v2/messages/long_code`, `/v2/messages/short_code`, `/v2/messages/number_pool`, `/v2/messages/group_mms`
+  - Messaging Profiles: CRUD API (`/v2/messaging_profiles`), all config fields (webhook URLs, whitelisted destinations, number pool settings, daily spend limit, alphanumeric sender ID)
+  - Number Pool: sticky sender, geomatch, skip unhealthy, weight configuration
+  - Webhook payloads: `message.received`, `message.sent`, `message.finalized` with full JSON examples
+  - Delivery statuses: queued, sending, sent, delivered, sending_failed, delivery_unconfirmed, delivery_failed, expired
+  - 10DLC: 3-step registration flow (brand -> campaign -> assign numbers), API endpoints, compliance requirements, campaign costs, status lifecycle
+  - Toll-Free: mandatory verification process, required fields, opt-in requirements, ISV/reseller considerations, approval timeline
+  - Alphanumeric Sender IDs: restrictions (no US/CA), country-specific registration, configuration methods
+  - Rate limits: per-number-type throughput (2/min unregistered long code, 1200/min toll-free, 60K/min short code), queuing behavior, API rate limit headers
+  - MMS: supported file types (JPEG, PNG, GIF, MP4, 3GPP), size limits by carrier tier (1MB T1, 600KB T2, 300KB T3), transcoding up to 5MB, US/CA only
+  - Scheduling: `send_at` parameter (5 min to 5 days), ISO 8601 format
+  - Group MMS: `/v2/messages/group_mms` endpoint with array `to` field
+  - Pricing: pay-per-message, ~$0.004/SMS, ~$0.01-0.02/MMS, 30-70% cheaper than Twilio
+  - Node.js SDK: `npm install telnyx`, send/receive examples, profile management, webhook verification
+  - Ed25519 webhook signature verification with Deno implementation
+  - Error codes reference
+  - Codebase audit: what exists (stubs) vs what's missing
+  - 4-phase integration plan
+
+**Codebase Audit Findings:**
+- `telnyxAdapter.ts` -- STUB (`sendSms()` returns failure)
+- `telnyx-webhook/index.ts` -- STUB (event cases defined, no SMS processing)
+- `sms-messaging` edge function -- Twilio only, no Telnyx path
+- `ai-sms-processor` edge function -- Twilio only, no Telnyx path
+- Database schema -- COMPLETE (`phone_providers`, `provider_numbers`, `carrier_configs`)
+- TypeScript types -- COMPLETE (`IProviderAdapter` includes `'telnyx'`)
+
+**Key Files Created:**
+- `TELNYX_MESSAGING_PLATFORM.md` (new)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file -- added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only -- no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs are behind aggressive CDN bot protection (403 on direct fetch) -- used web search + SDK docs
+- Unregistered US long codes limited to 2 msg/min -- must register 10DLC for any real volume
+- Toll-free numbers MUST be verified before first outbound send -- unverified = spam blocked
+- MMS only works for US/CA destinations
+- MMS media URLs from inbound webhooks expire after 30 days -- must cache if needed
+- Webhooks can arrive out of order (`message.finalized` before `message.sent`) -- use `occurred_at` for sequencing
+- Queue holds 4 hours of messages then drops -- don't burst beyond that
+- Number pool rejects message if no healthy number available (rather than silently failing)
+
+---
+
 ### February 23, 2026 - Telnyx Voice AI Platform Research & Integration Planning
 
 **Summary:** Comprehensive research and documentation of Telnyx's full-stack Voice AI platform. Created a complete technical reference covering AI Assistants, API endpoints, tools/function calling, webhooks, memory system, scheduled events, AI Missions, multi-agent handoff, pricing comparison vs Retell, and a 5-phase integration architecture plan.
@@ -602,6 +658,52 @@ See `WHITE_LABEL_SYSTEM.md` for:
 - Knowledge base embedding is async — returns task_id, must poll for completion
 - AMD standard is free (vs Twilio $0.0075/call), premium is $0.0065/call
 - SIP Refer transfer costs $0.002 vs regular Transfer at $0.10 — significant cost difference
+
+---
+
+### February 23, 2026 (Part 3) - Telnyx Phone Numbers API Complete Reference
+
+**Summary:** Comprehensive research and documentation of the Telnyx Phone Numbers API covering search, purchase, reservation, management, voice/messaging configuration, CNAM, STIR/SHAKEN, E911, 10DLC registration, number porting, pricing, and Node.js SDK usage. Created a standalone technical reference document with every endpoint, parameter, and code example needed to fully integrate Telnyx number management into dial-smart-system.
+
+**What Was Built:**
+- `TELNYX_PHONE_NUMBERS_API.md` — 800+ line comprehensive API reference covering:
+  - Search API: `GET /v2/available_phone_numbers` with all 10+ filter parameters
+  - Reservations: 30-minute holds with extend capability
+  - Number Orders: Async purchase flow with sub-order splitting
+  - Phone Number CRUD: List/retrieve/update/delete + batch operations (1,000/call)
+  - Voice Settings: `connection_id`, tech prefix, call forwarding, CNAM, E911
+  - Messaging Settings: `messaging_profile_id` assignment, bulk update
+  - CNAM: 15-char limit, toll-free not supported, legacy API deprecated
+  - STIR/SHAKEN: Automatic attestation A/B/C, `verstat` SIP header values
+  - E911: Standard + Dynamic (addresses + endpoints), geolocation support
+  - 10DLC: Brand registration, 2FA verification, campaign creation, cost breakdown
+  - Number Porting: Draft → submitted → FOC → ported lifecycle, document requirements
+  - Pricing: $1/mo local, $0.009/min outbound (35% cheaper than Twilio)
+  - Node.js SDK: Complete typed examples for all operations
+  - 60+ endpoints catalogued in summary table
+  - Integration notes comparing Telnyx vs Twilio patterns for our codebase
+
+**Key Files Created:**
+- `TELNYX_PHONE_NUMBERS_API.md` (new — ~800 lines)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file — added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only — no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs still behind 403 CDN bot protection — all data gathered via web search and SDK GitHub
+- Number orders are **async** (unlike Twilio's synchronous purchase) — must poll for completion or use webhooks
+- Numbers must appear in search results within **24 hours** before they can be ordered
+- US numbers have zero regulatory requirements (instant activation); international numbers may require documents
+- CNAM max is **15 characters** and does NOT work on toll-free or international numbers
+- Legacy CNAM Data API (`data.telnyx.com`) deprecated Sept 2022 — use Number Lookup instead
+- STIR/SHAKEN is fully automatic for Telnyx-purchased numbers (Attestation A)
+- 10DLC registration goes through same TCR (The Campaign Registry) as Twilio — brands/campaigns are portable
+- Telnyx local numbers $1.00/mo vs Twilio $1.15/mo; outbound voice $0.009/min vs $0.014/min
+- Node.js SDK requires Node 20 LTS+, TypeScript 4.9+; auto-retries on 408/409/429/5xx errors
 
 ---
 
