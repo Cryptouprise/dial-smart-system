@@ -5907,6 +5907,67 @@ export type Database = {
         }
         Relationships: []
       }
+      telnyx_conversation_insights: {
+        Row: {
+          call_log_id: string | null
+          created_at: string
+          id: string
+          insights: Json | null
+          lead_id: string | null
+          raw_payload: Json | null
+          telnyx_assistant_id: string | null
+          telnyx_conversation_id: string | null
+          telnyx_insight_group_id: string | null
+          user_id: string
+        }
+        Insert: {
+          call_log_id?: string | null
+          created_at?: string
+          id?: string
+          insights?: Json | null
+          lead_id?: string | null
+          raw_payload?: Json | null
+          telnyx_assistant_id?: string | null
+          telnyx_conversation_id?: string | null
+          telnyx_insight_group_id?: string | null
+          user_id: string
+        }
+        Update: {
+          call_log_id?: string | null
+          created_at?: string
+          id?: string
+          insights?: Json | null
+          lead_id?: string | null
+          raw_payload?: Json | null
+          telnyx_assistant_id?: string | null
+          telnyx_conversation_id?: string | null
+          telnyx_insight_group_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telnyx_conversation_insights_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telnyx_conversation_insights_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
+            foreignKeyName: "telnyx_conversation_insights_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_credentials: {
         Row: {
           created_at: string | null
