@@ -80,7 +80,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.phone-number-purchasing]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ghl-integration]
 verify_jwt = true

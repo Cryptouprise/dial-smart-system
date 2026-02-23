@@ -47,18 +47,38 @@ serve(async (req) => {
     const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response('Unauthorized', { status: 401, headers: corsHeaders });
-    }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseClient.auth.getUser(token);
-    if (!user) {
+    let userId: string | null = null;
+
+    // Clone request so we can read body later
+    const bodyText = await req.text();
+    const parseBody = () => JSON.parse(bodyText);
+
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      if (token === serviceRoleKey) {
+        try {
+          const bodyPeek = JSON.parse(bodyText);
+          userId = bodyPeek.user_id || null;
+        } catch { /* ignore */ }
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'user_id required for service role calls' }), 
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        console.log('✅ Service role auth - user_id:', userId);
+      } else {
+        const { data: { user } } = await supabaseClient.auth.getUser(token);
+        if (!user) {
+          return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+        }
+        userId = user.id;
+        console.log('✅ JWT auth - user_id:', userId);
+      }
+    } else {
       return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
 
     if (req.method === 'POST') {
-      const body = await req.json();
+      const body = parseBody();
       
       // Validate input
       const validationResult = PurchaseRequestSchema.safeParse(body);
@@ -83,7 +103,7 @@ serve(async (req) => {
       const { data: order, error: orderError } = await supabaseClient
         .from('number_orders')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           area_code: areaCode,
           quantity,
           provider,
@@ -206,7 +226,7 @@ serve(async (req) => {
               area_code: areaCode,
               status: 'active',
               daily_calls: 0,
-              user_id: user.id,
+               user_id: userId,
               twilio_sid: purchased.sid,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
@@ -323,7 +343,7 @@ serve(async (req) => {
             area_code: areaCode,
             status: 'active',
             daily_calls: 0,
-            user_id: user.id,
+             user_id: userId,
             allowed_uses: allowedUses,
             rotation_enabled: rotationEnabled,
             provider: 'telnyx',
@@ -373,7 +393,7 @@ serve(async (req) => {
               area_code: areaCode,
               status: 'active',
               daily_calls: 0,
-              user_id: user.id,
+              user_id: userId,
               retell_phone_id: retellNumber.phone_number_id,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
@@ -444,7 +464,7 @@ serve(async (req) => {
       const { data: orders, error } = await supabaseClient
         .from('number_orders')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) {
