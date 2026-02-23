@@ -1,8 +1,8 @@
 # Telnyx Voice AI Platform - Complete Technical Reference
 
 > **Purpose**: Comprehensive knowledge base for integrating Telnyx Voice AI Agents into dial-smart-system.
-> **Last Updated**: February 23, 2026
-> **Status**: Research Complete | Integration Planning
+> **Last Updated**: February 23, 2026 (Deep Technical Detail Update)
+> **Status**: Research Complete | Deep API-Level Documentation | Integration Planning
 
 ---
 
@@ -593,29 +593,146 @@ Variables that personalize conversations at runtime. Use `{{variable_name}}` syn
 | `call.machine.detection.ended` | AMD completed |
 | `call.gather.ended` | AI gather completed |
 
-### Post-Call Insights Webhook
-Configure a webhook URL in the Insights tab to receive structured analytics after every call:
+### Post-Call Insights Webhook (Deep Technical Detail)
 
+Insights are configurable, structured data extraction from conversations. Unlike simple transcription, insights use AI to analyze the conversation and extract specific information you define.
+
+#### Insight Architecture
+
+```
+Insight Templates (define what to extract)
+        │
+        ▼
+Insight Groups (organize templates into sets)
+        │
+        ▼
+Assigned to Assistant (via insight_settings.insight_group_id)
+        │
+        ▼
+After each call → Insights auto-generated
+        │
+        ▼
+Webhook delivery (push to your endpoint)
+```
+
+#### Creating Insight Templates
+
+**Portal:** AI, Storage and Compute -> AI Insights -> Create Insight
+
+Each insight template has:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Descriptive identifier (e.g., "Conversation Summary", "Customer Sentiment") |
+| `instructions` | Yes | Detailed prompt for what to analyze and extract |
+| `json_schema` | No | JSON Schema for structured output (forces consistent format) |
+| `webhook` | No | Per-insight webhook override |
+
+**Example insight templates:**
+
+**1. Conversation Summary:**
+```
+Name: "Conversation Summary"
+Instructions: "Summarize this conversation for use as future context. Include: key facts mentioned, decisions made, user preferences expressed, and action items or follow-ups needed. Keep it concise (2-3 sentences) focusing on useful information for future conversations."
+```
+
+**2. Customer Sentiment (Structured):**
+```
+Name: "Customer Sentiment"
+Instructions: "Measure the positivity and negativity of the call. Rate from 1-5 in ascending order."
+JSON Schema: { "type": "object", "properties": { "score": { "type": "integer", "minimum": 1, "maximum": 5 }, "reasoning": { "type": "string" } } }
+```
+
+**3. Lead Qualification:**
+```
+Name: "Lead Qualification"
+Instructions: "Extract the following from the conversation: homeowner status (yes/no/unknown), roof type, monthly electricity bill range, timeline for solar installation, and any objections raised."
+JSON Schema: { "type": "object", "properties": { "homeowner": { "type": "string", "enum": ["yes", "no", "unknown"] }, "roof_type": { "type": "string" }, "monthly_bill": { "type": "string" }, "timeline": { "type": "string" }, "objections": { "type": "array", "items": { "type": "string" } } } }
+```
+
+#### Insight Groups
+
+- Group multiple insight templates together
+- Assign a group to one or more assistants
+- All insights in the group run automatically after every conversation
+- Groups can have a default webhook URL (all insights in the group push there)
+- Per-assistant webhook override possible
+
+#### Webhook Delivery
+
+**Event type:** `call.conversation_insights.generated`
+
+**Configure:** Set webhook URL on the Insight Group, or override per-assistant in the Analysis tab.
+
+**Payload structure (estimated based on documentation):**
 ```json
 {
   "event_type": "call.conversation_insights.generated",
   "data": {
     "conversation_id": "conv_xxxxx",
     "assistant_id": "asst_xxxxx",
-    "duration_seconds": 180,
-    "summary": "Customer inquired about solar panel installation...",
-    "sentiment": "positive",
-    "action_items": ["Schedule site assessment", "Send pricing guide"],
-    "custom_insights": { ... }
+    "insight_group_id": "group_xxxxx",
+    "insights": [
+      {
+        "insight_id": "cfcc865c-d3d4-4823-8a4b-f0df57d9f56f",
+        "name": "Conversation Summary",
+        "result": "Customer Rachel Thomas called about solar panel installation for her home in Denver. She has a south-facing roof and pays ~$200/month in electricity. Interested in scheduling a site assessment next week."
+      },
+      {
+        "insight_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "name": "Customer Sentiment",
+        "result": { "score": 4, "reasoning": "Customer was enthusiastic and asked detailed questions" }
+      },
+      {
+        "insight_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "name": "Lead Qualification",
+        "result": {
+          "homeowner": "yes",
+          "roof_type": "south-facing shingle",
+          "monthly_bill": "$180-200",
+          "timeline": "next 2-3 months",
+          "objections": ["wants to compare pricing"]
+        }
+      }
+    ],
+    "metadata": {
+      "telnyx_end_user_target": "+15559876543",
+      "telnyx_agent_target": "+15551234567",
+      "your_custom_metadata": "your_custom_value"
+    }
   }
 }
 ```
 
-**Features**:
-- Automatic delivery (no polling needed)
-- Custom insight grouping for multi-location/multi-brand
-- Connect directly to CRM, EHR, compliance systems
-- Separate webhooks per assistant
+**Note:** The exact webhook payload schema is not fully documented publicly. The above is reconstructed from documentation fragments. Run a test call and inspect the actual payload to confirm exact field names.
+
+#### Dynamic Variables in Insights
+
+Insights can reference dynamic variables in their instructions:
+- `{{telnyx_conversation_channel}}` -- channel type
+- `{{telnyx_current_time}}` -- timestamp
+- `{{telnyx_end_user_target}}` -- caller's number
+- Any custom dynamic variables you defined
+
+#### Memory + Insights Integration
+
+Insight IDs can be used in the `memory.insight_query` field to control what the assistant remembers. Instead of loading full conversation transcripts into memory, load only specific insight results -- much more efficient.
+
+#### Get Insight Template API
+
+```
+GET https://api.telnyx.com/v2/ai/insights/{insight_id}
+```
+
+Returns the insight template definition including `id`, `name`, `instructions`, `json_schema`, `webhook`, `created_at`, and `insight_type`.
+
+#### Gotchas
+
+- Insights are generated **after** the call ends -- not available in real-time during the call
+- Structured insights (with `json_schema`) are more reliable for downstream automation
+- The webhook must respond with 2xx or Telnyx retries
+- Insights inherit the assistant's `data_retention` setting -- if false, no insights are stored
+- Separate webhooks per assistant allow different routing for different agent types
 
 ### Assistant Initialization Webhook
 Fires at conversation start when `dynamic_variables_webhook_url` is configured.
@@ -1515,31 +1632,72 @@ POST https://api.telnyx.com/v2/ai/assistants/import
 
 ---
 
-## Monitoring & Analytics
+## Monitoring & Analytics (Deep Technical Detail)
 
 ### Real-Time Cost Estimator
-In the Mission Control Portal, a dynamic cost bar shows per-minute cost estimate as you configure the assistant (base rate + STT + TTS + LLM).
+In the Mission Control Portal, a dynamic cost bar shows per-minute cost estimate as you configure the assistant (base rate + STT + TTS + LLM). Changes in real-time as you switch models/voices.
 
-### Post-Call Insights
-- **Automatic summaries**: Conversation summary generated after each call
-- **Sentiment analysis**: Positive/negative/neutral per call
-- **Action items**: Extracted to-do items
-- **Custom insights**: Define your own extraction templates
-- **Webhook delivery**: Push to your systems immediately
+### Post-Call Data Available
 
-### Conversation History
-- Full conversation logs accessible via API
-- Searchable by phone number, date range, assistant
-- Metadata tagging for custom filtering
+After each AI assistant call completes, you can access:
+
+| Data | How to Get It | Timing |
+|------|--------------|--------|
+| Call events | `call.conversation.ended` webhook | Immediately at call end |
+| Conversation transcript | `GET /v2/ai/assistants/{id}/conversations/{conv_id}` | After call end |
+| AI-generated insights | `call.conversation_insights.generated` webhook | Seconds after call end |
+| Call recording | `call.recording.saved` webhook (if recording enabled) | Shortly after call end |
+| Call metadata | `GET /v2/calls/{call_control_id}` | During or after call |
+
+#### `call.conversation.ended` Webhook
+
+Fires when the AI assistant conversation finishes (before hangup). Contains:
+- `call_control_id` -- correlate with call lifecycle events
+- `conversation_id` -- use to fetch full transcript via Conversations API
+- `call_leg_id`, `call_session_id` -- session tracking
+- `connection_id` -- which Voice API application
+- Standard Telnyx V2 webhook envelope with `event_type`, `occurred_at`, `record_type`
+
+#### `call.conversation_insights.generated` Webhook
+
+Fires after insights are computed (see Post-Call Insights section above for full details). Contains all configured insight results as structured data.
+
+### Conversation History API
+
+**List all conversations for an assistant:**
+```
+GET https://api.telnyx.com/v2/ai/assistants/{assistant_id}/conversations
+```
+
+Supports query parameters for filtering by:
+- Phone number (`metadata->telnyx_end_user_target`)
+- Date range
+- Custom metadata
+- Pagination (`limit`, `offset`, `order`)
+
+**Get a specific conversation (with full message history):**
+```
+GET https://api.telnyx.com/v2/ai/assistants/{assistant_id}/conversations/{conversation_id}
+```
+
+Returns the complete conversation including:
+- All messages (user and assistant turns)
+- Tool calls and results
+- Timestamps per message
+- Conversation metadata
+- Duration and channel info
+
+**Requires `data_retention: true`** on the assistant configuration.
 
 ### Latency Monitoring
 - Demo links with per-turn latency measurement
 - Shows client device, network, and compute delays
 - Helps tune voice/model selection for optimal experience
+- Deepgram Flux STT option with adjustable thresholds to cut latency further
 
 ### WebRTC React Library
 For web-based monitoring and testing:
-- `@telnyx/ai-agent-lib` — React library for AI agent frontends
+- `@telnyx/ai-agent-lib` -- React library for AI agent frontends
 - Real-time transcription display
 - Connection state management
 - Latency measurement
@@ -2050,22 +2208,67 @@ TELNYX_OUTBOUND_VOICE_PROFILE_ID=<your_ovp_id>
 
 ## Key Sources
 
+### Developer Documentation (API Reference)
 - [Telnyx Developer Docs](https://developers.telnyx.com/docs/overview)
 - [Voice AI Assistant Guide](https://developers.telnyx.com/docs/inference/ai-assistants/no-code-voice-assistant)
 - [Create Assistant API](https://developers.telnyx.com/api/inference/inference-embedding/create-new-assistant-public-assistants-post)
+- [Get Assistant API](https://developers.telnyx.com/api/inference/inference-embedding/get-assistant-public-assistants-assistant-id-get)
 - [Start AI Assistant on Call](https://developers.telnyx.com/api/call-control/call-start-ai-assistant)
 - [Gather Using AI](https://developers.telnyx.com/api/call-control/call-gather-using-ai)
 - [Scheduled Events API](https://developers.telnyx.com/api/inference/inference-embedding/create-scheduled-event)
-- [AI Missions](https://telnyx.com/release-notes/missions-multi-call-orchestration)
-- [Multi-Agent Handoff](https://telnyx.com/release-notes/multi-agent-handoff-tool)
-- [MCP Server Integration](https://telnyx.com/release-notes/mcp-servers-ai-agents)
-- [Dynamic Variables](https://developers.telnyx.com/docs/inference/ai-assistants/dynamic-variables)
+- [Create Assistant Test API](https://developers.telnyx.com/api/inference/inference-embedding/create-assistant-test-public-assistants-tests-post)
+- [List Assistant Tests API](https://developers.telnyx.com/api/inference/inference-embedding/get-assistant-tests-public-assistants-tests-get)
+- [Get All Test Suite Names API](https://developers.telnyx.com/api/inference/inference-embedding/fetch-test-suites-public-assistants-tests-test-suites-get)
+- [Embed Documents API](https://developers.telnyx.com/api/inference/inference-embedding/post-embedding)
+- [Embed URL Content API](https://developers.telnyx.com/api/inference/inference-embedding/post-embedding-url)
+- [Get Insight Template API](https://developers.telnyx.com/api/inference/inference-embedding/get-insight-by-id)
+- [Initiate TeXML Call API](https://developers.telnyx.com/api/call-scripting-twexit/initiate-texml-call)
+- [Create Bucket API](https://developers.telnyx.com/api/cloud-storage/bucket-operations/create-bucket)
+- [Inference API Reference](https://developers.telnyx.com/api/inference)
+
+### Feature Guides
 - [Memory](https://developers.telnyx.com/docs/inference/ai-assistants/memory)
+- [Dynamic Variables](https://developers.telnyx.com/docs/inference/ai-assistants/dynamic-variables)
+- [Agent Handoff](https://developers.telnyx.com/docs/inference/ai-assistants/agent-handoff)
+- [Version Testing & Traffic Distribution](https://developers.telnyx.com/docs/inference/ai-assistants/version-testing-traffic-distribution)
+- [Creating Insights](https://developers.telnyx.com/docs/inference/ai-insights/creating-insights)
+- [TeXML AMD](https://developers.telnyx.com/docs/voice/programmable-voice/texml-answering-machine)
+- [Call Control AMD](https://developers.telnyx.com/docs/voice/programmable-voice/answering-machine-detection)
+- [Cloud Storage API Endpoints](https://developers.telnyx.com/docs/cloud-storage/api-endpoints)
+- [AWS S3 Compatibility](https://developers.telnyx.com/docs/cloud-storage/aws-s3-compatibility)
+
+### Release Notes & Product Pages
+- [AI Missions](https://telnyx.com/release-notes/missions-multi-call-orchestration)
+- [Multi-Agent Handoff](https://telnyx.com/release-notes/multi-agent-handoff)
+- [Dual Voice Modes for Handoff](https://telnyx.com/release-notes/two-voice-modes-ai-agent-handoff-tool)
+- [Multi-Assistant Handoff Update](https://telnyx.com/release-notes/multi-assistant-ai-handoff-update)
+- [Versioning & Canary Deployments](https://telnyx.com/release-notes/versioning-canary-deployments)
+- [Scheduled Events API](https://telnyx.com/release-notes/ai-assistant-scheduled-events-api)
+- [Memory Feature](https://telnyx.com/release-notes/AI-assistant-memory-release-note)
 - [Post-Call Insights Webhook](https://telnyx.com/release-notes/ai-assistant-post-call-insights-webhook)
+- [Knowledge Base Uploads](https://telnyx.com/release-notes/fast-knowledge-base-uploads)
+- [URL Embedding API](https://telnyx.com/release-notes/url-embedding-API-endpoint)
+- [Simplified Knowledge Base Setup](https://telnyx.com/release-notes/simplified-knowledge-base-setup)
+- [Embed Website Content](https://telnyx.com/release-notes/embed-website-content-ai-assistant)
+- [Webhook Testing in AI Builder](https://telnyx.com/release-notes/test-webhooks-instantly-ai-agents)
+- [Premium AMD](https://telnyx.com/release-notes/premium-answering-machine-detection)
+- [Standard AMD](https://telnyx.com/release-notes/amd-is-live-on-telnyx)
+- [Conversation History & Insights](https://telnyx.com/release-notes/conversation-history-insights-ai-assistant-builder)
+- [MCP Server Integration](https://telnyx.com/release-notes/mcp-servers-ai-agents)
 - [Conversational AI Pricing](https://telnyx.com/pricing/conversational-ai)
 - [Telnyx vs Retell](https://telnyx.com/the-best-retell-alternative)
+
+### SDKs & Libraries
 - [Node.js SDK (npm)](https://www.npmjs.com/package/telnyx)
 - [Node.js SDK (GitHub)](https://github.com/team-telnyx/telnyx-node)
 - [AI Agent React Library](https://www.npmjs.com/package/@telnyx/ai-agent-lib)
 - [Telnyx MCP Server](https://github.com/team-telnyx/telnyx-mcp-server)
-- [Release Notes](https://telnyx.com/release-notes)
+- [AMD Demo (GitHub)](https://github.com/team-telnyx/demo-amd)
+
+### Resources & Guides
+- [AI Assistant Builder Guide](https://telnyx.com/resources/ai-assistant-builder)
+- [Voice AI Agent Platform Guide](https://telnyx.com/resources/voice-AI-agent-platform)
+- [AI Voice Analytics](https://telnyx.com/resources/ai-voice-analytics-telephony)
+- [AI Personalization with Memory](https://telnyx.com/resources/ai-assistant-personalization)
+- [AMD Explained for Call Centers](https://telnyx.com/resources/answering-machine-detection-explained)
+- [Release Notes (All)](https://telnyx.com/release-notes)
