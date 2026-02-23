@@ -563,6 +563,46 @@ See `WHITE_LABEL_SYSTEM.md` for:
 - Node.js SDK (`npm install telnyx`) has full assistant management support
 - `@telnyx/ai-agent-lib` React library could replace our custom agent UI components
 
+### February 23, 2026 (Part 2) - Telnyx Deep API-Level Research (8 Features)
+
+**Summary:** Deep technical research on 8 specific Telnyx Voice AI features at the API level. Updated `TELNYX_VOICE_PLATFORM.md` with exact API endpoints, request/response payloads, configuration examples, and gotchas for each feature.
+
+**What Was Updated:**
+
+1. **Memory System** — Full documentation of how cross-conversation memory works via `dynamic_variables_webhook_url`. The `memory` object uses a PostgREST-style query string (`conversation_query`) to filter past conversations by phone number, metadata, limit, and ordering. `insight_query` selectively recalls specific insight results instead of full transcripts. Memory is keyed on `telnyx_end_user_target` (phone number) and works cross-channel (voice + SMS). Webhook must respond within 1 second.
+
+2. **Multi-Agent Handoff** — Complete handoff tool configuration with `assistant_id` and `voice_mode` ("unified" or "distinct"). Full context (conversation history, collected data, variables) automatically transferred. Each agent can use different LLM models. Bidirectional handoff supported. Architecture patterns documented (by domain, task, language, complexity, customer segment).
+
+3. **A/B Testing / Traffic Splitting** — Built-in versioning with test objects containing `test_suite`, `instructions`, `rubric` (evaluation criteria), and `max_duration_seconds`. Full test API: create tests, trigger suites, view run results. Canary deployments with percentage-based traffic routing between versions. Replaces our custom `agent_script_variants` system.
+
+4. **Scheduled Callbacks** — `POST /v2/ai/assistants/{assistant_id}/scheduled_events` with `telnyx_conversation_channel`, `telnyx_agent_target`, `telnyx_end_user_target`, `scheduled_at_fixed_datetime` (ISO 8601), optional `text` and `conversation_metadata`. Supports both phone calls and SMS. Events fire automatically at scheduled time with full assistant capabilities.
+
+5. **Knowledge Base / RAG** — Complete pipeline: Create S3-compatible storage bucket -> Upload documents (PDF/DOCX/TXT) -> Embed via `POST /v2/ai/embeddings` (specifying `bucket_name`, `embedding_model`, `document_chunk_size`, `document_chunk_overlap_size`) -> Connect to assistant via retrieval tool. URL embedding endpoint crawls websites 5 levels deep. Auto-sync when documents change. Similarity search available via `/v2/ai/embeddings/similarity-search`.
+
+6. **AMD** — Both Call Control and TeXML interfaces documented. 5 detection modes: `detect`, `detect_words`, `detect_beep`, `greeting_end`, `premium`. Full webhook event flow documented with payload examples. Standard AMD is free, Premium is $0.0065/call. TeXML supports sync/async modes via `AsyncAmd` parameter. Works on AI assistant transfers too.
+
+7. **Post-Call Insights** — Configurable insight templates with `name`, `instructions`, and optional `json_schema` for structured output. Organized into Insight Groups assigned to assistants. Webhook delivery via `call.conversation_insights.generated`. Dynamic variables available in insight instructions. Insight IDs integrate with memory system for selective recall.
+
+8. **Tools/Function Calling** — All 10 tool types documented with JSON configuration: WebhookTool (GET/POST/PUT/PATCH/DELETE with path/query/body JSON Schema params, Mustache-templated headers for secrets), RetrievalTool, HandoffTool, HangupTool, TransferTool (with AMD on transfer), SIPReferTool, DTMFTool, SendMessageTool, SkipTurnTool, MCPServerTool (with `telnyx_conversation_id` injection).
+
+**Key Files Modified:**
+- `TELNYX_VOICE_PLATFORM.md` — Major expansion from ~1430 lines to ~1900+ lines with deep API detail
+- `CLAUDE.md` — Added this session log
+
+**Database Changes:** None
+
+**Deployment Status:** Documentation only — no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs still behind 403 CDN wall — web search + release notes are the workaround
+- Memory `conversation_query` uses PostgREST-style query strings (not JSON objects) — corrected from initial doc
+- `call.conversation_insights.generated` exact payload schema not publicly documented in full — needs test call to confirm
+- Telnyx versioning/testing completely replaces our custom A/B testing system (agent_script_variants, Thompson Sampling, UCB1)
+- Scheduled Events replace our custom retry logic in call-tracking-webhook
+- Knowledge base embedding is async — returns task_id, must poll for completion
+- AMD standard is free (vs Twilio $0.0075/call), premium is $0.0065/call
+- SIP Refer transfer costs $0.002 vs regular Transfer at $0.10 — significant cost difference
+
 ---
 
 ### February 10, 2026 (Part 5) - Campaign Strategist: 8/10 → 10/10 (NOT DEPLOYED)
