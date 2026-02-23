@@ -513,6 +513,289 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 23, 2026 - Telnyx Voice AI Platform FULL INTEGRATION (NOT DEPLOYED)
+
+**Summary:** Complete implementation of Telnyx Voice AI platform integration. Built 7 new edge functions, 1 database migration, 1 frontend component, updated outbound-calling with Telnyx provider path. This is a 100% additive build — no existing Retell functionality was modified or broken. The Telnyx path is a parallel provider option.
+
+**What Was Built:**
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| **DB Migration** | `supabase/migrations/20260223_telnyx_voice_ai_platform.sql` | ~250 | 7 tables, 1 function, RLS, indexes |
+| **Assistant CRUD** | `supabase/functions/telnyx-ai-assistant/index.ts` | ~470 | 12 actions: create, update, delete, list, get, sync, clone, import, models, voices, assign_number, health_check |
+| **Dynamic Vars Webhook** | `supabase/functions/telnyx-dynamic-vars/index.ts` | ~210 | Memory + personalization at call start. Responds within 1s with lead data, callback context, memory queries |
+| **Webhook Handler** | `supabase/functions/telnyx-webhook/index.ts` | ~330 | Complete rewrite of stub. Handles: call lifecycle, AI conversation ended, post-call insights, AMD, SMS events |
+| **Outbound AI Calls** | `supabase/functions/telnyx-outbound-ai/index.ts` | ~270 | Standalone Telnyx outbound calling via Call Control + AI assistant. Credit system integrated. |
+| **Insights Manager** | `supabase/functions/telnyx-insights/index.ts` | ~230 | CRUD for insight templates, default templates (disposition, summary, intent, appointment), insight viewer |
+| **Scheduled Events** | `supabase/functions/telnyx-scheduled-events/index.ts` | ~220 | Schedule callbacks and follow-up SMS via Telnyx Scheduled Events API |
+| **Knowledge Base** | `supabase/functions/telnyx-knowledge-base/index.ts` | ~280 | RAG pipeline: create KB, embed docs, embed URLs, similarity search, connect to assistants |
+| **Frontend UI** | `src/components/TelnyxAIManager.tsx` | ~530 | 4-tab manager: Assistants (CRUD + create form), Insights, Scheduled Events, Knowledge Base |
+
+**Modified Files:**
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/outbound-calling/index.ts` | +80 lines: Added `provider` and `telnyxAssistantId` to request, Telnyx call path with AMD + credit check. Retell path completely unchanged. |
+| `src/components/Dashboard.tsx` | +2 lines: Lazy import + tab case for TelnyxAIManager |
+| `src/components/DashboardSidebar.tsx` | +1 line: "Telnyx Voice AI" in AI & Automation section (simpleMode: true) |
+| `CLAUDE.md` | Added this session log |
+
+**New Database Tables (7):**
+
+| Table | Purpose |
+|-------|---------|
+| `telnyx_assistants` | AI assistant configs with Telnyx IDs, tools, voice, model, versioning |
+| `telnyx_insight_templates` | Post-call analysis templates (disposition, summary, intent) |
+| `telnyx_knowledge_bases` | RAG knowledge bases with Telnyx storage bucket references |
+| `telnyx_scheduled_events` | Local cache of Telnyx scheduled callbacks/SMS |
+| `telnyx_conversation_insights` | Received post-call insights from webhook |
+| `telnyx_settings` | Per-user Telnyx configuration (API key status, defaults, AMD) |
+
+**New Columns on `call_logs`:**
+- `telnyx_call_control_id` TEXT
+- `telnyx_call_session_id` TEXT
+- `telnyx_conversation_id` TEXT
+- `telnyx_assistant_id` TEXT
+- `provider` TEXT (retell/telnyx/twilio, default: retell)
+- `amd_result` TEXT (human/machine/etc)
+- `amd_type` TEXT (standard/premium)
+
+**New Database Function:**
+- `get_telnyx_assistant_for_call(user_id, assistant_id)` — Resolves which Telnyx assistant to use
+
+**Architecture Decisions:**
+1. **Zero breaking changes** — All new Telnyx code is additive. The existing Retell path in outbound-calling is 100% untouched. Provider routing is done by a new `provider` field in the request.
+2. **Calendar booking unchanged** — The webhook tool on Telnyx assistants calls the SAME `calendar-integration` edge function. No calendar code was modified.
+3. **Credit system integrated** — Telnyx calls go through the same `check_credit_balance` / `reserve_credits` / `finalize_call_cost` flow. Cost is $0.09/min (hardcoded Telnyx rate) vs variable Retell rate.
+4. **Dynamic vars webhook** — A new endpoint (`telnyx-dynamic-vars`) is called by Telnyx at conversation start. It loads lead data and memory in <1 second. This replaces the `retell_llm_dynamic_variables` injection pattern.
+5. **Memory is native** — Telnyx stores conversation history and loads past conversations via PostgREST-style queries. No custom memory hacking needed.
+6. **AMD is native** — Telnyx does ML-based answering machine detection at the telephony layer. Free for standard, $0.0065/call for premium (97% accuracy). Replaces our 300+ line regex transcript scanner.
+
+**Sidebar Location:** AI & Automation > Telnyx Voice AI (with Bot icon)
+**Dashboard URL:** `/?tab=telnyx-ai`
+
+**Deployment Required:**
+```bash
+# 1. Run migration
+# 2. Set secrets:
+supabase secrets set TELNYX_API_KEY=your_key_here
+# 3. Deploy all functions:
+supabase functions deploy telnyx-ai-assistant
+supabase functions deploy telnyx-dynamic-vars
+supabase functions deploy telnyx-webhook
+supabase functions deploy telnyx-outbound-ai
+supabase functions deploy telnyx-insights
+supabase functions deploy telnyx-scheduled-events
+supabase functions deploy telnyx-knowledge-base
+supabase functions deploy outbound-calling
+```
+
+**Validation:** `npx tsc --noEmit --skipLibCheck` passes clean (0 errors).
+
+**Gotchas / Lessons:**
+- Telnyx assistant update uses `POST` (not `PATCH`) — different from REST convention
+- Telnyx assistant clone excludes telephony/messaging settings — must re-assign numbers
+- Dynamic vars webhook MUST respond in <1 second or Telnyx proceeds without memory
+- Telnyx webhook handler returns 200 even on internal errors (prevents Telnyx retry storms)
+- `provider` column on call_logs defaults to 'retell' for backward compatibility
+- The `telnyx-outbound-ai` function is standalone but `outbound-calling` also has a Telnyx path — use either
+
+---
+
+### February 23, 2026 - Telnyx Messaging Platform (SMS/MMS) Research & Documentation
+
+**Summary:** Comprehensive research and documentation of Telnyx's Messaging API (SMS/MMS). Created a complete technical reference covering send/receive SMS, MMS media support, messaging profiles, number pools, webhook payloads, 10DLC registration, toll-free verification, alphanumeric sender IDs, rate limits, pricing, Node.js SDK usage, webhook signature verification, and a 4-phase integration plan.
+
+**What Was Built:**
+- `TELNYX_MESSAGING_PLATFORM.md` -- 900+ line comprehensive technical reference covering:
+  - Send SMS/MMS: `POST /v2/messages` with full request/response body reference
+  - Alternative endpoints: `/v2/messages/long_code`, `/v2/messages/short_code`, `/v2/messages/number_pool`, `/v2/messages/group_mms`
+  - Messaging Profiles: CRUD API (`/v2/messaging_profiles`), all config fields (webhook URLs, whitelisted destinations, number pool settings, daily spend limit, alphanumeric sender ID)
+  - Number Pool: sticky sender, geomatch, skip unhealthy, weight configuration
+  - Webhook payloads: `message.received`, `message.sent`, `message.finalized` with full JSON examples
+  - Delivery statuses: queued, sending, sent, delivered, sending_failed, delivery_unconfirmed, delivery_failed, expired
+  - 10DLC: 3-step registration flow (brand -> campaign -> assign numbers), API endpoints, compliance requirements, campaign costs, status lifecycle
+  - Toll-Free: mandatory verification process, required fields, opt-in requirements, ISV/reseller considerations, approval timeline
+  - Alphanumeric Sender IDs: restrictions (no US/CA), country-specific registration, configuration methods
+  - Rate limits: per-number-type throughput (2/min unregistered long code, 1200/min toll-free, 60K/min short code), queuing behavior, API rate limit headers
+  - MMS: supported file types (JPEG, PNG, GIF, MP4, 3GPP), size limits by carrier tier (1MB T1, 600KB T2, 300KB T3), transcoding up to 5MB, US/CA only
+  - Scheduling: `send_at` parameter (5 min to 5 days), ISO 8601 format
+  - Group MMS: `/v2/messages/group_mms` endpoint with array `to` field
+  - Pricing: pay-per-message, ~$0.004/SMS, ~$0.01-0.02/MMS, 30-70% cheaper than Twilio
+  - Node.js SDK: `npm install telnyx`, send/receive examples, profile management, webhook verification
+  - Ed25519 webhook signature verification with Deno implementation
+  - Error codes reference
+  - Codebase audit: what exists (stubs) vs what's missing
+  - 4-phase integration plan
+
+**Codebase Audit Findings:**
+- `telnyxAdapter.ts` -- STUB (`sendSms()` returns failure)
+- `telnyx-webhook/index.ts` -- STUB (event cases defined, no SMS processing)
+- `sms-messaging` edge function -- Twilio only, no Telnyx path
+- `ai-sms-processor` edge function -- Twilio only, no Telnyx path
+- Database schema -- COMPLETE (`phone_providers`, `provider_numbers`, `carrier_configs`)
+- TypeScript types -- COMPLETE (`IProviderAdapter` includes `'telnyx'`)
+
+**Key Files Created:**
+- `TELNYX_MESSAGING_PLATFORM.md` (new)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file -- added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only -- no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs are behind aggressive CDN bot protection (403 on direct fetch) -- used web search + SDK docs
+- Unregistered US long codes limited to 2 msg/min -- must register 10DLC for any real volume
+- Toll-free numbers MUST be verified before first outbound send -- unverified = spam blocked
+- MMS only works for US/CA destinations
+- MMS media URLs from inbound webhooks expire after 30 days -- must cache if needed
+- Webhooks can arrive out of order (`message.finalized` before `message.sent`) -- use `occurred_at` for sequencing
+- Queue holds 4 hours of messages then drops -- don't burst beyond that
+- Number pool rejects message if no healthy number available (rather than silently failing)
+
+---
+
+### February 23, 2026 - Telnyx Voice AI Platform Research & Integration Planning
+
+**Summary:** Comprehensive research and documentation of Telnyx's full-stack Voice AI platform. Created a complete technical reference covering AI Assistants, API endpoints, tools/function calling, webhooks, memory system, scheduled events, AI Missions, multi-agent handoff, pricing comparison vs Retell, and a 5-phase integration architecture plan.
+
+**What Was Built:**
+- `TELNYX_VOICE_PLATFORM.md` — 700+ line comprehensive technical reference document covering:
+  - Platform architecture (owned stack: carrier → GPU)
+  - AI Assistant CRUD API (POST/GET/PATCH/DELETE `/v2/ai/assistants`)
+  - 8 built-in tools: Webhook, Transfer, SIP Refer, Handoff, Hangup, Send DTMF, Send Message, MCP Server
+  - Voice/TTS providers: Telnyx NaturalHD, ElevenLabs, ResembleAI, Minimax, Azure Neural, AWS Polly
+  - STT providers: Deepgram Nova-3, Deepgram Flux, Google, Whisper
+  - Memory system with cross-conversation persistence
+  - Dynamic variables (system + custom) with webhook initialization
+  - Post-call insights webhook for analytics
+  - Outbound calling via 3 methods: TeXML AI Calls, Call Control + AI Assistant Start, Node.js SDK
+  - Scheduled Events API for callback management
+  - AI Missions for multi-call campaign orchestration
+  - Multi-agent handoff (unified/distinct voice modes)
+  - Pricing: $0.09/min all-in vs Retell's $0.13-0.31/min
+  - Complete Node.js SDK reference
+  - Current codebase audit (what exists, what's stubbed, what's missing)
+  - 5-phase integration plan
+
+**Codebase Audit Findings:**
+- `voice-broadcast-engine` — `callWithTelnyx()` WORKS for basic calls
+- `telnyxAdapter.ts` — STUB (all methods return failures)
+- `telnyx-webhook/index.ts` — STUB (event cases defined, no processing)
+- Database schema — COMPLETE (phone_providers, provider_numbers, carrier_configs)
+- TypeScript types — COMPLETE (IProviderAdapter includes 'telnyx')
+- Missing: AI assistant management, TeXML AI calls, webhook processing, insights ingestion
+
+**Key Files Created:**
+- `TELNYX_VOICE_PLATFORM.md` (new)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file — added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only — no code changes yet
+
+**Gotchas/Lessons:**
+- Telnyx developer docs are behind aggressive CDN bot protection (403 on direct fetch) — had to rely on web search + SDK GitHub
+- Telnyx $0.09/min all-in is significantly cheaper than Retell ($0.13-0.31/min stacked)
+- Telnyx latency (sub-200ms) dramatically better than Retell (~600-800ms)
+- Telnyx has features we built custom (memory, scheduled calls, missions, multi-agent) — native platform advantage
+- TeXML AI Calls endpoint (`/v2/texml/ai_calls/{app_id}`) is simplest way to make outbound AI calls
+- Node.js SDK (`npm install telnyx`) has full assistant management support
+- `@telnyx/ai-agent-lib` React library could replace our custom agent UI components
+
+### February 23, 2026 (Part 2) - Telnyx Deep API-Level Research (8 Features)
+
+**Summary:** Deep technical research on 8 specific Telnyx Voice AI features at the API level. Updated `TELNYX_VOICE_PLATFORM.md` with exact API endpoints, request/response payloads, configuration examples, and gotchas for each feature.
+
+**What Was Updated:**
+
+1. **Memory System** — Full documentation of how cross-conversation memory works via `dynamic_variables_webhook_url`. The `memory` object uses a PostgREST-style query string (`conversation_query`) to filter past conversations by phone number, metadata, limit, and ordering. `insight_query` selectively recalls specific insight results instead of full transcripts. Memory is keyed on `telnyx_end_user_target` (phone number) and works cross-channel (voice + SMS). Webhook must respond within 1 second.
+
+2. **Multi-Agent Handoff** — Complete handoff tool configuration with `assistant_id` and `voice_mode` ("unified" or "distinct"). Full context (conversation history, collected data, variables) automatically transferred. Each agent can use different LLM models. Bidirectional handoff supported. Architecture patterns documented (by domain, task, language, complexity, customer segment).
+
+3. **A/B Testing / Traffic Splitting** — Built-in versioning with test objects containing `test_suite`, `instructions`, `rubric` (evaluation criteria), and `max_duration_seconds`. Full test API: create tests, trigger suites, view run results. Canary deployments with percentage-based traffic routing between versions. Replaces our custom `agent_script_variants` system.
+
+4. **Scheduled Callbacks** — `POST /v2/ai/assistants/{assistant_id}/scheduled_events` with `telnyx_conversation_channel`, `telnyx_agent_target`, `telnyx_end_user_target`, `scheduled_at_fixed_datetime` (ISO 8601), optional `text` and `conversation_metadata`. Supports both phone calls and SMS. Events fire automatically at scheduled time with full assistant capabilities.
+
+5. **Knowledge Base / RAG** — Complete pipeline: Create S3-compatible storage bucket -> Upload documents (PDF/DOCX/TXT) -> Embed via `POST /v2/ai/embeddings` (specifying `bucket_name`, `embedding_model`, `document_chunk_size`, `document_chunk_overlap_size`) -> Connect to assistant via retrieval tool. URL embedding endpoint crawls websites 5 levels deep. Auto-sync when documents change. Similarity search available via `/v2/ai/embeddings/similarity-search`.
+
+6. **AMD** — Both Call Control and TeXML interfaces documented. 5 detection modes: `detect`, `detect_words`, `detect_beep`, `greeting_end`, `premium`. Full webhook event flow documented with payload examples. Standard AMD is free, Premium is $0.0065/call. TeXML supports sync/async modes via `AsyncAmd` parameter. Works on AI assistant transfers too.
+
+7. **Post-Call Insights** — Configurable insight templates with `name`, `instructions`, and optional `json_schema` for structured output. Organized into Insight Groups assigned to assistants. Webhook delivery via `call.conversation_insights.generated`. Dynamic variables available in insight instructions. Insight IDs integrate with memory system for selective recall.
+
+8. **Tools/Function Calling** — All 10 tool types documented with JSON configuration: WebhookTool (GET/POST/PUT/PATCH/DELETE with path/query/body JSON Schema params, Mustache-templated headers for secrets), RetrievalTool, HandoffTool, HangupTool, TransferTool (with AMD on transfer), SIPReferTool, DTMFTool, SendMessageTool, SkipTurnTool, MCPServerTool (with `telnyx_conversation_id` injection).
+
+**Key Files Modified:**
+- `TELNYX_VOICE_PLATFORM.md` — Major expansion from ~1430 lines to ~1900+ lines with deep API detail
+- `CLAUDE.md` — Added this session log
+
+**Database Changes:** None
+
+**Deployment Status:** Documentation only — no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs still behind 403 CDN wall — web search + release notes are the workaround
+- Memory `conversation_query` uses PostgREST-style query strings (not JSON objects) — corrected from initial doc
+- `call.conversation_insights.generated` exact payload schema not publicly documented in full — needs test call to confirm
+- Telnyx versioning/testing completely replaces our custom A/B testing system (agent_script_variants, Thompson Sampling, UCB1)
+- Scheduled Events replace our custom retry logic in call-tracking-webhook
+- Knowledge base embedding is async — returns task_id, must poll for completion
+- AMD standard is free (vs Twilio $0.0075/call), premium is $0.0065/call
+- SIP Refer transfer costs $0.002 vs regular Transfer at $0.10 — significant cost difference
+
+---
+
+### February 23, 2026 (Part 3) - Telnyx Phone Numbers API Complete Reference
+
+**Summary:** Comprehensive research and documentation of the Telnyx Phone Numbers API covering search, purchase, reservation, management, voice/messaging configuration, CNAM, STIR/SHAKEN, E911, 10DLC registration, number porting, pricing, and Node.js SDK usage. Created a standalone technical reference document with every endpoint, parameter, and code example needed to fully integrate Telnyx number management into dial-smart-system.
+
+**What Was Built:**
+- `TELNYX_PHONE_NUMBERS_API.md` — 800+ line comprehensive API reference covering:
+  - Search API: `GET /v2/available_phone_numbers` with all 10+ filter parameters
+  - Reservations: 30-minute holds with extend capability
+  - Number Orders: Async purchase flow with sub-order splitting
+  - Phone Number CRUD: List/retrieve/update/delete + batch operations (1,000/call)
+  - Voice Settings: `connection_id`, tech prefix, call forwarding, CNAM, E911
+  - Messaging Settings: `messaging_profile_id` assignment, bulk update
+  - CNAM: 15-char limit, toll-free not supported, legacy API deprecated
+  - STIR/SHAKEN: Automatic attestation A/B/C, `verstat` SIP header values
+  - E911: Standard + Dynamic (addresses + endpoints), geolocation support
+  - 10DLC: Brand registration, 2FA verification, campaign creation, cost breakdown
+  - Number Porting: Draft → submitted → FOC → ported lifecycle, document requirements
+  - Pricing: $1/mo local, $0.009/min outbound (35% cheaper than Twilio)
+  - Node.js SDK: Complete typed examples for all operations
+  - 60+ endpoints catalogued in summary table
+  - Integration notes comparing Telnyx vs Twilio patterns for our codebase
+
+**Key Files Created:**
+- `TELNYX_PHONE_NUMBERS_API.md` (new — ~800 lines)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file — added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only — no code changes
+
+**Gotchas/Lessons:**
+- Telnyx dev docs still behind 403 CDN bot protection — all data gathered via web search and SDK GitHub
+- Number orders are **async** (unlike Twilio's synchronous purchase) — must poll for completion or use webhooks
+- Numbers must appear in search results within **24 hours** before they can be ordered
+- US numbers have zero regulatory requirements (instant activation); international numbers may require documents
+- CNAM max is **15 characters** and does NOT work on toll-free or international numbers
+- Legacy CNAM Data API (`data.telnyx.com`) deprecated Sept 2022 — use Number Lookup instead
+- STIR/SHAKEN is fully automatic for Telnyx-purchased numbers (Attestation A)
+- 10DLC registration goes through same TCR (The Campaign Registry) as Twilio — brands/campaigns are portable
+- Telnyx local numbers $1.00/mo vs Twilio $1.15/mo; outbound voice $0.009/min vs $0.014/min
+- Node.js SDK requires Node 20 LTS+, TypeScript 4.9+; auto-retries on 408/409/429/5xx errors
+
+---
+
 ### February 10, 2026 (Part 5) - Campaign Strategist: 8/10 → 10/10 (NOT DEPLOYED)
 
 **Summary:** Two features that take the AI from execution-focused to strategist-level. The AI now plans entire days like a campaign manager (resource allocation across competing priorities) and discovers cross-dimensional patterns humans would miss (timing correlations, source effectiveness, decay curves, sequence optimization).

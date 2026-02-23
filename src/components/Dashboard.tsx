@@ -61,6 +61,7 @@ const CreditDashboard = lazy(() => import('@/components/CreditDashboard'));
 const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
 const ClientPortal = lazy(() => import('@/components/ClientPortal'));
 const AdminSettings = lazy(() => import('@/components/AdminSettings'));
+const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -447,6 +448,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Client Portal"><Suspense fallback={<TabLoader />}><ClientPortal /></Suspense></TabErrorBoundary>;
       case 'admin-settings':
         return <TabErrorBoundary tabName="Admin Settings"><Suspense fallback={<TabLoader />}><AdminSettings /></Suspense></TabErrorBoundary>;
+      case 'telnyx-ai':
+        return <TabErrorBoundary tabName="Telnyx Voice AI"><Suspense fallback={<TabLoader />}><TelnyxAIManager /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }

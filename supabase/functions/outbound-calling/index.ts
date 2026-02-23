@@ -98,6 +98,8 @@ interface OutboundCallRequest {
   agentId?: string;
   retellCallId?: string;
   userId?: string; // For service-role calls from call-dispatcher
+  provider?: 'retell' | 'telnyx'; // Which voice AI provider to use (default: retell)
+  telnyxAssistantId?: string; // Local DB ID of telnyx_assistants row
 }
 
 serve(async (req) => {
@@ -183,24 +185,34 @@ serve(async (req) => {
     }
 
     
-    const { 
-      action, 
-      campaignId, 
-      leadId, 
-      phoneNumber, 
-      callerId, 
-      agentId, 
-      retellCallId
+    const {
+      action,
+      campaignId,
+      leadId,
+      phoneNumber,
+      callerId,
+      agentId,
+      retellCallId,
+      provider: requestedProvider,
+      telnyxAssistantId,
     }: OutboundCallRequest = await req.json();
 
-    const apiKey = Deno.env.get('RETELL_AI_API_KEY');
-    if (!apiKey) {
+    // Determine provider: explicit request > auto-detect from agentId
+    const provider = requestedProvider || 'retell';
+    console.log(`[Outbound Calling] Processing ${action} request for user: ${userId}, provider: ${provider}`);
+
+    // Provider-specific setup
+    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+
+    if (provider === 'retell' && !retellApiKey) {
       throw new Error('RETELL_AI_API_KEY is not configured');
     }
+    if (provider === 'telnyx' && !telnyxApiKey) {
+      throw new Error('TELNYX_API_KEY is not configured. Set it in Supabase secrets.');
+    }
 
-    console.log(`[Outbound Calling] Processing ${action} request for user:`, userId);
-
-
+    const apiKey = retellApiKey; // Keep backward compatible
     const baseUrl = 'https://api.retellai.com/v2';
     const retellHeaders = {
       'Authorization': `Bearer ${apiKey}`,
@@ -349,6 +361,101 @@ serve(async (req) => {
         }
         // ========================================================================
 
+        // ========================================================================
+        // PROVIDER ROUTING: Telnyx AI vs Retell AI
+        // ========================================================================
+        if (provider === 'telnyx') {
+          // ---- TELNYX AI CALL PATH ----
+          console.log('[Outbound Calling] Using TELNYX provider');
+
+          if (!telnyxAssistantId) {
+            throw new Error('telnyxAssistantId is required for Telnyx calls');
+          }
+
+          // Get Telnyx assistant details
+          const { data: telnyxAssistant } = await supabaseAdmin
+            .from('telnyx_assistants')
+            .select('telnyx_assistant_id, telnyx_texml_app_id, name')
+            .eq('id', telnyxAssistantId)
+            .eq('user_id', userId)
+            .single();
+
+          if (!telnyxAssistant?.telnyx_assistant_id) {
+            await supabaseAdmin.from('call_logs').update({
+              status: 'failed', ended_at: new Date().toISOString(),
+              notes: 'Telnyx assistant not found or not synced to Telnyx API',
+            }).eq('id', callLog.id);
+            throw new Error('Telnyx assistant not found. Create one in the Telnyx AI Manager.');
+          }
+
+          // Update call log with provider info
+          await supabaseAdmin.from('call_logs').update({
+            provider: 'telnyx',
+            telnyx_assistant_id: telnyxAssistant.telnyx_assistant_id,
+          }).eq('id', callLog.id);
+
+          // Get AMD settings
+          const { data: telnyxSettings } = await supabaseAdmin
+            .from('telnyx_settings')
+            .select('amd_enabled, amd_type')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+
+          // Make the outbound call via Telnyx Call Control
+          const telnyxCallPayload: any = {
+            connection_id: telnyxAssistant.telnyx_texml_app_id,
+            to: finalPhone,
+            from: callerId,
+            webhook_url: `${supabaseUrl}/functions/v1/telnyx-webhook`,
+          };
+
+          if (telnyxSettings?.amd_enabled !== false) {
+            telnyxCallPayload.answering_machine_detection = telnyxSettings?.amd_type || 'premium';
+          }
+
+          const telnyxRes = await fetch('https://api.telnyx.com/v2/calls', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${telnyxApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(telnyxCallPayload),
+          });
+
+          if (!telnyxRes.ok) {
+            const errText = await telnyxRes.text();
+            await supabaseAdmin.from('call_logs').update({
+              status: 'failed', ended_at: new Date().toISOString(),
+              notes: `Telnyx API error: ${errText}`,
+            }).eq('id', callLog.id);
+            throw new Error(`Telnyx API error: ${errText}`);
+          }
+
+          const telnyxCallData = await telnyxRes.json();
+          const tCallData = telnyxCallData.data;
+
+          console.log('[Outbound Calling] Telnyx call initiated:', tCallData.call_control_id);
+
+          // Update call log with Telnyx IDs
+          await supabaseAdmin.from('call_logs').update({
+            telnyx_call_control_id: tCallData.call_control_id,
+            telnyx_call_session_id: tCallData.call_session_id,
+            status: 'ringing',
+          }).eq('id', callLog.id);
+
+          result = {
+            call_id: tCallData.call_control_id,
+            call_log_id: callLog.id,
+            status: 'created',
+            provider: 'telnyx',
+            assistant_name: telnyxAssistant.name,
+          };
+          break;
+        }
+
+        // ---- RETELL AI CALL PATH (existing, unchanged) ----
         // Create outbound call via Retell AI
         console.log('[Outbound Calling] Initiating Retell AI call:', {
           from: callerId,

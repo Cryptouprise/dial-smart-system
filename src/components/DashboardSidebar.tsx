@@ -118,6 +118,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
       { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch, simpleMode: true },
+      { title: 'Telnyx Voice AI', value: 'telnyx-ai', icon: Bot, simpleMode: true },
       { title: 'Retell AI', value: 'retell', icon: Settings },
       { title: 'Workflows', value: 'workflows', icon: Zap },
       { title: 'Automation', value: 'automation', icon: Calendar },
