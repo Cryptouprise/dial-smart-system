@@ -513,6 +513,95 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 23, 2026 - Telnyx Voice AI Platform FULL INTEGRATION (NOT DEPLOYED)
+
+**Summary:** Complete implementation of Telnyx Voice AI platform integration. Built 7 new edge functions, 1 database migration, 1 frontend component, updated outbound-calling with Telnyx provider path. This is a 100% additive build — no existing Retell functionality was modified or broken. The Telnyx path is a parallel provider option.
+
+**What Was Built:**
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| **DB Migration** | `supabase/migrations/20260223_telnyx_voice_ai_platform.sql` | ~250 | 7 tables, 1 function, RLS, indexes |
+| **Assistant CRUD** | `supabase/functions/telnyx-ai-assistant/index.ts` | ~470 | 12 actions: create, update, delete, list, get, sync, clone, import, models, voices, assign_number, health_check |
+| **Dynamic Vars Webhook** | `supabase/functions/telnyx-dynamic-vars/index.ts` | ~210 | Memory + personalization at call start. Responds within 1s with lead data, callback context, memory queries |
+| **Webhook Handler** | `supabase/functions/telnyx-webhook/index.ts` | ~330 | Complete rewrite of stub. Handles: call lifecycle, AI conversation ended, post-call insights, AMD, SMS events |
+| **Outbound AI Calls** | `supabase/functions/telnyx-outbound-ai/index.ts` | ~270 | Standalone Telnyx outbound calling via Call Control + AI assistant. Credit system integrated. |
+| **Insights Manager** | `supabase/functions/telnyx-insights/index.ts` | ~230 | CRUD for insight templates, default templates (disposition, summary, intent, appointment), insight viewer |
+| **Scheduled Events** | `supabase/functions/telnyx-scheduled-events/index.ts` | ~220 | Schedule callbacks and follow-up SMS via Telnyx Scheduled Events API |
+| **Knowledge Base** | `supabase/functions/telnyx-knowledge-base/index.ts` | ~280 | RAG pipeline: create KB, embed docs, embed URLs, similarity search, connect to assistants |
+| **Frontend UI** | `src/components/TelnyxAIManager.tsx` | ~530 | 4-tab manager: Assistants (CRUD + create form), Insights, Scheduled Events, Knowledge Base |
+
+**Modified Files:**
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/outbound-calling/index.ts` | +80 lines: Added `provider` and `telnyxAssistantId` to request, Telnyx call path with AMD + credit check. Retell path completely unchanged. |
+| `src/components/Dashboard.tsx` | +2 lines: Lazy import + tab case for TelnyxAIManager |
+| `src/components/DashboardSidebar.tsx` | +1 line: "Telnyx Voice AI" in AI & Automation section (simpleMode: true) |
+| `CLAUDE.md` | Added this session log |
+
+**New Database Tables (7):**
+
+| Table | Purpose |
+|-------|---------|
+| `telnyx_assistants` | AI assistant configs with Telnyx IDs, tools, voice, model, versioning |
+| `telnyx_insight_templates` | Post-call analysis templates (disposition, summary, intent) |
+| `telnyx_knowledge_bases` | RAG knowledge bases with Telnyx storage bucket references |
+| `telnyx_scheduled_events` | Local cache of Telnyx scheduled callbacks/SMS |
+| `telnyx_conversation_insights` | Received post-call insights from webhook |
+| `telnyx_settings` | Per-user Telnyx configuration (API key status, defaults, AMD) |
+
+**New Columns on `call_logs`:**
+- `telnyx_call_control_id` TEXT
+- `telnyx_call_session_id` TEXT
+- `telnyx_conversation_id` TEXT
+- `telnyx_assistant_id` TEXT
+- `provider` TEXT (retell/telnyx/twilio, default: retell)
+- `amd_result` TEXT (human/machine/etc)
+- `amd_type` TEXT (standard/premium)
+
+**New Database Function:**
+- `get_telnyx_assistant_for_call(user_id, assistant_id)` — Resolves which Telnyx assistant to use
+
+**Architecture Decisions:**
+1. **Zero breaking changes** — All new Telnyx code is additive. The existing Retell path in outbound-calling is 100% untouched. Provider routing is done by a new `provider` field in the request.
+2. **Calendar booking unchanged** — The webhook tool on Telnyx assistants calls the SAME `calendar-integration` edge function. No calendar code was modified.
+3. **Credit system integrated** — Telnyx calls go through the same `check_credit_balance` / `reserve_credits` / `finalize_call_cost` flow. Cost is $0.09/min (hardcoded Telnyx rate) vs variable Retell rate.
+4. **Dynamic vars webhook** — A new endpoint (`telnyx-dynamic-vars`) is called by Telnyx at conversation start. It loads lead data and memory in <1 second. This replaces the `retell_llm_dynamic_variables` injection pattern.
+5. **Memory is native** — Telnyx stores conversation history and loads past conversations via PostgREST-style queries. No custom memory hacking needed.
+6. **AMD is native** — Telnyx does ML-based answering machine detection at the telephony layer. Free for standard, $0.0065/call for premium (97% accuracy). Replaces our 300+ line regex transcript scanner.
+
+**Sidebar Location:** AI & Automation > Telnyx Voice AI (with Bot icon)
+**Dashboard URL:** `/?tab=telnyx-ai`
+
+**Deployment Required:**
+```bash
+# 1. Run migration
+# 2. Set secrets:
+supabase secrets set TELNYX_API_KEY=your_key_here
+# 3. Deploy all functions:
+supabase functions deploy telnyx-ai-assistant
+supabase functions deploy telnyx-dynamic-vars
+supabase functions deploy telnyx-webhook
+supabase functions deploy telnyx-outbound-ai
+supabase functions deploy telnyx-insights
+supabase functions deploy telnyx-scheduled-events
+supabase functions deploy telnyx-knowledge-base
+supabase functions deploy outbound-calling
+```
+
+**Validation:** `npx tsc --noEmit --skipLibCheck` passes clean (0 errors).
+
+**Gotchas / Lessons:**
+- Telnyx assistant update uses `POST` (not `PATCH`) — different from REST convention
+- Telnyx assistant clone excludes telephony/messaging settings — must re-assign numbers
+- Dynamic vars webhook MUST respond in <1 second or Telnyx proceeds without memory
+- Telnyx webhook handler returns 200 even on internal errors (prevents Telnyx retry storms)
+- `provider` column on call_logs defaults to 'retell' for backward compatibility
+- The `telnyx-outbound-ai` function is standalone but `outbound-calling` also has a Telnyx path — use either
+
+---
+
 ### February 23, 2026 - Telnyx Messaging Platform (SMS/MMS) Research & Documentation
 
 **Summary:** Comprehensive research and documentation of Telnyx's Messaging API (SMS/MMS). Created a complete technical reference covering send/receive SMS, MMS media support, messaging profiles, number pools, webhook payloads, 10DLC registration, toll-free verification, alphanumeric sender IDs, rate limits, pricing, Node.js SDK usage, webhook signature verification, and a 4-phase integration plan.
