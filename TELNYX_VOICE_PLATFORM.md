@@ -1314,23 +1314,188 @@ Send audio back to the call through the WebSocket — enables real-time AI-gener
 
 ---
 
-## Answering Machine Detection (AMD)
+## Answering Machine Detection / AMD (Deep Technical Detail)
 
-**Free** with Call Control — no additional charge.
+AMD is **free** with Call Control (standard detection). Premium AMD is $0.0065/call. Telnyx claims 97% accuracy with their algorithms.
 
-### Detection Modes
-| Mode | Description |
-|------|-------------|
-| `detect` | Basic human/machine detection |
-| `detect_words` | Word-based detection + greeting end |
-| `detect_beep` | Beep-only detection |
-| `greeting_end` | Detects end of machine greeting |
+### Two Interfaces for AMD
 
-### Premium AMD
-- Advanced Voice Activity Detection (VAD)
-- Granular classifications: `silence`, `machine_greeting`, `human_residence`, `human_business`
-- Webhook: `call.machine.premium.detection.ended`
-- Available on AI Assistant transfers too (new feature)
+#### 1. Call Control API (REST)
+
+When dialing with `POST /v2/calls`, set the `answering_machine_detection` parameter:
+
+```json
+{
+  "connection_id": "conn_xxxxx",
+  "from": "+15551234567",
+  "to": "+15559876543",
+  "answering_machine_detection": "detect",
+  "answering_machine_detection_config": {
+    "total_analysis_time_millis": 5000,
+    "after_greeting_silence_millis": 800,
+    "between_words_silence_millis": 50,
+    "greeting_duration_millis": 3500,
+    "initial_silence_millis": 3500,
+    "maximum_number_of_words": 5,
+    "silence_threshold": 256
+  }
+}
+```
+
+**Detection mode values:**
+
+| Value | Description | Events Fired |
+|-------|-------------|--------------|
+| `detect` | Basic human/machine detection | `call.machine.detection.ended` |
+| `detect_words` | Word-count-based detection (>5 words = machine) + greeting end | `call.machine.detection.ended` + `call.machine.greeting.ended` |
+| `detect_beep` | Listens for voicemail beep after machine detection | `call.machine.detection.ended` + `call.machine.greeting.ended` |
+| `greeting_end` | Detects end of machine greeting | `call.machine.detection.ended` + `call.machine.greeting.ended` |
+| `premium` | Advanced ML-based detection with granular classifications | `call.machine.premium.detection.ended` + `call.machine.premium.greeting.ended` |
+
+#### 2. TeXML (TwiML-compatible)
+
+When initiating outbound calls via `POST /v2/texml/calls/{app_id}`, use these parameters:
+
+```json
+{
+  "From": "+15551234567",
+  "To": "+15559876543",
+  "MachineDetection": "Enable",
+  "DetectionMode": "Premium",
+  "AsyncAmd": true,
+  "AsyncAmdStatusCallback": "https://your-server.com/amd-callback",
+  "AsyncAMDStatusCallbackMethod": "POST"
+}
+```
+
+**TeXML AMD parameters:**
+
+| Parameter | Values | Default | Description |
+|-----------|--------|---------|-------------|
+| `MachineDetection` | `Enable`, `Disable`, `DetectMessageEnd` | `Disable` | Enable AMD |
+| `DetectionMode` | `Regular`, `Premium` | `Regular` | Standard vs. premium detection |
+| `AsyncAmd` | `true`, `false` | `false` | Run AMD in background (don't block TeXML execution) |
+| `AsyncAmdStatusCallback` | URL | - | Where to send async AMD results |
+| `AsyncAMDStatusCallbackMethod` | `GET`, `POST` | Inherited | HTTP method for callback |
+
+**Sync vs Async modes:**
+- **Synchronous** (`AsyncAmd: false`): TeXML instructions wait until AMD completes. Result comes in the `AnsweredBy` parameter of the StatusCallback.
+- **Asynchronous** (`AsyncAmd: true`): TeXML instructions execute in parallel with AMD. Results arrive at the `AsyncAmdStatusCallback` URL separately.
+
+### TeXML AI Calls with AMD
+
+For AI assistant calls specifically:
+```json
+{
+  "From": "+15551234567",
+  "To": "+15559876543",
+  "AIAssistantId": "asst_xxxxx",
+  "MachineDetection": "Enable",
+  "AsyncAmd": true,
+  "DetectionMode": "Premium"
+}
+```
+
+### Webhook Events (Call Control)
+
+#### `call.machine.detection.ended` (Standard)
+```json
+{
+  "data": {
+    "event_type": "call.machine.detection.ended",
+    "payload": {
+      "call_control_id": "v3:xxxxx",
+      "call_leg_id": "leg_xxxxx",
+      "call_session_id": "sess_xxxxx",
+      "connection_id": "conn_xxxxx",
+      "from": "+15551234567",
+      "to": "+15559876543",
+      "result": "machine",
+      "client_state": "base64_encoded_state"
+    }
+  }
+}
+```
+
+**`result` values:** `"human"` or `"machine"`
+
+#### `call.machine.greeting.ended` (Standard)
+Fires when the voicemail greeting finishes (beep detected or timeout):
+```json
+{
+  "data": {
+    "event_type": "call.machine.greeting.ended",
+    "payload": {
+      "call_control_id": "v3:xxxxx",
+      "result": "beep_detected"
+    }
+  }
+}
+```
+
+**`result` values:** `"beep_detected"`, `"ended"`, `"no_beep_detected"`
+
+#### `call.machine.premium.detection.ended` (Premium)
+Granular classifications with ML-based detection:
+```json
+{
+  "data": {
+    "event_type": "call.machine.premium.detection.ended",
+    "payload": {
+      "call_control_id": "v3:xxxxx",
+      "result": "human_residence"
+    }
+  }
+}
+```
+
+**`result` values:** `"silence"`, `"machine_greeting"`, `"human_residence"`, `"human_business"`
+
+#### `call.machine.premium.greeting.ended` (Premium)
+Same as standard greeting ended but with premium accuracy. If beep detected before detection ends, only this event fires (not the detection event).
+
+### Typical Event Flow
+
+```
+1. call.answered
+   │
+   ├─── Standard AMD ───────────────────────────────────────┐
+   │    2. call.machine.detection.ended (human/machine)     │
+   │    3. call.machine.greeting.ended (beep/no_beep)       │
+   │                                                         │
+   ├─── Premium AMD ────────────────────────────────────────┐
+   │    2. call.machine.premium.detection.ended             │
+   │       (silence/machine_greeting/human_residence/       │
+   │        human_business)                                 │
+   │    3. call.machine.premium.greeting.ended              │
+   │       (beep_detected)                                  │
+   │                                                         │
+   └─── At any point: call.hangup possible ─────────────────┘
+```
+
+### AMD on Transfers
+
+AMD also works when the AI assistant transfers a call. If the transfer destination goes to voicemail, the assistant can:
+- Detect the voicemail greeting
+- Optionally leave a message
+- Or cancel the transfer
+
+### Pricing
+
+| Type | Cost |
+|------|------|
+| Standard AMD (`detect`, `detect_words`, `detect_beep`, `greeting_end`) | **Free** |
+| Premium AMD (`premium`) | **$0.0065/call** |
+
+Compare to Twilio: $0.0075/call for basic AMD.
+
+### Gotchas
+
+- Every webhook MUST be acknowledged with HTTP 2xx -- Telnyx keeps retrying otherwise
+- The callee can hang up at ANY point, generating `call.hangup` (handle this in your flow)
+- With `detect_words` mode, if more than 5 words are detected from the callee, it is classified as a machine
+- Premium AMD beep detection: if beep arrives before `premium.detection.ended`, you only get `premium.greeting.ended`
+- In async mode, the call proceeds immediately while AMD runs -- your AI may start talking before AMD completes
 
 ---
 
@@ -1603,19 +1768,168 @@ try {
 
 ---
 
-## Knowledge Base
+## Knowledge Base / RAG (Deep Technical Detail)
 
-### Setup
-- **Portal**: Drag-and-drop files (PDF, DOCX, TXT) or enter URLs
-- **API**: Upload documents or embed website content via embedding endpoint
-- **Auto-update**: Embeddings auto-update when documents change
+The Retrieval Tool gives AI assistants access to your documents during live calls. When the caller asks a question, the assistant automatically searches your knowledge base using vector similarity and incorporates relevant information into its response.
 
-### Embedding Models
-- `thenlper/gte-large`
-- `intfloat/multilingual-e5-large`
-- `sentence-transformers/all-mpnet-base-v2`
+### Architecture Overview
 
-Operates on Telnyx Storage Buckets. Processing is asynchronous. 90%+ cheaper than competitors on embeddings.
+```
+Your Documents (PDF, DOCX, TXT, URLs)
+        │
+        ▼
+Telnyx Cloud Storage (S3-compatible bucket)
+        │
+        ▼
+Embeddings API (vectorize documents into chunks)
+        │
+        ▼
+Vector Index (stored alongside documents)
+        │
+        ▼
+Retrieval Tool (AI assistant searches during call)
+        │
+        ▼
+LLM uses retrieved context to answer caller
+```
+
+### Step 1: Create a Storage Bucket
+
+Telnyx Cloud Storage is S3-compatible. Create a bucket via the portal or API.
+
+**API (S3-compatible PUT):**
+```bash
+PUT / HTTP/1.1
+Host: your-bucket-name.us-central-1.telnyxcloudstorage.com
+Authorization: AWS4-HMAC-SHA256 ...
+```
+
+**Regional endpoints:**
+- `us-central-1.telnyxcloudstorage.com`
+- `us-east-1.telnyxcloudstorage.com`
+- `us-west-1.telnyxcloudstorage.com`
+
+**Authentication:** Your Telnyx API Key serves as the S3 Access Key ID. Buckets are free (up to 100 per account).
+
+### Step 2: Upload Documents
+
+Upload files to the bucket using S3-compatible PutObject or the portal (drag-and-drop).
+
+**Supported formats:** PDF, DOCX, TXT, and any text-based file. Non-text files are attempted as unstructured text.
+
+**Portal:** Navigate to AI Assistants -> select agent -> Knowledge Bases section -> drag-and-drop files or enter URLs.
+
+### Step 3: Embed the Documents
+
+**Embed files from a storage bucket:**
+```bash
+POST https://api.telnyx.com/v2/ai/embeddings
+Authorization: Bearer <TELNYX_API_KEY>
+Content-Type: application/json
+
+{
+  "bucket_name": "solar-knowledge-base",
+  "embedding_model": "thenlper/gte-large",
+  "document_chunk_size": 1024,
+  "document_chunk_overlap_size": 512
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `bucket_name` | string | required | Name of existing Telnyx Storage bucket |
+| `embedding_model` | string | required | One of the supported models (see below) |
+| `document_chunk_size` | integer | 1024 | Size of document chunks in characters |
+| `document_chunk_overlap_size` | integer | 512 | Overlap between chunks for context continuity |
+| `loader` | string | "default" | Custom loader (`"intercom"` for Intercom articles) |
+
+**Response:** Returns a `task_id` for tracking. Processing runs **in the background**.
+
+**Check embedding status:**
+```
+GET https://api.telnyx.com/v2/ai/embeddings/{task_id}
+```
+
+**Embed website content (URL crawling):**
+```bash
+POST https://api.telnyx.com/v2/ai/embeddings/url
+Authorization: Bearer <TELNYX_API_KEY>
+Content-Type: application/json
+
+{
+  "url": "https://your-company.com/products",
+  "bucket_name": "solar-knowledge-base",
+  "embedding_model": "thenlper/gte-large"
+}
+```
+
+This automatically crawls the URL and child pages **up to 5 levels deep** within the same domain, loads content into the storage bucket, and embeds it.
+
+### Supported Embedding Models
+
+| Model | Best For |
+|-------|---------|
+| `thenlper/gte-large` | General English text (recommended default) |
+| `intfloat/multilingual-e5-large` | Multilingual content (40+ languages) |
+| `sentence-transformers/all-mpnet-base-v2` | Semantic similarity tasks |
+
+### Auto-Sync
+
+When you update documents in a bucket, embeddings **automatically update**:
+- Add/update a file -> automatically re-embedded
+- Delete a file -> embeddings deleted for that file
+- No manual re-embedding needed
+
+### Step 4: Connect to Assistant via Retrieval Tool
+
+When creating/updating the assistant, include the retrieval tool and reference the bucket:
+
+```json
+{
+  "tools": [
+    {
+      "type": "retrieval",
+      "name": "search_knowledge",
+      "description": "Search company documents for product info, pricing, and FAQs"
+    }
+  ]
+}
+```
+
+The assistant's configuration links to the embedded bucket(s) -- configure this in the Knowledge Bases section of the assistant builder.
+
+### Similarity Search API (Direct)
+
+You can also query the knowledge base directly (outside of an assistant call):
+
+```bash
+POST https://api.telnyx.com/v2/ai/embeddings/similarity-search
+Authorization: Bearer <TELNYX_API_KEY>
+Content-Type: application/json
+
+{
+  "bucket_name": "solar-knowledge-base",
+  "query": "What is the warranty period for solar panels?",
+  "num_docs": 5,
+  "embedding_model": "thenlper/gte-large"
+}
+```
+
+Returns the most similar `num_docs` document chunks to the query, with `loader_metadata` if a custom loader was used.
+
+### Pricing
+
+Telnyx claims 90%+ cheaper than competitors on embeddings. Storage costs are minimal (standard cloud storage rates). The embedding computation itself is charged per request.
+
+### Gotchas & Limitations
+
+- **Processing is async**: Large document sets can take minutes to embed. Poll the task status endpoint.
+- **Chunk size matters**: Smaller chunks (512) give more precise retrieval but less context per chunk. Larger chunks (2048) give more context but may dilute relevance.
+- **URL crawling depth**: Only goes 5 levels deep and stays on the same domain. External links are not followed.
+- **Supported formats**: While PDF/DOCX/TXT are explicitly supported, other formats are attempted as unstructured text -- results may vary.
+- **No real-time updates**: If you update a document, re-embedding happens automatically but is not instant.
 
 ---
 
