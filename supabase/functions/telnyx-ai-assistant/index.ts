@@ -122,24 +122,35 @@ serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    // Auth
+    // Auth - support both JWT and service role
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    const bodyText = await req.text();
+    const bodyJson = JSON.parse(bodyText);
+
+    let userId: string;
+
+    const token = authHeader?.replace('Bearer ', '') || '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+    
+    if (bodyJson.user_id && (!authHeader || token === serviceRoleKey || token === anonKey)) {
+      // Internal/service call with user_id
+      userId = bodyJson.user_id;
+      console.log('✅ Internal auth - user_id:', userId);
+    } else if (authHeader) {
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Authentication failed' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
+    } else {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Authentication failed' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const userId = user.id;
-
-    const { action, ...params } = await req.json();
+    const { action, ...params } = bodyJson;
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
     const apiKey = Deno.env.get('TELNYX_API_KEY');
@@ -748,6 +759,78 @@ serve(async (req) => {
           webhook_url: `${supabaseUrl}/functions/v1/telnyx-webhook`,
           dynamic_vars_url: `${supabaseUrl}/functions/v1/telnyx-dynamic-vars`,
           timestamp: new Date().toISOString(),
+        };
+        break;
+      }
+
+      // ================================================================
+      // PURCHASE NUMBER
+      // ================================================================
+      case 'purchase_number': {
+        const { area_code, quantity = 1 } = params as any;
+        if (!area_code) throw new Error('area_code is required');
+
+        // Search available numbers
+        const searchRes = await telnyxFetch(
+          `/available_phone_numbers?filter[national_destination_code]=${area_code}&filter[country_code]=US&filter[limit]=${quantity}&filter[features][]=voice`,
+          apiKey!
+        );
+        if (!searchRes.ok || !searchRes.data?.data?.length) {
+          throw new Error(`No numbers available in area code ${area_code}`);
+        }
+
+        const numbersToOrder = searchRes.data.data.slice(0, quantity).map((n: any) => ({
+          phone_number: n.phone_number,
+        }));
+
+        // Place order
+        const orderRes = await telnyxFetch('/number_orders', apiKey!, 'POST', {
+          phone_numbers: numbersToOrder,
+        });
+        if (!orderRes.ok) {
+          throw new Error(`Number order failed: ${orderRes.error}`);
+        }
+
+        const orderId = orderRes.data?.data?.id;
+        console.log(`[Telnyx] Number order ${orderId} placed, polling...`);
+
+        // Poll for completion (up to 30s)
+        let orderComplete = false;
+        let orderData = orderRes.data?.data;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const statusRes = await telnyxFetch(`/number_orders/${orderId}`, apiKey!);
+          if (statusRes.ok) {
+            orderData = statusRes.data?.data;
+            if (orderData?.status === 'success') { orderComplete = true; break; }
+          }
+        }
+
+        // Save to phone_numbers table
+        const purchasedNumbers: string[] = [];
+        for (const pn of numbersToOrder) {
+          const { error: insertErr } = await supabaseAdmin
+            .from('phone_numbers')
+            .insert({
+              number: pn.phone_number,
+              phone_number: pn.phone_number,
+              provider: 'telnyx',
+              status: 'active',
+              daily_calls: 0,
+              user_id: userId,
+              allowed_uses: ['voice_ai'],
+              rotation_enabled: false,
+            });
+          if (insertErr) console.error('DB insert error:', insertErr);
+          purchasedNumbers.push(pn.phone_number);
+        }
+
+        result = {
+          success: true,
+          order_id: orderId,
+          order_complete: orderComplete,
+          numbers: purchasedNumbers,
+          message: `Purchased ${purchasedNumbers.length} number(s) in area code ${area_code}`,
         };
         break;
       }
