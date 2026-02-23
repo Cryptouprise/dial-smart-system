@@ -234,3 +234,25 @@ verify_jwt = false  # External webhook from GHL workflows
 
 [functions.ghl-batch-callback]
 verify_jwt = true  # Internal use only
+
+# =============================================
+# TELNYX VOICE AI PLATFORM
+# =============================================
+
+[functions.telnyx-ai-assistant]
+verify_jwt = true
+
+[functions.telnyx-outbound-ai]
+verify_jwt = false  # Handles both JWT and service role auth internally
+
+[functions.telnyx-dynamic-vars]
+verify_jwt = false  # Called by Telnyx directly at conversation start
+
+[functions.telnyx-knowledge-base]
+verify_jwt = true
+
+[functions.telnyx-insights]
+verify_jwt = true
+
+[functions.telnyx-scheduled-events]
+verify_jwt = true

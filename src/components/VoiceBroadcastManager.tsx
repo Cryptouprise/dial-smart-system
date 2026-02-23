@@ -142,6 +142,9 @@ export const VoiceBroadcastManager: React.FC = () => {
   const [backfillingCosts, setBackfillingCosts] = useState(false);
 
   // Form state
+  // Telnyx assistants for AI broadcast mode
+  const [telnyxAssistants, setTelnyxAssistants] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -157,23 +160,40 @@ export const VoiceBroadcastManager: React.FC = () => {
     timezone: 'America/New_York',
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
-    use_dialer_features: true, // Enable number rotation & local presence for better deliverability
+    use_dialer_features: true,
     enable_local_presence: true,
     enable_number_rotation: true,
-    caller_id: '', // Specific phone number to use as caller ID
-    // AMD settings
+    caller_id: '',
     enable_amd: true,
     voicemail_action: 'hangup' as 'hangup' | 'leave_message',
     voicemail_audio_url: '',
-    // SIP trunk (opt-in for cost savings, default off for reliability)
     use_sip_trunk: false,
+    // Telnyx AI broadcast provider
+    broadcast_provider: 'twilio_classic' as 'twilio_classic' | 'telnyx_ai',
+    telnyx_assistant_id: '',
+    telnyx_script: '',
   });
 
   useEffect(() => {
     loadBroadcasts();
     loadLeads();
     loadPhoneNumbers();
+    loadTelnyxAssistants();
   }, []);
+
+  const loadTelnyxAssistants = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('telnyx_assistants')
+        .select('id, name, telnyx_assistant_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('name');
+      setTelnyxAssistants(data || []);
+    } catch { /* non-critical */ }
+  };
 
   const loadPhoneNumbers = async () => {
     try {
@@ -499,7 +519,10 @@ export const VoiceBroadcastManager: React.FC = () => {
         voicemail_action: formData.voicemail_action,
         voicemail_audio_url: formData.voicemail_audio_url || null,
         use_sip_trunk: formData.use_sip_trunk,
-      });
+        broadcast_provider: formData.broadcast_provider,
+        telnyx_assistant_id: formData.broadcast_provider === 'telnyx_ai' ? formData.telnyx_assistant_id : null,
+        telnyx_script: formData.broadcast_provider === 'telnyx_ai' ? formData.telnyx_script : null,
+      } as any);
       setShowCreateDialog(false);
       resetForm();
     } catch (error) {
@@ -531,6 +554,9 @@ export const VoiceBroadcastManager: React.FC = () => {
       voicemail_action: 'hangup',
       voicemail_audio_url: '',
       use_sip_trunk: false,
+      broadcast_provider: 'twilio_classic',
+      telnyx_assistant_id: '',
+      telnyx_script: '',
     });
   };
 
@@ -722,6 +748,36 @@ export const VoiceBroadcastManager: React.FC = () => {
               </TabsList>
 
               <TabsContent value="message" className="space-y-4">
+                {/* Broadcast Provider Selector */}
+                <div className="space-y-2">
+                  <Label>Broadcast Provider</Label>
+                  <Select
+                    value={formData.broadcast_provider}
+                    onValueChange={(val: 'twilio_classic' | 'telnyx_ai') => setFormData({ ...formData, broadcast_provider: val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="twilio_classic">
+                        <span className="flex items-center gap-2">
+                          <Volume2 className="h-3 w-3" /> Twilio + ElevenLabs (Classic)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="telnyx_ai">
+                        <span className="flex items-center gap-2">
+                          <Bot className="h-3 w-3" /> Telnyx AI Agent (Conversational)
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {formData.broadcast_provider === 'telnyx_ai'
+                      ? 'Two-way AI conversations — no audio pre-generation needed (~$0.09/min)'
+                      : 'Pre-recorded audio with DTMF/IVR options (~$0.02-0.05/min)'}
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Campaign Name</Label>
                   <Input
@@ -740,18 +796,58 @@ export const VoiceBroadcastManager: React.FC = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Message Script</Label>
-                  <Textarea
-                    value={formData.message_text}
-                    onChange={(e) => setFormData({ ...formData, message_text: e.target.value })}
-                    placeholder="Hello! This is a special announcement from..."
-                    rows={5}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This will be converted to speech using AI voice technology
-                  </p>
-                </div>
+                {/* Telnyx AI Mode: Assistant + Script */}
+                {formData.broadcast_provider === 'telnyx_ai' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Telnyx AI Assistant</Label>
+                      <Select
+                        value={formData.telnyx_assistant_id}
+                        onValueChange={(val) => setFormData({ ...formData, telnyx_assistant_id: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select an assistant..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {telnyxAssistants.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                          ))}
+                          {telnyxAssistants.length === 0 && (
+                            <SelectItem value="_none" disabled>No assistants configured</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Create assistants in the Telnyx Voice AI tab
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Broadcast Script / Instructions</Label>
+                      <Textarea
+                        value={formData.telnyx_script}
+                        onChange={(e) => setFormData({ ...formData, telnyx_script: e.target.value })}
+                        placeholder="You are calling {{first_name}} about our upcoming event..."
+                        rows={5}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        This overrides the assistant's default instructions for this broadcast. Use {'{{first_name}}'} etc. for personalization.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Message Script</Label>
+                      <Textarea
+                        value={formData.message_text}
+                        onChange={(e) => setFormData({ ...formData, message_text: e.target.value })}
+                        placeholder="Hello! This is a special announcement from..."
+                        rows={5}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        This will be converted to speech using AI voice technology
+                      </p>
+                    </div>
 
                 <div className="space-y-2">
                   <Label>Voice</Label>
@@ -771,6 +867,8 @@ export const VoiceBroadcastManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+                  </>
+                )}
               </TabsContent>
 
               <TabsContent value="ivr" className="space-y-4">
@@ -1380,7 +1478,7 @@ export const VoiceBroadcastManager: React.FC = () => {
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={isLoading || !formData.name || !formData.message_text}>
+              <Button onClick={handleCreate} disabled={isLoading || !formData.name || (formData.broadcast_provider === 'twilio_classic' ? !formData.message_text : !formData.telnyx_assistant_id)}>
                 Create Broadcast
               </Button>
             </div>

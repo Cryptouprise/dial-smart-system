@@ -1402,6 +1402,7 @@ export type Database = {
           agent_name: string | null
           ai_analysis: Json | null
           amd_result: string | null
+          amd_type: string | null
           answered_at: string | null
           auto_disposition: string | null
           call_summary: string | null
@@ -1416,12 +1417,19 @@ export type Database = {
           notes: string | null
           opener_extracted: string | null
           opener_score: number | null
+          organization_id: string | null
           outcome: string | null
           phone_number: string
+          provider: string | null
           recording_url: string | null
           retell_call_id: string | null
           sentiment: string | null
+          started_at: string | null
           status: string
+          telnyx_assistant_id: string | null
+          telnyx_call_control_id: string | null
+          telnyx_call_session_id: string | null
+          telnyx_conversation_id: string | null
           time_wasted_reason: string | null
           time_wasted_score: number | null
           transcript: string | null
@@ -1432,6 +1440,7 @@ export type Database = {
           agent_name?: string | null
           ai_analysis?: Json | null
           amd_result?: string | null
+          amd_type?: string | null
           answered_at?: string | null
           auto_disposition?: string | null
           call_summary?: string | null
@@ -1446,12 +1455,19 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
+          organization_id?: string | null
           outcome?: string | null
           phone_number: string
+          provider?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           sentiment?: string | null
+          started_at?: string | null
           status: string
+          telnyx_assistant_id?: string | null
+          telnyx_call_control_id?: string | null
+          telnyx_call_session_id?: string | null
+          telnyx_conversation_id?: string | null
           time_wasted_reason?: string | null
           time_wasted_score?: number | null
           transcript?: string | null
@@ -1462,6 +1478,7 @@ export type Database = {
           agent_name?: string | null
           ai_analysis?: Json | null
           amd_result?: string | null
+          amd_type?: string | null
           answered_at?: string | null
           auto_disposition?: string | null
           call_summary?: string | null
@@ -1476,12 +1493,19 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
+          organization_id?: string | null
           outcome?: string | null
           phone_number?: string
+          provider?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           sentiment?: string | null
+          started_at?: string | null
           status?: string
+          telnyx_assistant_id?: string | null
+          telnyx_call_control_id?: string | null
+          telnyx_call_session_id?: string | null
+          telnyx_conversation_id?: string | null
           time_wasted_reason?: string | null
           time_wasted_score?: number | null
           transcript?: string | null
@@ -5907,6 +5931,92 @@ export type Database = {
         }
         Relationships: []
       }
+      telnyx_assistants: {
+        Row: {
+          created_at: string
+          data_retention: boolean | null
+          description: string | null
+          dynamic_variables: Json | null
+          dynamic_variables_webhook_url: string | null
+          enabled_features: string[] | null
+          greeting: string | null
+          id: string
+          insight_group_id: string | null
+          instructions: string | null
+          metadata: Json | null
+          model: string | null
+          name: string
+          organization_id: string | null
+          status: string | null
+          telnyx_assistant_id: string | null
+          telnyx_messaging_profile_id: string | null
+          telnyx_texml_app_id: string | null
+          tools: Json | null
+          transcription_model: string | null
+          updated_at: string
+          user_id: string
+          voice: string | null
+        }
+        Insert: {
+          created_at?: string
+          data_retention?: boolean | null
+          description?: string | null
+          dynamic_variables?: Json | null
+          dynamic_variables_webhook_url?: string | null
+          enabled_features?: string[] | null
+          greeting?: string | null
+          id?: string
+          insight_group_id?: string | null
+          instructions?: string | null
+          metadata?: Json | null
+          model?: string | null
+          name: string
+          organization_id?: string | null
+          status?: string | null
+          telnyx_assistant_id?: string | null
+          telnyx_messaging_profile_id?: string | null
+          telnyx_texml_app_id?: string | null
+          tools?: Json | null
+          transcription_model?: string | null
+          updated_at?: string
+          user_id: string
+          voice?: string | null
+        }
+        Update: {
+          created_at?: string
+          data_retention?: boolean | null
+          description?: string | null
+          dynamic_variables?: Json | null
+          dynamic_variables_webhook_url?: string | null
+          enabled_features?: string[] | null
+          greeting?: string | null
+          id?: string
+          insight_group_id?: string | null
+          instructions?: string | null
+          metadata?: Json | null
+          model?: string | null
+          name?: string
+          organization_id?: string | null
+          status?: string | null
+          telnyx_assistant_id?: string | null
+          telnyx_messaging_profile_id?: string | null
+          telnyx_texml_app_id?: string | null
+          tools?: Json | null
+          transcription_model?: string | null
+          updated_at?: string
+          user_id?: string
+          voice?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telnyx_assistants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telnyx_conversation_insights: {
         Row: {
           call_log_id: string | null
@@ -5967,6 +6077,192 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telnyx_insight_templates: {
+        Row: {
+          created_at: string
+          id: string
+          instructions: string | null
+          json_schema: Json | null
+          name: string
+          telnyx_group_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instructions?: string | null
+          json_schema?: Json | null
+          name: string
+          telnyx_group_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instructions?: string | null
+          json_schema?: Json | null
+          name?: string
+          telnyx_group_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      telnyx_knowledge_bases: {
+        Row: {
+          assistant_ids: string[] | null
+          bucket_name: string | null
+          created_at: string
+          description: string | null
+          document_chunk_overlap: number | null
+          document_chunk_size: number | null
+          embedding_model: string | null
+          id: string
+          last_embed_task_id: string | null
+          name: string
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assistant_ids?: string[] | null
+          bucket_name?: string | null
+          created_at?: string
+          description?: string | null
+          document_chunk_overlap?: number | null
+          document_chunk_size?: number | null
+          embedding_model?: string | null
+          id?: string
+          last_embed_task_id?: string | null
+          name: string
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assistant_ids?: string[] | null
+          bucket_name?: string | null
+          created_at?: string
+          description?: string | null
+          document_chunk_overlap?: number | null
+          document_chunk_size?: number | null
+          embedding_model?: string | null
+          id?: string
+          last_embed_task_id?: string | null
+          name?: string
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      telnyx_scheduled_events: {
+        Row: {
+          campaign_id: string | null
+          channel: string | null
+          conversation_metadata: Json | null
+          created_at: string
+          from_number: string | null
+          id: string
+          lead_id: string | null
+          scheduled_at: string | null
+          status: string | null
+          telnyx_assistant_id: string | null
+          telnyx_event_id: string | null
+          text_message: string | null
+          to_number: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          channel?: string | null
+          conversation_metadata?: Json | null
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          lead_id?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          telnyx_assistant_id?: string | null
+          telnyx_event_id?: string | null
+          text_message?: string | null
+          to_number?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string | null
+          channel?: string | null
+          conversation_metadata?: Json | null
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          lead_id?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          telnyx_assistant_id?: string | null
+          telnyx_event_id?: string | null
+          text_message?: string | null
+          to_number?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telnyx_scheduled_events_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telnyx_scheduled_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      telnyx_settings: {
+        Row: {
+          amd_enabled: boolean | null
+          amd_type: string | null
+          api_key_configured: boolean | null
+          created_at: string
+          dynamic_vars_webhook_url: string | null
+          id: string
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          amd_enabled?: boolean | null
+          amd_type?: string | null
+          api_key_configured?: boolean | null
+          created_at?: string
+          dynamic_vars_webhook_url?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          amd_enabled?: boolean | null
+          amd_type?: string | null
+          api_key_configured?: boolean | null
+          created_at?: string
+          dynamic_vars_webhook_url?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
+        }
+        Relationships: []
       }
       user_credentials: {
         Row: {
@@ -6120,6 +6416,7 @@ export type Database = {
           ai_system_prompt: string | null
           ai_transfer_keywords: string[] | null
           audio_url: string | null
+          broadcast_provider: string | null
           bypass_calling_hours: boolean | null
           callbacks_scheduled: number | null
           caller_id: string | null
@@ -6144,6 +6441,8 @@ export type Database = {
           name: string
           retry_delay_minutes: number | null
           status: string
+          telnyx_assistant_id: string | null
+          telnyx_script: string | null
           timezone: string | null
           total_leads: number | null
           transfers_completed: number | null
@@ -6160,6 +6459,7 @@ export type Database = {
           ai_system_prompt?: string | null
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
+          broadcast_provider?: string | null
           bypass_calling_hours?: boolean | null
           callbacks_scheduled?: number | null
           caller_id?: string | null
@@ -6184,6 +6484,8 @@ export type Database = {
           name: string
           retry_delay_minutes?: number | null
           status?: string
+          telnyx_assistant_id?: string | null
+          telnyx_script?: string | null
           timezone?: string | null
           total_leads?: number | null
           transfers_completed?: number | null
@@ -6200,6 +6502,7 @@ export type Database = {
           ai_system_prompt?: string | null
           ai_transfer_keywords?: string[] | null
           audio_url?: string | null
+          broadcast_provider?: string | null
           bypass_calling_hours?: boolean | null
           callbacks_scheduled?: number | null
           caller_id?: string | null
@@ -6224,6 +6527,8 @@ export type Database = {
           name?: string
           retry_delay_minutes?: number | null
           status?: string
+          telnyx_assistant_id?: string | null
+          telnyx_script?: string | null
           timezone?: string | null
           total_leads?: number | null
           transfers_completed?: number | null
@@ -6236,7 +6541,15 @@ export type Database = {
           voicemail_action?: string | null
           voicemail_audio_url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "voice_broadcasts_telnyx_assistant_id_fkey"
+            columns: ["telnyx_assistant_id"]
+            isOneToOne: false
+            referencedRelation: "telnyx_assistants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       voicemail_analytics: {
         Row: {
@@ -6784,6 +7097,18 @@ export type Database = {
           total_leads: number
           total_spend_cents: number
           won_count: number
+        }[]
+      }
+      get_telnyx_assistant_for_call: {
+        Args: { p_assistant_id?: string; p_user_id: string }
+        Returns: {
+          assistant_id: string
+          greeting: string
+          instructions: string
+          model: string
+          name: string
+          telnyx_assistant_id: string
+          voice: string
         }[]
       }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
