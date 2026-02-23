@@ -223,7 +223,6 @@ serve(async (req) => {
             if (callerNumber) {
               await supabaseAdmin.from('phone_numbers')
                 .update({
-                  daily_calls: supabaseAdmin.rpc ? undefined : 0, // Increment handled elsewhere
                   last_used: occurredAt,
                 })
                 .eq('phone_number', callerNumber);
@@ -317,7 +316,7 @@ serve(async (req) => {
                     user_id: insightUserId,
                     call_log_id: callLog.id,
                     ...intent,
-                  }).then(() => {}).catch(() => {}); // Soft fail
+                  }); // Soft fail — outer try/catch handles errors
                 } catch { /* non-critical */ }
               }
             }
