@@ -216,6 +216,119 @@ serve(async (req) => {
             console.error('Failed to purchase Twilio number:', error);
           }
         }
+      } else if (effectiveProvider === 'telnyx') {
+        // Purchase from Telnyx
+        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+        if (!telnyxApiKey) {
+          console.error('TELNYX_API_KEY not configured');
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+          return new Response(JSON.stringify({ error: 'Telnyx credentials not configured' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Step 1: Search available numbers
+        const searchParams = new URLSearchParams({
+          'filter[country_code]': 'US',
+          'filter[national_destination_code]': areaCode,
+          'filter[features][]': 'voice',
+          'filter[limit]': String(quantity),
+        });
+        const searchUrl = `https://api.telnyx.com/v2/available_phone_numbers?${searchParams}`;
+        const searchRes = await fetch(searchUrl, {
+          headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
+        });
+
+        if (!searchRes.ok) {
+          const errText = await searchRes.text();
+          console.error('Telnyx search failed:', errText);
+          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
+          return new Response(JSON.stringify({
+            error: `No Telnyx numbers available in area code ${areaCode}`
+          }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const searchData = await searchRes.json();
+        const availableNumbers = searchData.data || [];
+
+        if (availableNumbers.length === 0) {
+          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
+          return new Response(JSON.stringify({
+            error: `No Telnyx numbers available in area code ${areaCode}. Try a different area code.`
+          }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Step 2: Create number order to purchase
+        const phonesToBuy = availableNumbers.slice(0, quantity).map((n: any) => ({
+          phone_number: n.phone_number,
+        }));
+
+        const orderRes = await fetch('https://api.telnyx.com/v2/number_orders', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${telnyxApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ phone_numbers: phonesToBuy }),
+        });
+
+        if (!orderRes.ok) {
+          const errText = await orderRes.text();
+          console.error('Telnyx order failed:', errText);
+          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
+          return new Response(JSON.stringify({ error: `Telnyx purchase error: ${errText}` }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const orderData = await orderRes.json();
+        const telnyxOrder = orderData.data;
+        console.log('Telnyx number order created:', telnyxOrder.id, 'status:', telnyxOrder.status);
+
+        // Step 3: Poll for completion (Telnyx orders are async)
+        // Wait up to 15 seconds for the order to complete
+        let orderComplete = telnyxOrder.status === 'success';
+        let finalOrder = telnyxOrder;
+        if (!orderComplete) {
+          for (let attempt = 0; attempt < 5; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            const pollRes = await fetch(`https://api.telnyx.com/v2/number_orders/${telnyxOrder.id}`, {
+              headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
+            });
+            if (pollRes.ok) {
+              const pollData = await pollRes.json();
+              finalOrder = pollData.data;
+              if (finalOrder.status === 'success') { orderComplete = true; break; }
+              if (finalOrder.status === 'failed') break;
+            }
+          }
+        }
+
+        if (!orderComplete) {
+          console.log('Telnyx order still pending after polling, checking sub-orders...');
+        }
+
+        // Step 4: Get the purchased numbers from sub_number_orders or phone_numbers in the order
+        const purchasedPhones = (finalOrder.phone_numbers || phonesToBuy)
+          .filter((p: any) => p.status === 'success' || !p.status || finalOrder.status === 'success');
+
+        for (const pn of purchasedPhones) {
+          const phoneNum = pn.phone_number;
+          console.log('Telnyx number provisioned:', phoneNum);
+          numbers.push({
+            number: phoneNum,
+            area_code: areaCode,
+            status: 'active',
+            daily_calls: 0,
+            user_id: user.id,
+            allowed_uses: allowedUses,
+            rotation_enabled: rotationEnabled,
+            provider: 'telnyx',
+          });
+        }
       } else {
         // Purchase from Retell AI (for voice_ai purpose)
         const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
@@ -225,10 +338,8 @@ serve(async (req) => {
             .from('number_orders')
             .update({ status: 'failed' })
             .eq('id', order.id);
-
           return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -240,23 +351,17 @@ serve(async (req) => {
                 'Authorization': `Bearer ${retellApiKey}`,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({
-                area_code: parseInt(areaCode, 10)
-              })
+              body: JSON.stringify({ area_code: parseInt(areaCode, 10) })
             });
 
             if (!purchaseResponse.ok) {
               const errorText = await purchaseResponse.text();
               console.error('Retell purchase failed:', errorText);
-
               let errorMessage = `Retell API error: ${purchaseResponse.status}`;
               try {
                 const errorJson = JSON.parse(errorText);
                 errorMessage = errorJson.message || errorJson.error_message || errorMessage;
-              } catch {
-                // Use default error message
-              }
-
+              } catch { /* Use default */ }
               throw new Error(errorMessage);
             }
 
