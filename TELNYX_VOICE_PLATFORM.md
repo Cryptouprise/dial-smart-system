@@ -692,18 +692,76 @@ Add handoff tools to your assistant, referencing other assistant IDs. The handof
 ### What is Call Control?
 Telnyx Call Control is a real-time API that lets you control every aspect of a phone call with code. Unlike pre-scripted systems, commands can be issued at any point during the call.
 
-### Key Commands
-- **Answer**: Accept incoming call
-- **Speak**: Play TTS
-- **Gather**: Collect DTMF or speech input
-- **Transfer**: Move call to another number
-- **Bridge**: Connect two calls
-- **Record**: Start/stop recording
-- **Stream**: Real-time audio streaming
-- **AI Assistant Start**: Attach AI to the call
-- **Gather Using AI**: Structured data collection via AI
-- **Noise Suppression**: Improve transcription quality
-- **SIPREC**: Session recording protocol
+### Complete Call Control Commands (36 Actions)
+
+All action endpoints: `POST /v2/calls/{call_control_id}/actions/{action}`
+Except Dial: `POST /v2/calls`
+
+| # | Command | Description | Expected Webhooks |
+|---|---------|-------------|-------------------|
+| 1 | **Dial** | Initiate outbound call | `call.initiated`, `call.answered`/`call.hangup` |
+| 2 | **Answer** | Answer incoming call | `call.answered` |
+| 3 | **Hangup** | End call | `call.hangup` |
+| 4 | **Reject** | Reject incoming call | None |
+| 5 | **Transfer** | Transfer to new destination | `call.initiated` (new leg) |
+| 6 | **Bridge** | Bridge two call legs | `call.bridged` |
+| 7 | **Speak** | Text-to-speech | `call.speak.started/ended` |
+| 8 | **Play Audio** | Play WAV/MP3 file | `call.playback.started/ended` |
+| 9 | **Stop Playback** | Stop audio | None |
+| 10 | **Gather** | Collect DTMF digits | `call.gather.ended`, `call.dtmf.received` |
+| 11 | **Gather Using Audio** | Play audio + collect DTMF | `call.gather.ended` |
+| 12 | **Gather Using Speak** | TTS + collect DTMF | `call.gather.ended` |
+| 13 | **Gather Using AI** | AI-powered structured gather | AI events |
+| 14 | **Gather Stop** | Stop active gather | None |
+| 15 | **Send DTMF** | Send touch-tones on call | None |
+| 16 | **Recording Start** | Start recording | `call.recording.saved` |
+| 17 | **Recording Stop** | Stop recording | `call.recording.saved` |
+| 18 | **Record Pause** | Pause recording | None |
+| 19 | **Record Resume** | Resume recording | None |
+| 20 | **Streaming Start** | Start WebSocket media stream | `streaming.started/stopped` |
+| 21 | **Streaming Stop** | Stop media stream | `streaming.stopped` |
+| 22 | **Forking Start** | Start RTP media fork | `call.fork.started` |
+| 23 | **Forking Stop** | Stop media fork | `call.fork.stopped` |
+| 24 | **Transcription Start** | Real-time transcription | Transcription events |
+| 25 | **Transcription Stop** | Stop transcription | None |
+| 26 | **SIP Refer** | Send SIP REFER | SIP events |
+| 27 | **Send SIP Info** | Send SIP INFO | None |
+| 28 | **SIPREC Start** | Start SIPREC session | SIPREC events |
+| 29 | **SIPREC Stop** | Stop SIPREC | None |
+| 30 | **Enqueue** | Put call in queue | Queue events |
+| 31 | **Dequeue** | Remove from queue | None |
+| 32 | **Update Client State** | Update state on call | None |
+| 33 | **Noise Suppression Start** | Start noise suppression (BETA) | None |
+| 34 | **Noise Suppression Stop** | Stop noise suppression | None |
+| 35 | **Switch Supervisor Role** | Switch supervisor role | None |
+| 36 | **AI Assistant Start** | Attach AI assistant to call | `call.conversation.ended`, `call.conversation_insights.generated` |
+
+### Key Dial Parameters
+```json
+{
+  "connection_id": "conn_xxxxx",        // Required: Voice API application
+  "to": "+15551234567",                 // E.164 or SIP URI
+  "from": "+15559876543",               // Caller ID (E.164)
+  "webhook_url": "https://...",         // Per-call webhook override
+  "answering_machine_detection": "detect", // detect|detect_words|detect_beep|greeting_end
+  "stream_url": "wss://...",            // WebSocket URL for streaming
+  "timeout_secs": 30,                   // 5-600 seconds
+  "time_limit_secs": 3600,              // Max call duration
+  "record": "record-from-answer",       // Auto-record
+  "custom_headers": [...]               // SIP custom headers
+}
+```
+
+### Management Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/v2/calls` | List active calls |
+| `GET` | `/v2/calls/{id}` | Get call details |
+| `GET` | `/v2/call_events` | List call events |
+| `POST` | `/v2/call_control_applications` | Create application |
+| `GET` | `/v2/call_control_applications` | List applications |
+| `PATCH` | `/v2/call_control_applications/{id}` | Update application |
+| `DELETE` | `/v2/call_control_applications/{id}` | Delete application |
 
 ### Gather Using AI
 Collect structured data from a conversation using JSON Schema:
@@ -727,6 +785,174 @@ POST /v2/calls/{call_control_id}/actions/gather_using_ai
 ```
 
 When all required fields are gathered, a webhook is fired with the structured data.
+
+---
+
+## TeXML (TwiML-Compatible XML)
+
+TeXML is Telnyx's XML scripting language with **full TwiML parity**. Existing TwiML code works without changes.
+
+### All TeXML Verbs
+
+| Verb | Description | Notes |
+|------|-------------|-------|
+| `<Dial>` | Dial a number | Nouns: `<Number>`, `<Sip>`, `<Client>` |
+| `<Say>` | Text-to-speech | Multiple voices/languages |
+| `<Play>` | Play audio file | WAV/MP3 |
+| `<Gather>` | Collect DTMF | `input`, `numDigits`, `timeout`, `action` |
+| `<AIGather>` | AI-powered gather | Telnyx-specific |
+| `<AIAssistant>` | Start AI assistant | Telnyx-specific |
+| `<Record>` | Record call | `channels="single\|dual"` |
+| `<Conference>` | Join conference | Full conference management |
+| `<Enqueue>` | Put in queue | Queue management |
+| `<Hangup>` | End call | |
+| `<Pause>` | Pause execution | `length` attribute |
+| `<Redirect>` | Redirect to new TeXML URL | |
+| `<Reject>` | Reject incoming call | |
+| `<Stream>` | Start WebSocket stream | Telnyx-specific |
+| `<HttpRequest>` | Make HTTP request during call | Telnyx-specific |
+| `<Refer>` | SIP REFER transfer | |
+| `<Siprec>` | Start SIPREC | |
+| `<Suppression>` | Noise suppression | |
+| `<Transcription>` | Real-time transcription | |
+
+**TwiML Migration**: Upload existing TwiML code directly — works without changes. Just switch the endpoint to `https://api.telnyx.com/v2/texml/`.
+
+---
+
+## Complete Webhook Event Reference
+
+### Call Lifecycle Events
+| Event | Description | Key Payload Fields |
+|-------|-------------|-------------------|
+| `call.initiated` | Call started | `call_control_id`, `from`, `to`, `direction` |
+| `call.answered` | Call answered | `start_time`, `tags` |
+| `call.hangup` | Call ended | `hangup_cause`, `hangup_source`, `sip_hangup_cause`, `start_time`, `end_time` |
+| `call.bridged` | Two calls bridged | `state: "bridged"` |
+
+### TTS/Audio Events
+| Event | Description |
+|-------|-------------|
+| `call.speak.started` | TTS playback began |
+| `call.speak.ended` | TTS playback ended |
+| `call.playback.started` | Audio file playback began |
+| `call.playback.ended` | Audio file playback ended |
+
+### DTMF/Gather Events
+| Event | Key Fields |
+|-------|------------|
+| `call.gather.ended` | `digits` (collected) |
+| `call.dtmf.received` | `digit` (single) |
+
+### Recording Events
+| Event | Key Fields |
+|-------|------------|
+| `call.recording.saved` | Recording URL (valid 10 min), duration |
+
+### AMD Events
+| Event | Description |
+|-------|-------------|
+| `call.machine.detection.ended` | Basic result: human/machine |
+| `call.machine.greeting.ended` | Machine greeting ended (beep detected) |
+| `call.machine.premium.detection.ended` | Granular: silence, machine greeting, human residence, human business |
+| `call.machine.premium.greeting.ended` | Premium greeting ended |
+
+### AI/Conversation Events
+| Event | Description |
+|-------|-------------|
+| `call.conversation.ended` | AI assistant conversation ended |
+| `call.conversation_insights.generated` | Post-call insights ready |
+
+### Streaming Events
+| Event | Description |
+|-------|-------------|
+| `streaming.started` | WebSocket streaming started |
+| `streaming.stopped` | WebSocket streaming stopped |
+| `streaming.failed` | WebSocket streaming failed |
+
+### Media Fork Events
+| Event | Description |
+|-------|-------------|
+| `call.fork.started` | Media forking started |
+| `call.fork.stopped` | Media forking stopped |
+
+### Webhook Delivery Rules
+- Must respond with 2xx HTTP status
+- Retries with exponential backoff on failure
+- Primary + failover URL support
+- Ed25519 signature verification via `telnyx-signature-ed25519` + `telnyx-timestamp` headers
+- Duplicate delivery possible — implement idempotency
+
+---
+
+## Media Streaming (WebSocket)
+
+Real-time bidirectional audio streaming over WebSocket.
+
+### Start Streaming
+```json
+POST /v2/calls/{call_control_id}/actions/streaming_start
+{
+  "stream_url": "wss://your-server.com/stream",
+  "stream_track": "both_tracks",
+  "codec": "PCMU"
+}
+```
+
+### Supported Codecs
+| Codec | Sample Rates |
+|-------|-------------|
+| PCMU | 8 kHz (default) |
+| PCMA | 8 kHz |
+| G722 | 8 kHz |
+| OPUS | 8, 16 kHz |
+| AMR-WB | 8, 16 kHz |
+
+### WebSocket Events
+- **start**: Connection opened, includes `media_format`, `call_control_id`
+- **media**: Audio data as base64 payload
+- **dtmf**: DTMF digit events via WebSocket
+- **stop**: Connection closed
+- **error**: Error with code/detail
+
+### Bidirectional Audio
+Send audio back to the call through the WebSocket — enables real-time AI-generated audio responses.
+
+---
+
+## Answering Machine Detection (AMD)
+
+**Free** with Call Control — no additional charge.
+
+### Detection Modes
+| Mode | Description |
+|------|-------------|
+| `detect` | Basic human/machine detection |
+| `detect_words` | Word-based detection + greeting end |
+| `detect_beep` | Beep-only detection |
+| `greeting_end` | Detects end of machine greeting |
+
+### Premium AMD
+- Advanced Voice Activity Detection (VAD)
+- Granular classifications: `silence`, `machine_greeting`, `human_residence`, `human_business`
+- Webhook: `call.machine.premium.detection.ended`
+- Available on AI Assistant transfers too (new feature)
+
+---
+
+## Import Agents from Other Platforms
+
+Telnyx can import AI agents directly from competitors:
+
+```bash
+POST https://api.telnyx.com/v2/ai/assistants/import
+{
+  "provider": "retell",     // or "vapi" or "elevenlabs"
+  "api_key_ref": "stored-api-key-ref"
+}
+```
+
+**What gets imported**: Instructions, greeting, voice config, tools/functions, call analysis settings, secret placeholders. For Retell: both single- and multi-prompt agents supported.
 
 ---
 
