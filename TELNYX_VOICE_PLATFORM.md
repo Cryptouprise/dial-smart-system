@@ -221,12 +221,18 @@ Authorization: Bearer <TELNYX_API_KEY>
 
 ---
 
-## Tools & Function Calling
+## Tools & Function Calling (Deep Technical Detail)
 
-AI Assistants support 8 built-in tool types:
+AI Assistants support 10 built-in tool types. Tools are configured in the `tools` array when creating/updating an assistant via the API. The LLM decides when to invoke tools based on the conversation context and tool descriptions.
 
-### 1. Webhook Tool
-Make HTTP requests to external APIs during a conversation.
+### Tool Types in the `tools` Array
+
+The `tools` array accepts objects of these types: `WebhookTool`, `RetrievalTool`, `HandoffTool`, `HangupTool`, `TransferTool`, `SIPReferTool`, `DTMFTool`, `SendMessageTool`, `SkipTurnTool`, and `MCPServerTool`.
+
+All tools can be templated with **dynamic variables** using `{{variable_name}}` syntax in URLs, headers, descriptions, and parameter definitions.
+
+### 1. Webhook Tool (Primary Function Calling Mechanism)
+Make HTTP requests to external APIs during a conversation. This is the main way to give the AI real-world capabilities.
 
 ```json
 {
@@ -236,44 +242,49 @@ Make HTTP requests to external APIs during a conversation.
   "url": "https://your-api.com/availability/{date}",
   "method": "GET",
   "headers": {
-    "Authorization": "Bearer {{api_key}}"
+    "Authorization": "Bearer {{#integration_secret}}your-secret-name{{/integration_secret}}"
   },
   "path_parameters": {
     "type": "object",
     "properties": {
       "date": { "type": "string", "description": "Date in YYYY-MM-DD format" }
-    }
+    },
+    "required": ["date"]
   },
   "query_parameters": {
     "type": "object",
     "properties": {
-      "timezone": { "type": "string" }
+      "timezone": { "type": "string", "description": "IANA timezone" }
     }
   },
   "body_parameters": {
     "type": "object",
     "properties": {
-      "service_type": { "type": "string" }
+      "service_type": { "type": "string", "enum": ["consultation", "installation", "maintenance"] }
     }
   }
 }
 ```
 
-**Features**:
-- Supports GET, POST, PUT, PATCH, DELETE
-- Headers can reference integration secrets (for API keys)
-- Path/query/body parameters described as JSON Schema
-- Dynamic variables can be used in URL and parameter descriptions
-- Test button available in portal to verify with sample data
+**Configuration details:**
+- `url`: The URL to call. Supports path parameters via `{param_name}` placeholders.
+- `method`: GET, POST, PUT, PATCH, DELETE
+- `headers`: Static headers. Use Mustache templating `{{#integration_secret}}name{{/integration_secret}}` to reference stored secrets (never expose API keys in the tool definition).
+- `path_parameters`: JSON Schema object. Values extracted by the LLM and substituted into URL placeholders.
+- `query_parameters`: JSON Schema object. Values appended as URL query string.
+- `body_parameters`: JSON Schema object. Values sent as JSON request body.
+- Each parameter type supports `properties`, `required`, and standard JSON Schema features (type, description, enum, etc.)
+- **Test button**: Available in the portal to send sample requests during configuration (not just during live calls)
+- **Webhook timeout**: Must respond within **2 seconds** or Telnyx retries
 
 ### 2. Transfer Tool
-Transfer calls to human agents or other numbers.
+Transfer calls to human agents or other phone numbers.
 
 ```json
 {
   "type": "transfer",
   "name": "transfer_to_sales",
-  "description": "Transfer the caller to the sales team",
+  "description": "Transfer the caller to the sales team when they want to speak with a human",
   "targets": [
     { "name": "Sales Team", "number": "+15551234567" },
     { "name": "Support", "number": "+15559876543" }
@@ -281,47 +292,61 @@ Transfer calls to human agents or other numbers.
 }
 ```
 
-**Features**:
-- Named targets with phone numbers
-- Full conversation context passed to receiving agent
-- Warm transfer (context preserved, no repeat info)
-- AMD detection on transfer (detect voicemail, optionally leave message or cancel)
+**Features:**
+- Named targets with phone numbers -- LLM picks the right target based on conversation
+- Full conversation context preserved (warm transfer)
+- **AMD on transfer**: Telnyx can detect voicemail on the transfer destination and either cancel the transfer or have the AI leave a voicemail message
+- Generates `call.initiated` webhook for the new leg
 
 ### 3. SIP Refer Tool
-Transfer calls via SIP REFER for contact center integration.
+Transfer calls via SIP REFER for contact center integration. Lower cost than a regular transfer ($0.002 vs $0.10) because it uses SIP signaling rather than creating a new call leg.
 
-### 4. Handoff Tool
-Route conversation between multiple AI assistants.
+### 4. Handoff Tool (Multi-Agent)
+Route conversation between multiple AI assistants. See dedicated [Multi-Agent Handoff](#multi-agent-handoff) section below for full details.
 
 ```json
 {
   "type": "handoff",
   "name": "handoff_to_billing",
-  "description": "Hand off to billing specialist assistant",
-  "assistant_id": "asst_billing_xxxxx"
+  "description": "Hand off to billing specialist assistant when the user has billing questions",
+  "assistant_id": "asst_billing_xxxxx",
+  "voice_mode": "unified"
 }
 ```
 
-**Features**:
-- Transparent to the user (shared context, same voice by default)
-- OR distinct voice mode (each assistant keeps its own voice)
-- Team of specialist assistants on one call
-- Shared conversation history
+- `assistant_id`: The target assistant's ID to hand off to
+- `voice_mode`: `"unified"` (same voice, transparent) or `"distinct"` (each agent keeps its voice)
 
 ### 5. Hangup Tool
-Let the assistant end the call programmatically.
+Let the assistant end the call programmatically when the conversation is complete.
+
+```json
+{
+  "type": "hangup",
+  "name": "end_call",
+  "description": "End the call when the conversation is complete and all questions are answered"
+}
+```
 
 ### 6. Send DTMF Tool
-Send touch-tone signals during the call (useful for IVR navigation).
+Send touch-tone signals during the call. Useful for navigating legacy IVR systems.
 
-### 7. Send Message Tool (NEW)
-Send SMS directly from the voice agent during a call.
+```json
+{
+  "type": "dtmf",
+  "name": "navigate_ivr",
+  "description": "Send DTMF tones to navigate phone menus"
+}
+```
+
+### 7. Send Message Tool
+Send SMS directly from the voice agent during a call. Requires `messaging_settings.default_messaging_profile_id` on the assistant.
 
 ```json
 {
   "type": "send_message",
   "name": "send_confirmation_sms",
-  "description": "Send appointment confirmation SMS to the caller"
+  "description": "Send appointment confirmation SMS to the caller with the details discussed"
 }
 ```
 
@@ -337,19 +362,36 @@ Connect to any Model Context Protocol server for external integrations.
 }
 ```
 
-**Features**:
-- Native MCP support in AI Assistants
-- Connects to any public API with an MCP server
-- Telnyx auto-includes `telnyx_conversation_id` (not susceptible to prompt injection)
+**Features:**
+- Native MCP support -- connects to any public API with an MCP server
+- Telnyx auto-includes `telnyx_conversation_id` in requests (tamper-proof, not susceptible to prompt injection)
 - Integration secrets for secure URL storage
 - Zapier integration via MCP (access 6,000+ apps)
-- Can store MCP server URL as integration secret
+- Telnyx publishes their own MCP server: `github.com/team-telnyx/telnyx-mcp-server`
 
 ### 9. Skip Turn Tool
 Let the assistant stay silent and wait for more user input. Useful when the user is thinking or providing extended information.
 
+```json
+{
+  "type": "skip_turn",
+  "name": "wait_for_input",
+  "description": "Stay silent and wait when the user seems to be thinking or looking something up"
+}
+```
+
 ### 10. Retrieval Tool (Knowledge Base / RAG)
-Search the assistant's uploaded knowledge base (PDFs, DOCX, TXT, URLs) for relevant information during the conversation. Powered by vector embeddings on Telnyx GPUs.
+Search the assistant's uploaded knowledge base for relevant information during the conversation. See dedicated [Knowledge Base / RAG](#knowledge-base-1) section below for full details.
+
+```json
+{
+  "type": "retrieval",
+  "name": "search_knowledge_base",
+  "description": "Search company documents for product information, pricing, and policies"
+}
+```
+
+The retrieval tool automatically searches the embedded storage buckets configured on the assistant. The assistant configuration includes a list of bucket names for RAG.
 
 ---
 
@@ -387,29 +429,111 @@ Search the assistant's uploaded knowledge base (PDFs, DOCX, TXT, URLs) for relev
 
 ## Memory & Dynamic Variables
 
-### Memory System
-Telnyx AI Assistants have built-in memory that persists across conversations:
+### Memory System (Deep Technical Detail)
 
-- **Returning caller recognition**: Links past conversations to phone number
-- **Time range flexibility**: Control how far back memory extends (days/weeks)
-- **Configurable parameters**: What to store, how long, how it's recalled
-- **Memory query**: Uses same filters as List Conversations endpoint
+Telnyx AI Assistants have built-in memory that persists across conversations. Instead of starting each phone call or text exchange from scratch, the assistant naturally continues previous discussions.
 
-**Memory Query Configuration** (in dynamic variables webhook response):
+#### How Memory Persists Between Calls
+
+Memory is keyed on **phone number** (the `telnyx_end_user_target`). When a returning caller calls in (or you call them out), Telnyx can automatically recall their previous conversations. The mechanism works as follows:
+
+1. **Call starts** -- Telnyx fires the `assistant.initialization` webhook to your `dynamic_variables_webhook_url`
+2. **Your webhook responds** with a `memory` object specifying which past conversations to load
+3. **Telnyx fetches** the matching conversations from its stored history
+4. **The assistant receives** those past conversations as context alongside the system instructions
+5. **During the call**, the assistant can reference what was discussed before
+6. **After the call**, the new conversation is automatically stored (if `data_retention: true`)
+
+#### The `memory` Object -- Query Language
+
+Telnyx exposed a **flexible query language** that mirrors the List Conversations API. Any query you can build with the List Conversations endpoint can be used as a `conversation_query` string. The format is URL query-string syntax with PostgREST-style filters.
+
+**Full webhook response with memory (the canonical example):**
 ```json
 {
+  "dynamic_variables": {
+    "full_name": "Rachel Thomas",
+    "facility_name": "UCHealth",
+    "facility_department": "Cardiology"
+  },
   "memory": {
-    "conversation_query": {
-      "phone_number": "+15551234567",
-      "limit": 5,
-      "order": "desc"
-    },
-    "insight_query": {
-      "insight_ids": ["insight_abc", "insight_def"]
+    "conversation_query": "metadata->telnyx_end_user_target=eq.+13128675309&limit=5&order=last_message_at.desc",
+    "insight_query": "insight_ids=cfcc865c-d3d4-4823-8a4b-f0df57d9f56f,a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  },
+  "conversation": {
+    "metadata": {
+      "lead_id": "lead_123",
+      "campaign": "solar_followup",
+      "your_custom_metadata": "your_custom_value"
     }
   }
 }
 ```
+
+**Query string breakdown:**
+- `metadata->telnyx_end_user_target=eq.+13128675309` -- filter by caller phone number (PostgREST JSON arrow operator)
+- `limit=5` -- return only the last 5 conversations
+- `order=last_message_at.desc` -- most recent first
+
+#### `conversation_query` -- What Conversations to Remember
+
+Controls WHICH past conversations the assistant can see. Supports:
+- Filtering by metadata fields (phone number, custom tags, campaign ID, etc.)
+- Limiting how many past conversations (e.g., `limit=5` for last 5)
+- Ordering (typically `last_message_at.desc` for most recent first)
+- Time-based filtering via metadata or date ranges
+
+#### `insight_query` -- What Information to Remember
+
+Controls WHAT from those conversations is remembered. Instead of feeding full conversation transcripts (which can be verbose), you specify insight IDs:
+- `insight_ids=123,456` -- comma-delimited list of insight IDs
+- Only the **results** from those specific insights will be included in memory
+- Insight IDs are found in the Insights tab for your assistant (UUID format)
+- Example: If you have a "Conversation Summary" insight, passing its ID means the assistant only sees summaries, not raw transcripts
+
+#### `conversation.metadata` -- Tagging Current Conversation
+
+You can attach custom metadata to the CURRENT conversation in the webhook response. This metadata is stored with the conversation and can be used in future `conversation_query` filters:
+```json
+{
+  "conversation": {
+    "metadata": {
+      "lead_id": "lead_123",
+      "campaign_type": "solar_followup",
+      "agent_version": "v2"
+    }
+  }
+}
+```
+
+In future conversations, you can then filter on this metadata:
+`"conversation_query": "metadata->lead_id=eq.lead_123&limit=10&order=last_message_at.desc"`
+
+#### Reading Conversations Programmatically
+
+**List Conversations:**
+```
+GET https://api.telnyx.com/v2/ai/assistants/{assistant_id}/conversations
+```
+
+**Get Conversation Details (with messages/transcript):**
+```
+GET https://api.telnyx.com/v2/ai/assistants/{assistant_id}/conversations/{conversation_id}
+```
+
+These endpoints return conversation history including messages, metadata, and timestamps. The `data_retention` setting on the assistant must be `true` for conversations to be stored.
+
+#### Cross-Channel Memory
+
+Memory works across **voice AND SMS**. The same assistant can remember a phone call when the person texts, and vice versa. The `telnyx_end_user_target` (phone number) is the linking key across channels.
+
+#### Key Limitations & Gotchas
+
+- **Webhook timeout**: Your `dynamic_variables_webhook_url` must respond within **1 second** or the call proceeds with fallback values (no memory loaded)
+- **`data_retention` must be `true`**: If false, no conversation history is stored, so memory has nothing to query
+- **Shared numbers**: If multiple end users share a number, memory may cross-contaminate -- use custom metadata to disambiguate
+- **Memory is read-only during call**: You cannot write to memory mid-call; the conversation is stored after it ends
+- **No direct "write memory" API**: Memory is implicitly populated by conversation history and insights -- you control what gets stored via `data_retention` and what gets recalled via the `memory` query
 
 ### Dynamic Variables
 
@@ -603,28 +727,52 @@ Required for outbound calls. Controls which countries/regions you can call. Crea
 
 ---
 
-## Scheduled Events API
+## Scheduled Events API (Deep Technical Detail)
 
-Schedule outbound calls or SMS at specific future times — perfect for appointment reminders, follow-ups, and proactive outreach.
+Schedule outbound calls or SMS at specific future times. Telnyx executes them automatically -- perfect for callbacks, reminders, follow-ups, and campaign scheduling. This replaces custom retry/scheduling logic.
 
 ### Create Scheduled Event
-```bash
-POST https://api.telnyx.com/v2/ai/assistants/{assistant_id}/scheduled_events
-Authorization: Bearer <TELNYX_API_KEY>
 
+**Endpoint:**
+```
+POST https://api.telnyx.com/v2/ai/assistants/{assistant_id}/scheduled_events
+```
+
+**Headers:**
+```
+Authorization: Bearer <TELNYX_API_KEY>
+Content-Type: application/json
+Accept: application/json
+```
+
+**Request Body:**
+```json
 {
-  "channel": "phone_call",
-  "agent_target": "+15551234567",
-  "end_user_target": "+15559876543",
-  "scheduled_at": "2026-02-24T14:00:00Z",
+  "telnyx_conversation_channel": "phone_call",
+  "telnyx_agent_target": "+15551234567",
+  "telnyx_end_user_target": "+15559876543",
+  "scheduled_at_fixed_datetime": "2026-02-24T14:00:00Z",
+  "text": "Hi, this is a follow-up call about your solar consultation.",
   "conversation_metadata": {
     "lead_id": "lead_123",
-    "campaign": "solar_followup"
+    "campaign": "solar_followup",
+    "attempt": 2
   }
 }
 ```
 
-**Response**:
+**Parameter details:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `telnyx_conversation_channel` | string | Yes | `"phone_call"` or `"sms_chat"` |
+| `telnyx_agent_target` | string | Yes | The FROM number (must be a Telnyx number assigned to the assistant) |
+| `telnyx_end_user_target` | string | Yes | The TO number (the person being called/texted) |
+| `scheduled_at_fixed_datetime` | string | Yes | ISO 8601 datetime for when to fire (e.g., `"2026-02-24T14:00:00Z"`) |
+| `text` | string | No | Message text (primarily for SMS; for calls, the assistant's greeting is used) |
+| `conversation_metadata` | object | No | Custom metadata attached to the conversation for tracking |
+
+**Response:**
 ```json
 {
   "data": {
@@ -634,18 +782,52 @@ Authorization: Bearer <TELNYX_API_KEY>
 }
 ```
 
-### Capabilities
-- **Channel**: `phone_call` or `sms`
-- **Precise timing**: ISO 8601 format
-- **Custom metadata**: Track context per scheduled event
-- **Post-call insights**: Webhook receives insights after scheduled call completes
-- **Cancel**: DELETE the event by ID
+### List Scheduled Events
+
+```
+GET https://api.telnyx.com/v2/ai/assistants/{assistant_id}/scheduled_events
+```
+
+Returns all scheduled events for the assistant with their statuses.
+
+### Cancel Scheduled Event
+
+```
+DELETE https://api.telnyx.com/v2/ai/assistants/{assistant_id}/scheduled_events/{event_id}
+```
+
+### What Happens When Event Fires
+
+**For phone calls:**
+1. At `scheduled_at_fixed_datetime`, Telnyx initiates an outbound call using the assistant
+2. The `dynamic_variables_webhook_url` fires (if configured) -- you can inject lead-specific context
+3. The AI assistant conducts the conversation using its instructions/tools
+4. Post-call insights are generated and delivered via webhook (if configured)
+5. The conversation is stored and accessible via the Conversations API
+
+**For SMS:**
+1. At `scheduled_at_fixed_datetime`, Telnyx sends the SMS with the `text` content
+2. If the recipient replies, the assistant handles the SMS conversation
+3. Insights and history are stored normally
 
 ### Use Cases for Our System
-- Callback scheduling (lead says "call me Tuesday at 2pm")
-- Appointment reminders (day-before, morning-of)
-- Follow-up sequences (call → wait 2 days → call again)
-- Campaign scheduling (schedule 1,000 calls at optimal times)
+
+| Use Case | How to Implement |
+|----------|-----------------|
+| **Callback requests** ("call me Tuesday at 2pm") | Schedule event with exact datetime from lead's request |
+| **Appointment reminders** | Schedule 3 events: day-before, morning-of, 1-hour-before |
+| **Follow-up sequences** | After call ends, schedule next call for +2 days |
+| **Campaign scheduling** | Schedule 1,000 events at optimal times (stagger by seconds to avoid burst) |
+| **Retry on no-answer** | Schedule retry event for +60min when first call goes unanswered |
+| **Timezone-aware outreach** | Calculate local time, schedule within 9am-9pm in lead's timezone |
+
+### Gotchas & Limitations
+
+- The `assistant_id` in the URL determines WHICH agent makes the call -- choose the right specialized agent
+- Events are fire-and-forget: if the call fails, you need to handle retry logic via webhooks
+- Metadata is preserved through the call and available in post-call insights
+- Events execute at the specified time regardless of calling hours -- enforce your own 9am-9pm logic before scheduling
+- For high-volume scheduling (1000+ events), stagger `scheduled_at_fixed_datetime` by a few seconds to avoid rate limits
 
 ---
 
@@ -676,41 +858,185 @@ This maps directly to our voice broadcast + lead journey system:
 
 ---
 
-## Multi-Agent Handoff
+## Multi-Agent Handoff (Deep Technical Detail)
 
-Seamlessly route conversations between specialized AI assistants:
+Seamlessly route conversations between specialized AI assistants within a single call. Instead of building one monolithic agent that handles everything, you build a team of specialist agents that collaborate.
+
+### How Handoff Works
+
+1. **Detection**: The current agent identifies (via its instructions) that another agent would handle the request better
+2. **Transition**: The handoff tool is invoked, Telnyx switches the active assistant
+3. **Context Transfer**: The target agent receives the FULL conversation history (all messages, collected data, user info)
+4. **Continuation**: The new agent continues seamlessly -- the caller does NOT need to repeat anything
 
 ### Two Voice Modes
-1. **Unified Voice**: All assistants share the same voice (seamless, caller doesn't notice the switch)
-2. **Distinct Voice**: Each assistant keeps its own voice settings
 
-### Use Cases
-- **Triage → Specialist**: First assistant qualifies the lead, hands off to product specialist
-- **Language switching**: English assistant → Spanish assistant
-- **Escalation**: Sales AI → Manager AI → Human transfer
+#### Unified Voice Mode (Default)
+All assistants share the same voice. The handoff is **completely invisible** to the caller -- they have no idea a different AI is now talking. Best for:
+- Back-office routing where the caller shouldn't notice
+- Specialized knowledge domains that feel like one agent
 
-### How to Configure
-Add handoff tools to your assistant, referencing other assistant IDs. The handoff is transparent — shared context, no disruption to the caller. Visual workflow editor in portal shows flowchart of nodes (color-coded: purple=transfers, red=hangups, blue=other).
+#### Distinct Voice Mode
+Each assistant retains its own configured voice settings. The handoff feels like being transferred to a different specialist on a conference call. Best for:
+- Simulating a team of people
+- Making it clear when a different department is handling the request
+- Language switching (English voice -> Spanish voice)
+
+### API Configuration
+
+Add handoff tools to the `tools` array when creating an assistant:
+
+```json
+{
+  "tools": [
+    {
+      "type": "handoff",
+      "name": "handoff_to_billing",
+      "description": "Hand off to billing specialist when the user asks about invoices, payments, or account charges",
+      "assistant_id": "asst_billing_xxxxx",
+      "voice_mode": "unified"
+    },
+    {
+      "type": "handoff",
+      "name": "handoff_to_spanish",
+      "description": "Hand off to Spanish-speaking assistant when the user prefers Spanish",
+      "assistant_id": "asst_spanish_xxxxx",
+      "voice_mode": "distinct"
+    }
+  ]
+}
+```
+
+### Portal Configuration
+
+1. Navigate to AI Assistants in Mission Control Portal
+2. Select the agent to edit
+3. On the Agent tab, click "Add tool" -> "Handoff"
+4. In the popup, select the target assistant and choose "Unified" or "Distinct"
+5. The portal shows a visual flowchart with color-coded nodes (purple = transfers, red = hangups, blue = handoffs)
+
+### Context Passed During Handoff
+
+The target agent receives:
+- **Full conversation history** (all messages from all prior agents in the chain)
+- **User information** (phone number, any collected data)
+- **Collected data** (order numbers, issue details, preferences)
+- **Agent actions** (what previous agents already tried or gathered)
+- **Dynamic variables** (all variables from the session)
+
+### Multi-Agent Architecture Patterns
+
+| Pattern | Example | When to Use |
+|---------|---------|-------------|
+| **By domain** | Sales -> Billing -> Support | Different knowledge bases needed |
+| **By task** | Triage -> Qualification -> Booking | Sequential workflow steps |
+| **By language** | English -> Spanish -> French | Multilingual support |
+| **By complexity** | FAQ Bot -> Deep Support -> Human | Escalation ladder |
+| **By customer segment** | Standard -> VIP -> Enterprise | Different service levels |
+
+### Model Agnostic
+
+Each agent in the handoff chain can use a **different LLM model**. Example: a fast triage agent on Qwen (cheap) handing off to a complex sales agent on GPT-4o (expensive). This lets you optimize cost vs. quality per agent role.
+
+### Bidirectional Handoff
+
+Agents can hand off back and forth. Agent A can hand to Agent B, and Agent B can have a handoff tool pointing back to Agent A if the conversation shifts topics.
+
+### Gotchas & Limitations
+
+- Each assistant must be **pre-created** with its own ID -- you cannot create agents dynamically during a call
+- Handoff tool instructions matter: be explicit about WHEN the handoff should trigger (e.g., "Hand off when the user says 'billing' or asks about invoices")
+- Test with direct requests: "I need to talk to billing" to verify handoff triggers correctly
+- All agents in the chain share the same `conversation_id`
+- Maximum chain depth is not publicly documented -- test with your specific workflow
 
 ---
 
-## Versioning, A/B Testing & Canary Deployments
+## Versioning, A/B Testing & Canary Deployments (Deep Technical Detail)
 
-Built-in version management for assistants — no custom implementation needed:
+Built-in version management for assistants -- no custom implementation needed. Released July 2025.
 
-- **Multiple versions**: Create and manage different assistant versions
-- **Traffic splitting**: Percentage-based routing between versions (A/B testing)
-- **Canary deployments**: Route a small portion of traffic to a new version before full rollout
-- **Performance comparison**: Compare metrics across versions in real-world conditions
-- **Test without risk**: All changes testable without impacting production traffic
+### How Versions Work
+
+Each AI assistant can have multiple **versions**. A version captures a complete snapshot of the assistant's configuration (instructions, tools, voice, model, etc.). You can:
+- Create new versions without affecting the live production version
+- Compare metrics between versions using real traffic
+- Gradually shift traffic from one version to another
+
+### A/B Testing Workflow
+
+1. **Create baseline assistant** -- your current production agent
+2. **Create a new version** -- modify instructions, model, voice, or tools
+3. **Create a test** -- define success criteria (e.g., "greeting must include company name")
+4. **Run the test** -- Telnyx simulates conversations and evaluates against your criteria
+5. **Deploy canary** -- route a small percentage (e.g., 10%) of real traffic to the new version
+6. **Compare metrics** -- monitor performance across versions in real-world conditions
+7. **Roll out or roll back** -- increase traffic to the winner or revert
 
 ### API Endpoints
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/v2/ai/assistants/tests` | List assistant tests with pagination |
 | `POST` | `/v2/ai/assistants/tests` | Create a test case |
-| `POST` | `/v2/ai/assistants/tests/trigger` | Execute a test suite |
-| `GET` | `/v2/ai/assistants/tests/runs` | View test run results |
+| `GET` | `/v2/ai/assistants/tests/{test_id}` | Get a specific test |
+| `PUT` | `/v2/ai/assistants/tests/{test_id}` | Update a test |
+| `DELETE` | `/v2/ai/assistants/tests/{test_id}` | Delete a test |
+| `GET` | `/v2/ai/assistants/tests/test-suites` | List all test suite names |
+| `POST` | `/v2/ai/assistants/tests/trigger` | Trigger test suite execution |
+| `GET` | `/v2/ai/assistants/tests/runs` | View test run history/results |
+
+### Test Object Schema
+
+```json
+{
+  "test_id": "test_xxxxx",
+  "name": "Solar greeting validation",
+  "description": "Validates the solar sales agent greets correctly and asks qualifying questions",
+  "telnyx_conversation_channel": "phone_call",
+  "destination": "+15551234567",
+  "max_duration_seconds": 120,
+  "test_suite": "solar_sales_v2",
+  "instructions": "Call as a homeowner interested in solar panels. Ask about pricing and timeline.",
+  "rubric": [
+    {
+      "name": "Greeting Quality",
+      "criteria": "Agent must introduce themselves by name and mention the company within the first response"
+    },
+    {
+      "name": "Qualification",
+      "criteria": "Agent must ask about roof type, electricity bill, and homeownership status"
+    },
+    {
+      "name": "Booking Attempt",
+      "criteria": "Agent must attempt to book a consultation before ending the call"
+    }
+  ]
+}
+```
+
+**Channel options**: `phone_call`, `web_call`, `sms_chat`, `web_chat`
+
+### Traffic Distribution / Canary Deployment
+
+After tests pass, deploy with percentage-based traffic routing:
+- Route a configurable percentage of incoming/outgoing calls to each version
+- Example: 90% to v1 (stable), 10% to v2 (experimental)
+- Gradually increase v2's share as confidence grows
+- Compare performance metrics in real-world conditions between versions
+- Roll back instantly by setting v2 traffic to 0%
+
+### Portal Workflow
+
+1. Navigate to AI Assistants, select the agent to edit
+2. Create a new version of the agent
+3. Move to the Test tab, run tests comparing versions
+4. Launch a canary deployment to direct partial traffic to the new version
+5. Monitor performance and adjust traffic split
+
+### Why This Matters for Us
+
+This replaces our custom `agent_script_variants` / `call_variant_assignments` A/B testing system (built in Migration Phase 7). Telnyx handles variant selection, traffic routing, and performance tracking natively -- no custom Thompson Sampling or UCB1 rebalancing needed.
 
 ---
 
