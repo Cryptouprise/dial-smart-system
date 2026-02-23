@@ -1,0 +1,1021 @@
+# Telnyx Voice AI Platform - Complete Technical Reference
+
+> **Purpose**: Comprehensive knowledge base for integrating Telnyx Voice AI Agents into dial-smart-system.
+> **Last Updated**: February 23, 2026
+> **Status**: Research Complete | Integration Planning
+
+---
+
+## Table of Contents
+
+1. [Platform Overview](#platform-overview)
+2. [Architecture & Infrastructure](#architecture--infrastructure)
+3. [AI Assistants (Voice Agents)](#ai-assistants-voice-agents)
+4. [API Reference](#api-reference)
+5. [Tools & Function Calling](#tools--function-calling)
+6. [Voice & Speech Configuration](#voice--speech-configuration)
+7. [Memory & Dynamic Variables](#memory--dynamic-variables)
+8. [Webhooks & Events](#webhooks--events)
+9. [Outbound Calling](#outbound-calling)
+10. [Scheduled Events API](#scheduled-events-api)
+11. [AI Missions (Multi-Call Orchestration)](#ai-missions-multi-call-orchestration)
+12. [Multi-Agent Handoff](#multi-agent-handoff)
+13. [Call Control Integration](#call-control-integration)
+14. [Monitoring & Analytics](#monitoring--analytics)
+15. [Pricing](#pricing)
+16. [Telnyx vs Retell AI Comparison](#telnyx-vs-retell-ai-comparison)
+17. [Node.js SDK](#nodejs-sdk)
+18. [Current Codebase Integration Status](#current-codebase-integration-status)
+19. [Integration Architecture Plan](#integration-architecture-plan)
+
+---
+
+## Platform Overview
+
+Telnyx is a **full-stack, agent-native voice AI platform** that owns everything from the carrier network to AI inference. Unlike competitors that abstract over third-party infrastructure, Telnyx owns:
+
+- **Layer 1-3**: Bare-metal fiber, direct peering, private global IP backbone (bypasses public internet)
+- **Layer 4-5**: Programmable identity & compliance (STIR/SHAKEN, 10DLC/KYC, SOC2, HIPAA, PCI, GDPR)
+- **Layer 6-9**: Agent execution & memory — colocated GPUs with telephony PoPs for ultra-low latency
+
+### Key Stats
+- **Latency**: Sub-200ms round-trip (sub-500ms end-to-end including client)
+- **PoPs**: 16+ Points of Presence globally
+- **Countries**: 30+ with licensed carrier footprint
+- **Languages**: 40+ supported with real-time multilingual transcription
+- **Compliance**: ISO, PCI, HIPAA, GDPR, SOC2 Type II
+
+---
+
+## Architecture & Infrastructure
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 Your Application                      │
+│         (dial-smart-system / Edge Functions)          │
+├─────────────────────────────────────────────────────┤
+│                  Telnyx API Layer                      │
+│   REST API  │  Call Control  │  TeXML  │  WebRTC      │
+├─────────────────────────────────────────────────────┤
+│              Agent Control Plane (L6-9)               │
+│   AI Assistants │ LLM Inference │ TTS │ STT │ Memory  │
+├─────────────────────────────────────────────────────┤
+│           Identity & Compliance (L4-5)                │
+│   STIR/SHAKEN │ 10DLC │ KYC │ Number Management      │
+├─────────────────────────────────────────────────────┤
+│              Owned Network (L1-3)                     │
+│   Private Fiber │ Direct Peering │ Edge PoPs + GPUs   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Why This Matters for Us
+- **No handoffs**: Voice → STT → LLM → TTS all happen on the same infrastructure
+- **No lag**: GPUs colocated with telephony PoPs eliminates network hops
+- **No third-party dependencies**: Unlike Retell (which uses Twilio/Telnyx for telephony), Telnyx IS the telephony
+- **Cost**: Single vendor = no stacking of STT + LLM + TTS + telephony fees
+
+---
+
+## AI Assistants (Voice Agents)
+
+### What They Are
+Telnyx AI Assistants are fully managed voice AI agents that handle phone calls autonomously. They combine:
+- An LLM for conversation intelligence
+- Speech-to-Text for understanding the caller
+- Text-to-Speech for speaking back
+- Tools for taking real-world actions (webhooks, transfers, DTMF, etc.)
+- Memory for recalling past interactions
+- Telephony for actual phone connectivity
+
+### Creating an Assistant
+
+#### Via Mission Control Portal (No-Code)
+1. Navigate to AI Assistant section
+2. Name the assistant
+3. Select an AI model
+4. Write system instructions (persona, purpose, conversation steps)
+5. Configure greeting message
+6. Enable tools (webhook, transfer, handoff, etc.)
+7. Configure voice and transcription settings
+8. Enable telephony (inbound/outbound)
+9. Assign phone numbers
+10. Test with built-in call tester
+
+#### Via API (Programmatic)
+```bash
+POST https://api.telnyx.com/v2/ai/assistants
+Authorization: Bearer <TELNYX_API_KEY>
+Content-Type: application/json
+
+{
+  "name": "Solar Sales Agent",
+  "model": "qwen/qwen3-235b-a22b",
+  "instructions": "You are a friendly solar energy consultant...",
+  "greeting": "Hi! Thanks for your interest in solar energy. How can I help you today?",
+  "tools": [...],
+  "voice_settings": {
+    "voice": "Telnyx.NaturalHD.Ava",
+    "api_key_ref": null
+  },
+  "transcription": {
+    "model": "telnyx_deepgram_nova3"
+  },
+  "telephony_settings": {
+    "default_texml_app_id": "app_xxxxx"
+  },
+  "messaging_settings": {
+    "default_messaging_profile_id": "profile_xxxxx"
+  },
+  "enabled_features": ["telephony", "messaging"],
+  "dynamic_variables_webhook_url": "https://your-server.com/init",
+  "dynamic_variables": {
+    "company_name": "Solar Solutions Inc"
+  },
+  "insight_settings": {
+    "insight_group_id": "group_xxxxx"
+  },
+  "privacy_settings": {
+    "data_retention": true
+  }
+}
+```
+
+### Available Models
+
+Telnyx supports models from multiple providers:
+
+| Provider | Model | Notes |
+|----------|-------|-------|
+| **Qwen** | qwen/qwen3-235b-a22b | Recommended starting point, no API key needed |
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.2 | Requires OpenAI API key |
+| **Anthropic** | Claude Sonnet | Requires API key |
+| **Mistral** | Various | Available on platform |
+| **Google** | Gemini models | Available on platform |
+| **xAI** | Grok models | Available on platform |
+| **Deepseek** | Deepseek models | Available on platform |
+| **Fixie.ai** | ultravox-v0_4 | Native audio model (no separate STT needed) |
+| **Custom** | Any OpenAI-compatible endpoint | BYOK - bring your own model |
+
+**Fallback Model**: You can configure a fallback model that activates if the primary goes down.
+
+**Custom LLM**: Enable "Use Custom LLM" and provide a Base URL for any OpenAI-compatible inference endpoint.
+
+---
+
+## API Reference
+
+### Assistant CRUD Operations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/v2/ai/assistants` | Create a new assistant |
+| `GET` | `/v2/ai/assistants` | List all assistants |
+| `GET` | `/v2/ai/assistants/{id}` | Get assistant by ID |
+| `PATCH` | `/v2/ai/assistants/{id}` | Update assistant |
+| `DELETE` | `/v2/ai/assistants/{id}` | Delete assistant |
+
+### Call Control Commands
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/v2/calls` | Dial an outbound call |
+| `POST` | `/v2/calls/{id}/actions/answer` | Answer incoming call |
+| `POST` | `/v2/calls/{id}/actions/ai_assistant_start` | Start AI assistant on call |
+| `POST` | `/v2/calls/{id}/actions/gather_using_ai` | Gather structured data via AI |
+| `POST` | `/v2/calls/{id}/actions/hangup` | Hang up call |
+| `POST` | `/v2/calls/{id}/actions/transfer` | Transfer call |
+| `POST` | `/v2/calls/{id}/actions/speak` | Speak text (TTS) |
+| `POST` | `/v2/calls/{id}/actions/suppression_start` | Start noise suppression |
+| `POST` | `/v2/calls/{id}/actions/siprec_start` | Start SIPREC recording |
+
+### TeXML AI Calls
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/v2/texml/ai_calls/{texml_app_id}` | Initiate outbound AI call |
+
+### Scheduled Events
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/v2/ai/assistants/{id}/scheduled_events` | Schedule a call or SMS |
+| `GET` | `/v2/ai/assistants/{id}/scheduled_events` | List scheduled events |
+| `DELETE` | `/v2/ai/assistants/{id}/scheduled_events/{event_id}` | Cancel scheduled event |
+
+### Conversations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/v2/ai/assistants/{id}/conversations` | List conversations |
+| `GET` | `/v2/ai/assistants/{id}/conversations/{conv_id}` | Get conversation details |
+
+### Authentication
+All requests use Bearer token authentication:
+```
+Authorization: Bearer <TELNYX_API_KEY>
+```
+
+---
+
+## Tools & Function Calling
+
+AI Assistants support 8 built-in tool types:
+
+### 1. Webhook Tool
+Make HTTP requests to external APIs during a conversation.
+
+```json
+{
+  "type": "webhook",
+  "name": "check_availability",
+  "description": "Check calendar availability for appointment booking",
+  "url": "https://your-api.com/availability/{date}",
+  "method": "GET",
+  "headers": {
+    "Authorization": "Bearer {{api_key}}"
+  },
+  "path_parameters": {
+    "type": "object",
+    "properties": {
+      "date": { "type": "string", "description": "Date in YYYY-MM-DD format" }
+    }
+  },
+  "query_parameters": {
+    "type": "object",
+    "properties": {
+      "timezone": { "type": "string" }
+    }
+  },
+  "body_parameters": {
+    "type": "object",
+    "properties": {
+      "service_type": { "type": "string" }
+    }
+  }
+}
+```
+
+**Features**:
+- Supports GET, POST, PUT, PATCH, DELETE
+- Headers can reference integration secrets (for API keys)
+- Path/query/body parameters described as JSON Schema
+- Dynamic variables can be used in URL and parameter descriptions
+- Test button available in portal to verify with sample data
+
+### 2. Transfer Tool
+Transfer calls to human agents or other numbers.
+
+```json
+{
+  "type": "transfer",
+  "name": "transfer_to_sales",
+  "description": "Transfer the caller to the sales team",
+  "targets": [
+    { "name": "Sales Team", "number": "+15551234567" },
+    { "name": "Support", "number": "+15559876543" }
+  ]
+}
+```
+
+**Features**:
+- Named targets with phone numbers
+- Full conversation context passed to receiving agent
+- Warm transfer (context preserved, no repeat info)
+- AMD detection on transfer (detect voicemail, optionally leave message or cancel)
+
+### 3. SIP Refer Tool
+Transfer calls via SIP REFER for contact center integration.
+
+### 4. Handoff Tool
+Route conversation between multiple AI assistants.
+
+```json
+{
+  "type": "handoff",
+  "name": "handoff_to_billing",
+  "description": "Hand off to billing specialist assistant",
+  "assistant_id": "asst_billing_xxxxx"
+}
+```
+
+**Features**:
+- Transparent to the user (shared context, same voice by default)
+- OR distinct voice mode (each assistant keeps its own voice)
+- Team of specialist assistants on one call
+- Shared conversation history
+
+### 5. Hangup Tool
+Let the assistant end the call programmatically.
+
+### 6. Send DTMF Tool
+Send touch-tone signals during the call (useful for IVR navigation).
+
+### 7. Send Message Tool (NEW)
+Send SMS directly from the voice agent during a call.
+
+```json
+{
+  "type": "send_message",
+  "name": "send_confirmation_sms",
+  "description": "Send appointment confirmation SMS to the caller"
+}
+```
+
+### 8. MCP Server Tool
+Connect to any Model Context Protocol server for external integrations.
+
+```json
+{
+  "type": "mcp_server",
+  "name": "crm_integration",
+  "description": "Access CRM data via MCP",
+  "url": "https://your-mcp-server.com/mcp"
+}
+```
+
+**Features**:
+- Native MCP support in AI Assistants
+- Connects to any public API with an MCP server
+- Telnyx auto-includes `telnyx_conversation_id` (not susceptible to prompt injection)
+- Integration secrets for secure URL storage
+- Zapier integration via MCP (access 6,000+ apps)
+- Can store MCP server URL as integration secret
+
+### 9. Skip Turn Tool
+Let the assistant skip its turn and wait for the user to speak.
+
+---
+
+## Voice & Speech Configuration
+
+### Text-to-Speech (TTS) Providers
+
+| Provider | Voices | Notes |
+|----------|--------|-------|
+| **Telnyx NaturalHD** | Multiple voices | Native, lowest latency, English + 30+ languages |
+| **ElevenLabs** | Full library | Requires ElevenLabs API key |
+| **ResembleAI (Chatterbox)** | Emotion-preserving | New addition, preserves style/accent |
+| **Minimax** | Expressive speech | Natural, multilingual |
+| **Azure Neural HD** | Microsoft voices | Enterprise-grade |
+| **AWS Polly** | Standard + Neural | Use `AWS.Polly.<VoiceId>-Neural` format |
+
+### Speech-to-Text (STT) Providers
+
+| Provider | Model | Notes |
+|----------|-------|-------|
+| **Telnyx/Deepgram** | Nova-3 | Default, high accuracy |
+| **Deepgram Flux** | Eager end-of-turn | Adjustable thresholds, reduces latency |
+| **Google** | Cloud Speech | With speaker separation |
+| **Distil-Whisper** | distil-whisper | Via AI transcription API |
+
+### Configuration Options
+- **Voice selection**: Preview and compare samples in portal
+- **Language**: Dropdown of 40+ languages
+- **Noise suppression**: Toggle on/off for cleaner transcription
+- **Background audio**: Optional ambient sounds (e.g., "Office")
+- **Interruption settings**: Allow/disallow caller interrupting the assistant
+- **Max duration**: Configure maximum AI assistant participation time
+
+---
+
+## Memory & Dynamic Variables
+
+### Memory System
+Telnyx AI Assistants have built-in memory that persists across conversations:
+
+- **Returning caller recognition**: Links past conversations to phone number
+- **Time range flexibility**: Control how far back memory extends (days/weeks)
+- **Configurable parameters**: What to store, how long, how it's recalled
+- **Memory query**: Uses same filters as List Conversations endpoint
+
+**Memory Query Configuration** (in dynamic variables webhook response):
+```json
+{
+  "memory": {
+    "conversation_query": {
+      "phone_number": "+15551234567",
+      "limit": 5,
+      "order": "desc"
+    },
+    "insight_query": {
+      "insight_ids": ["insight_abc", "insight_def"]
+    }
+  }
+}
+```
+
+### Dynamic Variables
+
+Variables that personalize conversations at runtime. Use `{{variable_name}}` syntax in instructions, greeting, and tool configurations.
+
+**System Variables** (auto-populated by Telnyx):
+| Variable | Description |
+|----------|-------------|
+| `telnyx_current_time` | Current timestamp |
+| `telnyx_conversation_channel` | Channel type (phone_call, sms, web) |
+| `telnyx_agent_target` | The assistant's phone number |
+| `telnyx_end_user_target` | The caller's phone number |
+| `telnyx_end_user_target_verified` | STIR/SHAKEN verification status |
+| `call_control_id` | Unique call identifier |
+
+**Custom Variables**: Define your own (e.g., `company_name`, `appointment_time`, `patient_name`)
+
+**Injection Methods**:
+1. **Default values**: Set in assistant builder (fallback)
+2. **API injection**: Pass via `AIAssistantDynamicVariables` parameter in outbound call
+3. **Webhook**: `dynamic_variables_webhook_url` — called at conversation start
+4. **SIP headers**: Custom SIP headers mapped to variables
+
+**Webhook Initialization** (`assistant.initialization` event):
+```json
+{
+  "event_type": "assistant.initialization",
+  "data": {
+    "telnyx_conversation_channel": "phone_call",
+    "telnyx_agent_target": "+15551234567",
+    "telnyx_end_user_target": "+15559876543",
+    "telnyx_end_user_target_verified": true,
+    "call_control_id": "v3:xxxxx",
+    "assistant_id": "asst_xxxxx"
+  }
+}
+```
+
+**Important**: Webhook must respond within **1 second** or the call proceeds with fallback values.
+
+---
+
+## Webhooks & Events
+
+### Call Control Webhooks
+
+| Event Type | Trigger |
+|------------|---------|
+| `call.initiated` | Call is being set up |
+| `call.ringing` | Call is ringing |
+| `call.answered` | Call was answered |
+| `call.hangup` | Call ended |
+| `call.speak.started` | TTS playback started |
+| `call.speak.ended` | TTS playback ended |
+| `call.conversation.ended` | AI conversation finished |
+| `call.conversation_insights.generated` | Post-call insights ready |
+| `call.machine.detection.ended` | AMD completed |
+| `call.gather.ended` | AI gather completed |
+
+### Post-Call Insights Webhook
+Configure a webhook URL in the Insights tab to receive structured analytics after every call:
+
+```json
+{
+  "event_type": "call.conversation_insights.generated",
+  "data": {
+    "conversation_id": "conv_xxxxx",
+    "assistant_id": "asst_xxxxx",
+    "duration_seconds": 180,
+    "summary": "Customer inquired about solar panel installation...",
+    "sentiment": "positive",
+    "action_items": ["Schedule site assessment", "Send pricing guide"],
+    "custom_insights": { ... }
+  }
+}
+```
+
+**Features**:
+- Automatic delivery (no polling needed)
+- Custom insight grouping for multi-location/multi-brand
+- Connect directly to CRM, EHR, compliance systems
+- Separate webhooks per assistant
+
+### Assistant Initialization Webhook
+Fires at conversation start when `dynamic_variables_webhook_url` is configured.
+
+### Call Progress Events Webhook
+Configure under Voice settings for telephony lifecycle events.
+
+### Webhook Signature Verification
+Telnyx signs every webhook using **Ed25519 public key cryptography**:
+- Headers: `telnyx-timestamp`, `telnyx-signature-ed25519`
+- Compatible with Standard Webhooks specification
+- Must return HTTP 200 or Telnyx retries at failover URL
+
+### Testing Webhooks
+Built-in webhook testing in the portal — test during configuration, not just live calls.
+
+---
+
+## Outbound Calling
+
+### Method 1: TeXML AI Calls (Simplest)
+```bash
+POST https://api.telnyx.com/v2/texml/ai_calls/{texml_app_id}
+Authorization: Bearer <TELNYX_API_KEY>
+
+{
+  "From": "+15551234567",
+  "To": "+15559876543",
+  "AIAssistantId": "asst_xxxxx",
+  "MachineDetection": "Enable",
+  "AsyncAmd": true,
+  "DetectionMode": "Premium",
+  "AIAssistantDynamicVariables": {
+    "customer_name": "John",
+    "appointment_time": "2pm"
+  }
+}
+```
+
+### Method 2: Call Control + Start AI Assistant
+```bash
+# Step 1: Dial the call
+POST https://api.telnyx.com/v2/calls
+{
+  "connection_id": "conn_xxxxx",
+  "from": "+15551234567",
+  "to": "+15559876543",
+  "webhook_url": "https://your-server.com/webhooks"
+}
+
+# Step 2: On call.answered webhook, start the AI assistant
+POST https://api.telnyx.com/v2/calls/{call_control_id}/actions/ai_assistant_start
+{
+  "assistant": {
+    "id": "asst_xxxxx"
+  },
+  "voice": "Telnyx.NaturalHD.Ava",
+  "greeting": "Hi {{customer_name}}, this is Sarah from Solar Solutions!",
+  "transcription": {
+    "model": "telnyx_deepgram_nova3"
+  },
+  "interruption_settings": {
+    "enable": true
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "data": {
+    "result": "ok",
+    "conversation_id": "conv_xxxxx"
+  }
+}
+```
+
+### Method 3: Node.js SDK
+```javascript
+import Telnyx from 'telnyx';
+const client = new Telnyx({ apiKey: process.env.TELNYX_API_KEY });
+
+// Dial outbound call
+const call = await client.calls.dial({
+  connection_id: 'conn_xxxxx',
+  from: '+15551234567',
+  to: '+15559876543',
+  webhook_url: 'https://your-server.com/webhooks'
+});
+
+// Start AI assistant on the call
+await client.calls.actions.startAIAssistant(call.data.call_control_id, {
+  assistant: { id: 'asst_xxxxx' },
+  voice: 'Telnyx.NaturalHD.Ava',
+  greeting: 'Hello! How can I help you today?'
+});
+```
+
+### Answering Machine Detection
+Configure AMD in the outbound call request:
+- `MachineDetection: "Enable"` — basic detection
+- `DetectionMode: "Premium"` — higher accuracy
+- `AsyncAmd: true` — don't wait for detection to answer
+
+AMD also works on transfers — the assistant can detect voicemail when transferring and either stop the transfer or leave a message.
+
+### Outbound Voice Profile
+Required for outbound calls. Controls which countries/regions you can call. Create in Mission Control Portal.
+
+---
+
+## Scheduled Events API
+
+Schedule outbound calls or SMS at specific future times — perfect for appointment reminders, follow-ups, and proactive outreach.
+
+### Create Scheduled Event
+```bash
+POST https://api.telnyx.com/v2/ai/assistants/{assistant_id}/scheduled_events
+Authorization: Bearer <TELNYX_API_KEY>
+
+{
+  "channel": "phone_call",
+  "agent_target": "+15551234567",
+  "end_user_target": "+15559876543",
+  "scheduled_at": "2026-02-24T14:00:00Z",
+  "conversation_metadata": {
+    "lead_id": "lead_123",
+    "campaign": "solar_followup"
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "data": {
+    "scheduled_event_id": "sched_xxxxx",
+    "status": "scheduled"
+  }
+}
+```
+
+### Capabilities
+- **Channel**: `phone_call` or `sms`
+- **Precise timing**: ISO 8601 format
+- **Custom metadata**: Track context per scheduled event
+- **Post-call insights**: Webhook receives insights after scheduled call completes
+- **Cancel**: DELETE the event by ID
+
+### Use Cases for Our System
+- Callback scheduling (lead says "call me Tuesday at 2pm")
+- Appointment reminders (day-before, morning-of)
+- Follow-up sequences (call → wait 2 days → call again)
+- Campaign scheduling (schedule 1,000 calls at optimal times)
+
+---
+
+## AI Missions (Multi-Call Orchestration)
+
+**AI Missions** is an advanced orchestration API designed for AI agents to coordinate multi-step outbound workflows.
+
+### How It Works
+1. **Create Mission**: Define a goal (e.g., "Call 50 solar leads and qualify them")
+2. **Plan Execution**: Agent breaks mission into steps
+3. **Deploy Agents**: Create assistants with custom instructions per step
+4. **Track Progress**: Every action logged as events (full audit trail)
+5. **Collect Insights**: Structured data extraction after each call
+
+### Capabilities
+- Parallel outreach (call multiple leads simultaneously)
+- Sequential workflows (use info from call A to inform call B)
+- IVR navigation and data extraction
+- Structured insight capture with templates
+- Error recovery and retry logic
+
+### Relevance for Our System
+This maps directly to our voice broadcast + lead journey system:
+- **Campaigns as Missions**: Each broadcast campaign = a Mission
+- **Lead qualification**: AI extracts structured data per call
+- **Follow-up sequences**: Results from call 1 determine call 2 approach
+- **Audit trail**: Every action tracked for compliance
+
+---
+
+## Multi-Agent Handoff
+
+Seamlessly route conversations between specialized AI assistants:
+
+### Two Voice Modes
+1. **Unified Voice**: All assistants share the same voice (seamless, caller doesn't notice the switch)
+2. **Distinct Voice**: Each assistant keeps its own voice settings
+
+### Use Cases
+- **Triage → Specialist**: First assistant qualifies the lead, hands off to product specialist
+- **Language switching**: English assistant → Spanish assistant
+- **Escalation**: Sales AI → Manager AI → Human transfer
+
+### How to Configure
+Add handoff tools to your assistant, referencing other assistant IDs. The handoff is transparent — shared context, no disruption to the caller.
+
+---
+
+## Call Control Integration
+
+### What is Call Control?
+Telnyx Call Control is a real-time API that lets you control every aspect of a phone call with code. Unlike pre-scripted systems, commands can be issued at any point during the call.
+
+### Key Commands
+- **Answer**: Accept incoming call
+- **Speak**: Play TTS
+- **Gather**: Collect DTMF or speech input
+- **Transfer**: Move call to another number
+- **Bridge**: Connect two calls
+- **Record**: Start/stop recording
+- **Stream**: Real-time audio streaming
+- **AI Assistant Start**: Attach AI to the call
+- **Gather Using AI**: Structured data collection via AI
+- **Noise Suppression**: Improve transcription quality
+- **SIPREC**: Session recording protocol
+
+### Gather Using AI
+Collect structured data from a conversation using JSON Schema:
+
+```bash
+POST /v2/calls/{call_control_id}/actions/gather_using_ai
+{
+  "assistant": {
+    "instructions": "You are collecting appointment information."
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "preferred_date": { "type": "string", "description": "Preferred appointment date" },
+      "preferred_time": { "type": "string", "description": "Preferred time of day" },
+      "service_type": { "type": "string", "enum": ["consultation", "installation", "maintenance"] }
+    },
+    "required": ["preferred_date", "preferred_time", "service_type"]
+  }
+}
+```
+
+When all required fields are gathered, a webhook is fired with the structured data.
+
+---
+
+## Monitoring & Analytics
+
+### Real-Time Cost Estimator
+In the Mission Control Portal, a dynamic cost bar shows per-minute cost estimate as you configure the assistant (base rate + STT + TTS + LLM).
+
+### Post-Call Insights
+- **Automatic summaries**: Conversation summary generated after each call
+- **Sentiment analysis**: Positive/negative/neutral per call
+- **Action items**: Extracted to-do items
+- **Custom insights**: Define your own extraction templates
+- **Webhook delivery**: Push to your systems immediately
+
+### Conversation History
+- Full conversation logs accessible via API
+- Searchable by phone number, date range, assistant
+- Metadata tagging for custom filtering
+
+### Latency Monitoring
+- Demo links with per-turn latency measurement
+- Shows client device, network, and compute delays
+- Helps tune voice/model selection for optimal experience
+
+### WebRTC React Library
+For web-based monitoring and testing:
+- `@telnyx/ai-agent-lib` — React library for AI agent frontends
+- Real-time transcription display
+- Connection state management
+- Latency measurement
+- Event handling
+
+---
+
+## Pricing
+
+### Base Pricing
+
+| Component | Cost |
+|-----------|------|
+| **AI Orchestration + STT + TTS** | $0.08/min |
+| **Open-source LLM (Telnyx GPUs)** | $0.025/min |
+| **All-in bundle (orchestration + open-source LLM)** | $0.09/min |
+| **Telephony (outbound, US)** | ~$0.01-0.02/min |
+| **TeXML fee** | $0.002/min |
+
+### What's Included in Base Rate
+- Orchestration and call control
+- Real-time speech-to-text
+- Text-to-speech (Telnyx NaturalHD)
+- Open-source LLMs on Telnyx GPUs
+
+### What Costs Extra
+- Premium third-party models (GPT-4o, Claude, etc.) — at provider's rate
+- Third-party TTS (ElevenLabs, etc.) — at provider's rate
+- BYOK (Bring Your Own Key) pass-through fees
+- Telephony per-minute rates (varies by country/direction)
+
+### Volume Discounts
+Available for monthly commitments. Predictable pricing with discounted rates as spending increases.
+
+### Cost Comparison (All-In Per Minute)
+
+| Platform | Estimated All-In Cost |
+|----------|----------------------|
+| **Telnyx (open-source LLM)** | ~$0.09-0.11/min |
+| **Telnyx (GPT-4o)** | ~$0.13-0.15/min |
+| **Retell AI** | ~$0.13-0.31/min |
+| **Vapi** | ~$0.23-0.33/min |
+| **ElevenLabs Conversational AI** | ~$0.15-0.25/min |
+
+---
+
+## Telnyx vs Retell AI Comparison
+
+| Dimension | Telnyx | Retell AI |
+|-----------|--------|-----------|
+| **Infrastructure** | Owns entire stack (carrier → GPU) | Uses third-party telephony (Twilio/Telnyx) |
+| **Latency** | Sub-200ms round-trip | ~600-800ms response time |
+| **Pricing** | $0.09/min all-in (open-source LLM) | $0.07/min engine + stacked costs = $0.13-0.31/min |
+| **Voice Quality** | HD voice codecs on private network | Depends on telephony provider |
+| **Models** | Multiple providers + custom LLM | Multiple providers |
+| **Agent Builder** | No-code portal + full API | API-first + portal |
+| **Tools** | 8 built-in + MCP + webhooks | Custom functions + webhooks |
+| **Multi-Agent** | Native handoff (unified/distinct voice) | Limited |
+| **Memory** | Built-in cross-conversation memory | Custom implementation needed |
+| **Scheduled Calls** | Native Scheduled Events API | Custom implementation needed |
+| **Missions** | Multi-call orchestration API | Not available |
+| **SMS During Call** | Native send_message tool | Not available |
+| **AMD on Transfer** | Built-in | Not available |
+| **MCP Server** | Native integration | Not available |
+| **Compliance** | STIR/SHAKEN, SOC2, HIPAA, PCI, GDPR | SOC2, HIPAA, GDPR |
+| **Best For** | Full control, cost efficiency, scale | Quick deployment, simple use cases |
+
+### Why Telnyx Could Replace Retell for Us
+1. **Cost**: 30-70% cheaper per minute at scale
+2. **Latency**: Significantly lower (sub-200ms vs 600-800ms)
+3. **Native telephony**: No Twilio dependency, no stacked costs
+4. **Built-in features**: Memory, scheduled calls, missions, multi-agent — things we built custom
+5. **AMD on transfer**: Handles voicemail detection on warm transfers
+6. **SMS tool**: Agent can send SMS mid-call without external logic
+7. **MCP**: Connect to any external system natively
+
+### What Retell Does Better
+1. **Simpler onboarding**: Retell's API is more straightforward for basic use cases
+2. **Existing integration**: Our system already has Retell deeply integrated
+3. **Transcript analysis**: Retell provides detailed call transcripts (Telnyx does too via insights)
+
+---
+
+## Node.js SDK
+
+### Installation
+```bash
+npm install telnyx
+```
+
+### Basic Setup
+```javascript
+import Telnyx from 'telnyx';
+
+const client = new Telnyx({
+  apiKey: process.env.TELNYX_API_KEY,
+  maxRetries: 2,  // Default: 2 retries with exponential backoff
+  timeout: 60000  // Default: 1 minute
+});
+```
+
+### Key Operations
+
+```javascript
+// Create AI Assistant
+const assistant = await client.ai.assistants.create({
+  name: 'Solar Sales Agent',
+  model: 'qwen/qwen3-235b-a22b',
+  instructions: 'You are a friendly solar consultant...',
+  greeting: 'Hi! How can I help you with solar today?',
+  tools: [/* webhook, transfer, etc. */],
+  voice_settings: { voice: 'Telnyx.NaturalHD.Ava' },
+  enabled_features: ['telephony']
+});
+
+// Dial outbound call
+const call = await client.calls.dial({
+  connection_id: 'conn_xxxxx',
+  from: '+15551234567',
+  to: '+15559876543',
+  webhook_url: 'https://your-server.com/webhooks'
+});
+
+// Start AI assistant on active call
+await client.calls.actions.startAIAssistant(callControlId, {
+  assistant: { id: assistant.id },
+  voice: 'Telnyx.NaturalHD.Ava',
+  greeting: 'Hello!'
+});
+
+// Schedule a future call
+await client.ai.assistants.scheduledEvents.create(assistantId, {
+  channel: 'phone_call',
+  agent_target: '+15551234567',
+  end_user_target: '+15559876543',
+  scheduled_at: '2026-02-24T14:00:00Z'
+});
+
+// List conversations
+const conversations = await client.ai.assistants.conversations.list(assistantId);
+
+// Audio transcription
+const transcript = await client.ai.audio.transcribe({
+  model: 'distil-whisper',
+  file: fs.createReadStream('audio.mp3')
+});
+
+// Number management
+const order = await client.numberOrders.create({
+  phone_numbers: [{ phone_number: '+15551234567' }]
+});
+```
+
+### Additional Packages
+- `@telnyx/webrtc` — WebRTC SDK for browser-based calling
+- `@telnyx/ai-agent-lib` — React library for AI agent UIs
+
+### Error Handling
+```javascript
+try {
+  const assistant = await client.ai.assistants.create({...});
+} catch (err) {
+  if (err instanceof Telnyx.BadRequestError) { /* 400 */ }
+  if (err instanceof Telnyx.AuthenticationError) { /* 401 */ }
+  if (err instanceof Telnyx.RateLimitError) { /* 429 */ }
+}
+```
+
+---
+
+## Current Codebase Integration Status
+
+### What Already Exists
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| `telnyxAdapter.ts` | STUB | All methods return failures/empty |
+| `telnyx-webhook/index.ts` | STUB | Event cases defined but no processing |
+| `voice-broadcast-engine` | WORKING | `callWithTelnyx()` function works |
+| `provider-management` | STUB | Actions defined but not implemented |
+| Database schema | COMPLETE | `phone_providers`, `provider_numbers`, carrier configs |
+| TypeScript types | COMPLETE | `IProviderAdapter`, `ProviderType` includes 'telnyx' |
+| Provider factory | COMPLETE | `createProviderAdapter('telnyx')` works |
+| SIP trunk config | COMPLETE | `telnyx_connection_id` supported |
+| Environment config | READY | `TELNYX_API_KEY` referenced throughout |
+| Webhook config | READY | `verify_jwt = false` set in supabase config |
+| Demo data | EXISTS | Demo phone number with `provider: 'telnyx'` |
+
+### What's Missing for AI Agent Integration
+
+1. **Telnyx AI Assistant management** — Create/update/delete/list assistants
+2. **AI outbound calling** — Use TeXML AI calls endpoint instead of basic `callWithTelnyx()`
+3. **Webhook handler** — Process `call.conversation.ended`, `call.conversation_insights.generated`
+4. **Dynamic variables webhook** — Serve lead data to Telnyx at call start
+5. **Scheduled events** — Use native scheduling instead of custom retry logic
+6. **Insight ingestion** — Receive and store post-call insights
+7. **Cost tracking** — Track Telnyx-specific costs per call
+8. **Assistant sync** — Sync Telnyx assistants to our agent management UI
+
+---
+
+## Integration Architecture Plan
+
+### Phase 1: Core AI Assistant Management
+- Edge function: `telnyx-assistant-management` (CRUD for assistants)
+- UI: Add Telnyx tab to Agent Builder / Retell AI Manager
+- Store assistant configs in database (map to our agent records)
+
+### Phase 2: AI Outbound Calling
+- Modify `voice-broadcast-engine` to use TeXML AI calls for Telnyx AI broadcasts
+- Modify `outbound-calling` to support Telnyx AI assistants alongside Retell
+- Dynamic variables webhook endpoint (serve lead data at call start)
+- Handle AMD natively via Telnyx
+
+### Phase 3: Webhooks & Insights
+- Implement `telnyx-webhook` event processing for AI call events
+- Ingest post-call insights (summary, sentiment, action items)
+- Map to our `call_logs` and analytics tables
+- Feed into lead journey intelligence
+
+### Phase 4: Advanced Features
+- Scheduled Events for callback management
+- Multi-agent handoff for specialized conversations
+- MCP server integration for CRM sync
+- AI Missions for campaign orchestration
+- Send Message tool for mid-call SMS
+
+### Phase 5: Migration & Optimization
+- Side-by-side A/B testing: Telnyx AI vs Retell AI
+- Cost comparison per campaign
+- Latency measurement per provider
+- Gradual migration of call volume
+
+### Environment Variables Required
+```
+TELNYX_API_KEY=<your_telnyx_api_key>
+TELNYX_TEXML_APP_ID=<your_texml_app_id>
+TELNYX_CONNECTION_ID=<your_connection_id>
+TELNYX_OUTBOUND_VOICE_PROFILE_ID=<your_ovp_id>
+```
+
+---
+
+## Key Sources
+
+- [Telnyx Developer Docs](https://developers.telnyx.com/docs/overview)
+- [Voice AI Assistant Guide](https://developers.telnyx.com/docs/inference/ai-assistants/no-code-voice-assistant)
+- [Create Assistant API](https://developers.telnyx.com/api/inference/inference-embedding/create-new-assistant-public-assistants-post)
+- [Start AI Assistant on Call](https://developers.telnyx.com/api/call-control/call-start-ai-assistant)
+- [Gather Using AI](https://developers.telnyx.com/api/call-control/call-gather-using-ai)
+- [Scheduled Events API](https://developers.telnyx.com/api/inference/inference-embedding/create-scheduled-event)
+- [AI Missions](https://telnyx.com/release-notes/missions-multi-call-orchestration)
+- [Multi-Agent Handoff](https://telnyx.com/release-notes/multi-agent-handoff-tool)
+- [MCP Server Integration](https://telnyx.com/release-notes/mcp-servers-ai-agents)
+- [Dynamic Variables](https://developers.telnyx.com/docs/inference/ai-assistants/dynamic-variables)
+- [Memory](https://developers.telnyx.com/docs/inference/ai-assistants/memory)
+- [Post-Call Insights Webhook](https://telnyx.com/release-notes/ai-assistant-post-call-insights-webhook)
+- [Conversational AI Pricing](https://telnyx.com/pricing/conversational-ai)
+- [Telnyx vs Retell](https://telnyx.com/the-best-retell-alternative)
+- [Node.js SDK (npm)](https://www.npmjs.com/package/telnyx)
+- [Node.js SDK (GitHub)](https://github.com/team-telnyx/telnyx-node)
+- [AI Agent React Library](https://www.npmjs.com/package/@telnyx/ai-agent-lib)
+- [Telnyx MCP Server](https://github.com/team-telnyx/telnyx-mcp-server)
+- [Release Notes](https://telnyx.com/release-notes)

@@ -513,6 +513,58 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 23, 2026 - Telnyx Voice AI Platform Research & Integration Planning
+
+**Summary:** Comprehensive research and documentation of Telnyx's full-stack Voice AI platform. Created a complete technical reference covering AI Assistants, API endpoints, tools/function calling, webhooks, memory system, scheduled events, AI Missions, multi-agent handoff, pricing comparison vs Retell, and a 5-phase integration architecture plan.
+
+**What Was Built:**
+- `TELNYX_VOICE_PLATFORM.md` — 700+ line comprehensive technical reference document covering:
+  - Platform architecture (owned stack: carrier → GPU)
+  - AI Assistant CRUD API (POST/GET/PATCH/DELETE `/v2/ai/assistants`)
+  - 8 built-in tools: Webhook, Transfer, SIP Refer, Handoff, Hangup, Send DTMF, Send Message, MCP Server
+  - Voice/TTS providers: Telnyx NaturalHD, ElevenLabs, ResembleAI, Minimax, Azure Neural, AWS Polly
+  - STT providers: Deepgram Nova-3, Deepgram Flux, Google, Whisper
+  - Memory system with cross-conversation persistence
+  - Dynamic variables (system + custom) with webhook initialization
+  - Post-call insights webhook for analytics
+  - Outbound calling via 3 methods: TeXML AI Calls, Call Control + AI Assistant Start, Node.js SDK
+  - Scheduled Events API for callback management
+  - AI Missions for multi-call campaign orchestration
+  - Multi-agent handoff (unified/distinct voice modes)
+  - Pricing: $0.09/min all-in vs Retell's $0.13-0.31/min
+  - Complete Node.js SDK reference
+  - Current codebase audit (what exists, what's stubbed, what's missing)
+  - 5-phase integration plan
+
+**Codebase Audit Findings:**
+- `voice-broadcast-engine` — `callWithTelnyx()` WORKS for basic calls
+- `telnyxAdapter.ts` — STUB (all methods return failures)
+- `telnyx-webhook/index.ts` — STUB (event cases defined, no processing)
+- Database schema — COMPLETE (phone_providers, provider_numbers, carrier_configs)
+- TypeScript types — COMPLETE (IProviderAdapter includes 'telnyx')
+- Missing: AI assistant management, TeXML AI calls, webhook processing, insights ingestion
+
+**Key Files Created:**
+- `TELNYX_VOICE_PLATFORM.md` (new)
+
+**Key Files Modified:**
+- `CLAUDE.md` (this file — added session log)
+
+**Database Changes:** None
+
+**Deployment Status:** Research/documentation only — no code changes yet
+
+**Gotchas/Lessons:**
+- Telnyx developer docs are behind aggressive CDN bot protection (403 on direct fetch) — had to rely on web search + SDK GitHub
+- Telnyx $0.09/min all-in is significantly cheaper than Retell ($0.13-0.31/min stacked)
+- Telnyx latency (sub-200ms) dramatically better than Retell (~600-800ms)
+- Telnyx has features we built custom (memory, scheduled calls, missions, multi-agent) — native platform advantage
+- TeXML AI Calls endpoint (`/v2/texml/ai_calls/{app_id}`) is simplest way to make outbound AI calls
+- Node.js SDK (`npm install telnyx`) has full assistant management support
+- `@telnyx/ai-agent-lib` React library could replace our custom agent UI components
+
+---
+
 ### February 10, 2026 (Part 5) - Campaign Strategist: 8/10 → 10/10 (NOT DEPLOYED)
 
 **Summary:** Two features that take the AI from execution-focused to strategist-level. The AI now plans entire days like a campaign manager (resource allocation across competing priorities) and discovers cross-dimensional patterns humans would miss (timing correlations, source effectiveness, decay curves, sequence optimization).
