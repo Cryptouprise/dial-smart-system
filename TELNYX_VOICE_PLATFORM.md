@@ -171,8 +171,12 @@ Telnyx supports models from multiple providers:
 | `POST` | `/v2/ai/assistants` | Create a new assistant |
 | `GET` | `/v2/ai/assistants` | List all assistants |
 | `GET` | `/v2/ai/assistants/{id}` | Get assistant by ID |
-| `PATCH` | `/v2/ai/assistants/{id}` | Update assistant |
+| `POST` | `/v2/ai/assistants/{id}` | Update assistant |
 | `DELETE` | `/v2/ai/assistants/{id}` | Delete assistant |
+| `POST` | `/v2/ai/assistants/{id}/clone` | Clone assistant (excludes telephony/messaging settings) |
+| `POST` | `/v2/ai/assistants/import` | Import from Retell/Vapi/ElevenLabs |
+| `POST` | `/v2/ai/assistants/{id}/chat` | Chat with assistant (BETA) |
+| `POST` | `/v2/ai/assistants/{id}/sms_chat` | SMS chat with assistant |
 
 ### Call Control Commands
 
@@ -1006,11 +1010,43 @@ For web-based monitoring and testing:
 - Text-to-speech (Telnyx NaturalHD)
 - Open-source LLMs on Telnyx GPUs
 
+### Component-Level Pricing (A La Carte)
+
+**Speech-to-Text:**
+| Provider | Price/Min |
+|----------|-----------|
+| Telnyx STT (Whisper) | $0.015 |
+| Deepgram Nova 2/3/Flux | $0.015 |
+| Google STT | $0.017 |
+| Azure STT | $0.017 |
+
+**Text-to-Speech:**
+| Provider | Price/Character | Notes |
+|----------|----------------|-------|
+| Telnyx KokoroTTS | $0.000003 | 26 voices, 8 languages |
+| Telnyx Natural | $0.000003 | Enhanced naturalness |
+| AWS Polly Standard | $0.000006 | Standard |
+| Resemble AI | $0.000009 | Voice cloning |
+| Telnyx NaturalHD | $0.000012 | Premium HD quality |
+| ElevenLabs | BYO API key | 70+ languages |
+
+**Voice ID Format**: `Provider.ModelId.VoiceId` — e.g., `Telnyx.KokoroTTS.af_heart`, `Telnyx.NaturalHD.andersen_johan`, `Polly.Amy-Neural`, `Azure.en-CA-ClaraNeural`
+
+**Telephony Components:**
+| Feature | Price |
+|---------|-------|
+| Inbound/Outbound calls | Starting $0.002/min |
+| TeXML fee | $0.002/call |
+| Call recording | $0.002/min |
+| Conference | $0.002/participant/min |
+| Call transfer | $0.10/invocation |
+| AMD (standard) | Free |
+| AMD (premium) | $0.0065/call |
+
 ### What Costs Extra
 - Premium third-party models (GPT-4o, Claude, etc.) — at provider's rate
 - Third-party TTS (ElevenLabs, etc.) — at provider's rate
 - BYOK (Bring Your Own Key) pass-through fees
-- Telephony per-minute rates (varies by country/direction)
 
 ### Volume Discounts
 Available for monthly commitments. Predictable pricing with discounted rates as spending increases.
@@ -1148,6 +1184,90 @@ try {
   if (err instanceof Telnyx.RateLimitError) { /* 429 */ }
 }
 ```
+
+---
+
+## Rate Limits & Error Handling
+
+### Rate Limit Headers
+| Header | Description |
+|--------|-------------|
+| `x-ratelimit-limit` | Max requests in current window |
+| `x-ratelimit-remaining` | Requests remaining |
+| `x-ratelimit-reset` | Seconds until reset |
+
+### HTTP Error Codes
+| Code | Meaning | SDK Class |
+|------|---------|-----------|
+| 400 | Bad Request | `BadRequestError` |
+| 401 | Unauthorized (invalid API key) | `AuthenticationError` |
+| 403 | Permission Denied | `PermissionDeniedError` |
+| 404 | Not Found | `NotFoundError` |
+| 422 | Unprocessable Entity | `UnprocessableEntityError` |
+| 429 | Rate Limit Exceeded | `RateLimitError` |
+| 500+ | Server Error | `InternalServerError` |
+
+**SDK auto-retries**: 408, 409, 429, and 500+ errors are automatically retried up to 2 times with exponential backoff.
+
+**Webhook timeout**: Endpoints must respond within **2000ms** with 2xx. Non-2xx triggers retry.
+
+---
+
+## Knowledge Base
+
+### Setup
+- **Portal**: Drag-and-drop files (PDF, DOCX, TXT) or enter URLs
+- **API**: Upload documents or embed website content via embedding endpoint
+- **Auto-update**: Embeddings auto-update when documents change
+
+### Embedding Models
+- `thenlper/gte-large`
+- `intfloat/multilingual-e5-large`
+- `sentence-transformers/all-mpnet-base-v2`
+
+Operates on Telnyx Storage Buckets. Processing is asynchronous. 90%+ cheaper than competitors on embeddings.
+
+---
+
+## Transcription Timing (Endpointing)
+
+Fine-tune when the AI considers the user's turn "done":
+
+| Setting | Description | Recommended |
+|---------|-------------|-------------|
+| `on_punctuation_seconds` | Delay after period/question mark | 0.1s |
+| `on_no_punctuation_seconds` | Delay after unpunctuated pause | 1.5s |
+| `on_number_seconds` | Delay after digit sequences | 1.0s |
+
+These settings prevent the AI from interrupting the user mid-sentence while keeping response times fast.
+
+---
+
+## Inference API (Standalone LLM)
+
+Telnyx also offers a standalone inference API (OpenAI-compatible):
+
+```bash
+POST https://api.telnyx.com/v2/ai/chat/completions
+{
+  "model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "stream": true,
+  "tools": [...],
+  "tool_choice": "auto"
+}
+```
+
+**Works with OpenAI SDK** — just change the base URL:
+```javascript
+import OpenAI from 'openai';
+const client = new OpenAI({
+  apiKey: 'TELNYX_API_KEY',
+  baseURL: 'https://api.telnyx.com/v2/ai'
+});
+```
+
+Supports function calling, streaming, structured output (JSON schema), and parallel tool calls.
 
 ---
 
