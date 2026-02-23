@@ -81,7 +81,7 @@ serve(async (req) => {
     const { data: phoneRecord } = await supabaseAdmin
       .from('phone_numbers')
       .select('user_id')
-      .or(`phone_number.eq.${agentNumber},phone_number.eq.${normalizedPhone.replace(endUserNumber, agentNumber)}`)
+      .or(`number.eq.${agentNumber},number.eq.${normalizedPhone.replace(endUserNumber, agentNumber)}`)
       .limit(1)
       .maybeSingle();
 

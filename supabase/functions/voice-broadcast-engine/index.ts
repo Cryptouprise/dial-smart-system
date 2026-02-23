@@ -963,7 +963,7 @@ serve(async (req) => {
 
     switch (action) {
       case 'start': {
-        if (!broadcast.audio_url && broadcast.ivr_mode !== 'ai_conversational') {
+        if (!broadcast.audio_url && broadcast.ivr_mode !== 'ai_conversational' && broadcast.broadcast_provider !== 'telnyx_ai') {
           const errorMsg = 'No audio generated for this broadcast. Please generate audio first.';
           await supabase.from('voice_broadcasts').update({ last_error: errorMsg, last_error_at: new Date().toISOString() }).eq('id', broadcastId);
           throw new Error(errorMsg);

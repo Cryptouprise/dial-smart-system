@@ -206,8 +206,8 @@ serve(async (req) => {
                   p_organization_id: callLog.organization_id,
                   p_call_log_id: callLog.id,
                   p_retell_call_id: callControlId,
-                  p_duration_minutes: durationSecs / 60,
-                  p_actual_cost_cents: costCents,
+                  p_actual_minutes: durationSecs / 60,
+                  p_retell_cost_cents: costCents,
                 });
 
                 if (finalizeError) {
@@ -225,7 +225,7 @@ serve(async (req) => {
                 .update({
                   last_used: occurredAt,
                 })
-                .eq('phone_number', callerNumber);
+                .eq('number', callerNumber);
             }
           }
           break;
@@ -380,7 +380,7 @@ serve(async (req) => {
           const { data: phoneRecord } = await supabaseAdmin
             .from('phone_numbers')
             .select('user_id')
-            .or(`phone_number.eq.${to},phone_number.ilike.%${to.replace(/\D/g, '').slice(-10)}%`)
+            .or(`number.eq.${to},number.ilike.%${to.replace(/\D/g, '').slice(-10)}%`)
             .limit(1)
             .maybeSingle();
 
@@ -388,13 +388,13 @@ serve(async (req) => {
             // Store inbound SMS
             await supabaseAdmin.from('sms_messages').insert({
               user_id: phoneRecord.user_id,
-              phone_number: from,
-              our_number: to,
-              message: messageText,
+              from_number: from,
+              to_number: to,
+              body: messageText,
               direction: 'inbound',
               status: 'received',
-              provider: 'telnyx',
-              external_id: messageId,
+              provider_type: 'telnyx',
+              provider_message_id: messageId,
             });
 
             // Route to AI SMS processor if configured
@@ -429,7 +429,7 @@ serve(async (req) => {
             const newStatus = eventType === 'message.delivered' ? 'delivered' : 'sent';
             await supabaseAdmin.from('sms_messages')
               .update({ status: newStatus })
-              .eq('external_id', messageId);
+              .eq('provider_message_id', messageId);
           }
           break;
         }
@@ -445,7 +445,7 @@ serve(async (req) => {
                 status: finalizedStatus === 'delivered' ? 'delivered' : 'failed',
                 error: errors.length > 0 ? JSON.stringify(errors) : null,
               })
-              .eq('external_id', messageId);
+              .eq('provider_message_id', messageId);
           }
           break;
         }
