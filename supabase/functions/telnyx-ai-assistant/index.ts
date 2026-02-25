@@ -36,14 +36,18 @@ async function telnyxFetch(
   method: string = 'GET',
   body?: unknown
 ): Promise<{ ok: boolean; status: number; data: any; error?: string }> {
+  // Sanitize API key - remove any whitespace, newlines, or non-ASCII characters
+  const cleanKey = String(apiKey || '').trim().replace(/[^\x20-\x7E]/g, '');
+  if (!cleanKey) {
+    return { ok: false, status: 0, data: null, error: 'API key is empty or invalid after sanitization' };
+  }
+
   const url = `${TELNYX_API_BASE}${path}`;
-  const options: RequestInit = {
-    method,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${cleanKey}`,
+    'Content-Type': 'application/json',
   };
+  const options: RequestInit = { method, headers };
   if (body && method !== 'GET') {
     options.body = JSON.stringify(body);
   }
