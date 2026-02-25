@@ -839,6 +839,141 @@ serve(async (req) => {
         break;
       }
 
+      // ================================================================
+      // TEST CALL - Have the assistant call a phone number
+      // ================================================================
+      case 'test_call': {
+        const { assistant_id, to_number, from_number, dynamic_variables: dynVars } = params;
+        if (!assistant_id) throw new Error('assistant_id is required');
+        if (!to_number) throw new Error('to_number is required — enter the phone number to call');
+
+        // Get assistant from DB
+        const { data: testAssistant } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('*')
+          .eq('id', assistant_id)
+          .eq('user_id', userId)
+          .single();
+
+        if (!testAssistant) throw new Error('Assistant not found');
+        if (!testAssistant.telnyx_assistant_id) throw new Error('Assistant not synced to Telnyx yet');
+
+        // Get TeXML app ID — required for outbound AI calls
+        const texmlAppId = testAssistant.telnyx_texml_app_id;
+        if (!texmlAppId) {
+          // Try to get it from the assistant on Telnyx
+          const getRes = await telnyxFetch(`/ai/assistants/${testAssistant.telnyx_assistant_id}`, apiKey!);
+          if (!getRes.ok) throw new Error('Could not retrieve assistant details from Telnyx');
+          const texmlId = getRes.data?.data?.telephony_settings?.default_texml_app_id;
+          if (!texmlId) throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled.');
+          // Update local DB
+          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
+          // Use it
+          Object.defineProperty(testAssistant, 'telnyx_texml_app_id', { value: texmlId });
+        }
+
+        const finalTexmlId = testAssistant.telnyx_texml_app_id;
+
+        // Determine From number
+        let callerNumber = from_number;
+        if (!callerNumber) {
+          // Try to get a Telnyx number from phone_numbers table
+          const { data: phoneNum } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('phone_number')
+            .eq('user_id', userId)
+            .eq('provider', 'telnyx')
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          callerNumber = phoneNum?.phone_number;
+        }
+        if (!callerNumber) {
+          throw new Error('No from_number provided and no active Telnyx numbers found. Purchase a Telnyx number first or provide a from_number.');
+        }
+
+        // Clean phone numbers to E.164
+        const cleanTo = to_number.replace(/\D/g, '');
+        const cleanFrom = callerNumber.replace(/\D/g, '');
+        const formattedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
+        const formattedFrom = cleanFrom.startsWith('1') ? `+${cleanFrom}` : `+1${cleanFrom}`;
+
+        // Make the outbound AI call via TeXML
+        const callPayload: any = {
+          From: formattedFrom,
+          To: formattedTo,
+          AIAssistantId: testAssistant.telnyx_assistant_id,
+        };
+
+        // Include dynamic variables if provided
+        if (dynVars && typeof dynVars === 'object' && Object.keys(dynVars).length > 0) {
+          callPayload.AIAssistantDynamicVariables = dynVars;
+        }
+
+        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}`);
+
+        const callRes = await telnyxFetch(
+          `/texml/ai_calls/${finalTexmlId}`,
+          apiKey!, 'POST', callPayload
+        );
+
+        if (!callRes.ok) {
+          throw new Error(`Test call failed: ${callRes.error || JSON.stringify(callRes.data)}`);
+        }
+
+        const callData = callRes.data?.data || callRes.data;
+        result = {
+          success: true,
+          call_sid: callData?.call_sid || callData?.sid,
+          call_control_id: callData?.call_control_id,
+          from: formattedFrom,
+          to: formattedTo,
+          assistant: testAssistant.name,
+          message: `Test call initiated! Your phone (${formattedTo}) should ring in a few seconds.`,
+        };
+        break;
+      }
+
+      // ================================================================
+      // LIST AVAILABLE DYNAMIC VARIABLES (system + custom reference)
+      // ================================================================
+      case 'list_variables': {
+        result = {
+          system_variables: [
+            { name: '{{telnyx_current_time}}', description: 'Current date and time in UTC', example: 'Monday, February 24 2025 04:04:15 PM UTC' },
+            { name: '{{telnyx_conversation_channel}}', description: 'Channel type: phone_call, web_call, or sms_chat', example: 'phone_call' },
+            { name: '{{telnyx_agent_target}}', description: 'Phone number or SIP URI of the agent', example: '+13128675309' },
+            { name: '{{telnyx_end_user_target}}', description: 'Phone number or identifier of the person being called', example: '+15551234567' },
+            { name: '{{telnyx_end_user_target_verified}}', description: 'Whether the end user number is verified (inbound only)', example: 'true' },
+            { name: '{{call_control_id}}', description: 'Unique identifier for the call', example: 'v3:abc123...' },
+          ],
+          custom_variables: [
+            { name: '{{first_name}}', description: 'Lead first name — injected via API call or dynamic vars webhook' },
+            { name: '{{last_name}}', description: 'Lead last name' },
+            { name: '{{full_name}}', description: 'Lead full name' },
+            { name: '{{company}}', description: 'Company or business name' },
+            { name: '{{lead_source}}', description: 'Where the lead came from' },
+            { name: '{{current_time}}', description: 'Current time (from webhook)' },
+            { name: '{{address}}', description: 'Lead address' },
+            { name: '{{email}}', description: 'Lead email' },
+            { name: '{{phone}}', description: 'Lead phone number' },
+            { name: '{{utility_provider}}', description: 'Utility provider name' },
+            { name: '{{appointment_time}}', description: 'Scheduled appointment time' },
+            { name: '{{callback_reason}}', description: 'Why we are calling back' },
+          ],
+          how_it_works: {
+            priority_order: [
+              '1. AIAssistantDynamicVariables in outbound API call (highest priority)',
+              '2. dynamic_variables_webhook_url — POST at conversation start, must respond in <1 second',
+              '3. Default values set in assistant configuration (lowest priority)',
+            ],
+            webhook_url: `${supabaseUrl}/functions/v1/telnyx-dynamic-vars`,
+            webhook_note: 'The dynamic vars webhook auto-loads lead data from your database using the phone number. No manual setup needed.',
+          },
+        };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
