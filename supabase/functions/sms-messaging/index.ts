@@ -100,7 +100,7 @@ serve(async (req) => {
     };
 
     // Get Telnyx credentials (for health check)
-    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
 
     let result: Record<string, unknown>;
 

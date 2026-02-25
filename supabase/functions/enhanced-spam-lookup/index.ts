@@ -909,7 +909,7 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
 }
 
 async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
-  const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+  const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
   
   if (!telnyxApiKey) {
     return new Response(JSON.stringify({ 

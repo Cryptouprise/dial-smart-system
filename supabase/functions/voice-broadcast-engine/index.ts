@@ -603,7 +603,7 @@ serve(async (req) => {
       retellKey: Deno.env.get('RETELL_AI_API_KEY'),
       twilioAccountSid: Deno.env.get('TWILIO_ACCOUNT_SID'),
       twilioAuthToken: Deno.env.get('TWILIO_AUTH_TOKEN'),
-      telnyxApiKey: Deno.env.get('TELNYX_API_KEY'),
+      telnyxApiKey: Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null,
     };
 
     const supabase = createClient(supabaseUrl, supabaseKey);

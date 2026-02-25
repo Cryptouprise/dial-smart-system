@@ -203,7 +203,7 @@ serve(async (req) => {
 
     // Provider-specific setup
     const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+    const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
 
     if (provider === 'retell' && !retellApiKey) {
       throw new Error('RETELL_AI_API_KEY is not configured');

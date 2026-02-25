@@ -157,7 +157,9 @@ serve(async (req) => {
     const { action, ...params } = bodyJson;
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
-    const apiKey = Deno.env.get('TELNYX_API_KEY');
+    const rawApiKey = Deno.env.get('TELNYX_API_KEY');
+    // Sanitize: trim whitespace and remove non-ASCII/invisible characters
+    const apiKey = rawApiKey?.trim().replace(/[^\x20-\x7E]/g, '') || null;
     if (!apiKey && action !== 'list_assistants' && action !== 'health_check') {
       return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
