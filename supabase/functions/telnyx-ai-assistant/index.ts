@@ -343,16 +343,53 @@ serve(async (req) => {
             case 'model':
             case 'instructions':
             case 'greeting':
+            case 'fallback_model':
               telnyxUpdate[key] = value;
               dbUpdate[key] = value;
               break;
             case 'voice':
-              telnyxUpdate.voice_settings = { voice: value };
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), voice: value };
               dbUpdate.voice = value;
+              break;
+            case 'voice_speed':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), speed: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), voice_speed: value };
+              break;
+            case 'voice_provider':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), provider: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), voice_provider: value };
+              break;
+            case 'voice_model':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), model: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), voice_model: value };
               break;
             case 'transcription_model':
               telnyxUpdate.transcription = { model: value };
               dbUpdate.transcription_model = value;
+              break;
+            case 'end_of_turn_threshold':
+              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_threshold: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_threshold: value };
+              break;
+            case 'end_of_turn_timeout_ms':
+              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_timeout_ms: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_timeout_ms: value };
+              break;
+            case 'eager_end_of_turn_threshold':
+              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), eager_end_of_turn_threshold: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), eager_end_of_turn_threshold: value };
+              break;
+            case 'noise_suppression':
+              telnyxUpdate.noise_suppression = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), noise_suppression: value };
+              break;
+            case 'background_audio':
+              telnyxUpdate.background_audio = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), background_audio: value };
+              break;
+            case 'speaking_plan':
+              telnyxUpdate.speaking_plan = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), speaking_plan: value };
               break;
             case 'tools':
               telnyxUpdate.tools = (value as any[]).map(buildToolConfig);
@@ -364,6 +401,30 @@ serve(async (req) => {
             case 'dynamic_variables':
               telnyxUpdate.dynamic_variables = value;
               dbUpdate.dynamic_variables = value;
+              break;
+            case 'max_call_duration_seconds':
+              telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), max_call_duration_seconds: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), max_call_duration_seconds: value };
+              break;
+            case 'user_idle_timeout_seconds':
+              telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), user_idle_timeout_seconds: value };
+              dbUpdate.metadata = { ...(existing.metadata || {}), user_idle_timeout_seconds: value };
+              break;
+            case 'amd_settings':
+              telnyxUpdate.amd_settings = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), amd_settings: value };
+              break;
+            case 'recording_settings':
+              telnyxUpdate.recording_settings = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), recording_settings: value };
+              break;
+            case 'greeting_mode':
+              telnyxUpdate.greeting_mode = value;
+              dbUpdate.metadata = { ...(existing.metadata || {}), greeting_mode: value };
+              break;
+            case 'enabled_features':
+              telnyxUpdate.enabled_features = value;
+              dbUpdate.enabled_features = value;
               break;
           }
         }
