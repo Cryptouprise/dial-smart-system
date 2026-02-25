@@ -98,7 +98,7 @@ serve(async (req) => {
     }
 
     const { action, ...params } = await req.json();
-    const apiKey = Deno.env.get('TELNYX_API_KEY');
+    const apiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
 
     if (!apiKey && action !== 'health_check') {
       throw new Error('TELNYX_API_KEY not configured');

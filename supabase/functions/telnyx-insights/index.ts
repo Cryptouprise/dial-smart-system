@@ -68,7 +68,7 @@ serve(async (req) => {
     const userId = user.id;
 
     const { action, ...params } = await req.json();
-    const apiKey = Deno.env.get('TELNYX_API_KEY');
+    const apiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
     let result: any = {};
 
     switch (action) {
