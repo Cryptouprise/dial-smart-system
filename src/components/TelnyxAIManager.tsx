@@ -14,6 +14,7 @@ import {
   Plus, RefreshCw, Trash2, Copy, Phone, Bot, Brain,
   Mic, MessageSquare, Calendar, Database, Settings,
   CheckCircle, AlertCircle, Loader2, ExternalLink, Zap,
+  PhoneCall, Variable, Info, BookOpen,
 } from 'lucide-react';
 
 interface TelnyxAssistant {
@@ -61,7 +62,7 @@ Key behaviors:
 - If they're not interested, be respectful and end the call gracefully
 - Never be pushy or aggressive
 
-Current time: {{current_time}}
+Current time: {{telnyx_current_time}}
 Lead info: {{full_name}}, {{company}}, {{lead_source}}`;
 
 const DEFAULT_GREETING = "Hi {{first_name}}, this is an AI assistant calling on behalf of our team. How are you doing today?";
@@ -87,6 +88,230 @@ async function callEdgeFunction(functionName: string, body: any) {
   return data;
 }
 
+// =============================================
+// TEST CALL DIALOG
+// =============================================
+const TestCallDialog: React.FC<{ assistant: TelnyxAssistant; onClose: () => void }> = ({ assistant, onClose }) => {
+  const { toast } = useToast();
+  const [toNumber, setToNumber] = useState('');
+  const [fromNumber, setFromNumber] = useState('');
+  const [calling, setCalling] = useState(false);
+  const [callResult, setCallResult] = useState<any>(null);
+  const [dynVars, setDynVars] = useState('{\n  "first_name": "John",\n  "last_name": "Smith",\n  "company": "Test Corp"\n}');
+
+  const handleTestCall = async () => {
+    if (!toNumber.trim()) {
+      toast({ title: 'Enter Phone Number', description: 'Enter the number you want the AI to call', variant: 'destructive' });
+      return;
+    }
+    setCalling(true);
+    setCallResult(null);
+    try {
+      let parsedVars = {};
+      try { parsedVars = JSON.parse(dynVars); } catch { /* ignore parse errors */ }
+
+      const data = await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'test_call',
+        assistant_id: assistant.id,
+        to_number: toNumber,
+        from_number: fromNumber || undefined,
+        dynamic_variables: parsedVars,
+      });
+      setCallResult(data);
+      toast({ title: '📞 Call Initiated!', description: data.message });
+    } catch (err: any) {
+      toast({ title: 'Call Failed', description: err.message, variant: 'destructive' });
+      setCallResult({ error: err.message });
+    } finally {
+      setCalling(false);
+    }
+  };
+
+  return (
+    <Card className="border-2 border-primary/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <PhoneCall className="h-5 w-5 text-primary" />
+          Test Call — {assistant.name}
+        </CardTitle>
+        <CardDescription>
+          Have this AI assistant call a phone number. The agent will use its instructions, voice, and tools in a live call.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Phone Number to Call *</Label>
+            <Input
+              value={toNumber}
+              onChange={e => setToNumber(e.target.value)}
+              placeholder="+1 (555) 123-4567"
+              type="tel"
+            />
+            <p className="text-xs text-muted-foreground">Enter your phone number — the AI will call you</p>
+          </div>
+          <div className="space-y-2">
+            <Label>From Number (optional)</Label>
+            <Input
+              value={fromNumber}
+              onChange={e => setFromNumber(e.target.value)}
+              placeholder="Auto-detect Telnyx number"
+              type="tel"
+            />
+            <p className="text-xs text-muted-foreground">Leave blank to use your first active Telnyx number</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Dynamic Variables (JSON — injected into the call)</Label>
+          <Textarea
+            value={dynVars}
+            onChange={e => setDynVars(e.target.value)}
+            className="font-mono text-sm min-h-[100px]"
+            placeholder='{"first_name": "John", "company": "Acme"}'
+          />
+          <p className="text-xs text-muted-foreground">
+            These override the {"{{variable}}"} placeholders in your instructions and greeting
+          </p>
+        </div>
+
+        {callResult && (
+          <Card className={callResult.error ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/50 bg-green-500/5'}>
+            <CardContent className="py-3">
+              {callResult.error ? (
+                <p className="text-sm text-destructive">{callResult.error}</p>
+              ) : (
+                <div className="text-sm space-y-1">
+                  <p className="font-medium text-green-700">✅ {callResult.message}</p>
+                  <p className="text-muted-foreground">From: {callResult.from} → To: {callResult.to}</p>
+                  {callResult.call_sid && <p className="text-xs text-muted-foreground">Call SID: {callResult.call_sid}</p>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={handleTestCall} disabled={calling} className="gap-1">
+            {calling ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
+            {calling ? 'Calling...' : 'Call Now'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// =============================================
+// DYNAMIC VARIABLES REFERENCE PANEL
+// =============================================
+const DynamicVariablesPanel: React.FC = () => {
+  const [varData, setVarData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await callEdgeFunction('telnyx-ai-assistant', { action: 'list_variables' });
+        setVarData(data);
+      } catch { /* ignore */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (!varData) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* How It Works */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2"><Info className="h-4 w-4" />How Dynamic Variables Work</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Variables let you personalize every call. Use <code className="bg-muted px-1 rounded">{"{{variable_name}}"}</code> in your instructions and greeting.
+          </p>
+          <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+            {varData.how_it_works?.priority_order?.map((step: string, i: number) => (
+              <p key={i} className="text-xs text-muted-foreground">{step}</p>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            <strong>Webhook:</strong> <code className="bg-muted px-1 rounded text-[10px]">{varData.how_it_works?.webhook_url}</code>
+          </p>
+          <p className="text-xs text-muted-foreground">{varData.how_it_works?.webhook_note}</p>
+        </CardContent>
+      </Card>
+
+      {/* System Variables */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">System Variables (Auto-injected by Telnyx)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="divide-y">
+            {varData.system_variables?.map((v: any) => (
+              <div key={v.name} className="py-2 flex items-start gap-3">
+                <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono whitespace-nowrap">{v.name}</code>
+                <div className="flex-1">
+                  <p className="text-sm">{v.description}</p>
+                  {v.example && <p className="text-xs text-muted-foreground">e.g. {v.example}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Custom Variables */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Custom Variables (From Webhook or API Call)</CardTitle>
+          <CardDescription className="text-xs">
+            These are auto-loaded from your leads database via the dynamic vars webhook when a call starts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {varData.custom_variables?.map((v: any) => (
+              <div key={v.name} className="flex items-center gap-2 py-1">
+                <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">{v.name}</code>
+                <span className="text-xs text-muted-foreground">{v.description}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Calendar Integration Info */}
+      <Card className="border-blue-500/20 bg-blue-500/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-blue-500" />Calendar Integration</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p>Calendar booking is <strong>automatically added</strong> as a webhook tool on every new assistant. The AI can:</p>
+          <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm">
+            <li><code className="bg-muted px-1 rounded">get_available_slots</code> — Check your calendar availability for a given date</li>
+            <li><code className="bg-muted px-1 rounded">book_appointment</code> — Book an appointment with lead name, email, phone, date/time</li>
+          </ul>
+          <p className="text-muted-foreground text-xs mt-2">
+            <strong>Setup:</strong> Connect Google Calendar in Settings → Calendar tab first. The AI agent will automatically call your calendar-integration endpoint during live calls.
+          </p>
+          <p className="text-muted-foreground text-xs">
+            <strong>In your instructions:</strong> Add something like "When the lead wants to schedule, use the book_appointment tool to check availability and book."
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+// =============================================
+// MAIN COMPONENT
+// =============================================
 const TelnyxAIManager: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('assistants');
@@ -96,6 +321,7 @@ const TelnyxAIManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [testCallAssistant, setTestCallAssistant] = useState<TelnyxAssistant | null>(null);
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -158,7 +384,7 @@ const TelnyxAIManager: React.FC = () => {
 
     setCreating(true);
     try {
-      const data = await callEdgeFunction('telnyx-ai-assistant', {
+      await callEdgeFunction('telnyx-ai-assistant', {
         action: 'create_assistant',
         name: formName,
         description: formDescription || null,
@@ -166,7 +392,7 @@ const TelnyxAIManager: React.FC = () => {
         voice: formVoice,
         instructions: formInstructions,
         greeting: formGreeting || null,
-        tools: [], // Calendar tool auto-added by edge function
+        tools: [],
       });
 
       toast({ title: 'Assistant Created', description: `${formName} is ready on Telnyx` });
@@ -244,7 +470,7 @@ const TelnyxAIManager: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Telnyx Voice AI</h2>
-          <p className="text-muted-foreground">Manage AI assistants, knowledge bases, and scheduled events</p>
+          <p className="text-muted-foreground">Manage AI assistants, test calls, dynamic variables, and more</p>
         </div>
         <div className="flex items-center gap-2">
           {healthStatus && (
@@ -281,15 +507,25 @@ const TelnyxAIManager: React.FC = () => {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="assistants" className="gap-1"><Bot className="h-3 w-3" />Assistants</TabsTrigger>
+          <TabsTrigger value="variables" className="gap-1"><Variable className="h-3 w-3" />Variables</TabsTrigger>
           <TabsTrigger value="insights" className="gap-1"><Brain className="h-3 w-3" />Insights</TabsTrigger>
           <TabsTrigger value="scheduled" className="gap-1"><Calendar className="h-3 w-3" />Scheduled</TabsTrigger>
           <TabsTrigger value="knowledge" className="gap-1"><Database className="h-3 w-3" />Knowledge</TabsTrigger>
+          <TabsTrigger value="docs" className="gap-1"><BookOpen className="h-3 w-3" />Docs</TabsTrigger>
         </TabsList>
 
         {/* ==================== ASSISTANTS TAB ==================== */}
         <TabsContent value="assistants" className="space-y-4">
+          {/* Test Call Panel */}
+          {testCallAssistant && (
+            <TestCallDialog
+              assistant={testCallAssistant}
+              onClose={() => setTestCallAssistant(null)}
+            />
+          )}
+
           {/* Create Form */}
           {showCreateForm && (
             <Card>
@@ -410,6 +646,16 @@ const TelnyxAIManager: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => setTestCallAssistant(a)}
+                          disabled={a.status !== 'active'}
+                        >
+                          <PhoneCall className="h-3.5 w-3.5" />
+                          Test Call
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => handleToggleStatus(a)} title={a.status === 'active' ? 'Pause' : 'Activate'}>
                           {a.status === 'active' ? 'Pause' : 'Activate'}
                         </Button>
@@ -428,6 +674,11 @@ const TelnyxAIManager: React.FC = () => {
           )}
         </TabsContent>
 
+        {/* ==================== VARIABLES TAB ==================== */}
+        <TabsContent value="variables" className="space-y-4">
+          <DynamicVariablesPanel />
+        </TabsContent>
+
         {/* ==================== INSIGHTS TAB ==================== */}
         <TabsContent value="insights" className="space-y-4">
           <InsightsPanel />
@@ -441,6 +692,64 @@ const TelnyxAIManager: React.FC = () => {
         {/* ==================== KNOWLEDGE TAB ==================== */}
         <TabsContent value="knowledge" className="space-y-4">
           <KnowledgeBasePanel />
+        </TabsContent>
+
+        {/* ==================== DOCS TAB ==================== */}
+        <TabsContent value="docs" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Telnyx AI Quick Reference</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div>
+                <h4 className="font-semibold mb-2">🤖 Creating Agents</h4>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li><strong>Name & Instructions</strong> are required — instructions are the system prompt</li>
+                  <li><strong>Greeting</strong> is spoken first when the call connects</li>
+                  <li><strong>Model</strong>: Qwen 3 235B is free on Telnyx and recommended for voice</li>
+                  <li><strong>Voice</strong>: NaturalHD voices sound most human ($0.000012/char)</li>
+                  <li><strong>Calendar tool</strong> is auto-added — just mention booking in your instructions</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">📞 Test Calls</h4>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li>Click <strong>"Test Call"</strong> on any active assistant</li>
+                  <li>Enter your phone number — the AI will call you within seconds</li>
+                  <li>You can inject dynamic variables for personalization testing</li>
+                  <li>Requires at least one active Telnyx phone number</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">📋 Dynamic Variables</h4>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li>Use <code className="bg-muted px-1 rounded">{"{{variable_name}}"}</code> in instructions & greeting</li>
+                  <li>System vars like <code className="bg-muted px-1 rounded">{"{{telnyx_current_time}}"}</code> are auto-filled</li>
+                  <li>Custom vars are loaded from your leads DB via the dynamic vars webhook</li>
+                  <li>See the <strong>Variables</strong> tab for the full reference</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">📅 Calendar Booking</h4>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li>Connect Google Calendar first in Settings → Calendar</li>
+                  <li>The webhook tool is auto-configured on every new assistant</li>
+                  <li>The AI calls <code className="bg-muted px-1 rounded">get_available_slots</code> and <code className="bg-muted px-1 rounded">book_appointment</code></li>
+                  <li>Include booking instructions in your agent prompt</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">💡 Tips for Best Results</h4>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  <li>Keep instructions under 4000 characters for best latency</li>
+                  <li>Use numbered steps in your script for consistent flow</li>
+                  <li>Always include objection handling instructions</li>
+                  <li>Test with real phone calls before launching campaigns</li>
+                  <li>Telnyx memory persists across calls — the AI remembers previous conversations</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
