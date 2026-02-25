@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,8 +14,10 @@ import {
   Plus, RefreshCw, Trash2, Copy, Phone, Bot, Brain,
   Mic, MessageSquare, Calendar, Database, Settings,
   CheckCircle, AlertCircle, Loader2, ExternalLink, Zap,
-  PhoneCall, Variable, Info, BookOpen,
+  PhoneCall, Variable, Info, BookOpen, Pencil,
 } from 'lucide-react';
+
+const TelnyxAssistantEditor = lazy(() => import('@/components/TelnyxAssistantEditor'));
 
 interface TelnyxAssistant {
   id: string;
@@ -322,6 +324,7 @@ const TelnyxAIManager: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [testCallAssistant, setTestCallAssistant] = useState<TelnyxAssistant | null>(null);
+  const [editingAssistant, setEditingAssistant] = useState<TelnyxAssistant | null>(null);
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -518,6 +521,19 @@ const TelnyxAIManager: React.FC = () => {
 
         {/* ==================== ASSISTANTS TAB ==================== */}
         <TabsContent value="assistants" className="space-y-4">
+          {/* Editor Panel */}
+          {editingAssistant && (
+            <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+              <TelnyxAssistantEditor
+                assistant={editingAssistant}
+                models={models}
+                voices={voices}
+                onSave={() => { setEditingAssistant(null); loadAssistants(); }}
+                onClose={() => setEditingAssistant(null)}
+              />
+            </Suspense>
+          )}
+
           {/* Test Call Panel */}
           {testCallAssistant && (
             <TestCallDialog
@@ -646,6 +662,15 @@ const TelnyxAIManager: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => setEditingAssistant(a)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
                         <Button
                           variant="default"
                           size="sm"
