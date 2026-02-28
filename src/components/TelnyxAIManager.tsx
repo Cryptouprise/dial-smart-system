@@ -323,6 +323,7 @@ const TelnyxAIManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingNumbers, setSyncingNumbers] = useState(false);
   const [testCallAssistant, setTestCallAssistant] = useState<TelnyxAssistant | null>(null);
   const [editingAssistant, setEditingAssistant] = useState<TelnyxAssistant | null>(null);
 
@@ -453,6 +454,22 @@ const TelnyxAIManager: React.FC = () => {
     }
   };
 
+  const handleSyncNumbers = async () => {
+    setSyncingNumbers(true);
+    try {
+      const data = await callEdgeFunction('phone-number-purchasing', { action: 'sync_telnyx' });
+      if (data.synced > 0) {
+        toast({ title: 'Numbers Synced', description: `${data.synced} Telnyx numbers imported (${data.already_existed} already existed)` });
+      } else {
+        toast({ title: 'Numbers Up to Date', description: data.message || 'All Telnyx numbers already synced' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Number Sync Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setSyncingNumbers(false);
+    }
+  };
+
   const handleToggleStatus = async (assistant: TelnyxAssistant) => {
     const newStatus = assistant.status === 'active' ? 'paused' : 'active';
     try {
@@ -482,6 +499,10 @@ const TelnyxAIManager: React.FC = () => {
               {healthStatus.telnyx_configured ? (healthStatus.telnyx_api_reachable ? 'Connected' : 'API Error') : 'Not Configured'}
             </Badge>
           )}
+          <Button variant="outline" size="sm" onClick={handleSyncNumbers} disabled={syncingNumbers}>
+            <Phone className={`h-4 w-4 mr-1 ${syncingNumbers ? 'animate-spin' : ''}`} />
+            {syncingNumbers ? 'Syncing...' : 'Sync Numbers'}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
             <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? 'animate-spin' : ''}`} />
             Sync

@@ -79,6 +79,114 @@ serve(async (req) => {
 
     if (req.method === 'POST') {
       const body = parseBody();
+
+      // ================================================================
+      // SYNC EXISTING TELNYX NUMBERS
+      // ================================================================
+      if (body.action === 'sync_telnyx') {
+        console.log('[Phone Number Purchasing] Syncing existing Telnyx numbers for user:', userId);
+        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
+        if (!telnyxApiKey) {
+          return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Fetch all phone numbers from Telnyx account
+        let allNumbers: any[] = [];
+        let pageNumber = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+          const listRes = await fetch(`https://api.telnyx.com/v2/phone_numbers?page[size]=250&page[number]=${pageNumber}`, {
+            headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
+          });
+
+          if (!listRes.ok) {
+            const errText = await listRes.text();
+            console.error('Telnyx list numbers failed:', errText);
+            return new Response(JSON.stringify({ error: `Failed to fetch Telnyx numbers: ${listRes.status}` }), {
+              status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const listData = await listRes.json();
+          const pageNumbers = listData.data || [];
+          allNumbers = allNumbers.concat(pageNumbers);
+
+          // Check if there are more pages
+          const totalPages = listData.meta?.total_pages || 1;
+          hasMore = pageNumber < totalPages;
+          pageNumber++;
+        }
+
+        console.log(`[Phone Number Purchasing] Found ${allNumbers.length} numbers in Telnyx account`);
+
+        if (allNumbers.length === 0) {
+          return new Response(JSON.stringify({
+            success: true,
+            synced: 0,
+            message: 'No phone numbers found in your Telnyx account'
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Get existing Telnyx numbers in our DB to avoid duplicates
+        const { data: existingNumbers } = await supabaseClient
+          .from('phone_numbers')
+          .select('number')
+          .eq('user_id', userId)
+          .eq('provider', 'telnyx');
+
+        const existingSet = new Set((existingNumbers || []).map((n: any) => n.number));
+
+        // Build insert array for new numbers
+        const newNumbers = allNumbers
+          .filter((tn: any) => !existingSet.has(tn.phone_number))
+          .map((tn: any) => ({
+            number: tn.phone_number,
+            area_code: tn.phone_number?.replace(/\D/g, '').substring(1, 4) || '',
+            status: tn.status === 'active' ? 'active' : 'inactive',
+            daily_calls: 0,
+            user_id: userId,
+            provider: 'telnyx',
+            allowed_uses: ['voice_ai'],
+            rotation_enabled: false,
+            friendly_name: tn.connection_name || `Telnyx ${tn.phone_number}`,
+          }));
+
+        if (newNumbers.length === 0) {
+          return new Response(JSON.stringify({
+            success: true,
+            synced: 0,
+            total_in_account: allNumbers.length,
+            message: 'All Telnyx numbers already synced'
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const { error: insertError } = await supabaseClient
+          .from('phone_numbers')
+          .insert(newNumbers);
+
+        if (insertError) {
+          console.error('Telnyx sync insert error:', insertError);
+          return new Response(JSON.stringify({ error: 'Failed to save synced numbers' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        console.log(`[Phone Number Purchasing] Synced ${newNumbers.length} new Telnyx numbers`);
+        return new Response(JSON.stringify({
+          success: true,
+          synced: newNumbers.length,
+          total_in_account: allNumbers.length,
+          already_existed: allNumbers.length - newNumbers.length,
+          numbers: newNumbers.map((n: any) => n.number),
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // ================================================================
+      // PURCHASE NEW NUMBERS (existing flow)
+      // ================================================================
       
       // Validate input
       const validationResult = PurchaseRequestSchema.safeParse(body);
