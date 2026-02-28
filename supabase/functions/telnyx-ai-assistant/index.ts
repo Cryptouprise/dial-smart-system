@@ -182,6 +182,7 @@ serve(async (req) => {
           voice, transcription_model, tools, enabled_features,
           dynamic_variables, insight_group_id, data_retention,
           fallback_model, llm_api_key_ref, voice_api_key_ref,
+          call_direction,
         } = params;
 
         if (!name || !instructions) {
@@ -300,6 +301,7 @@ serve(async (req) => {
             data_retention: data_retention !== false,
             insight_group_id: insight_group_id || null,
             status: 'active',
+            call_direction: call_direction || 'outbound',
             metadata: { telnyx_response: telnyxAssistant },
           })
           .select()

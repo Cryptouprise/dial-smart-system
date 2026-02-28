@@ -5933,6 +5933,7 @@ export type Database = {
       }
       telnyx_assistants: {
         Row: {
+          call_direction: string
           created_at: string
           data_retention: boolean | null
           description: string | null
@@ -5958,6 +5959,7 @@ export type Database = {
           voice: string | null
         }
         Insert: {
+          call_direction?: string
           created_at?: string
           data_retention?: boolean | null
           description?: string | null
@@ -5983,6 +5985,7 @@ export type Database = {
           voice?: string | null
         }
         Update: {
+          call_direction?: string
           created_at?: string
           data_retention?: boolean | null
           description?: string | null

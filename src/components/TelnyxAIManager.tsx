@@ -33,6 +33,7 @@ interface TelnyxAssistant {
   tools: any[];
   enabled_features: string[];
   is_default: boolean;
+  call_direction: 'inbound' | 'outbound' | 'both';
   created_at: string;
   updated_at: string;
 }
@@ -336,6 +337,7 @@ const TelnyxAIManager: React.FC = () => {
   const [formInstructions, setFormInstructions] = useState(DEFAULT_INSTRUCTIONS);
   const [formGreeting, setFormGreeting] = useState(DEFAULT_GREETING);
   const [formAmd, setFormAmd] = useState(true);
+  const [formDirection, setFormDirection] = useState<'inbound' | 'outbound' | 'both'>('outbound');
 
   // Health check state
   const [healthStatus, setHealthStatus] = useState<any>(null);
@@ -397,6 +399,7 @@ const TelnyxAIManager: React.FC = () => {
         instructions: formInstructions,
         greeting: formGreeting || null,
         tools: [],
+        call_direction: formDirection,
       });
 
       toast({ title: 'Assistant Created', description: `${formName} is ready on Telnyx` });
@@ -607,6 +610,19 @@ const TelnyxAIManager: React.FC = () => {
                     </Select>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Call Direction</Label>
+                    <Select value={formDirection} onValueChange={(v: 'inbound' | 'outbound' | 'both') => setFormDirection(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="outbound">Outbound</SelectItem>
+                        <SelectItem value="inbound">Inbound</SelectItem>
+                        <SelectItem value="both">Both</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label>Greeting (spoken at call start — supports {"{{variables}}"} )</Label>
                   <Input value={formGreeting} onChange={e => setFormGreeting(e.target.value)} placeholder="Hi {{first_name}}..." />
@@ -666,6 +682,9 @@ const TelnyxAIManager: React.FC = () => {
                             {a.status}
                           </Badge>
                           {a.is_default && <Badge variant="outline" className="text-xs">Default</Badge>}
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {a.call_direction === 'both' ? '↕ Both' : a.call_direction === 'inbound' ? '↓ Inbound' : '↑ Outbound'}
+                          </Badge>
                           {a.telnyx_assistant_id && (
                             <Badge variant="outline" className="text-xs gap-1">
                               <CheckCircle className="h-2.5 w-2.5" />Synced
