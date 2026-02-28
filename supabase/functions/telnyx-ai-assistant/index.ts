@@ -947,13 +947,13 @@ serve(async (req) => {
           // Try to get a Telnyx number from phone_numbers table
           const { data: phoneNum } = await supabaseAdmin
             .from('phone_numbers')
-            .select('phone_number')
+            .select('number')
             .eq('user_id', userId)
             .eq('provider', 'telnyx')
             .eq('status', 'active')
             .limit(1)
             .maybeSingle();
-          callerNumber = phoneNum?.phone_number;
+          callerNumber = phoneNum?.number;
         }
         if (!callerNumber) {
           throw new Error('No from_number provided and no active Telnyx numbers found. Purchase a Telnyx number first or provide a from_number.');
