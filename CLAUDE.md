@@ -513,6 +513,63 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### February 28, 2026 - Telnyx Integration Fixes: Metadata Clobbering, Missing Settings, Expanded Models (NOT DEPLOYED)
+
+**Summary:** Fixed critical metadata clobbering bug that caused agent saves to lose settings. Added 15+ missing Telnyx API settings to the editor. Expanded models (18) and voices (27) lists. Fixed phone lookup bug in dynamic vars webhook.
+
+**What Was Fixed:**
+
+| Issue | Severity | Fix |
+|-------|----------|-----|
+| **Metadata clobbering on save** | CRITICAL | Each metadata field was overwriting previous by spreading from `existing.metadata` instead of accumulating. Saves lost voice_speed, thresholds, AMD settings, recording settings, etc. Fixed by introducing `mergedMetadata` accumulator. |
+| **Sync only captured 6 fields** | HIGH | Sync from Telnyx now captures 20+ fields including transcription settings, enabled features, dynamic variables, all metadata. |
+| **Phone lookup in dynamic-vars** | MEDIUM | Broken `.replace()` logic in phone_numbers query. Fixed to search by both `number` and `phone_number` columns with normalized agent number. |
+| **Missing custom_url audio input** | MEDIUM | Background audio "Custom URL" type had no input field for the URL. Added. |
+| **No input validation** | MEDIUM | Editor now validates name and instructions are not empty before save. |
+
+**What Was Added (TelnyxAssistantEditor):**
+
+| Setting | Tab | Description |
+|---------|-----|-------------|
+| Fallback Model | Agent | Activates if primary LLM unavailable |
+| Voice Provider | Voice | Select Telnyx, ElevenLabs, ResembleAI, AWS, Azure |
+| Voice Model | Voice | ElevenLabs-specific model (shown when provider=elevenlabs) |
+| Voice API Key Ref | Advanced | Telnyx integration secret for ElevenLabs API |
+| LLM API Key Ref | Advanced | Telnyx integration secret for OpenAI/Anthropic |
+| Transcription Language | Voice | 12 languages + auto-detect |
+| Background Audio URL | Voice | Custom URL input for bg audio |
+| Dynamic Vars Webhook | Advanced | Editable webhook URL (was read-only) |
+| Data Retention | Advanced | Privacy setting toggle |
+| Voicemail Audio URL | Calling | Direct audio URL for voicemail (when type=audio_url) |
+| New "Advanced" tab | — | Dedicated tab for API keys, webhook, privacy, features |
+
+**Edge Function Updates (telnyx-ai-assistant):**
+- Models expanded from 6 to 18 (Qwen 3, Llama 4, Gemma 3, Mistral, DeepSeek, GPT-4.1, Claude Sonnet 4, Gemini 2.5)
+- Voices expanded from 8 to 27 across 6 providers
+- Update handler now supports: `voice_api_key_ref`, `llm_api_key_ref`, `transcription_language`, `dynamic_variables_webhook_url`, `data_retention`, `insight_group_id`
+
+**Key Files Modified:**
+- `src/components/TelnyxAssistantEditor.tsx` — Major rewrite (647 → 580 lines, cleaner structure)
+- `supabase/functions/telnyx-ai-assistant/index.ts` — +120 lines (fix + features)
+- `supabase/functions/telnyx-dynamic-vars/index.ts` — Bug fix in phone lookup
+
+**Database Changes:** None
+
+**Deployment Required:**
+```bash
+supabase functions deploy telnyx-ai-assistant
+supabase functions deploy telnyx-dynamic-vars
+```
+
+**Build Validation:** `tsc --noEmit` and `vite build` both pass clean.
+
+**Gotchas/Lessons:**
+- The metadata clobbering bug was the root cause of "agent settings not saving" — each `case` in the update switch was doing `dbUpdate.metadata = { ...existing.metadata, key: val }` which overwrites the accumulated metadata from previous cases
+- Telnyx POST-based updates send only changed fields, but the DB side needs accumulated metadata
+- `prompt()` for adding dynamic variables replaced with inline input field (better UX)
+
+---
+
 ### February 23, 2026 - Telnyx Voice AI Platform FULL INTEGRATION (NOT DEPLOYED)
 
 **Summary:** Complete implementation of Telnyx Voice AI platform integration. Built 7 new edge functions, 1 database migration, 1 frontend component, updated outbound-calling with Telnyx provider path. This is a 100% additive build — no existing Retell functionality was modified or broken. The Telnyx path is a parallel provider option.
