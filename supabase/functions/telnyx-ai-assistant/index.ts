@@ -342,6 +342,11 @@ serve(async (req) => {
         const telnyxUpdate: any = {};
         const dbUpdate: any = { updated_at: new Date().toISOString() };
 
+        // CRITICAL: Accumulate metadata from existing, then layer each change on top.
+        // Previous code was clobbering metadata by spreading from existing.metadata
+        // on every case instead of accumulating into dbUpdate.metadata.
+        const mergedMetadata: any = { ...(existing.metadata || {}) };
+
         for (const [key, value] of Object.entries(updateFields)) {
           switch (key) {
             case 'name':
@@ -359,43 +364,55 @@ serve(async (req) => {
               break;
             case 'voice_speed':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), speed: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_speed: value };
+              mergedMetadata.voice_speed = value;
               break;
             case 'voice_provider':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), provider: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_provider: value };
+              mergedMetadata.voice_provider = value;
               break;
             case 'voice_model':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), model: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_model: value };
+              mergedMetadata.voice_model = value;
+              break;
+            case 'voice_api_key_ref':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), api_key_ref: value };
+              mergedMetadata.voice_api_key_ref = value;
+              break;
+            case 'llm_api_key_ref':
+              telnyxUpdate.llm_api_key_ref = value;
+              mergedMetadata.llm_api_key_ref = value;
               break;
             case 'transcription_model':
-              telnyxUpdate.transcription = { model: value };
+              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), model: value };
               dbUpdate.transcription_model = value;
+              break;
+            case 'transcription_language':
+              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), language: value };
+              mergedMetadata.transcription_language = value;
               break;
             case 'end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_threshold: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_threshold: value };
+              mergedMetadata.end_of_turn_threshold = value;
               break;
             case 'end_of_turn_timeout_ms':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_timeout_ms: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_timeout_ms: value };
+              mergedMetadata.end_of_turn_timeout_ms = value;
               break;
             case 'eager_end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), eager_end_of_turn_threshold: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), eager_end_of_turn_threshold: value };
+              mergedMetadata.eager_end_of_turn_threshold = value;
               break;
             case 'noise_suppression':
               telnyxUpdate.noise_suppression = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), noise_suppression: value };
+              mergedMetadata.noise_suppression = value;
               break;
             case 'background_audio':
               telnyxUpdate.background_audio = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), background_audio: value };
+              mergedMetadata.background_audio = value;
               break;
             case 'speaking_plan':
               telnyxUpdate.speaking_plan = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), speaking_plan: value };
+              mergedMetadata.speaking_plan = value;
               break;
             case 'tools':
               telnyxUpdate.tools = (value as any[]).map(buildToolConfig);
@@ -408,32 +425,47 @@ serve(async (req) => {
               telnyxUpdate.dynamic_variables = value;
               dbUpdate.dynamic_variables = value;
               break;
+            case 'dynamic_variables_webhook_url':
+              telnyxUpdate.dynamic_variables_webhook_url = value;
+              dbUpdate.dynamic_variables_webhook_url = value;
+              break;
             case 'max_call_duration_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), max_call_duration_seconds: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), max_call_duration_seconds: value };
+              mergedMetadata.max_call_duration_seconds = value;
               break;
             case 'user_idle_timeout_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), user_idle_timeout_seconds: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), user_idle_timeout_seconds: value };
+              mergedMetadata.user_idle_timeout_seconds = value;
               break;
             case 'amd_settings':
               telnyxUpdate.amd_settings = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), amd_settings: value };
+              mergedMetadata.amd_settings = value;
               break;
             case 'recording_settings':
               telnyxUpdate.recording_settings = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), recording_settings: value };
+              mergedMetadata.recording_settings = value;
               break;
             case 'greeting_mode':
               telnyxUpdate.greeting_mode = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), greeting_mode: value };
+              mergedMetadata.greeting_mode = value;
               break;
             case 'enabled_features':
               telnyxUpdate.enabled_features = value;
               dbUpdate.enabled_features = value;
               break;
+            case 'data_retention':
+              telnyxUpdate.privacy_settings = { data_retention: value };
+              mergedMetadata.data_retention = value;
+              break;
+            case 'insight_group_id':
+              telnyxUpdate.insight_settings = { insight_group_id: value };
+              dbUpdate.insight_group_id = value;
+              break;
           }
         }
+
+        // Apply accumulated metadata to dbUpdate
+        dbUpdate.metadata = mergedMetadata;
 
         // Update Telnyx if there are API changes
         if (Object.keys(telnyxUpdate).length > 0 && existing.telnyx_assistant_id) {
@@ -562,37 +594,63 @@ serve(async (req) => {
             .eq('telnyx_assistant_id', telnyxId)
             .maybeSingle();
 
+          // Build comprehensive metadata from Telnyx response
+          const syncMetadata: any = {
+            telnyx_response: ta,
+            voice_speed: ta.voice_settings?.speed,
+            voice_provider: ta.voice_settings?.provider,
+            voice_model: ta.voice_settings?.model,
+            voice_api_key_ref: ta.voice_settings?.api_key_ref,
+            llm_api_key_ref: ta.llm_api_key_ref,
+            end_of_turn_threshold: ta.transcription?.end_of_turn_threshold,
+            end_of_turn_timeout_ms: ta.transcription?.end_of_turn_timeout_ms,
+            eager_end_of_turn_threshold: ta.transcription?.eager_end_of_turn_threshold,
+            transcription_language: ta.transcription?.language,
+            noise_suppression: ta.noise_suppression,
+            background_audio: ta.background_audio,
+            speaking_plan: ta.speaking_plan,
+            amd_settings: ta.amd_settings,
+            recording_settings: ta.recording_settings,
+            greeting_mode: ta.greeting_mode,
+            max_call_duration_seconds: ta.telephony_settings?.max_call_duration_seconds,
+            user_idle_timeout_seconds: ta.telephony_settings?.user_idle_timeout_seconds,
+            data_retention: ta.privacy_settings?.data_retention,
+          };
+
+          const syncRecord = {
+            name: ta.name,
+            model: ta.model,
+            instructions: ta.instructions,
+            greeting: ta.greeting,
+            voice: ta.voice_settings?.voice,
+            transcription_model: ta.transcription?.model || 'telnyx_deepgram_nova3',
+            tools: ta.tools || [],
+            enabled_features: ta.enabled_features || ['telephony'],
+            dynamic_variables: ta.dynamic_variables || {},
+            dynamic_variables_webhook_url: ta.dynamic_variables_webhook_url,
+            fallback_model: ta.fallback_model,
+            insight_group_id: ta.insight_settings?.insight_group_id,
+            telnyx_texml_app_id: ta.telephony_settings?.default_texml_app_id,
+            telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id,
+            metadata: syncMetadata,
+            updated_at: new Date().toISOString(),
+          };
+
           if (existing) {
-            // Update local record
+            // Update local record with full data
             await supabaseAdmin
               .from('telnyx_assistants')
-              .update({
-                name: ta.name,
-                model: ta.model,
-                instructions: ta.instructions,
-                greeting: ta.greeting,
-                voice: ta.voice_settings?.voice,
-                tools: ta.tools || [],
-                updated_at: new Date().toISOString(),
-              })
+              .update(syncRecord)
               .eq('id', existing.id);
           } else {
-            // Create local record
+            // Create local record with full data
             await supabaseAdmin
               .from('telnyx_assistants')
               .insert({
                 user_id: userId,
                 telnyx_assistant_id: telnyxId,
-                telnyx_texml_app_id: ta.telephony_settings?.default_texml_app_id,
-                telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id,
-                name: ta.name || 'Imported Assistant',
-                model: ta.model || 'Qwen/Qwen3-235B-A22B',
-                instructions: ta.instructions || '',
-                greeting: ta.greeting,
-                voice: ta.voice_settings?.voice || 'Telnyx.NaturalHD.Ava',
-                tools: ta.tools || [],
+                ...syncRecord,
                 status: 'active',
-                metadata: { imported_from: 'telnyx_sync', telnyx_response: ta },
               });
           }
           synced++;
@@ -725,15 +783,30 @@ serve(async (req) => {
       // LIST MODELS
       // ================================================================
       case 'list_models': {
-        // Return known Telnyx-supported models
+        // Comprehensive list of Telnyx-supported models
         result = {
           models: [
+            // Free on Telnyx (hosted)
             { id: 'Qwen/Qwen3-235B-A22B', name: 'Qwen 3 235B', provider: 'Qwen', recommended: true, cost: 'Free on Telnyx' },
+            { id: 'Qwen/Qwen3-32B', name: 'Qwen 3 32B', provider: 'Qwen', cost: 'Free on Telnyx' },
+            { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', name: 'Llama 4 Scout 17B', provider: 'Meta', cost: 'Free on Telnyx' },
+            { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick 17B', provider: 'Meta', cost: 'Free on Telnyx' },
+            { id: 'meta-llama/Meta-Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', provider: 'Meta', cost: 'Free on Telnyx' },
             { id: 'meta-llama/Meta-Llama-3.1-70B-Instruct', name: 'Llama 3.1 70B', provider: 'Meta', cost: 'Free on Telnyx' },
             { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct', name: 'Llama 3.1 8B', provider: 'Meta', cost: 'Free on Telnyx' },
+            { id: 'google/gemma-3-27b-it', name: 'Gemma 3 27B', provider: 'Google', cost: 'Free on Telnyx' },
+            { id: 'google/gemma-3-12b-it', name: 'Gemma 3 12B', provider: 'Google', cost: 'Free on Telnyx' },
+            { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B', provider: 'Mistral', cost: 'Free on Telnyx' },
+            { id: 'deepseek-ai/DeepSeek-V3-0324', name: 'DeepSeek V3', provider: 'DeepSeek', cost: 'Free on Telnyx' },
+            // Requires API key (BYOK)
             { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key' },
             { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+            { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key' },
+            { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key' },
+            { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key' },
+            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'Google', cost: 'Requires API key' },
+            { id: 'gemini-2.5-flash-preview-04-17', name: 'Gemini 2.5 Flash', provider: 'Google', cost: 'Requires API key' },
           ],
         };
         break;
@@ -745,19 +818,39 @@ serve(async (req) => {
       case 'list_voices': {
         result = {
           voices: [
-            // Telnyx NaturalHD (Premium, $0.000012/char)
+            // Telnyx NaturalHD (Premium - most natural, $0.000012/char)
             { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Bella', name: 'Bella', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Chloe', name: 'Chloe', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+            { id: 'Telnyx.NaturalHD.Max', name: 'Max', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+            { id: 'Telnyx.NaturalHD.Ryan', name: 'Ryan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
             // Telnyx Natural (Enhanced, $0.000003/char)
             { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.allison', name: 'Allison', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.jasmine', name: 'Jasmine', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+            { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
             // KokoroTTS (Basic, $0.000003/char)
             { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
             // AWS Polly Neural
             { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+            { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+            { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
             { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+            { id: 'AWS.Polly.Stephen-Neural', name: 'Stephen', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
             // Azure Neural
             { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
+            { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
             { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
+            { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
+            // ElevenLabs (Requires API key)
+            { id: 'ElevenLabs.rachel', name: 'Rachel', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+            { id: 'ElevenLabs.drew', name: 'Drew', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+            { id: 'ElevenLabs.clyde', name: 'Clyde', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
           ],
         };
         break;

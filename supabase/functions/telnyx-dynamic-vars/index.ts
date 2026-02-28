@@ -78,10 +78,12 @@ serve(async (req) => {
     let userId: string | null = null;
 
     // Try to find user by the agent number (our Telnyx number)
+    const agentDigits = agentNumber.replace(/\D/g, '');
+    const normalizedAgent = agentDigits.startsWith('1') ? `+${agentDigits}` : agentDigits.length >= 10 ? `+1${agentDigits}` : agentNumber;
     const { data: phoneRecord } = await supabaseAdmin
       .from('phone_numbers')
       .select('user_id')
-      .or(`number.eq.${agentNumber},number.eq.${normalizedPhone.replace(endUserNumber, agentNumber)}`)
+      .or(`number.eq.${agentNumber},number.eq.${normalizedAgent},phone_number.eq.${agentNumber},phone_number.eq.${normalizedAgent}`)
       .limit(1)
       .maybeSingle();
 
