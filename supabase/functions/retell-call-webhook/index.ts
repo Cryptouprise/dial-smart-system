@@ -931,6 +931,7 @@ serve(async (req) => {
         campaign_id: campaignId,
         phone_number: call.to_number || '',
         caller_id: call.from_number || metadata.caller_id || '',
+        agent_id: call.agent_id ?? null, // CRITICAL: Track which agent was used for analytics
         status: call.call_status === 'ended' ? 'completed' : call.call_status,
         outcome: outcome,
         duration_seconds: durationSeconds,
