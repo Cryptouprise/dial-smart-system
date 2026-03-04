@@ -38,6 +38,7 @@ interface TelnyxAssistant {
   call_direction: 'inbound' | 'outbound' | 'both';
   created_at: string;
   updated_at: string;
+  assigned_phone_numbers?: string[];
 }
 
 interface TelnyxModel {
@@ -787,6 +788,21 @@ const TelnyxAIManager: React.FC = () => {
                           <span className="flex items-center gap-1"><Zap className="h-3 w-3" />{a.tools?.length || 0} tools</span>
                           {a.enabled_features?.includes('messaging') && (
                             <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />SMS</span>
+                          )}
+                          {a.assigned_phone_numbers && a.assigned_phone_numbers.length > 0 ? (
+                            <span className="flex items-center gap-1 text-primary font-medium">
+                              <Phone className="h-3 w-3" />
+                              {a.assigned_phone_numbers.map(n => {
+                                const d = n.replace(/\D/g, '');
+                                if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+                                if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+                                return n;
+                              }).join(', ')}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-destructive/70">
+                              <Phone className="h-3 w-3" />No number
+                            </span>
                           )}
                         </div>
                       </div>

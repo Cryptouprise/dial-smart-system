@@ -1,0 +1,1 @@
+ALTER TABLE public.telnyx_assistants ADD COLUMN IF NOT EXISTS assigned_phone_number_ids TEXT[] DEFAULT '{}';
