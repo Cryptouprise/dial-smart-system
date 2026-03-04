@@ -160,16 +160,50 @@ serve(async (req) => {
               .maybeSingle();
 
             if (phoneRecord) {
-              // Find an active Telnyx assistant configured for inbound
-              const { data: assistant } = await supabaseAdmin
-                .from('telnyx_assistants')
-                .select('id, telnyx_assistant_id, name')
-                .eq('user_id', phoneRecord.user_id)
-                .eq('status', 'active')
-                .in('call_direction', ['inbound', 'both'])
-                .order('created_at', { ascending: false })
+              // Find the phone_number record ID for matching against assigned_phone_number_ids
+              const { data: phoneIdRecord } = await supabaseAdmin
+                .from('phone_numbers')
+                .select('id')
+                .or(`number.eq.${calledNumber},number.ilike.%${calledNumber.replace(/\D/g, '').slice(-10)}%`)
+                .eq('provider', 'telnyx')
                 .limit(1)
                 .maybeSingle();
+
+              let assistant: any = null;
+
+              // First: try to find an assistant that has this specific number assigned
+              if (phoneIdRecord?.id) {
+                const { data: assignedAssistant } = await supabaseAdmin
+                  .from('telnyx_assistants')
+                  .select('id, telnyx_assistant_id, name')
+                  .eq('user_id', phoneRecord.user_id)
+                  .eq('status', 'active')
+                  .in('call_direction', ['inbound', 'both'])
+                  .contains('assigned_phone_number_ids', [phoneIdRecord.id])
+                  .limit(1)
+                  .maybeSingle();
+                assistant = assignedAssistant;
+                if (assistant) {
+                  console.log(`[Telnyx Webhook] Matched inbound number to assigned assistant: ${assistant.name}`);
+                }
+              }
+
+              // Fallback: if no assistant has this number explicitly assigned, use newest inbound assistant
+              if (!assistant) {
+                const { data: fallbackAssistant } = await supabaseAdmin
+                  .from('telnyx_assistants')
+                  .select('id, telnyx_assistant_id, name')
+                  .eq('user_id', phoneRecord.user_id)
+                  .eq('status', 'active')
+                  .in('call_direction', ['inbound', 'both'])
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                assistant = fallbackAssistant;
+                if (assistant) {
+                  console.log(`[Telnyx Webhook] No number-specific assignment, using fallback assistant: ${assistant.name}`);
+                }
+              }
 
               if (assistant?.telnyx_assistant_id) {
                 console.log(`[Telnyx Webhook] Routing inbound call to assistant: ${assistant.name} (${assistant.telnyx_assistant_id})`);
