@@ -30,6 +30,7 @@ interface TelnyxAssistant {
   tools: any[];
   enabled_features: string[];
   is_default: boolean;
+  call_direction: 'inbound' | 'outbound' | 'both';
   created_at: string;
   updated_at: string;
   metadata?: any;
@@ -100,6 +101,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [bgAudioVolume, setBgAudioVolume] = useState(assistant.metadata?.background_audio?.volume || 0.5);
 
   // Calling tab
+  const [callDirection, setCallDirection] = useState<'inbound' | 'outbound' | 'both'>(assistant.call_direction || 'outbound');
   const [maxCallDuration, setMaxCallDuration] = useState(assistant.metadata?.max_call_duration_seconds || 1800);
   const [userIdleTimeout, setUserIdleTimeout] = useState(assistant.metadata?.user_idle_timeout_seconds || 30);
   const [amdAction, setAmdAction] = useState(assistant.metadata?.amd_settings?.action || 'leave_message_stop');
@@ -199,6 +201,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
         },
         recording_settings: { channels: recordingChannels, format: recordingFormat },
         dynamic_variables: dynamicVars,
+        call_direction: callDirection,
       });
 
       toast({ title: 'Saved', description: `${name} updated successfully` });
@@ -502,7 +505,31 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
 
           {/* ===== CALLING TAB ===== */}
           <TabsContent value="calling" className="space-y-4">
-            <h4 className="font-semibold text-sm">Settings</h4>
+            {/* Call Direction */}
+            <h4 className="font-semibold text-sm flex items-center gap-2">
+              <PhoneCall className="h-4 w-4" />
+              Call Direction
+            </h4>
+            <div className="space-y-2">
+              <Label>How should this assistant be used?</Label>
+              <Select value={callDirection} onValueChange={(v) => setCallDirection(v as 'inbound' | 'outbound' | 'both')}>
+                <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="outbound">↑ Outbound — Makes calls to leads</SelectItem>
+                  <SelectItem value="inbound">↓ Inbound — Answers incoming calls</SelectItem>
+                  <SelectItem value="both">↕ Both — Inbound &amp; outbound</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {callDirection === 'inbound' 
+                  ? 'This assistant will answer incoming calls on your Telnyx numbers.' 
+                  : callDirection === 'both'
+                  ? 'This assistant handles both incoming and outgoing calls.'
+                  : 'This assistant is used for outbound dialing and campaigns.'}
+              </p>
+            </div>
+
+            <h4 className="font-semibold text-sm pt-2">Settings</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Max Call Duration (seconds)</Label>
