@@ -88,6 +88,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [dynamicVarsWebhook, setDynamicVarsWebhook] = useState('');
 
   // Voice tab
+  const [voiceProvider, setVoiceProvider] = useState(assistant.metadata?.voice_provider || 'all');
   const [voice, setVoice] = useState(assistant.voice);
   const [voiceSpeed, setVoiceSpeed] = useState(assistant.metadata?.voice_speed || 1);
   const [transcriptionModel, setTranscriptionModel] = useState(assistant.transcription_model);
@@ -152,6 +153,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           if (t.model) setModel(t.model);
           if (t.name) setName(t.name);
           if (t.voice_settings?.voice) setVoice(t.voice_settings.voice);
+          if (t.voice_settings?.provider) setVoiceProvider(t.voice_settings.provider);
           if (t.voice_settings?.speed) setVoiceSpeed(t.voice_settings.speed);
           if (t.transcription?.model) setTranscriptionModel(t.transcription.model);
           if (t.transcription?.end_of_turn_threshold) setEndOfTurnThreshold(t.transcription.end_of_turn_threshold);
@@ -203,6 +205,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
         greeting: greeting || null,
         greeting_mode: greetingMode,
         voice,
+        voice_provider: voiceProvider !== 'all' ? voiceProvider : undefined,
         voice_speed: voiceSpeed,
         transcription_model: transcriptionModel,
         end_of_turn_threshold: endOfTurnThreshold,
@@ -517,8 +520,23 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </Card>
           </TabsContent>
 
-          {/* ===== VOICE TAB ===== */}
+           {/* ===== VOICE TAB ===== */}
           <TabsContent value="voice" className="space-y-4">
+            <div className="space-y-2">
+              <Label>TTS Provider</Label>
+              <Select value={voiceProvider} onValueChange={setVoiceProvider}>
+                <SelectTrigger><SelectValue placeholder="All providers" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Providers</SelectItem>
+                  {Array.from(new Set(voices.map(v => v.provider))).sort().map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Matches the "Provider" dropdown in the Telnyx Portal Voice tab.
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2 md:col-span-2">
                 <Label>Voice</Label>
@@ -526,7 +544,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                   <Select value={voice} onValueChange={setVoice}>
                     <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {voices.map(v => (
+                      {(voiceProvider && voiceProvider !== 'all' ? voices.filter(v => v.provider === voiceProvider) : voices).map(v => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.name} ({v.provider}, {v.gender})
                         </SelectItem>
@@ -544,12 +562,10 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                         const sampleText = greeting
                           ? greeting.replace(/\{\{[^}]+\}\}/g, 'there')
                           : `Hi there! My name is ${voices.find(v => v.id === voice)?.name || 'your assistant'}. How can I help you today?`;
-
                         const res = await callEdgeFunction('telnyx-ai-assistant', {
                           action: 'preview_voice',
                           params: { voice_id: voice, text: sampleText },
                         });
-
                         if (res.audio_url) {
                           const audio = new Audio(res.audio_url);
                           audio.play();
