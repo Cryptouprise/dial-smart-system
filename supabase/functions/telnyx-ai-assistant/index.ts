@@ -835,6 +835,56 @@ serve(async (req) => {
       }
 
       // ================================================================
+      // PUSH CALENDAR TOOL (single assistant)
+      // ================================================================
+      case 'push_calendar_tool': {
+        const { assistant_id } = params;
+        if (!assistant_id) throw new Error('assistant_id is required');
+
+        const { data: asst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, telnyx_assistant_id, tools')
+          .eq('id', assistant_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!asst) throw new Error('Assistant not found');
+        if (!asst.telnyx_assistant_id) throw new Error('Assistant has no Telnyx ID — sync first');
+
+        // Fetch current tools from Telnyx API (source of truth)
+        const getRes = await telnyxFetch(`/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!);
+        if (!getRes.ok) throw new Error(`Failed to fetch from Telnyx: ${getRes.error}`);
+
+        const currentTools = getRes.data.data?.tools || [];
+        const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+
+        if (hasCalendar) {
+          await supabaseAdmin
+            .from('telnyx_assistants')
+            .update({ tools: currentTools, updated_at: new Date().toISOString() })
+            .eq('id', asst.id);
+          result = { status: 'already_present', assistant: asst.name };
+          break;
+        }
+
+        const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+        const pushRes = await telnyxFetch(
+          `/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!, 'POST',
+          { tools: updatedTools }
+        );
+
+        if (!pushRes.ok) throw new Error(`Push failed: ${pushRes.error}`);
+
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({ tools: updatedTools, updated_at: new Date().toISOString() })
+          .eq('id', asst.id);
+
+        result = { status: 'provisioned', assistant: asst.name, tools_count: updatedTools.length };
+        break;
+      }
+
+      // ================================================================
       // CLONE ASSISTANT
       // ================================================================
       case 'clone_assistant': {

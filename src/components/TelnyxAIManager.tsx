@@ -508,6 +508,32 @@ const TelnyxAIManager: React.FC = () => {
     }
   };
 
+  const [pushingCalendarFor, setPushingCalendarFor] = useState<string | null>(null);
+
+  const handlePushCalendarTool = async (assistant: TelnyxAssistant) => {
+    setPushingCalendarFor(assistant.id);
+    try {
+      const data = await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'push_calendar_tool',
+        assistant_id: assistant.id,
+      });
+      if (data.status === 'already_present') {
+        toast({ title: '📅 Calendar Tool Present', description: `${assistant.name} already has the booking tool` });
+      } else {
+        toast({ title: '📅 Calendar Tool Pushed', description: `${assistant.name} now has ${data.tools_count} tools including calendar booking` });
+      }
+      loadAssistants();
+    } catch (err: any) {
+      toast({ title: 'Push Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setPushingCalendarFor(null);
+    }
+  };
+
+  const hasCalendarTool = (assistant: TelnyxAssistant): boolean => {
+    return (assistant.tools || []).some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
+  };
+
   const handleToggleStatus = async (assistant: TelnyxAssistant) => {
     const newStatus = assistant.status === 'active' ? 'paused' : 'active';
     try {
@@ -786,6 +812,26 @@ const TelnyxAIManager: React.FC = () => {
                           <span className="flex items-center gap-1"><Brain className="h-3 w-3" />{a.model.split('/').pop()}</span>
                           <span className="flex items-center gap-1"><Mic className="h-3 w-3" />{a.voice.split('.').pop()}</span>
                           <span className="flex items-center gap-1"><Zap className="h-3 w-3" />{a.tools?.length || 0} tools</span>
+                          {hasCalendarTool(a) ? (
+                            <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
+                              <Calendar className="h-3 w-3" />Calendar
+                            </span>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-xs text-destructive hover:text-destructive gap-0.5"
+                              onClick={() => handlePushCalendarTool(a)}
+                              disabled={pushingCalendarFor === a.id}
+                            >
+                              {pushingCalendarFor === a.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <XCircle className="h-3 w-3" />
+                              )}
+                              No Calendar — Push
+                            </Button>
+                          )}
                           {a.enabled_features?.includes('messaging') && (
                             <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />SMS</span>
                           )}
@@ -807,6 +853,17 @@ const TelnyxAIManager: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-2">
+                        {a.telnyx_assistant_id && (
+                          <a
+                            href={`https://portal.telnyx.com/#/ai/assistants/edit/assistant-${a.telnyx_assistant_id}?tab=agent`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open in Telnyx Portal"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                          </a>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
