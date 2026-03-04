@@ -935,21 +935,71 @@ serve(async (req) => {
         if (!testAssistant) throw new Error('Assistant not found');
         if (!testAssistant.telnyx_assistant_id) throw new Error('Assistant not synced to Telnyx yet');
 
-        // Get TeXML app ID — required for outbound AI calls
-        const texmlAppId = testAssistant.telnyx_texml_app_id;
-        if (!texmlAppId) {
-          // Try to get it from the assistant on Telnyx
-          const getRes = await telnyxFetch(`/ai/assistants/${testAssistant.telnyx_assistant_id}`, apiKey!);
-          if (!getRes.ok) throw new Error('Could not retrieve assistant details from Telnyx');
-          const texmlId = getRes.data?.data?.telephony_settings?.default_texml_app_id;
-          if (!texmlId) throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled.');
-          // Update local DB
-          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
-          // Use it
-          Object.defineProperty(testAssistant, 'telnyx_texml_app_id', { value: texmlId });
+        // ── Pre-call diagnostic: fetch full assistant config from Telnyx ──
+        const diagRes = await telnyxFetch(`/ai/assistants/${testAssistant.telnyx_assistant_id}`, apiKey!);
+        if (!diagRes.ok) throw new Error('Could not retrieve assistant details from Telnyx for pre-call check');
+        const assistantConfig = diagRes.data?.data || diagRes.data;
+
+        const diagnosticWarnings: string[] = [];
+
+        // Check voice / TTS
+        const voiceSettings = assistantConfig?.voice_settings || assistantConfig?.voice;
+        if (!voiceSettings?.voice) {
+          diagnosticWarnings.push('❌ No TTS voice configured — the caller will not hear the AI speak. Go to Voice tab and select a voice.');
         }
 
-        const finalTexmlId = testAssistant.telnyx_texml_app_id;
+        // Check transcription / STT
+        const transcription = assistantConfig?.transcription;
+        if (!transcription?.provider && !transcription?.model) {
+          diagnosticWarnings.push('❌ No STT/transcription configured — the AI cannot hear the caller. Enable transcription in Voice or Advanced settings.');
+        }
+
+        // Check telephony / TeXML app
+        const telephonySettings = assistantConfig?.telephony_settings;
+        const texmlId = telephonySettings?.default_texml_app_id || testAssistant.telnyx_texml_app_id;
+        if (!texmlId) {
+          throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled in the Telnyx portal.');
+        }
+
+        // Check model
+        if (!assistantConfig?.model) {
+          diagnosticWarnings.push('⚠️ No LLM model set — the AI may not respond intelligently. Set a model in Advanced settings.');
+        }
+
+        // Check instructions
+        if (!assistantConfig?.instructions || assistantConfig.instructions.length < 20) {
+          diagnosticWarnings.push('⚠️ Instructions are very short or empty — the AI may not know what to say.');
+        }
+
+        // Update local DB with latest TeXML app ID if needed
+        if (texmlId && texmlId !== testAssistant.telnyx_texml_app_id) {
+          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
+        }
+
+        const finalTexmlId = texmlId;
+
+        // If there are critical warnings (no voice or no STT), block the call
+        const criticalIssues = diagnosticWarnings.filter(w => w.startsWith('❌'));
+        if (criticalIssues.length > 0) {
+          result = {
+            success: false,
+            diagnostic: true,
+            warnings: diagnosticWarnings,
+            critical_issues: criticalIssues,
+            message: `Pre-call check FAILED — ${criticalIssues.length} critical issue(s) found that will cause no audio:\n\n${criticalIssues.join('\n')}\n\nFix these in the Telnyx portal or Voice tab before calling.`,
+            assistant_config_snapshot: {
+              voice: voiceSettings?.voice || null,
+              transcription_provider: transcription?.provider || null,
+              transcription_model: transcription?.model || null,
+              model: assistantConfig?.model || null,
+              texml_app_id: texmlId,
+              has_instructions: !!(assistantConfig?.instructions && assistantConfig.instructions.length > 20),
+            },
+          };
+          break;
+        }
+
+        console.log(`[Telnyx AI] Pre-call diagnostic passed (${diagnosticWarnings.length} warning(s)): ${diagnosticWarnings.join('; ') || 'all clear'}`);
 
         // Determine From number
         let callerNumber = from_number;
@@ -1007,6 +1057,12 @@ serve(async (req) => {
           to: formattedTo,
           assistant: testAssistant.name,
           message: `Test call initiated! Your phone (${formattedTo}) should ring in a few seconds.`,
+          warnings: diagnosticWarnings.length > 0 ? diagnosticWarnings : undefined,
+          assistant_config_snapshot: {
+            voice: voiceSettings?.voice || null,
+            transcription_provider: transcription?.provider || null,
+            model: assistantConfig?.model || null,
+          },
         };
         break;
       }
