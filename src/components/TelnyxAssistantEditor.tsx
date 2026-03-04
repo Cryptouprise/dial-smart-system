@@ -355,9 +355,56 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 onChange={e => setInstructions(e.target.value)}
                 className="min-h-[300px] font-mono text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                {instructions.length} chars · Use {"{{variable_name}}"} for personalization
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {instructions.length} chars · Use {"{{variable_name}}"} for personalization
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => {
+                    // Extract all {{var}} from instructions + greeting
+                    const allText = `${instructions} ${greeting}`;
+                    const regex = /\{\{([^}]+)\}\}/g;
+                    const foundVars = new Set<string>();
+                    let match;
+                    while ((match = regex.exec(allText)) !== null) {
+                      foundVars.add(match[1].trim());
+                    }
+
+                    const definedKeys = new Set(Object.keys(dynamicVars));
+                    const missingInDefs = [...foundVars].filter(v => !definedKeys.has(v));
+                    const unusedDefs = [...definedKeys].filter(k => !foundVars.has(k));
+
+                    if (missingInDefs.length === 0 && unusedDefs.length === 0) {
+                      toast({ title: '✅ All variables match', description: `${foundVars.size} variable(s) found — all have default values defined.` });
+                      return;
+                    }
+
+                    let msg = '';
+                    if (missingInDefs.length > 0) {
+                      msg += `Used in script but missing defaults:\n• ${missingInDefs.join('\n• ')}\n\n`;
+                    }
+                    if (unusedDefs.length > 0) {
+                      msg += `Defined but not used in script:\n• ${unusedDefs.join('\n• ')}`;
+                    }
+
+                    const shouldFix = missingInDefs.length > 0
+                      ? confirm(`${msg}\n\nAdd missing variables with empty defaults?`)
+                      : (alert(msg), false);
+
+                    if (shouldFix) {
+                      const next = { ...dynamicVars };
+                      missingInDefs.forEach(k => { next[k] = ''; });
+                      setDynamicVars(next);
+                      toast({ title: 'Variables added', description: `Added ${missingInDefs.length} missing variable(s) with empty defaults.` });
+                    }
+                  }}
+                >
+                  <Search className="h-3 w-3" /> Check Variables
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
