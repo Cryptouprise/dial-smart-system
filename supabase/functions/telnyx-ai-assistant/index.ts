@@ -567,7 +567,30 @@ serve(async (req) => {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        result = { assistants: assistants || [] };
+
+        // Resolve assigned phone number IDs to actual phone numbers
+        const allPhoneIds = (assistants || []).flatMap((a: any) => a.assigned_phone_number_ids || []).filter(Boolean);
+        let phoneMap: Record<string, string> = {};
+        if (allPhoneIds.length > 0) {
+          const { data: phones } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('id, number')
+            .in('id', allPhoneIds);
+          if (phones) {
+            for (const p of phones) {
+              phoneMap[p.id] = p.number;
+            }
+          }
+        }
+
+        const enriched = (assistants || []).map((a: any) => ({
+          ...a,
+          assigned_phone_numbers: (a.assigned_phone_number_ids || [])
+            .map((id: string) => phoneMap[id])
+            .filter(Boolean),
+        }));
+
+        result = { assistants: enriched };
         break;
       }
 
@@ -611,6 +634,7 @@ serve(async (req) => {
         const texmlToPhones: Record<string, string[]> = {};
 
         // Build TeXML app ID → local phone_numbers.id map from active Telnyx numbers
+        try {
           const { data: localPhones } = await supabaseAdmin
             .from('phone_numbers')
             .select('id, number')

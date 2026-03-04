@@ -5936,6 +5936,7 @@ export type Database = {
       }
       telnyx_assistants: {
         Row: {
+          assigned_phone_number_ids: string[] | null
           call_direction: string
           created_at: string
           data_retention: boolean | null
@@ -5962,6 +5963,7 @@ export type Database = {
           voice: string | null
         }
         Insert: {
+          assigned_phone_number_ids?: string[] | null
           call_direction?: string
           created_at?: string
           data_retention?: boolean | null
@@ -5988,6 +5990,7 @@ export type Database = {
           voice?: string | null
         }
         Update: {
+          assigned_phone_number_ids?: string[] | null
           call_direction?: string
           created_at?: string
           data_retention?: boolean | null
