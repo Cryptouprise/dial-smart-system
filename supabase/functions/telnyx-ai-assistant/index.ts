@@ -343,6 +343,8 @@ serve(async (req) => {
         // Build Telnyx update payload (only changed fields)
         const telnyxUpdate: any = {};
         const dbUpdate: any = { updated_at: new Date().toISOString() };
+        // Accumulate metadata changes properly — spread from existing, then merge all updates
+        const metadataUpdate: any = { ...(existing.metadata || {}) };
 
         for (const [key, value] of Object.entries(updateFields)) {
           switch (key) {
@@ -361,15 +363,15 @@ serve(async (req) => {
               break;
             case 'voice_speed':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), speed: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_speed: value };
+              metadataUpdate.voice_speed = value;
               break;
             case 'voice_provider':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), provider: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_provider: value };
+              metadataUpdate.voice_provider = value;
               break;
             case 'voice_model':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), model: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), voice_model: value };
+              metadataUpdate.voice_model = value;
               break;
             case 'transcription_model':
               telnyxUpdate.transcription = { model: value };
@@ -377,27 +379,27 @@ serve(async (req) => {
               break;
             case 'end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_threshold: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_threshold: value };
+              metadataUpdate.end_of_turn_threshold = value;
               break;
             case 'end_of_turn_timeout_ms':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_timeout_ms: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), end_of_turn_timeout_ms: value };
+              metadataUpdate.end_of_turn_timeout_ms = value;
               break;
             case 'eager_end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), eager_end_of_turn_threshold: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), eager_end_of_turn_threshold: value };
+              metadataUpdate.eager_end_of_turn_threshold = value;
               break;
             case 'noise_suppression':
               telnyxUpdate.noise_suppression = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), noise_suppression: value };
+              metadataUpdate.noise_suppression = value;
               break;
             case 'background_audio':
               telnyxUpdate.background_audio = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), background_audio: value };
+              metadataUpdate.background_audio = value;
               break;
             case 'speaking_plan':
               telnyxUpdate.speaking_plan = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), speaking_plan: value };
+              metadataUpdate.speaking_plan = value;
               break;
             case 'tools':
               telnyxUpdate.tools = (value as any[]).map(buildToolConfig);
@@ -412,23 +414,23 @@ serve(async (req) => {
               break;
             case 'max_call_duration_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), max_call_duration_seconds: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), max_call_duration_seconds: value };
+              metadataUpdate.max_call_duration_seconds = value;
               break;
             case 'user_idle_timeout_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), user_idle_timeout_seconds: value };
-              dbUpdate.metadata = { ...(existing.metadata || {}), user_idle_timeout_seconds: value };
+              metadataUpdate.user_idle_timeout_seconds = value;
               break;
             case 'amd_settings':
               telnyxUpdate.amd_settings = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), amd_settings: value };
+              metadataUpdate.amd_settings = value;
               break;
             case 'recording_settings':
               telnyxUpdate.recording_settings = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), recording_settings: value };
+              metadataUpdate.recording_settings = value;
               break;
             case 'greeting_mode':
               telnyxUpdate.greeting_mode = value;
-              dbUpdate.metadata = { ...(existing.metadata || {}), greeting_mode: value };
+              metadataUpdate.greeting_mode = value;
               break;
             case 'enabled_features':
               telnyxUpdate.enabled_features = value;
@@ -439,6 +441,9 @@ serve(async (req) => {
               break;
           }
         }
+
+        // Apply accumulated metadata updates to dbUpdate
+        dbUpdate.metadata = metadataUpdate;
 
         // Update Telnyx if there are API changes
         if (Object.keys(telnyxUpdate).length > 0 && existing.telnyx_assistant_id) {
