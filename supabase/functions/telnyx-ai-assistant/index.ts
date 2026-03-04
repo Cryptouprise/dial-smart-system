@@ -1076,71 +1076,97 @@ serve(async (req) => {
       // LIST VOICES
       // ================================================================
       case 'list_voices': {
-        result = {
-          voices: [
-            // Telnyx NaturalHD (Premium, $0.000012/char)
-            { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Estelle', name: 'Estelle (Estrella)', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
-            { id: 'Telnyx.NaturalHD.Celeste', name: 'Celeste', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Luna', name: 'Luna', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Valentina', name: 'Valentina', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Aurora', name: 'Aurora', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Marcus', name: 'Marcus', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
-            { id: 'Telnyx.NaturalHD.Atlas', name: 'Atlas', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+        // Try fetching live voices from Telnyx API (includes ElevenLabs, etc.)
+        let liveVoices: any[] = [];
+        if (apiKey) {
+          try {
+            const voicesResp = await fetch('https://api.telnyx.com/v2/ai/voices', {
+              headers: { 'Authorization': `Bearer ${apiKey}` },
+            });
+            if (voicesResp.ok) {
+              const voicesData = await voicesResp.json();
+              const items = voicesData?.data || voicesData?.voices || voicesData || [];
+              if (Array.isArray(items)) {
+                liveVoices = items.map((v: any) => ({
+                  id: v.id || v.voice_id || v.name,
+                  name: v.display_name || v.name || v.id || 'Unknown',
+                  provider: v.provider || v.tts_provider || 'Unknown',
+                  tier: v.tier || (v.provider?.toLowerCase()?.includes('elevenlabs') ? 'premium' : 'standard'),
+                  gender: v.gender || 'unknown',
+                }));
+              }
+            } else {
+              console.warn('[Telnyx AI Assistant] Live voices fetch failed:', voicesResp.status);
+            }
+          } catch (e: any) {
+            console.warn('[Telnyx AI Assistant] Failed to fetch live voices:', e.message);
+          }
+        }
 
-            // Telnyx Natural (Enhanced, $0.000003/char)
-            { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.amanda', name: 'Amanda', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.chloe', name: 'Chloe', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.diana', name: 'Diana', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
-            { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+        // Static fallback list
+        const staticVoices = [
+          // Telnyx NaturalHD (Premium, $0.000012/char)
+          { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Estelle', name: 'Estelle (Estrella)', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          { id: 'Telnyx.NaturalHD.Celeste', name: 'Celeste', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Luna', name: 'Luna', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Valentina', name: 'Valentina', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Aurora', name: 'Aurora', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Marcus', name: 'Marcus', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          { id: 'Telnyx.NaturalHD.Atlas', name: 'Atlas', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          // Telnyx Natural (Enhanced)
+          { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.amanda', name: 'Amanda', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.chloe', name: 'Chloe', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.diana', name: 'Diana', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+          { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+          // KokoroTTS — American Female
+          { id: 'Telnyx.KokoroTTS.af_alloy', name: 'Alloy', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_aoede', name: 'Aoede', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_bella', name: 'Bella', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_jessica', name: 'Jessica', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_kore', name: 'Kore', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_nova', name: 'Nova', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_river', name: 'River', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_sarah', name: 'Sarah', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_sky', name: 'Sky', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          // KokoroTTS — American Male
+          { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_echo', name: 'Echo', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_eric', name: 'Eric', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_fenrir', name: 'Fenrir', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_liam', name: 'Liam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_onyx', name: 'Onyx', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_puck', name: 'Puck', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          // KokoroTTS — British
+          { id: 'Telnyx.KokoroTTS.bf_alice', name: 'Alice (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.bf_emma', name: 'Emma (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.bm_george', name: 'George (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.bm_daniel', name: 'Daniel (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          // AWS Polly Neural
+          { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+          { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          { id: 'AWS.Polly.Joey-Neural', name: 'Joey', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+          { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          // Azure Neural
+          { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
+          { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
+          { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
+          { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
+        ];
 
-            // KokoroTTS — American Female
-            { id: 'Telnyx.KokoroTTS.af_alloy', name: 'Alloy', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_aoede', name: 'Aoede', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_bella', name: 'Bella', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_jessica', name: 'Jessica', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_kore', name: 'Kore', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_nova', name: 'Nova', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_river', name: 'River', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_sarah', name: 'Sarah', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_sky', name: 'Sky', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+        // Merge: live voices first, then static (dedup by id)
+        const seenIds = new Set(liveVoices.map((v: any) => v.id));
+        const merged = [...liveVoices, ...staticVoices.filter(v => !seenIds.has(v.id))];
 
-            // KokoroTTS — American Male
-            { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_echo', name: 'Echo', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_eric', name: 'Eric', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_fenrir', name: 'Fenrir', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_liam', name: 'Liam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_onyx', name: 'Onyx', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_puck', name: 'Puck', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-
-            // KokoroTTS — British
-            { id: 'Telnyx.KokoroTTS.bf_alice', name: 'Alice (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.bf_emma', name: 'Emma (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.bm_george', name: 'George (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.bm_daniel', name: 'Daniel (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-
-            // AWS Polly Neural
-            { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-            { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
-            { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-            { id: 'AWS.Polly.Joey-Neural', name: 'Joey', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
-            { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-
-            // Azure Neural
-            { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
-            { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
-            { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
-            { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
-          ],
-        };
+        result = { voices: merged };
         break;
       }
 
