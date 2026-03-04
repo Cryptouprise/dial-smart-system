@@ -66,6 +66,29 @@ async function callEdgeFunction(functionName: string, body: any) {
   if (!res.ok) throw new Error(data.error || 'Edge function error');
   return data;
 }
+
+function normalizeVoiceProvider(provider?: string, voiceId?: string): string {
+  const raw = String(provider || '').trim();
+  const source = `${raw} ${voiceId || ''}`.toLowerCase();
+
+  if (source.includes('elevenlabs') || source.includes('eleven_labs') || source.includes('eleven labs') || source.includes('11labs')) return 'ElevenLabs';
+  if (source.includes('kokoro')) return 'KokoroTTS';
+  if (source.includes('naturalhd')) return 'Telnyx NaturalHD';
+  if (source.includes('telnyx.natural') || source.includes(' natural')) return 'Telnyx Natural';
+  if (source.includes('aws') || source.includes('polly')) return 'AWS Polly';
+  if (source.includes('azure')) return 'Azure';
+  if (source.includes('minimax')) return 'MiniMax';
+  if (source.includes('resemble')) return 'ResembleAI';
+  if (source.includes('telnyx')) return 'Telnyx';
+
+  return raw || 'all';
+}
+
+function humanizeVoiceId(voiceId: string): string {
+  const tail = String(voiceId).split(/[./]/).pop() || String(voiceId);
+  return tail.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // Phone Number Assignment sub-component for Calling tab
 const PhoneNumberAssignment: React.FC<{
   assistantId: string;
@@ -229,7 +252,9 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [dynamicVarsWebhook, setDynamicVarsWebhook] = useState('');
 
   // Voice tab
-  const [voiceProvider, setVoiceProvider] = useState(assistant.metadata?.voice_provider || 'all');
+  const [voiceProvider, setVoiceProvider] = useState(
+    normalizeVoiceProvider(assistant.metadata?.voice_provider, assistant.voice)
+  );
   const [voice, setVoice] = useState(assistant.voice);
   const [voiceSpeed, setVoiceSpeed] = useState(assistant.metadata?.voice_speed || 1);
   const [transcriptionModel, setTranscriptionModel] = useState(assistant.transcription_model);
@@ -293,8 +318,13 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           if (t.greeting) setGreeting(t.greeting);
           if (t.model) setModel(t.model);
           if (t.name) setName(t.name);
-          if (t.voice_settings?.voice) setVoice(t.voice_settings.voice);
-          if (t.voice_settings?.provider) setVoiceProvider(t.voice_settings.provider);
+          if (t.voice_settings?.voice) {
+            setVoice(t.voice_settings.voice);
+            if (!t.voice_settings?.provider) {
+              setVoiceProvider(normalizeVoiceProvider(undefined, t.voice_settings.voice));
+            }
+          }
+          if (t.voice_settings?.provider) setVoiceProvider(normalizeVoiceProvider(t.voice_settings.provider, t.voice_settings?.voice));
           if (t.voice_settings?.speed) setVoiceSpeed(t.voice_settings.speed);
           if (t.transcription?.model) setTranscriptionModel(t.transcription.model);
           if (t.transcription?.end_of_turn_threshold) setEndOfTurnThreshold(t.transcription.end_of_turn_threshold);
@@ -332,6 +362,33 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
       setLoadingTelnyx(false);
     })();
   }, [assistant.id]);
+
+  const normalizedVoices = (voices || []).map((v) => ({
+    ...v,
+    provider: normalizeVoiceProvider(v.provider, v.id) === 'all' ? 'Custom' : normalizeVoiceProvider(v.provider, v.id),
+  }));
+
+  const normalizedSelectedProvider = normalizeVoiceProvider(voiceProvider, voice);
+  const fallbackProvider = normalizedSelectedProvider === 'all'
+    ? (normalizeVoiceProvider(undefined, voice) === 'all' ? 'Custom' : normalizeVoiceProvider(undefined, voice))
+    : normalizedSelectedProvider;
+
+  const fallbackVoiceOption =
+    voice && !normalizedVoices.some((v) => v.id === voice)
+      ? [{
+          id: voice,
+          name: humanizeVoiceId(voice),
+          provider: fallbackProvider,
+          tier: 'custom',
+          gender: 'unknown',
+        }]
+      : [];
+
+  const voiceOptions = [...fallbackVoiceOption, ...normalizedVoices];
+  const providerOptions = Array.from(new Set(voiceOptions.map((v) => v.provider))).sort();
+  const filteredVoiceOptions = normalizedSelectedProvider !== 'all'
+    ? voiceOptions.filter((v) => normalizeVoiceProvider(v.provider, v.id) === normalizedSelectedProvider)
+    : voiceOptions;
 
   const handleSave = async () => {
     setSaving(true);
@@ -669,7 +726,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 <SelectTrigger><SelectValue placeholder="All providers" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Providers</SelectItem>
-                  {Array.from(new Set(voices.map(v => v.provider))).sort().map(p => (
+                  {providerOptions.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>
@@ -685,7 +742,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                   <Select value={voice} onValueChange={setVoice}>
                     <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(voiceProvider && voiceProvider !== 'all' ? voices.filter(v => v.provider === voiceProvider) : voices).map(v => (
+                      {filteredVoiceOptions.map(v => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.name} ({v.provider}, {v.gender})
                         </SelectItem>
