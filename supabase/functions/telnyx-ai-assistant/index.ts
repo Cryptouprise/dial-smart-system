@@ -758,10 +758,22 @@ serve(async (req) => {
             // Telnyx NaturalHD (Premium, $0.000012/char)
             { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.Astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Estelle', name: 'Estelle (Estrella)', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+            { id: 'Telnyx.NaturalHD.Celeste', name: 'Celeste', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Luna', name: 'Luna', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Valentina', name: 'Valentina', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Aurora', name: 'Aurora', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Marcus', name: 'Marcus', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+            { id: 'Telnyx.NaturalHD.Atlas', name: 'Atlas', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
 
             // Telnyx Natural (Enhanced, $0.000003/char)
             { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.amanda', name: 'Amanda', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.chloe', name: 'Chloe', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.diana', name: 'Diana', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+            { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+            { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
 
             // KokoroTTS — American Female
             { id: 'Telnyx.KokoroTTS.af_alloy', name: 'Alloy', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
