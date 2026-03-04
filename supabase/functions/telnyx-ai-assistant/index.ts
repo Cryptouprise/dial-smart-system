@@ -1223,6 +1223,37 @@ serve(async (req) => {
           { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
           { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
           { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
+          // ── ElevenLabs Premade Voices (Top Sales / Conversational) ──
+          // Female — Conversational / Sales
+          { id: 'ElevenLabs.21m00Tcm4TlvDq8ikWAM', name: 'Rachel', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.EXAVITQu4vr4xnSDxMaL', name: 'Sarah', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.LcfcDJNUP1GQjkzn1xUU', name: 'Emily', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.oWAxZDx7w5VEj9dCyTzz', name: 'Grace', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.XB0fDUnXU5powFXDhCwa', name: 'Charlotte', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.jsCqWAovK2LkecY7zXl4', name: 'Freya', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.ThT5KcBeYPX3keUQqHPh', name: 'Dorothy', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.AZnzlk1XvdvUeBnXmlld', name: 'Domi', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.MF3mGyEYCl7XYWbV9V6O', name: 'Elli', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.jBpfuIE2acCO8z3wKNLl', name: 'Lily', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.z9fAnlkpzviPz146aGWa', name: 'Glinda', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.XrExE9yKIg1WjnnlVkGX', name: 'Matilda', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.pFZP5JQG7iQjIQuC4Bku', name: 'Lily (British)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          // Male — Conversational / Sales
+          { id: 'ElevenLabs.JBFqnCBsd6RMkjVDRZzb', name: 'George', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.pNInz6obpgDQGcFmaJgB', name: 'Adam', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.nPczCjzI2devNBz1zQrb', name: 'Brian', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.onwK4e9ZLuTAKqWW03F9', name: 'Daniel', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.29vD33N1CtxCmqQRPOHJ', name: 'Drew', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.SOYHLrjzK2X1ezoPC6cr', name: 'Dave', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.N2lVS1w4EtoT3dr4eOWO', name: 'Callum', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.IKne3meq5aSn9XLyUdCD', name: 'Charlie', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.pqHfZKP75CvOlQylNhV4', name: 'Bill', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.VR6AewLTigWG4xSOukaG', name: 'Arnold', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.TxGEqnHWrfWFTfGW9XjX', name: 'Josh', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.iP95p4xoKVk53GoZ742B', name: 'Chris', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.ErXwobaYiN019PkySvjV', name: 'Antoni', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
         ];
 
         // Merge: live voices, then locally-known voices, then static fallback (dedup by id)
