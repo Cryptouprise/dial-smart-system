@@ -29,6 +29,29 @@ const corsHeaders = {
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2';
 
+// Normalize model IDs for Telnyx API — proprietary models need provider prefix
+function normalizeTelnyxModelId(modelId: string): string {
+  if (!modelId) return modelId;
+  // Already prefixed — pass through
+  if (modelId.includes('/')) return modelId;
+  // OpenAI models
+  const openaiPatterns = ['gpt-', 'o1-', 'o3-', 'o4-', 'chatgpt-'];
+  if (openaiPatterns.some(p => modelId.toLowerCase().startsWith(p))) {
+    return `openai/${modelId}`;
+  }
+  // Anthropic models
+  const anthropicPatterns = ['claude-'];
+  if (anthropicPatterns.some(p => modelId.toLowerCase().startsWith(p))) {
+    return `anthropic/${modelId}`;
+  }
+  // Meta models
+  if (modelId.toLowerCase().startsWith('llama-') || modelId.toLowerCase().startsWith('meta-llama')) {
+    return `meta-llama/${modelId}`;
+  }
+  // Default: return as-is (Telnyx-native models like mistralai/*, etc.)
+  return modelId;
+}
+
 // Telnyx API helper
 async function telnyxFetch(
   path: string,
@@ -235,7 +258,7 @@ serve(async (req) => {
         const telnyxPayload: any = {
           name,
           description: description || '',
-          model: model || 'Qwen/Qwen3-235B-A22B',
+          model: normalizeTelnyxModelId(model || 'Qwen/Qwen3-235B-A22B'),
           instructions,
           greeting: greeting || undefined,
           voice_settings: {
@@ -259,7 +282,7 @@ serve(async (req) => {
           telnyxPayload.llm_api_key_ref = llm_api_key_ref;
         }
         if (fallback_model) {
-          telnyxPayload.fallback_model = fallback_model;
+          telnyxPayload.fallback_model = normalizeTelnyxModelId(fallback_model);
         }
         if (insight_group_id) {
           telnyxPayload.insight_settings = { insight_group_id };
@@ -491,6 +514,14 @@ serve(async (req) => {
 
         // Apply accumulated metadata updates to dbUpdate
         dbUpdate.metadata = metadataUpdate;
+
+        // Normalize model ID for Telnyx API (e.g. "gpt-4.1" → "openai/gpt-4.1")
+        if (telnyxUpdate.model) {
+          telnyxUpdate.model = normalizeTelnyxModelId(telnyxUpdate.model);
+        }
+        if (telnyxUpdate.fallback_model) {
+          telnyxUpdate.fallback_model = normalizeTelnyxModelId(telnyxUpdate.fallback_model);
+        }
 
         // Update Telnyx if there are API changes
         if (Object.keys(telnyxUpdate).length > 0 && existing.telnyx_assistant_id) {
