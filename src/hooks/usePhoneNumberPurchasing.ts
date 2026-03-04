@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export type PhoneNumberPurpose = 'sip_broadcast' | 'voice_ai' | 'sms' | 'inbound' | 'programmable_voice';
+export type CallDirection = 'inbound' | 'outbound' | 'both';
 
 export const usePhoneNumberPurchasing = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -13,11 +14,12 @@ export const usePhoneNumberPurchasing = () => {
     areaCode: string,
     quantity: number,
     provider = 'retell',
-    purpose: PhoneNumberPurpose = 'voice_ai'
+    purpose: PhoneNumberPurpose = 'voice_ai',
+    callDirection: CallDirection = 'outbound'
   ) => {
     setIsLoading(true);
     try {
-      console.log(`Purchasing ${quantity} numbers in area code ${areaCode} for ${purpose}`);
+      console.log(`Purchasing ${quantity} numbers in area code ${areaCode} for ${purpose} (${callDirection})`);
 
       const { data, error } = await supabase.functions.invoke('phone-number-purchasing', {
         method: 'POST',
@@ -25,7 +27,8 @@ export const usePhoneNumberPurchasing = () => {
           areaCode,
           quantity,
           provider,
-          purpose
+          purpose,
+          callDirection
         }
       });
 

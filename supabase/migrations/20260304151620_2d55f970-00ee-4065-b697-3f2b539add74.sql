@@ -1,0 +1,1 @@
+ALTER TABLE public.phone_numbers ADD COLUMN IF NOT EXISTS call_direction TEXT NOT NULL DEFAULT 'outbound' CHECK (call_direction IN ('inbound', 'outbound', 'both'));

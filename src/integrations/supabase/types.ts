@@ -4482,6 +4482,7 @@ export type Database = {
         Row: {
           allowed_uses: string[] | null
           area_code: string
+          call_direction: string
           caller_name: string | null
           capabilities: Json | null
           carrier_name: string | null
@@ -4520,6 +4521,7 @@ export type Database = {
         Insert: {
           allowed_uses?: string[] | null
           area_code: string
+          call_direction?: string
           caller_name?: string | null
           capabilities?: Json | null
           carrier_name?: string | null
@@ -4558,6 +4560,7 @@ export type Database = {
         Update: {
           allowed_uses?: string[] | null
           area_code?: string
+          call_direction?: string
           caller_name?: string | null
           capabilities?: Json | null
           carrier_name?: string | null
