@@ -1087,13 +1087,41 @@ serve(async (req) => {
               const voicesData = await voicesResp.json();
               const items = voicesData?.data || voicesData?.voices || voicesData || [];
               if (Array.isArray(items)) {
-                liveVoices = items.map((v: any) => ({
-                  id: v.id || v.voice_id || v.name,
-                  name: v.display_name || v.name || v.id || 'Unknown',
-                  provider: v.provider || v.tts_provider || 'Unknown',
-                  tier: v.tier || (v.provider?.toLowerCase()?.includes('elevenlabs') ? 'premium' : 'standard'),
-                  gender: v.gender || 'unknown',
-                }));
+                liveVoices = items.map((v: any) => {
+                  const rawProvider = v.provider || v.tts_provider || '';
+                  // Normalize provider names to match UI expectations
+                  let provider = rawProvider;
+                  const lp = rawProvider.toLowerCase();
+                  if (lp.includes('elevenlabs') || lp.includes('eleven_labs') || lp.includes('eleven labs')) {
+                    provider = 'ElevenLabs';
+                  } else if (lp.includes('kokoro')) {
+                    provider = 'KokoroTTS';
+                  } else if (lp.includes('polly') || lp.includes('aws')) {
+                    provider = 'AWS Polly';
+                  } else if (lp.includes('azure')) {
+                    provider = 'Azure';
+                  } else if (lp.includes('minimax')) {
+                    provider = 'MiniMax';
+                  } else if (lp.includes('resemble')) {
+                    provider = 'ResembleAI';
+                  } else if (lp.includes('telnyx') && lp.includes('hd')) {
+                    provider = 'Telnyx NaturalHD';
+                  } else if (lp.includes('telnyx') && lp.includes('natural')) {
+                    provider = 'Telnyx Natural';
+                  } else if (lp.includes('telnyx')) {
+                    provider = 'Telnyx';
+                  } else if (!provider) {
+                    provider = 'Unknown';
+                  }
+                  
+                  return {
+                    id: v.id || v.voice_id || v.name,
+                    name: v.display_name || v.name || v.id || 'Unknown',
+                    provider,
+                    tier: v.tier || (provider === 'ElevenLabs' ? 'premium' : provider === 'Telnyx NaturalHD' ? 'premium' : 'standard'),
+                    gender: v.gender || 'unknown',
+                  };
+                });
               }
             } else {
               console.warn('[Telnyx AI Assistant] Live voices fetch failed:', voicesResp.status);
@@ -1272,6 +1300,36 @@ serve(async (req) => {
         }
 
         result = { assigned: true, phone_number: phoneNumber.number };
+        break;
+      }
+
+      // ================================================================
+      // UNASSIGN NUMBER
+      // ================================================================
+      case 'unassign_number': {
+        const { assistant_id: unassignAstId, phone_number_id: unassignPhId } = params;
+        if (!unassignAstId || !unassignPhId) throw new Error('assistant_id and phone_number_id required');
+
+        const { data: unassignAst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('assigned_phone_number_ids')
+          .eq('id', unassignAstId)
+          .eq('user_id', userId)
+          .single();
+
+        if (!unassignAst) throw new Error('Assistant not found');
+
+        const updatedIds = (unassignAst.assigned_phone_number_ids || []).filter((pid: string) => pid !== unassignPhId);
+
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({
+            assigned_phone_number_ids: updatedIds,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', unassignAstId);
+
+        result = { unassigned: true };
         break;
       }
 

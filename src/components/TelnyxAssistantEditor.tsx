@@ -66,6 +66,147 @@ async function callEdgeFunction(functionName: string, body: any) {
   if (!res.ok) throw new Error(data.error || 'Edge function error');
   return data;
 }
+// Phone Number Assignment sub-component for Calling tab
+const PhoneNumberAssignment: React.FC<{
+  assistantId: string;
+  assistantName: string;
+  assignedPhoneIds: string[];
+  onUpdate: () => void;
+}> = ({ assistantId, assistantName, assignedPhoneIds, onUpdate }) => {
+  const { toast } = useToast();
+  const [phoneNumbers, setPhoneNumbers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [assigning, setAssigning] = useState<string | null>(null);
+  const [unassigning, setUnassigning] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('phone_numbers')
+          .select('id, number, friendly_name, provider, status, call_direction')
+          .in('provider', ['telnyx', 'Telnyx'])
+          .eq('status', 'active')
+          .order('number');
+        setPhoneNumbers(data || []);
+      } catch { /* ignore */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const formatPhone = (n: string) => {
+    const d = n.replace(/\D/g, '');
+    if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+    return n;
+  };
+
+  const handleAssign = async (phoneId: string) => {
+    setAssigning(phoneId);
+    try {
+      await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'assign_number',
+        params: { assistant_id: assistantId, phone_number_id: phoneId },
+      });
+      toast({ title: 'Number Assigned', description: `Phone number assigned to ${assistantName}` });
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: 'Assignment Failed', description: err.message, variant: 'destructive' });
+    }
+    setAssigning(null);
+  };
+
+  const handleUnassign = async (phoneId: string) => {
+    setUnassigning(phoneId);
+    try {
+      await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'unassign_number',
+        params: { assistant_id: assistantId, phone_number_id: phoneId },
+      });
+      toast({ title: 'Number Unassigned', description: `Phone number removed from ${assistantName}` });
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: 'Unassign Failed', description: err.message, variant: 'destructive' });
+    }
+    setUnassigning(null);
+  };
+
+  const assigned = phoneNumbers.filter(p => assignedPhoneIds.includes(p.id));
+  const available = phoneNumbers.filter(p => !assignedPhoneIds.includes(p.id));
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Phone className="h-4 w-4" />
+          Phone Numbers
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Assign Telnyx phone numbers to this assistant for inbound routing.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />Loading numbers...
+          </div>
+        ) : (
+          <>
+            {assigned.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Assigned</Label>
+                {assigned.map(p => (
+                  <div key={p.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-primary/5 border border-primary/20">
+                    <span className="text-sm font-medium">{formatPhone(p.number)}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-destructive hover:text-destructive"
+                      onClick={() => handleUnassign(p.id)}
+                      disabled={unassigning === p.id}
+                    >
+                      {unassigning === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3 mr-1" />}
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {available.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Available Numbers</Label>
+                {available.slice(0, 10).map(p => (
+                  <div key={p.id} className="flex items-center justify-between py-1.5 px-2 rounded border hover:bg-muted/50">
+                    <div>
+                      <span className="text-sm">{formatPhone(p.number)}</span>
+                      {p.friendly_name && <span className="text-xs text-muted-foreground ml-2">{p.friendly_name}</span>}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => handleAssign(p.id)}
+                      disabled={assigning === p.id}
+                    >
+                      {assigning === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Phone className="h-3 w-3 mr-1" />}
+                      Assign
+                    </Button>
+                  </div>
+                ))}
+                {available.length > 10 && (
+                  <p className="text-xs text-muted-foreground">+{available.length - 10} more available</p>
+                )}
+              </div>
+            )}
+            {phoneNumbers.length === 0 && (
+              <p className="text-sm text-muted-foreground">No Telnyx numbers found. Sync your numbers first from the main Telnyx AI tab.</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voices, onSave, onClose }) => {
   const { toast } = useToast();
@@ -885,6 +1026,14 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
 
           {/* ===== CALLING TAB ===== */}
           <TabsContent value="calling" className="space-y-4">
+            {/* Phone Number Assignment */}
+            <PhoneNumberAssignment
+              assistantId={assistant.id}
+              assistantName={assistant.name}
+              assignedPhoneIds={assistant.metadata?.assigned_phone_number_ids || []}
+              onUpdate={onSave}
+            />
+
             <h4 className="font-semibold text-sm flex items-center gap-2">
               <PhoneCall className="h-4 w-4" />
               Call Direction
