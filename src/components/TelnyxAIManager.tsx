@@ -582,13 +582,15 @@ const TelnyxAIManager: React.FC = () => {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="assistants" className="gap-1"><Bot className="h-3 w-3" />Assistants</TabsTrigger>
-          <TabsTrigger value="variables" className="gap-1"><Variable className="h-3 w-3" />Variables</TabsTrigger>
-          <TabsTrigger value="insights" className="gap-1"><Brain className="h-3 w-3" />Insights</TabsTrigger>
-          <TabsTrigger value="scheduled" className="gap-1"><Calendar className="h-3 w-3" />Scheduled</TabsTrigger>
-          <TabsTrigger value="knowledge" className="gap-1"><Database className="h-3 w-3" />Knowledge</TabsTrigger>
-          <TabsTrigger value="docs" className="gap-1"><BookOpen className="h-3 w-3" />Docs</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-8">
+          <TabsTrigger value="assistants" className="gap-1 text-xs"><Bot className="h-3 w-3" />Assistants</TabsTrigger>
+          <TabsTrigger value="conversations" className="gap-1 text-xs"><PhoneCall className="h-3 w-3" />History</TabsTrigger>
+          <TabsTrigger value="tests" className="gap-1 text-xs"><Zap className="h-3 w-3" />AI Tests</TabsTrigger>
+          <TabsTrigger value="variables" className="gap-1 text-xs"><Variable className="h-3 w-3" />Variables</TabsTrigger>
+          <TabsTrigger value="insights" className="gap-1 text-xs"><Brain className="h-3 w-3" />Insights</TabsTrigger>
+          <TabsTrigger value="scheduled" className="gap-1 text-xs"><Calendar className="h-3 w-3" />Scheduled</TabsTrigger>
+          <TabsTrigger value="knowledge" className="gap-1 text-xs"><Database className="h-3 w-3" />Knowledge</TabsTrigger>
+          <TabsTrigger value="docs" className="gap-1 text-xs"><BookOpen className="h-3 w-3" />Docs</TabsTrigger>
         </TabsList>
 
         {/* ==================== ASSISTANTS TAB ==================== */}
@@ -785,6 +787,16 @@ const TelnyxAIManager: React.FC = () => {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* ==================== CONVERSATIONS TAB ==================== */}
+        <TabsContent value="conversations" className="space-y-4">
+          <ConversationHistoryPanel />
+        </TabsContent>
+
+        {/* ==================== AI TESTS TAB ==================== */}
+        <TabsContent value="tests" className="space-y-4">
+          <AITestsPanel />
         </TabsContent>
 
         {/* ==================== VARIABLES TAB ==================== */}
@@ -1144,6 +1156,143 @@ const KnowledgeBasePanel: React.FC = () => {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ConversationHistoryPanel: React.FC = () => {
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('call_logs')
+        .select('id, phone_number, status, outcome, duration_seconds, created_at, call_summary, telnyx_conversation_id, telnyx_assistant_id, provider, sentiment')
+        .not('telnyx_assistant_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setConversations(data || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Conversation History</h3>
+        <Button size="sm" variant="outline" onClick={loadData}><RefreshCw className="h-4 w-4 mr-1" />Refresh</Button>
+      </div>
+      {conversations.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">No Telnyx AI conversations yet. Make a test call to see data here.</CardContent></Card>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left py-2 px-3 font-medium">Conversation ID</th>
+                <th className="text-left py-2 px-3 font-medium">Channel</th>
+                <th className="text-left py-2 px-3 font-medium">User</th>
+                <th className="text-left py-2 px-3 font-medium">Outcome</th>
+                <th className="text-left py-2 px-3 font-medium">Created at</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {conversations.map(c => (
+                <tr key={c.id} className="hover:bg-muted/30">
+                  <td className="py-2 px-3"><code className="text-xs">{c.telnyx_conversation_id?.slice(0, 20) || c.id.slice(0, 8)}...</code></td>
+                  <td className="py-2 px-3"><Badge variant="outline" className="text-xs">phone call</Badge></td>
+                  <td className="py-2 px-3 text-xs">{c.phone_number}</td>
+                  <td className="py-2 px-3"><Badge variant={c.outcome === 'appointment_set' ? 'default' : 'secondary'} className="text-xs">{c.outcome || c.status}</Badge></td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AITestsPanel: React.FC = () => {
+  const [tests, setTests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => { loadTests(); }, []);
+
+  const loadTests = async () => {
+    setLoading(true);
+    try {
+      const data = await callEdgeFunction('telnyx-ai-assistant', { action: 'list_tests' });
+      setTests(data.tests || []);
+    } catch {
+      setTests([]);
+    }
+    setLoading(false);
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">AI Tests</h3>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={loadTests}><RefreshCw className="h-4 w-4 mr-1" />Refresh</Button>
+          <Button size="sm" variant="outline" onClick={() => window.open('https://portal.telnyx.com/#/ai/tests', '_blank')}>
+            <ExternalLink className="h-4 w-4 mr-1" />Manage in Portal
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        AI Tests let you create automated test suites for your assistants. Define test scenarios, run them against specific assistant versions, and compare results.
+      </p>
+
+      {tests.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No AI tests found. Create tests in the Telnyx portal to validate your assistant behavior.</p>
+            <Button variant="outline" size="sm" className="mt-3 gap-1" onClick={() => window.open('https://portal.telnyx.com/#/ai/tests', '_blank')}>
+              <ExternalLink className="h-3 w-3" />Create Tests in Portal
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left py-2 px-3 font-medium">Status</th>
+                <th className="text-left py-2 px-3 font-medium">Created At</th>
+                <th className="text-left py-2 px-3 font-medium">Version</th>
+                <th className="text-left py-2 px-3 font-medium">Completed At</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {tests.map((t: any, i: number) => (
+                <tr key={i} className="hover:bg-muted/30">
+                  <td className="py-2 px-3 flex items-center gap-1">
+                    <span className={`h-2 w-2 rounded-full ${t.status === 'passed' ? 'bg-green-500' : t.status === 'failed' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                    {t.status}
+                  </td>
+                  <td className="py-2 px-3 text-xs">{t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</td>
+                  <td className="py-2 px-3 text-xs">{t.version || 'main'}</td>
+                  <td className="py-2 px-3 text-xs">{t.completed_at ? new Date(t.completed_at).toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
