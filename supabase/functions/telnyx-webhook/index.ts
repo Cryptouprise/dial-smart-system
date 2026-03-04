@@ -142,6 +142,101 @@ serve(async (req) => {
               telnyx_call_session_id: callSessionId,
             }).eq('id', callLog.id);
           }
+
+          // ===== INBOUND CALL ROUTING =====
+          // If this is an incoming call to one of our Telnyx numbers,
+          // find the appropriate AI assistant and answer + connect it.
+          if (direction === 'incoming' && !callLog) {
+            const calledNumber = to.replace(/[^\d+]/g, '');
+            console.log(`[Telnyx Webhook] Inbound call to ${calledNumber} from ${from}`);
+
+            // Find the phone number owner
+            const { data: phoneRecord } = await supabaseAdmin
+              .from('phone_numbers')
+              .select('user_id')
+              .or(`number.eq.${calledNumber},number.ilike.%${calledNumber.replace(/\D/g, '').slice(-10)}%`)
+              .eq('provider', 'telnyx')
+              .limit(1)
+              .maybeSingle();
+
+            if (phoneRecord) {
+              // Find an active Telnyx assistant configured for inbound
+              const { data: assistant } = await supabaseAdmin
+                .from('telnyx_assistants')
+                .select('id, telnyx_assistant_id, name')
+                .eq('user_id', phoneRecord.user_id)
+                .eq('status', 'active')
+                .in('call_direction', ['inbound', 'both'])
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (assistant?.telnyx_assistant_id) {
+                console.log(`[Telnyx Webhook] Routing inbound call to assistant: ${assistant.name} (${assistant.telnyx_assistant_id})`);
+
+                const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '');
+                if (telnyxApiKey) {
+                  // Answer the call
+                  try {
+                    const answerResp = await fetch(`https://api.telnyx.com/v2/calls/${callControlId}/actions/answer`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${telnyxApiKey}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({}),
+                    });
+
+                    if (answerResp.ok) {
+                      console.log('[Telnyx Webhook] Call answered, starting AI assistant...');
+
+                      // Start AI assistant on the call
+                      const aiResp = await fetch(`https://api.telnyx.com/v2/calls/${callControlId}/actions/ai_assistant_start`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${telnyxApiKey}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          assistant_id: assistant.telnyx_assistant_id,
+                        }),
+                      });
+
+                      if (!aiResp.ok) {
+                        const aiErr = await aiResp.text();
+                        console.error('[Telnyx Webhook] AI assistant start failed:', aiErr);
+                      } else {
+                        console.log('[Telnyx Webhook] AI assistant started successfully');
+                      }
+                    } else {
+                      const answerErr = await answerResp.text();
+                      console.error('[Telnyx Webhook] Answer failed:', answerErr);
+                    }
+                  } catch (routingErr: any) {
+                    console.error('[Telnyx Webhook] Inbound routing error:', routingErr.message);
+                  }
+
+                  // Create a call_log for this inbound call
+                  await supabaseAdmin.from('call_logs').insert({
+                    user_id: phoneRecord.user_id,
+                    phone_number: from.replace(/[^\d+]/g, ''),
+                    caller_id: calledNumber,
+                    status: 'in-progress',
+                    provider: 'telnyx',
+                    telnyx_call_control_id: callControlId,
+                    telnyx_call_session_id: callSessionId,
+                    telnyx_assistant_id: assistant.telnyx_assistant_id,
+                    started_at: occurredAt,
+                    notes: `Inbound call routed to AI assistant: ${assistant.name}`,
+                  });
+                }
+              } else {
+                console.log('[Telnyx Webhook] No inbound assistant configured for user:', phoneRecord.user_id);
+              }
+            } else {
+              console.log('[Telnyx Webhook] No phone record found for inbound number:', calledNumber);
+            }
+          }
           break;
         }
 
