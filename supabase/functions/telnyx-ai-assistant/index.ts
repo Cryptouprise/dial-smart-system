@@ -67,6 +67,45 @@ async function telnyxFetch(
   }
 }
 
+// Build the calendar booking webhook tool config
+function buildCalendarTool(supabaseUrl: string, serviceRoleKey: string, userId: string): any {
+  return {
+    type: 'webhook',
+    name: 'book_appointment',
+    description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability first, then "book_appointment" to book. Always provide the user_id.',
+    url: `${supabaseUrl}/functions/v1/calendar-integration`,
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+    },
+    body_parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
+        user_id: { type: 'string', description: `The user ID for calendar lookup. Always use: ${userId}` },
+        date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+        time: { type: 'string', description: 'Time in HH:MM format (24h)' },
+        duration_minutes: { type: 'number', description: 'Appointment duration in minutes, default 30' },
+        attendee_name: { type: 'string', description: 'Name of the person being booked' },
+        attendee_email: { type: 'string', description: 'Email of the person being booked' },
+        attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
+        notes: { type: 'string', description: 'Appointment notes' },
+      },
+      required: ['action', 'user_id'],
+    },
+  };
+}
+
+// Ensure calendar tools are present in a tools array
+function ensureCalendarTools(tools: any[], supabaseUrl: string, serviceRoleKey: string, userId: string): any[] {
+  const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
+  if (!hasCalendar) {
+    tools.push(buildCalendarTool(supabaseUrl, serviceRoleKey, userId));
+  }
+  return tools;
+}
+
 // Build Telnyx tool config from our simplified format
 function buildToolConfig(tool: any): any {
   switch (tool.type) {
@@ -226,41 +265,9 @@ serve(async (req) => {
           telnyxPayload.insight_settings = { insight_group_id };
         }
 
-        // Build tools
-        if (tools && Array.isArray(tools) && tools.length > 0) {
-          telnyxPayload.tools = tools.map(buildToolConfig);
-
-          // Auto-add calendar booking tool if not present
-          const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
-          if (!hasCalendar) {
-            telnyxPayload.tools.push({
-              type: 'webhook',
-              name: 'book_appointment',
-              description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability and "book_appointment" to book.',
-              url: `${supabaseUrl}/functions/v1/calendar-integration`,
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer {{#integration_secret}}supabase-service-key{{/integration_secret}}`,
-                'Content-Type': 'application/json',
-              },
-              body_parameters: {
-                type: 'object',
-                properties: {
-                  action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
-                  user_id: { type: 'string', description: 'The user ID for calendar lookup' },
-                  date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-                  time: { type: 'string', description: 'Time in HH:MM format (24h)' },
-                  duration_minutes: { type: 'number', description: 'Appointment duration in minutes' },
-                  attendee_name: { type: 'string', description: 'Name of the person being booked' },
-                  attendee_email: { type: 'string', description: 'Email of the person being booked' },
-                  attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
-                  notes: { type: 'string', description: 'Appointment notes' },
-                },
-                required: ['action'],
-              },
-            });
-          }
-        }
+        // Build tools - ALWAYS include calendar tool
+        const userTools = (tools && Array.isArray(tools)) ? tools.map(buildToolConfig) : [];
+        telnyxPayload.tools = ensureCalendarTools(userTools, supabaseUrl, serviceRoleKey, userId);
 
         // Create on Telnyx
         const createRes = await telnyxFetch('/ai/assistants', apiKey!, 'POST', telnyxPayload);
@@ -401,10 +408,12 @@ serve(async (req) => {
               telnyxUpdate.speaking_plan = value;
               metadataUpdate.speaking_plan = value;
               break;
-            case 'tools':
-              telnyxUpdate.tools = (value as any[]).map(buildToolConfig);
+            case 'tools': {
+              const mappedTools = (value as any[]).map(buildToolConfig);
+              telnyxUpdate.tools = ensureCalendarTools(mappedTools, supabaseUrl, serviceRoleKey, userId);
               dbUpdate.tools = value;
               break;
+            }
             case 'status':
               dbUpdate.status = value;
               break;
@@ -561,6 +570,7 @@ serve(async (req) => {
 
         const telnyxAssistants = listRes.data.data || [];
         let synced = 0;
+        const texmlToPhones: Record<string, string[]> = {};
 
         // Build a map of Telnyx phone ID → local phone_numbers.id
         const telnyxIdToLocalId: Record<string, string> = {};
@@ -643,10 +653,79 @@ serve(async (req) => {
                 metadata: { imported_from: 'telnyx_sync', telnyx_response: ta },
               });
           }
+          // Push calendar tools to this assistant on Telnyx if missing
+          const currentTools = ta.tools || [];
+          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+          if (!hasCalendar) {
+            const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+            const toolPushRes = await telnyxFetch(
+              `/ai/assistants/${telnyxId}`, apiKey!, 'POST',
+              { tools: updatedTools }
+            );
+            if (toolPushRes.ok) {
+              console.log(`[Sync] ✅ Pushed calendar tool to ${ta.name}`);
+            } else {
+              console.warn(`[Sync] ⚠️ Failed to push calendar tool to ${ta.name}: ${toolPushRes.error}`);
+            }
+          }
           synced++;
         }
 
         result = { synced, total_on_telnyx: telnyxAssistants.length };
+        break;
+      }
+
+      // ================================================================
+      // PROVISION CALENDAR TOOLS (push to all existing assistants)
+      // ================================================================
+      case 'provision_calendar_tools': {
+        const { data: assistants } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, telnyx_assistant_id, tools')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+
+        let provisioned = 0;
+        const results: any[] = [];
+
+        for (const asst of (assistants || [])) {
+          if (!asst.telnyx_assistant_id) continue;
+
+          // Get current tools from Telnyx
+          const getRes = await telnyxFetch(`/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!);
+          if (!getRes.ok) {
+            results.push({ name: asst.name, status: 'error', error: getRes.error });
+            continue;
+          }
+
+          const currentTools = getRes.data.data?.tools || [];
+          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+
+          if (hasCalendar) {
+            results.push({ name: asst.name, status: 'already_has_tools' });
+            continue;
+          }
+
+          const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+          const pushRes = await telnyxFetch(
+            `/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!, 'POST',
+            { tools: updatedTools }
+          );
+
+          if (pushRes.ok) {
+            provisioned++;
+            results.push({ name: asst.name, status: 'provisioned' });
+            // Update local DB
+            await supabaseAdmin
+              .from('telnyx_assistants')
+              .update({ tools: updatedTools, updated_at: new Date().toISOString() })
+              .eq('id', asst.id);
+          } else {
+            results.push({ name: asst.name, status: 'error', error: pushRes.error });
+          }
+        }
+
+        result = { provisioned, total: assistants?.length || 0, details: results };
         break;
       }
 
