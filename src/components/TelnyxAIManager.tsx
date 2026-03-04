@@ -531,7 +531,10 @@ const TelnyxAIManager: React.FC = () => {
   };
 
   const hasCalendarTool = (assistant: TelnyxAssistant): boolean => {
-    return (assistant.tools || []).some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
+    return (assistant.tools || []).some((t: any) =>
+      t.name === 'book_appointment' || t.name === 'check_availability' ||
+      t.webhook?.name === 'book_appointment' || t.webhook?.name === 'check_availability'
+    );
   };
 
   const handleToggleStatus = async (assistant: TelnyxAssistant) => {
