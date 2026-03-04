@@ -481,7 +481,7 @@ const TelnyxAIManager: React.FC = () => {
     setSyncing(true);
     try {
       const data = await callEdgeFunction('telnyx-ai-assistant', { action: 'sync_assistants' });
-      toast({ title: 'Synced', description: `${data.synced} assistants synced from Telnyx` });
+      toast({ title: 'Synced & Calendar Tools Provisioned', description: `${data.synced} assistants synced from Telnyx (calendar booking tools auto-added)` });
       loadAssistants();
     } catch (err: any) {
       toast({ title: 'Sync Failed', description: err.message, variant: 'destructive' });
