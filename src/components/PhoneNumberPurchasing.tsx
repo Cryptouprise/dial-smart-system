@@ -21,7 +21,7 @@ import {
   Download,
   LogIn
 } from 'lucide-react';
-import { usePhoneNumberPurchasing, PhoneNumberPurpose } from '@/hooks/usePhoneNumberPurchasing';
+import { usePhoneNumberPurchasing, PhoneNumberPurpose, CallDirection } from '@/hooks/usePhoneNumberPurchasing';
 import { useTwilioIntegration } from '@/hooks/useTwilioIntegration';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -43,6 +43,7 @@ const PhoneNumberPurchasing = () => {
   const [quantity, setQuantity] = useState('5');
   const [provider, setProvider] = useState('retell');
   const [purpose, setPurpose] = useState<PhoneNumberPurpose>('voice_ai');
+  const [callDirection, setCallDirection] = useState<CallDirection>('outbound');
   
   // Area code validation helper
   const validateAreaCode = (code: string): string => {
@@ -114,7 +115,7 @@ const PhoneNumberPurchasing = () => {
     }
 
     try {
-      await purchaseNumbers(areaCode, qty, provider, purpose);
+      await purchaseNumbers(areaCode, qty, provider, purpose, callDirection);
       setAreaCode('');
       setQuantity('5');
     } catch (error) {
@@ -322,6 +323,43 @@ const PhoneNumberPurchasing = () => {
                       Numbers will be automatically added to the broadcast rotator
                     </p>
                   )}
+                </div>
+
+                {/* Call Direction Selector */}
+                <div className="space-y-2">
+                  <Label htmlFor="call-direction">Call Direction *</Label>
+                  <Select value={callDirection} onValueChange={(v) => setCallDirection(v as CallDirection)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="outbound">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">↑ Outbound Only</span>
+                          <span className="text-xs text-muted-foreground">For making outgoing calls/SMS</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="inbound">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">↓ Inbound Only</span>
+                          <span className="text-xs text-muted-foreground">For receiving calls/SMS only</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="both">
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">↕ Both Directions</span>
+                          <span className="text-xs text-muted-foreground">Inbound + outbound capable</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {callDirection === 'inbound' 
+                      ? 'Numbers will be configured to receive calls and route to your AI assistant'
+                      : callDirection === 'both'
+                      ? 'Numbers can make and receive calls — most flexible option'
+                      : 'Numbers will be used for outbound campaigns and dialing'}
+                  </p>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-3">

@@ -21,11 +21,14 @@ const PURPOSE_TO_ALLOWED_USES: Record<PhoneNumberPurpose, string[]> = {
   'programmable_voice': ['programmable_voice', 'sip_broadcast'], // Flexible
 };
 
+const VALID_DIRECTIONS = ['inbound', 'outbound', 'both'] as const;
+
 const PurchaseRequestSchema = z.object({
   areaCode: z.string().regex(/^\d{3}$/, 'Area code must be exactly 3 digits'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Maximum 100 numbers per order'),
   provider: z.enum(['retell', 'telnyx', 'twilio']).default('retell'),
   purpose: z.enum(VALID_PURPOSES).default('voice_ai'),
+  callDirection: z.enum(VALID_DIRECTIONS).default('outbound'),
 });
 
 serve(async (req) => {
@@ -200,8 +203,8 @@ serve(async (req) => {
         );
       }
 
-      const { areaCode, quantity, provider, purpose } = validationResult.data;
-      console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose}`);
+      const { areaCode, quantity, provider, purpose, callDirection } = validationResult.data;
+      console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose} (direction: ${callDirection})`);
 
       // Determine allowed_uses and rotation_enabled based on purpose
       const allowedUses = PURPOSE_TO_ALLOWED_USES[purpose];
@@ -338,7 +341,8 @@ serve(async (req) => {
               twilio_sid: purchased.sid,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
-              provider: 'twilio'
+              provider: 'twilio',
+              call_direction: callDirection,
             });
           } catch (error) {
             console.error('Failed to purchase Twilio number:', error);
@@ -455,6 +459,7 @@ serve(async (req) => {
             allowed_uses: allowedUses,
             rotation_enabled: rotationEnabled,
             provider: 'telnyx',
+            call_direction: callDirection,
           });
         }
       } else {
@@ -505,7 +510,8 @@ serve(async (req) => {
               retell_phone_id: retellNumber.phone_number_id,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
-              provider: 'retell'
+              provider: 'retell',
+              call_direction: callDirection,
             });
           } catch (error) {
             console.error(`Failed to purchase number ${i + 1}:`, error);
