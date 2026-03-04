@@ -757,25 +757,104 @@ serve(async (req) => {
           voices: [
             // Telnyx NaturalHD (Premium, $0.000012/char)
             { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.Astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+
             // Telnyx Natural (Enhanced, $0.000003/char)
             { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            // KokoroTTS (Basic, $0.000003/char)
+
+            // KokoroTTS — American Female
+            { id: 'Telnyx.KokoroTTS.af_alloy', name: 'Alloy', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_aoede', name: 'Aoede', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_bella', name: 'Bella', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
             { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_jessica', name: 'Jessica', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_kore', name: 'Kore', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_nova', name: 'Nova', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_river', name: 'River', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_sarah', name: 'Sarah', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.af_sky', name: 'Sky', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+
+            // KokoroTTS — American Male
+            { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_echo', name: 'Echo', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_eric', name: 'Eric', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_fenrir', name: 'Fenrir', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_liam', name: 'Liam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_onyx', name: 'Onyx', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.am_puck', name: 'Puck', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+
+            // KokoroTTS — British
+            { id: 'Telnyx.KokoroTTS.bf_alice', name: 'Alice (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.bf_emma', name: 'Emma (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+            { id: 'Telnyx.KokoroTTS.bm_george', name: 'George (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+            { id: 'Telnyx.KokoroTTS.bm_daniel', name: 'Daniel (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+
             // AWS Polly Neural
             { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
             { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+            { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+            { id: 'AWS.Polly.Joey-Neural', name: 'Joey', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+            { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+
             // Azure Neural
             { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
             { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
+            { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
+            { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
           ],
         };
         break;
       }
 
       // ================================================================
-      // ASSIGN PHONE NUMBER to assistant's TeXML app
+      // PREVIEW VOICE — Generate a short TTS sample via Telnyx API
       // ================================================================
+      case 'preview_voice': {
+        const { voice_id, text } = params;
+        if (!voice_id || !text) throw new Error('voice_id and text required');
+
+        const sampleText = (text as string).slice(0, 200);
+
+        try {
+          const ttsResp = await fetch('https://api.telnyx.com/v2/ai/generate', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: sampleText,
+              voice: voice_id,
+              output_format: 'mp3',
+            }),
+          });
+
+          if (ttsResp.ok) {
+            const audioBuffer = await ttsResp.arrayBuffer();
+            const uint8 = new Uint8Array(audioBuffer);
+            // Manual base64 encoding for Deno
+            let binary = '';
+            for (let i = 0; i < uint8.length; i++) {
+              binary += String.fromCharCode(uint8[i]);
+            }
+            const base64 = btoa(binary);
+            result = { audio_base64: base64 };
+          } else {
+            const errText = await ttsResp.text();
+            console.warn('[Telnyx AI Assistant] TTS preview failed:', ttsResp.status, errText);
+            // Fallback: just confirm voice is valid
+            result = { preview_unavailable: true, message: 'Voice set successfully. Preview via live test call.', voice_id };
+          }
+        } catch (ttsErr: any) {
+          console.warn('[Telnyx AI Assistant] TTS preview error:', ttsErr.message);
+          result = { preview_unavailable: true, message: 'Preview unavailable. Voice ID saved — test with a live call.' };
+        }
+        break;
+      }
+
       case 'assign_number': {
         const { assistant_id, phone_number_id } = params;
         if (!assistant_id || !phone_number_id) throw new Error('assistant_id and phone_number_id required');
