@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -706,15 +707,21 @@ const TelnyxAIManager: React.FC = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Greeting (spoken at call start — supports {"{{variables}}"} )</Label>
-                  <Input value={formGreeting} onChange={e => setFormGreeting(e.target.value)} placeholder="Hi {{first_name}}..." />
+                  <Label>Greeting (spoken at call start)</Label>
+                  <DynamicVariablesInput
+                    value={formGreeting}
+                    onChange={setFormGreeting}
+                    placeholder="Hi {{first_name}}, this is..."
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Instructions * (system prompt — supports {"{{variables}}"} )</Label>
-                  <Textarea
+                  <Label>Instructions * (system prompt)</Label>
+                  <DynamicVariablesInput
                     value={formInstructions}
-                    onChange={e => setFormInstructions(e.target.value)}
-                    placeholder="You are a professional AI assistant..."
+                    onChange={setFormInstructions}
+                    multiline
+                    rows={8}
+                    placeholder="You are a professional AI assistant... Type {{ to insert variables"
                     className="min-h-[200px] font-mono text-sm"
                   />
                 </div>

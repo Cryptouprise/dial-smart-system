@@ -17,6 +17,7 @@ import {
   Globe, Puzzle, FlaskConical, Wrench, ExternalLink, Eye,
   Play, RefreshCw, Search, ChevronDown, Info,
 } from 'lucide-react';
+import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 
 interface TelnyxAssistant {
   id: string;
@@ -126,6 +127,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [maxTokens, setMaxTokens] = useState(assistant.metadata?.max_tokens ?? 1024);
   const [interruptSensitivity, setInterruptSensitivity] = useState(assistant.metadata?.interrupt_sensitivity ?? 0.5);
   const [silenceTimeout, setSilenceTimeout] = useState(assistant.metadata?.silence_timeout_ms ?? 10000);
+  const [llmApiKeyRef, setLlmApiKeyRef] = useState(assistant.metadata?.llm_api_key_ref || '');
 
   // Analysis tab  
   const [conversations, setConversations] = useState<any[]>([]);
@@ -226,6 +228,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
         max_tokens: maxTokens,
         interrupt_sensitivity: interruptSensitivity,
         silence_timeout_ms: silenceTimeout,
+        ...(llmApiKeyRef ? { llm_api_key_ref: llmApiKeyRef } : {}),
       });
 
       toast({ title: 'Saved', description: `${name} updated successfully` });
@@ -351,10 +354,13 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
 
             <div className="space-y-2">
               <Label>Instructions * (system prompt)</Label>
-              <Textarea
+              <DynamicVariablesInput
                 value={instructions}
-                onChange={e => setInstructions(e.target.value)}
+                onChange={setInstructions}
+                multiline
+                rows={12}
                 className="min-h-[300px] font-mono text-sm"
+                placeholder="Enter instructions... Type {{ to insert dynamic variables"
               />
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
@@ -420,8 +426,12 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </div>
 
             <div className="space-y-2">
-              <Label>Greeting (spoken at call start — supports {"{{variables}}"})</Label>
-              <Input value={greeting} onChange={e => setGreeting(e.target.value)} />
+              <Label>Greeting (spoken at call start)</Label>
+              <DynamicVariablesInput
+                value={greeting}
+                onChange={setGreeting}
+                placeholder="Hi {{first_name}}, this is... Type {{ to insert variables"
+              />
             </div>
 
             {/* Dynamic Variables */}
@@ -1059,7 +1069,28 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           {/* ===== ADVANCED TAB ===== */}
           <TabsContent value="advanced" className="space-y-4">
             <h4 className="font-semibold">Advanced Settings</h4>
-            <p className="text-sm text-muted-foreground">Fine-tune the AI model behavior and conversation dynamics.</p>
+            <p className="text-sm text-muted-foreground">Fine-tune the AI model behavior, API keys, and conversation dynamics.</p>
+
+            {/* LLM API Key */}
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Settings className="h-4 w-4" /> LLM API Key (for GPT-4o, Claude, etc.)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Input
+                  type="password"
+                  value={llmApiKeyRef}
+                  onChange={e => setLlmApiKeyRef(e.target.value)}
+                  placeholder="sk-... (your OpenAI / Anthropic key)"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Required when using GPT-4o, GPT-4o Mini, or Claude models. Free Telnyx models (Qwen, Llama) don't need a key.
+                  This key is stored securely in Telnyx — it's sent once during save and never returned.
+                </p>
+              </CardContent>
+            </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
