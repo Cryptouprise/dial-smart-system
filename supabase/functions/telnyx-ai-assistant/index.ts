@@ -448,6 +448,44 @@ serve(async (req) => {
             case 'call_direction':
               dbUpdate.call_direction = value;
               break;
+            case 'temperature':
+              telnyxUpdate.temperature = value;
+              metadataUpdate.temperature = value;
+              break;
+            case 'max_tokens':
+              telnyxUpdate.max_tokens = value;
+              metadataUpdate.max_tokens = value;
+              break;
+            case 'interrupt_sensitivity':
+              telnyxUpdate.interrupt_sensitivity = value;
+              metadataUpdate.interrupt_sensitivity = value;
+              break;
+            case 'silence_timeout_ms':
+              telnyxUpdate.silence_timeout_ms = value;
+              metadataUpdate.silence_timeout_ms = value;
+              break;
+            case 'llm_api_key_ref':
+              telnyxUpdate.llm_api_key_ref = value;
+              metadataUpdate.llm_api_key_ref = value;
+              break;
+            case 'voice_api_key_ref':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), api_key_ref: value };
+              metadataUpdate.voice_api_key_ref = value;
+              break;
+            case 'messaging': {
+              const msgVal = value as any;
+              if (msgVal?.enabled !== undefined) {
+                metadataUpdate.messaging = msgVal;
+              }
+              break;
+            }
+            case 'widget': {
+              const widVal = value as any;
+              if (widVal?.enabled !== undefined) {
+                metadataUpdate.widget = widVal;
+              }
+              break;
+            }
           }
         }
 
