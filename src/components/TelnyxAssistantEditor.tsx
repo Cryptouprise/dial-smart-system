@@ -69,6 +69,7 @@ async function callEdgeFunction(functionName: string, body: any) {
 const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voices, onSave, onClose }) => {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [previewingVoice, setPreviewingVoice] = useState(false);
   const [loadingTelnyx, setLoadingTelnyx] = useState(true);
   const [activeTab, setActiveTab] = useState('agent');
   const [telnyxData, setTelnyxData] = useState<any>(null);
@@ -509,18 +510,62 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           {/* ===== VOICE TAB ===== */}
           <TabsContent value="voice" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Voice</Label>
-                <Select value={voice} onValueChange={setVoice}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {voices.map(v => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.name} ({v.provider}, {v.gender})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={voice} onValueChange={setVoice}>
+                    <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {voices.map(v => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name} ({v.provider}, {v.gender})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={previewingVoice}
+                    onClick={async () => {
+                      setPreviewingVoice(true);
+                      try {
+                        const sampleText = greeting
+                          ? greeting.replace(/\{\{[^}]+\}\}/g, 'there')
+                          : `Hi there! My name is ${voices.find(v => v.id === voice)?.name || 'your assistant'}. How can I help you today?`;
+
+                        const res = await callEdgeFunction('telnyx-ai-assistant', {
+                          action: 'preview_voice',
+                          params: { voice_id: voice, text: sampleText },
+                        });
+
+                        if (res.audio_url) {
+                          const audio = new Audio(res.audio_url);
+                          audio.play();
+                        } else if (res.audio_base64) {
+                          const audio = new Audio(`data:audio/mpeg;base64,${res.audio_base64}`);
+                          audio.play();
+                        } else {
+                          toast({ title: 'Preview not available', description: 'Voice preview requires Telnyx TTS. Voice ID has been set — test with a live call.', variant: 'default' });
+                        }
+                      } catch (err: any) {
+                        toast({ title: 'Preview failed', description: err.message, variant: 'destructive' });
+                      } finally {
+                        setPreviewingVoice(false);
+                      }
+                    }}
+                    title="Preview voice sample"
+                  >
+                    {previewingVoice ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {voices.find(v => v.id === voice)?.tier === 'premium' && '⭐ Premium HD voice'}
+                  {voices.find(v => v.id === voice)?.tier === 'enhanced' && '✨ Enhanced voice'}
+                  {voices.find(v => v.id === voice)?.tier === 'basic' && '🎤 Free Kokoro voice'}
+                  {voices.find(v => v.id === voice)?.tier === 'neural' && '🧠 Neural voice'}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Voice Speed: {voiceSpeed}x</Label>
