@@ -52,6 +52,29 @@ function normalizeTelnyxModelId(modelId: string): string {
   return modelId;
 }
 
+function normalizeVoiceProvider(rawProvider?: string, voiceId?: string): string {
+  const provider = String(rawProvider || '').trim();
+  const source = `${provider} ${voiceId || ''}`.toLowerCase();
+
+  if (source.includes('elevenlabs') || source.includes('eleven_labs') || source.includes('eleven labs') || source.includes('11labs')) return 'ElevenLabs';
+  if (source.includes('kokoro')) return 'KokoroTTS';
+  if (source.includes('polly') || source.includes('aws')) return 'AWS Polly';
+  if (source.includes('azure')) return 'Azure';
+  if (source.includes('minimax')) return 'MiniMax';
+  if (source.includes('resemble')) return 'ResembleAI';
+  if (source.includes('naturalhd')) return 'Telnyx NaturalHD';
+  if (source.includes('telnyx') && source.includes('natural')) return 'Telnyx Natural';
+  if (source.includes('telnyx')) return 'Telnyx';
+
+  return provider || 'Unknown';
+}
+
+function humanizeVoiceId(voiceId?: string): string {
+  if (!voiceId) return 'Unknown';
+  const tail = String(voiceId).split(/[./]/).pop() || String(voiceId);
+  return tail.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // Telnyx API helper
 async function telnyxFetch(
   path: string,
@@ -1078,58 +1101,70 @@ serve(async (req) => {
       case 'list_voices': {
         // Try fetching live voices from Telnyx API (includes ElevenLabs, etc.)
         let liveVoices: any[] = [];
+        const voiceEndpoints = [
+          '/ai/voices',
+          '/ai/assistants/voices',
+          '/voice/tts/voices',
+          '/ai/tts/voices',
+        ];
+
         if (apiKey) {
-          try {
-            const voicesResp = await fetch('https://api.telnyx.com/v2/ai/voices', {
-              headers: { 'Authorization': `Bearer ${apiKey}` },
-            });
-            if (voicesResp.ok) {
-              const voicesData = await voicesResp.json();
-              const items = voicesData?.data || voicesData?.voices || voicesData || [];
-              if (Array.isArray(items)) {
-                liveVoices = items.map((v: any) => {
-                  const rawProvider = v.provider || v.tts_provider || '';
-                  // Normalize provider names to match UI expectations
-                  let provider = rawProvider;
-                  const lp = rawProvider.toLowerCase();
-                  if (lp.includes('elevenlabs') || lp.includes('eleven_labs') || lp.includes('eleven labs')) {
-                    provider = 'ElevenLabs';
-                  } else if (lp.includes('kokoro')) {
-                    provider = 'KokoroTTS';
-                  } else if (lp.includes('polly') || lp.includes('aws')) {
-                    provider = 'AWS Polly';
-                  } else if (lp.includes('azure')) {
-                    provider = 'Azure';
-                  } else if (lp.includes('minimax')) {
-                    provider = 'MiniMax';
-                  } else if (lp.includes('resemble')) {
-                    provider = 'ResembleAI';
-                  } else if (lp.includes('telnyx') && lp.includes('hd')) {
-                    provider = 'Telnyx NaturalHD';
-                  } else if (lp.includes('telnyx') && lp.includes('natural')) {
-                    provider = 'Telnyx Natural';
-                  } else if (lp.includes('telnyx')) {
-                    provider = 'Telnyx';
-                  } else if (!provider) {
-                    provider = 'Unknown';
-                  }
-                  
-                  return {
-                    id: v.id || v.voice_id || v.name,
-                    name: v.display_name || v.name || v.id || 'Unknown',
-                    provider,
-                    tier: v.tier || (provider === 'ElevenLabs' ? 'premium' : provider === 'Telnyx NaturalHD' ? 'premium' : 'standard'),
-                    gender: v.gender || 'unknown',
-                  };
-                });
-              }
-            } else {
-              console.warn('[Telnyx AI Assistant] Live voices fetch failed:', voicesResp.status);
+          for (const endpoint of voiceEndpoints) {
+            const voicesRes = await telnyxFetch(endpoint, apiKey!);
+            if (!voicesRes.ok) {
+              console.warn('[Telnyx AI Assistant] Live voices fetch failed:', endpoint, voicesRes.status);
+              continue;
             }
-          } catch (e: any) {
-            console.warn('[Telnyx AI Assistant] Failed to fetch live voices:', e.message);
+
+            const items = voicesRes.data?.data || voicesRes.data?.voices || voicesRes.data || [];
+            if (!Array.isArray(items) || items.length === 0) continue;
+
+            liveVoices = items.map((v: any) => {
+              const id = v.id || v.voice_id || v.name;
+              const provider = normalizeVoiceProvider(v.provider || v.tts_provider, id);
+              return {
+                id,
+                name: v.display_name || v.name || humanizeVoiceId(id),
+                provider,
+                tier: v.tier || (provider === 'ElevenLabs' || provider === 'Telnyx NaturalHD' ? 'premium' : 'standard'),
+                gender: v.gender || 'unknown',
+              };
+            }).filter((v: any) => !!v.id);
+
+            if (liveVoices.length > 0) {
+              console.log('[Telnyx AI Assistant] Loaded live voices from', endpoint, 'count=', liveVoices.length);
+              break;
+            }
           }
         }
+
+        // Fallback from local assistants (ensures existing/older agent voices still appear)
+        const { data: localRows } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('voice, metadata')
+          .eq('user_id', userId)
+          .not('voice', 'is', null);
+
+        const localVoices = Array.from(new Map(
+          (localRows || [])
+            .filter((r: any) => !!r.voice)
+            .map((r: any) => {
+              const provider = normalizeVoiceProvider(
+                r?.metadata?.voice_provider || r?.metadata?.telnyx_response?.voice_settings?.provider,
+                r.voice
+              );
+              return [
+                String(r.voice).toLowerCase(),
+                {
+                  id: r.voice,
+                  name: humanizeVoiceId(r.voice),
+                  provider,
+                  tier: provider === 'ElevenLabs' || provider === 'Telnyx NaturalHD' ? 'premium' : 'custom',
+                  gender: 'unknown',
+                },
+              ];
+            })
+        ).values());
 
         // Static fallback list
         const staticVoices = [
@@ -1190,9 +1225,19 @@ serve(async (req) => {
           { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
         ];
 
-        // Merge: live voices first, then static (dedup by id)
-        const seenIds = new Set(liveVoices.map((v: any) => v.id));
-        const merged = [...liveVoices, ...staticVoices.filter(v => !seenIds.has(v.id))];
+        // Merge: live voices, then locally-known voices, then static fallback (dedup by id)
+        const seenIds = new Set<string>();
+        const merged: any[] = [];
+        for (const source of [liveVoices, localVoices, staticVoices]) {
+          for (const voice of source) {
+            const id = String(voice?.id || '').trim();
+            if (!id) continue;
+            const key = id.toLowerCase();
+            if (seenIds.has(key)) continue;
+            seenIds.add(key);
+            merged.push(voice);
+          }
+        }
 
         result = { voices: merged };
         break;
