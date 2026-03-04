@@ -890,17 +890,47 @@ serve(async (req) => {
       // LIST MODELS
       // ================================================================
       case 'list_models': {
-        // Return known Telnyx-supported models
-        result = {
-          models: [
-            { id: 'Qwen/Qwen3-235B-A22B', name: 'Qwen 3 235B', provider: 'Qwen', recommended: true, cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Meta-Llama-3.1-70B-Instruct', name: 'Llama 3.1 70B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct', name: 'Llama 3.1 8B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
-          ],
-        };
+        // Fetch live models from Telnyx API + add known proprietary ones
+        let telnyxModels: any[] = [];
+        try {
+          const modelsResp = await fetch('https://api.telnyx.com/v2/ai/models', {
+            headers: { Authorization: `Bearer ${telnyxApiKey}` },
+          });
+          if (modelsResp.ok) {
+            const modelsJson = await modelsResp.json();
+            telnyxModels = (modelsJson.data || []).map((m: any) => ({
+              id: m.id,
+              name: m.id.split('/').pop()?.replace(/-/g, ' ') || m.id,
+              provider: m.owned_by || m.id.split('/')[0] || 'Unknown',
+              cost: 'Included with Telnyx',
+              recommended: m.id.includes('Qwen3') || m.id.includes('Llama-3.1-70B'),
+            }));
+          }
+        } catch (e) {
+          console.error('Failed to fetch Telnyx models:', e);
+        }
+
+        // Always include proprietary models that require user's own API key
+        const proprietaryModels = [
+          { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'o4-mini', name: 'o4-mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
+          { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
+          { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
+          { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
+        ];
+
+        // Deduplicate: proprietary models that already appear in Telnyx list get skipped
+        const telnyxIds = new Set(telnyxModels.map((m: any) => m.id));
+        const combined = [
+          ...telnyxModels,
+          ...proprietaryModels.filter(p => !telnyxIds.has(p.id)),
+        ];
+
+        result = { models: combined };
         break;
       }
 
