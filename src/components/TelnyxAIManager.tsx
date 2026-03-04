@@ -14,8 +14,9 @@ import {
   Plus, RefreshCw, Trash2, Copy, Phone, Bot, Brain,
   Mic, MessageSquare, Calendar, Database, Settings,
   CheckCircle, AlertCircle, Loader2, ExternalLink, Zap,
-  PhoneCall, Variable, Info, BookOpen, Pencil,
+  PhoneCall, Variable, Info, BookOpen, Pencil, Link2, XCircle,
 } from 'lucide-react';
+import { useCalendarIntegration } from '@/hooks/useCalendarIntegration';
 
 const TelnyxAssistantEditor = lazy(() => import('@/components/TelnyxAssistantEditor'));
 
@@ -290,21 +291,17 @@ const DynamicVariablesPanel: React.FC = () => {
       </Card>
 
       {/* Calendar Integration Info */}
-      <Card className="border-blue-500/20 bg-blue-500/5">
+      <Card className="border-primary/20 bg-primary/5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-blue-500" />Calendar Integration</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-primary" />Calendar Integration</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Calendar booking is <strong>automatically added</strong> as a webhook tool on every new assistant. The AI can:</p>
-          <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm">
-            <li><code className="bg-muted px-1 rounded">get_available_slots</code> — Check your calendar availability for a given date</li>
-            <li><code className="bg-muted px-1 rounded">book_appointment</code> — Book an appointment with lead name, email, phone, date/time</li>
-          </ul>
-          <p className="text-muted-foreground text-xs mt-2">
-            <strong>Setup:</strong> Connect Google Calendar in Settings → Calendar tab first. The AI agent will automatically call your calendar-integration endpoint during live calls.
+          <p>Calendar booking tools (<code className="bg-muted px-1 rounded">get_available_slots</code> and <code className="bg-muted px-1 rounded">book_appointment</code>) are <strong>automatically added</strong> to every new assistant.</p>
+          <p className="text-muted-foreground text-xs">
+            <strong>Tip:</strong> Make sure to mention booking in your agent instructions, e.g. "When the lead wants to schedule, use the book_appointment tool."
           </p>
           <p className="text-muted-foreground text-xs">
-            <strong>In your instructions:</strong> Add something like "When the lead wants to schedule, use the book_appointment tool to check availability and book."
+            Calendar connection status is shown at the top of this page. Connect Google Calendar there if you haven't already.
           </p>
         </CardContent>
       </Card>
@@ -327,6 +324,10 @@ const TelnyxAIManager: React.FC = () => {
   const [syncingNumbers, setSyncingNumbers] = useState(false);
   const [testCallAssistant, setTestCallAssistant] = useState<TelnyxAssistant | null>(null);
   const [editingAssistant, setEditingAssistant] = useState<TelnyxAssistant | null>(null);
+
+  // Calendar integration
+  const { integrations: calendarIntegrations, connectGoogleCalendar, isLoading: calendarLoading } = useCalendarIntegration();
+  const googleCalendar = calendarIntegrations.find(i => i.provider === 'google');
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -529,6 +530,53 @@ const TelnyxAIManager: React.FC = () => {
               <Badge variant="secondary">Sub-200ms Latency</Badge>
             </div>
             <span className="text-xs text-muted-foreground">vs Retell: $0.13-0.31/min</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Calendar Connection Status */}
+      <Card className={googleCalendar ? 'border-green-500/30 bg-green-500/5' : 'border-amber-500/30 bg-amber-500/5'}>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Calendar className={`h-5 w-5 ${googleCalendar ? 'text-green-600' : 'text-amber-600'}`} />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">Calendar</span>
+                  {googleCalendar ? (
+                    <Badge variant="default" className="text-xs gap-1 bg-green-600">
+                      <CheckCircle className="h-2.5 w-2.5" />Connected
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs gap-1 text-amber-700 border-amber-500/50">
+                      <AlertCircle className="h-2.5 w-2.5" />Not Connected
+                    </Badge>
+                  )}
+                </div>
+                {googleCalendar ? (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Synced to <strong>{googleCalendar.provider_account_email || 'Google Calendar'}</strong>
+                    {googleCalendar.calendar_name && <> — {googleCalendar.calendar_name}</>}
+                    {' • '}AI agents can check availability & book appointments automatically
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect Google Calendar so AI agents can check your availability and book appointments during calls
+                  </p>
+                )}
+              </div>
+            </div>
+            {googleCalendar ? (
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => window.location.href = '/?tab=calendar'}>
+                <Settings className="h-3.5 w-3.5" />
+                Manage
+              </Button>
+            ) : (
+              <Button size="sm" className="gap-1" onClick={connectGoogleCalendar} disabled={calendarLoading}>
+                {calendarLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                Connect Google Calendar
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
