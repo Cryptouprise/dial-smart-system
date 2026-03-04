@@ -122,7 +122,11 @@ const TestCallDialog: React.FC<{ assistant: TelnyxAssistant; onClose: () => void
         dynamic_variables: parsedVars,
       });
       setCallResult(data);
-      toast({ title: '📞 Call Initiated!', description: data.message });
+      if (data.diagnostic && !data.success) {
+        toast({ title: '🔍 Pre-Call Check Failed', description: data.critical_issues?.[0] || 'Configuration issues detected', variant: 'destructive' });
+      } else {
+        toast({ title: '📞 Call Initiated!', description: data.message });
+      }
     } catch (err: any) {
       toast({ title: 'Call Failed', description: err.message, variant: 'destructive' });
       setCallResult({ error: err.message });
@@ -180,15 +184,43 @@ const TestCallDialog: React.FC<{ assistant: TelnyxAssistant; onClose: () => void
         </div>
 
         {callResult && (
-          <Card className={callResult.error ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/50 bg-green-500/5'}>
+          <Card className={callResult.error || callResult.diagnostic ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/50 bg-green-500/5'}>
             <CardContent className="py-3">
               {callResult.error ? (
                 <p className="text-sm text-destructive">{callResult.error}</p>
+              ) : callResult.diagnostic && !callResult.success ? (
+                <div className="text-sm space-y-2">
+                  <p className="font-medium text-destructive">🔍 Pre-Call Diagnostic Failed</p>
+                  {callResult.warnings?.map((w: string, i: number) => (
+                    <p key={i} className="text-sm">{w}</p>
+                  ))}
+                  {callResult.assistant_config_snapshot && (
+                    <div className="mt-2 p-2 rounded bg-muted text-xs font-mono space-y-0.5">
+                      <p>Voice: {callResult.assistant_config_snapshot.voice || '❌ NOT SET'}</p>
+                      <p>STT: {callResult.assistant_config_snapshot.transcription_provider || '❌ NOT SET'}</p>
+                      <p>Model: {callResult.assistant_config_snapshot.model || '⚠️ NOT SET'}</p>
+                      <p>TeXML App: {callResult.assistant_config_snapshot.texml_app_id || '❌ MISSING'}</p>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="text-sm space-y-1">
-                  <p className="font-medium text-green-700">✅ {callResult.message}</p>
+                  <p className="font-medium text-green-700 dark:text-green-400">✅ {callResult.message}</p>
                   <p className="text-muted-foreground">From: {callResult.from} → To: {callResult.to}</p>
                   {callResult.call_sid && <p className="text-xs text-muted-foreground">Call SID: {callResult.call_sid}</p>}
+                  {callResult.warnings?.length > 0 && (
+                    <div className="mt-2 border-t pt-2 space-y-1">
+                      <p className="text-xs font-medium text-amber-600">⚠️ Non-critical warnings:</p>
+                      {callResult.warnings.map((w: string, i: number) => (
+                        <p key={i} className="text-xs text-amber-600">{w}</p>
+                      ))}
+                    </div>
+                  )}
+                  {callResult.assistant_config_snapshot && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Voice: {callResult.assistant_config_snapshot.voice} · STT: {callResult.assistant_config_snapshot.transcription_provider} · Model: {callResult.assistant_config_snapshot.model}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
