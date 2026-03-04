@@ -434,6 +434,9 @@ serve(async (req) => {
               telnyxUpdate.enabled_features = value;
               dbUpdate.enabled_features = value;
               break;
+            case 'call_direction':
+              dbUpdate.call_direction = value;
+              break;
           }
         }
 
