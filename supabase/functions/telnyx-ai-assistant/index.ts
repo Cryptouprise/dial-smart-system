@@ -798,6 +798,20 @@ serve(async (req) => {
 
         if (!phoneNumber) throw new Error('Phone number not found');
 
+        // Check if this number is already assigned to ANOTHER assistant
+        const { data: conflictingAssistants } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, assigned_phone_number_ids')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .neq('id', assistant_id)
+          .contains('assigned_phone_number_ids', [phone_number_id]);
+
+        if (conflictingAssistants && conflictingAssistants.length > 0) {
+          const conflictNames = conflictingAssistants.map((a: any) => a.name).join(', ');
+          throw new Error(`This number is already assigned to: ${conflictNames}. Unassign it first to avoid routing conflicts.`);
+        }
+
         // Update phone number on Telnyx to use this TeXML app
         const updateRes = await telnyxFetch(
           `/phone_numbers/${phone_number_id}`,
