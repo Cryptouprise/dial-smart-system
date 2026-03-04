@@ -94,35 +94,37 @@ async function telnyxFetch(
 function buildCalendarTool(supabaseUrl: string, serviceRoleKey: string, userId: string): any {
   return {
     type: 'webhook',
-    name: 'book_appointment',
-    description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability first, then "book_appointment" to book. Always provide the user_id.',
-    url: `${supabaseUrl}/functions/v1/calendar-integration`,
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body_parameters: {
-      type: 'object',
-      properties: {
-        action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
-        user_id: { type: 'string', description: `The user ID for calendar lookup. Always use: ${userId}` },
-        date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-        time: { type: 'string', description: 'Time in HH:MM format (24h)' },
-        duration_minutes: { type: 'number', description: 'Appointment duration in minutes, default 30' },
-        attendee_name: { type: 'string', description: 'Name of the person being booked' },
-        attendee_email: { type: 'string', description: 'Email of the person being booked' },
-        attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
-        notes: { type: 'string', description: 'Appointment notes' },
+    webhook: {
+      name: 'book_appointment',
+      description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability first, then "book_appointment" to book. Always provide the user_id.',
+      url: `${supabaseUrl}/functions/v1/calendar-integration`,
+      method: 'POST',
+      headers: [
+        { name: 'Authorization', value: `Bearer ${serviceRoleKey}` },
+        { name: 'Content-Type', value: 'application/json' },
+      ],
+      body_parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
+          user_id: { type: 'string', description: `The user ID for calendar lookup. Always use: ${userId}` },
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+          time: { type: 'string', description: 'Time in HH:MM format (24h)' },
+          duration_minutes: { type: 'number', description: 'Appointment duration in minutes, default 30' },
+          attendee_name: { type: 'string', description: 'Name of the person being booked' },
+          attendee_email: { type: 'string', description: 'Email of the person being booked' },
+          attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
+          notes: { type: 'string', description: 'Appointment notes' },
+        },
+        required: ['action', 'user_id'],
       },
-      required: ['action', 'user_id'],
     },
   };
 }
 
 // Ensure calendar tools are present in a tools array
 function ensureCalendarTools(tools: any[], supabaseUrl: string, serviceRoleKey: string, userId: string): any[] {
-  const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
+  const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability' || t.webhook?.name === 'book_appointment' || t.webhook?.name === 'check_availability');
   if (!hasCalendar) {
     tools.push(buildCalendarTool(supabaseUrl, serviceRoleKey, userId));
   }
@@ -132,18 +134,24 @@ function ensureCalendarTools(tools: any[], supabaseUrl: string, serviceRoleKey: 
 // Build Telnyx tool config from our simplified format
 function buildToolConfig(tool: any): any {
   switch (tool.type) {
-    case 'webhook':
+    case 'webhook': {
+      const webhookHeaders = Array.isArray(tool.headers) ? tool.headers :
+        (tool.headers && typeof tool.headers === 'object') ?
+          Object.entries(tool.headers).map(([k, v]) => ({ name: k, value: v })) : [];
       return {
         type: 'webhook',
-        name: tool.name,
-        description: tool.description || '',
-        url: tool.url,
-        method: tool.method || 'POST',
-        headers: tool.headers || {},
-        path_parameters: tool.path_parameters,
-        query_parameters: tool.query_parameters,
-        body_parameters: tool.body_parameters,
+        webhook: {
+          name: tool.name,
+          description: tool.description || '',
+          url: tool.url,
+          method: tool.method || 'POST',
+          headers: webhookHeaders,
+          path_parameters: tool.path_parameters,
+          query_parameters: tool.query_parameters,
+          body_parameters: tool.body_parameters,
+        },
       };
+    }
     case 'transfer':
       return {
         type: 'transfer',
@@ -760,7 +768,7 @@ serve(async (req) => {
           }
           // Push calendar tools to this assistant on Telnyx if missing
           const currentTools = resolvedTools;
-          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+           const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
           if (!hasCalendar) {
             const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
             const toolPushRes = await telnyxFetch(
@@ -804,7 +812,7 @@ serve(async (req) => {
           }
 
           const currentTools = getRes.data.data?.tools || [];
-          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
 
           if (hasCalendar) {
             results.push({ name: asst.name, status: 'already_has_tools' });
@@ -856,7 +864,7 @@ serve(async (req) => {
         if (!getRes.ok) throw new Error(`Failed to fetch from Telnyx: ${getRes.error}`);
 
         const currentTools = getRes.data.data?.tools || [];
-        const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
+        const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
 
         if (hasCalendar) {
           await supabaseAdmin
