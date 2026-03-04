@@ -203,7 +203,7 @@ serve(async (req) => {
     // Debug: log key metadata (NOT the key itself) to diagnose malformed key errors
     console.log(`[Telnyx AI Assistant] API Key debug: raw_length=${rawApiKey?.length ?? 'null'}, clean_length=${apiKey?.length ?? 'null'}, starts_with=${apiKey?.substring(0, 4) ?? 'null'}, ends_with=${apiKey?.substring((apiKey?.length ?? 0) - 4) ?? 'null'}`);
     
-    if (!apiKey && action !== 'list_assistants' && action !== 'health_check') {
+    if (!apiKey && !['list_assistants', 'health_check', 'list_voices', 'list_models'].includes(action)) {
       return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -603,16 +603,14 @@ serve(async (req) => {
       // SYNC ASSISTANTS (Telnyx → local DB) + phone number mapping
       // ================================================================
       case 'sync_assistants': {
-        const listRes = await telnyxFetch('/ai/assistants', apiKey!);
+        const listRes = await telnyxFetch('/ai/assistants?page[size]=250', apiKey!);
         if (!listRes.ok) throw new Error(`Telnyx API error: ${listRes.error}`);
 
         const telnyxAssistants = listRes.data.data || [];
         let synced = 0;
         const texmlToPhones: Record<string, string[]> = {};
 
-        // Build a map of Telnyx phone ID → local phone_numbers.id
-        const telnyxIdToLocalId: Record<string, string> = {};
-        try {
+        // Build TeXML app ID → local phone_numbers.id map from active Telnyx numbers
           const { data: localPhones } = await supabaseAdmin
             .from('phone_numbers')
             .select('id, number')
@@ -626,7 +624,6 @@ serve(async (req) => {
                 const e164 = tp.phone_number; // Telnyx returns E.164
                 const localMatch = localPhones.find((lp: any) => lp.number === e164);
                 if (localMatch) {
-                  telnyxIdToLocalId[tp.id] = localMatch.id;
                   const connId = tp.connection_id;
                   if (connId) {
                     if (!texmlToPhones[connId]) texmlToPhones[connId] = [];
@@ -642,10 +639,25 @@ serve(async (req) => {
 
         for (const ta of telnyxAssistants) {
           const telnyxId = ta.assistant_id || ta.id;
-          const texmlAppId = ta.telephony_settings?.default_texml_app_id;
+
+          // Pull full assistant payload so sync reflects exact portal config (model/voice/tools/etc)
+          let fullAssistant = ta;
+          if (telnyxId) {
+            const detailRes = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey!);
+            if (detailRes.ok && detailRes.data?.data) {
+              fullAssistant = detailRes.data.data;
+            }
+          }
+
+          const texmlAppId = fullAssistant.telephony_settings?.default_texml_app_id || ta.telephony_settings?.default_texml_app_id;
 
           // Find phone numbers assigned to this assistant's TeXML app
           const assignedPhoneIds = texmlAppId ? (texmlToPhones[texmlAppId] || []) : [];
+          const resolvedModel = fullAssistant.model || ta.model || 'Qwen/Qwen3-235B-A22B';
+          const resolvedVoice = fullAssistant.voice_settings?.voice || ta.voice_settings?.voice || 'Telnyx.NaturalHD.Ava';
+          const resolvedInstructions = fullAssistant.instructions || ta.instructions || '';
+          const resolvedGreeting = fullAssistant.greeting || ta.greeting || null;
+          const resolvedTools = fullAssistant.tools || ta.tools || [];
 
           // Check if already exists locally
           const { data: existing } = await supabaseAdmin
@@ -659,14 +671,14 @@ serve(async (req) => {
             await supabaseAdmin
               .from('telnyx_assistants')
               .update({
-                name: ta.name,
-                model: ta.model,
-                instructions: ta.instructions,
-                greeting: ta.greeting,
-                voice: ta.voice_settings?.voice,
-                tools: ta.tools || [],
+                name: fullAssistant.name || ta.name,
+                model: resolvedModel,
+                instructions: resolvedInstructions,
+                greeting: resolvedGreeting,
+                voice: resolvedVoice,
+                tools: resolvedTools,
                 telnyx_texml_app_id: texmlAppId || undefined,
-                telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id || undefined,
+                telnyx_messaging_profile_id: fullAssistant.messaging_settings?.default_messaging_profile_id || ta.messaging_settings?.default_messaging_profile_id || undefined,
                 assigned_phone_number_ids: assignedPhoneIds.length > 0 ? assignedPhoneIds : undefined,
                 updated_at: new Date().toISOString(),
               })
@@ -679,20 +691,20 @@ serve(async (req) => {
                 user_id: userId,
                 telnyx_assistant_id: telnyxId,
                 telnyx_texml_app_id: texmlAppId,
-                telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id,
-                name: ta.name || 'Imported Assistant',
-                model: ta.model || 'Qwen/Qwen3-235B-A22B',
-                instructions: ta.instructions || '',
-                greeting: ta.greeting,
-                voice: ta.voice_settings?.voice || 'Telnyx.NaturalHD.Ava',
-                tools: ta.tools || [],
+                telnyx_messaging_profile_id: fullAssistant.messaging_settings?.default_messaging_profile_id || ta.messaging_settings?.default_messaging_profile_id,
+                name: fullAssistant.name || ta.name || 'Imported Assistant',
+                model: resolvedModel,
+                instructions: resolvedInstructions,
+                greeting: resolvedGreeting,
+                voice: resolvedVoice,
+                tools: resolvedTools,
                 status: 'active',
                 assigned_phone_number_ids: assignedPhoneIds,
-                metadata: { imported_from: 'telnyx_sync', telnyx_response: ta },
+                metadata: { imported_from: 'telnyx_sync', telnyx_response: fullAssistant },
               });
           }
           // Push calendar tools to this assistant on Telnyx if missing
-          const currentTools = ta.tools || [];
+          const currentTools = resolvedTools;
           const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment');
           if (!hasCalendar) {
             const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
@@ -701,9 +713,9 @@ serve(async (req) => {
               { tools: updatedTools }
             );
             if (toolPushRes.ok) {
-              console.log(`[Sync] ✅ Pushed calendar tool to ${ta.name}`);
+              console.log(`[Sync] ✅ Pushed calendar tool to ${fullAssistant.name || ta.name}`);
             } else {
-              console.warn(`[Sync] ⚠️ Failed to push calendar tool to ${ta.name}: ${toolPushRes.error}`);
+              console.warn(`[Sync] ⚠️ Failed to push calendar tool to ${fullAssistant.name || ta.name}: ${toolPushRes.error}`);
             }
           }
           synced++;
@@ -890,45 +902,58 @@ serve(async (req) => {
       // LIST MODELS
       // ================================================================
       case 'list_models': {
-        // Fetch live models from Telnyx API + add known proprietary ones
+        // Fetch live models from Telnyx API + include OpenAI/Anthropic aliases used in portal configs
         let telnyxModels: any[] = [];
-        try {
-          const modelsResp = await fetch('https://api.telnyx.com/v2/ai/models', {
-            headers: { Authorization: `Bearer ${telnyxApiKey}` },
-          });
-          if (modelsResp.ok) {
-            const modelsJson = await modelsResp.json();
-            telnyxModels = (modelsJson.data || []).map((m: any) => ({
-              id: m.id,
-              name: m.id.split('/').pop()?.replace(/-/g, ' ') || m.id,
-              provider: m.owned_by || m.id.split('/')[0] || 'Unknown',
-              cost: 'Included with Telnyx',
-              recommended: m.id.includes('Qwen3') || m.id.includes('Llama-3.1-70B'),
-            }));
+
+        if (apiKey) {
+          const modelsRes = await telnyxFetch('/ai/models', apiKey);
+          if (modelsRes.ok) {
+            telnyxModels = (modelsRes.data?.data || []).map((m: any) => {
+              const modelId = m.id || '';
+              const provider = m.owned_by || modelId.split('/')[0] || 'Unknown';
+              const nameBase = modelId.split('/').pop() || modelId;
+              return {
+                id: modelId,
+                name: nameBase.replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+                provider,
+                cost: 'Included with Telnyx',
+                recommended: /qwen3|llama-3\.1-70b/i.test(modelId),
+              };
+            });
+          } else {
+            console.warn('Failed to fetch Telnyx model list:', modelsRes.error);
           }
-        } catch (e) {
-          console.error('Failed to fetch Telnyx models:', e);
         }
 
-        // Always include proprietary models that require user's own API key
-        const proprietaryModels = [
-          { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'o4-mini', name: 'o4-mini', provider: 'OpenAI', cost: 'Requires API key', recommended: false },
-          { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
-          { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
-          { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', provider: 'Anthropic', cost: 'Requires API key', recommended: false },
+        // Include both prefixed and unprefixed IDs to match what users configure in portal/custom LLM flows
+        const aliasModels = [
+          { id: 'openai/gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1', name: 'GPT-4.1 (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4o', name: 'GPT-4o (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/o4-mini', name: 'o4-mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'o4-mini', name: 'o4-mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'anthropic/claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'anthropic/claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
         ];
 
-        // Deduplicate: proprietary models that already appear in Telnyx list get skipped
-        const telnyxIds = new Set(telnyxModels.map((m: any) => m.id));
-        const combined = [
-          ...telnyxModels,
-          ...proprietaryModels.filter(p => !telnyxIds.has(p.id)),
-        ];
+        const seen = new Set<string>();
+        const combined = [...telnyxModels, ...aliasModels].filter((m: any) => {
+          const key = (m.id || '').toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
 
         result = { models: combined };
         break;
