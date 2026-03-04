@@ -553,7 +553,7 @@ serve(async (req) => {
       }
 
       // ================================================================
-      // SYNC ASSISTANTS (Telnyx → local DB)
+      // SYNC ASSISTANTS (Telnyx → local DB) + phone number mapping
       // ================================================================
       case 'sync_assistants': {
         const listRes = await telnyxFetch('/ai/assistants', apiKey!);
@@ -562,8 +562,42 @@ serve(async (req) => {
         const telnyxAssistants = listRes.data.data || [];
         let synced = 0;
 
+        // Build a map of Telnyx phone ID → local phone_numbers.id
+        const telnyxIdToLocalId: Record<string, string> = {};
+        try {
+          const { data: localPhones } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('id, number')
+            .eq('user_id', userId);
+
+          if (localPhones) {
+            const phoneListRes = await telnyxFetch('/phone_numbers?page[size]=250&filter[status]=active', apiKey!);
+            if (phoneListRes.ok) {
+              const telnyxPhones = phoneListRes.data.data || [];
+              for (const tp of telnyxPhones) {
+                const e164 = tp.phone_number; // Telnyx returns E.164
+                const localMatch = localPhones.find((lp: any) => lp.number === e164);
+                if (localMatch) {
+                  telnyxIdToLocalId[tp.id] = localMatch.id;
+                  const connId = tp.connection_id;
+                  if (connId) {
+                    if (!texmlToPhones[connId]) texmlToPhones[connId] = [];
+                    texmlToPhones[connId].push(localMatch.id); // Store LOCAL id
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not fetch phone numbers for sync:', e);
+        }
+
         for (const ta of telnyxAssistants) {
           const telnyxId = ta.assistant_id || ta.id;
+          const texmlAppId = ta.telephony_settings?.default_texml_app_id;
+
+          // Find phone numbers assigned to this assistant's TeXML app
+          const assignedPhoneIds = texmlAppId ? (texmlToPhones[texmlAppId] || []) : [];
 
           // Check if already exists locally
           const { data: existing } = await supabaseAdmin
@@ -583,6 +617,9 @@ serve(async (req) => {
                 greeting: ta.greeting,
                 voice: ta.voice_settings?.voice,
                 tools: ta.tools || [],
+                telnyx_texml_app_id: texmlAppId || undefined,
+                telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id || undefined,
+                assigned_phone_number_ids: assignedPhoneIds.length > 0 ? assignedPhoneIds : undefined,
                 updated_at: new Date().toISOString(),
               })
               .eq('id', existing.id);
@@ -593,7 +630,7 @@ serve(async (req) => {
               .insert({
                 user_id: userId,
                 telnyx_assistant_id: telnyxId,
-                telnyx_texml_app_id: ta.telephony_settings?.default_texml_app_id,
+                telnyx_texml_app_id: texmlAppId,
                 telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id,
                 name: ta.name || 'Imported Assistant',
                 model: ta.model || 'Qwen/Qwen3-235B-A22B',
@@ -602,6 +639,7 @@ serve(async (req) => {
                 voice: ta.voice_settings?.voice || 'Telnyx.NaturalHD.Ava',
                 tools: ta.tools || [],
                 status: 'active',
+                assigned_phone_number_ids: assignedPhoneIds,
                 metadata: { imported_from: 'telnyx_sync', telnyx_response: ta },
               });
           }
@@ -757,7 +795,7 @@ serve(async (req) => {
           voices: [
             // Telnyx NaturalHD (Premium, $0.000012/char)
             { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+            { id: 'Telnyx.NaturalHD.astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.Estelle', name: 'Estelle (Estrella)', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
             { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
             { id: 'Telnyx.NaturalHD.Celeste', name: 'Celeste', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
@@ -880,14 +918,14 @@ serve(async (req) => {
 
         if (!assistant?.telnyx_texml_app_id) throw new Error('Assistant has no TeXML app');
 
-        // Get the Telnyx phone number ID
+        // Get the phone number from local DB
         const { data: phoneNumber } = await supabaseAdmin
           .from('phone_numbers')
-          .select('id, phone_number')
+          .select('id, number')
           .eq('id', phone_number_id)
           .single();
 
-        if (!phoneNumber) throw new Error('Phone number not found');
+        if (!phoneNumber) throw new Error('Phone number not found in local database. Sync your numbers first.');
 
         // Check if this number is already assigned to ANOTHER assistant
         const { data: conflictingAssistants } = await supabaseAdmin
@@ -922,7 +960,7 @@ serve(async (req) => {
             .eq('id', assistant_id);
         }
 
-        result = { assigned: true, phone_number: phoneNumber.phone_number };
+        result = { assigned: true, phone_number: phoneNumber.number };
         break;
       }
 
