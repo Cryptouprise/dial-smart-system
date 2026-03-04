@@ -1,44 +1,114 @@
 
 
-## Fix Build Errors in Telnyx Webhook + Missing Infrastructure
+# Telnyx Integration Readiness Audit
 
-### What's Wrong
-
-There are **2 TypeScript build errors** in `supabase/functions/telnyx-webhook/index.ts` and **1 missing database table** that need to be addressed.
+## Summary Verdict: 85% Ready — Usable Today for Core Flows, With Gaps in 3 Areas
 
 ---
 
-### Error 1: Line 226 - Nonsensical conditional check
-```
-daily_calls: supabaseAdmin.rpc ? undefined : 0
-```
-`supabaseAdmin.rpc` is always a function (always truthy), so this condition always returns `undefined`. This was likely an attempt to skip the field. **Fix:** Simply remove the `daily_calls` field from the update since the comment says "Increment handled elsewhere."
+## What IS Fully Working
 
-### Error 2: Line 320 - `.catch()` on incompatible type
-```
-.then(() => {}).catch(() => {});
-```
-The Supabase `.insert()` returns a `PromiseLike` that doesn't have `.catch()`. **Fix:** Wrap in a standard `Promise.resolve()` or just `await` inside the existing try/catch block (which already handles failures).
+### 1. Telnyx AI Assistant Management (Complete)
+- Create, edit, delete, clone, sync assistants via `telnyx-ai-assistant` edge function
+- Full editor UI with voice, model, transcription, AMD, tools, greeting, instructions
+- Call direction toggle (inbound/outbound/both) with badges
+- Health check, list models, list voices from Telnyx API
 
-### Missing Table: `telnyx_conversation_insights`
-Line 285 inserts into `telnyx_conversation_insights`, but this table doesn't exist in the database. A migration is needed to create it.
+### 2. Outbound AI Calls (Complete)
+- `outbound-calling` edge function has full Telnyx path alongside Retell
+- Provider routing: `provider: 'telnyx'` + `telnyxAssistantId` triggers Telnyx Call Control API
+- AMD detection (premium/standard) passed to Telnyx
+- Call logs updated with `telnyx_call_control_id`, `telnyx_session_id`, provider='telnyx'
+- Test calls from UI working (after the column fix we just deployed)
+
+### 3. Telnyx Webhook Handler (Complete)
+- `telnyx-webhook` handles all lifecycle events: initiated, ringing, answered, hangup, bridged
+- AI conversation ended + insights
+- AMD machine detection events
+- SMS sent/delivered/failed/received
+- Updates call_logs and triggers downstream processing
+
+### 4. Voice Broadcasts with Telnyx (Complete)
+- `voice-broadcast-engine` fully supports Telnyx as a provider
+- `broadcast_provider: 'telnyx_ai'` mode for AI conversational broadcasts
+- Classic audio playback via Telnyx Call Control
+- Number filtering by provider for rotation
+- UI toggle between `twilio_classic` and `telnyx_ai` in VoiceBroadcastManager
+
+### 5. Dynamic Variables + Personalization (Complete)
+- `telnyx-dynamic-vars` serves real-time lead data to Telnyx AI during calls
+- Variables reference tab in UI
+
+### 6. Scheduled Events / Callbacks (Complete)
+- `telnyx-scheduled-events` manages scheduled calls and SMS via Telnyx API
+
+### 7. Knowledge Base Management (Complete)
+- `telnyx-knowledge-base` edge function for RAG/document management
+
+### 8. Conversation Insights (Complete)
+- `telnyx-insights` edge function for post-call structured insights
+
+### 9. Phone Number Sync (Complete)
+- Numbers sync from Telnyx portal into `phone_numbers` table
+- Provider badge shows "Telnyx" in phone number UI
 
 ---
 
-### Missing Secret: Telnyx API Key
-The secrets list shows no `TELNYX_API_KEY`. If Telnyx integration is active, this will likely be needed. You mentioned you might need to provide your API key -- I'll ask for it during implementation.
+## What Has GAPS (3 Areas)
+
+### Gap 1: SMS Sending via Telnyx — NOT Implemented
+- `sms-messaging` only checks if Telnyx key exists for health status but **does NOT send SMS through Telnyx**
+- `ai-sms-processor` has **zero Telnyx references** — all SMS goes through Twilio only
+- **Impact**: Auto-replies, workflow SMS, AI SMS all route exclusively through Twilio. If you don't have Twilio configured, SMS won't work even if you have Telnyx numbers.
+- **Fix needed**: Add Telnyx messaging API path (`POST /v2/messages`) to `sms-messaging` and `ai-sms-processor`
+
+### Gap 2: Inbound Call Routing to Telnyx Assistants — NOT Implemented
+- `setup-inbound-calls` has **zero Telnyx references** — only configures Retell inbound webhooks
+- Despite having `call_direction: 'inbound'` on assistants, there's no mechanism to route incoming calls on Telnyx numbers to the appropriate Telnyx AI assistant
+- **Impact**: Inbound calls to Telnyx numbers won't trigger your AI assistant
+- **Fix needed**: Configure Telnyx number webhooks to point to `telnyx-webhook`, and add routing logic to connect incoming calls to the correct assistant
+
+### Gap 3: Provider Adapter Layer — All Stubs (Non-Blocking)
+- `src/services/providers/telnyxAdapter.ts`, `retellAdapter.ts`, `twilioAdapter.ts` are all empty stubs with TODO comments
+- The actual integration bypasses these adapters entirely — edge functions call Telnyx/Retell APIs directly
+- **Impact**: None currently. The system works without the adapter abstraction. This is a future refactoring concern, not a functional gap.
+- **No fix needed now** — the edge functions handle everything
 
 ---
 
-### Implementation Steps
+## Other Minor Items
 
-1. **Fix line 226** - Remove the broken `daily_calls` field from the phone_numbers update
-2. **Fix line 320** - Replace `.then().catch()` with a simple `await` (already inside try/catch)
-3. **Create `telnyx_conversation_insights` table** via database migration with columns matching the insert on line 285 (user_id, telnyx_conversation_id, telnyx_assistant_id, telnyx_insight_group_id, call_log_id, lead_id, insights, raw_payload)
-4. **Request Telnyx API key** as a Supabase secret if you want Telnyx functions to work
+| Item | Status |
+|------|--------|
+| `disposition-router` Telnyx support | Not needed — dispositions are provider-agnostic |
+| `call-dispatcher` Telnyx support | Not present — dispatches go through `outbound-calling` which handles Telnyx |
+| Campaign UI provider selection | Works via VoiceBroadcastManager `broadcast_provider` toggle |
+| Webhook signature verification | Logged but NOT enforced (Ed25519 TODO in `telnyx-webhook`) — low priority |
+| Credit/billing for Telnyx calls | Uses same `finalize_call_cost` system — works |
 
-### Risk Assessment
-- These are isolated fixes to the telnyx-webhook function only
-- No other edge functions or frontend files reference these specific code paths
-- The table creation is additive (no existing data affected)
+---
+
+## Bottom Line
+
+**You can use Telnyx assistants TODAY for:**
+- Outbound AI calls (single + broadcast)
+- Test calls
+- AMD/voicemail detection
+- Scheduled callbacks
+- Knowledge base RAG
+- Post-call insights
+
+**You CANNOT yet use Telnyx for:**
+- Sending SMS (auto-replies, workflows, AI SMS) — still Twilio-only
+- Receiving inbound calls routed to a Telnyx AI assistant
+
+---
+
+## Recommended Next Steps (Priority Order)
+
+1. **Add Telnyx SMS sending** to `sms-messaging` and `ai-sms-processor` — enables full SMS through Telnyx numbers without needing Twilio
+2. **Implement inbound call routing** — configure Telnyx number webhooks and add assistant matching logic so inbound calls trigger the right AI agent
+3. **(Optional)** Enforce webhook signature verification for production security
+
+Want me to start implementing the SMS sending via Telnyx, the inbound routing, or both?
 
