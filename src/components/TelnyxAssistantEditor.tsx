@@ -13,7 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Save, X, Loader2, Bot, Mic, Phone, BarChart3, Settings,
-  PhoneCall, Shield, Volume2, Clock, AlertCircle,
+  PhoneCall, Shield, Volume2, Clock, AlertCircle, MessageSquare,
+  Globe, Puzzle, FlaskConical, Wrench, ExternalLink, Eye,
+  Play, RefreshCw, Search, ChevronDown, Info,
 } from 'lucide-react';
 
 interface TelnyxAssistant {
@@ -110,9 +112,25 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [recordingChannels, setRecordingChannels] = useState(assistant.metadata?.recording_settings?.channels || 'dual');
   const [recordingFormat, setRecordingFormat] = useState(assistant.metadata?.recording_settings?.format || 'mp3');
 
+  // Messaging tab
+  const [messagingEnabled, setMessagingEnabled] = useState(assistant.metadata?.messaging?.enabled ?? false);
+  const [smsGreeting, setSmsGreeting] = useState(assistant.metadata?.messaging?.greeting || '');
+  const [smsInstructions, setSmsInstructions] = useState(assistant.metadata?.messaging?.instructions || '');
+
+  // Widget tab
+  const [widgetEnabled, setWidgetEnabled] = useState(assistant.metadata?.widget?.enabled ?? false);
+
+  // Advanced tab
+  const [temperature, setTemperature] = useState(assistant.metadata?.temperature ?? 0.7);
+  const [maxTokens, setMaxTokens] = useState(assistant.metadata?.max_tokens ?? 1024);
+  const [interruptSensitivity, setInterruptSensitivity] = useState(assistant.metadata?.interrupt_sensitivity ?? 0.5);
+  const [silenceTimeout, setSilenceTimeout] = useState(assistant.metadata?.silence_timeout_ms ?? 10000);
+
   // Analysis tab  
   const [conversations, setConversations] = useState<any[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
+  const [analysisSubTab, setAnalysisSubTab] = useState<'history' | 'insights'>('history');
+  const [conversationInsights, setConversationInsights] = useState<any[]>([]);
 
   // Load full Telnyx data on mount
   useEffect(() => {
@@ -124,7 +142,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
         });
         setTelnyxData(data.telnyx);
         
-        // Populate from Telnyx live data if available
         if (data.telnyx) {
           const t = data.telnyx;
           if (t.instructions) setInstructions(t.instructions);
@@ -202,6 +219,12 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
         recording_settings: { channels: recordingChannels, format: recordingFormat },
         dynamic_variables: dynamicVars,
         call_direction: callDirection,
+        messaging: { enabled: messagingEnabled, greeting: smsGreeting, instructions: smsInstructions },
+        widget: { enabled: widgetEnabled },
+        temperature,
+        max_tokens: maxTokens,
+        interrupt_sensitivity: interruptSensitivity,
+        silence_timeout_ms: silenceTimeout,
       });
 
       toast({ title: 'Saved', description: `${name} updated successfully` });
@@ -217,10 +240,9 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
     if (!assistant.telnyx_assistant_id) return;
     setLoadingConversations(true);
     try {
-      // Query call_logs for this assistant
       const { data } = await supabase
         .from('call_logs')
-        .select('id, phone_number, status, outcome, duration_seconds, created_at, transcript, call_summary, telnyx_conversation_id')
+        .select('id, phone_number, status, outcome, duration_seconds, created_at, transcript, call_summary, telnyx_conversation_id, sentiment')
         .or(`telnyx_assistant_id.eq.${assistant.telnyx_assistant_id},agent_id.eq.${assistant.telnyx_assistant_id}`)
         .order('created_at', { ascending: false })
         .limit(20);
@@ -229,9 +251,19 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
     setLoadingConversations(false);
   }, [assistant.telnyx_assistant_id]);
 
+  const loadInsights = useCallback(async () => {
+    try {
+      const data = await callEdgeFunction('telnyx-insights', { action: 'list_insights', limit: 20 });
+      setConversationInsights(data.insights || []);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
-    if (activeTab === 'analysis') loadConversations();
-  }, [activeTab, loadConversations]);
+    if (activeTab === 'analysis') {
+      loadConversations();
+      loadInsights();
+    }
+  }, [activeTab, loadConversations, loadInsights]);
 
   if (loadingTelnyx) {
     return (
@@ -243,6 +275,10 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
       </Card>
     );
   }
+
+  const telnyxPortalUrl = assistant.telnyx_assistant_id 
+    ? `https://portal.telnyx.com/#/ai/assistants/edit/assistant-${assistant.telnyx_assistant_id}`
+    : null;
 
   return (
     <Card className="border-2 border-primary/20">
@@ -261,6 +297,11 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </CardDescription>
           </div>
           <div className="flex gap-2">
+            {telnyxPortalUrl && (
+              <Button variant="ghost" size="sm" onClick={() => window.open(telnyxPortalUrl, '_blank')}>
+                <ExternalLink className="h-4 w-4 mr-1" />Portal
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onClose}>
               <X className="h-4 w-4 mr-1" />Cancel
             </Button>
@@ -273,11 +314,16 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-4">
-            <TabsTrigger value="agent" className="gap-1"><Bot className="h-3 w-3" />Agent</TabsTrigger>
-            <TabsTrigger value="voice" className="gap-1"><Mic className="h-3 w-3" />Voice</TabsTrigger>
-            <TabsTrigger value="calling" className="gap-1"><Phone className="h-3 w-3" />Calling</TabsTrigger>
-            <TabsTrigger value="analysis" className="gap-1"><BarChart3 className="h-3 w-3" />Analysis</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-9 mb-4">
+            <TabsTrigger value="agent" className="gap-1 text-xs"><Bot className="h-3 w-3" />Agent</TabsTrigger>
+            <TabsTrigger value="voice" className="gap-1 text-xs"><Mic className="h-3 w-3" />Voice</TabsTrigger>
+            <TabsTrigger value="integrations" className="gap-1 text-xs"><Puzzle className="h-3 w-3" />Integrations</TabsTrigger>
+            <TabsTrigger value="analysis" className="gap-1 text-xs"><BarChart3 className="h-3 w-3" />Analysis</TabsTrigger>
+            <TabsTrigger value="calling" className="gap-1 text-xs"><Phone className="h-3 w-3" />Calling</TabsTrigger>
+            <TabsTrigger value="messaging" className="gap-1 text-xs"><MessageSquare className="h-3 w-3" />Messaging</TabsTrigger>
+            <TabsTrigger value="widget" className="gap-1 text-xs"><Globe className="h-3 w-3" />Widget</TabsTrigger>
+            <TabsTrigger value="advanced" className="gap-1 text-xs"><Wrench className="h-3 w-3" />Advanced</TabsTrigger>
+            <TabsTrigger value="simulation" className="gap-1 text-xs"><FlaskConical className="h-3 w-3" />Simulation</TabsTrigger>
           </TabsList>
 
           {/* ===== AGENT TAB ===== */}
@@ -303,6 +349,18 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </div>
 
             <div className="space-y-2">
+              <Label>Instructions * (system prompt)</Label>
+              <Textarea
+                value={instructions}
+                onChange={e => setInstructions(e.target.value)}
+                className="min-h-[300px] font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                {instructions.length} chars · Use {"{{variable_name}}"} for personalization
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label>Greeting Mode</Label>
               <Select value={greetingMode} onValueChange={setGreetingMode}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -316,18 +374,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             <div className="space-y-2">
               <Label>Greeting (spoken at call start — supports {"{{variables}}"})</Label>
               <Input value={greeting} onChange={e => setGreeting(e.target.value)} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Instructions * (system prompt)</Label>
-              <Textarea
-                value={instructions}
-                onChange={e => setInstructions(e.target.value)}
-                className="min-h-[300px] font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                {instructions.length} chars · Use {"{{variable_name}}"} for personalization
-              </p>
             </div>
 
             {/* Dynamic Variables */}
@@ -385,7 +431,29 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Calendar booking tool is auto-added on creation.</p>
+                  <p className="text-sm text-muted-foreground">Calendar booking tools are auto-added on creation. Add more tools via the Telnyx portal.</p>
+                )}
+                {telnyxPortalUrl && (
+                  <Button variant="outline" size="sm" className="mt-3 gap-1" onClick={() => window.open(telnyxPortalUrl, '_blank')}>
+                    <ExternalLink className="h-3 w-3" />Manage Tools in Telnyx Portal
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Knowledge Bases */}
+            <Card className="border-dashed">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Knowledge Bases</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Attach knowledge bases from the <strong>Knowledge</strong> tab in the main Telnyx AI section, or manage directly in the Telnyx portal.
+                </p>
+                {telnyxPortalUrl && (
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => window.open(telnyxPortalUrl, '_blank')}>
+                    <ExternalLink className="h-3 w-3" />Manage Knowledge Bases
+                  </Button>
                 )}
               </CardContent>
             </Card>
@@ -408,12 +476,15 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Voice Speed</Label>
-                <Input type="number" value={voiceSpeed} onChange={e => setVoiceSpeed(parseFloat(e.target.value) || 1)} min={0.5} max={2} step={0.1} />
+                <Label>Voice Speed: {voiceSpeed}x</Label>
+                <Slider
+                  value={[voiceSpeed]}
+                  onValueChange={([v]) => setVoiceSpeed(v)}
+                  min={0.5} max={2} step={0.1}
+                />
               </div>
             </div>
 
-            {/* Transcription */}
             <h4 className="font-semibold text-sm pt-2">Transcription</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -444,7 +515,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               </div>
             </div>
 
-            {/* Noise Suppression */}
             <h4 className="font-semibold text-sm pt-2">Noise Suppression</h4>
             <div className="flex items-center gap-3">
               <Switch checked={noiseSuppressionEnabled} onCheckedChange={setNoiseSuppressionEnabled} />
@@ -463,7 +533,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               </div>
             )}
 
-            {/* Background Audio */}
             <h4 className="font-semibold text-sm pt-2">Background Audio</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -503,9 +572,201 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </div>
           </TabsContent>
 
+          {/* ===== INTEGRATIONS TAB ===== */}
+          <TabsContent value="integrations" className="space-y-4">
+            <h4 className="font-semibold">Integrations</h4>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Connected Integrations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(telnyxData?.integrations && telnyxData.integrations.length > 0) ? (
+                  <div className="space-y-2">
+                    {telnyxData.integrations.map((int: any, i: number) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Badge variant="default">{int.name || int.type}</Badge>
+                        <span className="text-sm text-muted-foreground">{int.tools_count || '?'} tools</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="border-amber-500/20 bg-amber-500/5">
+                    <CardContent className="py-3 text-sm">
+                      <AlertCircle className="h-4 w-4 inline mr-2 text-amber-600" />
+                      There are no integrations connected to this assistant
+                    </CardContent>
+                  </Card>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Add Integration</CardTitle>
+                <CardDescription className="text-xs">
+                  Connect third-party tools to give your assistant access to external data and actions. Manage integrations in the Telnyx portal.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {['All', 'sales_crm', 'scheduling', 'customer_support', 'knowledge_documentation'].map(cat => (
+                    <Badge key={cat} variant="outline" className="cursor-pointer hover:bg-accent capitalize">
+                      {cat.replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { name: 'Airtable', tools: 23 },
+                    { name: 'Asana', tools: 52 },
+                    { name: 'Calendly', tools: 35 },
+                    { name: 'Confluence', tools: 25 },
+                    { name: 'GitHub', tools: 71, available: true },
+                    { name: 'Gong', tools: 15 },
+                    { name: 'HubSpot', tools: 24 },
+                    { name: 'Intercom', tools: 31 },
+                    { name: 'Jira', tools: 40 },
+                    { name: 'Notion', tools: 28 },
+                    { name: 'Salesforce', tools: 45 },
+                    { name: 'Slack', tools: 20 },
+                  ].map(int => (
+                    <Card key={int.name} className="cursor-pointer hover:border-primary/50 transition-colors">
+                      <CardContent className="py-3 px-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{int.name}</span>
+                          {int.available && <Badge variant="default" className="text-[10px]">Available</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{int.tools} tools</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                {telnyxPortalUrl && (
+                  <Button variant="outline" size="sm" className="mt-4 gap-1" onClick={() => window.open(telnyxPortalUrl + '?tab=integrations', '_blank')}>
+                    <ExternalLink className="h-3 w-3" />Manage in Telnyx Portal
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ===== ANALYSIS TAB ===== */}
+          <TabsContent value="analysis" className="space-y-4">
+            <div className="flex gap-2 mb-2">
+              <Button
+                variant={analysisSubTab === 'history' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setAnalysisSubTab('history')}
+              >
+                Conversation History
+              </Button>
+              <Button
+                variant={analysisSubTab === 'insights' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setAnalysisSubTab('insights')}
+              >
+                Insights
+              </Button>
+            </div>
+
+            {analysisSubTab === 'history' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold text-sm">Conversation History</h4>
+                  <Button variant="outline" size="sm" onClick={loadConversations} disabled={loadingConversations}>
+                    {loadingConversations ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Refresh
+                  </Button>
+                </div>
+
+                {conversations.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      No conversations found for this assistant yet. Make a test call to see data here.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left py-2 px-3 font-medium">ID</th>
+                          <th className="text-left py-2 px-3 font-medium">Channel</th>
+                          <th className="text-left py-2 px-3 font-medium">User</th>
+                          <th className="text-left py-2 px-3 font-medium">Duration</th>
+                          <th className="text-left py-2 px-3 font-medium">Outcome</th>
+                          <th className="text-left py-2 px-3 font-medium">Created at</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {conversations.map(c => (
+                          <tr key={c.id} className="hover:bg-muted/30">
+                            <td className="py-2 px-3">
+                              <code className="text-xs">{c.telnyx_conversation_id ? c.telnyx_conversation_id.slice(0, 16) + '...' : c.id.slice(0, 8)}</code>
+                            </td>
+                            <td className="py-2 px-3">
+                              <Badge variant="outline" className="text-xs">phone call</Badge>
+                            </td>
+                            <td className="py-2 px-3 text-xs">{c.phone_number}</td>
+                            <td className="py-2 px-3 text-xs">{c.duration_seconds ? `${Math.round(c.duration_seconds / 60)}m ${c.duration_seconds % 60}s` : '—'}</td>
+                            <td className="py-2 px-3">
+                              <Badge variant={c.status === 'completed' ? 'default' : 'secondary'} className="text-xs">
+                                {c.outcome || c.status}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-3 text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {analysisSubTab === 'insights' && (
+              <>
+                <h4 className="font-semibold text-sm">Insights</h4>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Insight Group</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Select defaultValue="default">
+                      <SelectTrigger><SelectValue placeholder="Select insight group" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">Default</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2 mt-2 text-xs">
+                      <Button variant="link" size="sm" className="text-xs p-0 h-auto">Create new</Button>
+                      <span className="text-muted-foreground">·</span>
+                      <Button variant="link" size="sm" className="text-xs p-0 h-auto">Edit selected</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-3">
+                  {[
+                    { name: 'Summary', desc: 'Summarize the conversation for use as future context. Include key facts, decisions, preferences, or goals that could help continue or complete future tasks.' },
+                    { name: 'Disposition', desc: 'Classify the call outcome: appointment_set, interested, callback, not_interested, no_answer, voicemail, wrong_number.' },
+                    { name: 'Intent', desc: 'Identify the primary intent of the lead: buying, researching, comparing, not interested, or undecided.' },
+                    { name: 'Appointment Check', desc: 'Did the lead agree to book an appointment? Extract the date/time if mentioned.' },
+                  ].map(insight => (
+                    <Card key={insight.name}>
+                      <CardContent className="py-3">
+                        <h5 className="font-medium text-sm">{insight.name}</h5>
+                        <p className="text-xs text-muted-foreground mt-1">{insight.desc}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+          </TabsContent>
+
           {/* ===== CALLING TAB ===== */}
           <TabsContent value="calling" className="space-y-4">
-            {/* Call Direction */}
             <h4 className="font-semibold text-sm flex items-center gap-2">
               <PhoneCall className="h-4 w-4" />
               Call Direction
@@ -520,13 +781,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                   <SelectItem value="both">↕ Both — Inbound &amp; outbound</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                {callDirection === 'inbound' 
-                  ? 'This assistant will answer incoming calls on your Telnyx numbers.' 
-                  : callDirection === 'both'
-                  ? 'This assistant handles both incoming and outgoing calls.'
-                  : 'This assistant is used for outbound dialing and campaigns.'}
-              </p>
             </div>
 
             <h4 className="font-semibold text-sm pt-2">Settings</h4>
@@ -541,7 +795,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               </div>
             </div>
 
-            {/* Voicemail Detection */}
             <h4 className="font-semibold text-sm pt-4 flex items-center gap-2">
               <Shield className="h-4 w-4" />
               Voicemail Detection (AMD)
@@ -549,7 +802,6 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             <Card className="border-blue-500/20 bg-blue-500/5">
               <CardContent className="py-3 text-xs text-muted-foreground">
                 <AlertCircle className="h-3 w-3 inline mr-1" />
-                Answering Machine Detection (AMD) must be enabled on the call for voicemail detection to work. 
                 Standard AMD is free, Premium is $0.0065/call with 97% accuracy.
               </CardContent>
             </Card>
@@ -579,17 +831,10 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             {amdAction === 'leave_message_stop' && (
               <div className="space-y-2">
                 <Label>Voicemail Message</Label>
-                <Textarea
-                  value={vmMessage}
-                  onChange={e => setVmMessage(e.target.value)}
-                  placeholder="Hey, sorry we were trying to get a hold of you..."
-                  className="min-h-[80px]"
-                />
-                <p className="text-xs text-muted-foreground">Supports {"{{variables}}"} like {"{{first_name}}"}</p>
+                <Textarea value={vmMessage} onChange={e => setVmMessage(e.target.value)} placeholder="Hey, sorry we were trying to get a hold of you..." className="min-h-[80px]" />
               </div>
             )}
 
-            {/* Recording Settings */}
             <h4 className="font-semibold text-sm pt-4 flex items-center gap-2">
               <Volume2 className="h-4 w-4" />
               Recording Settings
@@ -600,7 +845,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 <Select value={recordingChannels} onValueChange={setRecordingChannels}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="dual">Dual (stereo - separate channels)</SelectItem>
+                    <SelectItem value="dual">Dual (stereo)</SelectItem>
                     <SelectItem value="single">Single (mono)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -618,51 +863,243 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
             </div>
           </TabsContent>
 
-          {/* ===== ANALYSIS TAB ===== */}
-          <TabsContent value="analysis" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-sm">Conversation History</h4>
-              <Button variant="outline" size="sm" onClick={loadConversations} disabled={loadingConversations}>
-                {loadingConversations ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                Refresh
-              </Button>
+          {/* ===== MESSAGING TAB ===== */}
+          <TabsContent value="messaging" className="space-y-4">
+            <h4 className="font-semibold">Messaging</h4>
+            <p className="text-sm text-muted-foreground">
+              Enable SMS/MMS messaging for this assistant. When enabled, the assistant can send and receive text messages using the same AI personality.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Switch checked={messagingEnabled} onCheckedChange={setMessagingEnabled} />
+              <Label>Enable SMS Messaging</Label>
             </div>
 
-            {conversations.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  No conversations found for this assistant yet. Make a test call to see data here.
-                </CardContent>
-              </Card>
-            ) : (
+            {messagingEnabled && (
+              <>
+                <div className="space-y-2">
+                  <Label>SMS Greeting</Label>
+                  <Input
+                    value={smsGreeting}
+                    onChange={e => setSmsGreeting(e.target.value)}
+                    placeholder="Hi {{first_name}}, this is {{assistant_name}}. How can I help you?"
+                  />
+                  <p className="text-xs text-muted-foreground">First message sent when a conversation starts via SMS</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>SMS Instructions (override)</Label>
+                  <Textarea
+                    value={smsInstructions}
+                    onChange={e => setSmsInstructions(e.target.value)}
+                    placeholder="Leave blank to use the same instructions as voice calls"
+                    className="min-h-[120px] font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional: Provide separate instructions for SMS conversations. If blank, the agent's main instructions are used.
+                  </p>
+                </div>
+                <Card className="border-blue-500/20 bg-blue-500/5">
+                  <CardContent className="py-3 text-xs text-muted-foreground">
+                    <Info className="h-3 w-3 inline mr-1" />
+                    SMS messages are sent via your Telnyx phone numbers. Make sure you have at least one number with messaging enabled.
+                    Telnyx SMS pricing: ~$0.004/message.
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>
+
+          {/* ===== WIDGET TAB ===== */}
+          <TabsContent value="widget" className="space-y-4">
+            <h4 className="font-semibold">Widget</h4>
+
+            <Card className="border-amber-500/20 bg-amber-500/5">
+              <CardContent className="py-4 text-sm">
+                <AlertCircle className="h-4 w-4 inline mr-2 text-amber-600" />
+                Widgets only work with assistants that have telephony enabled and support for unauthenticated web calls.
+                This allows users to interact with your AI assistant directly from your website without requiring authentication.
+                <br /><br />
+                You can manage these settings in the <strong>Calling</strong> tab or you can click the button below to enable these settings now.
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center gap-3">
+              <Switch checked={widgetEnabled} onCheckedChange={setWidgetEnabled} />
+              <Label>Enable Web Widget</Label>
+            </div>
+
+            {widgetEnabled && assistant.telnyx_assistant_id && (
+              <>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Embed Code</CardTitle>
+                    <CardDescription className="text-xs">Add this to your website to enable the AI voice widget</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+{`<script src="https://cdn.telnyx.com/ai-widget/v1/widget.js"></script>
+<script>
+  TelnyxAI.init({
+    assistantId: "${assistant.telnyx_assistant_id}",
+    theme: "light",
+    position: "bottom-right"
+  });
+</script>`}
+                    </pre>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => {
+                      navigator.clipboard.writeText(`<script src="https://cdn.telnyx.com/ai-widget/v1/widget.js"></script>\n<script>\n  TelnyxAI.init({\n    assistantId: "${assistant.telnyx_assistant_id}",\n    theme: "light",\n    position: "bottom-right"\n  });\n</script>`);
+                      toast({ title: 'Copied', description: 'Widget code copied to clipboard' });
+                    }}>
+                      Copy Code
+                    </Button>
+                  </CardContent>
+                </Card>
+                <p className="text-xs text-muted-foreground">
+                  For full widget customization options, visit the{' '}
+                  <a href="https://telnyx.com/docs/ai/widgets" target="_blank" rel="noreferrer" className="text-primary underline">
+                    Telnyx Widget documentation
+                  </a>.
+                </p>
+              </>
+            )}
+          </TabsContent>
+
+          {/* ===== ADVANCED TAB ===== */}
+          <TabsContent value="advanced" className="space-y-4">
+            <h4 className="font-semibold">Advanced Settings</h4>
+            <p className="text-sm text-muted-foreground">Fine-tune the AI model behavior and conversation dynamics.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                {conversations.map(c => (
-                  <Card key={c.id}>
-                    <CardContent className="py-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <PhoneCall className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium">{c.phone_number}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(c.created_at).toLocaleString()} · {c.duration_seconds ? `${Math.round(c.duration_seconds / 60)}min` : '—'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={c.status === 'completed' ? 'default' : 'secondary'}>{c.outcome || c.status}</Badge>
-                          {c.telnyx_conversation_id && (
-                            <code className="text-[10px] text-muted-foreground">{c.telnyx_conversation_id.slice(0, 12)}...</code>
-                          )}
-                        </div>
-                      </div>
-                      {c.call_summary && (
-                        <p className="text-xs text-muted-foreground mt-2 border-t pt-2">{c.call_summary}</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+                <Label>Temperature: {temperature}</Label>
+                <Slider
+                  value={[temperature]}
+                  onValueChange={([v]) => setTemperature(v)}
+                  min={0} max={1.5} step={0.05}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lower = more deterministic, higher = more creative. Default: 0.7
+                </p>
               </div>
+
+              <div className="space-y-2">
+                <Label>Max Tokens: {maxTokens}</Label>
+                <Slider
+                  value={[maxTokens]}
+                  onValueChange={([v]) => setMaxTokens(v)}
+                  min={128} max={4096} step={64}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Maximum tokens per response. Default: 1024
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Interrupt Sensitivity: {interruptSensitivity}</Label>
+                <Slider
+                  value={[interruptSensitivity]}
+                  onValueChange={([v]) => setInterruptSensitivity(v)}
+                  min={0} max={1} step={0.05}
+                />
+                <p className="text-xs text-muted-foreground">
+                  How easily the user can interrupt the AI. Lower = harder to interrupt.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Silence Timeout: {(silenceTimeout / 1000).toFixed(1)}s</Label>
+                <Slider
+                  value={[silenceTimeout]}
+                  onValueChange={([v]) => setSilenceTimeout(v)}
+                  min={3000} max={30000} step={1000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  How long to wait in silence before the AI prompts the user. Default: 10s
+                </p>
+              </div>
+            </div>
+
+            <Card className="border-dashed mt-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Version Management</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Telnyx supports assistant versioning. You can create new versions, switch between them, and A/B test performance.
+                </p>
+                {telnyxPortalUrl && (
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => window.open(telnyxPortalUrl, '_blank')}>
+                    <ExternalLink className="h-3 w-3" />Manage Versions in Portal
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-dashed">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Flowchart</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-2">
+                  View and manage the conversation flow of your assistant. The flowchart shows how agents hand off between each other.
+                </p>
+                {telnyxPortalUrl && (
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => window.open(telnyxPortalUrl + '/flowchart', '_blank')}>
+                    <ExternalLink className="h-3 w-3" />Open Flowchart in Portal
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ===== SIMULATION TAB ===== */}
+          <TabsContent value="simulation" className="space-y-4">
+            <h4 className="font-semibold">Simulation</h4>
+
+            <p className="text-sm text-muted-foreground">
+              Link this assistant to a Coval agent to enable simulation testing. Simulations let you test your AI against
+              predefined personas and scenarios without making real calls.
+            </p>
+
+            <Button variant="outline" className="gap-1" onClick={() => window.open('https://www.coval.dev/', '_blank')}>
+              <ExternalLink className="h-4 w-4" />Open in Coval
+            </Button>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+              <div>
+                <h5 className="font-medium text-sm mb-2">Select Simulated User</h5>
+                <p className="text-xs text-muted-foreground">Link an agent to view personas.</p>
+              </div>
+              <div>
+                <h5 className="font-medium text-sm mb-2">Simulation Runs</h5>
+                <p className="text-xs text-muted-foreground">Link an agent to view simulation runs.</p>
+                <Button variant="outline" size="sm" className="mt-2 gap-1" disabled>
+                  <RefreshCw className="h-3 w-3" />Refresh
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <h5 className="font-medium text-sm mb-2">Select Test Case</h5>
+              <p className="text-xs text-muted-foreground">Link an agent to view test cases.</p>
+            </div>
+
+            <div>
+              <h5 className="font-medium text-sm mb-2">Select Metrics to Evaluate Performance</h5>
+              <p className="text-xs text-muted-foreground">Link an agent to view metrics.</p>
+            </div>
+
+            <Button disabled className="w-full md:w-auto opacity-50">
+              Run Simulation
+            </Button>
+
+            {telnyxPortalUrl && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Full simulation features available in the{' '}
+                <a href={telnyxPortalUrl + '?tab=simulation'} target="_blank" rel="noreferrer" className="text-primary underline">
+                  Telnyx Portal
+                </a>
+              </p>
             )}
           </TabsContent>
         </Tabs>
