@@ -74,7 +74,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.call-dispatcher]
-verify_jwt = true
+verify_jwt = false  # Internal service function - called by automation-scheduler
 
 [functions.predictive-dialing-engine]
 verify_jwt = true
@@ -122,7 +122,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.workflow-executor]
-verify_jwt = true
+verify_jwt = false  # Internal service function - called by automation-scheduler
 
 [functions.disposition-router]
 verify_jwt = true
@@ -193,7 +193,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.nudge-scheduler]
-verify_jwt = true
+verify_jwt = false  # Internal service function - called by automation-scheduler
 
 [functions.campaign-health-monitor]
 verify_jwt = true
