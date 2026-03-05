@@ -236,9 +236,8 @@ serve(async (req) => {
       throw new Error('Supabase configuration missing');
     }
     
-    // Use anon key for internal function-to-function calls (passes verify_jwt gateway)
-    // Service role key is used for the admin client (direct DB access)
-    const gatewayAuthHeader = `Bearer ${anonKey || supabaseKey}`;
+    // Use service role key for all internal calls - downstream functions have verify_jwt = false
+    const gatewayAuthHeader = `Bearer ${supabaseKey}`;
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
