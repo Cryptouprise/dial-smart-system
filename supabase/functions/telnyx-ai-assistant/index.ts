@@ -1254,6 +1254,9 @@ serve(async (req) => {
           { id: 'ElevenLabs.TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
           { id: 'ElevenLabs.iP95p4xoKVk53GoZ742B', name: 'Chris', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
           { id: 'ElevenLabs.ErXwobaYiN019PkySvjV', name: 'Antoni', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          // Eryn — Hyper Real / Natural Conversational
+          { id: 'ElevenLabs.dMyQqiVXTU80dDl2eNK8', name: 'Eryn (Natural Conversational)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.dj3G1R1ilKoFKhBnWOzG', name: 'Eryn (Southern Casual)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
         ];
 
         // Merge: live voices, then locally-known voices, then static fallback (dedup by id)
