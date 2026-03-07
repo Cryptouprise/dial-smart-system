@@ -43,6 +43,14 @@ interface Campaign {
   calling_hours_end: string;
   timezone: string;
   created_at: string;
+  provider?: string;
+  telnyx_assistant_id?: string;
+}
+
+interface TelnyxAssistantOption {
+  id: string;
+  name: string;
+  telnyx_assistant_id: string;
 }
 
 interface Workflow {
@@ -84,6 +92,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumberStatus[]>([]);
+  const [telnyxAssistants, setTelnyxAssistants] = useState<TelnyxAssistantOption[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
@@ -114,7 +123,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     max_attempts: 3,
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
-    timezone: 'America/New_York'
+    timezone: 'America/New_York',
+    provider: 'retell' as 'retell' | 'telnyx',
+    telnyx_assistant_id: '',
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
   const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
@@ -134,6 +145,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       loadPhoneNumberStatus();
       loadWorkflows();
       loadTwilioNumbers();
+      loadTelnyxAssistants();
     }
   }, [isDemoMode]);
 
