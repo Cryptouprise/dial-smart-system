@@ -1682,11 +1682,14 @@ These edge functions were created/modified but NOT deployed:
 ### March 7, 2026 - Telnyx Test Call Variable Resolution Fix
 
 **What was built/fixed/changed**
-- Fixed `test_call` lead matching to handle duplicate leads sharing the same phone by scoring candidates and selecting the most complete record (instead of arbitrary first row).
-- Added compatibility variable aliases for scripts using `{{contact.first_name}}`-style placeholders during test calls.
+- Hardened `test_call` lead matching for duplicate phone records by prioritizing exact matches with real personalization data and strongly de-prioritizing `do_not_call=true` placeholder rows.
+- Changed lookup to use deterministic phone variants (`+1XXXXXXXXXX`, `1XXXXXXXXXX`, `XXXXXXXXXX`) before fallback partial matching.
+- Added fallback extraction from `custom_fields` for `first_name`, `last_name`, `full_name`, address fields, and timezone when base columns are blank.
+- Added richer selection logs showing candidate count and why the chosen lead won.
 
 **Key files modified**
 - `supabase/functions/telnyx-ai-assistant/index.ts`
+- `CLAUDE.md`
 
 **Database changes made**
 - None.
@@ -1695,5 +1698,6 @@ These edge functions were created/modified but NOT deployed:
 - Edge function code updated; no migration required.
 
 **Gotchas / lessons learned**
-- Duplicate leads with the same phone can silently break personalization by selecting empty rows unless lookup ranking favors data completeness.
-- Many imported scripts reference contact-scoped variables (`contact.first_name`), so alias coverage is important for test-call parity.
+- Newer leads can be empty inbound placeholders, so recency must not outrank personalization quality.
+- `do_not_call` rows should never be preferred for test personalization when a richer duplicate exists.
+- Phone matching must support all common stored variants to avoid false “lead not found” behavior.
