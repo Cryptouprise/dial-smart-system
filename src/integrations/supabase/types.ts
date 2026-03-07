@@ -1870,12 +1870,14 @@ export type Database = {
           max_attempts: number | null
           max_calls_per_day: number | null
           name: string
+          provider: string
           retry_delay_minutes: number | null
           script: string | null
           sms_from_number: string | null
           sms_on_no_answer: boolean | null
           sms_template: string | null
           status: string
+          telnyx_assistant_id: string | null
           timezone: string | null
           updated_at: string
           user_id: string
@@ -1892,12 +1894,14 @@ export type Database = {
           max_attempts?: number | null
           max_calls_per_day?: number | null
           name: string
+          provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
           sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
+          telnyx_assistant_id?: string | null
           timezone?: string | null
           updated_at?: string
           user_id: string
@@ -1914,18 +1918,27 @@ export type Database = {
           max_attempts?: number | null
           max_calls_per_day?: number | null
           name?: string
+          provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
           sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
+          telnyx_assistant_id?: string | null
           timezone?: string | null
           updated_at?: string
           user_id?: string
           workflow_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_telnyx_assistant_id_fkey"
+            columns: ["telnyx_assistant_id"]
+            isOneToOne: false
+            referencedRelation: "telnyx_assistants"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaigns_workflow_id_fkey"
             columns: ["workflow_id"]
