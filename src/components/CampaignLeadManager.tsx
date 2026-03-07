@@ -230,72 +230,124 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                 Add Leads
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
               <DialogHeader>
                 <DialogTitle>Add Leads to Campaign</DialogTitle>
                 <DialogDescription>
-                  Select leads to add to this campaign
+                  Search and select leads to add ({availableLeads.length} available)
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4">
-                {availableLeads.length === 0 ? (
+              <div className="space-y-3 flex-1 flex flex-col min-h-0">
+                {/* Search & Filter Bar */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, phone, email, company..."
+                      value={searchQuery}
+                      onChange={e => { setSearchQuery(e.target.value); setVisibleCount(50); }}
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setVisibleCount(50); }}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {uniqueStatuses.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Select All + Count */}
+                <div className="flex items-center justify-between text-sm">
+                  <Button variant="ghost" size="sm" onClick={handleSelectAll} className="h-7 px-2 gap-1.5">
+                    <CheckSquare className="h-3.5 w-3.5" />
+                    {filteredLeads.length > 0 && filteredLeads.every(l => selectedLeads.includes(l.id))
+                      ? 'Deselect All' : `Select All (${filteredLeads.length})`}
+                  </Button>
+                  <span className="text-muted-foreground">
+                    {selectedLeads.length} selected
+                  </span>
+                </div>
+
+                {/* Lead List */}
+                {filteredLeads.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No available leads to add. All leads are already in this campaign.
+                    {debouncedSearch || statusFilter !== 'all'
+                      ? 'No leads match your search.'
+                      : 'No available leads to add.'}
                   </div>
                 ) : (
-                  <>
-                    <div className="space-y-2">
-                      {availableLeads.map(lead => (
-                        <div
-                          key={lead.id}
-                          className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer"
-                          onClick={() => toggleLeadSelection(lead.id)}
-                        >
-                          <Checkbox
-                            checked={selectedLeads.includes(lead.id)}
-                            onCheckedChange={() => toggleLeadSelection(lead.id)}
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <User className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{getLeadDisplayName(lead)}</span>
-                              <Badge variant="outline">{lead.status}</Badge>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                              <Phone className="h-3 w-3" />
+                  <div className="overflow-y-auto flex-1 min-h-0 space-y-1 pr-1" onScroll={(e) => {
+                    const el = e.currentTarget;
+                    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100 && visibleCount < filteredLeads.length) {
+                      setVisibleCount(prev => Math.min(prev + 50, filteredLeads.length));
+                    }
+                  }}>
+                    {visibleLeads.map(lead => (
+                      <div
+                        key={lead.id}
+                        className="flex items-center space-x-3 p-2.5 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                        onClick={() => toggleLeadSelection(lead.id)}
+                      >
+                        <Checkbox
+                          checked={selectedLeads.includes(lead.id)}
+                          onCheckedChange={() => toggleLeadSelection(lead.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="font-medium truncate">{getLeadDisplayName(lead)}</span>
+                            <Badge variant="outline" className="shrink-0">{lead.status}</Badge>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
+                            <Phone className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
                               {lead.phone_number}
-                              {lead.company && <span>• {lead.company}</span>}
-                            </div>
+                              {lead.company && ` • ${lead.company}`}
+                            </span>
                           </div>
                         </div>
-                      ))}
-                    </div>
-
-                    <div className="flex justify-between items-center pt-4 border-t">
-                      <span className="text-sm text-muted-foreground">
-                        {selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''} selected
-                      </span>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedLeads([]);
-                            setShowAddDialog(false);
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={handleAddLeads}
-                          disabled={selectedLeads.length === 0 || isLoading}
-                        >
-                          Add {selectedLeads.length > 0 ? `(${selectedLeads.length})` : ''}
-                        </Button>
                       </div>
-                    </div>
-                  </>
+                    ))}
+                    {visibleCount < filteredLeads.length && (
+                      <div className="text-center py-2 text-sm text-muted-foreground">
+                        Showing {visibleCount} of {filteredLeads.length} — scroll for more
+                      </div>
+                    )}
+                  </div>
                 )}
+
+                {/* Actions */}
+                <div className="flex justify-between items-center pt-3 border-t">
+                  <span className="text-sm text-muted-foreground">
+                    {selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''} selected
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedLeads([]);
+                        setShowAddDialog(false);
+                        setSearchQuery('');
+                        setStatusFilter('all');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleAddLeads}
+                      disabled={selectedLeads.length === 0 || isLoading}
+                    >
+                      Add {selectedLeads.length > 0 ? `(${selectedLeads.length})` : ''}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
