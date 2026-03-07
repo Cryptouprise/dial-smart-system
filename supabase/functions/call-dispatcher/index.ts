@@ -1101,28 +1101,30 @@ serve(async (req) => {
         const toPhone = lead?.phone_number || queueItem.phone_number;
         const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
         
-        // Score each number
-        const scoredNumbers = availableNumbers
-          .filter(n => {
+        // Score each number from provider-specific pool
+        const numberPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
+
+        const scoredNumbers = numberPool
+          .filter((n: any) => {
             // Skip quarantined numbers
             if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
             // Skip spam-flagged numbers
             if (n.is_spam) return false;
             return true;
           })
-          .map(n => {
+          .map((n: any) => {
             let score = 100;
             const numAreaCode = n.number.replace(/\D/g, '').slice(1, 4);
-            
+
             // Local presence bonus (+50 points)
             if (numAreaCode === toAreaCode) score += 50;
-            
+
             // Penalize high daily usage (-1 per call)
-            score -= (n.daily_calls || 0);
-            
+            score -= n.daily_calls || 0;
+
             // Penalize usage in this batch (-20 per call)
             score -= (numberUsageInBatch[n.id] || 0) * 20;
-            
+
             return { number: n, score };
           });
         
