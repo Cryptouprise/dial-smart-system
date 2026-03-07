@@ -545,7 +545,7 @@ serve(async (req) => {
 
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, name, agent_id, max_attempts, workflow_id')
+      .select('id, name, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
