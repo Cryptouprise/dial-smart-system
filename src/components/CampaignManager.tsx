@@ -43,6 +43,14 @@ interface Campaign {
   calling_hours_end: string;
   timezone: string;
   created_at: string;
+  provider?: string;
+  telnyx_assistant_id?: string;
+}
+
+interface TelnyxAssistantOption {
+  id: string;
+  name: string;
+  telnyx_assistant_id: string;
 }
 
 interface Workflow {
@@ -84,6 +92,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumberStatus[]>([]);
+  const [telnyxAssistants, setTelnyxAssistants] = useState<TelnyxAssistantOption[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
@@ -114,7 +123,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     max_attempts: 3,
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
-    timezone: 'America/New_York'
+    timezone: 'America/New_York',
+    provider: 'retell' as 'retell' | 'telnyx',
+    telnyx_assistant_id: '',
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
   const [loadingTwilioNumbers, setLoadingTwilioNumbers] = useState(false);
@@ -134,6 +145,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       loadPhoneNumberStatus();
       loadWorkflows();
       loadTwilioNumbers();
+      loadTelnyxAssistants();
     }
   }, [isDemoMode]);
 
@@ -246,6 +258,26 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   };
 
+  const loadTelnyxAssistants = async () => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('telnyx_assistants')
+        .select('id, name, telnyx_assistant_id')
+        .eq('user_id', userId)
+        .eq('status', 'active');
+      if (!error && data) {
+        setTelnyxAssistants(data.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          telnyx_assistant_id: a.telnyx_assistant_id,
+        })));
+      }
+    } catch (e) {
+      console.error('Error loading Telnyx assistants:', e);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -315,7 +347,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       max_attempts: 3,
       calling_hours_start: '09:00',
       calling_hours_end: '17:00',
-      timezone: 'America/New_York'
+      timezone: 'America/New_York',
+      provider: 'retell',
+      telnyx_assistant_id: '',
     });
   };
 
@@ -331,7 +365,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       max_attempts: campaign.max_attempts,
       calling_hours_start: campaign.calling_hours_start,
       calling_hours_end: campaign.calling_hours_end,
-      timezone: campaign.timezone
+      timezone: campaign.timezone,
+      provider: (campaign.provider as 'retell' | 'telnyx') || 'retell',
+      telnyx_assistant_id: campaign.telnyx_assistant_id || '',
     });
     setShowCreateDialog(true);
   };
@@ -707,43 +743,102 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
+              {/* Provider Selection */}
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Retell AI Agent *
+                <label className="text-sm font-medium text-foreground">
+                  Voice AI Provider *
                 </label>
                 <Select
-                  value={formData.agent_id}
-                  onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
-                  disabled={loadingAgents}
+                  value={formData.provider}
+                  onValueChange={(value: 'retell' | 'telnyx') => setFormData({ ...formData, provider: value, agent_id: '', telnyx_assistant_id: '' })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        <div className="flex items-center gap-2">
-                          {agent.hasActivePhone ? (
-                            <Phone className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <PhoneOff className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <span>{agent.agent_name}</span>
-                          {!agent.hasActivePhone && (
-                            <span className="text-xs text-muted-foreground">(No active phone)</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="retell">
+                      <span className="flex items-center gap-2">
+                        <Bot className="h-4 w-4" /> Retell AI
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="telnyx">
+                      <span className="flex items-center gap-2">
+                        <Bot className="h-4 w-4" /> Telnyx AI
+                      </span>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
-                {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    This agent has no active phone number in Retell - calls won't work
-                  </p>
-                )}
               </div>
+
+              {/* Agent Selection - conditional on provider */}
+              {formData.provider === 'retell' ? (
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Retell AI Agent *
+                  </label>
+                  <Select
+                    value={formData.agent_id}
+                    onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
+                    disabled={loadingAgents}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                          <div className="flex items-center gap-2">
+                            {agent.hasActivePhone ? (
+                              <Phone className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <PhoneOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span>{agent.agent_name}</span>
+                            {!agent.hasActivePhone && (
+                              <span className="text-xs text-muted-foreground">(No active phone)</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      This agent has no active phone number in Retell - calls won't work
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Telnyx AI Assistant *
+                  </label>
+                  <Select
+                    value={formData.telnyx_assistant_id}
+                    onValueChange={(value) => setFormData({ ...formData, telnyx_assistant_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a Telnyx assistant" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      {telnyxAssistants.map((assistant) => (
+                        <SelectItem key={assistant.id} value={assistant.id}>
+                          <div className="flex items-center gap-2">
+                            <Bot className="h-4 w-4 text-primary" />
+                            <span>{assistant.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {telnyxAssistants.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Workflow Selector */}
               <div>
@@ -934,16 +1029,21 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={isLoading || !formData.agent_id}>
+                <Button type="submit" disabled={isLoading || (formData.provider === 'retell' ? !formData.agent_id : !formData.telnyx_assistant_id)}>
                   {editingCampaign ? 'Update' : 'Create'} Campaign
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
               </div>
-              {!formData.agent_id && (
+              {formData.provider === 'retell' && !formData.agent_id && (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
                   Please select a Retell AI agent to continue
+                </p>
+              )}
+              {formData.provider === 'telnyx' && !formData.telnyx_assistant_id && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Please select a Telnyx AI assistant to continue
                 </p>
               )}
             </form>
