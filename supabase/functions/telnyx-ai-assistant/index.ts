@@ -1785,14 +1785,6 @@ serve(async (req) => {
               lead_id: leadRecord.id,
               user_id: userId,
             };
-              'contact.city': String(leadRecord.city || ''),
-              'contact.state': String(leadRecord.state || ''),
-              'contact.zip_code': String(leadRecord.zip_code || ''),
-              'contact.email': String(leadRecord.email || ''),
-              'contact.phone_number': String(leadRecord.phone_number || normalizedTo),
-              lead_id: leadRecord.id,
-              user_id: userId,
-            };
 
             // Include custom fields
             if (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object') {
