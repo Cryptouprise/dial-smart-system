@@ -258,6 +258,26 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   };
 
+  const loadTelnyxAssistants = async () => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('telnyx_assistants')
+        .select('id, name, telnyx_assistant_id')
+        .eq('user_id', userId)
+        .eq('status', 'active');
+      if (!error && data) {
+        setTelnyxAssistants(data.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          telnyx_assistant_id: a.telnyx_assistant_id,
+        })));
+      }
+    } catch (e) {
+      console.error('Error loading Telnyx assistants:', e);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
