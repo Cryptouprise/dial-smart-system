@@ -1701,3 +1701,27 @@ These edge functions were created/modified but NOT deployed:
 - Newer leads can be empty inbound placeholders, so recency must not outrank personalization quality.
 - `do_not_call` rows should never be preferred for test personalization when a richer duplicate exists.
 - Phone matching must support all common stored variants to avoid false “lead not found” behavior.
+
+---
+
+### March 7, 2026 - Campaign 3.7 Telnyx Dispatch Unblock (IN PROGRESS / DEBUG FIX)
+
+**What was built/fixed/changed**
+- Identified why campaign **"3.7 test telnyx"** showed no dispatch: the dispatcher was blocking a lead because the same phone had a **completed** workflow record from another campaign within 24h.
+- Updated dispatcher dedupe logic to only block **non-terminal** workflow states (`completed/failed/cancelled/removed` no longer block calls).
+- Updated Quick Test to invoke `call-dispatcher` with an explicit JSON body (`{ action: 'dispatch' }`) to avoid empty-body parse noise.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `src/components/QuickTestCampaign.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function and frontend code updated; no migration required.
+
+**Gotchas / lessons learned**
+- Cross-campaign phone dedupe must ignore terminal workflow rows, or valid test calls get suppressed.
+- Empty-body edge invocations can create misleading parse warnings during debugging.
