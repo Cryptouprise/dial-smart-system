@@ -748,24 +748,33 @@ serve(async (req) => {
         }
       }
 
-      // Add to dialing queue for call-first or no-workflow campaigns
-      const { error: queueError } = await supabase
+      // Add to dialing queue for call-first or no-workflow campaigns.
+      // Use upsert so terminal rows (failed/completed) get recycled instead of blocking on unique(campaign_id, lead_id).
+      const queuePayload = {
+        campaign_id: campaign.id,
+        lead_id: cl.lead_id,
+        phone_number: lead.phone_number,
+        status: 'pending',
+        scheduled_at: nowIso,
+        priority: 1,
+        max_attempts: campaign.max_attempts || 3,
+        attempts: 0,
+        updated_at: nowIso,
+      };
+
+      const { data: upsertedQueue, error: queueError } = await supabase
         .from('dialing_queues')
-        .insert({
-          campaign_id: campaign.id,
-          lead_id: cl.lead_id,
-          phone_number: lead.phone_number,
-          status: 'pending',
-          scheduled_at: nowIso,
-          priority: 1,
-          max_attempts: campaign.max_attempts || 3,
-          attempts: 0,
-        });
+        .upsert(queuePayload, { onConflict: 'campaign_id,lead_id' })
+        .select('id, status, attempts, max_attempts')
+        .maybeSingle();
 
       if (!queueError) {
         dialingQueued++;
+        if (upsertedQueue) {
+          console.log(`[Dispatcher] Queue upserted for lead ${cl.lead_id} (queue ${upsertedQueue.id})`);
+        }
       } else {
-        console.error(`[Dispatcher] Queue insert error for ${cl.lead_id}:`, queueError);
+        console.error(`[Dispatcher] Queue upsert error for ${cl.lead_id}:`, queueError);
       }
     }
 
