@@ -33,6 +33,45 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState(50);
+  const debouncedSearch = useDebounce(searchQuery, 300);
+
+  const filteredLeads = useMemo(() => {
+    let filtered = availableLeads;
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      filtered = filtered.filter(lead =>
+        (lead.first_name?.toLowerCase().includes(q)) ||
+        (lead.last_name?.toLowerCase().includes(q)) ||
+        lead.phone_number.includes(q) ||
+        (lead.email?.toLowerCase().includes(q)) ||
+        (lead.company?.toLowerCase().includes(q))
+      );
+    }
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(lead => lead.status === statusFilter);
+    }
+    return filtered;
+  }, [availableLeads, debouncedSearch, statusFilter]);
+
+  const visibleLeads = useMemo(() => filteredLeads.slice(0, visibleCount), [filteredLeads, visibleCount]);
+
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set(availableLeads.map(l => l.status));
+    return Array.from(statuses).sort();
+  }, [availableLeads]);
+
+  const handleSelectAll = () => {
+    const filteredIds = filteredLeads.map(l => l.id);
+    const allSelected = filteredIds.every(id => selectedLeads.includes(id));
+    if (allSelected) {
+      setSelectedLeads(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedLeads(prev => [...new Set([...prev, ...filteredIds])]);
+    }
+  };
 
   useEffect(() => {
     loadCampaignLeads();
