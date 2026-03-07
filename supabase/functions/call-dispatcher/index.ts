@@ -1132,10 +1132,15 @@ serve(async (req) => {
         scoredNumbers.sort((a, b) => b.score - a.score);
         
         if (scoredNumbers.length === 0) {
-          console.error(`[Dispatcher] No valid phone numbers available after filtering`);
+          const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
+          console.error(`[Dispatcher] No valid ${providerLabel} phone numbers available after filtering`);
           await supabase
             .from('dialing_queues')
-            .update({ status: 'failed', updated_at: nowIso })
+            .update({
+              status: 'failed',
+              updated_at: nowIso,
+              notes: `No valid ${providerLabel} numbers available for this campaign`
+            })
             .eq('id', queueItem.id);
           continue;
         }
