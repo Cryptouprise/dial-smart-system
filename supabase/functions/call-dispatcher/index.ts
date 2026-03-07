@@ -601,18 +601,25 @@ serve(async (req) => {
       .in('workflow_id', workflowIds.length > 0 ? workflowIds : ['no-workflows'])
       .gte('created_at', oneDayAgo);
 
-    const existingWorkflowLeadIds = new Set((existingWorkflowProgress || []).map(p => p.lead_id));
-    
-    // Build a set of phone numbers that have been enrolled in workflows
+    // Only block leads that are currently in non-terminal workflow states
+    const terminalWorkflowStatuses = new Set(['completed', 'failed', 'cancelled', 'removed']);
+    const blockingWorkflowProgress = (existingWorkflowProgress || []).filter((progress: any) => {
+      const status = String(progress?.status || '').toLowerCase();
+      return status ? !terminalWorkflowStatuses.has(status) : true;
+    });
+
+    const existingWorkflowLeadIds = new Set(blockingWorkflowProgress.map((p: any) => p.lead_id));
+
+    // Build a set of phone numbers that are currently in active workflow progress
     const existingWorkflowPhones = new Set<string>();
-    for (const p of existingWorkflowProgress || []) {
+    for (const p of blockingWorkflowProgress) {
       const phone = (p as any).leads?.phone_number;
       if (phone) {
         const normalized = phone.replace(/\D/g, '').slice(-10);
         existingWorkflowPhones.add(normalized);
       }
     }
-    console.log(`[Dispatcher] Leads already in workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
+    console.log(`[Dispatcher] Leads currently in active workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
 
     // Check for RECENT call_logs to prevent re-calling leads
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();

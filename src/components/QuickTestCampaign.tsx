@@ -166,7 +166,7 @@ const QuickTestCampaign = () => {
         .eq('id', selectedCampaign);
 
       // Dispatch calls
-      const { data, error } = await supabase.functions.invoke('call-dispatcher');
+      const { data, error } = await supabase.functions.invoke('call-dispatcher', { body: { action: 'dispatch' } });
 
       if (error) throw error;
 
