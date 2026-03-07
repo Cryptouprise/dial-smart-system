@@ -223,9 +223,15 @@ serve(async (req) => {
     let result: any = {};
 
     switch (action) {
-      case 'create_call':
-        if (!phoneNumber || !callerId || !agentId) {
-          throw new Error('Phone number, caller ID, and agent ID are required');
+      case 'create_call': {
+        const isTelnyxProvider = provider === 'telnyx';
+
+        if (!phoneNumber || !callerId) {
+          throw new Error('Phone number and caller ID are required');
+        }
+
+        if (!isTelnyxProvider && !agentId) {
+          throw new Error('Agent ID is required for Retell calls');
         }
         
         // Validate and normalize phone number
@@ -373,12 +379,16 @@ serve(async (req) => {
           }
 
           // Get Telnyx assistant details
-          const { data: telnyxAssistant } = await supabaseAdmin
+          const { data: telnyxAssistant, error: telnyxAssistantError } = await supabaseAdmin
             .from('telnyx_assistants')
             .select('telnyx_assistant_id, telnyx_texml_app_id, name')
             .eq('id', telnyxAssistantId)
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
+
+          if (telnyxAssistantError) {
+            throw new Error(`Failed to load Telnyx assistant: ${telnyxAssistantError.message}`);
+          }
 
           if (!telnyxAssistant?.telnyx_assistant_id) {
             await supabaseAdmin.from('call_logs').update({
