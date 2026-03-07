@@ -527,7 +527,29 @@ serve(async (req) => {
                 if (disposition.disposition && callLog?.id) {
                   await supabaseAdmin.from('call_logs').update({
                     outcome: disposition.disposition,
+                    auto_disposition: disposition.disposition,
+                    confidence_score: disposition.confidence || null,
+                    call_summary: disposition.summary || null,
                   }).eq('id', callLog.id);
+
+                  // Trigger disposition router for pipeline movement
+                  if (callLog.lead_id && insightUserId) {
+                    try {
+                      console.log(`[Telnyx Webhook] Insight disposition: ${disposition.disposition} — triggering disposition-router`);
+                      await supabaseAdmin.functions.invoke('disposition-router', {
+                        body: {
+                          action: 'process_disposition',
+                          leadId: callLog.lead_id,
+                          userId: insightUserId,
+                          dispositionName: disposition.disposition,
+                          callOutcome: disposition.disposition,
+                          transcript: '',
+                        },
+                      });
+                    } catch (routerErr: any) {
+                      console.error('[Telnyx Webhook] Disposition router (insight) error:', routerErr.message);
+                    }
+                  }
                 }
               }
 
