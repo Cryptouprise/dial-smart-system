@@ -1029,16 +1029,21 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={isLoading || !formData.agent_id}>
+                <Button type="submit" disabled={isLoading || (formData.provider === 'retell' ? !formData.agent_id : !formData.telnyx_assistant_id)}>
                   {editingCampaign ? 'Update' : 'Create'} Campaign
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
               </div>
-              {!formData.agent_id && (
+              {formData.provider === 'retell' && !formData.agent_id && (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
                   Please select a Retell AI agent to continue
+                </p>
+              )}
+              {formData.provider === 'telnyx' && !formData.telnyx_assistant_id && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Please select a Telnyx AI assistant to continue
                 </p>
               )}
             </form>
