@@ -941,7 +941,7 @@ serve(async (req) => {
       .select(`
         *,
         leads (id, phone_number, first_name, last_name),
-        campaigns (id, agent_id, name, retry_delay_minutes)
+        campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id)
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending')
@@ -996,21 +996,26 @@ serve(async (req) => {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
+        const campaignProvider = campaign?.provider || 'retell';
+        const isTelnyx = campaignProvider === 'telnyx';
         
-        if (!campaign?.agent_id) {
-          console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no agent_id - cannot make calls`);
+        // Validate agent configuration based on provider
+        const hasAgent = isTelnyx ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
+        if (!hasAgent) {
+          const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
+          console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no ${providerLabel} agent - cannot make calls`);
 
-          // Log this configuration error prominently
           await supabase.from('edge_function_errors').insert({
             function_name: 'call-dispatcher',
             error_type: 'campaign_config_error',
-            error_message: `Campaign "${campaign?.name || queueItem.campaign_id}" has no Retell agent configured`,
+            error_message: `Campaign "${campaign?.name || queueItem.campaign_id}" has no ${providerLabel} agent configured`,
             user_id: user.id,
             context: {
               campaign_id: queueItem.campaign_id,
               campaign_name: campaign?.name,
               lead_id: queueItem.lead_id,
-              action_required: 'Configure a Retell agent for this campaign in campaign settings'
+              provider: campaignProvider,
+              action_required: `Configure a ${providerLabel} agent for this campaign in campaign settings`
             }
           });
 
@@ -1019,7 +1024,7 @@ serve(async (req) => {
             .update({
               status: 'failed',
               updated_at: nowIso,
-              notes: 'Campaign has no Retell agent configured'
+              notes: `Campaign has no ${providerLabel} agent configured`
             })
             .eq('id', queueItem.id);
           continue;
@@ -1085,17 +1090,22 @@ serve(async (req) => {
           })
           .eq('id', queueItem.id);
 
-        // Initiate the call with ALL required parameters
+        // Initiate the call with ALL required parameters (provider-aware)
+        const callBody: any = {
+          action: 'create_call',
+          leadId: queueItem.lead_id,
+          campaignId: queueItem.campaign_id,
+          userId: user.id,
+          phoneNumber: toPhone,
+          callerId: callerId,
+          agentId: campaign.agent_id,
+          provider: campaignProvider,
+        };
+        if (isTelnyx && campaign.telnyx_assistant_id) {
+          callBody.telnyxAssistantId = campaign.telnyx_assistant_id;
+        }
         const callResponse = await supabase.functions.invoke('outbound-calling', {
-          body: {
-            action: 'create_call',
-            leadId: queueItem.lead_id,
-            campaignId: queueItem.campaign_id,
-            userId: user.id,
-            phoneNumber: toPhone,
-            callerId: callerId,
-            agentId: campaign.agent_id,
-          },
+          body: callBody,
         });
 
         if (callResponse.error) {
