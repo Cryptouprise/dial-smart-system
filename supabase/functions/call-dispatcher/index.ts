@@ -856,7 +856,11 @@ serve(async (req) => {
       try {
         console.log('[Dispatcher] No local Retell numbers found, attempting Retell sync...');
         const syncResponse = await supabase.functions.invoke('retell-phone-management', {
-          body: { action: 'sync', userId: user.id }
+          body: { action: 'sync', userId: user.id },
+          headers: {
+            Authorization: `Bearer ${supabaseKey}`,
+            apikey: supabaseKey,
+          },
         });
         
         if (syncResponse.data?.synced > 0) {
@@ -897,6 +901,8 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
+          success: false,
+          status: 'no_numbers_available',
           error: 'No phone numbers available for calling. All numbers may have hit daily limits, been quarantined, or need Retell import.',
           dispatched: 0,
           workflowEnrolled,
@@ -904,7 +910,7 @@ serve(async (req) => {
           callbacks: { queued: callbacksQueued, enrolled: callbacksEnrolledInWorkflow, resumed: callbacksResumed },
           action_required: 'Check phone number status in settings or wait for daily reset'
         }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
@@ -1139,10 +1145,26 @@ serve(async (req) => {
         }
         const callResponse = await supabase.functions.invoke('outbound-calling', {
           body: callBody,
+          headers: {
+            Authorization: `Bearer ${supabaseKey}`,
+            apikey: supabaseKey,
+          },
         });
 
         if (callResponse.error) {
-          throw new Error(callResponse.error.message || 'Call failed');
+          let detailedMessage = callResponse.error.message || 'Call failed';
+          try {
+            const errorPayload = await callResponse.error.context?.json?.();
+            if (errorPayload?.error) detailedMessage = errorPayload.error;
+            else if (errorPayload?.message) detailedMessage = errorPayload.message;
+          } catch {
+            // keep fallback message
+          }
+          throw new Error(detailedMessage);
+        }
+
+        if ((callResponse.data as any)?.error) {
+          throw new Error((callResponse.data as any).error);
         }
 
         dispatched++;

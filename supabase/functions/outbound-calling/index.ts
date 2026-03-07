@@ -905,6 +905,7 @@ serve(async (req) => {
           status: 'created' 
         };
         break;
+      }
 
       case 'get_call_status':
         if (!retellCallId) {
