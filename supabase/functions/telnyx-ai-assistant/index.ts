@@ -1621,48 +1621,123 @@ serve(async (req) => {
         const phoneDigits = cleanTo.slice(-10);
         if (phoneDigits.length === 10) {
           const normalizedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
-          const { data: leadCandidates, error: leadLookupError } = await supabaseAdmin
-            .from('leads')
-            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at, created_at')
-            .eq('user_id', userId)
-            .or(`phone_number.eq.${normalizedTo},phone_number.eq.${cleanTo},phone_number.ilike.%${phoneDigits}%`)
-            .limit(10);
+          const normalizedWithCountryDigits = cleanTo.startsWith('1') ? cleanTo : `1${cleanTo}`;
+          const phoneVariants = Array.from(new Set([
+            normalizedTo,
+            formattedTo,
+            cleanTo,
+            normalizedWithCountryDigits,
+            phoneDigits,
+          ].filter(Boolean)));
 
-          if (leadLookupError) {
-            console.error('[Telnyx AI] Test call lead lookup error:', leadLookupError);
+          const leadSelect = 'id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at, created_at, do_not_call';
+
+          let leadCandidates: any[] = [];
+
+          const { data: exactMatches, error: exactMatchError } = await supabaseAdmin
+            .from('leads')
+            .select(leadSelect)
+            .eq('user_id', userId)
+            .in('phone_number', phoneVariants)
+            .limit(25);
+
+          if (exactMatchError) {
+            console.error('[Telnyx AI] Test call exact lead lookup error:', exactMatchError);
           }
 
-          const leadRecord = Array.isArray(leadCandidates)
-            ? leadCandidates
-              .map((lead: any) => {
-                const storedDigits = String(lead?.phone_number || '').replace(/\D/g, '');
-                const exactMatch = storedDigits === cleanTo || storedDigits === `1${phoneDigits}` || storedDigits === phoneDigits;
+          if (Array.isArray(exactMatches) && exactMatches.length > 0) {
+            leadCandidates = exactMatches;
+          } else {
+            const { data: partialMatches, error: partialMatchError } = await supabaseAdmin
+              .from('leads')
+              .select(leadSelect)
+              .eq('user_id', userId)
+              .or(`phone_number.ilike.%${phoneDigits}%`)
+              .limit(25);
 
-                const completeness = [
-                  lead?.first_name,
-                  lead?.last_name,
-                  lead?.email,
-                  lead?.address,
-                  lead?.city,
-                  lead?.state,
-                  lead?.zip_code,
-                  lead?.company,
-                  lead?.notes,
-                ].reduce((score, value) => score + (String(value || '').trim() ? 1 : 0), 0);
+            if (partialMatchError) {
+              console.error('[Telnyx AI] Test call partial lead lookup error:', partialMatchError);
+            }
 
-                const createdAt = lead?.created_at ? new Date(lead.created_at).getTime() : 0;
-                const score = (exactMatch ? 100 : 0) + (completeness * 10) + createdAt / 1_000_000_000_000;
+            leadCandidates = Array.isArray(partialMatches) ? partialMatches : [];
+          }
 
-                return { lead, score };
-              })
-              .sort((a, b) => b.score - a.score)[0]?.lead ?? null
-            : null;
+          const rankedCandidates = leadCandidates
+            .map((lead: any) => {
+              const storedDigits = String(lead?.phone_number || '').replace(/\D/g, '');
+              const exactMatch = storedDigits === cleanTo || storedDigits === normalizedWithCountryDigits || storedDigits === phoneDigits;
+
+              const hasName = !!(String(lead?.first_name || '').trim() || String(lead?.last_name || '').trim());
+              const hasAddress = !!(
+                String(lead?.address || '').trim() ||
+                String(lead?.city || '').trim() ||
+                String(lead?.state || '').trim() ||
+                String(lead?.zip_code || '').trim()
+              );
+              const isDnc = !!lead?.do_not_call;
+
+              const completeness = [
+                lead?.first_name,
+                lead?.last_name,
+                lead?.email,
+                lead?.address,
+                lead?.city,
+                lead?.state,
+                lead?.zip_code,
+                lead?.company,
+              ].reduce((score, value) => score + (String(value || '').trim() ? 1 : 0), 0);
+
+              const createdAt = lead?.created_at ? new Date(lead.created_at).getTime() : 0;
+              const score =
+                (exactMatch ? 200 : 0) +
+                (hasName ? 80 : 0) +
+                (hasAddress ? 60 : 0) +
+                (completeness * 8) +
+                (isDnc ? -1000 : 0) +
+                (createdAt / 1_000_000_000_000);
+
+              return { lead, score, hasName, hasAddress, isDnc };
+            })
+            .sort((a, b) => b.score - a.score);
+
+          const leadRecord = rankedCandidates[0]?.lead ?? null;
+
+          if (rankedCandidates.length > 0) {
+            const top = rankedCandidates[0];
+            console.log(
+              `[Telnyx AI] Test call lead lookup: ${rankedCandidates.length} candidate(s), selected ${top.lead.id} (score=${top.score.toFixed(2)}, hasName=${top.hasName}, hasAddress=${top.hasAddress}, dnc=${top.isDnc})`
+            );
+          }
 
           if (leadRecord) {
-            const firstName = String(leadRecord.first_name || '');
-            const lastName = String(leadRecord.last_name || '');
-            const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-            const tz = leadRecord.timezone || 'America/New_York';
+            const customFields = (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object')
+              ? (leadRecord.custom_fields as Record<string, unknown>)
+              : {};
+
+            const firstName = String(
+              leadRecord.first_name ||
+              customFields.first_name ||
+              customFields.firstname ||
+              customFields.contact_first_name ||
+              ''
+            ).trim();
+            const lastName = String(
+              leadRecord.last_name ||
+              customFields.last_name ||
+              customFields.lastname ||
+              customFields.contact_last_name ||
+              ''
+            ).trim();
+            const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+
+            const address = String(leadRecord.address || customFields.address || '').trim();
+            const city = String(leadRecord.city || customFields.city || '').trim();
+            const state = String(leadRecord.state || customFields.state || '').trim();
+            const zipCode = String(leadRecord.zip_code || customFields.zip_code || customFields.zip || '').trim();
+            const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
+            const tz = leadRecord.timezone || String(customFields.timezone || '') || 'America/New_York';
             const currentTime = new Date().toLocaleString('en-US', {
               timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
               day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
@@ -1687,25 +1762,25 @@ serve(async (req) => {
               'contact.full_name': fullName,
               contact_first_name: firstName,
               contact_last_name: lastName,
-              email: String(leadRecord.email || ''),
+              email: String(leadRecord.email || customFields.email || ''),
               phone: String(leadRecord.phone_number || normalizedTo),
               phone_number: String(leadRecord.phone_number || normalizedTo),
-              company: String(leadRecord.company || ''),
-              lead_source: String(leadRecord.lead_source || ''),
-              notes: String(leadRecord.notes || ''),
+              company: String(leadRecord.company || customFields.company || ''),
+              lead_source: String(leadRecord.lead_source || customFields.lead_source || ''),
+              notes: String(leadRecord.notes || customFields.notes || ''),
               tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
-              preferred_contact_time: String(leadRecord.preferred_contact_time || ''),
+              preferred_contact_time: String(leadRecord.preferred_contact_time || customFields.preferred_contact_time || ''),
               timezone: tz,
-              address: String(leadRecord.address || ''),
-              city: String(leadRecord.city || ''),
-              state: String(leadRecord.state || ''),
-              zip_code: String(leadRecord.zip_code || ''),
-              full_address: [leadRecord.address, leadRecord.city, leadRecord.state, leadRecord.zip_code].filter(Boolean).join(', '),
-              'contact.address': String(leadRecord.address || ''),
-              'contact.city': String(leadRecord.city || ''),
-              'contact.state': String(leadRecord.state || ''),
-              'contact.zip_code': String(leadRecord.zip_code || ''),
-              'contact.email': String(leadRecord.email || ''),
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              full_address: fullAddress,
+              'contact.address': address,
+              'contact.city': city,
+              'contact.state': state,
+              'contact.zip_code': zipCode,
+              'contact.email': String(leadRecord.email || customFields.email || ''),
               'contact.phone_number': String(leadRecord.phone_number || normalizedTo),
               lead_id: leadRecord.id,
               user_id: userId,
