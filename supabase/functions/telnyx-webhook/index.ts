@@ -467,12 +467,56 @@ serve(async (req) => {
               telnyx_conversation_id: conversationId,
             };
 
-            // Store transcript if available
+            // Store transcript in the proper transcript column
             if (transcript) {
+              updates.transcript = transcript;
               updates.notes = (callLog.notes || '') + '\n\n--- Transcript ---\n' + transcript;
             }
 
             await supabaseAdmin.from('call_logs').update(updates).eq('id', callLog.id);
+
+            // Trigger transcript analysis + disposition routing immediately
+            if (transcript && callLog.user_id && callLog.lead_id) {
+              try {
+                console.log('[Telnyx Webhook] Conversation ended with transcript, triggering analysis...');
+                const analysisResp = await supabaseAdmin.functions.invoke('analyze-call-transcript', {
+                  body: {
+                    transcript,
+                    callId: callLog.id,
+                    leadId: callLog.lead_id,
+                    userId: callLog.user_id,
+                    duration: callLog.duration_seconds || 0,
+                    provider: 'telnyx',
+                  },
+                });
+
+                if (analysisResp.data?.disposition) {
+                  console.log(`[Telnyx Webhook] AI disposition: ${analysisResp.data.disposition}`);
+                  await supabaseAdmin.from('call_logs').update({
+                    auto_disposition: analysisResp.data.disposition,
+                    confidence_score: analysisResp.data.confidence,
+                    call_summary: analysisResp.data.summary,
+                    ai_analysis: analysisResp.data,
+                    outcome: analysisResp.data.disposition,
+                  }).eq('id', callLog.id);
+
+                  // Trigger disposition router
+                  await supabaseAdmin.functions.invoke('disposition-router', {
+                    body: {
+                      action: 'process_disposition',
+                      leadId: callLog.lead_id,
+                      userId: callLog.user_id,
+                      dispositionName: analysisResp.data.disposition,
+                      callOutcome: analysisResp.data.disposition,
+                      transcript,
+                    },
+                  });
+                  console.log('[Telnyx Webhook] Disposition router triggered from conversation.ended');
+                }
+              } catch (analysisErr: any) {
+                console.error('[Telnyx Webhook] Conversation analysis error:', analysisErr.message);
+              }
+            }
           }
           break;
         }
