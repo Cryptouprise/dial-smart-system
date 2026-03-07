@@ -421,28 +421,70 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>AI Voice Agent *</Label>
+                <Label>Voice AI Provider</Label>
                 <Select
-                  value={wizardState.agentId}
-                  onValueChange={(v) => setWizardState(prev => ({ ...prev, agentId: v }))}
+                  value={wizardState.provider}
+                  onValueChange={(v: 'retell' | 'telnyx') => setWizardState(prev => ({ ...prev, provider: v, agentId: '', telnyxAssistantId: '' }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an AI agent..." />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        {agent.agent_name || agent.agent_id}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="retell">Retell AI</SelectItem>
+                    <SelectItem value="telnyx">Telnyx AI</SelectItem>
                   </SelectContent>
                 </Select>
-                {agents.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No agents found. Create one in the Retell AI section first.
-                  </p>
-                )}
               </div>
+
+              {wizardState.provider === 'retell' ? (
+                <div className="space-y-2">
+                  <Label>Retell AI Agent *</Label>
+                  <Select
+                    value={wizardState.agentId}
+                    onValueChange={(v) => setWizardState(prev => ({ ...prev, agentId: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an AI agent..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                          {agent.agent_name || agent.agent_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {agents.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No agents found. Create one in the Retell AI section first.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Telnyx AI Assistant *</Label>
+                  <Select
+                    value={wizardState.telnyxAssistantId}
+                    onValueChange={(v) => setWizardState(prev => ({ ...prev, telnyxAssistantId: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a Telnyx assistant..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {telnyxAssistants.map((assistant) => (
+                        <SelectItem key={assistant.id} value={assistant.id}>
+                          {assistant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {telnyxAssistants.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label>Max Calls Per Day (per lead)</Label>
