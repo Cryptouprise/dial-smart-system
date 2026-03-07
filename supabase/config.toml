@@ -71,7 +71,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.outbound-calling]
-verify_jwt = true
+verify_jwt = false  # Handles auth internally - supports both JWT and service-role calls from dispatcher
 
 [functions.call-dispatcher]
 verify_jwt = false  # Internal service function - called by automation-scheduler
