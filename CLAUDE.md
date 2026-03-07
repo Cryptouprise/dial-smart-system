@@ -1676,3 +1676,24 @@ These edge functions were created/modified but NOT deployed:
 **Gotchas / lessons learned**
 - Portal/model ID mismatch can happen when one side uses `openai/gpt-4.1` and another uses `gpt-4.1`; both IDs must be supported in dropdowns and sync logic.
 - Listing assistants alone may omit fields in some APIs; pulling per-assistant details avoids stale model configuration during sync.
+
+---
+
+### March 7, 2026 - Telnyx Test Call Variable Resolution Fix
+
+**What was built/fixed/changed**
+- Fixed `test_call` lead matching to handle duplicate leads sharing the same phone by scoring candidates and selecting the most complete record (instead of arbitrary first row).
+- Added compatibility variable aliases for scripts using `{{contact.first_name}}`-style placeholders during test calls.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated; no migration required.
+
+**Gotchas / lessons learned**
+- Duplicate leads with the same phone can silently break personalization by selecting empty rows unless lookup ranking favors data completeness.
+- Many imported scripts reference contact-scoped variables (`contact.first_name`), so alias coverage is important for test-call parity.
