@@ -114,7 +114,7 @@ serve(async (req) => {
       if (callControlId) {
         const { data } = await supabaseAdmin
           .from('call_logs')
-          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id')
+          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id, transcript, duration_seconds, notes')
           .eq('telnyx_call_control_id', callControlId)
           .maybeSingle();
         callLog = data;
@@ -124,7 +124,7 @@ serve(async (req) => {
       if (!callLog && callSessionId) {
         const { data } = await supabaseAdmin
           .from('call_logs')
-          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id')
+          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id, transcript, duration_seconds, notes')
           .eq('telnyx_call_session_id', callSessionId)
           .maybeSingle();
         callLog = data;
