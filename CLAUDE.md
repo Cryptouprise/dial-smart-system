@@ -1728,3 +1728,26 @@ These edge functions were created/modified but NOT deployed:
 **Gotchas / lessons learned**
 - Telnyx campaigns must never use mixed-provider caller IDs (Twilio/Retell), or call creation will fail at provider API level.
 - Long pending schedules can look like “broken dispatch”; manual dispatch override is required for fast QA loops.
+
+---
+
+### March 7, 2026 - Queue Recycling Fix for Campaign 3.7 (DISPATCH RECOVERY)
+
+**What was built/fixed/changed**
+- Fixed a hard blocker where leads with existing terminal queue rows (`failed`/`completed`) could never be re-queued.
+- Updated campaign queuing in `call-dispatcher` from `insert` to `upsert` on `(campaign_id, lead_id)` so terminal rows are recycled into fresh `pending` attempts.
+- Reset queue payload on recycle (`status='pending'`, `attempts=0`, `scheduled_at=now`) to guarantee immediate eligibility on manual dispatch.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated (no migration required).
+
+**Gotchas / lessons learned**
+- The unique constraint `dialing_queues_campaign_lead_unique` must be handled intentionally in dispatcher logic; plain inserts silently strand leads after max-attempt failures.
+- Re-queue behavior must be idempotent to support repeated “test again now” loops without manual DB cleanup.
