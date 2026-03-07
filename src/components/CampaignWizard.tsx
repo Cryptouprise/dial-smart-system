@@ -221,7 +221,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
   };
 
   const handleCreate = async () => {
-    if (!wizardState.name || !wizardState.workflowId || !wizardState.agentId) {
+    const hasAgent = wizardState.provider === 'retell' ? wizardState.agentId : wizardState.telnyxAssistantId;
+    if (!wizardState.name || !wizardState.workflowId || !hasAgent) {
       toast({ title: 'Missing Fields', description: 'Please complete all required fields', variant: 'destructive' });
       return;
     }
@@ -238,14 +239,16 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           name: wizardState.name,
           description: wizardState.description,
           workflow_id: wizardState.workflowId,
-          agent_id: wizardState.agentId,
+          agent_id: wizardState.provider === 'retell' ? wizardState.agentId : null,
           calling_hours_start: wizardState.callingHoursStart,
           calling_hours_end: wizardState.callingHoursEnd,
           max_calls_per_day: wizardState.maxCallsPerDay,
           sms_on_no_answer: wizardState.smsOnNoAnswer,
           sms_template: wizardState.smsTemplate,
           status: 'draft',
-        })
+          provider: wizardState.provider,
+          telnyx_assistant_id: wizardState.provider === 'telnyx' ? wizardState.telnyxAssistantId : null,
+        } as any)
         .select()
         .single();
 
@@ -266,7 +269,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     switch (currentStep) {
       case 0: return wizardState.name.length > 0;
       case 1: return wizardState.workflowId.length > 0;
-      case 2: return wizardState.agentId.length > 0;
+      case 2: return wizardState.provider === 'retell' ? wizardState.agentId.length > 0 : wizardState.telnyxAssistantId.length > 0;
       default: return true;
     }
   };
