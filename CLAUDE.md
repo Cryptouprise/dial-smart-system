@@ -1751,3 +1751,25 @@ These edge functions were created/modified but NOT deployed:
 **Gotchas / lessons learned**
 - The unique constraint `dialing_queues_campaign_lead_unique` must be handled intentionally in dispatcher logic; plain inserts silently strand leads after max-attempt failures.
 - Re-queue behavior must be idempotent to support repeated “test again now” loops without manual DB cleanup.
+
+---
+
+### March 7, 2026 - Immediate Dispatch Flag Parity Fix (FORCE BUTTON)
+
+**What was built/fixed/changed**
+- Fixed `call-dispatcher` so UI calls using `body: { immediate: true }` are treated as manual dispatch and bypass `scheduled_at` gating, matching `action: 'dispatch'` behavior.
+- Added explicit log line when immediate override is active to make diagnostics clearer during test runs.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated (no migration required).
+
+**Gotchas / lessons learned**
+- Several UI widgets call dispatcher with `immediate: true` (not `action: 'dispatch'`), so manual bypass logic must support both payload patterns.
+- Retry-delay scheduling can look like a dispatcher failure unless immediate mode bypasses the schedule gate consistently.
