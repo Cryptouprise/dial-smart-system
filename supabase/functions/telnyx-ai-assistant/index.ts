@@ -1616,6 +1616,73 @@ serve(async (req) => {
         const formattedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
         const formattedFrom = cleanFrom.startsWith('1') ? `+${cleanFrom}` : `+1${cleanFrom}`;
 
+        // ── Auto-lookup lead data from DB by the "to" phone number ──
+        let leadVars: Record<string, string> = {};
+        const phoneDigits = cleanTo.slice(-10);
+        if (phoneDigits.length === 10) {
+          const normalizedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
+          const { data: leadRecord } = await supabaseAdmin
+            .from('leads')
+            .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
+            .eq('user_id', userId)
+            .or(`phone_number.eq.${normalizedTo},phone_number.eq.${cleanTo},phone_number.ilike.%${phoneDigits}%`)
+            .limit(1)
+            .maybeSingle();
+
+          if (leadRecord) {
+            const firstName = String(leadRecord.first_name || '');
+            const lastName = String(leadRecord.last_name || '');
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
+            const tz = leadRecord.timezone || 'America/New_York';
+            const currentTime = new Date().toLocaleString('en-US', {
+              timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
+              day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+            });
+
+            leadVars = {
+              current_time: currentTime,
+              current_time_iso: new Date().toISOString(),
+              current_timezone: tz,
+              current_date_ymd: new Date().toLocaleDateString('en-CA', { timeZone: tz }),
+              current_day_of_week: new Date().toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' }),
+              first_name: firstName,
+              last_name: lastName,
+              full_name: fullName,
+              name: fullName,
+              email: String(leadRecord.email || ''),
+              phone: String(leadRecord.phone_number || normalizedTo),
+              phone_number: String(leadRecord.phone_number || normalizedTo),
+              company: String(leadRecord.company || ''),
+              lead_source: String(leadRecord.lead_source || ''),
+              notes: String(leadRecord.notes || ''),
+              tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
+              preferred_contact_time: String(leadRecord.preferred_contact_time || ''),
+              timezone: tz,
+              address: String(leadRecord.address || ''),
+              city: String(leadRecord.city || ''),
+              state: String(leadRecord.state || ''),
+              zip_code: String(leadRecord.zip_code || ''),
+              full_address: [leadRecord.address, leadRecord.city, leadRecord.state, leadRecord.zip_code].filter(Boolean).join(', '),
+              lead_id: leadRecord.id,
+              user_id: userId,
+            };
+
+            // Include custom fields
+            if (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object') {
+              for (const [key, val] of Object.entries(leadRecord.custom_fields as Record<string, unknown>)) {
+                leadVars[`custom_${key}`] = String(val ?? '');
+              }
+            }
+
+            console.log(`[Telnyx AI] Test call: Found lead "${fullName}" (${leadRecord.id}) — injecting ${Object.keys(leadVars).length} variables`);
+          } else {
+            console.log(`[Telnyx AI] Test call: No lead found for ${formattedTo} — using manual variables only`);
+          }
+        }
+
+        // Merge: lead DB data first, then manual overrides on top (manual wins)
+        const mergedVars = { ...leadVars, ...(dynVars && typeof dynVars === 'object' ? dynVars : {}) };
+
         // Make the outbound AI call via TeXML
         const callPayload: any = {
           From: formattedFrom,
@@ -1623,9 +1690,9 @@ serve(async (req) => {
           AIAssistantId: testAssistant.telnyx_assistant_id,
         };
 
-        // Include dynamic variables if provided
-        if (dynVars && typeof dynVars === 'object' && Object.keys(dynVars).length > 0) {
-          callPayload.AIAssistantDynamicVariables = dynVars;
+        // Include merged dynamic variables
+        if (Object.keys(mergedVars).length > 0) {
+          callPayload.AIAssistantDynamicVariables = mergedVars;
         }
 
         console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}`);
