@@ -545,7 +545,7 @@ serve(async (req) => {
 
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, name, agent_id, max_attempts, workflow_id')
+      .select('id, name, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
@@ -779,33 +779,68 @@ serve(async (req) => {
 
     let availableNumbers: any[] = [];
 
-    // First query: Get all phone numbers with Retell IDs and rotation enabled
-    const { data: retellNumbers, error: retellError } = await supabase
-      .from('phone_numbers')
-      .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .eq('rotation_enabled', true)
-      .not('retell_phone_id', 'is', null);
-    
-    if (retellError) {
-      console.error('[Dispatcher] Error fetching phone numbers:', retellError);
-    } else {
-      // Apply max_daily_calls hard cap - filter out numbers that hit their limit
-      const maxDailyDefault = 100;
-      const filteredNumbers = (retellNumbers || []).filter(n => {
-        const maxCalls = n.max_daily_calls || maxDailyDefault;
-        const currentCalls = n.daily_calls || 0;
-        return currentCalls < maxCalls;
-      });
-      availableNumbers = filteredNumbers;
-      console.log(`[Dispatcher] ${availableNumbers.length}/${retellNumbers?.length || 0} numbers available (within daily limits)`);
+    // Check if any active campaign uses Telnyx
+    const hasTelnyxCampaign = activeCampaigns.some((c: any) => c.provider === 'telnyx');
+    const hasRetellCampaign = activeCampaigns.some((c: any) => !c.provider || c.provider === 'retell');
+
+    if (hasRetellCampaign) {
+      // Get phone numbers with Retell IDs for Retell campaigns
+      const { data: retellNumbers, error: retellError } = await supabase
+        .from('phone_numbers')
+        .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .eq('rotation_enabled', true)
+        .not('retell_phone_id', 'is', null);
+      
+      if (retellError) {
+        console.error('[Dispatcher] Error fetching Retell phone numbers:', retellError);
+      } else {
+        const maxDailyDefault = 100;
+        const filteredNumbers = (retellNumbers || []).filter(n => {
+          const maxCalls = n.max_daily_calls || maxDailyDefault;
+          const currentCalls = n.daily_calls || 0;
+          return currentCalls < maxCalls;
+        });
+        availableNumbers = filteredNumbers;
+        console.log(`[Dispatcher] ${availableNumbers.length}/${retellNumbers?.length || 0} Retell numbers available`);
+      }
+    }
+
+    if (hasTelnyxCampaign) {
+      // Get ALL active phone numbers for Telnyx (don't require retell_phone_id)
+      const { data: telnyxNumbers, error: telnyxError } = await supabase
+        .from('phone_numbers')
+        .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .eq('rotation_enabled', true);
+      
+      if (telnyxError) {
+        console.error('[Dispatcher] Error fetching Telnyx phone numbers:', telnyxError);
+      } else {
+        const maxDailyDefault = 100;
+        const filteredTelnyx = (telnyxNumbers || []).filter(n => {
+          const maxCalls = n.max_daily_calls || maxDailyDefault;
+          const currentCalls = n.daily_calls || 0;
+          return currentCalls < maxCalls;
+        });
+        // Merge without duplicates
+        const existingIds = new Set(availableNumbers.map(n => n.id));
+        for (const n of filteredTelnyx) {
+          if (!existingIds.has(n.id)) {
+            availableNumbers.push(n);
+            existingIds.add(n.id);
+          }
+        }
+        console.log(`[Dispatcher] After Telnyx merge: ${availableNumbers.length} total numbers available`);
+      }
     }
     
-    console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers with Retell IDs`);
+    console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers for dispatch`);
     
-    // DEBUG: If empty, check what numbers exist for this user
-    if (availableNumbers.length === 0) {
+    // If still empty for Retell campaigns, try Retell sync fallback
+    if (availableNumbers.length === 0 && hasRetellCampaign) {
       const { data: allUserNumbers } = await supabase
         .from('phone_numbers')
         .select('id, number, retell_phone_id, status, user_id')
@@ -818,7 +853,6 @@ serve(async (req) => {
           status: n.status 
         })) || []));
       
-      // Fallback: Try to sync from Retell if no numbers have Retell IDs
       try {
         console.log('[Dispatcher] No local Retell numbers found, attempting Retell sync...');
         const syncResponse = await supabase.functions.invoke('retell-phone-management', {
@@ -828,7 +862,6 @@ serve(async (req) => {
         if (syncResponse.data?.synced > 0) {
           console.log(`[Dispatcher] Synced ${syncResponse.data.synced} numbers from Retell`);
           
-          // Re-query after sync
           const { data: syncedNumbers } = await supabase
             .from('phone_numbers')
             .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until')
@@ -941,7 +974,7 @@ serve(async (req) => {
       .select(`
         *,
         leads (id, phone_number, first_name, last_name),
-        campaigns (id, agent_id, name, retry_delay_minutes)
+        campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id)
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending')
@@ -996,21 +1029,26 @@ serve(async (req) => {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
+        const campaignProvider = campaign?.provider || 'retell';
+        const isTelnyx = campaignProvider === 'telnyx';
         
-        if (!campaign?.agent_id) {
-          console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no agent_id - cannot make calls`);
+        // Validate agent configuration based on provider
+        const hasAgent = isTelnyx ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
+        if (!hasAgent) {
+          const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
+          console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no ${providerLabel} agent - cannot make calls`);
 
-          // Log this configuration error prominently
           await supabase.from('edge_function_errors').insert({
             function_name: 'call-dispatcher',
             error_type: 'campaign_config_error',
-            error_message: `Campaign "${campaign?.name || queueItem.campaign_id}" has no Retell agent configured`,
+            error_message: `Campaign "${campaign?.name || queueItem.campaign_id}" has no ${providerLabel} agent configured`,
             user_id: user.id,
             context: {
               campaign_id: queueItem.campaign_id,
               campaign_name: campaign?.name,
               lead_id: queueItem.lead_id,
-              action_required: 'Configure a Retell agent for this campaign in campaign settings'
+              provider: campaignProvider,
+              action_required: `Configure a ${providerLabel} agent for this campaign in campaign settings`
             }
           });
 
@@ -1019,7 +1057,7 @@ serve(async (req) => {
             .update({
               status: 'failed',
               updated_at: nowIso,
-              notes: 'Campaign has no Retell agent configured'
+              notes: `Campaign has no ${providerLabel} agent configured`
             })
             .eq('id', queueItem.id);
           continue;
@@ -1085,17 +1123,22 @@ serve(async (req) => {
           })
           .eq('id', queueItem.id);
 
-        // Initiate the call with ALL required parameters
+        // Initiate the call with ALL required parameters (provider-aware)
+        const callBody: any = {
+          action: 'create_call',
+          leadId: queueItem.lead_id,
+          campaignId: queueItem.campaign_id,
+          userId: user.id,
+          phoneNumber: toPhone,
+          callerId: callerId,
+          agentId: campaign.agent_id,
+          provider: campaignProvider,
+        };
+        if (isTelnyx && campaign.telnyx_assistant_id) {
+          callBody.telnyxAssistantId = campaign.telnyx_assistant_id;
+        }
         const callResponse = await supabase.functions.invoke('outbound-calling', {
-          body: {
-            action: 'create_call',
-            leadId: queueItem.lead_id,
-            campaignId: queueItem.campaign_id,
-            userId: user.id,
-            phoneNumber: toPhone,
-            callerId: callerId,
-            agentId: campaign.agent_id,
-          },
+          body: callBody,
         });
 
         if (callResponse.error) {

@@ -114,7 +114,7 @@ serve(async (req) => {
       if (callControlId) {
         const { data } = await supabaseAdmin
           .from('call_logs')
-          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id')
+          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id, transcript, duration_seconds, notes')
           .eq('telnyx_call_control_id', callControlId)
           .maybeSingle();
         callLog = data;
@@ -124,7 +124,7 @@ serve(async (req) => {
       if (!callLog && callSessionId) {
         const { data } = await supabaseAdmin
           .from('call_logs')
-          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id')
+          .select('id, user_id, lead_id, campaign_id, organization_id, status, telnyx_assistant_id, transcript, duration_seconds, notes')
           .eq('telnyx_call_session_id', callSessionId)
           .maybeSingle();
         callLog = data;
@@ -328,8 +328,7 @@ serve(async (req) => {
             // Credit finalization for Telnyx calls
             if (callLog.organization_id) {
               try {
-                // Telnyx pricing is simpler — $0.09/min all-in for AI calls
-                const costCents = Math.ceil(durationSecs / 60 * 9); // $0.09/min
+                const costCents = Math.ceil(durationSecs / 60 * 9);
 
                 const { error: finalizeError } = await supabaseAdmin.rpc('finalize_call_cost', {
                   p_organization_id: callLog.organization_id,
@@ -356,6 +355,102 @@ serve(async (req) => {
                 })
                 .eq('number', callerNumber);
             }
+
+            // --- DISPOSITION ROUTING & TRANSCRIPT ANALYSIS ---
+            // Trigger for calls with meaningful duration (likely had a conversation)
+            if (callLog.user_id && callLog.lead_id && durationSecs > 15) {
+              const finalOutcome = outcome || 'completed';
+
+              // Trigger analyze-call-transcript if we have a transcript
+              if (callLog.transcript || callLog.notes) {
+                try {
+                  console.log('[Telnyx Webhook] Triggering transcript analysis...');
+                  const analysisResp = await supabaseAdmin.functions.invoke('analyze-call-transcript', {
+                    body: {
+                      transcript: callLog.transcript || callLog.notes || '',
+                      callId: callLog.id,
+                      leadId: callLog.lead_id,
+                      userId: callLog.user_id,
+                      duration: durationSecs,
+                      provider: 'telnyx',
+                    },
+                  });
+                  if (analysisResp.data?.disposition) {
+                    console.log(`[Telnyx Webhook] Transcript analysis disposition: ${analysisResp.data.disposition}`);
+                    // Update call log with AI analysis
+                    await supabaseAdmin.from('call_logs').update({
+                      auto_disposition: analysisResp.data.disposition,
+                      confidence_score: analysisResp.data.confidence,
+                      call_summary: analysisResp.data.summary,
+                      ai_analysis: analysisResp.data,
+                    }).eq('id', callLog.id);
+                  }
+                } catch (analysisErr: any) {
+                  console.error('[Telnyx Webhook] Transcript analysis error:', analysisErr.message);
+                }
+              }
+
+              // Trigger disposition router for pipeline movement & automation
+              try {
+                console.log(`[Telnyx Webhook] Triggering disposition router for outcome: ${finalOutcome}`);
+                await supabaseAdmin.functions.invoke('disposition-router', {
+                  body: {
+                    action: 'process_disposition',
+                    leadId: callLog.lead_id,
+                    userId: callLog.user_id,
+                    dispositionName: finalOutcome,
+                    callOutcome: finalOutcome,
+                    transcript: callLog.transcript || '',
+                  },
+                });
+                console.log('[Telnyx Webhook] Disposition router triggered successfully');
+              } catch (routerErr: any) {
+                console.error('[Telnyx Webhook] Disposition router error:', routerErr.message);
+              }
+
+              // Handle terminal dispositions - remove from workflows
+              const TERMINAL_DISPOSITIONS = ['not_interested', 'dnc', 'do_not_call', 'failed', 'invalid_number'];
+              const CAMPAIGN_REMOVAL = ['not_interested', 'dnc', 'do_not_call', 'invalid_number'];
+
+              if (CAMPAIGN_REMOVAL.includes(finalOutcome)) {
+                // Remove from all active campaigns
+                const { data: campaignLeads } = await supabaseAdmin
+                  .from('campaign_leads')
+                  .select('id, campaign_id')
+                  .eq('lead_id', callLog.lead_id);
+
+                if (campaignLeads?.length) {
+                  for (const cl of campaignLeads) {
+                    await supabaseAdmin.from('campaign_leads').delete().eq('id', cl.id);
+                  }
+                  console.log(`[Telnyx Webhook] Removed lead from ${campaignLeads.length} campaigns (${finalOutcome})`);
+                }
+
+                // Mark DNC
+                if (['dnc', 'do_not_call'].includes(finalOutcome)) {
+                  await supabaseAdmin.from('leads').update({ do_not_call: true }).eq('id', callLog.lead_id);
+                }
+              }
+
+              if (TERMINAL_DISPOSITIONS.includes(finalOutcome)) {
+                // Stop active workflows
+                await supabaseAdmin
+                  .from('lead_workflow_progress')
+                  .update({ status: 'completed', completed_at: occurredAt })
+                  .eq('lead_id', callLog.lead_id)
+                  .eq('status', 'active');
+              }
+
+              // Handle callbacks
+              if (['callback', 'callback_requested'].includes(finalOutcome)) {
+                // Schedule callback for 1 hour from now
+                const callbackTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+                await supabaseAdmin.from('leads').update({
+                  next_callback_at: callbackTime,
+                }).eq('id', callLog.lead_id);
+                console.log(`[Telnyx Webhook] Callback scheduled for ${callbackTime}`);
+              }
+            }
           }
           break;
         }
@@ -372,12 +467,56 @@ serve(async (req) => {
               telnyx_conversation_id: conversationId,
             };
 
-            // Store transcript if available
+            // Store transcript in the proper transcript column
             if (transcript) {
+              updates.transcript = transcript;
               updates.notes = (callLog.notes || '') + '\n\n--- Transcript ---\n' + transcript;
             }
 
             await supabaseAdmin.from('call_logs').update(updates).eq('id', callLog.id);
+
+            // Trigger transcript analysis + disposition routing immediately
+            if (transcript && callLog.user_id && callLog.lead_id) {
+              try {
+                console.log('[Telnyx Webhook] Conversation ended with transcript, triggering analysis...');
+                const analysisResp = await supabaseAdmin.functions.invoke('analyze-call-transcript', {
+                  body: {
+                    transcript,
+                    callId: callLog.id,
+                    leadId: callLog.lead_id,
+                    userId: callLog.user_id,
+                    duration: callLog.duration_seconds || 0,
+                    provider: 'telnyx',
+                  },
+                });
+
+                if (analysisResp.data?.disposition) {
+                  console.log(`[Telnyx Webhook] AI disposition: ${analysisResp.data.disposition}`);
+                  await supabaseAdmin.from('call_logs').update({
+                    auto_disposition: analysisResp.data.disposition,
+                    confidence_score: analysisResp.data.confidence,
+                    call_summary: analysisResp.data.summary,
+                    ai_analysis: analysisResp.data,
+                    outcome: analysisResp.data.disposition,
+                  }).eq('id', callLog.id);
+
+                  // Trigger disposition router
+                  await supabaseAdmin.functions.invoke('disposition-router', {
+                    body: {
+                      action: 'process_disposition',
+                      leadId: callLog.lead_id,
+                      userId: callLog.user_id,
+                      dispositionName: analysisResp.data.disposition,
+                      callOutcome: analysisResp.data.disposition,
+                      transcript,
+                    },
+                  });
+                  console.log('[Telnyx Webhook] Disposition router triggered from conversation.ended');
+                }
+              } catch (analysisErr: any) {
+                console.error('[Telnyx Webhook] Conversation analysis error:', analysisErr.message);
+              }
+            }
           }
           break;
         }
@@ -432,7 +571,29 @@ serve(async (req) => {
                 if (disposition.disposition && callLog?.id) {
                   await supabaseAdmin.from('call_logs').update({
                     outcome: disposition.disposition,
+                    auto_disposition: disposition.disposition,
+                    confidence_score: disposition.confidence || null,
+                    call_summary: disposition.summary || null,
                   }).eq('id', callLog.id);
+
+                  // Trigger disposition router for pipeline movement
+                  if (callLog.lead_id && insightUserId) {
+                    try {
+                      console.log(`[Telnyx Webhook] Insight disposition: ${disposition.disposition} — triggering disposition-router`);
+                      await supabaseAdmin.functions.invoke('disposition-router', {
+                        body: {
+                          action: 'process_disposition',
+                          leadId: callLog.lead_id,
+                          userId: insightUserId,
+                          dispositionName: disposition.disposition,
+                          callOutcome: disposition.disposition,
+                          transcript: '',
+                        },
+                      });
+                    } catch (routerErr: any) {
+                      console.error('[Telnyx Webhook] Disposition router (insight) error:', routerErr.message);
+                    }
+                  }
                 }
               }
 
