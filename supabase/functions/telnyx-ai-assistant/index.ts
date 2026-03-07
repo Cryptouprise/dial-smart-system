@@ -1697,6 +1697,12 @@ serve(async (req) => {
               state: String(leadRecord.state || ''),
               zip_code: String(leadRecord.zip_code || ''),
               full_address: [leadRecord.address, leadRecord.city, leadRecord.state, leadRecord.zip_code].filter(Boolean).join(', '),
+              'contact.address': String(leadRecord.address || ''),
+              'contact.city': String(leadRecord.city || ''),
+              'contact.state': String(leadRecord.state || ''),
+              'contact.zip_code': String(leadRecord.zip_code || ''),
+              'contact.email': String(leadRecord.email || ''),
+              'contact.phone_number': String(leadRecord.phone_number || normalizedTo),
               lead_id: leadRecord.id,
               user_id: userId,
             };
