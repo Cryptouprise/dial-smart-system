@@ -1710,10 +1710,34 @@ serve(async (req) => {
           }
 
           if (leadRecord) {
-            const firstName = String(leadRecord.first_name || '');
-            const lastName = String(leadRecord.last_name || '');
-            const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-            const tz = leadRecord.timezone || 'America/New_York';
+            const customFields = (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object')
+              ? (leadRecord.custom_fields as Record<string, unknown>)
+              : {};
+
+            const firstName = String(
+              leadRecord.first_name ||
+              customFields.first_name ||
+              customFields.firstname ||
+              customFields.contact_first_name ||
+              ''
+            ).trim();
+            const lastName = String(
+              leadRecord.last_name ||
+              customFields.last_name ||
+              customFields.lastname ||
+              customFields.contact_last_name ||
+              ''
+            ).trim();
+            const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+
+            const address = String(leadRecord.address || customFields.address || '').trim();
+            const city = String(leadRecord.city || customFields.city || '').trim();
+            const state = String(leadRecord.state || customFields.state || '').trim();
+            const zipCode = String(leadRecord.zip_code || customFields.zip_code || customFields.zip || '').trim();
+            const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
+            const tz = leadRecord.timezone || String(customFields.timezone || '') || 'America/New_York';
             const currentTime = new Date().toLocaleString('en-US', {
               timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
               day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
@@ -1738,21 +1762,29 @@ serve(async (req) => {
               'contact.full_name': fullName,
               contact_first_name: firstName,
               contact_last_name: lastName,
-              email: String(leadRecord.email || ''),
+              email: String(leadRecord.email || customFields.email || ''),
               phone: String(leadRecord.phone_number || normalizedTo),
               phone_number: String(leadRecord.phone_number || normalizedTo),
-              company: String(leadRecord.company || ''),
-              lead_source: String(leadRecord.lead_source || ''),
-              notes: String(leadRecord.notes || ''),
+              company: String(leadRecord.company || customFields.company || ''),
+              lead_source: String(leadRecord.lead_source || customFields.lead_source || ''),
+              notes: String(leadRecord.notes || customFields.notes || ''),
               tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
-              preferred_contact_time: String(leadRecord.preferred_contact_time || ''),
+              preferred_contact_time: String(leadRecord.preferred_contact_time || customFields.preferred_contact_time || ''),
               timezone: tz,
-              address: String(leadRecord.address || ''),
-              city: String(leadRecord.city || ''),
-              state: String(leadRecord.state || ''),
-              zip_code: String(leadRecord.zip_code || ''),
-              full_address: [leadRecord.address, leadRecord.city, leadRecord.state, leadRecord.zip_code].filter(Boolean).join(', '),
-              'contact.address': String(leadRecord.address || ''),
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              full_address: fullAddress,
+              'contact.address': address,
+              'contact.city': city,
+              'contact.state': state,
+              'contact.zip_code': zipCode,
+              'contact.email': String(leadRecord.email || customFields.email || ''),
+              'contact.phone_number': String(leadRecord.phone_number || normalizedTo),
+              lead_id: leadRecord.id,
+              user_id: userId,
+            };
               'contact.city': String(leadRecord.city || ''),
               'contact.state': String(leadRecord.state || ''),
               'contact.zip_code': String(leadRecord.zip_code || ''),
