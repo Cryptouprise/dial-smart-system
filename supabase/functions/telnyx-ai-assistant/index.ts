@@ -1707,6 +1707,7 @@ serve(async (req) => {
         }
 
         const callData = callRes.data?.data || callRes.data;
+        const hasLeadData = Object.keys(leadVars).length > 0;
         result = {
           success: true,
           call_sid: callData?.call_sid || callData?.sid,
@@ -1714,7 +1715,11 @@ serve(async (req) => {
           from: formattedFrom,
           to: formattedTo,
           assistant: testAssistant.name,
-          message: `Test call initiated! Your phone (${formattedTo}) should ring in a few seconds.`,
+          lead_found: hasLeadData,
+          variables_injected: Object.keys(mergedVars).length,
+          message: hasLeadData
+            ? `Test call initiated! Found lead "${mergedVars.full_name || mergedVars.first_name}" — injecting ${Object.keys(mergedVars).length} variables. Your phone should ring shortly.`
+            : `Test call initiated! No lead found for ${formattedTo} — using manual variables only. Your phone should ring shortly.`,
           warnings: diagnosticWarnings.length > 0 ? diagnosticWarnings : undefined,
           assistant_config_snapshot: {
             voice: voiceSettings?.voice || null,
