@@ -743,43 +743,102 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
+              {/* Provider Selection */}
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Retell AI Agent *
+                <label className="text-sm font-medium text-foreground">
+                  Voice AI Provider *
                 </label>
                 <Select
-                  value={formData.agent_id}
-                  onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
-                  disabled={loadingAgents}
+                  value={formData.provider}
+                  onValueChange={(value: 'retell' | 'telnyx') => setFormData({ ...formData, provider: value, agent_id: '', telnyx_assistant_id: '' })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        <div className="flex items-center gap-2">
-                          {agent.hasActivePhone ? (
-                            <Phone className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <PhoneOff className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <span>{agent.agent_name}</span>
-                          {!agent.hasActivePhone && (
-                            <span className="text-xs text-muted-foreground">(No active phone)</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="retell">
+                      <span className="flex items-center gap-2">
+                        <Bot className="h-4 w-4" /> Retell AI
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="telnyx">
+                      <span className="flex items-center gap-2">
+                        <Bot className="h-4 w-4" /> Telnyx AI
+                      </span>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
-                {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    This agent has no active phone number in Retell - calls won't work
-                  </p>
-                )}
               </div>
+
+              {/* Agent Selection - conditional on provider */}
+              {formData.provider === 'retell' ? (
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Retell AI Agent *
+                  </label>
+                  <Select
+                    value={formData.agent_id}
+                    onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
+                    disabled={loadingAgents}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                          <div className="flex items-center gap-2">
+                            {agent.hasActivePhone ? (
+                              <Phone className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <PhoneOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span>{agent.agent_name}</span>
+                            {!agent.hasActivePhone && (
+                              <span className="text-xs text-muted-foreground">(No active phone)</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      This agent has no active phone number in Retell - calls won't work
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Telnyx AI Assistant *
+                  </label>
+                  <Select
+                    value={formData.telnyx_assistant_id}
+                    onValueChange={(value) => setFormData({ ...formData, telnyx_assistant_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a Telnyx assistant" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      {telnyxAssistants.map((assistant) => (
+                        <SelectItem key={assistant.id} value={assistant.id}>
+                          <div className="flex items-center gap-2">
+                            <Bot className="h-4 w-4 text-primary" />
+                            <span>{assistant.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {telnyxAssistants.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Workflow Selector */}
               <div>
