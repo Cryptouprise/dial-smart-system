@@ -1704,24 +1704,27 @@ These edge functions were created/modified but NOT deployed:
 
 ---
 
-### March 7, 2026 - Campaign 3.7 Telnyx Dispatch Unblock (IN PROGRESS / DEBUG FIX)
+### March 7, 2026 - Campaign 3.7 Telnyx Dispatch Unblock (FIXED + DEPLOYED)
 
 **What was built/fixed/changed**
-- Identified why campaign **"3.7 test telnyx"** showed no dispatch: the dispatcher was blocking a lead because the same phone had a **completed** workflow record from another campaign within 24h.
-- Updated dispatcher dedupe logic to only block **non-terminal** workflow states (`completed/failed/cancelled/removed` no longer block calls).
-- Updated Quick Test to invoke `call-dispatcher` with an explicit JSON body (`{ action: 'dispatch' }`) to avoid empty-body parse noise.
+- Confirmed the active blocker was **timing + provider mismatch**: campaign queue had pending calls scheduled in the future, and Telnyx campaigns could still pull non-Telnyx caller IDs.
+- Updated `call-dispatcher` to use **provider-specific caller ID pools**:
+  - Retell campaigns → numbers with `retell_phone_id` + `rotation_enabled=true`
+  - Telnyx campaigns → `provider='telnyx'` numbers only (prefers `rotation_enabled=true`, safely falls back to active Telnyx numbers for manual continuity)
+- Updated dispatch behavior so **manual user dispatch** (`action: 'dispatch'`, non-internal call) can bypass `scheduled_at` gating for immediate testing.
+- Added clearer queue failure notes when no valid provider-specific numbers are available.
 
 **Key files modified**
 - `supabase/functions/call-dispatcher/index.ts`
-- `src/components/QuickTestCampaign.tsx`
 - `CLAUDE.md`
 
 **Database changes made**
 - None.
 
 **Deployment status**
-- Edge function and frontend code updated; no migration required.
+- `call-dispatcher` deployed successfully.
+- Verified in logs: `5/5 Telnyx numbers available` and fallback warning for non-rotation Telnyx numbers.
 
 **Gotchas / lessons learned**
-- Cross-campaign phone dedupe must ignore terminal workflow rows, or valid test calls get suppressed.
-- Empty-body edge invocations can create misleading parse warnings during debugging.
+- Telnyx campaigns must never use mixed-provider caller IDs (Twilio/Retell), or call creation will fail at provider API level.
+- Long pending schedules can look like “broken dispatch”; manual dispatch override is required for fast QA loops.

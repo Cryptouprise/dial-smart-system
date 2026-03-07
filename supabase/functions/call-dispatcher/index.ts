@@ -785,65 +785,77 @@ serve(async (req) => {
     await supabase.rpc('reset_stale_daily_calls', { target_user_id: user.id });
 
     let availableNumbers: any[] = [];
+    let retellAvailableNumbers: any[] = [];
+    let telnyxAvailableNumbers: any[] = [];
 
     // Check if any active campaign uses Telnyx
     const hasTelnyxCampaign = activeCampaigns.some((c: any) => c.provider === 'telnyx');
     const hasRetellCampaign = activeCampaigns.some((c: any) => !c.provider || c.provider === 'retell');
 
     if (hasRetellCampaign) {
-      // Get phone numbers with Retell IDs for Retell campaigns
+      // Retell campaigns must use numbers imported into Retell + rotation enabled
       const { data: retellNumbers, error: retellError } = await supabase
         .from('phone_numbers')
-        .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .select('id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .eq('rotation_enabled', true)
         .not('retell_phone_id', 'is', null);
-      
+
       if (retellError) {
         console.error('[Dispatcher] Error fetching Retell phone numbers:', retellError);
       } else {
         const maxDailyDefault = 100;
-        const filteredNumbers = (retellNumbers || []).filter(n => {
+        retellAvailableNumbers = (retellNumbers || []).filter((n: any) => {
           const maxCalls = n.max_daily_calls || maxDailyDefault;
           const currentCalls = n.daily_calls || 0;
           return currentCalls < maxCalls;
         });
-        availableNumbers = filteredNumbers;
-        console.log(`[Dispatcher] ${availableNumbers.length}/${retellNumbers?.length || 0} Retell numbers available`);
+        console.log(`[Dispatcher] ${retellAvailableNumbers.length}/${retellNumbers?.length || 0} Retell numbers available`);
       }
     }
 
     if (hasTelnyxCampaign) {
-      // Get ALL active phone numbers for Telnyx (don't require retell_phone_id)
+      // Telnyx campaigns should only use Telnyx-owned numbers.
+      // Prefer rotation-enabled numbers; if none are enabled, fallback to all active Telnyx numbers
+      // so manual testing is never blocked by rotation toggles.
       const { data: telnyxNumbers, error: telnyxError } = await supabase
         .from('phone_numbers')
-        .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .select('id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
         .eq('user_id', user.id)
         .eq('status', 'active')
-        .eq('rotation_enabled', true);
-      
+        .eq('provider', 'telnyx');
+
       if (telnyxError) {
         console.error('[Dispatcher] Error fetching Telnyx phone numbers:', telnyxError);
       } else {
         const maxDailyDefault = 100;
-        const filteredTelnyx = (telnyxNumbers || []).filter(n => {
+        const telnyxWithinLimits = (telnyxNumbers || []).filter((n: any) => {
           const maxCalls = n.max_daily_calls || maxDailyDefault;
           const currentCalls = n.daily_calls || 0;
           return currentCalls < maxCalls;
         });
-        // Merge without duplicates
-        const existingIds = new Set(availableNumbers.map(n => n.id));
-        for (const n of filteredTelnyx) {
-          if (!existingIds.has(n.id)) {
-            availableNumbers.push(n);
-            existingIds.add(n.id);
-          }
+
+        const rotationEnabledTelnyx = telnyxWithinLimits.filter((n: any) => n.rotation_enabled === true);
+        telnyxAvailableNumbers = rotationEnabledTelnyx.length > 0 ? rotationEnabledTelnyx : telnyxWithinLimits;
+
+        if (rotationEnabledTelnyx.length === 0 && telnyxWithinLimits.length > 0) {
+          console.warn('[Dispatcher] No rotation-enabled Telnyx numbers found; using active Telnyx numbers for manual continuity');
         }
-        console.log(`[Dispatcher] After Telnyx merge: ${availableNumbers.length} total numbers available`);
+
+        console.log(`[Dispatcher] ${telnyxAvailableNumbers.length}/${telnyxNumbers?.length || 0} Telnyx numbers available`);
       }
     }
-    
+
+    availableNumbers = [...retellAvailableNumbers];
+    const existingIds = new Set(availableNumbers.map((n: any) => n.id));
+    for (const n of telnyxAvailableNumbers) {
+      if (!existingIds.has(n.id)) {
+        availableNumbers.push(n);
+        existingIds.add(n.id);
+      }
+    }
+
     console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers for dispatch`);
     
     // If still empty for Retell campaigns, try Retell sync fallback
@@ -982,7 +994,10 @@ serve(async (req) => {
     }
 
     // Now process the dialing queue with DYNAMIC batch size
-    const { data: queuedCalls, error: queueError } = await supabase
+    // Manual user dispatch can bypass schedule time to unblock immediate testing.
+    const manualDispatchNow = action === 'dispatch' && !isInternalCall;
+
+    let queueQuery = supabase
       .from('dialing_queues')
       .select(`
         *,
@@ -990,8 +1005,13 @@ serve(async (req) => {
         campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id)
       `)
       .in('campaign_id', campaignIds)
-      .eq('status', 'pending')
-      .lte('scheduled_at', nowIso)
+      .eq('status', 'pending');
+
+    if (!manualDispatchNow) {
+      queueQuery = queueQuery.lte('scheduled_at', nowIso);
+    }
+
+    const { data: queuedCalls, error: queueError } = await queueQuery
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
       .limit(batchSize);
@@ -1081,28 +1101,30 @@ serve(async (req) => {
         const toPhone = lead?.phone_number || queueItem.phone_number;
         const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
         
-        // Score each number
-        const scoredNumbers = availableNumbers
-          .filter(n => {
+        // Score each number from provider-specific pool
+        const numberPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
+
+        const scoredNumbers = numberPool
+          .filter((n: any) => {
             // Skip quarantined numbers
             if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
             // Skip spam-flagged numbers
             if (n.is_spam) return false;
             return true;
           })
-          .map(n => {
+          .map((n: any) => {
             let score = 100;
             const numAreaCode = n.number.replace(/\D/g, '').slice(1, 4);
-            
+
             // Local presence bonus (+50 points)
             if (numAreaCode === toAreaCode) score += 50;
-            
+
             // Penalize high daily usage (-1 per call)
-            score -= (n.daily_calls || 0);
-            
+            score -= n.daily_calls || 0;
+
             // Penalize usage in this batch (-20 per call)
             score -= (numberUsageInBatch[n.id] || 0) * 20;
-            
+
             return { number: n, score };
           });
         
@@ -1110,10 +1132,15 @@ serve(async (req) => {
         scoredNumbers.sort((a, b) => b.score - a.score);
         
         if (scoredNumbers.length === 0) {
-          console.error(`[Dispatcher] No valid phone numbers available after filtering`);
+          const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
+          console.error(`[Dispatcher] No valid ${providerLabel} phone numbers available after filtering`);
           await supabase
             .from('dialing_queues')
-            .update({ status: 'failed', updated_at: nowIso })
+            .update({
+              status: 'failed',
+              updated_at: nowIso,
+              notes: `No valid ${providerLabel} numbers available for this campaign`
+            })
             .eq('id', queueItem.id);
           continue;
         }
