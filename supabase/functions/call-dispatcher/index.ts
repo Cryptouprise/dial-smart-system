@@ -994,7 +994,10 @@ serve(async (req) => {
     }
 
     // Now process the dialing queue with DYNAMIC batch size
-    const { data: queuedCalls, error: queueError } = await supabase
+    // Manual user dispatch can bypass schedule time to unblock immediate testing.
+    const manualDispatchNow = action === 'dispatch' && !isInternalCall;
+
+    let queueQuery = supabase
       .from('dialing_queues')
       .select(`
         *,
@@ -1002,8 +1005,13 @@ serve(async (req) => {
         campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id)
       `)
       .in('campaign_id', campaignIds)
-      .eq('status', 'pending')
-      .lte('scheduled_at', nowIso)
+      .eq('status', 'pending');
+
+    if (!manualDispatchNow) {
+      queueQuery = queueQuery.lte('scheduled_at', nowIso);
+    }
+
+    const { data: queuedCalls, error: queueError } = await queueQuery
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
       .limit(batchSize);
