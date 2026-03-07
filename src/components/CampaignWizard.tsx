@@ -32,6 +32,8 @@ interface WizardState {
   maxCallsPerDay: number;
   smsOnNoAnswer: boolean;
   smsTemplate: string;
+  provider: 'retell' | 'telnyx';
+  telnyxAssistantId: string;
 }
 
 const WORKFLOW_TEMPLATES = [
@@ -90,6 +92,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [agents, setAgents] = useState<Array<{ agent_id: string; agent_name: string }>>([]);
+  const [telnyxAssistants, setTelnyxAssistants] = useState<Array<{ id: string; name: string }>>([]);
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; steps?: any[] }>>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   
@@ -103,6 +106,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     maxCallsPerDay: 2,
     smsOnNoAnswer: true,
     smsTemplate: "Hi {{first_name}}, I just tried to reach you. When's a good time to chat?",
+    provider: 'retell',
+    telnyxAssistantId: '',
   });
 
   const steps = [
@@ -116,8 +121,24 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     if (open) {
       fetchAgents();
       fetchWorkflows();
+      fetchTelnyxAssistants();
     }
   }, [open]);
+
+  const fetchTelnyxAssistants = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.user) return;
+      const { data } = await supabase
+        .from('telnyx_assistants')
+        .select('id, name')
+        .eq('user_id', session.session.user.id)
+        .eq('status', 'active');
+      setTelnyxAssistants(data || []);
+    } catch (error) {
+      console.error('Failed to fetch Telnyx assistants:', error);
+    }
+  };
 
   const fetchAgents = async () => {
     try {
