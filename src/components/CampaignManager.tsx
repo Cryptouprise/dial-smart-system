@@ -327,7 +327,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       max_attempts: 3,
       calling_hours_start: '09:00',
       calling_hours_end: '17:00',
-      timezone: 'America/New_York'
+      timezone: 'America/New_York',
+      provider: 'retell',
+      telnyx_assistant_id: '',
     });
   };
 
@@ -343,7 +345,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       max_attempts: campaign.max_attempts,
       calling_hours_start: campaign.calling_hours_start,
       calling_hours_end: campaign.calling_hours_end,
-      timezone: campaign.timezone
+      timezone: campaign.timezone,
+      provider: (campaign.provider as 'retell' | 'telnyx') || 'retell',
+      telnyx_assistant_id: campaign.telnyx_assistant_id || '',
     });
     setShowCreateDialog(true);
   };
