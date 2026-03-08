@@ -1003,12 +1003,12 @@ serve(async (req) => {
     }
 
     // Now process the dialing queue with DYNAMIC batch size
-    // Manual user dispatch can bypass schedule time to unblock immediate testing.
-    const immediateDispatchNow = requestBody.immediate === true;
-    const manualDispatchNow = !isInternalCall && (action === 'dispatch' || immediateDispatchNow);
+    // ALL user-initiated calls bypass scheduling. If you clicked a button, you want calls NOW.
+    // Only internal/cron calls (isInternalCall=true) respect scheduled_at.
+    const manualDispatchNow = !isInternalCall;
 
-    if (immediateDispatchNow) {
-      console.log('[Dispatcher] Immediate dispatch override enabled (bypassing scheduled_at gate)');
+    if (manualDispatchNow) {
+      console.log('[Dispatcher] Manual dispatch — bypassing scheduled_at gate');
     }
 
     let queueQuery = supabase
