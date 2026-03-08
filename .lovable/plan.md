@@ -1,48 +1,54 @@
 
 
-# Plan: Calendar Tool Visibility + Push per Assistant
+## Problem Analysis
 
-## The Problem
+There are **three compounding issues** preventing calls from going out:
 
-The screenshot shows the Telnyx portal's "Add Webhook Tool" dialog. You can see where tools are configured — but our app gives zero feedback about whether the `book_appointment` tool is actually present on each assistant. The sync logic tries to push it, but failures are silent. Your test call booked nothing because the tool likely wasn't there.
+### Issue 1: `retry_delay_minutes = 300` (5 hours!) on the campaign
+The "3.7 test telnyx" campaign has `retry_delay_minutes: 300`. Every time a call fails (which happened ~15 times today due to the billing blocker), the dispatcher schedules the next retry 5 hours later. The current queue entry is scheduled for 19:03 UTC - that's from the last failure retry.
 
-## What I'll Build
+### Issue 2: Billing was blocking all calls (NOW FIXED)
+The `billing_enabled` flag was `true` with $0 balance, so `outbound-calling` kept failing every attempt with "Insufficient credits". We just fixed this by setting `billing_enabled = false`. But the damage is done - the queue entry now has a future `scheduled_at` from the retry logic.
 
-### 1. Per-Assistant Calendar Tool Status Badge
+### Issue 3: "Dispatch Now" button doesn't bypass schedule
+The `dispatchCalls()` function in `useCallDispatcher.ts` sends `body: {}` (empty). The `manualDispatchNow` bypass in the edge function requires either `action === 'dispatch'` or `immediate === true`. An empty body satisfies neither, so the scheduled_at filter blocks it.
 
-On each assistant card, add a visual indicator next to the existing tool count:
-- **"📅 Calendar"** (green) — `book_appointment` found in the assistant's tools array
-- **"❌ No Calendar Tool"** (red) — missing, with a "Push" button
+The "Reset Schedule (Call Now)" button in CampaignManager DOES work (it updates `scheduled_at` directly in the DB), but the QuickTestCampaign and standard Dispatch buttons don't.
 
-The check is local (tools array already synced from Telnyx), so it's instant — no extra API call.
+### What happens step by step:
+1. Call fails with "Insufficient credits" 
+2. Dispatcher retries → schedules 300 min later 
+3. User clicks Dispatch → sends `{}` → dispatcher respects `scheduled_at` filter → 0 calls eligible 
+4. User sees "1 calls pending but scheduled for later"
 
-### 2. One-Click "Push Calendar Tool" Button
+## Plan
 
-When a tool is missing, show a button that calls the existing `provision_calendar_tools` logic but targeted to a single assistant. This will:
-- Fetch current tools from Telnyx API
-- Append `book_appointment` webhook tool if missing
-- Push back to Telnyx via `POST /v2/ai/assistants/{id}`
-- Update local DB
-- Refresh the UI
+### 1. Fix the Dispatch button to always bypass scheduling for manual clicks
+In `supabase/functions/call-dispatcher/index.ts`, change the `manualDispatchNow` logic so ALL non-internal (user-initiated) calls bypass the `scheduled_at` gate. If you're a human clicking a button, you want calls NOW.
 
-### 3. New `push_calendar_tool` Action (Single Assistant)
+**Change**: Line ~1008
+```
+// BEFORE: Only bypass for specific action values
+const manualDispatchNow = !isInternalCall && (action === 'dispatch' || immediateDispatchNow);
 
-Add a targeted action to the edge function that provisions the calendar tool for ONE specific assistant (the existing `provision_calendar_tools` does ALL assistants — we need a surgical version).
+// AFTER: ALL user-initiated calls bypass scheduling
+const manualDispatchNow = !isInternalCall;
+```
 
-### 4. Telnyx Portal Deep Link
+This is the simplest, most robust fix. If the automation-scheduler calls it, it sends `internal: true` so it will still respect schedules. If a user clicks ANY dispatch button, calls go immediately.
 
-Add a small external link icon on each assistant card that opens:
-`https://portal.telnyx.com/#/ai/assistants/edit/assistant-{telnyx_id}?tab=agent`
+### 2. Fix the campaign's retry_delay_minutes from 300 to 5
+Run a SQL update to fix the "3.7 test telnyx" campaign's insane 300-minute retry delay back to a reasonable 5 minutes.
 
-So you can quickly jump to the Telnyx portal to verify tools visually.
+### 3. Reset the stuck queue entry to NOW
+Clear the future `scheduled_at` on the pending queue entry so the next dispatch picks it up immediately.
 
-## Technical Changes
+### 4. Deploy the updated call-dispatcher edge function
 
-### `supabase/functions/telnyx-ai-assistant/index.ts`
-- Add `push_calendar_tool` action: takes `assistant_id`, fetches tools from Telnyx, pushes calendar tool if missing, updates local DB
-
-### `src/components/TelnyxAIManager.tsx`
-- In assistant card metadata row (line ~788): check `a.tools` for `book_appointment`, show green badge or red "Push" button
-- Add `handlePushCalendarTool(assistant)` function
-- Add Telnyx portal deep link icon next to the Edit button
+### Technical Details
+- **File modified**: `supabase/functions/call-dispatcher/index.ts` (line ~1008, 1 line change)
+- **DB changes**: 
+  - Update `campaigns.retry_delay_minutes` from 300 to 5 for campaign `0312b0de-63f5-41db-93dc-b32cbcb66961`
+  - Update `dialing_queues.scheduled_at` to NOW for the stuck entry
+- **Risk**: Low - only changes behavior for user-initiated calls. Automated/cron calls still respect schedules.
 
