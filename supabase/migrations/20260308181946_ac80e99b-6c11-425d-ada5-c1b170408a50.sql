@@ -1,0 +1,1 @@
+UPDATE organizations SET billing_enabled = false WHERE id = '11824e05-24e3-4dc3-b684-5d0bc7c436d6';
