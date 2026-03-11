@@ -105,11 +105,7 @@ export const usePipelineManagement = () => {
       setDispositions(result.data || []);
     } catch (error) {
       console.error('Error fetching dispositions:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch dispositions",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch dispositions");
     } finally {
       setLoadingStates(prev => ({ ...prev, dispositions: false }));
     }
