@@ -118,11 +118,7 @@ export const usePipelineManagement = () => {
       setPipelineBoards(result.data || []);
     } catch (error) {
       console.error('Error fetching pipeline boards:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch pipeline boards",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch pipeline boards");
     } finally {
       setLoadingStates(prev => ({ ...prev, pipelineBoards: false }));
     }
