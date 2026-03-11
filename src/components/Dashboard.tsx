@@ -173,11 +173,7 @@ const Dashboard = () => {
       setNumbers(formattedNumbers);
     } catch (error) {
       console.error('Error loading numbers:', error);
-      toast({
-        title: 'Error Loading Numbers',
-        description: 'Failed to load phone numbers from database',
-        variant: 'destructive'
-      });
+      debouncedErrorToast(toast, 'Failed to load phone numbers from database', 'Error Loading Numbers');
     }
   };
 
