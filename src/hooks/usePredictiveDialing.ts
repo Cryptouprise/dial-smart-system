@@ -553,11 +553,7 @@ export const usePredictiveDialing = () => {
       if (error) throw error;
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch call logs",
-        variant: "destructive"
-      });
+      debouncedErrorToast(toast, error.message || "Failed to fetch call logs");
       return null;
     } finally {
       setIsLoading(false);
