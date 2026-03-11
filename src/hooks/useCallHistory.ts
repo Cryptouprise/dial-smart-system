@@ -213,11 +213,7 @@ export const useCallHistory = () => {
       return formattedCalls;
     } catch (error) {
       console.error('Error fetching calls:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch call history',
-        variant: 'destructive'
-      });
+      debouncedErrorToast(toast, 'Failed to fetch call history');
       return [];
     } finally {
       setIsLoading(false);

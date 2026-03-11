@@ -131,11 +131,7 @@ export const usePipelineManagement = () => {
       setLeadPositions(result.data || []);
     } catch (error) {
       console.error('Error fetching lead positions:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch lead positions",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch lead positions");
     } finally {
       setLoadingStates(prev => ({ ...prev, leadPositions: false }));
     }
