@@ -328,11 +328,7 @@ export const usePredictiveDialing = () => {
       if (error) throw error;
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch leads",
-        variant: "destructive"
-      });
+      debouncedErrorToast(toast, error.message || "Failed to fetch leads");
       return null;
     } finally {
       setIsLoading(false);
