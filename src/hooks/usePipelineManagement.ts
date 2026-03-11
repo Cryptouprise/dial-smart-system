@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { debouncedErrorToast } from '@/lib/toastDedup';
 
 interface Disposition {
   id: string;
@@ -104,11 +105,7 @@ export const usePipelineManagement = () => {
       setDispositions(result.data || []);
     } catch (error) {
       console.error('Error fetching dispositions:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch dispositions",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch dispositions");
     } finally {
       setLoadingStates(prev => ({ ...prev, dispositions: false }));
     }
@@ -121,11 +118,7 @@ export const usePipelineManagement = () => {
       setPipelineBoards(result.data || []);
     } catch (error) {
       console.error('Error fetching pipeline boards:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch pipeline boards",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch pipeline boards");
     } finally {
       setLoadingStates(prev => ({ ...prev, pipelineBoards: false }));
     }
@@ -138,11 +131,7 @@ export const usePipelineManagement = () => {
       setLeadPositions(result.data || []);
     } catch (error) {
       console.error('Error fetching lead positions:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch lead positions",
-        variant: "destructive",
-      });
+      debouncedErrorToast(toast, "Failed to fetch lead positions");
     } finally {
       setLoadingStates(prev => ({ ...prev, leadPositions: false }));
     }

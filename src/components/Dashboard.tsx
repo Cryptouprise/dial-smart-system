@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RotateCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { debouncedErrorToast } from '@/lib/toastDedup';
 import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -172,11 +173,7 @@ const Dashboard = () => {
       setNumbers(formattedNumbers);
     } catch (error) {
       console.error('Error loading numbers:', error);
-      toast({
-        title: 'Error Loading Numbers',
-        description: 'Failed to load phone numbers from database',
-        variant: 'destructive'
-      });
+      debouncedErrorToast(toast, 'Failed to load phone numbers from database', 'Error Loading Numbers');
     }
   };
 
