@@ -109,6 +109,7 @@ const VOICE_OPTIONS = [
   { value: 'IKne3meq5aSn9XLyUdCD', label: 'Charlie (Male, Casual Approachable)' },
   
   // === FEMALE VOICES - Sales Optimized ===
+  { value: 'kdnRe2koJdOK4Ovxn2DI', label: 'Eryn (Female, Hyperreal Conversational) ⭐' },
   { value: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah (Female, Warm Professional)' },
   { value: 'FGY2WhTYpPnrIDTdsKH5', label: 'Laura (Female, Upbeat Friendly)' },
   { value: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica (Female, Clear Energetic)' },
