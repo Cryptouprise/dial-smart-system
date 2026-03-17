@@ -46,7 +46,7 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
       if (!session.session) return;
 
       const response = await fetch(
-        `https://emonjusymdripmkvtttc.supabase.co/functions/v1/enhanced-rotation-manager?action=settings`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enhanced-rotation-manager?action=settings`,
         {
           headers: {
             'Authorization': `Bearer ${session.session.access_token}`,

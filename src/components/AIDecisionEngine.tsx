@@ -271,14 +271,11 @@ const AIDecisionEngine = ({ numbers, onRefreshNumbers }: AIDecisionEngineProps) 
   };
 
   const executeRecommendation = async (recommendation: AIRecommendation) => {
-    // For now, just show what would be executed
     toast({
-      title: "Recommendation Noted",
-      description: `Would execute: ${recommendation.action}`,
+      title: "Not yet implemented",
+      description: `Automatic execution of "${recommendation.title}" is not yet available. Please apply this recommendation manually.`,
+      variant: "destructive",
     });
-    
-    // TODO: Implement actual execution logic based on recommendation type
-    console.log('Would execute recommendation:', recommendation);
   };
 
   const getPriorityColor = (priority: string) => {

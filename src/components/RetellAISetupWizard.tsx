@@ -13,7 +13,7 @@ import { CheckCircle2, Circle, Copy, Calendar, ArrowRight, Loader2, Link, Extern
 import { useToast } from '@/hooks/use-toast';
 
 // Webhook URL for call tracking - use retell-call-webhook which handles dynamic variables, transcript analysis, and workflows
-const WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
+const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retell-call-webhook`;
 
 interface RetellLLM {
   llm_id: string;

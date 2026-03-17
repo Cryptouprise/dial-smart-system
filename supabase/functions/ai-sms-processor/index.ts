@@ -86,7 +86,22 @@ serve(async (req) => {
     if (action === 'process_webhook') {
       // Handle incoming SMS from Twilio webhook
       const message: WebhookMessage = request.message;
-      
+
+      // Check DNC list before auto-responding
+      const { data: dncEntry } = await supabaseAdmin
+        .from('dnc_list')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('phone_number', message.From)
+        .maybeSingle();
+
+      if (dncEntry) {
+        console.log('[AI SMS] Skipping - contact is on DNC list:', message.From);
+        return new Response(JSON.stringify({ success: true, message: 'Skipped - contact on DNC list' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       // Get or create conversation
       const { data: conversation, error: convError } = await supabaseAdmin
         .from('sms_conversations')
@@ -109,6 +124,9 @@ serve(async (req) => {
           .maybeSingle();
 
         if (createError) throw createError;
+        if (!newConv) {
+          throw new Error('SMS conversation insert returned no data');
+        }
         conversationId = newConv.id;
       }
 
@@ -345,6 +363,14 @@ serve(async (req) => {
 
       if (leadError || !lead) {
         throw new Error('Lead not found: ' + (leadError?.message || 'Unknown'));
+      }
+
+      // Check DNC / do_not_call before sending
+      if (lead.do_not_call) {
+        console.log('[AI SMS] Skipping - lead has do_not_call flag:', leadId);
+        return new Response(JSON.stringify({ success: true, message: 'Skipped - lead marked do_not_call' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
 
       // Get or create conversation

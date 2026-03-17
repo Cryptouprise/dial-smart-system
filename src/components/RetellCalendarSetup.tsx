@@ -762,7 +762,7 @@ export const RetellCalendarSetup: React.FC = () => {
   };
 
   const copyWebhookUrl = () => {
-    const webhookUrl = `https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration`;
+    const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/calendar-integration`;
     navigator.clipboard.writeText(webhookUrl);
     toast.success('Webhook URL copied to clipboard!');
   };
@@ -770,7 +770,7 @@ export const RetellCalendarSetup: React.FC = () => {
   const retellFunctionConfig = `{
   "name": "check_calendar_availability",
   "description": "Check available time slots for booking appointments",
-  "url": "https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration",
+  "url": "${import.meta.env.VITE_SUPABASE_URL}/functions/v1/calendar-integration",
   "speak_during_execution": true,
   "speak_after_execution": true
 }`;
@@ -1041,7 +1041,7 @@ export const RetellCalendarSetup: React.FC = () => {
               <div className="flex gap-2">
                 <Input
                   readOnly
-                  value="https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration"
+                  value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/calendar-integration`}
                   className="font-mono text-sm"
                 />
                 <Button variant="outline" size="icon" onClick={copyWebhookUrl}>

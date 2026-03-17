@@ -7,10 +7,10 @@ const corsHeaders = {
 };
 
 // Default webhook URL for Retell call events (handles transcript analysis, disposition routing, workflows)
-const DEFAULT_WEBHOOK_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
+const DEFAULT_WEBHOOK_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/retell-call-webhook`;
 
 // Calendar integration function URL
-const CALENDAR_FUNCTION_URL = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/calendar-integration';
+const CALENDAR_FUNCTION_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`;
 
 interface RetellAgentRequest {
   action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'get_agent' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings' | 'list_voices';
@@ -40,6 +40,22 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) {
+      // Allow service role
+      if (token !== supabaseServiceKey) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     const { action, agentName, agentId, voiceId, llmId, agentConfig, text, message, webhookUrl, userId }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
@@ -48,9 +64,7 @@ serve(async (req) => {
     }
 
     // Create Supabase client for calendar timezone lookup
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseClient = supabaseAdmin;
 
     console.log(`[Retell Agent] Processing ${action} request`);
 

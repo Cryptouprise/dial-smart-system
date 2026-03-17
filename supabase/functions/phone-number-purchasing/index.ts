@@ -21,14 +21,11 @@ const PURPOSE_TO_ALLOWED_USES: Record<PhoneNumberPurpose, string[]> = {
   'programmable_voice': ['programmable_voice', 'sip_broadcast'], // Flexible
 };
 
-const VALID_DIRECTIONS = ['inbound', 'outbound', 'both'] as const;
-
 const PurchaseRequestSchema = z.object({
   areaCode: z.string().regex(/^\d{3}$/, 'Area code must be exactly 3 digits'),
   quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100, 'Maximum 100 numbers per order'),
   provider: z.enum(['retell', 'telnyx', 'twilio']).default('retell'),
   purpose: z.enum(VALID_PURPOSES).default('voice_ai'),
-  callDirection: z.enum(VALID_DIRECTIONS).default('outbound'),
 });
 
 serve(async (req) => {
@@ -50,146 +47,18 @@ serve(async (req) => {
     const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
     
     const authHeader = req.headers.get('Authorization');
-    let userId: string | null = null;
-
-    // Clone request so we can read body later
-    const bodyText = await req.text();
-    const parseBody = () => JSON.parse(bodyText);
-
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      if (token === serviceRoleKey) {
-        try {
-          const bodyPeek = JSON.parse(bodyText);
-          userId = bodyPeek.user_id || null;
-        } catch { /* ignore */ }
-        if (!userId) {
-          return new Response(JSON.stringify({ error: 'user_id required for service role calls' }), 
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-        console.log('✅ Service role auth - user_id:', userId);
-      } else {
-        const { data: { user } } = await supabaseClient.auth.getUser(token);
-        if (!user) {
-          return new Response('Unauthorized', { status: 401, headers: corsHeaders });
-        }
-        userId = user.id;
-        console.log('✅ JWT auth - user_id:', userId);
-      }
-    } else {
+    if (!authHeader) {
+      return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabaseClient.auth.getUser(token);
+    if (!user) {
       return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
 
     if (req.method === 'POST') {
-      const body = parseBody();
-
-      // ================================================================
-      // SYNC EXISTING TELNYX NUMBERS
-      // ================================================================
-      if (body.action === 'sync_telnyx') {
-        console.log('[Phone Number Purchasing] Syncing existing Telnyx numbers for user:', userId);
-        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
-        if (!telnyxApiKey) {
-          return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Fetch all phone numbers from Telnyx account
-        let allNumbers: any[] = [];
-        let pageNumber = 1;
-        let hasMore = true;
-
-        while (hasMore) {
-          const listRes = await fetch(`https://api.telnyx.com/v2/phone_numbers?page[size]=250&page[number]=${pageNumber}`, {
-            headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
-          });
-
-          if (!listRes.ok) {
-            const errText = await listRes.text();
-            console.error('Telnyx list numbers failed:', errText);
-            return new Response(JSON.stringify({ error: `Failed to fetch Telnyx numbers: ${listRes.status}` }), {
-              status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-
-          const listData = await listRes.json();
-          const pageNumbers = listData.data || [];
-          allNumbers = allNumbers.concat(pageNumbers);
-
-          // Check if there are more pages
-          const totalPages = listData.meta?.total_pages || 1;
-          hasMore = pageNumber < totalPages;
-          pageNumber++;
-        }
-
-        console.log(`[Phone Number Purchasing] Found ${allNumbers.length} numbers in Telnyx account`);
-
-        if (allNumbers.length === 0) {
-          return new Response(JSON.stringify({
-            success: true,
-            synced: 0,
-            message: 'No phone numbers found in your Telnyx account'
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // Get existing Telnyx numbers in our DB to avoid duplicates
-        const { data: existingNumbers } = await supabaseClient
-          .from('phone_numbers')
-          .select('number')
-          .eq('user_id', userId)
-          .eq('provider', 'telnyx');
-
-        const existingSet = new Set((existingNumbers || []).map((n: any) => n.number));
-
-        // Build insert array for new numbers
-        const newNumbers = allNumbers
-          .filter((tn: any) => !existingSet.has(tn.phone_number))
-          .map((tn: any) => ({
-            number: tn.phone_number,
-            area_code: tn.phone_number?.replace(/\D/g, '').substring(1, 4) || '',
-            status: tn.status === 'active' ? 'active' : 'inactive',
-            daily_calls: 0,
-            user_id: userId,
-            provider: 'telnyx',
-            allowed_uses: ['voice_ai'],
-            rotation_enabled: false,
-            friendly_name: tn.connection_name || `Telnyx ${tn.phone_number}`,
-          }));
-
-        if (newNumbers.length === 0) {
-          return new Response(JSON.stringify({
-            success: true,
-            synced: 0,
-            total_in_account: allNumbers.length,
-            message: 'All Telnyx numbers already synced'
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        const { error: insertError } = await supabaseClient
-          .from('phone_numbers')
-          .insert(newNumbers);
-
-        if (insertError) {
-          console.error('Telnyx sync insert error:', insertError);
-          return new Response(JSON.stringify({ error: 'Failed to save synced numbers' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        console.log(`[Phone Number Purchasing] Synced ${newNumbers.length} new Telnyx numbers`);
-        return new Response(JSON.stringify({
-          success: true,
-          synced: newNumbers.length,
-          total_in_account: allNumbers.length,
-          already_existed: allNumbers.length - newNumbers.length,
-          numbers: newNumbers.map((n: any) => n.number),
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      // ================================================================
-      // PURCHASE NEW NUMBERS (existing flow)
-      // ================================================================
+      const body = await req.json();
       
       // Validate input
       const validationResult = PurchaseRequestSchema.safeParse(body);
@@ -203,8 +72,8 @@ serve(async (req) => {
         );
       }
 
-      const { areaCode, quantity, provider, purpose, callDirection } = validationResult.data;
-      console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose} (direction: ${callDirection})`);
+      const { areaCode, quantity, provider, purpose } = validationResult.data;
+      console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose}`);
 
       // Determine allowed_uses and rotation_enabled based on purpose
       const allowedUses = PURPOSE_TO_ALLOWED_USES[purpose];
@@ -214,7 +83,7 @@ serve(async (req) => {
       const { data: order, error: orderError } = await supabaseClient
         .from('number_orders')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           area_code: areaCode,
           quantity,
           provider,
@@ -337,12 +206,11 @@ serve(async (req) => {
               area_code: areaCode,
               status: 'active',
               daily_calls: 0,
-               user_id: userId,
+              user_id: user.id,
               twilio_sid: purchased.sid,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
-              provider: 'twilio',
-              call_direction: callDirection,
+              provider: 'twilio'
             });
           } catch (error) {
             console.error('Failed to purchase Twilio number:', error);
@@ -350,117 +218,102 @@ serve(async (req) => {
         }
       } else if (effectiveProvider === 'telnyx') {
         // Purchase from Telnyx
-        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
+        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
         if (!telnyxApiKey) {
           console.error('TELNYX_API_KEY not configured');
           await supabaseClient
             .from('number_orders')
             .update({ status: 'failed' })
             .eq('id', order.id);
-          return new Response(JSON.stringify({ error: 'Telnyx credentials not configured' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+
+          return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        // Step 1: Search available numbers
-        const searchParams = new URLSearchParams({
-          'filter[country_code]': 'US',
-          'filter[national_destination_code]': areaCode,
-          'filter[features][]': 'voice',
-          'filter[limit]': String(quantity),
-        });
-        const searchUrl = `https://api.telnyx.com/v2/available_phone_numbers?${searchParams}`;
-        const searchRes = await fetch(searchUrl, {
-          headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
-        });
+        // Search for available numbers in the area code
+        const searchResponse = await fetch(
+          `https://api.telnyx.com/v2/available_phone_numbers?filter[national_destination_code]=${areaCode}&filter[country_code]=US&filter[limit]=${quantity}&filter[features][]=voice`,
+          {
+            headers: {
+              'Authorization': `Bearer ${telnyxApiKey}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
 
-        if (!searchRes.ok) {
-          const errText = await searchRes.text();
-          console.error('Telnyx search failed:', errText);
-          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
+        if (!searchResponse.ok) {
+          const errorData = await searchResponse.json();
+          console.error('Telnyx search failed:', errorData);
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+
           return new Response(JSON.stringify({
-            error: `No Telnyx numbers available in area code ${areaCode}`
-          }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            error: `No phone numbers available in area code ${areaCode}`
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
 
-        const searchData = await searchRes.json();
+        const searchData = await searchResponse.json();
         const availableNumbers = searchData.data || [];
 
         if (availableNumbers.length === 0) {
-          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
+          await supabaseClient
+            .from('number_orders')
+            .update({ status: 'failed' })
+            .eq('id', order.id);
+
           return new Response(JSON.stringify({
-            error: `No Telnyx numbers available in area code ${areaCode}. Try a different area code.`
-          }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // Step 2: Create number order to purchase
-        const phonesToBuy = availableNumbers.slice(0, quantity).map((n: any) => ({
-          phone_number: n.phone_number,
-        }));
-
-        const orderRes = await fetch('https://api.telnyx.com/v2/number_orders', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${telnyxApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ phone_numbers: phonesToBuy }),
-        });
-
-        if (!orderRes.ok) {
-          const errText = await orderRes.text();
-          console.error('Telnyx order failed:', errText);
-          await supabaseClient.from('number_orders').update({ status: 'failed' }).eq('id', order.id);
-          return new Response(JSON.stringify({ error: `Telnyx purchase error: ${errText}` }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            error: `No phone numbers available in area code ${areaCode}. Try a different area code.`
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        const orderData = await orderRes.json();
-        const telnyxOrder = orderData.data;
-        console.log('Telnyx number order created:', telnyxOrder.id, 'status:', telnyxOrder.status);
-
-        // Step 3: Poll for completion (Telnyx orders are async)
-        // Wait up to 15 seconds for the order to complete
-        let orderComplete = telnyxOrder.status === 'success';
-        let finalOrder = telnyxOrder;
-        if (!orderComplete) {
-          for (let attempt = 0; attempt < 5; attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            const pollRes = await fetch(`https://api.telnyx.com/v2/number_orders/${telnyxOrder.id}`, {
-              headers: { 'Authorization': `Bearer ${telnyxApiKey}` },
+        // Purchase each available number via number orders
+        for (const avail of availableNumbers) {
+          try {
+            const phoneNumber = avail.phone_number;
+            const orderResponse = await fetch('https://api.telnyx.com/v2/number_orders', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${telnyxApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                phone_numbers: [{ phone_number: phoneNumber }],
+              }),
             });
-            if (pollRes.ok) {
-              const pollData = await pollRes.json();
-              finalOrder = pollData.data;
-              if (finalOrder.status === 'success') { orderComplete = true; break; }
-              if (finalOrder.status === 'failed') break;
+
+            if (!orderResponse.ok) {
+              const errorData = await orderResponse.json();
+              console.error('Telnyx purchase failed:', errorData);
+              continue;
             }
+
+            const orderData = await orderResponse.json();
+            console.log('Purchased number from Telnyx:', phoneNumber);
+
+            numbers.push({
+              number: phoneNumber,
+              area_code: areaCode,
+              status: 'active',
+              daily_calls: 0,
+              user_id: user.id,
+              allowed_uses: allowedUses,
+              rotation_enabled: rotationEnabled,
+              provider: 'telnyx',
+              carrier_name: 'Telnyx',
+            });
+          } catch (error) {
+            console.error('Failed to purchase Telnyx number:', error);
           }
-        }
-
-        if (!orderComplete) {
-          console.log('Telnyx order still pending after polling, checking sub-orders...');
-        }
-
-        // Step 4: Get the purchased numbers from sub_number_orders or phone_numbers in the order
-        const purchasedPhones = (finalOrder.phone_numbers || phonesToBuy)
-          .filter((p: any) => p.status === 'success' || !p.status || finalOrder.status === 'success');
-
-        for (const pn of purchasedPhones) {
-          const phoneNum = pn.phone_number;
-          console.log('Telnyx number provisioned:', phoneNum);
-          numbers.push({
-            number: phoneNum,
-            area_code: areaCode,
-            status: 'active',
-            daily_calls: 0,
-             user_id: userId,
-            allowed_uses: allowedUses,
-            rotation_enabled: rotationEnabled,
-            provider: 'telnyx',
-            call_direction: callDirection,
-          });
         }
       } else {
         // Purchase from Retell AI (for voice_ai purpose)
@@ -471,8 +324,10 @@ serve(async (req) => {
             .from('number_orders')
             .update({ status: 'failed' })
             .eq('id', order.id);
+
           return new Response(JSON.stringify({ error: 'Retell AI credentials not configured' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -484,17 +339,23 @@ serve(async (req) => {
                 'Authorization': `Bearer ${retellApiKey}`,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({ area_code: parseInt(areaCode, 10) })
+              body: JSON.stringify({
+                area_code: parseInt(areaCode, 10)
+              })
             });
 
             if (!purchaseResponse.ok) {
               const errorText = await purchaseResponse.text();
               console.error('Retell purchase failed:', errorText);
+
               let errorMessage = `Retell API error: ${purchaseResponse.status}`;
               try {
                 const errorJson = JSON.parse(errorText);
                 errorMessage = errorJson.message || errorJson.error_message || errorMessage;
-              } catch { /* Use default */ }
+              } catch {
+                // Use default error message
+              }
+
               throw new Error(errorMessage);
             }
 
@@ -506,12 +367,11 @@ serve(async (req) => {
               area_code: areaCode,
               status: 'active',
               daily_calls: 0,
-              user_id: userId,
+              user_id: user.id,
               retell_phone_id: retellNumber.phone_number_id,
               allowed_uses: allowedUses,
               rotation_enabled: rotationEnabled,
-              provider: 'retell',
-              call_direction: callDirection,
+              provider: 'retell'
             });
           } catch (error) {
             console.error(`Failed to purchase number ${i + 1}:`, error);
@@ -578,7 +438,7 @@ serve(async (req) => {
       const { data: orders, error } = await supabaseClient
         .from('number_orders')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {

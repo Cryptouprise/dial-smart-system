@@ -966,6 +966,7 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
             area_code: areaCode,
             user_id: userId,
             status: num.status === 'active' ? 'active' : 'inactive',
+            provider: 'telnyx',
             carrier_name: 'Telnyx',
             line_type: num.phone_number_type || 'unknown'
           });
