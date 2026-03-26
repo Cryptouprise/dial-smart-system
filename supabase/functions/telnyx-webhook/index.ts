@@ -482,6 +482,61 @@ serve(async (req) => {
             if (leadError) {
               console.error('[Telnyx Webhook] Error updating lead:', leadError);
             }
+
+            // Move lead to pipeline based on call outcome
+            const stageName = (finalStatus === 'completed' && durationSecs && durationSecs > 0)
+              ? 'Contacted'
+              : finalStatus === 'no_answer' ? 'Not Contacted'
+              : finalStatus === 'failed' ? 'Not Contacted'
+              : 'Not Contacted';
+
+            try {
+              const userId = queueItem.voice_broadcasts?.user_id;
+              if (userId) {
+                // Find or create pipeline board
+                const { data: existingBoard } = await supabaseAdmin
+                  .from('pipeline_boards')
+                  .select('id')
+                  .eq('user_id', userId)
+                  .ilike('name', stageName)
+                  .limit(1)
+                  .maybeSingle();
+
+                let boardId = existingBoard?.id;
+                if (!boardId) {
+                  const { data: maxPos } = await supabaseAdmin
+                    .from('pipeline_boards')
+                    .select('position')
+                    .eq('user_id', userId)
+                    .order('position', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                  const { data: newBoard } = await supabaseAdmin
+                    .from('pipeline_boards')
+                    .insert({ user_id: userId, name: stageName, position: (maxPos?.position || 0) + 1, description: `Auto-created for: ${stageName}` })
+                    .select('id')
+                    .single();
+                  boardId = newBoard?.id;
+                }
+
+                if (boardId) {
+                  await supabaseAdmin
+                    .from('lead_pipeline_positions')
+                    .upsert({
+                      user_id: userId,
+                      lead_id: queueItem.lead_id,
+                      pipeline_board_id: boardId,
+                      position: 0,
+                      moved_at: new Date().toISOString(),
+                      moved_by_user: false,
+                      notes: `Auto-moved by Telnyx call outcome: ${finalStatus}`,
+                    }, { onConflict: 'lead_id,user_id' });
+                  console.log(`[Telnyx Webhook] Lead ${queueItem.lead_id} moved to pipeline: ${stageName}`);
+                }
+              }
+            } catch (pipelineErr) {
+              console.error('[Telnyx Webhook] Pipeline move error (non-fatal):', (pipelineErr as Error).message);
+            }
           }
         } else {
           console.warn(`[Telnyx Webhook] No queue item found for hangup: ${callControlId}`);
@@ -548,6 +603,175 @@ serve(async (req) => {
             })
             .eq('call_sid', eventPayload.call_control_id)
             .eq('status', 'pending'); // Only update if still pending
+        }
+
+        break;
+      }
+
+      // =====================================================================
+      // CALL.CONVERSATION.ENDED - AI conversation completed (Telnyx Voice AI)
+      // =====================================================================
+      case 'call.conversation.ended': {
+        console.log('[Telnyx Webhook] Processing AI conversation ended');
+
+        const callControlId = eventPayload.call_control_id;
+        const durationSecs = eventPayload.duration_secs as number | undefined;
+        const transcript = (eventPayload as any).transcript || '';
+        const assistantId = (eventPayload as any).assistant_id || '';
+
+        // Find the call log for this conversation
+        let callLog: any = null;
+        if (callControlId) {
+          const { data } = await supabaseAdmin
+            .from('call_logs')
+            .select('id, user_id, lead_id, campaign_id')
+            .eq('telnyx_call_control_id', callControlId)
+            .maybeSingle();
+          callLog = data;
+        }
+
+        if (callLog) {
+          // Update call log with transcript and completion
+          await supabaseAdmin
+            .from('call_logs')
+            .update({
+              status: 'completed',
+              duration: durationSecs || 0,
+              transcript: transcript,
+              outcome: (durationSecs && durationSecs > 30) ? 'completed' : 'short_call',
+              ended_at: new Date().toISOString(),
+            })
+            .eq('id', callLog.id);
+
+          console.log(`[Telnyx Webhook] Updated call log ${callLog.id}`);
+
+          // Call disposition-router if we have a lead
+          if (callLog.lead_id && callLog.user_id) {
+            try {
+              const outcome = (durationSecs && durationSecs > 30) ? 'completed' : 'short_call';
+              const supabaseUrl = Deno.env.get('SUPABASE_URL');
+              const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+              await fetch(`${supabaseUrl}/functions/v1/disposition-router`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                },
+                body: JSON.stringify({
+                  action: 'process_disposition',
+                  leadId: callLog.lead_id,
+                  userId: callLog.user_id,
+                  dispositionName: outcome,
+                  callOutcome: outcome,
+                  transcript: transcript?.substring(0, 5000),
+                  callId: callLog.id,
+                  setBy: 'telnyx_ai',
+                }),
+              });
+              console.log(`[Telnyx Webhook] Disposition-router called for lead ${callLog.lead_id}`);
+            } catch (dispErr) {
+              console.error('[Telnyx Webhook] Disposition-router call failed (non-fatal):', (dispErr as Error).message);
+            }
+          }
+
+          // Also try to analyze the transcript if it exists
+          if (transcript && callLog.lead_id) {
+            try {
+              const supabaseUrl = Deno.env.get('SUPABASE_URL');
+              const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+              fetch(`${supabaseUrl}/functions/v1/analyze-call-transcript`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                },
+                body: JSON.stringify({
+                  callId: callLog.id,
+                  userId: callLog.user_id,
+                  leadId: callLog.lead_id,
+                  transcript: transcript,
+                  duration: durationSecs || 0,
+                }),
+              }).catch(() => {}); // Fire and forget
+              console.log(`[Telnyx Webhook] Transcript analysis triggered for call ${callLog.id}`);
+            } catch {
+              // Non-critical
+            }
+          }
+        } else {
+          console.warn(`[Telnyx Webhook] No call log found for conversation: ${callControlId}`);
+        }
+
+        break;
+      }
+
+      // =====================================================================
+      // CALL.CONVERSATION_INSIGHTS.GENERATED - Post-call insights from Telnyx AI
+      // =====================================================================
+      case 'call.conversation_insights.generated': {
+        console.log('[Telnyx Webhook] Processing post-call insights');
+
+        const insights = (eventPayload as any).insights || [];
+        const conversationId = (eventPayload as any).conversation_id;
+        const callControlId = eventPayload.call_control_id;
+
+        if (conversationId && insights.length > 0) {
+          // Store insights
+          for (const insight of insights) {
+            await supabaseAdmin
+              .from('telnyx_conversation_insights')
+              .insert({
+                telnyx_conversation_id: conversationId,
+                telnyx_call_control_id: callControlId,
+                insight_name: insight.name,
+                insight_result: insight.result,
+                created_at: new Date().toISOString(),
+              })
+              .single()
+              .then(() => console.log(`[Telnyx Webhook] Stored insight: ${insight.name}`))
+              .catch((err: any) => console.error('[Telnyx Webhook] Failed to store insight:', err));
+          }
+
+          // Check if any insight indicates a disposition (e.g., "disposition" template)
+          const dispositionInsight = insights.find((i: any) => i.name === 'disposition' || i.name === 'call_disposition');
+          if (dispositionInsight?.result) {
+            // Find the call log to get lead_id
+            const { data: callLog } = await supabaseAdmin
+              .from('call_logs')
+              .select('id, user_id, lead_id')
+              .or(`telnyx_call_control_id.eq.${callControlId},telnyx_conversation_id.eq.${conversationId}`)
+              .maybeSingle();
+
+            if (callLog?.lead_id && callLog?.user_id) {
+              try {
+                const supabaseUrl = Deno.env.get('SUPABASE_URL');
+                const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+                await fetch(`${supabaseUrl}/functions/v1/disposition-router`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`,
+                  },
+                  body: JSON.stringify({
+                    action: 'process_disposition',
+                    leadId: callLog.lead_id,
+                    userId: callLog.user_id,
+                    dispositionName: dispositionInsight.result,
+                    callOutcome: dispositionInsight.result,
+                    callId: callLog.id,
+                    aiConfidence: 0.9,
+                    setBy: 'telnyx_insights',
+                  }),
+                });
+                console.log(`[Telnyx Webhook] Disposition from insight: ${dispositionInsight.result}`);
+              } catch (dispErr) {
+                console.error('[Telnyx Webhook] Insight disposition-router call failed:', (dispErr as Error).message);
+              }
+            }
+          }
         }
 
         break;

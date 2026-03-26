@@ -36,6 +36,7 @@ import {
   UserCircle,
   Lock,
   Play,
+  Building2,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -86,6 +87,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'Try Demo', value: 'demo', icon: Play, simpleMode: true, route: '/demo' },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
       { title: 'AI Setup', value: 'ai-setup', icon: Sparkles, simpleMode: true },
+      { title: 'Business Profile', value: 'business-profile', icon: Building2, simpleMode: true },
     ],
   },
   {

@@ -3014,6 +3014,33 @@ async function runForUser(
       return result;
     }
 
+    // 3b. Check daily budget (if configured)
+    const dailyBudgetCents = (settings as any).daily_budget_cents || 0;
+    let budgetExhausted = false;
+    if (dailyBudgetCents > 0) {
+      const { data: todaySpendData } = await supabase
+        .from('call_logs')
+        .select('billed_cost_cents')
+        .eq('user_id', userId)
+        .gte('created_at', `${today}T00:00:00`);
+
+      const todaySpend = (todaySpendData || []).reduce(
+        (sum: number, row: any) => sum + (row.billed_cost_cents || 0), 0
+      );
+
+      if (todaySpend >= dailyBudgetCents) {
+        budgetExhausted = true;
+        result.decisions.push(
+          `Daily budget exhausted: $${(todaySpend / 100).toFixed(2)} spent of $${(dailyBudgetCents / 100).toFixed(2)} budget. Pausing new call actions.`
+        );
+      } else {
+        const remaining = dailyBudgetCents - todaySpend;
+        result.decisions.push(
+          `Budget: $${(todaySpend / 100).toFixed(2)} / $${(dailyBudgetCents / 100).toFixed(2)} ($${(remaining / 100).toFixed(2)} remaining)`
+        );
+      }
+    }
+
     // 4. Re-score leads (server-side)
     if (settings.auto_prioritize_leads) {
       result.leads_rescored = await rescoreLeads(supabase, userId);
@@ -3031,7 +3058,7 @@ async function runForUser(
     // 7. Analyze pacing
     const pacingAnalysis = await analyzePacing(supabase, userId);
 
-    // 8. Make decisions
+    // 8. Make decisions (skip call-related actions if budget exhausted)
     if (settings.autonomy_level !== 'suggestions_only') {
       const decisions = await makeDecisions(supabase, userId, settings, goalProgress, pacingAnalysis);
 
@@ -3040,6 +3067,13 @@ async function runForUser(
         if ((todayActions || 0) + result.actions_queued >= settings.max_daily_autonomous_actions) {
           result.decisions.push('Daily cap would be exceeded. Stopping new actions.');
           break;
+        }
+
+        // Respect daily budget - block call/SMS actions when budget exhausted
+        const callActions = ['queue_leads_for_calling', 'journey_call', 'journey_ai_sms', 'send_followup_sms'];
+        if (budgetExhausted && callActions.includes(decision.action_type)) {
+          result.decisions.push(`[BLOCKED] ${decision.action_type}: Budget exhausted`);
+          continue;
         }
 
         const requiresApproval = settings.autonomy_level === 'approval_required';
