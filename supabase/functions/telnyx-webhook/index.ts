@@ -189,11 +189,25 @@ serve(async (req) => {
 
     // Verify webhook signature
     const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret);
-    if (!signatureValid) {
-      // TODO: Once the public key is confirmed working, return 401 here instead of warning.
-      console.warn('[Telnyx Webhook] Signature verification failed or skipped - processing anyway');
-    } else {
-      console.log('[Telnyx Webhook] Signature verified successfully');
+    if (webhookSecret && !signatureValid) {
+      console.error('[Telnyx Webhook] Signature verification FAILED - rejecting request');
+      return new Response(JSON.stringify({ error: 'Invalid webhook signature' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (signatureValid) {
+      // Replay protection: reject timestamps older than 5 minutes
+      if (timestamp) {
+        const eventTime = parseInt(timestamp, 10);
+        const now = Math.floor(Date.now() / 1000);
+        if (Math.abs(now - eventTime) > 300) {
+          console.error('[Telnyx Webhook] Timestamp too old (possible replay attack)');
+          return new Response(JSON.stringify({ error: 'Timestamp expired' }), {
+            status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      console.log('[Telnyx Webhook] Signature verified ✓');
     }
 
     const payload: TelnyxWebhookPayload = JSON.parse(rawBody);

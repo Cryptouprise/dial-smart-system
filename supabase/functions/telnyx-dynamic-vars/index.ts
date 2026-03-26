@@ -45,28 +45,34 @@ serve(async (req) => {
 
     console.log(`[Telnyx DynVars] Channel: ${channel}, Agent: ${agentNumber}, EndUser: ${endUserNumber}`);
 
-    // Default response structure
+    // Default timezone — will be overridden by user/lead timezone if available
+    let defaultTz = 'America/New_York';
+
+    // Build default response structure (timezone updated after user/lead lookup)
     const response: any = {
-      dynamic_variables: {
-        current_time: new Date().toLocaleString('en-US', {
-          timeZone: 'America/New_York',
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-          hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-        }),
-        current_time_iso: new Date().toISOString(),
-        current_date_ymd: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-        current_day_of_week: new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long' }),
-      },
+      dynamic_variables: {},
       memory: {},
       conversation: {
         metadata: {},
       },
     };
 
+    // Helper to populate time variables for a given timezone
+    function setTimeVars(tz: string) {
+      response.dynamic_variables.current_time = new Date().toLocaleString('en-US', {
+        timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
+        day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+      });
+      response.dynamic_variables.current_time_iso = new Date().toISOString();
+      response.dynamic_variables.current_date_ymd = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+      response.dynamic_variables.current_day_of_week = new Date().toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' });
+    }
+
     // Normalize the phone number for lookup
     const phoneDigits = endUserNumber.replace(/\D/g, '');
     if (!phoneDigits || phoneDigits.length < 10) {
       console.log('[Telnyx DynVars] No valid phone number, returning defaults');
+      setTimeVars(defaultTz);
       return new Response(JSON.stringify(response), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -78,10 +84,12 @@ serve(async (req) => {
     let userId: string | null = null;
 
     // Try to find user by the agent number (our Telnyx number)
+    const agentDigits = agentNumber.replace(/\D/g, '');
+    const normalizedAgent = agentDigits.startsWith('1') ? `+${agentDigits}` : agentDigits.length >= 10 ? `+1${agentDigits}` : agentNumber;
     const { data: phoneRecord } = await supabaseAdmin
       .from('phone_numbers')
       .select('user_id')
-      .or(`number.eq.${agentNumber},number.eq.${normalizedPhone.replace(endUserNumber, agentNumber)}`)
+      .or(`number.eq.${agentNumber},number.eq.${normalizedAgent},phone_number.eq.${agentNumber},phone_number.eq.${normalizedAgent}`)
       .limit(1)
       .maybeSingle();
 
@@ -103,6 +111,21 @@ serve(async (req) => {
       if (recentCall) userId = recentCall.user_id;
     }
 
+    // Try to get the user's default timezone from their profile/settings
+    // Uses profiles table if available, otherwise stays with America/New_York
+    if (userId) {
+      try {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('timezone')
+          .eq('id', userId)
+          .maybeSingle();
+        if (profile?.timezone) {
+          defaultTz = profile.timezone;
+        }
+      } catch { /* profiles table may not have timezone column, use default */ }
+    }
+
     // Look up lead by phone number
     let lead: any = null;
     if (userId) {
@@ -121,7 +144,7 @@ serve(async (req) => {
       const firstName = String(lead.first_name || '');
       const lastName = String(lead.last_name || '');
       const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-      const tz = lead.timezone || 'America/New_York';
+      const tz = lead.timezone || defaultTz;
 
       // Recalculate time in lead's timezone
       const currentTime = new Date().toLocaleString('en-US', {
@@ -243,6 +266,7 @@ serve(async (req) => {
 
     } else {
       console.log('[Telnyx DynVars] No lead found for', normalizedPhone);
+      setTimeVars(defaultTz);
       response.dynamic_variables.phone_number = normalizedPhone;
       response.dynamic_variables.is_callback = 'false';
 
