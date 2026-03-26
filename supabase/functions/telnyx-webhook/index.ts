@@ -63,20 +63,65 @@ serve(async (req) => {
   }
 
   try {
-    // Signature verification (when configured)
+    const rawBody = await req.text();
+
+    // Ed25519 signature verification (when configured)
     const webhookPublicKey = Deno.env.get('TELNYX_WEBHOOK_PUBLIC_KEY');
     const signature = req.headers.get('telnyx-signature-ed25519');
     const timestamp = req.headers.get('telnyx-timestamp');
 
-    // Note: Full Ed25519 verification would require importing crypto library.
-    // For now, log signature presence for debugging. In production, implement:
-    //   1. Concatenate timestamp + '|' + body
-    //   2. Verify Ed25519 signature against Telnyx public key
-    if (webhookPublicKey && !signature) {
-      console.warn('[Telnyx Webhook] No signature present but verification configured');
-    }
+    if (webhookPublicKey) {
+      if (!signature || !timestamp) {
+        console.error('[Telnyx Webhook] Missing signature or timestamp header');
+        return new Response(JSON.stringify({ error: 'Missing signature' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    const rawBody = await req.text();
+      // Verify: Ed25519(timestamp | rawBody) matches signature
+      try {
+        const signedPayload = `${timestamp}|${rawBody}`;
+        const signatureBytes = new Uint8Array(
+          (signature.match(/.{1,2}/g) || []).map((b: string) => parseInt(b, 16))
+        );
+        const publicKeyBytes = new Uint8Array(
+          (webhookPublicKey.match(/.{1,2}/g) || []).map((b: string) => parseInt(b, 16))
+        );
+        const encoder = new TextEncoder();
+        const messageBytes = encoder.encode(signedPayload);
+
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw', publicKeyBytes, { name: 'Ed25519' }, false, ['verify']
+        );
+        const valid = await crypto.subtle.verify(
+          'Ed25519', cryptoKey, signatureBytes, messageBytes
+        );
+
+        if (!valid) {
+          console.error('[Telnyx Webhook] Invalid Ed25519 signature');
+          return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+            status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Reject timestamps older than 5 minutes (replay protection)
+        const eventTime = parseInt(timestamp, 10);
+        const now = Math.floor(Date.now() / 1000);
+        if (Math.abs(now - eventTime) > 300) {
+          console.error('[Telnyx Webhook] Timestamp too old (replay attack?)');
+          return new Response(JSON.stringify({ error: 'Timestamp expired' }), {
+            status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log('[Telnyx Webhook] Signature verified ✓');
+      } catch (verifyErr: any) {
+        console.error('[Telnyx Webhook] Signature verification error:', verifyErr.message);
+        return new Response(JSON.stringify({ error: 'Signature verification failed' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
     let payload: any;
     try {
       payload = JSON.parse(rawBody);
