@@ -29,6 +29,52 @@ const corsHeaders = {
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2';
 
+// Normalize model IDs for Telnyx API — proprietary models need provider prefix
+function normalizeTelnyxModelId(modelId: string): string {
+  if (!modelId) return modelId;
+  // Already prefixed — pass through
+  if (modelId.includes('/')) return modelId;
+  // OpenAI models
+  const openaiPatterns = ['gpt-', 'o1-', 'o3-', 'o4-', 'chatgpt-'];
+  if (openaiPatterns.some(p => modelId.toLowerCase().startsWith(p))) {
+    return `openai/${modelId}`;
+  }
+  // Anthropic models
+  const anthropicPatterns = ['claude-'];
+  if (anthropicPatterns.some(p => modelId.toLowerCase().startsWith(p))) {
+    return `anthropic/${modelId}`;
+  }
+  // Meta models
+  if (modelId.toLowerCase().startsWith('llama-') || modelId.toLowerCase().startsWith('meta-llama')) {
+    return `meta-llama/${modelId}`;
+  }
+  // Default: return as-is (Telnyx-native models like mistralai/*, etc.)
+  return modelId;
+}
+
+function normalizeVoiceProvider(rawProvider?: string, voiceId?: string): string {
+  const provider = String(rawProvider || '').trim();
+  const source = `${provider} ${voiceId || ''}`.toLowerCase();
+
+  if (source.includes('elevenlabs') || source.includes('eleven_labs') || source.includes('eleven labs') || source.includes('11labs')) return 'ElevenLabs';
+  if (source.includes('kokoro')) return 'KokoroTTS';
+  if (source.includes('polly') || source.includes('aws')) return 'AWS Polly';
+  if (source.includes('azure')) return 'Azure';
+  if (source.includes('minimax')) return 'MiniMax';
+  if (source.includes('resemble')) return 'ResembleAI';
+  if (source.includes('naturalhd')) return 'Telnyx NaturalHD';
+  if (source.includes('telnyx') && source.includes('natural')) return 'Telnyx Natural';
+  if (source.includes('telnyx')) return 'Telnyx';
+
+  return provider || 'Unknown';
+}
+
+function humanizeVoiceId(voiceId?: string): string {
+  if (!voiceId) return 'Unknown';
+  const tail = String(voiceId).split(/[./]/).pop() || String(voiceId);
+  return tail.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // Telnyx API helper
 async function telnyxFetch(
   path: string,
@@ -67,21 +113,68 @@ async function telnyxFetch(
   }
 }
 
+// Build the calendar booking webhook tool config
+function buildCalendarTool(supabaseUrl: string, serviceRoleKey: string, userId: string): any {
+  return {
+    type: 'webhook',
+    webhook: {
+      name: 'book_appointment',
+      description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability first, then "book_appointment" to book. Always provide the user_id.',
+      url: `${supabaseUrl}/functions/v1/calendar-integration`,
+      method: 'POST',
+      headers: [
+        { name: 'Authorization', value: `Bearer ${serviceRoleKey}` },
+        { name: 'Content-Type', value: 'application/json' },
+      ],
+      body_parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
+          user_id: { type: 'string', description: `The user ID for calendar lookup. Always use: ${userId}` },
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+          time: { type: 'string', description: 'Time in HH:MM format (24h)' },
+          duration_minutes: { type: 'number', description: 'Appointment duration in minutes, default 30' },
+          attendee_name: { type: 'string', description: 'Name of the person being booked' },
+          attendee_email: { type: 'string', description: 'Email of the person being booked' },
+          attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
+          notes: { type: 'string', description: 'Appointment notes' },
+        },
+        required: ['action', 'user_id'],
+      },
+    },
+  };
+}
+
+// Ensure calendar tools are present in a tools array
+function ensureCalendarTools(tools: any[], supabaseUrl: string, serviceRoleKey: string, userId: string): any[] {
+  const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability' || t.webhook?.name === 'book_appointment' || t.webhook?.name === 'check_availability');
+  if (!hasCalendar) {
+    tools.push(buildCalendarTool(supabaseUrl, serviceRoleKey, userId));
+  }
+  return tools;
+}
+
 // Build Telnyx tool config from our simplified format
 function buildToolConfig(tool: any): any {
   switch (tool.type) {
-    case 'webhook':
+    case 'webhook': {
+      const webhookHeaders = Array.isArray(tool.headers) ? tool.headers :
+        (tool.headers && typeof tool.headers === 'object') ?
+          Object.entries(tool.headers).map(([k, v]) => ({ name: k, value: v })) : [];
       return {
         type: 'webhook',
-        name: tool.name,
-        description: tool.description || '',
-        url: tool.url,
-        method: tool.method || 'POST',
-        headers: tool.headers || {},
-        path_parameters: tool.path_parameters,
-        query_parameters: tool.query_parameters,
-        body_parameters: tool.body_parameters,
+        webhook: {
+          name: tool.name,
+          description: tool.description || '',
+          url: tool.url,
+          method: tool.method || 'POST',
+          headers: webhookHeaders,
+          path_parameters: tool.path_parameters,
+          query_parameters: tool.query_parameters,
+          body_parameters: tool.body_parameters,
+        },
       };
+    }
     case 'transfer':
       return {
         type: 'transfer',
@@ -164,7 +257,7 @@ serve(async (req) => {
     // Debug: log key metadata (NOT the key itself) to diagnose malformed key errors
     console.log(`[Telnyx AI Assistant] API Key debug: raw_length=${rawApiKey?.length ?? 'null'}, clean_length=${apiKey?.length ?? 'null'}, starts_with=${apiKey?.substring(0, 4) ?? 'null'}, ends_with=${apiKey?.substring((apiKey?.length ?? 0) - 4) ?? 'null'}`);
     
-    if (!apiKey && action !== 'list_assistants' && action !== 'health_check') {
+    if (!apiKey && !['list_assistants', 'health_check', 'list_voices', 'list_models'].includes(action)) {
       return new Response(JSON.stringify({ error: 'TELNYX_API_KEY not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -182,6 +275,7 @@ serve(async (req) => {
           voice, transcription_model, tools, enabled_features,
           dynamic_variables, insight_group_id, data_retention,
           fallback_model, llm_api_key_ref, voice_api_key_ref,
+          call_direction,
         } = params;
 
         if (!name || !instructions) {
@@ -195,7 +289,7 @@ serve(async (req) => {
         const telnyxPayload: any = {
           name,
           description: description || '',
-          model: model || 'Qwen/Qwen3-235B-A22B',
+          model: normalizeTelnyxModelId(model || 'Qwen/Qwen3-235B-A22B'),
           instructions,
           greeting: greeting || undefined,
           voice_settings: {
@@ -219,47 +313,15 @@ serve(async (req) => {
           telnyxPayload.llm_api_key_ref = llm_api_key_ref;
         }
         if (fallback_model) {
-          telnyxPayload.fallback_model = fallback_model;
+          telnyxPayload.fallback_model = normalizeTelnyxModelId(fallback_model);
         }
         if (insight_group_id) {
           telnyxPayload.insight_settings = { insight_group_id };
         }
 
-        // Build tools
-        if (tools && Array.isArray(tools) && tools.length > 0) {
-          telnyxPayload.tools = tools.map(buildToolConfig);
-
-          // Auto-add calendar booking tool if not present
-          const hasCalendar = tools.some((t: any) => t.name === 'book_appointment' || t.name === 'check_availability');
-          if (!hasCalendar) {
-            telnyxPayload.tools.push({
-              type: 'webhook',
-              name: 'book_appointment',
-              description: 'Check calendar availability and book appointments. Use action "get_available_slots" to check availability and "book_appointment" to book.',
-              url: `${supabaseUrl}/functions/v1/calendar-integration`,
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer {{#integration_secret}}supabase-service-key{{/integration_secret}}`,
-                'Content-Type': 'application/json',
-              },
-              body_parameters: {
-                type: 'object',
-                properties: {
-                  action: { type: 'string', enum: ['get_available_slots', 'book_appointment'], description: 'Action to perform' },
-                  user_id: { type: 'string', description: 'The user ID for calendar lookup' },
-                  date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-                  time: { type: 'string', description: 'Time in HH:MM format (24h)' },
-                  duration_minutes: { type: 'number', description: 'Appointment duration in minutes' },
-                  attendee_name: { type: 'string', description: 'Name of the person being booked' },
-                  attendee_email: { type: 'string', description: 'Email of the person being booked' },
-                  attendee_phone: { type: 'string', description: 'Phone number of the person being booked' },
-                  notes: { type: 'string', description: 'Appointment notes' },
-                },
-                required: ['action'],
-              },
-            });
-          }
-        }
+        // Build tools - ALWAYS include calendar tool
+        const userTools = (tools && Array.isArray(tools)) ? tools.map(buildToolConfig) : [];
+        telnyxPayload.tools = ensureCalendarTools(userTools, supabaseUrl, serviceRoleKey, userId);
 
         // Create on Telnyx
         const createRes = await telnyxFetch('/ai/assistants', apiKey!, 'POST', telnyxPayload);
@@ -300,6 +362,7 @@ serve(async (req) => {
             data_retention: data_retention !== false,
             insight_group_id: insight_group_id || null,
             status: 'active',
+            call_direction: call_direction || 'outbound',
             metadata: { telnyx_response: telnyxAssistant },
           })
           .select()
@@ -341,11 +404,8 @@ serve(async (req) => {
         // Build Telnyx update payload (only changed fields)
         const telnyxUpdate: any = {};
         const dbUpdate: any = { updated_at: new Date().toISOString() };
-
-        // CRITICAL: Accumulate metadata from existing, then layer each change on top.
-        // Previous code was clobbering metadata by spreading from existing.metadata
-        // on every case instead of accumulating into dbUpdate.metadata.
-        const mergedMetadata: any = { ...(existing.metadata || {}) };
+        // Accumulate metadata changes properly — spread from existing, then merge all updates
+        const metadataUpdate: any = { ...(existing.metadata || {}) };
 
         for (const [key, value] of Object.entries(updateFields)) {
           switch (key) {
@@ -364,60 +424,50 @@ serve(async (req) => {
               break;
             case 'voice_speed':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), speed: value };
-              mergedMetadata.voice_speed = value;
+              metadataUpdate.voice_speed = value;
               break;
             case 'voice_provider':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), provider: value };
-              mergedMetadata.voice_provider = value;
+              metadataUpdate.voice_provider = value;
               break;
             case 'voice_model':
               telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), model: value };
-              mergedMetadata.voice_model = value;
-              break;
-            case 'voice_api_key_ref':
-              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), api_key_ref: value };
-              mergedMetadata.voice_api_key_ref = value;
-              break;
-            case 'llm_api_key_ref':
-              telnyxUpdate.llm_api_key_ref = value;
-              mergedMetadata.llm_api_key_ref = value;
+              metadataUpdate.voice_model = value;
               break;
             case 'transcription_model':
-              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), model: value };
+              telnyxUpdate.transcription = { model: value };
               dbUpdate.transcription_model = value;
-              break;
-            case 'transcription_language':
-              telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), language: value };
-              mergedMetadata.transcription_language = value;
               break;
             case 'end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_threshold: value };
-              mergedMetadata.end_of_turn_threshold = value;
+              metadataUpdate.end_of_turn_threshold = value;
               break;
             case 'end_of_turn_timeout_ms':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), end_of_turn_timeout_ms: value };
-              mergedMetadata.end_of_turn_timeout_ms = value;
+              metadataUpdate.end_of_turn_timeout_ms = value;
               break;
             case 'eager_end_of_turn_threshold':
               telnyxUpdate.transcription = { ...(telnyxUpdate.transcription || {}), eager_end_of_turn_threshold: value };
-              mergedMetadata.eager_end_of_turn_threshold = value;
+              metadataUpdate.eager_end_of_turn_threshold = value;
               break;
             case 'noise_suppression':
               telnyxUpdate.noise_suppression = value;
-              mergedMetadata.noise_suppression = value;
+              metadataUpdate.noise_suppression = value;
               break;
             case 'background_audio':
               telnyxUpdate.background_audio = value;
-              mergedMetadata.background_audio = value;
+              metadataUpdate.background_audio = value;
               break;
             case 'speaking_plan':
               telnyxUpdate.speaking_plan = value;
-              mergedMetadata.speaking_plan = value;
+              metadataUpdate.speaking_plan = value;
               break;
-            case 'tools':
-              telnyxUpdate.tools = (value as any[]).map(buildToolConfig);
+            case 'tools': {
+              const mappedTools = (value as any[]).map(buildToolConfig);
+              telnyxUpdate.tools = ensureCalendarTools(mappedTools, supabaseUrl, serviceRoleKey, userId);
               dbUpdate.tools = value;
               break;
+            }
             case 'status':
               dbUpdate.status = value;
               break;
@@ -425,47 +475,84 @@ serve(async (req) => {
               telnyxUpdate.dynamic_variables = value;
               dbUpdate.dynamic_variables = value;
               break;
-            case 'dynamic_variables_webhook_url':
-              telnyxUpdate.dynamic_variables_webhook_url = value;
-              dbUpdate.dynamic_variables_webhook_url = value;
-              break;
             case 'max_call_duration_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), max_call_duration_seconds: value };
-              mergedMetadata.max_call_duration_seconds = value;
+              metadataUpdate.max_call_duration_seconds = value;
               break;
             case 'user_idle_timeout_seconds':
               telnyxUpdate.telephony_settings = { ...(telnyxUpdate.telephony_settings || {}), user_idle_timeout_seconds: value };
-              mergedMetadata.user_idle_timeout_seconds = value;
+              metadataUpdate.user_idle_timeout_seconds = value;
               break;
             case 'amd_settings':
               telnyxUpdate.amd_settings = value;
-              mergedMetadata.amd_settings = value;
+              metadataUpdate.amd_settings = value;
               break;
             case 'recording_settings':
               telnyxUpdate.recording_settings = value;
-              mergedMetadata.recording_settings = value;
+              metadataUpdate.recording_settings = value;
               break;
             case 'greeting_mode':
               telnyxUpdate.greeting_mode = value;
-              mergedMetadata.greeting_mode = value;
+              metadataUpdate.greeting_mode = value;
               break;
             case 'enabled_features':
               telnyxUpdate.enabled_features = value;
               dbUpdate.enabled_features = value;
               break;
-            case 'data_retention':
-              telnyxUpdate.privacy_settings = { data_retention: value };
-              mergedMetadata.data_retention = value;
+            case 'call_direction':
+              dbUpdate.call_direction = value;
               break;
-            case 'insight_group_id':
-              telnyxUpdate.insight_settings = { insight_group_id: value };
-              dbUpdate.insight_group_id = value;
+            case 'temperature':
+              telnyxUpdate.temperature = value;
+              metadataUpdate.temperature = value;
               break;
+            case 'max_tokens':
+              telnyxUpdate.max_tokens = value;
+              metadataUpdate.max_tokens = value;
+              break;
+            case 'interrupt_sensitivity':
+              telnyxUpdate.interrupt_sensitivity = value;
+              metadataUpdate.interrupt_sensitivity = value;
+              break;
+            case 'silence_timeout_ms':
+              telnyxUpdate.silence_timeout_ms = value;
+              metadataUpdate.silence_timeout_ms = value;
+              break;
+            case 'llm_api_key_ref':
+              telnyxUpdate.llm_api_key_ref = value;
+              metadataUpdate.llm_api_key_ref = value;
+              break;
+            case 'voice_api_key_ref':
+              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), api_key_ref: value };
+              metadataUpdate.voice_api_key_ref = value;
+              break;
+            case 'messaging': {
+              const msgVal = value as any;
+              if (msgVal?.enabled !== undefined) {
+                metadataUpdate.messaging = msgVal;
+              }
+              break;
+            }
+            case 'widget': {
+              const widVal = value as any;
+              if (widVal?.enabled !== undefined) {
+                metadataUpdate.widget = widVal;
+              }
+              break;
+            }
           }
         }
 
-        // Apply accumulated metadata to dbUpdate
-        dbUpdate.metadata = mergedMetadata;
+        // Apply accumulated metadata updates to dbUpdate
+        dbUpdate.metadata = metadataUpdate;
+
+        // Normalize model ID for Telnyx API (e.g. "gpt-4.1" → "openai/gpt-4.1")
+        if (telnyxUpdate.model) {
+          telnyxUpdate.model = normalizeTelnyxModelId(telnyxUpdate.model);
+        }
+        if (telnyxUpdate.fallback_model) {
+          telnyxUpdate.fallback_model = normalizeTelnyxModelId(telnyxUpdate.fallback_model);
+        }
 
         // Update Telnyx if there are API changes
         if (Object.keys(telnyxUpdate).length > 0 && existing.telnyx_assistant_id) {
@@ -542,7 +629,30 @@ serve(async (req) => {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        result = { assistants: assistants || [] };
+
+        // Resolve assigned phone number IDs to actual phone numbers
+        const allPhoneIds = (assistants || []).flatMap((a: any) => a.assigned_phone_number_ids || []).filter(Boolean);
+        let phoneMap: Record<string, string> = {};
+        if (allPhoneIds.length > 0) {
+          const { data: phones } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('id, number')
+            .in('id', allPhoneIds);
+          if (phones) {
+            for (const p of phones) {
+              phoneMap[p.id] = p.number;
+            }
+          }
+        }
+
+        const enriched = (assistants || []).map((a: any) => ({
+          ...a,
+          assigned_phone_numbers: (a.assigned_phone_number_ids || [])
+            .map((id: string) => phoneMap[id])
+            .filter(Boolean),
+        }));
+
+        result = { assistants: enriched };
         break;
       }
 
@@ -575,17 +685,65 @@ serve(async (req) => {
       }
 
       // ================================================================
-      // SYNC ASSISTANTS (Telnyx → local DB)
+      // SYNC ASSISTANTS (Telnyx → local DB) + phone number mapping
       // ================================================================
       case 'sync_assistants': {
-        const listRes = await telnyxFetch('/ai/assistants', apiKey!);
+        const listRes = await telnyxFetch('/ai/assistants?page[size]=250', apiKey!);
         if (!listRes.ok) throw new Error(`Telnyx API error: ${listRes.error}`);
 
         const telnyxAssistants = listRes.data.data || [];
         let synced = 0;
+        const texmlToPhones: Record<string, string[]> = {};
+
+        // Build TeXML app ID → local phone_numbers.id map from active Telnyx numbers
+        try {
+          const { data: localPhones } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('id, number')
+            .eq('user_id', userId);
+
+          if (localPhones) {
+            const phoneListRes = await telnyxFetch('/phone_numbers?page[size]=250&filter[status]=active', apiKey!);
+            if (phoneListRes.ok) {
+              const telnyxPhones = phoneListRes.data.data || [];
+              for (const tp of telnyxPhones) {
+                const e164 = tp.phone_number; // Telnyx returns E.164
+                const localMatch = localPhones.find((lp: any) => lp.number === e164);
+                if (localMatch) {
+                  const connId = tp.connection_id;
+                  if (connId) {
+                    if (!texmlToPhones[connId]) texmlToPhones[connId] = [];
+                    texmlToPhones[connId].push(localMatch.id); // Store LOCAL id
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not fetch phone numbers for sync:', e);
+        }
 
         for (const ta of telnyxAssistants) {
           const telnyxId = ta.assistant_id || ta.id;
+
+          // Pull full assistant payload so sync reflects exact portal config (model/voice/tools/etc)
+          let fullAssistant = ta;
+          if (telnyxId) {
+            const detailRes = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey!);
+            if (detailRes.ok && detailRes.data?.data) {
+              fullAssistant = detailRes.data.data;
+            }
+          }
+
+          const texmlAppId = fullAssistant.telephony_settings?.default_texml_app_id || ta.telephony_settings?.default_texml_app_id;
+
+          // Find phone numbers assigned to this assistant's TeXML app
+          const assignedPhoneIds = texmlAppId ? (texmlToPhones[texmlAppId] || []) : [];
+          const resolvedModel = fullAssistant.model || ta.model || 'Qwen/Qwen3-235B-A22B';
+          const resolvedVoice = fullAssistant.voice_settings?.voice || ta.voice_settings?.voice || 'Telnyx.NaturalHD.Ava';
+          const resolvedInstructions = fullAssistant.instructions || ta.instructions || '';
+          const resolvedGreeting = fullAssistant.greeting || ta.greeting || null;
+          const resolvedTools = fullAssistant.tools || ta.tools || [];
 
           // Check if already exists locally
           const { data: existing } = await supabaseAdmin
@@ -594,69 +752,166 @@ serve(async (req) => {
             .eq('telnyx_assistant_id', telnyxId)
             .maybeSingle();
 
-          // Build comprehensive metadata from Telnyx response
-          const syncMetadata: any = {
-            telnyx_response: ta,
-            voice_speed: ta.voice_settings?.speed,
-            voice_provider: ta.voice_settings?.provider,
-            voice_model: ta.voice_settings?.model,
-            voice_api_key_ref: ta.voice_settings?.api_key_ref,
-            llm_api_key_ref: ta.llm_api_key_ref,
-            end_of_turn_threshold: ta.transcription?.end_of_turn_threshold,
-            end_of_turn_timeout_ms: ta.transcription?.end_of_turn_timeout_ms,
-            eager_end_of_turn_threshold: ta.transcription?.eager_end_of_turn_threshold,
-            transcription_language: ta.transcription?.language,
-            noise_suppression: ta.noise_suppression,
-            background_audio: ta.background_audio,
-            speaking_plan: ta.speaking_plan,
-            amd_settings: ta.amd_settings,
-            recording_settings: ta.recording_settings,
-            greeting_mode: ta.greeting_mode,
-            max_call_duration_seconds: ta.telephony_settings?.max_call_duration_seconds,
-            user_idle_timeout_seconds: ta.telephony_settings?.user_idle_timeout_seconds,
-            data_retention: ta.privacy_settings?.data_retention,
-          };
-
-          const syncRecord = {
-            name: ta.name,
-            model: ta.model,
-            instructions: ta.instructions,
-            greeting: ta.greeting,
-            voice: ta.voice_settings?.voice,
-            transcription_model: ta.transcription?.model || 'telnyx_deepgram_nova3',
-            tools: ta.tools || [],
-            enabled_features: ta.enabled_features || ['telephony'],
-            dynamic_variables: ta.dynamic_variables || {},
-            dynamic_variables_webhook_url: ta.dynamic_variables_webhook_url,
-            fallback_model: ta.fallback_model,
-            insight_group_id: ta.insight_settings?.insight_group_id,
-            telnyx_texml_app_id: ta.telephony_settings?.default_texml_app_id,
-            telnyx_messaging_profile_id: ta.messaging_settings?.default_messaging_profile_id,
-            metadata: syncMetadata,
-            updated_at: new Date().toISOString(),
-          };
-
           if (existing) {
-            // Update local record with full data
+            // Update local record
             await supabaseAdmin
               .from('telnyx_assistants')
-              .update(syncRecord)
+              .update({
+                name: fullAssistant.name || ta.name,
+                model: resolvedModel,
+                instructions: resolvedInstructions,
+                greeting: resolvedGreeting,
+                voice: resolvedVoice,
+                tools: resolvedTools,
+                telnyx_texml_app_id: texmlAppId || undefined,
+                telnyx_messaging_profile_id: fullAssistant.messaging_settings?.default_messaging_profile_id || ta.messaging_settings?.default_messaging_profile_id || undefined,
+                assigned_phone_number_ids: assignedPhoneIds.length > 0 ? assignedPhoneIds : undefined,
+                updated_at: new Date().toISOString(),
+              })
               .eq('id', existing.id);
           } else {
-            // Create local record with full data
+            // Create local record
             await supabaseAdmin
               .from('telnyx_assistants')
               .insert({
                 user_id: userId,
                 telnyx_assistant_id: telnyxId,
-                ...syncRecord,
+                telnyx_texml_app_id: texmlAppId,
+                telnyx_messaging_profile_id: fullAssistant.messaging_settings?.default_messaging_profile_id || ta.messaging_settings?.default_messaging_profile_id,
+                name: fullAssistant.name || ta.name || 'Imported Assistant',
+                model: resolvedModel,
+                instructions: resolvedInstructions,
+                greeting: resolvedGreeting,
+                voice: resolvedVoice,
+                tools: resolvedTools,
                 status: 'active',
+                assigned_phone_number_ids: assignedPhoneIds,
+                metadata: { imported_from: 'telnyx_sync', telnyx_response: fullAssistant },
               });
+          }
+          // Push calendar tools to this assistant on Telnyx if missing
+          const currentTools = resolvedTools;
+           const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
+          if (!hasCalendar) {
+            const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+            const toolPushRes = await telnyxFetch(
+              `/ai/assistants/${telnyxId}`, apiKey!, 'POST',
+              { tools: updatedTools }
+            );
+            if (toolPushRes.ok) {
+              console.log(`[Sync] ✅ Pushed calendar tool to ${fullAssistant.name || ta.name}`);
+            } else {
+              console.warn(`[Sync] ⚠️ Failed to push calendar tool to ${fullAssistant.name || ta.name}: ${toolPushRes.error}`);
+            }
           }
           synced++;
         }
 
         result = { synced, total_on_telnyx: telnyxAssistants.length };
+        break;
+      }
+
+      // ================================================================
+      // PROVISION CALENDAR TOOLS (push to all existing assistants)
+      // ================================================================
+      case 'provision_calendar_tools': {
+        const { data: assistants } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, telnyx_assistant_id, tools')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+
+        let provisioned = 0;
+        const results: any[] = [];
+
+        for (const asst of (assistants || [])) {
+          if (!asst.telnyx_assistant_id) continue;
+
+          // Get current tools from Telnyx
+          const getRes = await telnyxFetch(`/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!);
+          if (!getRes.ok) {
+            results.push({ name: asst.name, status: 'error', error: getRes.error });
+            continue;
+          }
+
+          const currentTools = getRes.data.data?.tools || [];
+          const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
+
+          if (hasCalendar) {
+            results.push({ name: asst.name, status: 'already_has_tools' });
+            continue;
+          }
+
+          const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+          const pushRes = await telnyxFetch(
+            `/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!, 'POST',
+            { tools: updatedTools }
+          );
+
+          if (pushRes.ok) {
+            provisioned++;
+            results.push({ name: asst.name, status: 'provisioned' });
+            // Update local DB
+            await supabaseAdmin
+              .from('telnyx_assistants')
+              .update({ tools: updatedTools, updated_at: new Date().toISOString() })
+              .eq('id', asst.id);
+          } else {
+            results.push({ name: asst.name, status: 'error', error: pushRes.error });
+          }
+        }
+
+        result = { provisioned, total: assistants?.length || 0, details: results };
+        break;
+      }
+
+      // ================================================================
+      // PUSH CALENDAR TOOL (single assistant)
+      // ================================================================
+      case 'push_calendar_tool': {
+        const { assistant_id } = params;
+        if (!assistant_id) throw new Error('assistant_id is required');
+
+        const { data: asst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, telnyx_assistant_id, tools')
+          .eq('id', assistant_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!asst) throw new Error('Assistant not found');
+        if (!asst.telnyx_assistant_id) throw new Error('Assistant has no Telnyx ID — sync first');
+
+        // Fetch current tools from Telnyx API (source of truth)
+        const getRes = await telnyxFetch(`/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!);
+        if (!getRes.ok) throw new Error(`Failed to fetch from Telnyx: ${getRes.error}`);
+
+        const currentTools = getRes.data.data?.tools || [];
+        const hasCalendar = currentTools.some((t: any) => t.name === 'book_appointment' || t.webhook?.name === 'book_appointment');
+
+        if (hasCalendar) {
+          await supabaseAdmin
+            .from('telnyx_assistants')
+            .update({ tools: currentTools, updated_at: new Date().toISOString() })
+            .eq('id', asst.id);
+          result = { status: 'already_present', assistant: asst.name };
+          break;
+        }
+
+        const updatedTools = ensureCalendarTools([...currentTools], supabaseUrl, serviceRoleKey, userId);
+        const pushRes = await telnyxFetch(
+          `/ai/assistants/${asst.telnyx_assistant_id}`, apiKey!, 'POST',
+          { tools: updatedTools }
+        );
+
+        if (!pushRes.ok) throw new Error(`Push failed: ${pushRes.error}`);
+
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({ tools: updatedTools, updated_at: new Date().toISOString() })
+          .eq('id', asst.id);
+
+        result = { status: 'provisioned', assistant: asst.name, tools_count: updatedTools.length };
         break;
       }
 
@@ -783,32 +1038,60 @@ serve(async (req) => {
       // LIST MODELS
       // ================================================================
       case 'list_models': {
-        // Comprehensive list of Telnyx-supported models
-        result = {
-          models: [
-            // Free on Telnyx (hosted)
-            { id: 'Qwen/Qwen3-235B-A22B', name: 'Qwen 3 235B', provider: 'Qwen', recommended: true, cost: 'Free on Telnyx' },
-            { id: 'Qwen/Qwen3-32B', name: 'Qwen 3 32B', provider: 'Qwen', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', name: 'Llama 4 Scout 17B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick 17B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Meta-Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Meta-Llama-3.1-70B-Instruct', name: 'Llama 3.1 70B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct', name: 'Llama 3.1 8B', provider: 'Meta', cost: 'Free on Telnyx' },
-            { id: 'google/gemma-3-27b-it', name: 'Gemma 3 27B', provider: 'Google', cost: 'Free on Telnyx' },
-            { id: 'google/gemma-3-12b-it', name: 'Gemma 3 12B', provider: 'Google', cost: 'Free on Telnyx' },
-            { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B', provider: 'Mistral', cost: 'Free on Telnyx' },
-            { id: 'deepseek-ai/DeepSeek-V3-0324', name: 'DeepSeek V3', provider: 'DeepSeek', cost: 'Free on Telnyx' },
-            // Requires API key (BYOK)
-            { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key' },
-            { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key' },
-            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
-            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'Google', cost: 'Requires API key' },
-            { id: 'gemini-2.5-flash-preview-04-17', name: 'Gemini 2.5 Flash', provider: 'Google', cost: 'Requires API key' },
-          ],
-        };
+        // Fetch live models from Telnyx API + include OpenAI/Anthropic aliases used in portal configs
+        let telnyxModels: any[] = [];
+
+        if (apiKey) {
+          const modelsRes = await telnyxFetch('/ai/models', apiKey);
+          if (modelsRes.ok) {
+            telnyxModels = (modelsRes.data?.data || []).map((m: any) => {
+              const modelId = m.id || '';
+              const provider = m.owned_by || modelId.split('/')[0] || 'Unknown';
+              const nameBase = modelId.split('/').pop() || modelId;
+              return {
+                id: modelId,
+                name: nameBase.replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+                provider,
+                cost: 'Included with Telnyx',
+                recommended: /qwen3|llama-3\.1-70b/i.test(modelId),
+              };
+            });
+          } else {
+            console.warn('Failed to fetch Telnyx model list:', modelsRes.error);
+          }
+        }
+
+        // Include both prefixed and unprefixed IDs to match what users configure in portal/custom LLM flows
+        const aliasModels = [
+          { id: 'openai/gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1', name: 'GPT-4.1 (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4o', name: 'GPT-4o (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'openai/o4-mini', name: 'o4-mini', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'o4-mini', name: 'o4-mini (Legacy ID)', provider: 'OpenAI', cost: 'Requires API key' },
+          { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'anthropic/claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'anthropic/claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', cost: 'Requires API key' },
+          { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (Legacy ID)', provider: 'Anthropic', cost: 'Requires API key' },
+        ];
+
+        const seen = new Set<string>();
+        const combined = [...telnyxModels, ...aliasModels].filter((m: any) => {
+          const key = (m.id || '').toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        result = { models: combined };
         break;
       }
 
@@ -816,49 +1099,230 @@ serve(async (req) => {
       // LIST VOICES
       // ================================================================
       case 'list_voices': {
-        result = {
-          voices: [
-            // Telnyx NaturalHD (Premium - most natural, $0.000012/char)
-            { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Bella', name: 'Bella', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.Chloe', name: 'Chloe', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
-            { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
-            { id: 'Telnyx.NaturalHD.Max', name: 'Max', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
-            { id: 'Telnyx.NaturalHD.Ryan', name: 'Ryan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
-            // Telnyx Natural (Enhanced, $0.000003/char)
-            { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.allison', name: 'Allison', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.jasmine', name: 'Jasmine', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
-            { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
-            { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
-            // KokoroTTS (Basic, $0.000003/char)
-            { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
-            { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
-            // AWS Polly Neural
-            { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-            { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-            { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
-            { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
-            { id: 'AWS.Polly.Stephen-Neural', name: 'Stephen', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
-            // Azure Neural
-            { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
-            { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
-            { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
-            { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
-            // ElevenLabs (Requires API key)
-            { id: 'ElevenLabs.rachel', name: 'Rachel', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
-            { id: 'ElevenLabs.drew', name: 'Drew', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
-            { id: 'ElevenLabs.clyde', name: 'Clyde', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
-          ],
-        };
+        // Try fetching live voices from Telnyx API (includes ElevenLabs, etc.)
+        let liveVoices: any[] = [];
+        const voiceEndpoints = [
+          '/ai/voices',
+          '/ai/assistants/voices',
+          '/voice/tts/voices',
+          '/ai/tts/voices',
+        ];
+
+        if (apiKey) {
+          for (const endpoint of voiceEndpoints) {
+            const voicesRes = await telnyxFetch(endpoint, apiKey!);
+            if (!voicesRes.ok) {
+              console.warn('[Telnyx AI Assistant] Live voices fetch failed:', endpoint, voicesRes.status);
+              continue;
+            }
+
+            const items = voicesRes.data?.data || voicesRes.data?.voices || voicesRes.data || [];
+            if (!Array.isArray(items) || items.length === 0) continue;
+
+            liveVoices = items.map((v: any) => {
+              const id = v.id || v.voice_id || v.name;
+              const provider = normalizeVoiceProvider(v.provider || v.tts_provider, id);
+              return {
+                id,
+                name: v.display_name || v.name || humanizeVoiceId(id),
+                provider,
+                tier: v.tier || (provider === 'ElevenLabs' || provider === 'Telnyx NaturalHD' ? 'premium' : 'standard'),
+                gender: v.gender || 'unknown',
+              };
+            }).filter((v: any) => !!v.id);
+
+            if (liveVoices.length > 0) {
+              console.log('[Telnyx AI Assistant] Loaded live voices from', endpoint, 'count=', liveVoices.length);
+              break;
+            }
+          }
+        }
+
+        // Fallback from local assistants (ensures existing/older agent voices still appear)
+        const { data: localRows } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('voice, metadata')
+          .eq('user_id', userId)
+          .not('voice', 'is', null);
+
+        const localVoices = Array.from(new Map(
+          (localRows || [])
+            .filter((r: any) => !!r.voice)
+            .map((r: any) => {
+              const provider = normalizeVoiceProvider(
+                r?.metadata?.voice_provider || r?.metadata?.telnyx_response?.voice_settings?.provider,
+                r.voice
+              );
+              return [
+                String(r.voice).toLowerCase(),
+                {
+                  id: r.voice,
+                  name: humanizeVoiceId(r.voice),
+                  provider,
+                  tier: provider === 'ElevenLabs' || provider === 'Telnyx NaturalHD' ? 'premium' : 'custom',
+                  gender: 'unknown',
+                },
+              ];
+            })
+        ).values());
+
+        // Static fallback list
+        const staticVoices = [
+          // Telnyx NaturalHD (Premium, $0.000012/char)
+          { id: 'Telnyx.NaturalHD.Ava', name: 'Ava', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.astra', name: 'Astra', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Estelle', name: 'Estelle (Estrella)', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.andersen_johan', name: 'Johan', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          { id: 'Telnyx.NaturalHD.Celeste', name: 'Celeste', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Luna', name: 'Luna', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Valentina', name: 'Valentina', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Aurora', name: 'Aurora', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'female' },
+          { id: 'Telnyx.NaturalHD.Marcus', name: 'Marcus', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          { id: 'Telnyx.NaturalHD.Atlas', name: 'Atlas', provider: 'Telnyx NaturalHD', tier: 'premium', gender: 'male' },
+          // Telnyx Natural (Enhanced)
+          { id: 'Telnyx.Natural.abbie', name: 'Abbie', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.amanda', name: 'Amanda', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.chloe', name: 'Chloe', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.diana', name: 'Diana', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'female' },
+          { id: 'Telnyx.Natural.james', name: 'James', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+          { id: 'Telnyx.Natural.oliver', name: 'Oliver', provider: 'Telnyx Natural', tier: 'enhanced', gender: 'male' },
+          // KokoroTTS — American Female
+          { id: 'Telnyx.KokoroTTS.af_alloy', name: 'Alloy', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_aoede', name: 'Aoede', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_bella', name: 'Bella', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_heart', name: 'Heart', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_jessica', name: 'Jessica', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_kore', name: 'Kore', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_nicole', name: 'Nicole', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_nova', name: 'Nova', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_river', name: 'River', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_sarah', name: 'Sarah', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.af_sky', name: 'Sky', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          // KokoroTTS — American Male
+          { id: 'Telnyx.KokoroTTS.am_adam', name: 'Adam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_echo', name: 'Echo', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_eric', name: 'Eric', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_fenrir', name: 'Fenrir', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_liam', name: 'Liam', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_michael', name: 'Michael', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_onyx', name: 'Onyx', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.am_puck', name: 'Puck', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          // KokoroTTS — British
+          { id: 'Telnyx.KokoroTTS.bf_alice', name: 'Alice (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.bf_emma', name: 'Emma (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'female' },
+          { id: 'Telnyx.KokoroTTS.bm_george', name: 'George (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          { id: 'Telnyx.KokoroTTS.bm_daniel', name: 'Daniel (British)', provider: 'KokoroTTS', tier: 'basic', gender: 'male' },
+          // AWS Polly Neural
+          { id: 'AWS.Polly.Joanna-Neural', name: 'Joanna', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          { id: 'AWS.Polly.Matthew-Neural', name: 'Matthew', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+          { id: 'AWS.Polly.Salli-Neural', name: 'Salli', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          { id: 'AWS.Polly.Joey-Neural', name: 'Joey', provider: 'AWS Polly', tier: 'neural', gender: 'male' },
+          { id: 'AWS.Polly.Kendra-Neural', name: 'Kendra', provider: 'AWS Polly', tier: 'neural', gender: 'female' },
+          // Azure Neural
+          { id: 'Azure.en-US-JennyNeural', name: 'Jenny', provider: 'Azure', tier: 'neural', gender: 'female' },
+          { id: 'Azure.en-US-GuyNeural', name: 'Guy', provider: 'Azure', tier: 'neural', gender: 'male' },
+          { id: 'Azure.en-US-AriaNeural', name: 'Aria', provider: 'Azure', tier: 'neural', gender: 'female' },
+          { id: 'Azure.en-US-DavisNeural', name: 'Davis', provider: 'Azure', tier: 'neural', gender: 'male' },
+          // ── ElevenLabs Premade Voices (Top Sales / Conversational) ──
+          // Female — Conversational / Sales
+          { id: 'ElevenLabs.21m00Tcm4TlvDq8ikWAM', name: 'Rachel', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.EXAVITQu4vr4xnSDxMaL', name: 'Sarah', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.LcfcDJNUP1GQjkzn1xUU', name: 'Emily', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.oWAxZDx7w5VEj9dCyTzz', name: 'Grace', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.XB0fDUnXU5powFXDhCwa', name: 'Charlotte', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.jsCqWAovK2LkecY7zXl4', name: 'Freya', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.ThT5KcBeYPX3keUQqHPh', name: 'Dorothy', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.AZnzlk1XvdvUeBnXmlld', name: 'Domi', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.MF3mGyEYCl7XYWbV9V6O', name: 'Elli', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.jBpfuIE2acCO8z3wKNLl', name: 'Lily', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.z9fAnlkpzviPz146aGWa', name: 'Glinda', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.XrExE9yKIg1WjnnlVkGX', name: 'Matilda', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.pFZP5JQG7iQjIQuC4Bku', name: 'Lily (British)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          // Male — Conversational / Sales
+          { id: 'ElevenLabs.JBFqnCBsd6RMkjVDRZzb', name: 'George', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.pNInz6obpgDQGcFmaJgB', name: 'Adam', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.nPczCjzI2devNBz1zQrb', name: 'Brian', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.onwK4e9ZLuTAKqWW03F9', name: 'Daniel', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.29vD33N1CtxCmqQRPOHJ', name: 'Drew', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.SOYHLrjzK2X1ezoPC6cr', name: 'Dave', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.N2lVS1w4EtoT3dr4eOWO', name: 'Callum', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.IKne3meq5aSn9XLyUdCD', name: 'Charlie', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.pqHfZKP75CvOlQylNhV4', name: 'Bill', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.VR6AewLTigWG4xSOukaG', name: 'Arnold', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.TxGEqnHWrfWFTfGW9XjX', name: 'Josh', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.iP95p4xoKVk53GoZ742B', name: 'Chris', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          { id: 'ElevenLabs.ErXwobaYiN019PkySvjV', name: 'Antoni', provider: 'ElevenLabs', tier: 'premium', gender: 'male' },
+          // Eryn — Hyper Real / Natural Conversational
+          { id: 'ElevenLabs.dMyQqiVXTU80dDl2eNK8', name: 'Eryn (Natural Conversational)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+          { id: 'ElevenLabs.dj3G1R1ilKoFKhBnWOzG', name: 'Eryn (Southern Casual)', provider: 'ElevenLabs', tier: 'premium', gender: 'female' },
+        ];
+
+        // Merge: live voices, then locally-known voices, then static fallback (dedup by id)
+        const seenIds = new Set<string>();
+        const merged: any[] = [];
+        for (const source of [liveVoices, localVoices, staticVoices]) {
+          for (const voice of source) {
+            const id = String(voice?.id || '').trim();
+            if (!id) continue;
+            const key = id.toLowerCase();
+            if (seenIds.has(key)) continue;
+            seenIds.add(key);
+            merged.push(voice);
+          }
+        }
+
+        result = { voices: merged };
         break;
       }
 
       // ================================================================
-      // ASSIGN PHONE NUMBER to assistant's TeXML app
+      // PREVIEW VOICE — Generate a short TTS sample via Telnyx API
       // ================================================================
+      case 'preview_voice': {
+        const { voice_id, text } = params;
+        if (!voice_id || !text) throw new Error('voice_id and text required');
+
+        const sampleText = (text as string).slice(0, 200);
+
+        try {
+          const ttsResp = await fetch('https://api.telnyx.com/v2/ai/generate', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: sampleText,
+              voice: voice_id,
+              output_format: 'mp3',
+            }),
+          });
+
+          if (ttsResp.ok) {
+            const audioBuffer = await ttsResp.arrayBuffer();
+            const uint8 = new Uint8Array(audioBuffer);
+            // Manual base64 encoding for Deno
+            let binary = '';
+            for (let i = 0; i < uint8.length; i++) {
+              binary += String.fromCharCode(uint8[i]);
+            }
+            const base64 = btoa(binary);
+            result = { audio_base64: base64 };
+          } else {
+            const errText = await ttsResp.text();
+            console.warn('[Telnyx AI Assistant] TTS preview failed:', ttsResp.status, errText);
+            // Fallback: just confirm voice is valid
+            result = { preview_unavailable: true, message: 'Voice set successfully. Preview via live test call.', voice_id };
+          }
+        } catch (ttsErr: any) {
+          console.warn('[Telnyx AI Assistant] TTS preview error:', ttsErr.message);
+          result = { preview_unavailable: true, message: 'Preview unavailable. Voice ID saved — test with a live call.' };
+        }
+        break;
+      }
+
       case 'assign_number': {
         const { assistant_id, phone_number_id } = params;
         if (!assistant_id || !phone_number_id) throw new Error('assistant_id and phone_number_id required');
@@ -872,14 +1336,28 @@ serve(async (req) => {
 
         if (!assistant?.telnyx_texml_app_id) throw new Error('Assistant has no TeXML app');
 
-        // Get the Telnyx phone number ID
+        // Get the phone number from local DB
         const { data: phoneNumber } = await supabaseAdmin
           .from('phone_numbers')
-          .select('id, phone_number')
+          .select('id, number')
           .eq('id', phone_number_id)
           .single();
 
-        if (!phoneNumber) throw new Error('Phone number not found');
+        if (!phoneNumber) throw new Error('Phone number not found in local database. Sync your numbers first.');
+
+        // Check if this number is already assigned to ANOTHER assistant
+        const { data: conflictingAssistants } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('id, name, assigned_phone_number_ids')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .neq('id', assistant_id)
+          .contains('assigned_phone_number_ids', [phone_number_id]);
+
+        if (conflictingAssistants && conflictingAssistants.length > 0) {
+          const conflictNames = conflictingAssistants.map((a: any) => a.name).join(', ');
+          throw new Error(`This number is already assigned to: ${conflictNames}. Unassign it first to avoid routing conflicts.`);
+        }
 
         // Update phone number on Telnyx to use this TeXML app
         const updateRes = await telnyxFetch(
@@ -900,7 +1378,37 @@ serve(async (req) => {
             .eq('id', assistant_id);
         }
 
-        result = { assigned: true, phone_number: phoneNumber.phone_number };
+        result = { assigned: true, phone_number: phoneNumber.number };
+        break;
+      }
+
+      // ================================================================
+      // UNASSIGN NUMBER
+      // ================================================================
+      case 'unassign_number': {
+        const { assistant_id: unassignAstId, phone_number_id: unassignPhId } = params;
+        if (!unassignAstId || !unassignPhId) throw new Error('assistant_id and phone_number_id required');
+
+        const { data: unassignAst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('assigned_phone_number_ids')
+          .eq('id', unassignAstId)
+          .eq('user_id', userId)
+          .single();
+
+        if (!unassignAst) throw new Error('Assistant not found');
+
+        const updatedIds = (unassignAst.assigned_phone_number_ids || []).filter((pid: string) => pid !== unassignPhId);
+
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({
+            assigned_phone_number_ids: updatedIds,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', unassignAstId);
+
+        result = { unassigned: true };
         break;
       }
 
@@ -1018,21 +1526,71 @@ serve(async (req) => {
         if (!testAssistant) throw new Error('Assistant not found');
         if (!testAssistant.telnyx_assistant_id) throw new Error('Assistant not synced to Telnyx yet');
 
-        // Get TeXML app ID — required for outbound AI calls
-        const texmlAppId = testAssistant.telnyx_texml_app_id;
-        if (!texmlAppId) {
-          // Try to get it from the assistant on Telnyx
-          const getRes = await telnyxFetch(`/ai/assistants/${testAssistant.telnyx_assistant_id}`, apiKey!);
-          if (!getRes.ok) throw new Error('Could not retrieve assistant details from Telnyx');
-          const texmlId = getRes.data?.data?.telephony_settings?.default_texml_app_id;
-          if (!texmlId) throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled.');
-          // Update local DB
-          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
-          // Use it
-          Object.defineProperty(testAssistant, 'telnyx_texml_app_id', { value: texmlId });
+        // ── Pre-call diagnostic: fetch full assistant config from Telnyx ──
+        const diagRes = await telnyxFetch(`/ai/assistants/${testAssistant.telnyx_assistant_id}`, apiKey!);
+        if (!diagRes.ok) throw new Error('Could not retrieve assistant details from Telnyx for pre-call check');
+        const assistantConfig = diagRes.data?.data || diagRes.data;
+
+        const diagnosticWarnings: string[] = [];
+
+        // Check voice / TTS
+        const voiceSettings = assistantConfig?.voice_settings || assistantConfig?.voice;
+        if (!voiceSettings?.voice) {
+          diagnosticWarnings.push('❌ No TTS voice configured — the caller will not hear the AI speak. Go to Voice tab and select a voice.');
         }
 
-        const finalTexmlId = testAssistant.telnyx_texml_app_id;
+        // Check transcription / STT
+        const transcription = assistantConfig?.transcription;
+        if (!transcription?.provider && !transcription?.model) {
+          diagnosticWarnings.push('❌ No STT/transcription configured — the AI cannot hear the caller. Enable transcription in Voice or Advanced settings.');
+        }
+
+        // Check telephony / TeXML app
+        const telephonySettings = assistantConfig?.telephony_settings;
+        const texmlId = telephonySettings?.default_texml_app_id || testAssistant.telnyx_texml_app_id;
+        if (!texmlId) {
+          throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled in the Telnyx portal.');
+        }
+
+        // Check model
+        if (!assistantConfig?.model) {
+          diagnosticWarnings.push('⚠️ No LLM model set — the AI may not respond intelligently. Set a model in Advanced settings.');
+        }
+
+        // Check instructions
+        if (!assistantConfig?.instructions || assistantConfig.instructions.length < 20) {
+          diagnosticWarnings.push('⚠️ Instructions are very short or empty — the AI may not know what to say.');
+        }
+
+        // Update local DB with latest TeXML app ID if needed
+        if (texmlId && texmlId !== testAssistant.telnyx_texml_app_id) {
+          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
+        }
+
+        const finalTexmlId = texmlId;
+
+        // If there are critical warnings (no voice or no STT), block the call
+        const criticalIssues = diagnosticWarnings.filter(w => w.startsWith('❌'));
+        if (criticalIssues.length > 0) {
+          result = {
+            success: false,
+            diagnostic: true,
+            warnings: diagnosticWarnings,
+            critical_issues: criticalIssues,
+            message: `Pre-call check FAILED — ${criticalIssues.length} critical issue(s) found that will cause no audio:\n\n${criticalIssues.join('\n')}\n\nFix these in the Telnyx portal or Voice tab before calling.`,
+            assistant_config_snapshot: {
+              voice: voiceSettings?.voice || null,
+              transcription_provider: transcription?.provider || null,
+              transcription_model: transcription?.model || null,
+              model: assistantConfig?.model || null,
+              texml_app_id: texmlId,
+              has_instructions: !!(assistantConfig?.instructions && assistantConfig.instructions.length > 20),
+            },
+          };
+          break;
+        }
+
+        console.log(`[Telnyx AI] Pre-call diagnostic passed (${diagnosticWarnings.length} warning(s)): ${diagnosticWarnings.join('; ') || 'all clear'}`);
 
         // Determine From number
         let callerNumber = from_number;
@@ -1040,13 +1598,13 @@ serve(async (req) => {
           // Try to get a Telnyx number from phone_numbers table
           const { data: phoneNum } = await supabaseAdmin
             .from('phone_numbers')
-            .select('phone_number')
+            .select('number')
             .eq('user_id', userId)
             .eq('provider', 'telnyx')
             .eq('status', 'active')
             .limit(1)
             .maybeSingle();
-          callerNumber = phoneNum?.phone_number;
+          callerNumber = phoneNum?.number;
         }
         if (!callerNumber) {
           throw new Error('No from_number provided and no active Telnyx numbers found. Purchase a Telnyx number first or provide a from_number.');
@@ -1058,6 +1616,192 @@ serve(async (req) => {
         const formattedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
         const formattedFrom = cleanFrom.startsWith('1') ? `+${cleanFrom}` : `+1${cleanFrom}`;
 
+        // ── Auto-lookup lead data from DB by the "to" phone number ──
+        let leadVars: Record<string, string> = {};
+        const phoneDigits = cleanTo.slice(-10);
+        if (phoneDigits.length === 10) {
+          const normalizedTo = cleanTo.startsWith('1') ? `+${cleanTo}` : `+1${cleanTo}`;
+          const normalizedWithCountryDigits = cleanTo.startsWith('1') ? cleanTo : `1${cleanTo}`;
+          const phoneVariants = Array.from(new Set([
+            normalizedTo,
+            formattedTo,
+            cleanTo,
+            normalizedWithCountryDigits,
+            phoneDigits,
+          ].filter(Boolean)));
+
+          const leadSelect = 'id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at, created_at, do_not_call';
+
+          let leadCandidates: any[] = [];
+
+          const { data: exactMatches, error: exactMatchError } = await supabaseAdmin
+            .from('leads')
+            .select(leadSelect)
+            .eq('user_id', userId)
+            .in('phone_number', phoneVariants)
+            .limit(25);
+
+          if (exactMatchError) {
+            console.error('[Telnyx AI] Test call exact lead lookup error:', exactMatchError);
+          }
+
+          if (Array.isArray(exactMatches) && exactMatches.length > 0) {
+            leadCandidates = exactMatches;
+          } else {
+            const { data: partialMatches, error: partialMatchError } = await supabaseAdmin
+              .from('leads')
+              .select(leadSelect)
+              .eq('user_id', userId)
+              .or(`phone_number.ilike.%${phoneDigits}%`)
+              .limit(25);
+
+            if (partialMatchError) {
+              console.error('[Telnyx AI] Test call partial lead lookup error:', partialMatchError);
+            }
+
+            leadCandidates = Array.isArray(partialMatches) ? partialMatches : [];
+          }
+
+          const rankedCandidates = leadCandidates
+            .map((lead: any) => {
+              const storedDigits = String(lead?.phone_number || '').replace(/\D/g, '');
+              const exactMatch = storedDigits === cleanTo || storedDigits === normalizedWithCountryDigits || storedDigits === phoneDigits;
+
+              const hasName = !!(String(lead?.first_name || '').trim() || String(lead?.last_name || '').trim());
+              const hasAddress = !!(
+                String(lead?.address || '').trim() ||
+                String(lead?.city || '').trim() ||
+                String(lead?.state || '').trim() ||
+                String(lead?.zip_code || '').trim()
+              );
+              const isDnc = !!lead?.do_not_call;
+
+              const completeness = [
+                lead?.first_name,
+                lead?.last_name,
+                lead?.email,
+                lead?.address,
+                lead?.city,
+                lead?.state,
+                lead?.zip_code,
+                lead?.company,
+              ].reduce((score, value) => score + (String(value || '').trim() ? 1 : 0), 0);
+
+              const createdAt = lead?.created_at ? new Date(lead.created_at).getTime() : 0;
+              const score =
+                (exactMatch ? 200 : 0) +
+                (hasName ? 80 : 0) +
+                (hasAddress ? 60 : 0) +
+                (completeness * 8) +
+                (isDnc ? -1000 : 0) +
+                (createdAt / 1_000_000_000_000);
+
+              return { lead, score, hasName, hasAddress, isDnc };
+            })
+            .sort((a, b) => b.score - a.score);
+
+          const leadRecord = rankedCandidates[0]?.lead ?? null;
+
+          if (rankedCandidates.length > 0) {
+            const top = rankedCandidates[0];
+            console.log(
+              `[Telnyx AI] Test call lead lookup: ${rankedCandidates.length} candidate(s), selected ${top.lead.id} (score=${top.score.toFixed(2)}, hasName=${top.hasName}, hasAddress=${top.hasAddress}, dnc=${top.isDnc})`
+            );
+          }
+
+          if (leadRecord) {
+            const customFields = (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object')
+              ? (leadRecord.custom_fields as Record<string, unknown>)
+              : {};
+
+            const firstName = String(
+              leadRecord.first_name ||
+              customFields.first_name ||
+              customFields.firstname ||
+              customFields.contact_first_name ||
+              ''
+            ).trim();
+            const lastName = String(
+              leadRecord.last_name ||
+              customFields.last_name ||
+              customFields.lastname ||
+              customFields.contact_last_name ||
+              ''
+            ).trim();
+            const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+
+            const address = String(leadRecord.address || customFields.address || '').trim();
+            const city = String(leadRecord.city || customFields.city || '').trim();
+            const state = String(leadRecord.state || customFields.state || '').trim();
+            const zipCode = String(leadRecord.zip_code || customFields.zip_code || customFields.zip || '').trim();
+            const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
+            const tz = leadRecord.timezone || String(customFields.timezone || '') || 'America/New_York';
+            const currentTime = new Date().toLocaleString('en-US', {
+              timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
+              day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+            });
+
+            leadVars = {
+              current_time: currentTime,
+              current_time_iso: new Date().toISOString(),
+              current_timezone: tz,
+              current_date_ymd: new Date().toLocaleDateString('en-CA', { timeZone: tz }),
+              current_day_of_week: new Date().toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' }),
+              first_name: firstName,
+              'first name': firstName,
+              'first-name': firstName,
+              last_name: lastName,
+              'last name': lastName,
+              'last-name': lastName,
+              full_name: fullName,
+              name: fullName,
+              'contact.first_name': firstName,
+              'contact.last_name': lastName,
+              'contact.full_name': fullName,
+              contact_first_name: firstName,
+              contact_last_name: lastName,
+              email: String(leadRecord.email || customFields.email || ''),
+              phone: String(leadRecord.phone_number || normalizedTo),
+              phone_number: String(leadRecord.phone_number || normalizedTo),
+              company: String(leadRecord.company || customFields.company || ''),
+              lead_source: String(leadRecord.lead_source || customFields.lead_source || ''),
+              notes: String(leadRecord.notes || customFields.notes || ''),
+              tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
+              preferred_contact_time: String(leadRecord.preferred_contact_time || customFields.preferred_contact_time || ''),
+              timezone: tz,
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              full_address: fullAddress,
+              'contact.address': address,
+              'contact.city': city,
+              'contact.state': state,
+              'contact.zip_code': zipCode,
+              'contact.email': String(leadRecord.email || customFields.email || ''),
+              'contact.phone_number': String(leadRecord.phone_number || normalizedTo),
+              lead_id: leadRecord.id,
+              user_id: userId,
+            };
+
+            // Include custom fields
+            if (leadRecord.custom_fields && typeof leadRecord.custom_fields === 'object') {
+              for (const [key, val] of Object.entries(leadRecord.custom_fields as Record<string, unknown>)) {
+                leadVars[`custom_${key}`] = String(val ?? '');
+              }
+            }
+
+            console.log(`[Telnyx AI] Test call: Found lead "${fullName}" (${leadRecord.id}) — injecting ${Object.keys(leadVars).length} variables`);
+          } else {
+            console.log(`[Telnyx AI] Test call: No lead found for ${formattedTo} — using manual variables only`);
+          }
+        }
+
+        // Merge: lead DB data first, then manual overrides on top (manual wins)
+        const mergedVars = { ...leadVars, ...(dynVars && typeof dynVars === 'object' ? dynVars : {}) };
+
         // Make the outbound AI call via TeXML
         const callPayload: any = {
           From: formattedFrom,
@@ -1065,9 +1809,9 @@ serve(async (req) => {
           AIAssistantId: testAssistant.telnyx_assistant_id,
         };
 
-        // Include dynamic variables if provided
-        if (dynVars && typeof dynVars === 'object' && Object.keys(dynVars).length > 0) {
-          callPayload.AIAssistantDynamicVariables = dynVars;
+        // Include merged dynamic variables
+        if (Object.keys(mergedVars).length > 0) {
+          callPayload.AIAssistantDynamicVariables = mergedVars;
         }
 
         console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}`);
@@ -1082,6 +1826,7 @@ serve(async (req) => {
         }
 
         const callData = callRes.data?.data || callRes.data;
+        const hasLeadData = Object.keys(leadVars).length > 0;
         result = {
           success: true,
           call_sid: callData?.call_sid || callData?.sid,
@@ -1089,7 +1834,17 @@ serve(async (req) => {
           from: formattedFrom,
           to: formattedTo,
           assistant: testAssistant.name,
-          message: `Test call initiated! Your phone (${formattedTo}) should ring in a few seconds.`,
+          lead_found: hasLeadData,
+          variables_injected: Object.keys(mergedVars).length,
+          message: hasLeadData
+            ? `Test call initiated! Found lead "${mergedVars.full_name || mergedVars.first_name}" — injecting ${Object.keys(mergedVars).length} variables. Your phone should ring shortly.`
+            : `Test call initiated! No lead found for ${formattedTo} — using manual variables only. Your phone should ring shortly.`,
+          warnings: diagnosticWarnings.length > 0 ? diagnosticWarnings : undefined,
+          assistant_config_snapshot: {
+            voice: voiceSettings?.voice || null,
+            transcription_provider: transcription?.provider || null,
+            model: assistantConfig?.model || null,
+          },
         };
         break;
       }

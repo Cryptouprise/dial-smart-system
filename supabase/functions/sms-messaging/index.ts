@@ -124,56 +124,38 @@ serve(async (req) => {
           throw new Error('To, from, and body are required for sending SMS');
         }
 
-        if (!twilioAccountSid || !twilioAuthToken) {
-          throw new Error('Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.');
-        }
-
         console.log('[SMS Messaging] Sending SMS from', request.from, 'to', request.to);
 
         // Clean phone numbers
         const cleanTo = request.to.replace(/[^\d+]/g, '');
         let cleanFrom = request.from.replace(/[^\d+]/g, '');
-        
-        // Ensure E.164 format
-        if (!cleanFrom.startsWith('+')) {
-          cleanFrom = '+' + cleanFrom;
+        if (!cleanFrom.startsWith('+')) cleanFrom = '+' + cleanFrom;
+
+        // Determine provider by looking up the from number in phone_numbers table
+        const { data: phoneRecord } = await supabaseAdmin
+          .from('phone_numbers')
+          .select('provider')
+          .or(`number.eq.${cleanFrom},number.ilike.%${cleanFrom.replace(/\D/g, '').slice(-10)}%`)
+          .limit(1)
+          .maybeSingle();
+
+        const isTelnyxNumber = phoneRecord?.provider === 'telnyx';
+
+        // Check we have the right credentials
+        if (isTelnyxNumber && !telnyxApiKey) {
+          throw new Error('Telnyx API key not configured. Please add TELNYX_API_KEY to Supabase secrets.');
+        }
+        if (!isTelnyxNumber && (!twilioAccountSid || !twilioAuthToken)) {
+          throw new Error('Twilio credentials not configured. Please add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to Supabase secrets.');
         }
 
-        // Verify the "From" number belongs to the Twilio account
-        console.log('[SMS Messaging] Verifying phone number ownership...');
-        const verifyUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanFrom)}`;
-        
-        const verifyResponse = await fetch(verifyUrl, {
-          headers: {
-            'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
-          },
-        });
-
-        const verifyData = await verifyResponse.json();
-        
-        if (!verifyResponse.ok || !verifyData.incoming_phone_numbers || verifyData.incoming_phone_numbers.length === 0) {
-          console.error('[SMS Messaging] Phone number not found in Twilio account:', cleanFrom);
-          throw new Error(`The phone number ${cleanFrom} is not registered in your Twilio account. Please ensure the number is purchased and active in your Twilio console, or select a different number.`);
-        }
-
-        // Check if the number has SMS capability
-        const twilioNumber = verifyData.incoming_phone_numbers[0];
-        if (twilioNumber.capabilities && !twilioNumber.capabilities.sms) {
-          console.error('[SMS Messaging] Phone number does not support SMS:', cleanFrom);
-          throw new Error(`The phone number ${cleanFrom} does not have SMS capability enabled. Please enable SMS in your Twilio console or use a different number.`);
-        }
-
-        console.log('[SMS Messaging] Phone number verified:', twilioNumber.sid);
-
-        // Check if we should skip DB insert (message already stored by caller like twilio-sms-webhook)
+        // Check if we should skip DB insert
         let smsRecordId: string | null = null;
         
         if (request.skip_db_insert && request.existing_message_id) {
-          // Message already exists, just use the provided ID
           smsRecordId = request.existing_message_id;
           console.log('[SMS Messaging] Skipping DB insert, using existing message:', smsRecordId);
         } else {
-          // Create SMS record first
           const { data: smsRecord, error: insertError } = await supabaseAdmin
             .from('sms_messages')
             .insert({
@@ -185,7 +167,7 @@ serve(async (req) => {
               status: 'pending',
               lead_id: request.lead_id || null,
               conversation_id: request.conversation_id || null,
-              provider_type: 'twilio',
+              provider_type: isTelnyxNumber ? 'telnyx' : 'twilio',
               metadata: {},
             })
             .select()
@@ -195,77 +177,134 @@ serve(async (req) => {
             console.error('[SMS Messaging] Database insert error:', insertError);
             throw new Error('Failed to create SMS record');
           }
-          
           smsRecordId = smsRecord?.id;
         }
 
-        // Send via Twilio
-        try {
-          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-          
-          const formData = new URLSearchParams();
-          formData.append('To', cleanTo);
-          formData.append('From', cleanFrom);
-          formData.append('Body', request.body);
+        // ===== TELNYX SMS PATH =====
+        if (isTelnyxNumber) {
+          try {
+            console.log('[SMS Messaging] Sending via Telnyx API');
+            const telnyxResponse = await fetch('https://api.telnyx.com/v2/messages', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${telnyxApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                from: cleanFrom,
+                to: cleanTo,
+                text: request.body,
+                type: 'SMS',
+              }),
+            });
 
-          const twilioResponse = await fetch(twilioUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid, twilioAuthToken),
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString(),
-          });
+            const telnyxData = await telnyxResponse.json();
 
-          const twilioData = await twilioResponse.json();
+            if (!telnyxResponse.ok) {
+              console.error('[SMS Messaging] Telnyx error:', telnyxData);
+              if (smsRecordId) {
+                await supabaseAdmin.from('sms_messages')
+                  .update({ status: 'failed', error_message: telnyxData.errors?.[0]?.detail || 'Telnyx API error' })
+                  .eq('id', smsRecordId);
+              }
+              throw new Error(telnyxData.errors?.[0]?.detail || 'Failed to send SMS via Telnyx');
+            }
 
-          if (!twilioResponse.ok) {
-            console.error('[SMS Messaging] Twilio error:', twilioData);
-            
-            // Update SMS record with error
+            const telnyxMessageId = telnyxData.data?.id;
+            console.log('[SMS Messaging] Telnyx response:', telnyxMessageId);
+
             if (smsRecordId) {
-              await supabaseAdmin
-                .from('sms_messages')
-                .update({ 
-                  status: 'failed',
-                  error_message: twilioData.message || 'Twilio API error',
-                })
+              await supabaseAdmin.from('sms_messages')
+                .update({ status: 'sent', provider_message_id: telnyxMessageId, sent_at: new Date().toISOString() })
                 .eq('id', smsRecordId);
             }
 
-            throw new Error(twilioData.message || 'Failed to send SMS via Twilio');
+            if (request.conversation_id) {
+              await supabaseAdmin.from('sms_conversations')
+                .update({ last_message_at: new Date().toISOString() })
+                .eq('id', request.conversation_id);
+            }
+
+            result = { success: true, message_id: smsRecordId, provider_message_id: telnyxMessageId };
+          } catch (telnyxError) {
+            console.error('[SMS Messaging] Telnyx send error:', telnyxError);
+            throw telnyxError;
+          }
+        }
+        // ===== TWILIO SMS PATH =====
+        else {
+          // Verify the "From" number belongs to the Twilio account
+          console.log('[SMS Messaging] Verifying phone number ownership...');
+          const verifyUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanFrom)}`;
+          
+          const verifyResponse = await fetch(verifyUrl, {
+            headers: {
+              'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid!, twilioAuthToken!),
+            },
+          });
+
+          const verifyData = await verifyResponse.json();
+          
+          if (!verifyResponse.ok || !verifyData.incoming_phone_numbers || verifyData.incoming_phone_numbers.length === 0) {
+            console.error('[SMS Messaging] Phone number not found in Twilio account:', cleanFrom);
+            throw new Error(`The phone number ${cleanFrom} is not registered in your Twilio account.`);
           }
 
-          console.log('[SMS Messaging] Twilio response:', twilioData.sid);
-
-          // Update SMS record with success
-          if (smsRecordId) {
-            await supabaseAdmin
-              .from('sms_messages')
-              .update({ 
-                status: 'sent',
-                provider_message_id: twilioData.sid,
-                sent_at: new Date().toISOString(),
-              })
-              .eq('id', smsRecordId);
+          const twilioNumber = verifyData.incoming_phone_numbers[0];
+          if (twilioNumber.capabilities && !twilioNumber.capabilities.sms) {
+            throw new Error(`The phone number ${cleanFrom} does not have SMS capability enabled.`);
           }
 
-          // Update conversation last_message_at if conversation_id provided
-          if (request.conversation_id) {
-            await supabaseAdmin
-              .from('sms_conversations')
-              .update({ last_message_at: new Date().toISOString() })
-              .eq('id', request.conversation_id);
-          }
+          console.log('[SMS Messaging] Phone number verified:', twilioNumber.sid);
 
-          result = { 
-            success: true, 
-            message_id: smsRecordId,
-            provider_message_id: twilioData.sid,
-          };
-        } catch (twilioError) {
-          console.error('[SMS Messaging] Twilio send error:', twilioError);
-          throw twilioError;
+          try {
+            const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+            
+            const formData = new URLSearchParams();
+            formData.append('To', cleanTo);
+            formData.append('From', cleanFrom);
+            formData.append('Body', request.body);
+
+            const twilioResponse = await fetch(twilioUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Basic ' + encodeCredentials(twilioAccountSid!, twilioAuthToken!),
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: formData.toString(),
+            });
+
+            const twilioData = await twilioResponse.json();
+
+            if (!twilioResponse.ok) {
+              console.error('[SMS Messaging] Twilio error:', twilioData);
+              if (smsRecordId) {
+                await supabaseAdmin.from('sms_messages')
+                  .update({ status: 'failed', error_message: twilioData.message || 'Twilio API error' })
+                  .eq('id', smsRecordId);
+              }
+              throw new Error(twilioData.message || 'Failed to send SMS via Twilio');
+            }
+
+            console.log('[SMS Messaging] Twilio response:', twilioData.sid);
+
+            if (smsRecordId) {
+              await supabaseAdmin.from('sms_messages')
+                .update({ status: 'sent', provider_message_id: twilioData.sid, sent_at: new Date().toISOString() })
+                .eq('id', smsRecordId);
+            }
+
+            if (request.conversation_id) {
+              await supabaseAdmin.from('sms_conversations')
+                .update({ last_message_at: new Date().toISOString() })
+                .eq('id', request.conversation_id);
+            }
+
+            result = { success: true, message_id: smsRecordId, provider_message_id: twilioData.sid };
+          } catch (twilioError) {
+            console.error('[SMS Messaging] Twilio send error:', twilioError);
+            throw twilioError;
+          }
         }
         break;
       }

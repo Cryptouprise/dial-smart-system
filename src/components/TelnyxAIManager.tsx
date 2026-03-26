@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,8 +15,9 @@ import {
   Plus, RefreshCw, Trash2, Copy, Phone, Bot, Brain,
   Mic, MessageSquare, Calendar, Database, Settings,
   CheckCircle, AlertCircle, Loader2, ExternalLink, Zap,
-  PhoneCall, Variable, Info, BookOpen, Pencil,
+  PhoneCall, Variable, Info, BookOpen, Pencil, Link2, XCircle,
 } from 'lucide-react';
+import { useCalendarIntegration } from '@/hooks/useCalendarIntegration';
 
 const TelnyxAssistantEditor = lazy(() => import('@/components/TelnyxAssistantEditor'));
 
@@ -33,8 +35,10 @@ interface TelnyxAssistant {
   tools: any[];
   enabled_features: string[];
   is_default: boolean;
+  call_direction: 'inbound' | 'outbound' | 'both';
   created_at: string;
   updated_at: string;
+  assigned_phone_numbers?: string[];
 }
 
 interface TelnyxModel {
@@ -120,7 +124,11 @@ const TestCallDialog: React.FC<{ assistant: TelnyxAssistant; onClose: () => void
         dynamic_variables: parsedVars,
       });
       setCallResult(data);
-      toast({ title: '📞 Call Initiated!', description: data.message });
+      if (data.diagnostic && !data.success) {
+        toast({ title: '🔍 Pre-Call Check Failed', description: data.critical_issues?.[0] || 'Configuration issues detected', variant: 'destructive' });
+      } else {
+        toast({ title: '📞 Call Initiated!', description: data.message });
+      }
     } catch (err: any) {
       toast({ title: 'Call Failed', description: err.message, variant: 'destructive' });
       setCallResult({ error: err.message });
@@ -178,15 +186,43 @@ const TestCallDialog: React.FC<{ assistant: TelnyxAssistant; onClose: () => void
         </div>
 
         {callResult && (
-          <Card className={callResult.error ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/50 bg-green-500/5'}>
+          <Card className={callResult.error || callResult.diagnostic ? 'border-destructive/50 bg-destructive/5' : 'border-green-500/50 bg-green-500/5'}>
             <CardContent className="py-3">
               {callResult.error ? (
                 <p className="text-sm text-destructive">{callResult.error}</p>
+              ) : callResult.diagnostic && !callResult.success ? (
+                <div className="text-sm space-y-2">
+                  <p className="font-medium text-destructive">🔍 Pre-Call Diagnostic Failed</p>
+                  {callResult.warnings?.map((w: string, i: number) => (
+                    <p key={i} className="text-sm">{w}</p>
+                  ))}
+                  {callResult.assistant_config_snapshot && (
+                    <div className="mt-2 p-2 rounded bg-muted text-xs font-mono space-y-0.5">
+                      <p>Voice: {callResult.assistant_config_snapshot.voice || '❌ NOT SET'}</p>
+                      <p>STT: {callResult.assistant_config_snapshot.transcription_provider || '❌ NOT SET'}</p>
+                      <p>Model: {callResult.assistant_config_snapshot.model || '⚠️ NOT SET'}</p>
+                      <p>TeXML App: {callResult.assistant_config_snapshot.texml_app_id || '❌ MISSING'}</p>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="text-sm space-y-1">
-                  <p className="font-medium text-green-700">✅ {callResult.message}</p>
+                  <p className="font-medium text-green-700 dark:text-green-400">✅ {callResult.message}</p>
                   <p className="text-muted-foreground">From: {callResult.from} → To: {callResult.to}</p>
                   {callResult.call_sid && <p className="text-xs text-muted-foreground">Call SID: {callResult.call_sid}</p>}
+                  {callResult.warnings?.length > 0 && (
+                    <div className="mt-2 border-t pt-2 space-y-1">
+                      <p className="text-xs font-medium text-amber-600">⚠️ Non-critical warnings:</p>
+                      {callResult.warnings.map((w: string, i: number) => (
+                        <p key={i} className="text-xs text-amber-600">{w}</p>
+                      ))}
+                    </div>
+                  )}
+                  {callResult.assistant_config_snapshot && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Voice: {callResult.assistant_config_snapshot.voice} · STT: {callResult.assistant_config_snapshot.transcription_provider} · Model: {callResult.assistant_config_snapshot.model}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -289,21 +325,17 @@ const DynamicVariablesPanel: React.FC = () => {
       </Card>
 
       {/* Calendar Integration Info */}
-      <Card className="border-blue-500/20 bg-blue-500/5">
+      <Card className="border-primary/20 bg-primary/5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-blue-500" />Calendar Integration</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-primary" />Calendar Integration</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Calendar booking is <strong>automatically added</strong> as a webhook tool on every new assistant. The AI can:</p>
-          <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm">
-            <li><code className="bg-muted px-1 rounded">get_available_slots</code> — Check your calendar availability for a given date</li>
-            <li><code className="bg-muted px-1 rounded">book_appointment</code> — Book an appointment with lead name, email, phone, date/time</li>
-          </ul>
-          <p className="text-muted-foreground text-xs mt-2">
-            <strong>Setup:</strong> Connect Google Calendar in Settings → Calendar tab first. The AI agent will automatically call your calendar-integration endpoint during live calls.
+          <p>Calendar booking tools (<code className="bg-muted px-1 rounded">get_available_slots</code> and <code className="bg-muted px-1 rounded">book_appointment</code>) are <strong>automatically added</strong> to every new assistant.</p>
+          <p className="text-muted-foreground text-xs">
+            <strong>Tip:</strong> Make sure to mention booking in your agent instructions, e.g. "When the lead wants to schedule, use the book_appointment tool."
           </p>
           <p className="text-muted-foreground text-xs">
-            <strong>In your instructions:</strong> Add something like "When the lead wants to schedule, use the book_appointment tool to check availability and book."
+            Calendar connection status is shown at the top of this page. Connect Google Calendar there if you haven't already.
           </p>
         </CardContent>
       </Card>
@@ -323,8 +355,13 @@ const TelnyxAIManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingNumbers, setSyncingNumbers] = useState(false);
   const [testCallAssistant, setTestCallAssistant] = useState<TelnyxAssistant | null>(null);
   const [editingAssistant, setEditingAssistant] = useState<TelnyxAssistant | null>(null);
+
+  // Calendar integration
+  const { integrations: calendarIntegrations, connectGoogleCalendar, isLoading: calendarLoading } = useCalendarIntegration();
+  const googleCalendar = calendarIntegrations.find(i => i.provider === 'google');
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -335,6 +372,7 @@ const TelnyxAIManager: React.FC = () => {
   const [formInstructions, setFormInstructions] = useState(DEFAULT_INSTRUCTIONS);
   const [formGreeting, setFormGreeting] = useState(DEFAULT_GREETING);
   const [formAmd, setFormAmd] = useState(true);
+  const [formDirection, setFormDirection] = useState<'inbound' | 'outbound' | 'both'>('outbound');
 
   // Health check state
   const [healthStatus, setHealthStatus] = useState<any>(null);
@@ -396,6 +434,7 @@ const TelnyxAIManager: React.FC = () => {
         instructions: formInstructions,
         greeting: formGreeting || null,
         tools: [],
+        call_direction: formDirection,
       });
 
       toast({ title: 'Assistant Created', description: `${formName} is ready on Telnyx` });
@@ -444,13 +483,58 @@ const TelnyxAIManager: React.FC = () => {
     setSyncing(true);
     try {
       const data = await callEdgeFunction('telnyx-ai-assistant', { action: 'sync_assistants' });
-      toast({ title: 'Synced', description: `${data.synced} assistants synced from Telnyx` });
-      loadAssistants();
+      await Promise.all([loadAssistants(), loadModelsAndVoices()]);
+      toast({ title: 'Synced', description: `${data.synced} assistants synced from Telnyx and model/voice lists refreshed` });
     } catch (err: any) {
       toast({ title: 'Sync Failed', description: err.message, variant: 'destructive' });
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleSyncNumbers = async () => {
+    setSyncingNumbers(true);
+    try {
+      const data = await callEdgeFunction('phone-number-purchasing', { action: 'sync_telnyx' });
+      if (data.synced > 0) {
+        toast({ title: 'Numbers Synced', description: `${data.synced} Telnyx numbers imported (${data.already_existed} already existed)` });
+      } else {
+        toast({ title: 'Numbers Up to Date', description: data.message || 'All Telnyx numbers already synced' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Number Sync Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setSyncingNumbers(false);
+    }
+  };
+
+  const [pushingCalendarFor, setPushingCalendarFor] = useState<string | null>(null);
+
+  const handlePushCalendarTool = async (assistant: TelnyxAssistant) => {
+    setPushingCalendarFor(assistant.id);
+    try {
+      const data = await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'push_calendar_tool',
+        assistant_id: assistant.id,
+      });
+      if (data.status === 'already_present') {
+        toast({ title: '📅 Calendar Tool Present', description: `${assistant.name} already has the booking tool` });
+      } else {
+        toast({ title: '📅 Calendar Tool Pushed', description: `${assistant.name} now has ${data.tools_count} tools including calendar booking` });
+      }
+      loadAssistants();
+    } catch (err: any) {
+      toast({ title: 'Push Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setPushingCalendarFor(null);
+    }
+  };
+
+  const hasCalendarTool = (assistant: TelnyxAssistant): boolean => {
+    return (assistant.tools || []).some((t: any) =>
+      t.name === 'book_appointment' || t.name === 'check_availability' ||
+      t.webhook?.name === 'book_appointment' || t.webhook?.name === 'check_availability'
+    );
   };
 
   const handleToggleStatus = async (assistant: TelnyxAssistant) => {
@@ -482,6 +566,10 @@ const TelnyxAIManager: React.FC = () => {
               {healthStatus.telnyx_configured ? (healthStatus.telnyx_api_reachable ? 'Connected' : 'API Error') : 'Not Configured'}
             </Badge>
           )}
+          <Button variant="outline" size="sm" onClick={handleSyncNumbers} disabled={syncingNumbers}>
+            <Phone className={`h-4 w-4 mr-1 ${syncingNumbers ? 'animate-spin' : ''}`} />
+            {syncingNumbers ? 'Syncing...' : 'Sync Numbers'}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
             <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? 'animate-spin' : ''}`} />
             Sync
@@ -509,14 +597,63 @@ const TelnyxAIManager: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Calendar Connection Status */}
+      <Card className={googleCalendar ? 'border-green-500/30 bg-green-500/5' : 'border-amber-500/30 bg-amber-500/5'}>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Calendar className={`h-5 w-5 ${googleCalendar ? 'text-green-600' : 'text-amber-600'}`} />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">Calendar</span>
+                  {googleCalendar ? (
+                    <Badge variant="default" className="text-xs gap-1 bg-green-600">
+                      <CheckCircle className="h-2.5 w-2.5" />Connected
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs gap-1 text-amber-700 border-amber-500/50">
+                      <AlertCircle className="h-2.5 w-2.5" />Not Connected
+                    </Badge>
+                  )}
+                </div>
+                {googleCalendar ? (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Synced to <strong>{googleCalendar.provider_account_email || 'Google Calendar'}</strong>
+                    {googleCalendar.calendar_name && <> — {googleCalendar.calendar_name}</>}
+                    {' • '}AI agents can check availability & book appointments automatically
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect Google Calendar so AI agents can check your availability and book appointments during calls
+                  </p>
+                )}
+              </div>
+            </div>
+            {googleCalendar ? (
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => window.location.href = '/?tab=calendar'}>
+                <Settings className="h-3.5 w-3.5" />
+                Manage
+              </Button>
+            ) : (
+              <Button size="sm" className="gap-1" onClick={connectGoogleCalendar} disabled={calendarLoading}>
+                {calendarLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                Connect Google Calendar
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="assistants" className="gap-1"><Bot className="h-3 w-3" />Assistants</TabsTrigger>
-          <TabsTrigger value="variables" className="gap-1"><Variable className="h-3 w-3" />Variables</TabsTrigger>
-          <TabsTrigger value="insights" className="gap-1"><Brain className="h-3 w-3" />Insights</TabsTrigger>
-          <TabsTrigger value="scheduled" className="gap-1"><Calendar className="h-3 w-3" />Scheduled</TabsTrigger>
-          <TabsTrigger value="knowledge" className="gap-1"><Database className="h-3 w-3" />Knowledge</TabsTrigger>
-          <TabsTrigger value="docs" className="gap-1"><BookOpen className="h-3 w-3" />Docs</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-8">
+          <TabsTrigger value="assistants" className="gap-1 text-xs"><Bot className="h-3 w-3" />Assistants</TabsTrigger>
+          <TabsTrigger value="conversations" className="gap-1 text-xs"><PhoneCall className="h-3 w-3" />History</TabsTrigger>
+          <TabsTrigger value="tests" className="gap-1 text-xs"><Zap className="h-3 w-3" />AI Tests</TabsTrigger>
+          <TabsTrigger value="variables" className="gap-1 text-xs"><Variable className="h-3 w-3" />Variables</TabsTrigger>
+          <TabsTrigger value="insights" className="gap-1 text-xs"><Brain className="h-3 w-3" />Insights</TabsTrigger>
+          <TabsTrigger value="scheduled" className="gap-1 text-xs"><Calendar className="h-3 w-3" />Scheduled</TabsTrigger>
+          <TabsTrigger value="knowledge" className="gap-1 text-xs"><Database className="h-3 w-3" />Knowledge</TabsTrigger>
+          <TabsTrigger value="docs" className="gap-1 text-xs"><BookOpen className="h-3 w-3" />Docs</TabsTrigger>
         </TabsList>
 
         {/* ==================== ASSISTANTS TAB ==================== */}
@@ -586,16 +723,35 @@ const TelnyxAIManager: React.FC = () => {
                     </Select>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Greeting (spoken at call start — supports {"{{variables}}"} )</Label>
-                  <Input value={formGreeting} onChange={e => setFormGreeting(e.target.value)} placeholder="Hi {{first_name}}..." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Call Direction</Label>
+                    <Select value={formDirection} onValueChange={(v: 'inbound' | 'outbound' | 'both') => setFormDirection(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="outbound">Outbound</SelectItem>
+                        <SelectItem value="inbound">Inbound</SelectItem>
+                        <SelectItem value="both">Both</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Instructions * (system prompt — supports {"{{variables}}"} )</Label>
-                  <Textarea
+                  <Label>Greeting (spoken at call start)</Label>
+                  <DynamicVariablesInput
+                    value={formGreeting}
+                    onChange={setFormGreeting}
+                    placeholder="Hi {{first_name}}, this is..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Instructions * (system prompt)</Label>
+                  <DynamicVariablesInput
                     value={formInstructions}
-                    onChange={e => setFormInstructions(e.target.value)}
-                    placeholder="You are a professional AI assistant..."
+                    onChange={setFormInstructions}
+                    multiline
+                    rows={8}
+                    placeholder="You are a professional AI assistant... Type {{ to insert variables"
                     className="min-h-[200px] font-mono text-sm"
                   />
                 </div>
@@ -645,6 +801,9 @@ const TelnyxAIManager: React.FC = () => {
                             {a.status}
                           </Badge>
                           {a.is_default && <Badge variant="outline" className="text-xs">Default</Badge>}
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {a.call_direction === 'both' ? '↕ Both' : a.call_direction === 'inbound' ? '↓ Inbound' : '↑ Outbound'}
+                          </Badge>
                           {a.telnyx_assistant_id && (
                             <Badge variant="outline" className="text-xs gap-1">
                               <CheckCircle className="h-2.5 w-2.5" />Synced
@@ -656,12 +815,58 @@ const TelnyxAIManager: React.FC = () => {
                           <span className="flex items-center gap-1"><Brain className="h-3 w-3" />{a.model.split('/').pop()}</span>
                           <span className="flex items-center gap-1"><Mic className="h-3 w-3" />{a.voice.split('.').pop()}</span>
                           <span className="flex items-center gap-1"><Zap className="h-3 w-3" />{a.tools?.length || 0} tools</span>
+                          {hasCalendarTool(a) ? (
+                            <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
+                              <Calendar className="h-3 w-3" />Calendar
+                            </span>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-xs text-destructive hover:text-destructive gap-0.5"
+                              onClick={() => handlePushCalendarTool(a)}
+                              disabled={pushingCalendarFor === a.id}
+                            >
+                              {pushingCalendarFor === a.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <XCircle className="h-3 w-3" />
+                              )}
+                              No Calendar — Push
+                            </Button>
+                          )}
                           {a.enabled_features?.includes('messaging') && (
                             <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />SMS</span>
+                          )}
+                          {a.assigned_phone_numbers && a.assigned_phone_numbers.length > 0 ? (
+                            <span className="flex items-center gap-1 text-primary font-medium">
+                              <Phone className="h-3 w-3" />
+                              {a.assigned_phone_numbers.map(n => {
+                                const d = n.replace(/\D/g, '');
+                                if (d.length === 11 && d.startsWith('1')) return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+                                if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+                                return n;
+                              }).join(', ')}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-destructive/70">
+                              <Phone className="h-3 w-3" />No number
+                            </span>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-2">
+                        {a.telnyx_assistant_id && (
+                          <a
+                            href={`https://portal.telnyx.com/#/ai/assistants/edit/assistant-${a.telnyx_assistant_id}?tab=agent`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open in Telnyx Portal"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                          </a>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -697,6 +902,16 @@ const TelnyxAIManager: React.FC = () => {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* ==================== CONVERSATIONS TAB ==================== */}
+        <TabsContent value="conversations" className="space-y-4">
+          <ConversationHistoryPanel />
+        </TabsContent>
+
+        {/* ==================== AI TESTS TAB ==================== */}
+        <TabsContent value="tests" className="space-y-4">
+          <AITestsPanel />
         </TabsContent>
 
         {/* ==================== VARIABLES TAB ==================== */}
@@ -1056,6 +1271,143 @@ const KnowledgeBasePanel: React.FC = () => {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ConversationHistoryPanel: React.FC = () => {
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('call_logs')
+        .select('id, phone_number, status, outcome, duration_seconds, created_at, call_summary, telnyx_conversation_id, telnyx_assistant_id, provider, sentiment')
+        .not('telnyx_assistant_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setConversations(data || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Conversation History</h3>
+        <Button size="sm" variant="outline" onClick={loadData}><RefreshCw className="h-4 w-4 mr-1" />Refresh</Button>
+      </div>
+      {conversations.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">No Telnyx AI conversations yet. Make a test call to see data here.</CardContent></Card>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left py-2 px-3 font-medium">Conversation ID</th>
+                <th className="text-left py-2 px-3 font-medium">Channel</th>
+                <th className="text-left py-2 px-3 font-medium">User</th>
+                <th className="text-left py-2 px-3 font-medium">Outcome</th>
+                <th className="text-left py-2 px-3 font-medium">Created at</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {conversations.map(c => (
+                <tr key={c.id} className="hover:bg-muted/30">
+                  <td className="py-2 px-3"><code className="text-xs">{c.telnyx_conversation_id?.slice(0, 20) || c.id.slice(0, 8)}...</code></td>
+                  <td className="py-2 px-3"><Badge variant="outline" className="text-xs">phone call</Badge></td>
+                  <td className="py-2 px-3 text-xs">{c.phone_number}</td>
+                  <td className="py-2 px-3"><Badge variant={c.outcome === 'appointment_set' ? 'default' : 'secondary'} className="text-xs">{c.outcome || c.status}</Badge></td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AITestsPanel: React.FC = () => {
+  const [tests, setTests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => { loadTests(); }, []);
+
+  const loadTests = async () => {
+    setLoading(true);
+    try {
+      const data = await callEdgeFunction('telnyx-ai-assistant', { action: 'list_tests' });
+      setTests(data.tests || []);
+    } catch {
+      setTests([]);
+    }
+    setLoading(false);
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">AI Tests</h3>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={loadTests}><RefreshCw className="h-4 w-4 mr-1" />Refresh</Button>
+          <Button size="sm" variant="outline" onClick={() => window.open('https://portal.telnyx.com/#/ai/tests', '_blank')}>
+            <ExternalLink className="h-4 w-4 mr-1" />Manage in Portal
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        AI Tests let you create automated test suites for your assistants. Define test scenarios, run them against specific assistant versions, and compare results.
+      </p>
+
+      {tests.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>No AI tests found. Create tests in the Telnyx portal to validate your assistant behavior.</p>
+            <Button variant="outline" size="sm" className="mt-3 gap-1" onClick={() => window.open('https://portal.telnyx.com/#/ai/tests', '_blank')}>
+              <ExternalLink className="h-3 w-3" />Create Tests in Portal
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left py-2 px-3 font-medium">Status</th>
+                <th className="text-left py-2 px-3 font-medium">Created At</th>
+                <th className="text-left py-2 px-3 font-medium">Version</th>
+                <th className="text-left py-2 px-3 font-medium">Completed At</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {tests.map((t: any, i: number) => (
+                <tr key={i} className="hover:bg-muted/30">
+                  <td className="py-2 px-3 flex items-center gap-1">
+                    <span className={`h-2 w-2 rounded-full ${t.status === 'passed' ? 'bg-green-500' : t.status === 'failed' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                    {t.status}
+                  </td>
+                  <td className="py-2 px-3 text-xs">{t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</td>
+                  <td className="py-2 px-3 text-xs">{t.version || 'main'}</td>
+                  <td className="py-2 px-3 text-xs">{t.completed_at ? new Date(t.completed_at).toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -86,7 +86,22 @@ serve(async (req) => {
     if (action === 'process_webhook') {
       // Handle incoming SMS from Twilio webhook
       const message: WebhookMessage = request.message;
-      
+
+      // Check DNC list before auto-responding
+      const { data: dncEntry } = await supabaseAdmin
+        .from('dnc_list')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('phone_number', message.From)
+        .maybeSingle();
+
+      if (dncEntry) {
+        console.log('[AI SMS] Skipping - contact is on DNC list:', message.From);
+        return new Response(JSON.stringify({ success: true, message: 'Skipped - contact on DNC list' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       // Get or create conversation
       const { data: conversation, error: convError } = await supabaseAdmin
         .from('sms_conversations')
@@ -109,6 +124,9 @@ serve(async (req) => {
           .maybeSingle();
 
         if (createError) throw createError;
+        if (!newConv) {
+          throw new Error('SMS conversation insert returned no data');
+        }
         conversationId = newConv.id;
       }
 
@@ -347,6 +365,14 @@ serve(async (req) => {
         throw new Error('Lead not found: ' + (leadError?.message || 'Unknown'));
       }
 
+      // Check DNC / do_not_call before sending
+      if (lead.do_not_call) {
+        console.log('[AI SMS] Skipping - lead has do_not_call flag:', leadId);
+        return new Response(JSON.stringify({ success: true, message: 'Skipped - lead marked do_not_call' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       // Get or create conversation
       const { data: conversation } = await supabaseAdmin
         .from('sms_conversations')
@@ -426,37 +452,73 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
 
       console.log('[AI SMS] Generated message:', generatedMessage);
 
-      // Get Twilio credentials
-      const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-      const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+      // Determine provider from phone_numbers table
+      const { data: fromPhoneRecord } = await supabaseAdmin
+        .from('phone_numbers')
+        .select('provider')
+        .or(`number.eq.${fromNumber},number.ilike.%${fromNumber.replace(/\D/g, '').slice(-10)}%`)
+        .limit(1)
+        .maybeSingle();
 
-      if (!twilioAccountSid || !twilioAuthToken) {
-        throw new Error('Twilio credentials not configured');
+      const isTelnyxNumber = fromPhoneRecord?.provider === 'telnyx';
+      let providerMessageId: string | null = null;
+
+      if (isTelnyxNumber) {
+        // ===== TELNYX SMS PATH =====
+        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '');
+        if (!telnyxApiKey) throw new Error('TELNYX_API_KEY not configured');
+
+        console.log('[AI SMS] Sending via Telnyx API');
+        const telnyxResponse = await fetch('https://api.telnyx.com/v2/messages', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${telnyxApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromNumber,
+            to: lead.phone_number,
+            text: generatedMessage,
+            type: 'SMS',
+          }),
+        });
+
+        const telnyxData = await telnyxResponse.json();
+        if (!telnyxResponse.ok) {
+          console.error('[AI SMS] Telnyx send failed:', telnyxData);
+          throw new Error(`SMS send failed: ${telnyxData.errors?.[0]?.detail || telnyxResponse.status}`);
+        }
+        providerMessageId = telnyxData.data?.id;
+        console.log('[AI SMS] Message sent via Telnyx:', providerMessageId);
+      } else {
+        // ===== TWILIO SMS PATH =====
+        const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+        const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+        if (!twilioAccountSid || !twilioAuthToken) throw new Error('Twilio credentials not configured');
+
+        console.log('[AI SMS] Sending via Twilio API');
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+        const twilioResponse = await fetch(twilioUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            From: fromNumber,
+            To: lead.phone_number,
+            Body: generatedMessage,
+          }).toString(),
+        });
+
+        const twilioData = await twilioResponse.json();
+        if (!twilioResponse.ok) {
+          console.error('[AI SMS] Twilio send failed:', twilioData);
+          throw new Error(`SMS send failed: ${twilioData.message || twilioResponse.status}`);
+        }
+        providerMessageId = twilioData.sid;
+        console.log('[AI SMS] Message sent via Twilio:', providerMessageId);
       }
-
-      // Send SMS via Twilio
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-      const twilioResponse = await fetch(twilioUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          From: fromNumber,
-          To: lead.phone_number,
-          Body: generatedMessage,
-        }).toString(),
-      });
-
-      const twilioData = await twilioResponse.json();
-
-      if (!twilioResponse.ok) {
-        console.error('[AI SMS] Twilio send failed:', twilioData);
-        throw new Error(`SMS send failed: ${twilioData.message || twilioResponse.status}`);
-      }
-
-      console.log('[AI SMS] Message sent via Twilio:', twilioData.sid);
 
       // Save outbound message to database
       await supabaseAdmin
@@ -471,7 +533,8 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
           direction: 'outbound',
           status: 'sent',
           is_ai_generated: true,
-          provider_message_id: twilioData.sid,
+          provider_type: isTelnyxNumber ? 'telnyx' : 'twilio',
+          provider_message_id: providerMessageId,
           sent_at: new Date().toISOString(),
         });
 
@@ -488,8 +551,9 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
 
       return new Response(JSON.stringify({ 
         success: true, 
-        message_sid: twilioData.sid,
+        message_sid: providerMessageId,
         generated_message: generatedMessage,
+        provider: isTelnyxNumber ? 'telnyx' : 'twilio',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

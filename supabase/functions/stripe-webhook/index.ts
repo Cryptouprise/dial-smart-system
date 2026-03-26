@@ -99,16 +99,17 @@ serve(async (req) => {
     const body = await req.text();
     const signature = req.headers.get("stripe-signature");
 
-    // Verify webhook signature (if configured)
-    if (STRIPE_WEBHOOK_SECRET && signature) {
-      const isValid = await verifySignature(body, signature, STRIPE_WEBHOOK_SECRET);
-      if (!isValid) {
-        console.error("[Stripe Webhook] Invalid signature");
-        return new Response(JSON.stringify({ error: "Invalid signature" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    // Verify webhook signature (mandatory)
+    if (!STRIPE_WEBHOOK_SECRET) {
+      console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured');
+      return new Response(JSON.stringify({ error: 'Webhook not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (!signature) {
+      return new Response(JSON.stringify({ error: 'Missing signature' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const isValid = await verifySignature(body, signature, STRIPE_WEBHOOK_SECRET);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const event: StripeEvent = JSON.parse(body);
@@ -152,16 +153,8 @@ serve(async (req) => {
           console.log(`[Stripe Webhook] Successfully added ${totalCredits} cents to org ${organizationId}`);
         }
 
-        // Log the transaction for audit
-        await supabase.from("credit_transactions").insert({
-          organization_id: organizationId,
-          type: "deposit",
-          amount_cents: totalCredits,
-          description: `Stripe payment: ${session.payment_intent || session.id}`,
-          stripe_payment_id: session.payment_intent || session.id,
-          idempotency_key: `stripe_${event.id}`,
-          created_by: userId || null,
-        }).single();
+        // Note: add_credits RPC already creates the credit_transactions audit log entry
+        // No manual insert needed here — that would create a duplicate transaction
 
         break;
       }

@@ -456,34 +456,31 @@ serve(async (req) => {
       const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
       
       if (callerFormats.length > 0) {
-        // Look up lead by caller's phone number
-        // If we have userId, filter by it; otherwise search all leads
-        let query = supabase
-          .from('leads')
-          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
-          .or(`phone_number.ilike.%${last10}`)
-          .order('updated_at', { ascending: false })
-          .limit(10);
-        
-        if (userId) {
-          query = query.eq('user_id', userId);
-        }
-        
-        const { data: leads, error: leadError } = await query;
-        
-        if (leadError) {
-          console.error('[Retell Webhook] Lead lookup error:', leadError);
-        } else if (leads && leads.length > 0) {
-          // Prefer leads with first_name populated
-          lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
-          // If we didn't have userId, get it from the lead
-          if (!userId && lead.user_id) {
-            userId = lead.user_id;
-            console.log('[Retell Webhook] Got userId from lead:', userId);
-          }
-          console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
+        // Only search for leads if we have a userId to scope the query
+        if (!userId) {
+          console.warn('[Retell Webhook] No userId found for inbound call - cannot identify tenant, skipping lead lookup');
+          // Still create the call log below but without lead association
         } else {
-          console.log('[Retell Webhook] No lead found for caller:', callerNumber);
+          // Look up lead by caller's phone number, always filtered by userId to prevent cross-tenant access
+          let query = supabase
+            .from('leads')
+            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
+            .or(`phone_number.ilike.%${last10}`)
+            .eq('user_id', userId)
+            .order('updated_at', { ascending: false })
+            .limit(10);
+
+          const { data: leads, error: leadError } = await query;
+
+          if (leadError) {
+            console.error('[Retell Webhook] Lead lookup error:', leadError);
+          } else if (leads && leads.length > 0) {
+            // Prefer leads with first_name populated
+            lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
+            console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
+          } else {
+            console.log('[Retell Webhook] No lead found for caller:', callerNumber);
+          }
         }
       }
       
@@ -1437,7 +1434,7 @@ serve(async (req) => {
     // gracefully accept it from webhook metadata when available.
     const webhookOrganizationId = (metadata as any)?.organization_id || (callLog as any)?.organization_id;
 
-    if (webhookOrganizationId && durationSeconds > 0) {
+    if (webhookOrganizationId && durationSeconds >= 0) {
       try {
         console.log(`[Retell Webhook] Finalizing credit cost for org ${webhookOrganizationId}, duration ${durationSeconds}s`);
 
@@ -1518,7 +1515,7 @@ serve(async (req) => {
             // Check for low balance alert
             const { data: credits } = await supabase
               .from('organization_credits')
-              .select('low_balance_threshold_cents, auto_recharge_enabled, auto_recharge_trigger_cents, last_low_balance_alert_at')
+              .select('low_balance_threshold_cents, auto_recharge_enabled, auto_recharge_trigger_cents, auto_recharge_amount_cents, last_low_balance_alert_at')
               .eq('organization_id', webhookOrganizationId)
               .single();
 
@@ -1554,14 +1551,37 @@ serve(async (req) => {
               // Check for auto-recharge
               if (credits.auto_recharge_enabled &&
                   result.new_balance_cents <= (credits.auto_recharge_trigger_cents || 500)) {
-                console.log(`[Retell Webhook] Auto-recharge triggered for org ${webhookOrganizationId}`);
-                // AUTO-RECHARGE: Stripe integration pending (Phase 5)
-                // When implemented, this will:
-                // 1. Check organization has valid stripe_payment_method_id
-                // 2. Invoke Stripe API to charge auto_recharge_amount_cents
-                // 3. Call add_credits() on success
-                // 4. Create system alert on failure
-                // For now, we just log the trigger - manual top-up required
+                console.log('[Retell Webhook] Auto-recharge triggered for org:', webhookOrganizationId);
+                const rechargeAmount = credits.auto_recharge_amount_cents || 5000; // default $50
+                const { error: rechargeError } = await supabase.rpc('add_credits', {
+                  p_organization_id: webhookOrganizationId,
+                  p_amount_cents: rechargeAmount,
+                  p_transaction_type: 'auto_recharge',
+                  p_description: 'Auto-recharge triggered by low balance',
+                  p_stripe_payment_intent_id: null,
+                  p_created_by: null,
+                  p_idempotency_key: `auto_recharge_${webhookOrganizationId}_${Date.now()}`
+                });
+                if (rechargeError) {
+                  console.error('[Retell Webhook] Auto-recharge failed:', rechargeError);
+                  // Create system alert for failed auto-recharge
+                  if (userId) {
+                    await supabase.from('system_alerts').insert({
+                      user_id: userId,
+                      alert_type: 'auto_recharge_failed',
+                      severity: 'error',
+                      title: 'Auto-Recharge Failed',
+                      message: `Auto-recharge of $${(rechargeAmount / 100).toFixed(2)} failed. Please add credits manually.`,
+                      metadata: {
+                        organization_id: webhookOrganizationId,
+                        recharge_amount_cents: rechargeAmount,
+                        error: rechargeError.message
+                      }
+                    });
+                  }
+                } else {
+                  console.log('[Retell Webhook] Auto-recharge successful:', rechargeAmount, 'cents');
+                }
               }
             }
           } else {

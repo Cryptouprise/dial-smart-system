@@ -41,6 +41,7 @@ import LiveProgressDashboard from '@/components/LiveProgressDashboard';
 import BroadcastStepIndicator from '@/components/BroadcastStepIndicator';
 
 const ELEVENLABS_VOICES = [
+  { id: 'kdnRe2koJdOK4Ovxn2DI', name: 'Eryn ⭐⭐' },
   { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam ⭐' },
   { id: 'zrHiDhphv9ZnVXBqCLjz', name: 'Juniper ⭐' },
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah' },

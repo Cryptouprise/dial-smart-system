@@ -179,6 +179,7 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
 
   const loadCallActivity = async () => {
     try {
+      // Get display rows (limited to 20)
       const { data, error } = await supabase
         .from('call_logs')
         .select(`
@@ -193,23 +194,50 @@ export const CampaignCallActivity = ({ campaignId }: CampaignCallActivityProps) 
 
       setCalls(data || []);
 
-      // Calculate comprehensive stats
+      // Get accurate stats counts (separate from display query)
+      const [
+        { count: totalCount },
+        { count: completedCount },
+        { count: failedCount },
+        { count: inProgressCount },
+        { count: ringingCount },
+        { count: noAnswerStatusCount },
+        { count: noAnswerOutcomeCount },
+        { count: voicemailOutcomeCount },
+        { count: machineAmdCount },
+        { count: connectedOutcomeCount },
+        { count: answeredOutcomeCount },
+      ] = await Promise.all([
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'completed'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'failed'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'in-progress'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'ringing'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'no-answer'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('outcome', 'no-answer'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('outcome', 'voicemail'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('amd_result', 'machine'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('outcome', 'connected'),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('outcome', 'answered'),
+      ]);
+
+      const total = totalCount || 0;
+      const completed = completedCount || 0;
+      const failed = failedCount || 0;
+      const inProgress = (inProgressCount || 0) + (ringingCount || 0);
+      const noAnswer = Math.max(noAnswerStatusCount || 0, noAnswerOutcomeCount || 0);
+      const voicemail = Math.max(voicemailOutcomeCount || 0, machineAmdCount || 0);
+      const connected = (connectedOutcomeCount || 0) + (answeredOutcomeCount || 0);
+
+      // Calculate average duration from display rows (acceptable approximation)
       const allCalls = data || [];
-      const completed = allCalls.filter(c => c.status === 'completed').length;
-      const failed = allCalls.filter(c => c.status === 'failed').length;
-      const inProgress = allCalls.filter(c => c.status === 'in-progress' || c.status === 'ringing').length;
-      const noAnswer = allCalls.filter(c => c.status === 'no-answer' || c.outcome === 'no-answer').length;
-      const voicemail = allCalls.filter(c => c.outcome === 'voicemail' || c.amd_result === 'machine').length;
-      const connected = allCalls.filter(c => c.outcome === 'connected' || c.outcome === 'answered' || (c.duration_seconds && c.duration_seconds > 10)).length;
-      
-      // Calculate average duration for completed calls
       const completedCalls = allCalls.filter(c => c.duration_seconds && c.duration_seconds > 0);
-      const avgDuration = completedCalls.length > 0 
+      const avgDuration = completedCalls.length > 0
         ? Math.round(completedCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) / completedCalls.length)
         : 0;
 
       setStats({
-        total: allCalls.length,
+        total,
         completed,
         failed,
         inProgress,

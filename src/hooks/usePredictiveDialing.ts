@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { debouncedErrorToast } from '@/lib/toastDedup';
 import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 interface Lead {
@@ -327,11 +328,7 @@ export const usePredictiveDialing = () => {
       if (error) throw error;
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch leads",
-        variant: "destructive"
-      });
+      debouncedErrorToast(toast, error.message || "Failed to fetch leads");
       return null;
     } finally {
       setIsLoading(false);
@@ -461,11 +458,7 @@ export const usePredictiveDialing = () => {
       if (error) throw error;
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch campaigns",
-        variant: "destructive"
-      });
+      debouncedErrorToast(toast, error.message || "Failed to fetch campaigns");
       return null;
     } finally {
       setIsLoading(false);
@@ -560,11 +553,7 @@ export const usePredictiveDialing = () => {
       if (error) throw error;
       return data;
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch call logs",
-        variant: "destructive"
-      });
+      debouncedErrorToast(toast, error.message || "Failed to fetch call logs");
       return null;
     } finally {
       setIsLoading(false);

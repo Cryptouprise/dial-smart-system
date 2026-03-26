@@ -146,15 +146,17 @@ serve(async (req) => {
     // Check if this is a service-role call (from call-dispatcher)
     const isServiceRoleCall = token === serviceRoleKey;
     
+    // Read body once to avoid double consumption crash
+    const body = await req.json();
+
     let userId: string;
-    
+
     if (isServiceRoleCall) {
       // Service role call - get userId from request body
       console.log('[Outbound Calling] Service role call detected');
-      const body = await req.clone().json();
       if (!body.userId) {
         return new Response(
-          JSON.stringify({ error: 'userId required for service role calls' }), 
+          JSON.stringify({ error: 'userId required for service role calls' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -163,20 +165,20 @@ serve(async (req) => {
     } else {
       // User JWT call - verify the token
       const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      
-      console.log('[Outbound Calling] Auth verification:', { 
-        hasUser: !!user, 
+
+      console.log('[Outbound Calling] Auth verification:', {
+        hasUser: !!user,
         userId: user?.id,
-        error: authError?.message 
+        error: authError?.message
       });
-      
+
       if (authError || !user) {
         console.error('[Outbound Calling] Auth failed:', authError?.message || 'No user');
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: 'Authentication failed: Auth session missing!',
             details: authError?.message || 'Invalid or expired session. Please refresh and try again.'
-          }), 
+          }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -184,7 +186,7 @@ serve(async (req) => {
       console.log('[Outbound Calling] ✓ User verified:', userId);
     }
 
-    
+
     const {
       action,
       campaignId,
@@ -195,7 +197,7 @@ serve(async (req) => {
       retellCallId,
       provider: requestedProvider,
       telnyxAssistantId,
-    }: OutboundCallRequest = await req.json();
+    }: OutboundCallRequest = body;
 
     // Determine provider: explicit request > auto-detect from agentId
     const provider = requestedProvider || 'retell';
@@ -223,9 +225,15 @@ serve(async (req) => {
     let result: any = {};
 
     switch (action) {
-      case 'create_call':
-        if (!phoneNumber || !callerId || !agentId) {
-          throw new Error('Phone number, caller ID, and agent ID are required');
+      case 'create_call': {
+        const isTelnyxProvider = provider === 'telnyx';
+
+        if (!phoneNumber || !callerId) {
+          throw new Error('Phone number and caller ID are required');
+        }
+
+        if (!isTelnyxProvider && !agentId) {
+          throw new Error('Agent ID is required for Retell calls');
         }
         
         // Validate and normalize phone number
@@ -257,6 +265,10 @@ serve(async (req) => {
         if (callLogError) {
           console.error('[Outbound Calling] Call log error:', callLogError);
           throw callLogError;
+        }
+
+        if (!callLog) {
+          throw new Error('Call log insert returned no data — possible RLS policy block');
         }
 
         console.log('[Outbound Calling] Call log created:', callLog.id);
@@ -373,12 +385,16 @@ serve(async (req) => {
           }
 
           // Get Telnyx assistant details
-          const { data: telnyxAssistant } = await supabaseAdmin
+          const { data: telnyxAssistant, error: telnyxAssistantError } = await supabaseAdmin
             .from('telnyx_assistants')
             .select('telnyx_assistant_id, telnyx_texml_app_id, name')
             .eq('id', telnyxAssistantId)
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
+
+          if (telnyxAssistantError) {
+            throw new Error(`Failed to load Telnyx assistant: ${telnyxAssistantError.message}`);
+          }
 
           if (!telnyxAssistant?.telnyx_assistant_id) {
             await supabaseAdmin.from('call_logs').update({
@@ -895,6 +911,7 @@ serve(async (req) => {
           status: 'created' 
         };
         break;
+      }
 
       case 'get_call_status':
         if (!retellCallId) {

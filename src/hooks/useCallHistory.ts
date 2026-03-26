@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { debouncedErrorToast } from '@/lib/toastDedup';
 
 export interface CallRecord {
   id: string;
@@ -212,11 +213,7 @@ export const useCallHistory = () => {
       return formattedCalls;
     } catch (error) {
       console.error('Error fetching calls:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch call history',
-        variant: 'destructive'
-      });
+      debouncedErrorToast(toast, 'Failed to fetch call history');
       return [];
     } finally {
       setIsLoading(false);

@@ -1870,12 +1870,14 @@ export type Database = {
           max_attempts: number | null
           max_calls_per_day: number | null
           name: string
+          provider: string
           retry_delay_minutes: number | null
           script: string | null
           sms_from_number: string | null
           sms_on_no_answer: boolean | null
           sms_template: string | null
           status: string
+          telnyx_assistant_id: string | null
           timezone: string | null
           updated_at: string
           user_id: string
@@ -1892,12 +1894,14 @@ export type Database = {
           max_attempts?: number | null
           max_calls_per_day?: number | null
           name: string
+          provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
           sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
+          telnyx_assistant_id?: string | null
           timezone?: string | null
           updated_at?: string
           user_id: string
@@ -1914,18 +1918,27 @@ export type Database = {
           max_attempts?: number | null
           max_calls_per_day?: number | null
           name?: string
+          provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
           sms_from_number?: string | null
           sms_on_no_answer?: boolean | null
           sms_template?: string | null
           status?: string
+          telnyx_assistant_id?: string | null
           timezone?: string | null
           updated_at?: string
           user_id?: string
           workflow_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_telnyx_assistant_id_fkey"
+            columns: ["telnyx_assistant_id"]
+            isOneToOne: false
+            referencedRelation: "telnyx_assistants"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaigns_workflow_id_fkey"
             columns: ["workflow_id"]
@@ -4482,6 +4495,7 @@ export type Database = {
         Row: {
           allowed_uses: string[] | null
           area_code: string
+          call_direction: string
           caller_name: string | null
           capabilities: Json | null
           carrier_name: string | null
@@ -4520,6 +4534,7 @@ export type Database = {
         Insert: {
           allowed_uses?: string[] | null
           area_code: string
+          call_direction?: string
           caller_name?: string | null
           capabilities?: Json | null
           carrier_name?: string | null
@@ -4558,6 +4573,7 @@ export type Database = {
         Update: {
           allowed_uses?: string[] | null
           area_code?: string
+          call_direction?: string
           caller_name?: string | null
           capabilities?: Json | null
           carrier_name?: string | null
@@ -5933,6 +5949,8 @@ export type Database = {
       }
       telnyx_assistants: {
         Row: {
+          assigned_phone_number_ids: string[] | null
+          call_direction: string
           created_at: string
           data_retention: boolean | null
           description: string | null
@@ -5958,6 +5976,8 @@ export type Database = {
           voice: string | null
         }
         Insert: {
+          assigned_phone_number_ids?: string[] | null
+          call_direction?: string
           created_at?: string
           data_retention?: boolean | null
           description?: string | null
@@ -5983,6 +6003,8 @@ export type Database = {
           voice?: string | null
         }
         Update: {
+          assigned_phone_number_ids?: string[] | null
+          call_direction?: string
           created_at?: string
           data_retention?: boolean | null
           description?: string | null

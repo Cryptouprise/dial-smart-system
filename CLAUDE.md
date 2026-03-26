@@ -1708,3 +1708,125 @@ These edge functions were created/modified but NOT deployed:
 - The Autonomous Agent UI previously exposed only a subset of autonomous settings; several server-supported toggles existed in DB/function logic but were not persisted via `useAutonomousAgent`.
 - Full `npm run lint` and full `npm run test` currently have unrelated pre-existing failures in this repository baseline; use targeted validation for this change set.
 - Manual UI verification required a local fake session in browser storage because auth is enforced on `/`.
+
+---
+
+### March 4, 2026 - Telnyx Model Sync + Dropdown Parity Fix
+
+**What was built/fixed/changed**
+- Fixed Telnyx model dropdown parity by switching `list_models` to fetch live model IDs from `GET /v2/ai/models`.
+- Added OpenAI/Anthropic alias IDs (both prefixed and legacy unprefixed forms), including GPT-4.1, so portal-selected model IDs always appear in the UI dropdown.
+- Hardened `sync_assistants` so each assistant pulls full details (`GET /v2/ai/assistants/{id}`) before local upsert, ensuring model/voice/tools reflect actual portal settings.
+- Increased sync list page size to 250 assistants so larger accounts sync more reliably.
+- Updated UI sync action to refresh both assistants and model/voice catalogs immediately after Sync.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `src/components/TelnyxAIManager.tsx`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function and frontend changes committed in codebase; no migration required.
+
+**Gotchas / lessons learned**
+- Portal/model ID mismatch can happen when one side uses `openai/gpt-4.1` and another uses `gpt-4.1`; both IDs must be supported in dropdowns and sync logic.
+- Listing assistants alone may omit fields in some APIs; pulling per-assistant details avoids stale model configuration during sync.
+
+---
+
+### March 7, 2026 - Telnyx Test Call Variable Resolution Fix
+
+**What was built/fixed/changed**
+- Hardened `test_call` lead matching for duplicate phone records by prioritizing exact matches with real personalization data and strongly de-prioritizing `do_not_call=true` placeholder rows.
+- Changed lookup to use deterministic phone variants (`+1XXXXXXXXXX`, `1XXXXXXXXXX`, `XXXXXXXXXX`) before fallback partial matching.
+- Added fallback extraction from `custom_fields` for `first_name`, `last_name`, `full_name`, address fields, and timezone when base columns are blank.
+- Added richer selection logs showing candidate count and why the chosen lead won.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated; no migration required.
+
+**Gotchas / lessons learned**
+- Newer leads can be empty inbound placeholders, so recency must not outrank personalization quality.
+- `do_not_call` rows should never be preferred for test personalization when a richer duplicate exists.
+- Phone matching must support all common stored variants to avoid false “lead not found” behavior.
+
+---
+
+### March 7, 2026 - Campaign 3.7 Telnyx Dispatch Unblock (FIXED + DEPLOYED)
+
+**What was built/fixed/changed**
+- Confirmed the active blocker was **timing + provider mismatch**: campaign queue had pending calls scheduled in the future, and Telnyx campaigns could still pull non-Telnyx caller IDs.
+- Updated `call-dispatcher` to use **provider-specific caller ID pools**:
+  - Retell campaigns → numbers with `retell_phone_id` + `rotation_enabled=true`
+  - Telnyx campaigns → `provider='telnyx'` numbers only (prefers `rotation_enabled=true`, safely falls back to active Telnyx numbers for manual continuity)
+- Updated dispatch behavior so **manual user dispatch** (`action: 'dispatch'`, non-internal call) can bypass `scheduled_at` gating for immediate testing.
+- Added clearer queue failure notes when no valid provider-specific numbers are available.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- `call-dispatcher` deployed successfully.
+- Verified in logs: `5/5 Telnyx numbers available` and fallback warning for non-rotation Telnyx numbers.
+
+**Gotchas / lessons learned**
+- Telnyx campaigns must never use mixed-provider caller IDs (Twilio/Retell), or call creation will fail at provider API level.
+- Long pending schedules can look like “broken dispatch”; manual dispatch override is required for fast QA loops.
+
+---
+
+### March 7, 2026 - Queue Recycling Fix for Campaign 3.7 (DISPATCH RECOVERY)
+
+**What was built/fixed/changed**
+- Fixed a hard blocker where leads with existing terminal queue rows (`failed`/`completed`) could never be re-queued.
+- Updated campaign queuing in `call-dispatcher` from `insert` to `upsert` on `(campaign_id, lead_id)` so terminal rows are recycled into fresh `pending` attempts.
+- Reset queue payload on recycle (`status='pending'`, `attempts=0`, `scheduled_at=now`) to guarantee immediate eligibility on manual dispatch.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated (no migration required).
+
+**Gotchas / lessons learned**
+- The unique constraint `dialing_queues_campaign_lead_unique` must be handled intentionally in dispatcher logic; plain inserts silently strand leads after max-attempt failures.
+- Re-queue behavior must be idempotent to support repeated “test again now” loops without manual DB cleanup.
+
+---
+
+### March 7, 2026 - Immediate Dispatch Flag Parity Fix (FORCE BUTTON)
+
+**What was built/fixed/changed**
+- Fixed `call-dispatcher` so UI calls using `body: { immediate: true }` are treated as manual dispatch and bypass `scheduled_at` gating, matching `action: 'dispatch'` behavior.
+- Added explicit log line when immediate override is active to make diagnostics clearer during test runs.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated (no migration required).
+
+**Gotchas / lessons learned**
+- Several UI widgets call dispatcher with `immediate: true` (not `action: 'dispatch'`), so manual bypass logic must support both payload patterns.
+- Retry-delay scheduling can look like a dispatcher failure unless immediate mode bypasses the schedule gate consistently.

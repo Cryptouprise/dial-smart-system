@@ -32,6 +32,8 @@ interface WizardState {
   maxCallsPerDay: number;
   smsOnNoAnswer: boolean;
   smsTemplate: string;
+  provider: 'retell' | 'telnyx';
+  telnyxAssistantId: string;
 }
 
 const WORKFLOW_TEMPLATES = [
@@ -90,6 +92,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [agents, setAgents] = useState<Array<{ agent_id: string; agent_name: string }>>([]);
+  const [telnyxAssistants, setTelnyxAssistants] = useState<Array<{ id: string; name: string }>>([]);
   const [workflows, setWorkflows] = useState<Array<{ id: string; name: string; steps?: any[] }>>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   
@@ -103,6 +106,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     maxCallsPerDay: 2,
     smsOnNoAnswer: true,
     smsTemplate: "Hi {{first_name}}, I just tried to reach you. When's a good time to chat?",
+    provider: 'retell',
+    telnyxAssistantId: '',
   });
 
   const steps = [
@@ -116,8 +121,24 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     if (open) {
       fetchAgents();
       fetchWorkflows();
+      fetchTelnyxAssistants();
     }
   }, [open]);
+
+  const fetchTelnyxAssistants = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.user) return;
+      const { data } = await supabase
+        .from('telnyx_assistants')
+        .select('id, name')
+        .eq('user_id', session.session.user.id)
+        .eq('status', 'active');
+      setTelnyxAssistants(data || []);
+    } catch (error) {
+      console.error('Failed to fetch Telnyx assistants:', error);
+    }
+  };
 
   const fetchAgents = async () => {
     try {
@@ -200,7 +221,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
   };
 
   const handleCreate = async () => {
-    if (!wizardState.name || !wizardState.workflowId || !wizardState.agentId) {
+    const hasAgent = wizardState.provider === 'retell' ? wizardState.agentId : wizardState.telnyxAssistantId;
+    if (!wizardState.name || !wizardState.workflowId || !hasAgent) {
       toast({ title: 'Missing Fields', description: 'Please complete all required fields', variant: 'destructive' });
       return;
     }
@@ -217,14 +239,16 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           name: wizardState.name,
           description: wizardState.description,
           workflow_id: wizardState.workflowId,
-          agent_id: wizardState.agentId,
+          agent_id: wizardState.provider === 'retell' ? wizardState.agentId : null,
           calling_hours_start: wizardState.callingHoursStart,
           calling_hours_end: wizardState.callingHoursEnd,
           max_calls_per_day: wizardState.maxCallsPerDay,
           sms_on_no_answer: wizardState.smsOnNoAnswer,
           sms_template: wizardState.smsTemplate,
           status: 'draft',
-        })
+          provider: wizardState.provider,
+          telnyx_assistant_id: wizardState.provider === 'telnyx' ? wizardState.telnyxAssistantId : null,
+        } as any)
         .select()
         .single();
 
@@ -245,7 +269,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
     switch (currentStep) {
       case 0: return wizardState.name.length > 0;
       case 1: return wizardState.workflowId.length > 0;
-      case 2: return wizardState.agentId.length > 0;
+      case 2: return wizardState.provider === 'retell' ? wizardState.agentId.length > 0 : wizardState.telnyxAssistantId.length > 0;
       default: return true;
     }
   };
@@ -397,28 +421,70 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>AI Voice Agent *</Label>
+                <Label>Voice AI Provider</Label>
                 <Select
-                  value={wizardState.agentId}
-                  onValueChange={(v) => setWizardState(prev => ({ ...prev, agentId: v }))}
+                  value={wizardState.provider}
+                  onValueChange={(v: 'retell' | 'telnyx') => setWizardState(prev => ({ ...prev, provider: v, agentId: '', telnyxAssistantId: '' }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an AI agent..." />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        {agent.agent_name || agent.agent_id}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="retell">Retell AI</SelectItem>
+                    <SelectItem value="telnyx">Telnyx AI</SelectItem>
                   </SelectContent>
                 </Select>
-                {agents.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No agents found. Create one in the Retell AI section first.
-                  </p>
-                )}
               </div>
+
+              {wizardState.provider === 'retell' ? (
+                <div className="space-y-2">
+                  <Label>Retell AI Agent *</Label>
+                  <Select
+                    value={wizardState.agentId}
+                    onValueChange={(v) => setWizardState(prev => ({ ...prev, agentId: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an AI agent..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                          {agent.agent_name || agent.agent_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {agents.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No agents found. Create one in the Retell AI section first.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Telnyx AI Assistant *</Label>
+                  <Select
+                    value={wizardState.telnyxAssistantId}
+                    onValueChange={(v) => setWizardState(prev => ({ ...prev, telnyxAssistantId: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a Telnyx assistant..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {telnyxAssistants.map((assistant) => (
+                        <SelectItem key={assistant.id} value={assistant.id}>
+                          {assistant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {telnyxAssistants.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label>Max Calls Per Day (per lead)</Label>

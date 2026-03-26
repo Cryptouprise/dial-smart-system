@@ -113,14 +113,27 @@ async function callWithRetell(
         requestBody.override_agent_id = agentId;
       }
       
-      const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${retellKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      let response: Response;
+      try {
+        response = await fetch('https://api.retellai.com/v2/create-phone-call', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${retellKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Retell API call timed out after 30 seconds');
+        }
+        throw fetchError;
+      }
 
       if (response.status === 429) {
         console.warn(`Retell rate limited, waiting before retry (attempt ${attempt + 1}/${MAX_RETRIES_ON_429})`);
@@ -374,17 +387,30 @@ async function callWithTwilio(
 
     console.log(`Twilio call params: To=${toNumber}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
 
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: requestBody,
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: requestBody,
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        return { success: false, provider: 'twilio', error: 'Twilio API call timed out after 30 seconds' };
       }
-    );
+      return { success: false, provider: 'twilio', error: fetchError.message };
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -415,21 +441,34 @@ async function callWithTelnyx(
   try {
     console.log(`Making Telnyx call from ${fromNumber} to ${toNumber}${connectionId ? ` via connection ${connectionId}` : ''}`);
     
-    const response = await fetch('https://api.telnyx.com/v2/calls', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        connection_id: connectionId || '', // Use SIP connection if provided
-        to: toNumber,
-        from: fromNumber,
-        webhook_url: webhookUrl,
-        answering_machine_detection: 'detect',
-        custom_headers: metadata,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch('https://api.telnyx.com/v2/calls', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...(connectionId ? { connection_id: connectionId } : {}),
+          to: toNumber,
+          from: fromNumber,
+          webhook_url: webhookUrl,
+          answering_machine_detection: 'detect',
+          custom_headers: { ...metadata, audio_url: audioUrl },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        return { success: false, provider: 'telnyx', error: 'Telnyx API call timed out after 30 seconds' };
+      }
+      return { success: false, provider: 'telnyx', error: fetchError.message };
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -527,17 +566,30 @@ async function callWithTwilioSipTrunk(
 
     console.log(`Twilio SIP trunk call params: To=${callTo}, From=${fromNumber}, StatusCallback=${statusCallbackUrl}`);
 
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: requestBody,
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: requestBody,
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        return { success: false, provider: 'twilio-sip', error: 'Twilio SIP trunk API call timed out after 30 seconds' };
       }
-    );
+      return { success: false, provider: 'twilio-sip', error: fetchError.message };
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1620,14 +1672,8 @@ serve(async (req) => {
                 console.log(`Stored call_sid ${callResult.callId} on queue item ${item.id}`);
               }
               
-              // Update phone number usage
-              await supabase
-                .from('phone_numbers')
-                .update({ 
-                  daily_calls: (callerNumber.daily_calls || 0) + 1,
-                  last_used: new Date().toISOString(),
-                })
-                .eq('id', callerNumber.id);
+              // Update phone number usage atomically via RPC
+              await supabase.rpc('increment_daily_calls', { phone_last_10: callerNumber.number.slice(-10) });
             } else {
               // Track rate limit hits
               if (callResult.rateLimited) {

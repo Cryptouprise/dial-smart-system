@@ -111,7 +111,7 @@ export const useRetellAI = () => {
   const updatePhoneNumber = async (phoneNumber: string, agentId?: string, nickname?: string) => {
     setIsLoading(true);
     try {
-      const inboundWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-inbound-webhook';
+      const inboundWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retell-inbound-webhook`;
 
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
         body: {
@@ -466,7 +466,7 @@ export const useRetellAI = () => {
         return results;
       }
 
-      const agentWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-call-webhook';
+      const agentWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retell-call-webhook`;
 
       for (const agent of agents) {
         try {
@@ -493,7 +493,7 @@ export const useRetellAI = () => {
       }
 
       // 2) Configure inbound webhook on ALL phone numbers (this is what makes {{first_name}} work on pickup)
-      const inboundWebhookUrl = 'https://emonjusymdripmkvtttc.supabase.co/functions/v1/retell-inbound-webhook';
+      const inboundWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retell-inbound-webhook`;
       try {
         const { data: numbersData, error: listErr } = await supabase.functions.invoke('retell-phone-management', {
           body: { action: 'list' },

@@ -28,7 +28,7 @@ const QuickTestCampaign = () => {
     try {
       const { data, error } = await supabase
         .from('campaigns')
-        .select('id, name, status, agent_id')
+        .select('id, name, status, agent_id, provider, telnyx_assistant_id')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
@@ -166,7 +166,7 @@ const QuickTestCampaign = () => {
         .eq('id', selectedCampaign);
 
       // Dispatch calls
-      const { data, error } = await supabase.functions.invoke('call-dispatcher');
+      const { data, error } = await supabase.functions.invoke('call-dispatcher', { body: { action: 'dispatch' } });
 
       if (error) throw error;
 
@@ -246,11 +246,11 @@ const QuickTestCampaign = () => {
           </div>
         </div>
 
-        {selectedCampaignData && !selectedCampaignData.agent_id && (
+        {selectedCampaignData && !selectedCampaignData.agent_id && !selectedCampaignData.telnyx_assistant_id && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
             <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200 text-sm">
               <AlertCircle className="h-4 w-4" />
-              <span>Campaign has no agent assigned. Assign a Retell agent in Campaign settings.</span>
+              <span>Campaign has no agent assigned. Assign a Retell or Telnyx agent in Campaign settings.</span>
             </div>
           </div>
         )}

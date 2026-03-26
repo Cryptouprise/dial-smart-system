@@ -6,10 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Brain, TrendingUp, AlertCircle, CheckCircle, Activity } from 'lucide-react';
 import { usePredictiveDialingAlgorithm } from '@/hooks/usePredictiveDialingAlgorithm';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const PredictiveDialingEngine = () => {
   const { metrics, calculatePredictiveMetrics, learnFromHistory } = usePredictiveDialingAlgorithm();
-  
+
   const [params, setParams] = useState({
     avgCallDuration: 180, // 3 minutes
     avgAnswerRate: 40,
@@ -18,12 +19,13 @@ const PredictiveDialingEngine = () => {
     targetAbandonmentRate: 3
   });
 
+  const debouncedParams = useDebounce(params, 500);
   const [historicalInsights, setHistoricalInsights] = useState<any>(null);
 
   useEffect(() => {
-    calculatePredictiveMetrics(params);
+    calculatePredictiveMetrics(debouncedParams);
     loadInsights();
-  }, [params]);
+  }, [debouncedParams]);
 
   const loadInsights = async () => {
     const insights = await learnFromHistory();

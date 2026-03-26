@@ -260,10 +260,28 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         const withinHours = await checkCallingHours(campaignId);
         const dncViolations = await checkDNCCompliance(campaignId);
 
+        // Get today's call count
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const { count: callsTodayCount } = await supabase
+          .from('call_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId)
+          .gte('created_at', today.toISOString());
+
+        // Get this hour's call count
+        const thisHour = new Date();
+        thisHour.setMinutes(0, 0, 0);
+        const { count: callsThisHourCount } = await supabase
+          .from('call_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId)
+          .gte('created_at', thisHour.toISOString());
+
         setMetrics({
           abandonmentRate,
-          callsToday: 0, // TODO: Implement
-          callsThisHour: 0, // TODO: Implement
+          callsToday: callsTodayCount || 0,
+          callsThisHour: callsThisHourCount || 0,
           complianceViolations: check.violations.length,
           isWithinCallingHours: withinHours,
           dncViolations

@@ -63,6 +63,7 @@ const ELEVENLABS_VOICE_ID_BY_RETELL_VOICE_ID: Record<string, string> = {
   '11labs-Rachel': '21m00Tcm4TlvDq8ikWAM',
   '11labs-Dorothy': 'ThT5KcBeYPX3keUQqHPh',
   '11labs-Freya': 'jsCqWAovK2LkecY7zXl4',
+  '11labs-Eryn': 'kdnRe2koJdOK4Ovxn2DI',
 };
 
 // Pricing data based on Retell AI's pricing page

@@ -236,12 +236,33 @@ serve(async (req) => {
       };
 
       // Enable memory: load last 5 conversations with this phone number
+      // conversation_query uses PostgREST-style filtering on conversation metadata
       response.memory = {
-        conversation_query: `metadata->telnyx_end_user_target=eq.${endUserNumber}&limit=5&order=last_message_at.desc`,
+        conversation_query: `metadata->phone_number=eq.${normalizedPhone}&limit=5&order=last_message_at.desc`,
       };
 
-      // If insights are configured, load recent insights too
-      // (Uses insight_query to selectively recall specific insight results)
+      // Load insight-scoped memory if insights exist for this lead
+      const { data: recentInsights } = await supabaseAdmin
+        .from('telnyx_conversation_insights')
+        .select('telnyx_conversation_id, insights')
+        .eq('lead_id', lead.id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (recentInsights && recentInsights.length > 0) {
+        // Build a summary of past call insights for the AI
+        const insightSummaries = recentInsights.map((i: any) => {
+          const ins = i.insights || {};
+          return Object.entries(ins)
+            .map(([k, v]: [string, any]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+            .join('; ');
+        }).filter(Boolean);
+
+        if (insightSummaries.length > 0) {
+          response.dynamic_variables.past_call_insights = insightSummaries.join(' | ').substring(0, 1000);
+          response.dynamic_variables.total_past_conversations = String(recentInsights.length);
+        }
+      }
 
     } else {
       console.log('[Telnyx DynVars] No lead found for', normalizedPhone);
@@ -255,9 +276,9 @@ serve(async (req) => {
         lead_status: 'unknown',
       };
 
-      // Still enable memory even without a lead
+      // Still enable memory even without a lead match
       response.memory = {
-        conversation_query: `metadata->telnyx_end_user_target=eq.${endUserNumber}&limit=3&order=last_message_at.desc`,
+        conversation_query: `metadata->phone_number=eq.${normalizedPhone}&limit=3&order=last_message_at.desc`,
       };
     }
 
