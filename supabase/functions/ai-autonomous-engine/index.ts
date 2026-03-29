@@ -363,7 +363,7 @@ async function executeApprovedActions(
 
         case 'send_followup_sms': {
           // Send SMS via edge function
-          const { lead_id, phone_number, message } = action.action_params;
+          const { lead_id, phone_number, message, variant_id } = action.action_params;
           const resp = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
             method: 'POST',
             headers: {
@@ -379,6 +379,18 @@ async function executeApprovedActions(
             }),
           });
           result = await resp.json();
+
+          // Track SMS variant stats if a variant was used
+          if (variant_id) {
+            try {
+              await supabase.rpc('update_sms_variant_stats', { p_variant_id: variant_id });
+              await supabase.from('sms_variant_assignments').insert({
+                variant_id,
+                lead_id,
+                message_sent: message,
+              });
+            } catch { /* variant tracking non-critical */ }
+          }
           break;
         }
 
@@ -445,7 +457,7 @@ async function executeApprovedActions(
 
         case 'journey_ai_sms': {
           // Send AI-generated SMS via ai-sms-processor
-          const { lead_id, phone_number, prompt, lead_name } = action.action_params;
+          const { lead_id, phone_number, prompt, lead_name, variant_id: aiVariantId } = action.action_params;
           const resp = await fetch(`${supabaseUrl}/functions/v1/ai-sms-processor`, {
             method: 'POST',
             headers: {
@@ -462,6 +474,18 @@ async function executeApprovedActions(
             }),
           });
           result = await resp.json();
+
+          // Track SMS variant stats if a variant was used
+          if (aiVariantId) {
+            try {
+              await supabase.rpc('update_sms_variant_stats', { p_variant_id: aiVariantId });
+              await supabase.from('sms_variant_assignments').insert({
+                variant_id: aiVariantId,
+                lead_id,
+                message_sent: prompt,
+              });
+            } catch { /* variant tracking non-critical */ }
+          }
           break;
         }
 
@@ -1180,8 +1204,8 @@ async function manageLeadJourneys(
   userId: string,
   settings: AutonomousSettings,
   maxDailyTouches: number
-): Promise<{ processed: number; actions_queued: number; stage_changes: number; decisions: string[] }> {
-  const result = { processed: 0, actions_queued: 0, stage_changes: 0, decisions: [] as string[] };
+): Promise<{ processed: number; actions_queued: number; stage_changes: number; perpetual_touches: number; decisions: string[] }> {
+  const result = { processed: 0, actions_queued: 0, stage_changes: 0, perpetual_touches: 0, decisions: [] as string[] };
 
   // 1. Seed default playbook if user has none
   try {
@@ -1625,6 +1649,7 @@ async function manageLeadJourneys(
             }).eq('id', journey.id);
 
             result.actions_queued++;
+            result.perpetual_touches++;
             touchesRemaining--;
           }
         }
@@ -1674,19 +1699,59 @@ async function manageLeadJourneys(
       case 'sms': {
         actionType = 'send_followup_sms';
         let message = config.template || `Hey ${name}, just following up. Do you have a few minutes to chat?`;
+
+        // SMS copy A/B testing: check for variants on this playbook rule
+        let selectedVariantId: string | null = null;
+        try {
+          const { data: variant } = await supabase.rpc('select_sms_variant', {
+            p_user_id: userId,
+            p_context_type: 'playbook_rule',
+            p_context_id: bestRule.id,
+          });
+          if (variant && variant.length > 0) {
+            message = variant[0].message_template;
+            selectedVariantId = variant[0].variant_id;
+          }
+        } catch { /* no variants configured, use default */ }
+
         message = message.replace(/\{\{first_name\}\}/g, name);
-        actionParams = { lead_id: lead.id, phone_number: lead.phone_number, message };
+        message = message.replace(/\{\{days_since_touch\}\}/g, String(Math.round(daysSinceTouch)));
+        actionParams = {
+          lead_id: lead.id,
+          phone_number: lead.phone_number,
+          message,
+          variant_id: selectedVariantId,
+        };
         break;
       }
 
       case 'ai_sms':
       case 'nurture_sms': {
         actionType = 'journey_ai_sms';
+
+        // SMS copy A/B testing: check for variants on this playbook rule
+        let smsPrompt = config.prompt || `Write a friendly follow-up SMS for ${name}. Under 160 chars.`;
+        let selectedVariantId: string | null = null;
+        try {
+          const { data: variant } = await supabase.rpc('select_sms_variant', {
+            p_user_id: userId,
+            p_context_type: 'playbook_rule',
+            p_context_id: bestRule.id,
+          });
+          if (variant && variant.length > 0) {
+            // If the variant has a template, use it directly as an SMS (not AI-generated)
+            // This allows A/B testing fixed copy vs AI copy
+            smsPrompt = variant[0].message_template;
+            selectedVariantId = variant[0].variant_id;
+          }
+        } catch { /* no variants configured, use default */ }
+
         actionParams = {
           lead_id: lead.id,
           phone_number: lead.phone_number,
-          prompt: config.prompt || `Write a friendly follow-up SMS for ${name}. Under 160 chars.`,
+          prompt: smsPrompt,
           lead_name: name,
+          variant_id: selectedVariantId,
         };
         break;
       }
@@ -1753,6 +1818,9 @@ async function manageLeadJourneys(
   }
   if (result.actions_queued > 0) {
     result.decisions.push(`[JOURNEY] ${result.actions_queued} follow-up actions queued for ${result.processed} leads`);
+  }
+  if (result.perpetual_touches > 0) {
+    result.decisions.push(`[PERPETUAL] ${result.perpetual_touches} perpetual follow-up touches queued`);
   }
 
   return result;
@@ -3023,6 +3091,703 @@ async function generateBriefing(
 }
 
 // ---------------------------------------------------------------------------
+// SMS Copy A/B Testing Optimizer
+// Analyzes underperforming SMS variants and generates AI-improved alternatives
+// ---------------------------------------------------------------------------
+
+async function optimizeSmsCopy(
+  supabase: any,
+  userId: string
+): Promise<{ decisions: string[]; variants_created: number }> {
+  const decisions: string[] = [];
+  let variantsCreated = 0;
+
+  try {
+    // 1. Find variants with 50+ sends that are underperforming (reply_rate < 5%)
+    const { data: underperformers } = await supabase
+      .from('sms_copy_variants')
+      .select('id, context_type, context_id, variant_label, message_template, times_sent, reply_rate, positive_rate, appointment_rate, is_control')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .gte('times_sent', 50)
+      .lt('reply_rate', 0.05);
+
+    if (!underperformers || underperformers.length === 0) {
+      return { decisions, variants_created: 0 };
+    }
+
+    for (const variant of underperformers) {
+      // 2. Check how many variants already exist for this context (cap at 4)
+      const { count: existingCount } = await supabase
+        .from('sms_copy_variants')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('context_type', variant.context_type)
+        .eq('context_id', variant.context_id)
+        .eq('is_active', true);
+
+      if ((existingCount || 0) >= 4) {
+        decisions.push(`[SMS A/B] Variant "${variant.variant_label}" underperforming (${(variant.reply_rate * 100).toFixed(1)}% reply rate) but already at 4-variant cap for context ${variant.context_id}`);
+        continue;
+      }
+
+      // 3. Generate an AI-improved version via LLM
+      let newMessage: string | null = null;
+      let aiReasoning = '';
+      try {
+        const mod = await import('../_shared/openrouter.ts');
+        const callLLMJson = mod.callLLMJson;
+
+        const { data: improvement } = await callLLMJson({
+          model: 'fast',
+          system: 'You are an SMS copywriting expert. You optimize SMS messages for higher reply rates. Keep messages under 160 characters. Be conversational, not salesy.',
+          prompt: `This SMS template has a ${(variant.reply_rate * 100).toFixed(1)}% reply rate after ${variant.times_sent} sends. Improve it to get more replies.
+
+Current message: "${variant.message_template}"
+
+Stats: ${variant.times_sent} sent, ${(variant.reply_rate * 100).toFixed(1)}% reply rate, ${(variant.positive_rate * 100).toFixed(1)}% positive rate, ${(variant.appointment_rate * 100).toFixed(1)}% appointment rate.
+
+Return JSON: { "improved_message": "your improved SMS text under 160 chars", "reasoning": "why this should perform better" }`,
+          temperature: 0.8,
+        });
+
+        if (improvement?.improved_message) {
+          newMessage = improvement.improved_message;
+          aiReasoning = improvement.reasoning || 'AI-generated improvement of underperforming copy';
+        }
+      } catch {
+        // LLM unavailable — generate a simple variation by restructuring
+        // Swap to a question-based format which typically gets higher reply rates
+        const original = variant.message_template;
+        if (!original.includes('?')) {
+          newMessage = original.replace(/\.\s*$/, '? What do you think?').slice(0, 160);
+          aiReasoning = 'Fallback: converted statement to question (questions get ~20% higher reply rates)';
+        }
+      }
+
+      if (!newMessage) continue;
+
+      // 4. Determine next variant label (A -> B -> C -> D)
+      const labels = ['A', 'B', 'C', 'D'];
+      const nextLabel = labels[(existingCount || 1)] || `V${(existingCount || 1) + 1}`;
+
+      // 5. Create the new variant
+      const { error: insertError } = await supabase.from('sms_copy_variants').insert({
+        user_id: userId,
+        context_type: variant.context_type,
+        context_id: variant.context_id,
+        variant_label: nextLabel,
+        message_template: newMessage,
+        traffic_weight: 50, // Start at equal weight with UCB1 to explore
+        is_control: false,
+        is_active: true,
+        ai_generated: true,
+        ai_reasoning: aiReasoning,
+        parent_variant_id: variant.id,
+      });
+
+      if (!insertError) {
+        variantsCreated++;
+        decisions.push(`[SMS A/B] Created variant "${nextLabel}" to challenge "${variant.variant_label}" (${(variant.reply_rate * 100).toFixed(1)}% reply rate, ${variant.times_sent} sends). Reason: ${aiReasoning}`);
+      }
+    }
+  } catch (err: any) {
+    decisions.push(`[SMS A/B] Error during optimization: ${err.message}`);
+  }
+
+  return { decisions, variants_created: variantsCreated };
+}
+
+// ---------------------------------------------------------------------------
+// AI Strategy Planner — Goal-driven workflow/playbook/pipeline generation
+// ---------------------------------------------------------------------------
+
+interface StrategyPlan {
+  reasoning: string;
+  pipelines: Array<{ name: string; stages: string[] }>;
+  workflows: Array<{
+    name: string;
+    purpose: string;
+    template_id?: string;
+    target_leads: { status: string; min_count: number };
+    steps?: Array<{ step_number: number; step_type: string; step_config: Record<string, unknown>; delay_hours?: number }> | null;
+  }>;
+  playbook_rules: Array<{
+    rule_name: string;
+    journey_stage: string;
+    action_type: string;
+    delay_hours: number;
+    priority: number;
+    action_config: Record<string, unknown>;
+  }>;
+  estimated_conversion_rate: number;
+  estimated_daily_calls: number;
+  estimated_appointments_per_day: number;
+}
+
+/**
+ * Analyze pending campaign strategies — query leads, call LLM, produce a proposed plan.
+ */
+async function planCampaignStrategy(
+  supabase: any,
+  userId: string
+): Promise<{ analyzed: number; decisions: string[] }> {
+  const decisions: string[] = [];
+  let analyzed = 0;
+
+  try {
+    // 1. Check for pending strategies in 'analyzing' status
+    const { data: pendingStrategies, error: fetchErr } = await supabase
+      .from('ai_campaign_strategies')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'analyzing')
+      .order('created_at', { ascending: true })
+      .limit(3);
+
+    if (fetchErr || !pendingStrategies || pendingStrategies.length === 0) {
+      return { analyzed: 0, decisions };
+    }
+
+    for (const strategy of pendingStrategies) {
+      try {
+        console.log(`[StrategyPlanner] Analyzing strategy ${strategy.id}: ${strategy.goal_description}`);
+
+        // 2. Analyze leads — counts by status, source, tags, recency
+        const [leadsRes, statusRes, sourceRes, dispositionRes, templatesRes] = await Promise.all([
+          supabase.from('leads')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId),
+          supabase.from('leads')
+            .select('status')
+            .eq('user_id', userId),
+          supabase.from('leads')
+            .select('lead_source')
+            .eq('user_id', userId),
+          supabase.from('call_logs')
+            .select('disposition')
+            .eq('user_id', userId)
+            .not('disposition', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(500),
+          supabase.from('sequence_templates')
+            .select('id, name, description, category, estimated_touchpoints, estimated_days_to_complete')
+            .or(`is_system_template.eq.true,user_id.eq.${userId}`),
+        ]);
+
+        const totalLeads = leadsRes.count || 0;
+
+        // Compute status distribution
+        const statusDist: Record<string, number> = {};
+        for (const lead of (statusRes.data || [])) {
+          const s = lead.status || 'unknown';
+          statusDist[s] = (statusDist[s] || 0) + 1;
+        }
+
+        // Compute source distribution
+        const sourceDist: Record<string, number> = {};
+        for (const lead of (sourceRes.data || [])) {
+          const s = lead.lead_source || 'unknown';
+          sourceDist[s] = (sourceDist[s] || 0) + 1;
+        }
+
+        // Compute disposition distribution from call logs
+        const dispDist: Record<string, number> = {};
+        for (const log of (dispositionRes.data || [])) {
+          const d = log.disposition || 'unknown';
+          dispDist[d] = (dispDist[d] || 0) + 1;
+        }
+
+        // Compute average lead age (rough: midpoint between oldest lead and now)
+        const { data: ageData } = await supabase
+          .from('leads')
+          .select('created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        const oldestLead = ageData?.[0]?.created_at;
+        const avgDaysOld = oldestLead
+          ? Math.round((Date.now() - new Date(oldestLead).getTime()) / (1000 * 60 * 60 * 24) / 2)
+          : 0;
+
+        // Format template names for prompt
+        const templates = (templatesRes.data || []).map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          touchpoints: t.estimated_touchpoints,
+          days: t.estimated_days_to_complete,
+        }));
+
+        // 3. Call LLM to generate strategy
+        let callLLMJsonFn: any;
+        try {
+          const mod = await import('../_shared/openrouter.ts');
+          callLLMJsonFn = mod.callLLMJson;
+        } catch {
+          console.warn('[StrategyPlanner] OpenRouter not available, falling back to rule-based strategy');
+          const fallbackPlan = buildRuleBasedStrategy(strategy.goal_type, totalLeads, statusDist, templates);
+          await supabase
+            .from('ai_campaign_strategies')
+            .update({
+              status: 'proposed',
+              analysis: {
+                lead_count: totalLeads,
+                status_distribution: statusDist,
+                source_distribution: sourceDist,
+                disposition_distribution: dispDist,
+                avg_days_old: avgDaysOld,
+                ...fallbackPlan,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', strategy.id);
+
+          analyzed++;
+          decisions.push(`[STRATEGY] Analyzed strategy "${strategy.goal_description}" with rule-based planner (${totalLeads} leads). Status: proposed.`);
+          continue;
+        }
+
+        const systemPrompt = `You are an elite sales strategist AI. Analyze this lead data and create an execution plan.
+
+GOAL: ${strategy.goal_description}
+GOAL TYPE: ${strategy.goal_type}
+
+LEAD DATA:
+- Total leads: ${totalLeads}
+- By status: ${JSON.stringify(statusDist)}
+- By source: ${JSON.stringify(sourceDist)}
+- Average age: ${avgDaysOld} days
+- Previous call outcomes: ${JSON.stringify(dispDist)}
+
+AVAILABLE SEQUENCE TEMPLATES:
+${templates.map((t: any) => `- ${t.name} (${t.category}): ${t.description} [id: ${t.id}, ${t.touchpoints} touches over ${t.days} days]`).join('\n')}
+
+Create a comprehensive strategy. Return JSON with this exact structure:
+{
+  "reasoning": "2-3 sentences explaining your strategic approach",
+  "pipelines": [
+    { "name": "string - pipeline board name", "stages": ["stage1", "stage2", "stage3"] }
+  ],
+  "workflows": [
+    {
+      "name": "workflow name",
+      "purpose": "what this workflow does",
+      "template_id": "UUID of sequence template to use, or null for custom",
+      "target_leads": { "status": "new|contacted|callback|stalled", "min_count": 0 },
+      "steps": null
+    }
+  ],
+  "playbook_rules": [
+    {
+      "rule_name": "descriptive_snake_case_name",
+      "journey_stage": "fresh|attempting|engaged|hot|nurturing|stalled|dormant",
+      "action_type": "call|sms|ai_sms|wait",
+      "delay_hours": 0,
+      "priority": 1,
+      "action_config": {}
+    }
+  ],
+  "estimated_conversion_rate": 0.05,
+  "estimated_daily_calls": 100,
+  "estimated_appointments_per_day": 5
+}
+
+Rules:
+- Use template_id when an existing template matches the need. Set steps to null when using a template.
+- Only include custom steps array when no template fits.
+- Playbook rules should complement (not duplicate) the default playbook rules.
+- Be realistic with conversion estimates based on the lead data quality.
+- Create 1-2 pipelines max, 1-3 workflows, and 3-8 playbook rules.`;
+
+        const { data: plan } = await callLLMJsonFn({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: 'Generate the strategy now.' },
+          ],
+          tier: 'balanced',
+          temperature: 0.4,
+          max_tokens: 3000,
+        }) as { data: StrategyPlan };
+
+        if (!plan || !plan.reasoning) {
+          throw new Error('LLM returned invalid strategy plan');
+        }
+
+        // Update strategy with analysis results — status becomes 'proposed'
+        await supabase
+          .from('ai_campaign_strategies')
+          .update({
+            status: 'proposed',
+            analysis: {
+              lead_count: totalLeads,
+              status_distribution: statusDist,
+              source_distribution: sourceDist,
+              disposition_distribution: dispDist,
+              avg_days_old: avgDaysOld,
+              reasoning: plan.reasoning,
+              recommended_pipelines: plan.pipelines || [],
+              recommended_workflows: plan.workflows || [],
+              recommended_playbook_rules: plan.playbook_rules || [],
+              estimated_conversion_rate: plan.estimated_conversion_rate || 0,
+              estimated_daily_calls: plan.estimated_daily_calls || 0,
+              estimated_appointments_per_day: plan.estimated_appointments_per_day || 0,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', strategy.id);
+
+        analyzed++;
+        decisions.push(
+          `[STRATEGY] Analyzed strategy "${strategy.goal_description}" via LLM (${totalLeads} leads). ` +
+          `Plan: ${(plan.pipelines || []).length} pipelines, ${(plan.workflows || []).length} workflows, ` +
+          `${(plan.playbook_rules || []).length} playbook rules. Status: proposed.`
+        );
+
+      } catch (stratErr: any) {
+        console.error(`[StrategyPlanner] Error analyzing strategy ${strategy.id}:`, stratErr);
+        await supabase
+          .from('ai_campaign_strategies')
+          .update({
+            status: 'rejected',
+            analysis: { error: stratErr.message },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', strategy.id);
+        decisions.push(`[STRATEGY] Failed to analyze strategy ${strategy.id}: ${stratErr.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('[StrategyPlanner] Fatal error:', err);
+    decisions.push(`[STRATEGY] Fatal error: ${err.message}`);
+  }
+
+  return { analyzed, decisions };
+}
+
+/**
+ * Rule-based fallback strategy when LLM is unavailable.
+ */
+function buildRuleBasedStrategy(
+  goalType: string,
+  totalLeads: number,
+  statusDist: Record<string, number>,
+  templates: Array<{ id: string; name: string; category: string }>
+): {
+  reasoning: string;
+  recommended_pipelines: any[];
+  recommended_workflows: any[];
+  recommended_playbook_rules: any[];
+  estimated_conversion_rate: number;
+  estimated_daily_calls: number;
+  estimated_appointments_per_day: number;
+} {
+  const newLeads = statusDist['new'] || statusDist['New'] || 0;
+  const contactedLeads = statusDist['contacted'] || statusDist['Contacted'] || 0;
+
+  const templateMap: Record<string, string[]> = {
+    appointment_setting: ['speed_to_lead', 'appointment_setting', 'appointment_confirmation'],
+    lead_qualification: ['speed_to_lead', 'nurture_drip'],
+    database_reactivation: ['database_reactivation', 'win_back'],
+    solar_sales: ['speed_to_lead', 'appointment_setting', 'nurture_drip'],
+    home_services: ['speed_to_lead', 'appointment_setting'],
+    real_estate: ['speed_to_lead', 'nurture_drip'],
+    insurance_sales: ['speed_to_lead', 'nurture_drip', 'appointment_setting'],
+    debt_collection: ['collections'],
+    custom: ['speed_to_lead', 'nurture_drip'],
+  };
+
+  const desiredCategories = templateMap[goalType] || templateMap['custom'];
+  const matchedTemplates = templates.filter((t: any) => desiredCategories.includes(t.category));
+
+  const workflows = matchedTemplates.slice(0, 3).map((t: any) => ({
+    name: `${goalType} - ${t.name}`,
+    purpose: `Auto-generated from ${t.name} template`,
+    template_id: t.id,
+    target_leads: { status: 'new', min_count: 0 },
+    steps: null,
+  }));
+
+  const readableGoal = goalType.replace(/_/g, ' ');
+  const playbook_rules = [
+    {
+      rule_name: `${goalType}_immediate_call`,
+      journey_stage: 'fresh',
+      action_type: 'call',
+      delay_hours: 0.08,
+      priority: 1,
+      action_config: { urgency: 'immediate', source: 'strategy_planner' },
+    },
+    {
+      rule_name: `${goalType}_sms_after_miss`,
+      journey_stage: 'attempting',
+      action_type: 'ai_sms',
+      delay_hours: 0.5,
+      priority: 2,
+      action_config: { prompt: `Follow up on missed call about ${readableGoal}. Be helpful and brief.`, source: 'strategy_planner' },
+    },
+    {
+      rule_name: `${goalType}_stalled_reengagement`,
+      journey_stage: 'stalled',
+      action_type: 'ai_sms',
+      delay_hours: 72,
+      priority: 3,
+      action_config: { prompt: `Re-engage a stalled lead about ${readableGoal}. Use curiosity, not pressure.`, source: 'strategy_planner' },
+    },
+  ];
+
+  return {
+    reasoning: `Rule-based strategy for ${readableGoal} with ${totalLeads} leads (${newLeads} new, ${contactedLeads} contacted). Using ${matchedTemplates.length} matching templates and 3 playbook rules.`,
+    recommended_pipelines: [{
+      name: `${readableGoal.replace(/\b\w/g, c => c.toUpperCase())} Pipeline`,
+      stages: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Closed Won', 'Closed Lost'],
+    }],
+    recommended_workflows: workflows,
+    recommended_playbook_rules: playbook_rules,
+    estimated_conversion_rate: 0.03,
+    estimated_daily_calls: Math.min(totalLeads, 200),
+    estimated_appointments_per_day: Math.round(Math.min(totalLeads, 200) * 0.03),
+  };
+}
+
+/**
+ * Execute approved strategies — create pipelines, workflows, playbook rules in the database.
+ */
+async function executeCampaignStrategy(
+  supabase: any,
+  userId: string
+): Promise<{ executed: number; decisions: string[] }> {
+  const decisions: string[] = [];
+  let executed = 0;
+
+  try {
+    const { data: approvedStrategies, error: fetchErr } = await supabase
+      .from('ai_campaign_strategies')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'approved')
+      .order('approved_at', { ascending: true })
+      .limit(3);
+
+    if (fetchErr || !approvedStrategies || approvedStrategies.length === 0) {
+      return { executed: 0, decisions };
+    }
+
+    for (const strategy of approvedStrategies) {
+      try {
+        console.log(`[StrategyExecutor] Executing strategy ${strategy.id}: ${strategy.goal_description}`);
+
+        const analysis = strategy.analysis || {};
+        const recommendedPipelines = analysis.recommended_pipelines || [];
+        const recommendedWorkflows = analysis.recommended_workflows || [];
+        const recommendedRules = analysis.recommended_playbook_rules || [];
+
+        const createdPipelines: any[] = [];
+        const createdWorkflows: any[] = [];
+        const createdRules: any[] = [];
+
+        // --- Create pipeline boards (each stage is a board entry with a position) ---
+        for (const pipeline of recommendedPipelines) {
+          try {
+            const stages = pipeline.stages || [];
+            const pipelineEntries: any[] = [];
+
+            for (let i = 0; i < stages.length; i++) {
+              const { data: board, error: boardErr } = await supabase
+                .from('pipeline_boards')
+                .insert({
+                  user_id: userId,
+                  name: stages[i],
+                  description: `${pipeline.name} — Stage ${i + 1}`,
+                  position: i,
+                  settings: { pipeline_group: pipeline.name, strategy_id: strategy.id },
+                })
+                .select('id, name')
+                .single();
+
+              if (boardErr) {
+                console.warn(`[StrategyExecutor] Failed to create pipeline stage "${stages[i]}":`, boardErr.message);
+              } else {
+                pipelineEntries.push({ id: board.id, name: board.name, position: i });
+              }
+            }
+
+            if (pipelineEntries.length > 0) {
+              createdPipelines.push({
+                name: pipeline.name,
+                stages: pipelineEntries.map((e: any) => e.name),
+                board_ids: pipelineEntries.map((e: any) => e.id),
+              });
+            }
+          } catch (pipeErr: any) {
+            console.warn(`[StrategyExecutor] Pipeline creation error:`, pipeErr.message);
+          }
+        }
+
+        // --- Create workflows with steps (from template or custom) ---
+        for (const wf of recommendedWorkflows) {
+          try {
+            const wfType = wf.purpose?.includes('follow') ? 'follow_up'
+              : wf.purpose?.includes('appointment') ? 'appointment_reminder'
+              : 'mixed';
+
+            const { data: workflow, error: wfErr } = await supabase
+              .from('campaign_workflows')
+              .insert({
+                user_id: userId,
+                name: wf.name,
+                description: wf.purpose,
+                workflow_type: wfType,
+                active: true,
+                settings: { strategy_id: strategy.id, template_id: wf.template_id || null },
+              })
+              .select('id, name')
+              .single();
+
+            if (wfErr) {
+              console.warn(`[StrategyExecutor] Failed to create workflow "${wf.name}":`, wfErr.message);
+              continue;
+            }
+
+            // Resolve steps: prefer template, fall back to custom steps
+            let steps: any[] = [];
+            if (wf.template_id) {
+              const { data: template } = await supabase
+                .from('sequence_templates')
+                .select('steps, times_used')
+                .eq('id', wf.template_id)
+                .single();
+
+              if (template?.steps) {
+                steps = Array.isArray(template.steps) ? template.steps : [];
+              }
+
+              // Increment template usage counter
+              await supabase
+                .from('sequence_templates')
+                .update({ times_used: (template?.times_used || 0) + 1 })
+                .eq('id', wf.template_id)
+                .catch(() => {});
+            } else if (wf.steps && Array.isArray(wf.steps)) {
+              steps = wf.steps;
+            }
+
+            // Insert workflow steps
+            let stepsCreated = 0;
+            for (const step of steps) {
+              const { error: stepErr } = await supabase
+                .from('workflow_steps')
+                .insert({
+                  workflow_id: workflow.id,
+                  step_number: step.step_number || (stepsCreated + 1),
+                  step_type: step.step_type || 'wait',
+                  step_config: step.step_config || {},
+                  true_branch_step: step.true_branch_step || null,
+                  false_branch_step: step.false_branch_step || null,
+                  branch_conditions: step.branch_conditions || [],
+                  loop_back_to_step: step.loop_back_to_step || null,
+                  max_loop_count: step.max_loop_count || 0,
+                });
+
+              if (!stepErr) stepsCreated++;
+            }
+
+            createdWorkflows.push({
+              workflow_id: workflow.id,
+              name: workflow.name,
+              purpose: wf.purpose,
+              step_count: stepsCreated,
+            });
+          } catch (wfCreateErr: any) {
+            console.warn(`[StrategyExecutor] Workflow creation error:`, wfCreateErr.message);
+          }
+        }
+
+        // --- Create playbook rules (skip duplicates by rule_name) ---
+        for (const rule of recommendedRules) {
+          try {
+            const { data: existing } = await supabase
+              .from('followup_playbook')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('rule_name', rule.rule_name)
+              .limit(1);
+
+            if (existing && existing.length > 0) {
+              console.log(`[StrategyExecutor] Playbook rule "${rule.rule_name}" already exists, skipping`);
+              continue;
+            }
+
+            const { data: newRule, error: ruleErr } = await supabase
+              .from('followup_playbook')
+              .insert({
+                user_id: userId,
+                rule_name: rule.rule_name,
+                description: `Auto-generated by strategy planner for: ${strategy.goal_description}`,
+                journey_stage: rule.journey_stage,
+                action_type: rule.action_type,
+                delay_hours: rule.delay_hours || 0,
+                priority: rule.priority || 5,
+                action_config: { ...(rule.action_config || {}), strategy_id: strategy.id },
+                enabled: true,
+                is_system_default: false,
+              })
+              .select('id, rule_name')
+              .single();
+
+            if (ruleErr) {
+              console.warn(`[StrategyExecutor] Failed to create playbook rule "${rule.rule_name}":`, ruleErr.message);
+            } else {
+              createdRules.push({
+                rule_id: newRule.id,
+                rule_name: newRule.rule_name,
+                stage: rule.journey_stage,
+                action_type: rule.action_type,
+              });
+            }
+          } catch (ruleCreateErr: any) {
+            console.warn(`[StrategyExecutor] Playbook rule creation error:`, ruleCreateErr.message);
+          }
+        }
+
+        // --- Update strategy record with created resources, mark active ---
+        await supabase
+          .from('ai_campaign_strategies')
+          .update({
+            status: 'active',
+            created_pipelines: createdPipelines,
+            created_workflows: createdWorkflows,
+            created_playbook_rules: createdRules,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', strategy.id);
+
+        executed++;
+        decisions.push(
+          `[STRATEGY EXECUTED] "${strategy.goal_description}": ` +
+          `${createdPipelines.length} pipelines (${createdPipelines.reduce((s: number, p: any) => s + (p.stages?.length || 0), 0)} stages), ` +
+          `${createdWorkflows.length} workflows (${createdWorkflows.reduce((s: number, w: any) => s + (w.step_count || 0), 0)} steps), ` +
+          `${createdRules.length} playbook rules. Status: active.`
+        );
+
+        console.log(`[StrategyExecutor] Strategy ${strategy.id} executed successfully`);
+
+      } catch (execErr: any) {
+        console.error(`[StrategyExecutor] Error executing strategy ${strategy.id}:`, execErr);
+        decisions.push(`[STRATEGY] Failed to execute strategy ${strategy.id}: ${execErr.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.error('[StrategyExecutor] Fatal error:', err);
+    decisions.push(`[STRATEGY] Fatal error: ${err.message}`);
+  }
+
+  return { executed, decisions };
+}
+
+// ---------------------------------------------------------------------------
 // Main Engine Loop - Runs per user
 // ---------------------------------------------------------------------------
 
@@ -3149,6 +3914,7 @@ async function runForUser(
         result.journey_processed = journeyResult.processed;
         result.journey_actions = journeyResult.actions_queued;
         result.journey_stage_changes = journeyResult.stage_changes;
+        result.perpetual_touches = journeyResult.perpetual_touches;
         result.actions_queued += journeyResult.actions_queued;
         result.decisions.push(...journeyResult.decisions);
       } catch (journeyErr: any) {
@@ -3274,6 +4040,17 @@ async function runForUser(
       }
     }
 
+    // 15b. SMS Copy A/B Testing Optimizer — auto-improve underperforming SMS variants
+    if ((settings as any).manage_lead_journeys) {
+      try {
+        const smsCopyResult = await optimizeSmsCopy(supabase, userId);
+        result.sms_variants_optimized = smsCopyResult.variants_created;
+        result.decisions.push(...smsCopyResult.decisions);
+      } catch (smsOptErr: any) {
+        result.errors.push(`SMS copy optimization: ${smsOptErr.message}`);
+      }
+    }
+
     // 16. Campaign Resource Allocator — Daily War Room (9/10 feature)
     if ((settings as any).enable_daily_planning) {
       try {
@@ -3371,6 +4148,7 @@ serve(async (req) => {
         `journey=${userResult.journey_processed}/${userResult.journey_actions} actions/${userResult.journey_stage_changes} stage changes, ` +
         `plan=${userResult.battle_plan_generated ? 'generated' : 'skipped'}, ` +
         `insights=${userResult.insights_discovered}, rules=${userResult.rules_created}, ` +
+        `perpetual=${userResult.perpetual_touches}, sms_variants=${userResult.sms_variants_optimized}, ` +
         `decisions=${userResult.decisions.length}`
       );
     }
