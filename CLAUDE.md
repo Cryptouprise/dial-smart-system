@@ -1815,6 +1815,38 @@ These edge functions were created/modified but NOT deployed:
 
 ---
 
+### March 29, 2026 - Statistical Significance Testing & Message Effectiveness Tracking (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+- Added 3 statistical utility functions to the autonomous engine: `chiSquare2x2` (Yates-corrected chi-square for 2x2 contingency tables), `statisticalConfidence` (converts p-value + sample size into 0-1 confidence with sample penalty), `wilsonScore` (Wilson score interval for proportion confidence with small-sample correction).
+- Replaced all 6 crude confidence calculations in pattern detection sub-functions (`detectTimingPatterns`, `detectAttemptGapPatterns`, `detectSequencePatterns`, `detectSourcePatterns`, `detectDecayPatterns`, `detectNumberPatterns`) with proper chi-square significance testing. Old formula was `0.5 + sample_size / constant` which had no statistical basis. New formula runs chi-square on best-vs-worst group, derives p-value, then applies sample-size penalty.
+- Added `trackMessageEffectiveness` function that queries `sms_copy_variants` with 20+ sends, runs chi-square test against the overall baseline reply rate, computes effectiveness score (weighted: positive replies x2, appointments x5, opt-outs x-3), and upserts results into `message_effectiveness` table with proper `p_value`, `is_significant` flag (p<0.05 + 50+ sends), and `confidence_level`.
+- Wired `trackMessageEffectiveness` into `runForUser` as step 15c (after SMS copy optimization), gated by `manage_lead_journeys` setting.
+- Added `messages_tracked: number` to `EngineResult` interface and initialization.
+
+**Key files modified**
+- `supabase/functions/ai-autonomous-engine/index.ts` — +120 lines: 3 stat utility functions, 6 confidence replacements, `trackMessageEffectiveness` function, wiring into runForUser, EngineResult update
+
+**Database changes made**
+- None (relies on existing `sms_copy_variants` table; `message_effectiveness` table must exist with unique constraint on `user_id,message_hash,effective_for_stage`)
+
+**Deployment status**
+- Not deployed. Requires `message_effectiveness` table to be created before deployment.
+
+**Deployment required:**
+```bash
+supabase functions deploy ai-autonomous-engine
+```
+
+**Gotchas / lessons learned**
+- Chi-square with Yates' correction is conservative for small samples but prevents false positives that the old linear formula allowed.
+- `statisticalConfidence` returns 0 for samples under `minSamples` (default 30), preventing premature pattern claims.
+- `wilsonScore` is defined but not yet called — available for future use in variant ranking or proven-winner scoring.
+- The `message_effectiveness` upsert assumes a unique constraint on `(user_id, message_hash, effective_for_stage)` — this must be created in the migration.
+- Message hash is a simple first-50-chars lowercase alphanumeric — sufficient for dedup but not cryptographically robust.
+
+---
+
 ### March 29, 2026 - Perpetual Follow-Up & SMS Copy A/B Testing (NOT DEPLOYED)
 
 **What was built/fixed/changed**
