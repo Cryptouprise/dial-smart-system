@@ -57,6 +57,10 @@ interface EngineResult {
   insights_discovered: number;
   rules_created: number;
   briefing_generated: boolean;
+  strategies_analyzed: number;
+  strategies_executed: number;
+  perpetual_touches: number;
+  sms_variants_optimized: number;
   decisions: string[];
   errors: string[];
 }
@@ -1564,7 +1568,70 @@ async function manageLeadJourneys(
       (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType)
     );
 
-    if (stageRules.length === 0) continue;
+    // --- PERPETUAL FOLLOW-UP: If no playbook rule matched and perpetual is enabled ---
+    let matchedRule = true; // track whether a playbook rule was found
+    if (stageRules.length === 0) {
+      matchedRule = false;
+
+      // Check perpetual follow-up eligibility
+      const perpetualEnabled = (settings as any).perpetual_followup_enabled;
+      if (perpetualEnabled && newStage !== 'closed_won' && newStage !== 'closed_lost') {
+        const stopDispositions: string[] = (settings as any).perpetual_stop_on || ['dnc', 'not_interested', 'unsubscribe'];
+        const shouldStop = lastDisposition && stopDispositions.includes(lastDisposition);
+
+        if (!shouldStop) {
+          const minGap = (settings as any).perpetual_min_gap_days || 7;
+          const maxGap = (settings as any).perpetual_max_gap_days || 30;
+          const maxDays = (settings as any).perpetual_max_days || 365;
+          const touchCount = journey.perpetual_touch_count || 0;
+
+          // Adaptive gap: starts at minGap, grows toward maxGap as touches increase
+          const adaptiveGap = Math.min(maxGap, minGap + (touchCount * 3));
+
+          const daysInJourney = journey.first_contact_at
+            ? (now.getTime() - new Date(journey.first_contact_at).getTime()) / (1000 * 60 * 60 * 24)
+            : 0;
+
+          if (daysSinceTouch >= adaptiveGap && (maxDays === 0 || daysInJourney <= maxDays)) {
+            const channels: string[] = (settings as any).perpetual_channels || ['sms', 'call'];
+            const channelIndex = touchCount % channels.length;
+            const channel = channels[channelIndex];
+            const actionType = channel === 'call' ? 'journey_call' : 'journey_ai_sms';
+
+            const perpetualParams = channel === 'call'
+              ? { lead_id: lead.id, phone_number: lead.phone_number }
+              : {
+                  lead_id: lead.id,
+                  phone_number: lead.phone_number,
+                  prompt: `Write a brief, value-driven follow-up SMS for ${lead.first_name || 'there'}. This is touch #${touchCount + 1} over time. Be helpful and casual, not salesy. Under 160 chars.`,
+                  lead_name: lead.first_name || 'there',
+                };
+
+            await queueJourneyAction(supabase, userId, lead, journey, settings, {
+              action_type: actionType,
+              params: perpetualParams,
+              priority: 8, // Lower priority than explicit playbook rules
+              reasoning: `[PERPETUAL] Touch #${touchCount + 1} via ${channel} (adaptive gap: ${adaptiveGap}d, actual gap: ${Math.round(daysSinceTouch)}d, stage: ${newStage})`,
+              rule_name: 'perpetual_followup',
+              next_action_at: null,
+            });
+
+            // Update perpetual tracking on journey state
+            await supabase.from('lead_journey_state').update({
+              perpetual_touch_count: touchCount + 1,
+              perpetual_last_touch_at: now.toISOString(),
+              perpetual_next_touch_at: new Date(now.getTime() + adaptiveGap * 24 * 60 * 60 * 1000).toISOString(),
+              next_action_channel_rotation: (journey.next_action_channel_rotation || 0) + 1,
+            }).eq('id', journey.id);
+
+            result.actions_queued++;
+            touchesRemaining--;
+          }
+        }
+      }
+      // No playbook rule and no perpetual touch — skip this lead
+      continue;
+    }
 
     // Pick the highest-priority matching rule
     const bestRule = stageRules[0]; // Already sorted by priority
@@ -2980,6 +3047,10 @@ async function runForUser(
     insights_discovered: 0,
     rules_created: 0,
     briefing_generated: false,
+    strategies_analyzed: 0,
+    strategies_executed: 0,
+    perpetual_touches: 0,
+    sms_variants_optimized: 0,
     decisions: [],
     errors: [],
   };
