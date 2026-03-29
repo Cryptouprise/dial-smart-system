@@ -513,6 +513,57 @@ See `WHITE_LABEL_SYSTEM.md` for:
 
 ## Recent Fixes Log
 
+### March 29, 2026 - Predictive ML Functions for Autonomous Engine (NOT DEPLOYED)
+
+**Summary:** Added three predictive ML functions to the autonomous engine: logistic regression conversion model training, lead conversion scoring, and churn risk detection. These give the engine the ability to train its own ML model from historical call data, score all active leads with conversion probabilities, and proactively detect leads at risk of being lost.
+
+**What Was Built:**
+
+| Function | Purpose | Frequency |
+|----------|---------|-----------|
+| `trainConversionModel()` | Trains logistic regression from last 500 call outcomes. 9 features (recency, calls, interest, engagement, intent timeline, decision maker, sentiment, source, days in stage). 20-iteration gradient descent. Computes accuracy + AUC. Stores in `ml_models`. | Weekly (skips if model <7 days old) |
+| `predictLeadConversion()` | Loads trained model, scores up to 2,000 active leads. Segments: high_value (>0.7), nurture (0.4-0.7), at_risk (0.2-0.4), low_priority (<0.2). Computes expected_value = probability * conversion_value - cost_so_far. Upserts to `lead_predictions`. | Daily (skips if already scored today) |
+| `detectChurnRisk()` | Scores all active journey leads on 6 risk factors: days since response, days since touch, negative sentiment, missed callbacks, consecutive no-answers, high attempts with low interest. Levels: critical/high/medium/low. Auto-queues reengagement actions for critical/high. Inserts to `churn_risk_events`. | Every engine run |
+
+**Key Files Modified:**
+- `supabase/functions/ai-autonomous-engine/index.ts` — Added 3 functions (~550 lines total), 3 new EngineResult fields, 3 new steps (15d/15e/15f), updated logging
+
+**New EngineResult Fields:**
+- `leads_scored` (number) — Count of leads scored by ML model
+- `churn_risks_detected` (number) — Count of at-risk leads detected
+- `model_trained` (boolean) — Whether a new model was trained this run
+
+**New Engine Steps (now 24 total):**
+```
+15d. Train conversion model (weekly, requires 50+ samples with 25+/25- class balance)
+15e. Score leads with ML predictions (daily)
+15f. Detect churn risks (every run)
+```
+
+**Database Tables Required (need migration):**
+- `ml_models` — Stores trained model coefficients, accuracy, AUC, metadata
+- `lead_predictions` — Per-lead conversion probability, segment, expected value (unique on user_id,lead_id)
+- `churn_risk_events` — Churn detection events with risk scores and factors
+
+**Deployment Required:**
+```bash
+# 1. Create ml_models, lead_predictions, churn_risk_events tables (migration needed)
+# 2. Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Build Validation:** `tsc --noEmit --skipLibCheck` passes clean (0 errors).
+
+**Gotchas / Lessons Learned:**
+- AUC computation uses O(n^2) concordant pair counting — acceptable for 500 samples but would need sampling for larger datasets
+- Features are normalized to 0-1 range (recency capped at 90 days, calls at 10, days_in_stage at 30) for stable gradient descent
+- Churn detection runs every engine cycle (every 5 min) but reengagement actions require approval (status='pending') to prevent spam
+- Lead scoring checks if predictions already exist for today before re-running to avoid unnecessary DB writes
+- All three functions are gated by `manage_lead_journeys` setting — won't activate unless journey management is enabled
+- Source encoding is ordinal (referral=1.0 down to unknown=0.1) — simple but effective for logistic regression
+
+---
+
 ### March 29, 2026 - Autonomous Workflow Intelligence System + Test Coverage Expansion (NOT DEPLOYED)
 
 **Summary:** Two major bodies of work: (1) Massive test coverage expansion from ~8% to ~25% with 487 new tests across 20 files, and (2) Autonomous Workflow Intelligence System — the AI can now set a goal, create its own workflows with real branching logic, A/B test SMS copy, perpetually follow up leads, and self-optimize conversion rates.
