@@ -1711,6 +1711,38 @@ These edge functions were created/modified but NOT deployed:
 
 ---
 
+### March 29, 2026 - Perpetual Follow-Up & SMS Copy A/B Testing (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+- Added perpetual follow-up logic to the autonomous engine's journey management system. When no playbook rule matches a lead, the engine now checks if perpetual follow-up is enabled and queues adaptive-gap touches via alternating channels (SMS/call). Gap starts at `perpetual_min_gap_days` and grows by 3 days per touch up to `perpetual_max_gap_days`. Stops on terminal dispositions (dnc, not_interested, unsubscribe) or after `perpetual_max_days`.
+- Added SMS copy A/B testing integration. When the journey engine queues an SMS action (sms or ai_sms), it now calls `select_sms_variant` RPC to pick the best variant via UCB1. Variant ID is passed through the action queue and tracked via `update_sms_variant_stats` + `sms_variant_assignments` after execution.
+- Added `optimizeSmsCopy()` function that finds underperforming SMS variants (50+ sends, <5% reply rate), generates AI-improved alternatives via OpenRouter LLM, and creates new variant records (capped at 4 per context). Wired into runForUser as step 15b.
+- Added `perpetual_touches` and `sms_variants_optimized` to EngineResult for tracking.
+
+**Key files modified**
+- `supabase/functions/ai-autonomous-engine/index.ts` — Perpetual follow-up in manageLeadJourneys(), SMS variant selection in playbook action building, variant stat tracking in executeApprovedActions(), new optimizeSmsCopy() function, EngineResult additions
+
+**Database changes made**
+- None (relies on tables/columns from `20260329_autonomous_workflow_intelligence.sql` migration)
+
+**Deployment status**
+- Not deployed. Requires migration `20260329_autonomous_workflow_intelligence.sql` to be run first.
+
+**Deployment required:**
+```bash
+# 1. Run migration (adds perpetual columns, sms_copy_variants table, select_sms_variant function, etc.)
+# 2. Deploy:
+supabase functions deploy ai-autonomous-engine
+```
+
+**Gotchas / lessons learned**
+- Perpetual follow-up only activates when NO playbook rule matches AND `perpetual_followup_enabled=true` in autonomous_settings. It is the fallback, not a replacement for playbook rules.
+- SMS variant selection uses `select_sms_variant` RPC which does UCB1 (exploration/exploitation). With <20 total sends it falls back to random selection.
+- The `optimizeSmsCopy` function uses OpenRouter fast tier (Gemini Flash) for cost efficiency. Falls back to a simple statement-to-question conversion if LLM is unavailable.
+- Variant tracking in executeApprovedActions is wrapped in try/catch so variant tracking failures never block SMS delivery.
+
+---
+
 ### March 4, 2026 - Telnyx Model Sync + Dropdown Parity Fix
 
 **What was built/fixed/changed**

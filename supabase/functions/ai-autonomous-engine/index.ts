@@ -4075,10 +4075,28 @@ async function runForUser(
       }
     }
 
-    // 18. Save operational memory
+    // 18. Execute approved campaign strategies (create pipelines/workflows/rules)
+    try {
+      const execResult = await executeCampaignStrategy(supabase, userId);
+      result.strategies_executed = execResult.executed;
+      result.decisions.push(...execResult.decisions);
+    } catch (execStratErr: any) {
+      result.errors.push(`Strategy execution: ${execStratErr.message}`);
+    }
+
+    // 19. Analyze pending campaign strategies (LLM-powered goal planning)
+    try {
+      const planResult = await planCampaignStrategy(supabase, userId);
+      result.strategies_analyzed = planResult.analyzed;
+      result.decisions.push(...planResult.decisions);
+    } catch (planStratErr: any) {
+      result.errors.push(`Strategy planning: ${planStratErr.message}`);
+    }
+
+    // 20. Save operational memory
     result.memories_saved = await saveRunMemory(supabase, userId, result);
 
-    // 19. Update last_engine_run timestamp
+    // 21. Update last_engine_run timestamp
     await supabase
       .from('autonomous_settings')
       .update({ last_engine_run: new Date().toISOString() })
@@ -4149,6 +4167,7 @@ serve(async (req) => {
         `plan=${userResult.battle_plan_generated ? 'generated' : 'skipped'}, ` +
         `insights=${userResult.insights_discovered}, rules=${userResult.rules_created}, ` +
         `perpetual=${userResult.perpetual_touches}, sms_variants=${userResult.sms_variants_optimized}, ` +
+        `strategies=${userResult.strategies_analyzed}analyzed/${userResult.strategies_executed}executed, ` +
         `decisions=${userResult.decisions.length}`
       );
     }
