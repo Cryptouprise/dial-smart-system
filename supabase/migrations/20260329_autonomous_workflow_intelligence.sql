@@ -186,7 +186,7 @@ CREATE POLICY "Users manage own SMS variants" ON sms_copy_variants
 -- Track which variant was sent to which lead
 CREATE TABLE IF NOT EXISTS sms_variant_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  variant_id UUID NOT NULL REFERENCES sms_copy_variants(id),
+  variant_id UUID NOT NULL REFERENCES sms_copy_variants(id) ON DELETE CASCADE,
   lead_id UUID NOT NULL REFERENCES leads(id),
   sent_at TIMESTAMPTZ DEFAULT now(),
   message_sent TEXT,
@@ -396,8 +396,8 @@ INSERT INTO sequence_templates (name, description, category, is_system_template,
  '[
    {"step_number": 1, "step_type": "sms", "step_config": {"content": "Hey {{first_name}}! Your appointment is confirmed. We''ll call you at the scheduled time. Reply RESCHEDULE if you need to change it."}, "delay_hours": 0},
    {"step_number": 2, "step_type": "condition", "branch_conditions": [{"field": "sms_reply_contains", "operator": "contains", "value": "reschedule"}], "true_branch_step": 5, "false_branch_step": 3},
-   {"step_number": 3, "step_type": "sms", "step_config": {"content": "Hi {{first_name}}, just a reminder about your appointment tomorrow. Looking forward to it! Reply if anything changed."}, "delay_hours": -24, "step_config_note": "24h before appointment"},
-   {"step_number": 4, "step_type": "sms", "step_config": {"content": "Good morning {{first_name}}! Your appointment is today. Talk soon!"}, "delay_hours": -2, "step_config_note": "2h before appointment"},
+   {"step_number": 3, "step_type": "sms", "step_config": {"content": "Hi {{first_name}}, just a reminder about your appointment tomorrow. Looking forward to it! Reply if anything changed.", "relative_to": "appointment", "hours_before": 24}, "delay_hours": 24},
+   {"step_number": 4, "step_type": "sms", "step_config": {"content": "Good morning {{first_name}}! Your appointment is today. Talk soon!", "relative_to": "appointment", "hours_before": 2}, "delay_hours": 2},
    {"step_number": 5, "step_type": "end", "step_config": {"reason": "reminders_complete"}}
  ]'::jsonb),
 
@@ -440,3 +440,4 @@ CREATE INDEX IF NOT EXISTS idx_sms_assignments_variant ON sms_variant_assignment
 CREATE INDEX IF NOT EXISTS idx_seq_templates_category ON sequence_templates(category, is_system_template);
 CREATE INDEX IF NOT EXISTS idx_journey_perpetual ON lead_journey_state(user_id, perpetual_next_touch_at)
   WHERE perpetual_next_touch_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_journey_user_stage ON lead_journey_state(user_id, current_stage, next_action_at);

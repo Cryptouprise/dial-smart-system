@@ -438,20 +438,48 @@ function evaluateCondition(fieldValue: any, operator: string, value: any): boole
       return String(fieldValue) !== String(value);
 
     case 'greater_than':
-    case 'gt':
-      return Number(fieldValue) > Number(value);
+    case 'gt': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} > ${value}`);
+        return false;
+      }
+      return numField > numValue;
+    }
 
     case 'less_than':
-    case 'lt':
-      return Number(fieldValue) < Number(value);
+    case 'lt': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} < ${value}`);
+        return false;
+      }
+      return numField < numValue;
+    }
 
     case 'greater_than_or_equal':
-    case 'gte':
-      return Number(fieldValue) >= Number(value);
+    case 'gte': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} >= ${value}`);
+        return false;
+      }
+      return numField >= numValue;
+    }
 
     case 'less_than_or_equal':
-    case 'lte':
-      return Number(fieldValue) <= Number(value);
+    case 'lte': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} <= ${value}`);
+        return false;
+      }
+      return numField <= numValue;
+    }
 
     case 'contains':
       return String(fieldValue || '').toLowerCase().includes(String(value).toLowerCase());
@@ -478,7 +506,13 @@ function evaluateCondition(fieldValue: any, operator: string, value: any): boole
     case 'between': {
       const [min, max] = Array.isArray(value) ? value : [0, 0];
       const num = Number(fieldValue);
-      return num >= Number(min) && num <= Number(max);
+      const numMin = Number(min);
+      const numMax = Number(max);
+      if (isNaN(num) || isNaN(numMin) || isNaN(numMax)) {
+        console.warn(`[Workflow] Non-numeric between comparison: ${fieldValue} between ${min} and ${max}`);
+        return false;
+      }
+      return num >= numMin && num <= numMax;
     }
 
     default:
@@ -495,15 +529,30 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
     context.custom_fields = lead.custom_fields;
   }
 
-  // Get most recent call_log for this lead
-  const { data: lastCall } = await supabase
-    .from('call_logs')
-    .select('outcome, disposition, duration_seconds, sentiment_score, created_at')
-    .eq('lead_id', lead.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Single batched fetch: 3 parallel queries instead of 5 sequential ones
+  const [callResult, smsResult, journeyResult] = await Promise.all([
+    supabase
+      .from('call_logs')
+      .select('outcome, disposition, duration_seconds, sentiment_score, created_at')
+      .eq('lead_id', lead.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('sms_messages')
+      .select('id, direction, body, created_at')
+      .eq('lead_id', lead.id)
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('lead_journey_state')
+      .select('current_stage, interest_level, engagement_score, sentiment_trend, total_calls, sms_sent, last_touch_at')
+      .eq('lead_id', lead.id)
+      .maybeSingle()
+  ]);
 
+  // Process last call data
+  const lastCall = callResult.data;
   if (lastCall) {
     context.last_outcome = lastCall.outcome;
     context.disposition = lastCall.disposition;
@@ -512,34 +561,20 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
     context.last_call_at = lastCall.created_at;
   }
 
-  // Count calls and SMS
-  const { count: callCount } = await supabase
-    .from('call_logs')
-    .select('id', { count: 'exact', head: true })
-    .eq('lead_id', lead.id);
+  // Derive counts and SMS context from the single sms query
+  const smsMessages = smsResult.data || [];
+  const callCount = journeyResult.data?.total_calls || (lastCall ? 1 : 0);
+  const smsCount = journeyResult.data?.sms_sent || smsMessages.length;
+  context.call_count = callCount;
+  context.sms_count = smsCount;
+  context.total_touches = callCount + smsCount;
 
-  const { count: smsCount } = await supabase
-    .from('sms_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('lead_id', lead.id);
-
-  context.call_count = callCount || 0;
-  context.sms_count = smsCount || 0;
-  context.total_touches = (callCount || 0) + (smsCount || 0);
-
-  // Days since last touch
+  // Days since last touch - derived from already-fetched data
   const lastTouchDates: string[] = [];
   if (lastCall?.created_at) lastTouchDates.push(lastCall.created_at);
-
-  const { data: lastSms } = await supabase
-    .from('sms_messages')
-    .select('created_at')
-    .eq('lead_id', lead.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (lastSms?.created_at) lastTouchDates.push(lastSms.created_at);
+  if (smsMessages.length > 0 && smsMessages[0]?.created_at) {
+    lastTouchDates.push(smsMessages[0].created_at);
+  }
 
   if (lastTouchDates.length > 0) {
     const mostRecent = new Date(lastTouchDates.sort().reverse()[0]);
@@ -548,25 +583,12 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
     context.days_since_touch = 9999;
   }
 
-  // Last inbound SMS content
-  const { data: lastInboundSms } = await supabase
-    .from('sms_messages')
-    .select('body')
-    .eq('lead_id', lead.id)
-    .eq('direction', 'inbound')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
+  // Last inbound SMS content - derived from already-fetched SMS data
+  const lastInboundSms = smsMessages.find((m: any) => m.direction === 'inbound');
   context.sms_reply_contains = lastInboundSms?.body || '';
 
   // Journey state
-  const { data: journeyState } = await supabase
-    .from('lead_journey_state')
-    .select('current_stage, interest_level, engagement_score, sentiment_trend, total_calls, total_sms')
-    .eq('lead_id', lead.id)
-    .maybeSingle();
-
+  const journeyState = journeyResult.data;
   if (journeyState) {
     context.journey_stage = journeyState.current_stage;
     context.interest_level = journeyState.interest_level;
@@ -631,7 +653,7 @@ async function jumpToStep(supabase: any, progress: any, currentStep: any, target
       })
       .eq('id', progress.id);
 
-    console.log(`[Workflow] Target step ${targetStepNumber} not found, completing workflow for progress ${progress.id}`);
+    console.warn(`[Workflow] Branch target step ${targetStepNumber} not found in workflow ${currentStep.workflow_id || progress.workflow_id}. Completing workflow.`);
   }
 }
 
@@ -1059,6 +1081,11 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
   const maxLoopCount = currentStep.max_loop_count ?? currentStep.step_config?.max_loop_count ?? 0;
 
   if (loopBackTo != null) {
+    // Prevent self-loops (step looping to itself)
+    if (loopBackTo === (currentStep.step_number || 0)) {
+      console.warn(`[Workflow] Self-loop detected at step ${loopBackTo}, skipping`);
+      // Fall through to normal next-step behavior
+    } else {
     const currentLoopCount = progress.loop_count || 0;
     // max_loop_count = -1 means perpetual loop; 0 means no loop; >0 means limited loop
     const shouldLoop = maxLoopCount === -1 || (maxLoopCount > 0 && currentLoopCount < maxLoopCount);
@@ -1097,6 +1124,7 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
         .update({ loop_count: 0, updated_at: new Date().toISOString() })
         .eq('id', progress.id);
     }
+    } // end else (non-self-loop)
   }
   // ============= END LOOP SUPPORT =============
 

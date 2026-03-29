@@ -1604,6 +1604,20 @@ async function manageLeadJourneys(
         const shouldStop = lastDisposition && stopDispositions.includes(lastDisposition);
 
         if (!shouldStop) {
+          // Check if lead is in an active workflow — skip perpetual if so
+          const { data: activeWorkflow } = await supabase
+            .from('lead_workflow_progress')
+            .select('id')
+            .eq('lead_id', lead.id)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+
+          if (activeWorkflow) {
+            // Lead is in active workflow, skip perpetual touch
+            continue;
+          }
+
           const minGap = (settings as any).perpetual_min_gap_days || 7;
           const maxGap = (settings as any).perpetual_max_gap_days || 30;
           const maxDays = (settings as any).perpetual_max_days || 365;
@@ -1618,8 +1632,30 @@ async function manageLeadJourneys(
 
           if (daysSinceTouch >= adaptiveGap && (maxDays === 0 || daysInJourney <= maxDays)) {
             const channels: string[] = (settings as any).perpetual_channels || ['sms', 'call'];
-            const channelIndex = touchCount % channels.length;
-            const channel = channels[channelIndex];
+
+            // Use lead's preferred channel if known, otherwise alternate
+            const preferredChannel = (journey as any).preferred_channel;
+            let channel: string;
+            if (preferredChannel && channels.includes(preferredChannel)) {
+              channel = preferredChannel;
+            } else {
+              const channelIndex = touchCount % channels.length;
+              channel = channels[channelIndex];
+            }
+
+            // Respect calling hours for call touches
+            const currentHour = now.getHours();
+            if (channel === 'call' && (currentHour < 9 || currentHour >= 21)) {
+              // Outside calling hours — schedule for next day at 10am instead
+              const nextDay = new Date(now);
+              nextDay.setDate(nextDay.getDate() + 1);
+              nextDay.setHours(10, 0, 0, 0);
+              await supabase.from('lead_journey_state').update({
+                perpetual_next_touch_at: nextDay.toISOString(),
+              }).eq('id', journey.id);
+              continue;
+            }
+
             const actionType = channel === 'call' ? 'journey_call' : 'journey_ai_sms';
 
             const perpetualParams = channel === 'call'
@@ -3705,21 +3741,9 @@ async function executeCampaignStrategy(
           }
         }
 
-        // --- Create playbook rules (skip duplicates by rule_name) ---
+        // --- Create playbook rules (insert directly, catch duplicates gracefully) ---
         for (const rule of recommendedRules) {
           try {
-            const { data: existing } = await supabase
-              .from('followup_playbook')
-              .select('id')
-              .eq('user_id', userId)
-              .eq('rule_name', rule.rule_name)
-              .limit(1);
-
-            if (existing && existing.length > 0) {
-              console.log(`[StrategyExecutor] Playbook rule "${rule.rule_name}" already exists, skipping`);
-              continue;
-            }
-
             const { data: newRule, error: ruleErr } = await supabase
               .from('followup_playbook')
               .insert({
@@ -3738,21 +3762,26 @@ async function executeCampaignStrategy(
               .single();
 
             if (ruleErr) {
-              console.warn(`[StrategyExecutor] Failed to create playbook rule "${rule.rule_name}":`, ruleErr.message);
-            } else {
-              createdRules.push({
-                rule_id: newRule.id,
-                rule_name: newRule.rule_name,
-                stage: rule.journey_stage,
-                action_type: rule.action_type,
-              });
+              console.warn(`[StrategyExecutor] Rule '${rule.rule_name}' creation failed (may exist): ${ruleErr.message}`);
+              continue;
             }
+
+            createdRules.push({
+              rule_id: newRule.id,
+              rule_name: newRule.rule_name,
+              stage: rule.journey_stage,
+              action_type: rule.action_type,
+            });
           } catch (ruleCreateErr: any) {
             console.warn(`[StrategyExecutor] Playbook rule creation error:`, ruleCreateErr.message);
           }
         }
 
         // --- Update strategy record with created resources, mark active ---
+        const totalAttempted = (recommendedPipelines?.length || 0) + (recommendedWorkflows?.length || 0) + (recommendedRules?.length || 0);
+        const totalCreated = createdPipelines.length + createdWorkflows.length + createdRules.length;
+        const hasFailures = totalCreated < totalAttempted;
+
         await supabase
           .from('ai_campaign_strategies')
           .update({
@@ -3760,6 +3789,10 @@ async function executeCampaignStrategy(
             created_pipelines: createdPipelines,
             created_workflows: createdWorkflows,
             created_playbook_rules: createdRules,
+            analysis: {
+              ...analysis,
+              execution_warnings: hasFailures ? `Created ${totalCreated}/${totalAttempted} resources` : null
+            },
             updated_at: new Date().toISOString(),
           })
           .eq('id', strategy.id);
@@ -3769,7 +3802,9 @@ async function executeCampaignStrategy(
           `[STRATEGY EXECUTED] "${strategy.goal_description}": ` +
           `${createdPipelines.length} pipelines (${createdPipelines.reduce((s: number, p: any) => s + (p.stages?.length || 0), 0)} stages), ` +
           `${createdWorkflows.length} workflows (${createdWorkflows.reduce((s: number, w: any) => s + (w.step_count || 0), 0)} steps), ` +
-          `${createdRules.length} playbook rules. Status: active.`
+          `${createdRules.length} playbook rules.` +
+          (hasFailures ? ` WARNING: ${totalAttempted - totalCreated} resource(s) failed to create.` : '') +
+          ` Status: active.`
         );
 
         console.log(`[StrategyExecutor] Strategy ${strategy.id} executed successfully`);
