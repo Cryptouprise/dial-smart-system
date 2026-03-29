@@ -61,6 +61,7 @@ interface EngineResult {
   strategies_executed: number;
   perpetual_touches: number;
   sms_variants_optimized: number;
+  messages_tracked: number;
   leads_scored: number;
   churn_risks_detected: number;
   model_trained: boolean;
@@ -2604,7 +2605,13 @@ async function detectTimingPatterns(
     insight_type: 'timing_pattern',
     title: `${dayNames[best.day]} at ${best.hour}:00 converts ${magnitude.toFixed(1)}x better than ${dayNames[worst.day]} at ${worst.hour}:00`,
     description: `Best slot: ${dayNames[best.day]} ${best.hour}:00 (${(best.rate * 100).toFixed(1)}% connect rate, ${best.total} calls). Worst slot: ${dayNames[worst.day]} ${worst.hour}:00 (${(worst.rate * 100).toFixed(1)}%, ${worst.total} calls). Baseline: ${(overallRate * 100).toFixed(1)}%.`,
-    confidence: Math.min(0.95, 0.5 + (Math.min(best.total, worst.total) / 200)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        Math.round(best.rate * best.total), best.total - Math.round(best.rate * best.total),
+        Math.round(worst.rate * worst.total), worst.total - Math.round(worst.rate * worst.total)
+      ),
+      best.total + worst.total
+    ),
     sample_size: calls.length,
     effect_magnitude: magnitude,
     baseline_rate: overallRate,
@@ -2677,7 +2684,13 @@ async function detectAttemptGapPatterns(
     insight_type: 'attempt_gap_pattern',
     title: `${best.gap} gap between attempts converts ${(best.rate / Math.max(0.001, worst.rate)).toFixed(1)}x better than ${worst.gap}`,
     description: `Best retry gap: ${best.gap} (${(best.rate * 100).toFixed(1)}% convert, n=${best.total}). Worst: ${worst.gap} (${(worst.rate * 100).toFixed(1)}%, n=${worst.total}). Baseline: ${(overallRate * 100).toFixed(1)}%.`,
-    confidence: Math.min(0.9, 0.4 + (Math.min(best.total, worst.total) / 100)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        Math.round(best.rate * best.total), best.total - Math.round(best.rate * best.total),
+        Math.round(worst.rate * worst.total), worst.total - Math.round(worst.rate * worst.total)
+      ),
+      best.total + worst.total
+    ),
     sample_size: bucketEntries.reduce((s, b) => s + b.total, 0),
     effect_magnitude: best.rate / Math.max(0.001, worst.rate),
     baseline_rate: overallRate,
@@ -2717,7 +2730,13 @@ async function detectSequencePatterns(
     insight_type: 'sequence_pattern',
     title: `Leads who received SMS before calls answer ${magnitude.toFixed(1)}x more often`,
     description: `Leads with SMS touchpoints: ${(smsAnswerRate * 100).toFixed(1)}% answer rate (n=${withSms.length}). Call-only leads: ${(noSmsAnswerRate * 100).toFixed(1)}% (n=${withoutSms.length}).`,
-    confidence: Math.min(0.9, 0.5 + (Math.min(withSms.length, withoutSms.length) / 200)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        Math.round(smsAnswerRate * withSms.length), withSms.length - Math.round(smsAnswerRate * withSms.length),
+        Math.round(noSmsAnswerRate * withoutSms.length), withoutSms.length - Math.round(noSmsAnswerRate * withoutSms.length)
+      ),
+      withSms.length + withoutSms.length
+    ),
     sample_size: leadsWithSms.length,
     effect_magnitude: magnitude,
     baseline_rate: noSmsAnswerRate,
@@ -2797,7 +2816,13 @@ async function detectSourcePatterns(
     insight_type: 'source_channel_correlation',
     title: `"${best.source}" leads convert ${magnitude.toFixed(1)}x better than "${worst.source}"`,
     description: `Best source: "${best.source}" (${(best.appointmentRate * 100).toFixed(1)}% appointment rate, ${best.total} leads). Worst: "${worst.source}" (${(worst.appointmentRate * 100).toFixed(1)}%, ${worst.total} leads).`,
-    confidence: Math.min(0.9, 0.4 + (Math.min(best.total, worst.total) / 150)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        Math.round(best.appointmentRate * best.total), best.total - Math.round(best.appointmentRate * best.total),
+        Math.round(worst.appointmentRate * worst.total), worst.total - Math.round(worst.appointmentRate * worst.total)
+      ),
+      best.total + worst.total
+    ),
     sample_size: sourceStats.reduce((s, ss) => s + ss.total, 0),
     effect_magnitude: magnitude,
     baseline_rate: overallApptRate,
@@ -2873,7 +2898,13 @@ async function detectDecayPatterns(
     insight_type: 'decay_pattern',
     title: `Lead value drops 50% after ${halfLifeBucket} of no contact`,
     description: `Same-day follow-up: ${(freshRate * 100).toFixed(1)}% positive outcome rate. After ${halfLifeBucket}: rate drops below half. Leads contacted 30+ days later: ${(staleRate * 100).toFixed(1)}%.`,
-    confidence: Math.min(0.85, 0.4 + (entries.reduce((s, [, v]) => s + v.count, 0) / 300)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        decayBuckets['same_day'].positiveOutcomes, decayBuckets['same_day'].count - decayBuckets['same_day'].positiveOutcomes,
+        decayBuckets['>30d'].positiveOutcomes, decayBuckets['>30d'].count - decayBuckets['>30d'].positiveOutcomes
+      ),
+      decayBuckets['same_day'].count + decayBuckets['>30d'].count
+    ),
     sample_size: journeyLeads.length,
     effect_magnitude: freshRate / Math.max(0.001, staleRate),
     baseline_rate: staleRate,
@@ -2928,7 +2959,13 @@ async function detectNumberPatterns(
     insight_type: 'number_effectiveness',
     title: `Area code ${bestAc[0]} gets ${(bestAc[1].avgAnswerRate / Math.max(0.001, worstAc[1].avgAnswerRate)).toFixed(1)}x higher answer rate than ${worstAc[0]}`,
     description: `Area code ${bestAc[0]}: ${(bestAc[1].avgAnswerRate * 100).toFixed(1)}% answer rate (${bestAc[1].numbers} numbers). Area code ${worstAc[0]}: ${(worstAc[1].avgAnswerRate * 100).toFixed(1)}% (${worstAc[1].numbers} numbers).`,
-    confidence: Math.min(0.8, 0.3 + (Math.min(bestAc[1].totalCalls, worstAc[1].totalCalls) / 200)),
+    confidence: statisticalConfidence(
+      chiSquare2x2(
+        Math.round(bestAc[1].avgAnswerRate * bestAc[1].totalCalls), bestAc[1].totalCalls - Math.round(bestAc[1].avgAnswerRate * bestAc[1].totalCalls),
+        Math.round(worstAc[1].avgAnswerRate * worstAc[1].totalCalls), worstAc[1].totalCalls - Math.round(worstAc[1].avgAnswerRate * worstAc[1].totalCalls)
+      ),
+      bestAc[1].totalCalls + worstAc[1].totalCalls
+    ),
     sample_size: numberStats.length,
     effect_magnitude: bestAc[1].avgAnswerRate / Math.max(0.001, worstAc[1].avgAnswerRate),
     baseline_rate: worstAc[1].avgAnswerRate,
@@ -3454,6 +3491,77 @@ Return JSON: { "improved_message": "your improved SMS text under 160 chars", "re
   }
 
   return { decisions, variants_created: variantsCreated };
+}
+
+// ---------------------------------------------------------------------------
+// Message Effectiveness Tracking
+// Uses chi-square significance testing to identify proven winner messages
+// ---------------------------------------------------------------------------
+
+async function trackMessageEffectiveness(supabase: any, userId: string): Promise<number> {
+  // Get SMS variant data grouped by content hash + stage
+  const { data: variants } = await supabase
+    .from('sms_copy_variants')
+    .select('id, message_template, context_type, times_sent, replies_received, positive_replies, led_to_appointment, opt_outs')
+    .eq('user_id', userId)
+    .gte('times_sent', 20);
+
+  if (!variants?.length) return 0;
+
+  let tracked = 0;
+
+  // Get overall baseline rates
+  const totalSent = variants.reduce((s: number, v: any) => s + v.times_sent, 0);
+  const totalReplies = variants.reduce((s: number, v: any) => s + v.replies_received, 0);
+  const baselineReplyRate = totalSent > 0 ? totalReplies / totalSent : 0;
+
+  for (const variant of variants) {
+    if (variant.times_sent < 20) continue;
+
+    const replyRate = variant.replies_received / variant.times_sent;
+    const positiveRate = variant.positive_replies / variant.times_sent;
+    const apptRate = variant.led_to_appointment / variant.times_sent;
+
+    // Chi-square: is this variant significantly different from baseline?
+    const otherSent = totalSent - variant.times_sent;
+    const otherReplies = totalReplies - variant.replies_received;
+    const pValue = chiSquare2x2(
+      variant.replies_received, variant.times_sent - variant.replies_received,
+      otherReplies, otherSent - otherReplies
+    );
+
+    const confidence = statisticalConfidence(pValue, variant.times_sent);
+    const isSignificant = pValue < 0.05 && variant.times_sent >= 50;
+
+    // Effectiveness score
+    const effectivenessScore = (variant.positive_replies * 2 + variant.led_to_appointment * 5 - variant.opt_outs * 3) / variant.times_sent;
+
+    // Simple hash for dedup
+    const messageHash = variant.message_template.substring(0, 50).replace(/\W/g, '').toLowerCase();
+
+    await supabase.from('message_effectiveness').upsert({
+      user_id: userId,
+      message_type: 'sms',
+      message_content: variant.message_template,
+      message_hash: messageHash,
+      effective_for_stage: variant.context_type,
+      times_sent: variant.times_sent,
+      replies: variant.replies_received,
+      positive_replies: variant.positive_replies,
+      appointments: variant.led_to_appointment,
+      opt_outs: variant.opt_outs,
+      effectiveness_score: Math.round(effectivenessScore * 10000) / 10000,
+      is_significant: isSignificant,
+      p_value: Math.round(pValue * 100000) / 100000,
+      confidence_level: confidence,
+      sample_size_needed: isSignificant ? 0 : Math.max(0, 50 - variant.times_sent),
+      calculated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,message_hash,effective_for_stage' });
+
+    tracked++;
+  }
+
+  return tracked;
 }
 
 // ---------------------------------------------------------------------------
@@ -4073,6 +4181,7 @@ async function runForUser(
     strategies_executed: 0,
     perpetual_touches: 0,
     sms_variants_optimized: 0,
+    messages_tracked: 0,
     decisions: [],
     errors: [],
   };
@@ -4305,6 +4414,19 @@ async function runForUser(
         result.decisions.push(...smsCopyResult.decisions);
       } catch (smsOptErr: any) {
         result.errors.push(`SMS copy optimization: ${smsOptErr.message}`);
+      }
+    }
+
+    // 15c. Message Effectiveness Tracking — statistical significance testing
+    if ((settings as any).manage_lead_journeys) {
+      try {
+        const messagesTracked = await trackMessageEffectiveness(supabase, userId);
+        result.messages_tracked = messagesTracked;
+        if (messagesTracked > 0) {
+          result.decisions.push(`[MSG EFFECTIVENESS] Tracked ${messagesTracked} message variants with statistical significance testing`);
+        }
+      } catch (msgTrackErr: any) {
+        result.errors.push(`Message effectiveness tracking: ${msgTrackErr.message}`);
       }
     }
 
