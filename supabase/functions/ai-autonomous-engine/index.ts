@@ -61,6 +61,9 @@ interface EngineResult {
   strategies_executed: number;
   perpetual_touches: number;
   sms_variants_optimized: number;
+  leads_scored: number;
+  churn_risks_detected: number;
+  model_trained: boolean;
   decisions: string[];
   errors: string[];
 }
@@ -215,12 +218,55 @@ async function rescoreLeads(
       : 30;
 
     // Weighted final score (using calibrated weights from Phase 6)
-    const finalScore = (
+    let finalScore = (
       engagementScore * weights.engagement +
       recencyScore * weights.recency +
       answerRate * weights.answer_rate +
       statusScore * weights.status
     );
+
+    // INTENT ENRICHMENT: Multiply score by intent signals
+    try {
+      const { data: intent } = await supabase
+        .from('lead_intent_signals')
+        .select('intent_timeline, budget_mentioned, is_decision_maker, buying_signals, objections')
+        .eq('lead_id', lead.id)
+        .order('extracted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (intent) {
+        let intentMultiplier = 1.0;
+
+        // Timeline urgency
+        if (intent.intent_timeline === 'immediate' || intent.intent_timeline === 'this_week') {
+          intentMultiplier *= 2.0;
+        } else if (intent.intent_timeline === 'this_month') {
+          intentMultiplier *= 1.5;
+        } else if (intent.intent_timeline === 'exploring') {
+          intentMultiplier *= 1.1;
+        }
+
+        // Budget signals
+        if (intent.budget_mentioned) intentMultiplier *= 1.3;
+
+        // Decision maker
+        if (intent.is_decision_maker) intentMultiplier *= 1.2;
+
+        // Buying signals count
+        const buyingSignals = intent.buying_signals || [];
+        if (buyingSignals.length >= 3) intentMultiplier *= 1.4;
+        else if (buyingSignals.length >= 1) intentMultiplier *= 1.15;
+
+        // Objection penalty (mild - objections mean engagement, not disinterest)
+        const objections = intent.objections || [];
+        if (objections.length >= 3) intentMultiplier *= 0.85;
+
+        finalScore = Math.min(100, Math.round(finalScore * intentMultiplier));
+      }
+    } catch (e) {
+      // Intent enrichment is non-blocking
+    }
 
     // Update the lead's priority_score
     await supabase
@@ -2294,6 +2340,61 @@ async function scorePlanAdherence(
 }
 
 // ---------------------------------------------------------------------------
+// Statistical Significance Testing Utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Chi-square test for 2x2 contingency table.
+ * Returns approximate p-value.
+ * a = group1 success, b = group1 failure, c = group2 success, d = group2 failure
+ */
+function chiSquare2x2(a: number, b: number, c: number, d: number): number {
+  const n = a + b + c + d;
+  if (n === 0) return 1.0;
+
+  // Yates' continuity correction
+  const chi2 = (n * Math.pow(Math.abs(a * d - b * c) - n / 2, 2)) /
+    ((a + b) * (c + d) * (a + c) * (b + d));
+
+  if (chi2 < 0.001) return 1.0;
+  if (chi2 > 10) return 0.001;
+
+  // Approximate p-value: p ≈ exp(-0.5 * chi2) for 1 df
+  return Math.max(0.001, Math.min(1.0, Math.exp(-0.5 * chi2)));
+}
+
+/**
+ * Calculate confidence from p-value and sample size.
+ * Returns 0-1 confidence score with proper statistical basis.
+ */
+function statisticalConfidence(pValue: number, sampleSize: number, minSamples: number = 30): number {
+  if (sampleSize < minSamples) return 0; // Not enough data
+
+  // Confidence = 1 - p_value, but penalize small samples
+  const samplePenalty = Math.min(1.0, sampleSize / (minSamples * 3));
+  return Math.round((1 - pValue) * samplePenalty * 100) / 100;
+}
+
+/**
+ * Wilson score interval for proportion confidence.
+ * Better than simple p/n for small samples.
+ */
+function wilsonScore(successes: number, total: number, z: number = 1.96): { lower: number; upper: number; center: number } {
+  if (total === 0) return { lower: 0, upper: 0, center: 0 };
+
+  const p = successes / total;
+  const denominator = 1 + z * z / total;
+  const center = (p + z * z / (2 * total)) / denominator;
+  const margin = z * Math.sqrt((p * (1 - p) + z * z / (4 * total)) / total) / denominator;
+
+  return {
+    lower: Math.max(0, center - margin),
+    upper: Math.min(1, center + margin),
+    center
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 10/10 FEATURE: Strategic Pattern Detective
 // Discovers patterns humans would never see in the data.
 // "Leads from source X who get SMS within 2 min book at 4x rate"
@@ -2409,6 +2510,13 @@ async function detectStrategicPatterns(
       if (created) {
         rulesCreated++;
         decisions.push(`[PATTERNS] Auto-created rule from insight: "${insight.title}"`);
+      }
+      // Auto-apply insight to existing playbook rules
+      if (settings.auto_create_rules_from_insights) {
+        const applyResult = await applyInsightToPlaybook(supabase, userId, insight);
+        if (applyResult.applied) {
+          console.log(`[Insights] Auto-applied: ${applyResult.change_type} - ${applyResult.details}`);
+        }
       }
     }
   }
@@ -3036,6 +3144,120 @@ async function createRuleFromInsight(
   }
 
   return false;
+}
+
+function parseGapToHours(gap: string): number | null {
+  if (gap.includes('2-4h') || gap === '2-4h') return 3;
+  if (gap.includes('4-8h') || gap === '4-8h') return 6;
+  if (gap.includes('8-24h') || gap === '8-24h') return 16;
+  if (gap.includes('24-48h') || gap === '24-48h') return 36;
+  if (gap.includes('48-72h') || gap === '48-72h') return 60;
+  const match = gap.match(/(\d+)/);
+  return match ? parseInt(match[1]) : null;
+}
+
+async function applyInsightToPlaybook(
+  supabase: any, userId: string, insight: any
+): Promise<{ applied: boolean; change_type: string; details: string }> {
+  try {
+    const insightType = insight.insight_type;
+
+    if (insightType === 'attempt_gap_pattern' && insight.dimensions?.best_gap) {
+      // Update retry rules' delay_hours to match the best gap
+      const bestGapHours = parseGapToHours(insight.dimensions.best_gap);
+      if (!bestGapHours) return { applied: false, change_type: 'none', details: 'Could not parse gap' };
+
+      const { data: retryRules } = await supabase
+        .from('followup_playbook')
+        .select('id, rule_name, delay_hours')
+        .eq('user_id', userId)
+        .in('journey_stage', ['attempting', 'engaged'])
+        .eq('action_type', 'call')
+        .eq('enabled', true);
+
+      for (const rule of (retryRules || [])) {
+        if (Math.abs(rule.delay_hours - bestGapHours) > 2) {
+          // Log the change
+          await supabase.from('playbook_optimization_log').insert({
+            user_id: userId,
+            optimization_type: 'timing_adjusted',
+            rule_name: rule.rule_name,
+            before_value: { delay_hours: rule.delay_hours },
+            after_value: { delay_hours: bestGapHours },
+            reasoning: insight.recommended_action,
+            data_basis: { sample_size: insight.sample_size, confidence: insight.confidence },
+          });
+
+          await supabase.from('followup_playbook')
+            .update({ delay_hours: bestGapHours })
+            .eq('id', rule.id);
+        }
+      }
+      return { applied: true, change_type: 'timing_adjusted', details: `Updated retry delay to ${bestGapHours}h` };
+    }
+
+    if (insightType === 'timing_pattern' && insight.dimensions?.best_day && insight.dimensions?.best_hour) {
+      // Update preferred_hour on matching rules
+      const { data: rules } = await supabase
+        .from('followup_playbook')
+        .select('id, rule_name, preferred_hour')
+        .eq('user_id', userId)
+        .eq('respect_calling_windows', true)
+        .eq('enabled', true);
+
+      const bestHour = insight.dimensions.best_hour;
+      for (const rule of (rules || [])) {
+        if (rule.preferred_hour !== bestHour) {
+          await supabase.from('playbook_optimization_log').insert({
+            user_id: userId,
+            optimization_type: 'timing_adjusted',
+            rule_name: rule.rule_name,
+            before_value: { preferred_hour: rule.preferred_hour },
+            after_value: { preferred_hour: bestHour },
+            reasoning: `Pattern: hour ${bestHour} converts ${insight.effect_magnitude}x better`,
+            data_basis: { sample_size: insight.sample_size, confidence: insight.confidence },
+          });
+
+          await supabase.from('followup_playbook')
+            .update({ preferred_hour: bestHour })
+            .eq('id', rule.id);
+        }
+      }
+      return { applied: true, change_type: 'timing_adjusted', details: `Set preferred hour to ${bestHour}` };
+    }
+
+    if (insightType === 'sequence_pattern' && insight.dimensions?.best_sequence) {
+      // If SMS-before-call works better, create/enable that rule
+      if (insight.dimensions.best_sequence === 'sms_then_call') {
+        const { data: existing } = await supabase
+          .from('followup_playbook')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('rule_name', 'sms_before_call_insight')
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from('followup_playbook').insert({
+            user_id: userId,
+            rule_name: 'sms_before_call_insight',
+            description: 'AI insight: SMS before call increases answer rate',
+            journey_stage: 'attempting',
+            action_type: 'sms',
+            action_config: { content: 'Hey {{first_name}}, going to try giving you a call shortly about {{lead_source}}. Talk soon!' },
+            delay_hours: 0,
+            priority: 8,
+            enabled: true,
+          });
+          return { applied: true, change_type: 'rule_created', details: 'Created SMS-before-call rule' };
+        }
+      }
+    }
+
+    return { applied: false, change_type: 'none', details: 'No applicable action for this insight type' };
+  } catch (e: any) {
+    console.error('[Insight Apply] Error:', e.message);
+    return { applied: false, change_type: 'error', details: e.message };
+  }
 }
 
 async function generateBriefing(
