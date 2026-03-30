@@ -414,6 +414,251 @@ function calculateNextActionTime(step: any): string {
   return now.toISOString();
 }
 
+// ============= BRANCH / CONDITION HELPERS =============
+
+function resolveFieldValue(context: Record<string, any>, field: string): any {
+  // Support dot notation for nested fields (e.g. "custom_fields.budget")
+  const parts = field.split('.');
+  let value: any = context;
+  for (const part of parts) {
+    if (value == null) return undefined;
+    value = value[part];
+  }
+  return value;
+}
+
+function evaluateCondition(fieldValue: any, operator: string, value: any): boolean {
+  switch (operator) {
+    case 'equals':
+    case 'eq':
+      return String(fieldValue) === String(value);
+
+    case 'not_equals':
+    case 'neq':
+      return String(fieldValue) !== String(value);
+
+    case 'greater_than':
+    case 'gt': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} > ${value}`);
+        return false;
+      }
+      return numField > numValue;
+    }
+
+    case 'less_than':
+    case 'lt': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} < ${value}`);
+        return false;
+      }
+      return numField < numValue;
+    }
+
+    case 'greater_than_or_equal':
+    case 'gte': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} >= ${value}`);
+        return false;
+      }
+      return numField >= numValue;
+    }
+
+    case 'less_than_or_equal':
+    case 'lte': {
+      const numField = Number(fieldValue);
+      const numValue = Number(value);
+      if (isNaN(numField) || isNaN(numValue)) {
+        console.warn(`[Workflow] Non-numeric comparison: ${fieldValue} <= ${value}`);
+        return false;
+      }
+      return numField <= numValue;
+    }
+
+    case 'contains':
+      return String(fieldValue || '').toLowerCase().includes(String(value).toLowerCase());
+
+    case 'not_contains':
+      return !String(fieldValue || '').toLowerCase().includes(String(value).toLowerCase());
+
+    case 'in': {
+      const arr = Array.isArray(value) ? value : String(value).split(',').map((s: string) => s.trim());
+      return arr.map(String).includes(String(fieldValue));
+    }
+
+    case 'not_in': {
+      const arr2 = Array.isArray(value) ? value : String(value).split(',').map((s: string) => s.trim());
+      return !arr2.map(String).includes(String(fieldValue));
+    }
+
+    case 'exists':
+      return fieldValue != null && fieldValue !== '' && fieldValue !== false;
+
+    case 'not_exists':
+      return fieldValue == null || fieldValue === '' || fieldValue === false;
+
+    case 'between': {
+      const [min, max] = Array.isArray(value) ? value : [0, 0];
+      const num = Number(fieldValue);
+      const numMin = Number(min);
+      const numMax = Number(max);
+      if (isNaN(num) || isNaN(numMin) || isNaN(numMax)) {
+        console.warn(`[Workflow] Non-numeric between comparison: ${fieldValue} between ${min} and ${max}`);
+        return false;
+      }
+      return num >= numMin && num <= numMax;
+    }
+
+    default:
+      console.warn(`[Workflow] Unknown condition operator: ${operator}`);
+      return false;
+  }
+}
+
+async function getLeadContext(supabase: any, lead: any, progress: any): Promise<Record<string, any>> {
+  const context: Record<string, any> = { ...(lead || {}) };
+
+  // Spread custom_fields to top-level for easy dot-notation access
+  if (lead?.custom_fields && typeof lead.custom_fields === 'object') {
+    context.custom_fields = lead.custom_fields;
+  }
+
+  // Single batched fetch: 3 parallel queries instead of 5 sequential ones
+  const [callResult, smsResult, journeyResult] = await Promise.all([
+    supabase
+      .from('call_logs')
+      .select('outcome, disposition, duration_seconds, sentiment_score, created_at')
+      .eq('lead_id', lead.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('sms_messages')
+      .select('id, direction, body, created_at')
+      .eq('lead_id', lead.id)
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('lead_journey_state')
+      .select('current_stage, interest_level, engagement_score, sentiment_trend, total_calls, sms_sent, last_touch_at')
+      .eq('lead_id', lead.id)
+      .maybeSingle()
+  ]);
+
+  // Process last call data
+  const lastCall = callResult.data;
+  if (lastCall) {
+    context.last_outcome = lastCall.outcome;
+    context.disposition = lastCall.disposition;
+    context.last_call_duration = lastCall.duration_seconds;
+    context.sentiment_score = lastCall.sentiment_score;
+    context.last_call_at = lastCall.created_at;
+  }
+
+  // Derive counts and SMS context from the single sms query
+  const smsMessages = smsResult.data || [];
+  const callCount = journeyResult.data?.total_calls || (lastCall ? 1 : 0);
+  const smsCount = journeyResult.data?.sms_sent || smsMessages.length;
+  context.call_count = callCount;
+  context.sms_count = smsCount;
+  context.total_touches = callCount + smsCount;
+
+  // Days since last touch - derived from already-fetched data
+  const lastTouchDates: string[] = [];
+  if (lastCall?.created_at) lastTouchDates.push(lastCall.created_at);
+  if (smsMessages.length > 0 && smsMessages[0]?.created_at) {
+    lastTouchDates.push(smsMessages[0].created_at);
+  }
+
+  if (lastTouchDates.length > 0) {
+    const mostRecent = new Date(lastTouchDates.sort().reverse()[0]);
+    context.days_since_touch = Math.floor((Date.now() - mostRecent.getTime()) / (1000 * 60 * 60 * 24));
+  } else {
+    context.days_since_touch = 9999;
+  }
+
+  // Last inbound SMS content - derived from already-fetched SMS data
+  const lastInboundSms = smsMessages.find((m: any) => m.direction === 'inbound');
+  context.sms_reply_contains = lastInboundSms?.body || '';
+
+  // Journey state
+  const journeyState = journeyResult.data;
+  if (journeyState) {
+    context.journey_stage = journeyState.current_stage;
+    context.interest_level = journeyState.interest_level;
+    context.engagement_score = journeyState.engagement_score;
+    context.sentiment_trend = journeyState.sentiment_trend;
+  }
+
+  // Tags as a flat value for 'contains' checks
+  context.tags = lead?.tags || [];
+
+  return context;
+}
+
+async function evaluateBranchConditions(
+  supabase: any, lead: any, progress: any, conditions: any[]
+): Promise<boolean> {
+  if (!conditions || conditions.length === 0) return true;
+
+  // Get enriched lead context
+  const context = await getLeadContext(supabase, lead, progress);
+
+  // ALL conditions must be true (AND logic)
+  for (const condition of conditions) {
+    const { field, operator, value } = condition;
+    const fieldValue = resolveFieldValue(context, field);
+
+    if (!evaluateCondition(fieldValue, operator, value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function jumpToStep(supabase: any, progress: any, currentStep: any, targetStepNumber: number) {
+  const { data: targetStep } = await supabase
+    .from('workflow_steps')
+    .select('id, step_type, step_config')
+    .eq('workflow_id', currentStep.workflow_id || progress.workflow_id)
+    .eq('step_number', targetStepNumber)
+    .maybeSingle();
+
+  if (targetStep) {
+    const nextActionAt = calculateNextActionTime(targetStep);
+    await supabase
+      .from('lead_workflow_progress')
+      .update({
+        current_step_id: targetStep.id,
+        next_action_at: nextActionAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', progress.id);
+
+    console.log(`[Workflow] Jumped to step ${targetStepNumber} (id: ${targetStep.id}) for progress ${progress.id}`);
+  } else {
+    // Target step doesn't exist, complete the workflow
+    await supabase
+      .from('lead_workflow_progress')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', progress.id);
+
+    console.warn(`[Workflow] Branch target step ${targetStepNumber} not found in workflow ${currentStep.workflow_id || progress.workflow_id}. Completing workflow.`);
+  }
+}
+
+// ============= END BRANCH / CONDITION HELPERS =============
+
 async function executeStep(supabase: any, progress: any) {
   const step = progress.workflow_steps;
   const lead = progress.leads;
@@ -495,10 +740,21 @@ async function executeStep(supabase: any, progress: any) {
       break;
 
     case 'condition':
-    case 'branch':
-      console.log(`[Workflow] Condition step for lead ${lead?.id} - evaluating...`);
-      stepResult = { success: true, action: 'condition_evaluated' };
+    case 'branch': {
+      const conditions = step.branch_conditions || config.conditions || [];
+      const evaluationResult = await evaluateBranchConditions(supabase, lead, progress, conditions);
+      const targetStep = evaluationResult ? (step.true_branch_step || config.true_branch_step) : (step.false_branch_step || config.false_branch_step);
+
+      console.log(`[Workflow] Branch for lead ${lead.id}: conditions=${JSON.stringify(conditions)}, result=${evaluationResult}, jumping to step ${targetStep || 'next'}`);
+
+      if (targetStep) {
+        await jumpToStep(supabase, progress, step, targetStep);
+        return { success: true, action: 'branch_taken', branch: evaluationResult ? 'true' : 'false', target_step: targetStep };
+      }
+      // No target specified, fall through to next step
+      stepResult = { success: true, action: 'condition_evaluated', result: evaluationResult };
       break;
+    }
 
     case 'tag':
     case 'update_status':
@@ -819,6 +1075,59 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
     return;
   }
 
+  // ============= LOOP SUPPORT =============
+  // Fetch full step record with loop fields if not already present
+  const loopBackTo = currentStep.loop_back_to_step ?? currentStep.step_config?.loop_back_to_step;
+  const maxLoopCount = currentStep.max_loop_count ?? currentStep.step_config?.max_loop_count ?? 0;
+
+  if (loopBackTo != null) {
+    // Prevent self-loops (step looping to itself)
+    if (loopBackTo === (currentStep.step_number || 0)) {
+      console.warn(`[Workflow] Self-loop detected at step ${loopBackTo}, skipping`);
+      // Fall through to normal next-step behavior
+    } else {
+    const currentLoopCount = progress.loop_count || 0;
+    // max_loop_count = -1 means perpetual loop; 0 means no loop; >0 means limited loop
+    const shouldLoop = maxLoopCount === -1 || (maxLoopCount > 0 && currentLoopCount < maxLoopCount);
+
+    if (shouldLoop) {
+      console.log(`[Workflow] Loop: iteration ${currentLoopCount + 1}/${maxLoopCount === -1 ? '∞' : maxLoopCount}, jumping back to step ${loopBackTo} for progress ${progress.id}`);
+
+      // Find the target loop step
+      const { data: loopStep } = await supabase
+        .from('workflow_steps')
+        .select('id, step_type, step_config')
+        .eq('workflow_id', currentStep.workflow_id || progress.workflow_id)
+        .eq('step_number', loopBackTo)
+        .maybeSingle();
+
+      if (loopStep) {
+        const nextActionAt = calculateNextActionTime(loopStep);
+        await supabase
+          .from('lead_workflow_progress')
+          .update({
+            current_step_id: loopStep.id,
+            next_action_at: nextActionAt,
+            loop_count: currentLoopCount + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', progress.id);
+        return;
+      }
+      // If loop target doesn't exist, fall through to normal next-step logic
+      console.warn(`[Workflow] Loop target step ${loopBackTo} not found, proceeding linearly`);
+    } else if (maxLoopCount > 0) {
+      console.log(`[Workflow] Loop limit reached (${currentLoopCount}/${maxLoopCount}), proceeding to next step`);
+      // Reset loop count when loop completes
+      await supabase
+        .from('lead_workflow_progress')
+        .update({ loop_count: 0, updated_at: new Date().toISOString() })
+        .eq('id', progress.id);
+    }
+    } // end else (non-self-loop)
+  }
+  // ============= END LOOP SUPPORT =============
+
   // Get the next step
   const { data: nextStep } = await supabase
     .from('workflow_steps')
@@ -829,7 +1138,7 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
 
   if (nextStep) {
     const nextActionAt = calculateNextActionTime(nextStep);
-    
+
     await supabase
       .from('lead_workflow_progress')
       .update({
@@ -838,7 +1147,7 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', progress.id);
-    
+
     console.log(`[Workflow] Moved to step ${nextStep.id} for progress ${progress.id}`);
   } else {
     // No more steps, complete the workflow
@@ -850,7 +1159,7 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', progress.id);
-    
+
     console.log(`[Workflow] Completed workflow for progress ${progress.id}`);
   }
 }
