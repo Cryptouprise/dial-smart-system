@@ -188,7 +188,7 @@ serve(async (req) => {
     console.log('[Telnyx Webhook] Webhook secret configured:', !!webhookSecret);
 
     // Verify webhook signature
-    const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret);
+    const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret ?? null);
     if (webhookSecret && !signatureValid) {
       console.error('[Telnyx Webhook] Signature verification FAILED - rejecting request');
       return new Response(JSON.stringify({ error: 'Invalid webhook signature' }), {

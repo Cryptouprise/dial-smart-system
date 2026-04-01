@@ -39,6 +39,21 @@ interface AutonomousSettings {
   auto_prioritize_leads: boolean;
   last_engine_run: string | null;
   engine_interval_minutes: number;
+  manage_lead_journeys?: boolean;
+  journey_max_daily_touches?: number;
+  enable_daily_planning?: boolean;
+  enable_strategic_insights?: boolean;
+  auto_create_rules_from_insights?: boolean;
+  insight_confidence_threshold?: number;
+  briefing_frequency?: string;
+  daily_budget_cents?: number;
+  enable_script_ab_testing?: boolean;
+  perpetual_followup_enabled?: boolean;
+  perpetual_max_days?: number;
+  perpetual_min_gap_days?: number;
+  perpetual_max_gap_days?: number;
+  perpetual_channels?: string[];
+  perpetual_stop_on?: string[];
 }
 
 interface EngineResult {
@@ -3441,16 +3456,18 @@ async function optimizeSmsCopy(
         const mod = await import('../_shared/openrouter.ts');
         const callLLMJson = mod.callLLMJson;
 
-        const { data: improvement } = await callLLMJson({
-          model: 'fast',
-          system: 'You are an SMS copywriting expert. You optimize SMS messages for higher reply rates. Keep messages under 160 characters. Be conversational, not salesy.',
-          prompt: `This SMS template has a ${(variant.reply_rate * 100).toFixed(1)}% reply rate after ${variant.times_sent} sends. Improve it to get more replies.
+        const { data: improvement } = await callLLMJson<{ improved_message?: string; reasoning?: string }>({
+          messages: [
+            { role: 'system', content: 'You are an SMS copywriting expert. You optimize SMS messages for higher reply rates. Keep messages under 160 characters. Be conversational, not salesy.' },
+            { role: 'user', content: `This SMS template has a ${(variant.reply_rate * 100).toFixed(1)}% reply rate after ${variant.times_sent} sends. Improve it to get more replies.
 
 Current message: "${variant.message_template}"
 
 Stats: ${variant.times_sent} sent, ${(variant.reply_rate * 100).toFixed(1)}% reply rate, ${(variant.positive_rate * 100).toFixed(1)}% positive rate, ${(variant.appointment_rate * 100).toFixed(1)}% appointment rate.
 
-Return JSON: { "improved_message": "your improved SMS text under 160 chars", "reasoning": "why this should perform better" }`,
+Return JSON: { "improved_message": "your improved SMS text under 160 chars", "reasoning": "why this should perform better" }` },
+          ],
+          tier: 'fast',
           temperature: 0.8,
         });
 
@@ -4475,12 +4492,13 @@ async function predictLeadConversion(
       activeLeads = fetchedLeads || [];
     }
 
-    if (activeLeads.length === 0) {
+    const safeLeads = activeLeads ?? [];
+    if (safeLeads.length === 0) {
       return { scored: 0, decisions: ['[ML] No active leads to score.'] };
     }
 
     // Load intent signals
-    const leadIds = activeLeads.map((l: any) => l.id);
+    const leadIds = safeLeads.map((l: any) => l.id);
     const { data: intentSignals } = await supabase
       .from('lead_intent_signals')
       .select('lead_id, has_timeline, is_decision_maker')
@@ -4512,7 +4530,7 @@ async function predictLeadConversion(
       features: Record<string, number>;
     }> = [];
 
-    for (const lead of activeLeads) {
+    for (const lead of safeLeads) {
       const journey = Array.isArray(lead.lead_journey_state)
         ? lead.lead_journey_state[0]
         : lead.lead_journey_state;

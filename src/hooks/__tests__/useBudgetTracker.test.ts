@@ -237,7 +237,7 @@ describe('useBudgetTracker', () => {
 
     it('should trigger toast when budget alerts are present', async () => {
       const toastFn = vi.fn();
-      vi.mocked(await import('@/hooks/use-toast')).useToast = () => ({ toast: toastFn } as any);
+      (vi.mocked(await import('@/hooks/use-toast')).useToast as any) = () => ({ toast: toastFn });
 
       const budgetData = {
         withinBudget: false,
@@ -487,7 +487,7 @@ describe('useBudgetTracker', () => {
       // Should not have called toggle_pause action
       const calls = vi.mocked(mockSupabase.functions.invoke).mock.calls;
       const toggleCalls = calls.filter(
-        (c) => c[1]?.body?.action === 'toggle_pause',
+        (c) => (c[1]?.body as Record<string, unknown>)?.action === 'toggle_pause',
       );
       expect(toggleCalls).toHaveLength(0);
     });
