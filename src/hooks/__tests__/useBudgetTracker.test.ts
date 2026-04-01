@@ -237,7 +237,7 @@ describe('useBudgetTracker', () => {
 
     it('should trigger toast when budget alerts are present', async () => {
       const toastFn = vi.fn();
-      vi.mocked(await import('@/hooks/use-toast')).useToast = () => ({ toast: toastFn } as any);
+      (vi.mocked(await import('@/hooks/use-toast')).useToast as any) = () => ({ toast: toastFn });
 
       const budgetData = {
         withinBudget: false,
