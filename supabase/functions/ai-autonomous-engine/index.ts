@@ -3184,13 +3184,21 @@ async function createRuleFromInsight(
 }
 
 function parseGapToHours(gap: string): number | null {
-  if (gap.includes('2-4h') || gap === '2-4h') return 3;
-  if (gap.includes('4-8h') || gap === '4-8h') return 6;
-  if (gap.includes('8-24h') || gap === '8-24h') return 16;
-  if (gap.includes('24-48h') || gap === '24-48h') return 36;
-  if (gap.includes('48-72h') || gap === '48-72h') return 60;
-  const match = gap.match(/(\d+)/);
-  return match ? parseInt(match[1]) : null;
+  if (!gap) return null;
+  const g = gap.toLowerCase().trim();
+  if (g.includes('0-2h') || g.includes('<2h')) return 1;
+  if (g.includes('1-2h')) return 1.5;
+  if (g.includes('2-4h')) return 3;
+  if (g.includes('4-8h')) return 6;
+  if (g.includes('8-24h') || g.includes('same day')) return 16;
+  if (g.includes('24-48h') || g.includes('next day')) return 36;
+  if (g.includes('48-72h')) return 60;
+  if (g.includes('72-168h') || g.includes('1 week') || g.includes('7 day')) return 120;
+  // Fallback: extract first number
+  const match = g.match(/(\d+)/);
+  if (match) return parseInt(match[1]);
+  console.warn(`[Insight] Could not parse gap "${gap}" to hours`);
+  return null;
 }
 
 async function applyInsightToPlaybook(
