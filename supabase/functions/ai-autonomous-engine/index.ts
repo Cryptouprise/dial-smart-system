@@ -3456,16 +3456,18 @@ async function optimizeSmsCopy(
         const mod = await import('../_shared/openrouter.ts');
         const callLLMJson = mod.callLLMJson;
 
-        const { data: improvement } = await callLLMJson({
-          model: 'fast',
-          system: 'You are an SMS copywriting expert. You optimize SMS messages for higher reply rates. Keep messages under 160 characters. Be conversational, not salesy.',
-          prompt: `This SMS template has a ${(variant.reply_rate * 100).toFixed(1)}% reply rate after ${variant.times_sent} sends. Improve it to get more replies.
+        const { data: improvement } = await callLLMJson<{ improved_message?: string; reasoning?: string }>({
+          messages: [
+            { role: 'system', content: 'You are an SMS copywriting expert. You optimize SMS messages for higher reply rates. Keep messages under 160 characters. Be conversational, not salesy.' },
+            { role: 'user', content: `This SMS template has a ${(variant.reply_rate * 100).toFixed(1)}% reply rate after ${variant.times_sent} sends. Improve it to get more replies.
 
 Current message: "${variant.message_template}"
 
 Stats: ${variant.times_sent} sent, ${(variant.reply_rate * 100).toFixed(1)}% reply rate, ${(variant.positive_rate * 100).toFixed(1)}% positive rate, ${(variant.appointment_rate * 100).toFixed(1)}% appointment rate.
 
-Return JSON: { "improved_message": "your improved SMS text under 160 chars", "reasoning": "why this should perform better" }`,
+Return JSON: { "improved_message": "your improved SMS text under 160 chars", "reasoning": "why this should perform better" }` },
+          ],
+          tier: 'fast',
           temperature: 0.8,
         });
 
