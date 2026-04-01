@@ -443,6 +443,66 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_campaign_strategies: {
+        Row: {
+          analysis: Json
+          approved_at: string | null
+          conversion_rate: number | null
+          created_at: string | null
+          created_pipelines: Json | null
+          created_playbook_rules: Json | null
+          created_workflows: Json | null
+          goal_description: string
+          goal_type: string
+          id: string
+          status: string
+          total_appointments_set: number | null
+          total_calls_made: number | null
+          total_conversions: number | null
+          total_leads_processed: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json
+          approved_at?: string | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          created_pipelines?: Json | null
+          created_playbook_rules?: Json | null
+          created_workflows?: Json | null
+          goal_description: string
+          goal_type: string
+          id?: string
+          status?: string
+          total_appointments_set?: number | null
+          total_calls_made?: number | null
+          total_conversions?: number | null
+          total_leads_processed?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          analysis?: Json
+          approved_at?: string | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          created_pipelines?: Json | null
+          created_playbook_rules?: Json | null
+          created_workflows?: Json | null
+          goal_description?: string
+          goal_type?: string
+          id?: string
+          status?: string
+          total_appointments_set?: number | null
+          total_calls_made?: number | null
+          total_conversions?: number | null
+          total_leads_processed?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_chatbot_settings: {
         Row: {
           ai_actions_enabled: boolean | null
@@ -890,6 +950,12 @@ export type Database = {
           manage_lead_journeys: boolean | null
           max_auto_script_changes_per_day: number | null
           max_daily_autonomous_actions: number | null
+          perpetual_channels: Json | null
+          perpetual_followup_enabled: boolean | null
+          perpetual_max_days: number | null
+          perpetual_max_gap_days: number | null
+          perpetual_min_gap_days: number | null
+          perpetual_stop_on: Json | null
           require_approval_for_high_priority: boolean | null
           require_approval_for_script_changes: boolean | null
           script_optimization_threshold: number | null
@@ -926,6 +992,12 @@ export type Database = {
           manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
+          perpetual_channels?: Json | null
+          perpetual_followup_enabled?: boolean | null
+          perpetual_max_days?: number | null
+          perpetual_max_gap_days?: number | null
+          perpetual_min_gap_days?: number | null
+          perpetual_stop_on?: Json | null
           require_approval_for_high_priority?: boolean | null
           require_approval_for_script_changes?: boolean | null
           script_optimization_threshold?: number | null
@@ -962,6 +1034,12 @@ export type Database = {
           manage_lead_journeys?: boolean | null
           max_auto_script_changes_per_day?: number | null
           max_daily_autonomous_actions?: number | null
+          perpetual_channels?: Json | null
+          perpetual_followup_enabled?: boolean | null
+          perpetual_max_days?: number | null
+          perpetual_max_gap_days?: number | null
+          perpetual_min_gap_days?: number | null
+          perpetual_stop_on?: Json | null
           require_approval_for_high_priority?: boolean | null
           require_approval_for_script_changes?: boolean | null
           script_optimization_threshold?: number | null
@@ -3203,12 +3281,16 @@ export type Database = {
           metadata: Json | null
           next_action_scheduled_at: string | null
           next_recommended_action: string | null
+          perpetual_last_touch_at: string | null
+          perpetual_next_touch_at: string | null
+          perpetual_touch_count: number | null
           previous_stage: string | null
           roi_score: number | null
           sentiment_score: number | null
           sms_cost_cents: number | null
           stage_entered_at: string
           stale_since: string | null
+          strategy_id: string | null
           total_calls: number | null
           total_cost_cents: number | null
           total_emails: number | null
@@ -3231,12 +3313,16 @@ export type Database = {
           metadata?: Json | null
           next_action_scheduled_at?: string | null
           next_recommended_action?: string | null
+          perpetual_last_touch_at?: string | null
+          perpetual_next_touch_at?: string | null
+          perpetual_touch_count?: number | null
           previous_stage?: string | null
           roi_score?: number | null
           sentiment_score?: number | null
           sms_cost_cents?: number | null
           stage_entered_at?: string
           stale_since?: string | null
+          strategy_id?: string | null
           total_calls?: number | null
           total_cost_cents?: number | null
           total_emails?: number | null
@@ -3259,12 +3345,16 @@ export type Database = {
           metadata?: Json | null
           next_action_scheduled_at?: string | null
           next_recommended_action?: string | null
+          perpetual_last_touch_at?: string | null
+          perpetual_next_touch_at?: string | null
+          perpetual_touch_count?: number | null
           previous_stage?: string | null
           roi_score?: number | null
           sentiment_score?: number | null
           sms_cost_cents?: number | null
           stage_entered_at?: string
           stale_since?: string | null
+          strategy_id?: string | null
           total_calls?: number | null
           total_cost_cents?: number | null
           total_emails?: number | null
@@ -3279,6 +3369,13 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_journey_state_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "ai_campaign_strategies"
             referencedColumns: ["id"]
           },
         ]
@@ -3729,6 +3826,8 @@ export type Database = {
           id: string
           last_action_at: string | null
           lead_id: string
+          loop_count: number | null
+          metadata: Json | null
           next_action_at: string | null
           removal_reason: string | null
           started_at: string | null
@@ -3745,6 +3844,8 @@ export type Database = {
           id?: string
           last_action_at?: string | null
           lead_id: string
+          loop_count?: number | null
+          metadata?: Json | null
           next_action_at?: string | null
           removal_reason?: string | null
           started_at?: string | null
@@ -3761,6 +3862,8 @@ export type Database = {
           id?: string
           last_action_at?: string | null
           lead_id?: string
+          loop_count?: number | null
+          metadata?: Json | null
           next_action_at?: string | null
           removal_reason?: string | null
           started_at?: string | null
@@ -5320,6 +5423,57 @@ export type Database = {
           },
         ]
       }
+      sequence_templates: {
+        Row: {
+          avg_conversion_rate: number | null
+          category: string
+          created_at: string | null
+          description: string | null
+          estimated_days_to_complete: number | null
+          estimated_touchpoints: number | null
+          id: string
+          is_system_template: boolean | null
+          name: string
+          recommended_calling_hours: Json | null
+          recommended_goal_type: string | null
+          steps: Json
+          times_used: number | null
+          user_id: string | null
+        }
+        Insert: {
+          avg_conversion_rate?: number | null
+          category: string
+          created_at?: string | null
+          description?: string | null
+          estimated_days_to_complete?: number | null
+          estimated_touchpoints?: number | null
+          id?: string
+          is_system_template?: boolean | null
+          name: string
+          recommended_calling_hours?: Json | null
+          recommended_goal_type?: string | null
+          steps?: Json
+          times_used?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          avg_conversion_rate?: number | null
+          category?: string
+          created_at?: string | null
+          description?: string | null
+          estimated_days_to_complete?: number | null
+          estimated_touchpoints?: number | null
+          id?: string
+          is_system_template?: boolean | null
+          name?: string
+          recommended_calling_hours?: Json | null
+          recommended_goal_type?: string | null
+          steps?: Json
+          times_used?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       sip_trunk_configs: {
         Row: {
           auth_type: string | null
@@ -5508,6 +5662,92 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_copy_variants: {
+        Row: {
+          ai_generated: boolean | null
+          ai_reasoning: string | null
+          appointment_rate: number | null
+          context_id: string | null
+          context_type: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          is_control: boolean | null
+          last_sent_at: string | null
+          led_to_appointment: number | null
+          led_to_call_answer: number | null
+          message_template: string
+          opt_outs: number | null
+          parent_variant_id: string | null
+          positive_rate: number | null
+          positive_replies: number | null
+          replies_received: number | null
+          reply_rate: number | null
+          times_sent: number | null
+          traffic_weight: number | null
+          user_id: string
+          variant_label: string
+        }
+        Insert: {
+          ai_generated?: boolean | null
+          ai_reasoning?: string | null
+          appointment_rate?: number | null
+          context_id?: string | null
+          context_type: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_control?: boolean | null
+          last_sent_at?: string | null
+          led_to_appointment?: number | null
+          led_to_call_answer?: number | null
+          message_template: string
+          opt_outs?: number | null
+          parent_variant_id?: string | null
+          positive_rate?: number | null
+          positive_replies?: number | null
+          replies_received?: number | null
+          reply_rate?: number | null
+          times_sent?: number | null
+          traffic_weight?: number | null
+          user_id: string
+          variant_label?: string
+        }
+        Update: {
+          ai_generated?: boolean | null
+          ai_reasoning?: string | null
+          appointment_rate?: number | null
+          context_id?: string | null
+          context_type?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_control?: boolean | null
+          last_sent_at?: string | null
+          led_to_appointment?: number | null
+          led_to_call_answer?: number | null
+          message_template?: string
+          opt_outs?: number | null
+          parent_variant_id?: string | null
+          positive_rate?: number | null
+          positive_replies?: number | null
+          replies_received?: number | null
+          reply_rate?: number | null
+          times_sent?: number | null
+          traffic_weight?: number | null
+          user_id?: string
+          variant_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_copy_variants_parent_variant_id_fkey"
+            columns: ["parent_variant_id"]
+            isOneToOne: false
+            referencedRelation: "sms_copy_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sms_messages: {
         Row: {
           body: string
@@ -5597,6 +5837,63 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_variant_assignments: {
+        Row: {
+          id: string
+          lead_id: string
+          led_to_appointment: boolean | null
+          message_sent: string | null
+          opted_out: boolean | null
+          outcome_recorded_at: string | null
+          reply_received: boolean | null
+          reply_sentiment: number | null
+          reply_text: string | null
+          sent_at: string | null
+          variant_id: string
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          led_to_appointment?: boolean | null
+          message_sent?: string | null
+          opted_out?: boolean | null
+          outcome_recorded_at?: string | null
+          reply_received?: boolean | null
+          reply_sentiment?: number | null
+          reply_text?: string | null
+          sent_at?: string | null
+          variant_id: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          led_to_appointment?: boolean | null
+          message_sent?: string | null
+          opted_out?: boolean | null
+          outcome_recorded_at?: string | null
+          reply_received?: boolean | null
+          reply_sentiment?: number | null
+          reply_text?: string | null
+          sent_at?: string | null
+          variant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_variant_assignments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_variant_assignments_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "sms_copy_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -6748,27 +7045,42 @@ export type Database = {
       }
       workflow_steps: {
         Row: {
+          branch_conditions: Json | null
           created_at: string | null
+          false_branch_step: number | null
           id: string
+          loop_back_to_step: number | null
+          max_loop_count: number | null
           step_config: Json
           step_number: number
           step_type: string
+          true_branch_step: number | null
           workflow_id: string
         }
         Insert: {
+          branch_conditions?: Json | null
           created_at?: string | null
+          false_branch_step?: number | null
           id?: string
+          loop_back_to_step?: number | null
+          max_loop_count?: number | null
           step_config?: Json
           step_number: number
           step_type: string
+          true_branch_step?: number | null
           workflow_id: string
         }
         Update: {
+          branch_conditions?: Json | null
           created_at?: string | null
+          false_branch_step?: number | null
           id?: string
+          loop_back_to_step?: number | null
+          max_loop_count?: number | null
           step_config?: Json
           step_number?: number
           step_type?: string
+          true_branch_step?: number | null
           workflow_id?: string
         }
         Relationships: [
@@ -7199,6 +7511,18 @@ export type Database = {
           variant_name: string
         }[]
       }
+      select_sms_variant: {
+        Args: {
+          p_context_id: string
+          p_context_type: string
+          p_user_id: string
+        }
+        Returns: {
+          message_template: string
+          variant_id: string
+          variant_label: string
+        }[]
+      }
       update_opener_analytics: {
         Args: {
           p_agent_id: string
@@ -7212,6 +7536,16 @@ export type Database = {
           p_was_engaged: boolean
         }
         Returns: string
+      }
+      update_sms_variant_stats: {
+        Args: {
+          p_appointment?: boolean
+          p_opted_out?: boolean
+          p_positive?: boolean
+          p_replied?: boolean
+          p_variant_id: string
+        }
+        Returns: undefined
       }
       update_variant_stats: {
         Args: {
