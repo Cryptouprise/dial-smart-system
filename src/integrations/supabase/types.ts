@@ -2026,6 +2026,56 @@ export type Database = {
           },
         ]
       }
+      churn_risk_events: {
+        Row: {
+          action_result: string | null
+          action_taken: string | null
+          detected_at: string | null
+          id: string
+          lead_id: string
+          resolved_at: string | null
+          risk_level: string
+          risk_score: number
+          risk_signals: Json | null
+          trigger_reason: string
+          user_id: string
+        }
+        Insert: {
+          action_result?: string | null
+          action_taken?: string | null
+          detected_at?: string | null
+          id?: string
+          lead_id: string
+          resolved_at?: string | null
+          risk_level: string
+          risk_score: number
+          risk_signals?: Json | null
+          trigger_reason: string
+          user_id: string
+        }
+        Update: {
+          action_result?: string | null
+          action_taken?: string | null
+          detected_at?: string | null
+          id?: string
+          lead_id?: string
+          resolved_at?: string | null
+          risk_level?: string
+          risk_score?: number
+          risk_signals?: Json | null
+          trigger_reason?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "churn_risk_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_transactions: {
         Row: {
           amount_cents: number
@@ -3523,6 +3573,78 @@ export type Database = {
           },
         ]
       }
+      lead_predictions: {
+        Row: {
+          actual_outcome: string | null
+          churn_risk: number | null
+          conversion_probability: number | null
+          expected_value_cents: number | null
+          expires_at: string | null
+          feature_snapshot: Json | null
+          id: string
+          lead_id: string
+          model_id: string | null
+          optimal_contact_day: number | null
+          optimal_contact_hour: number | null
+          outcome_recorded_at: string | null
+          predicted_at: string | null
+          predicted_segment: string | null
+          roi_score: number | null
+          user_id: string
+        }
+        Insert: {
+          actual_outcome?: string | null
+          churn_risk?: number | null
+          conversion_probability?: number | null
+          expected_value_cents?: number | null
+          expires_at?: string | null
+          feature_snapshot?: Json | null
+          id?: string
+          lead_id: string
+          model_id?: string | null
+          optimal_contact_day?: number | null
+          optimal_contact_hour?: number | null
+          outcome_recorded_at?: string | null
+          predicted_at?: string | null
+          predicted_segment?: string | null
+          roi_score?: number | null
+          user_id: string
+        }
+        Update: {
+          actual_outcome?: string | null
+          churn_risk?: number | null
+          conversion_probability?: number | null
+          expected_value_cents?: number | null
+          expires_at?: string | null
+          feature_snapshot?: Json | null
+          id?: string
+          lead_id?: string
+          model_id?: string | null
+          optimal_contact_day?: number | null
+          optimal_contact_hour?: number | null
+          outcome_recorded_at?: string | null
+          predicted_at?: string | null
+          predicted_segment?: string | null
+          roi_score?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_predictions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_predictions_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ml_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_priority_scores: {
         Row: {
           best_contact_day: string | null
@@ -4074,6 +4196,75 @@ export type Database = {
         }
         Relationships: []
       }
+      message_effectiveness: {
+        Row: {
+          appointments: number | null
+          calculated_at: string | null
+          confidence_level: number | null
+          effective_for_disposition: string | null
+          effective_for_interest_range: unknown
+          effective_for_source: string | null
+          effective_for_stage: string | null
+          effectiveness_score: number | null
+          id: string
+          is_significant: boolean | null
+          message_content: string | null
+          message_hash: string | null
+          message_type: string
+          opt_outs: number | null
+          p_value: number | null
+          positive_replies: number | null
+          replies: number | null
+          sample_size_needed: number | null
+          times_sent: number | null
+          user_id: string
+        }
+        Insert: {
+          appointments?: number | null
+          calculated_at?: string | null
+          confidence_level?: number | null
+          effective_for_disposition?: string | null
+          effective_for_interest_range?: unknown
+          effective_for_source?: string | null
+          effective_for_stage?: string | null
+          effectiveness_score?: number | null
+          id?: string
+          is_significant?: boolean | null
+          message_content?: string | null
+          message_hash?: string | null
+          message_type: string
+          opt_outs?: number | null
+          p_value?: number | null
+          positive_replies?: number | null
+          replies?: number | null
+          sample_size_needed?: number | null
+          times_sent?: number | null
+          user_id: string
+        }
+        Update: {
+          appointments?: number | null
+          calculated_at?: string | null
+          confidence_level?: number | null
+          effective_for_disposition?: string | null
+          effective_for_interest_range?: unknown
+          effective_for_source?: string | null
+          effective_for_stage?: string | null
+          effectiveness_score?: number | null
+          id?: string
+          is_significant?: boolean | null
+          message_content?: string | null
+          message_hash?: string | null
+          message_type?: string
+          opt_outs?: number | null
+          p_value?: number | null
+          positive_replies?: number | null
+          replies?: number | null
+          sample_size_needed?: number | null
+          times_sent?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ml_learning_data: {
         Row: {
           agent_id: string | null
@@ -4152,6 +4343,80 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_models: {
+        Row: {
+          auc_score: number | null
+          coefficients: Json
+          correct_predictions: number | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          last_used_at: string | null
+          model_type: string
+          online_accuracy: number | null
+          precision_score: number | null
+          predictions_made: number | null
+          recall_score: number | null
+          superseded_by: string | null
+          trained_at: string | null
+          training_accuracy: number | null
+          training_positives: number | null
+          training_samples: number | null
+          user_id: string
+          version: number | null
+        }
+        Insert: {
+          auc_score?: number | null
+          coefficients?: Json
+          correct_predictions?: number | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_used_at?: string | null
+          model_type: string
+          online_accuracy?: number | null
+          precision_score?: number | null
+          predictions_made?: number | null
+          recall_score?: number | null
+          superseded_by?: string | null
+          trained_at?: string | null
+          training_accuracy?: number | null
+          training_positives?: number | null
+          training_samples?: number | null
+          user_id: string
+          version?: number | null
+        }
+        Update: {
+          auc_score?: number | null
+          coefficients?: Json
+          correct_predictions?: number | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_used_at?: string | null
+          model_type?: string
+          online_accuracy?: number | null
+          precision_score?: number | null
+          predictions_made?: number | null
+          recall_score?: number | null
+          superseded_by?: string | null
+          trained_at?: string | null
+          training_accuracy?: number | null
+          training_positives?: number | null
+          training_samples?: number | null
+          user_id?: string
+          version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_models_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "ml_models"
             referencedColumns: ["id"]
           },
         ]
@@ -5381,6 +5646,78 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      segment_roi_metrics: {
+        Row: {
+          appointments_set: number | null
+          calculated_at: string | null
+          conversion_rate: number | null
+          conversions: number | null
+          cost_per_appointment_cents: number | null
+          cost_per_conversion_cents: number | null
+          id: string
+          period_end: string | null
+          period_start: string | null
+          recommended_budget_pct: number | null
+          recommended_channel: string | null
+          recommended_pacing: number | null
+          roi_ratio: number | null
+          roi_trend: string | null
+          segment_criteria: Json
+          segment_name: string
+          total_calls: number | null
+          total_leads: number | null
+          total_sms: number | null
+          total_spend_cents: number | null
+          user_id: string
+        }
+        Insert: {
+          appointments_set?: number | null
+          calculated_at?: string | null
+          conversion_rate?: number | null
+          conversions?: number | null
+          cost_per_appointment_cents?: number | null
+          cost_per_conversion_cents?: number | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          recommended_budget_pct?: number | null
+          recommended_channel?: string | null
+          recommended_pacing?: number | null
+          roi_ratio?: number | null
+          roi_trend?: string | null
+          segment_criteria?: Json
+          segment_name: string
+          total_calls?: number | null
+          total_leads?: number | null
+          total_sms?: number | null
+          total_spend_cents?: number | null
+          user_id: string
+        }
+        Update: {
+          appointments_set?: number | null
+          calculated_at?: string | null
+          conversion_rate?: number | null
+          conversions?: number | null
+          cost_per_appointment_cents?: number | null
+          cost_per_conversion_cents?: number | null
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          recommended_budget_pct?: number | null
+          recommended_channel?: string | null
+          recommended_pacing?: number | null
+          roi_ratio?: number | null
+          roi_trend?: string | null
+          segment_criteria?: Json
+          segment_name?: string
+          total_calls?: number | null
+          total_leads?: number | null
+          total_sms?: number | null
+          total_spend_cents?: number | null
+          user_id?: string
+        }
+        Relationships: []
       }
       sequence_steps: {
         Row: {
@@ -7383,6 +7720,10 @@ export type Database = {
           required_cents: number
         }[]
       }
+      chi_square_2x2: {
+        Args: { a: number; b: number; c: number; d: number }
+        Returns: number
+      }
       cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
@@ -7459,6 +7800,10 @@ export type Database = {
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
       normalize_opener_text: { Args: { p_opener: string }; Returns: string }
+      predict_lead_conversion: {
+        Args: { p_lead_id: string; p_user_id: string }
+        Returns: number
+      }
       rebalance_variant_weights: {
         Args: { p_agent_id: string; p_user_id: string }
         Returns: Json
@@ -7523,6 +7868,7 @@ export type Database = {
           variant_label: string
         }[]
       }
+      sigmoid: { Args: { x: number }; Returns: number }
       update_opener_analytics: {
         Args: {
           p_agent_id: string
