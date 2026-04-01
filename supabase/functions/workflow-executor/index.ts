@@ -279,31 +279,46 @@ serve(async (req) => {
 
       console.log(`[Workflow] Found ${pendingProgress?.length || 0} pending steps to execute`);
 
-      const results = [];
-      
-      for (const progress of pendingProgress || []) {
-        try {
-          // Check if lead is engaged or sequence is paused
-          const { data: nudgeStatus } = await supabase
-            .from('lead_nudge_tracking')
-            .select('is_engaged, sequence_paused')
-            .eq('lead_id', progress.lead_id)
-            .maybeSingle();
+      const BATCH_SIZE = 10;
+      const startTime = Date.now();
+      const results: Array<{ leadId: string; success: boolean; result?: any; error?: string; skipped?: boolean }> = [];
+      const allPending = pendingProgress || [];
 
-          if (nudgeStatus?.sequence_paused) {
-            console.log(`[Workflow] Skipping lead ${progress.lead_id} - sequence paused`);
-            continue;
-          }
-
-          const result = await executeStep(supabase, progress);
-          results.push({ leadId: progress.lead_id, success: true, result });
-        } catch (stepError: any) {
-          console.error('[Workflow] Error executing step for lead:', progress.lead_id, stepError);
-          results.push({ leadId: progress.lead_id, success: false, error: stepError.message });
+      for (let i = 0; i < allPending.length; i += BATCH_SIZE) {
+        // Safety timeout: stop if approaching Deno function limit
+        if (Date.now() - startTime > 25000) {
+          console.warn(`[Workflow] Approaching timeout, processed ${results.length}/${allPending.length} leads`);
+          break;
         }
+
+        const batch = allPending.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(
+          batch.map(async (progress) => {
+            try {
+              // Check if lead is engaged or sequence is paused
+              const { data: nudgeStatus } = await supabase
+                .from('lead_nudge_tracking')
+                .select('is_engaged, sequence_paused')
+                .eq('lead_id', progress.lead_id)
+                .maybeSingle();
+
+              if (nudgeStatus?.sequence_paused) {
+                console.log(`[Workflow] Skipping lead ${progress.lead_id} - sequence paused`);
+                return { leadId: progress.lead_id, success: true, skipped: true };
+              }
+
+              const result = await executeStep(supabase, progress);
+              return { leadId: progress.lead_id, success: true, result };
+            } catch (err: any) {
+              console.error(`[Workflow] Error processing progress ${progress.id}:`, err.message);
+              return { leadId: progress.lead_id, success: false, error: err.message };
+            }
+          })
+        );
+        results.push(...batchResults);
       }
 
-      return new Response(JSON.stringify({ processed: results.length, results }), {
+      return new Response(JSON.stringify({ processed: results.length, total: allPending.length, results }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -555,7 +570,7 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
       .select('id, direction, body, created_at')
       .eq('lead_id', lead.id)
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(3),
     supabase
       .from('lead_journey_state')
       .select('current_stage, interest_level, engagement_score, sentiment_trend, total_calls, sms_sent, last_touch_at')
