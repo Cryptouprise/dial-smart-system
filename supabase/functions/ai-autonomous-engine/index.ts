@@ -4281,15 +4281,27 @@ async function trainConversionModel(
       return { trained: false, accuracy: 0, auc: 0, decisions };
     }
 
-    // Logistic regression via gradient descent (20 iterations)
+    // Shuffle and split data 80/20 for train/test
+    const shuffled = [...trainingData].sort(() => Math.random() - 0.5);
+    const splitIdx = Math.floor(shuffled.length * 0.8);
+    const trainSet = shuffled.slice(0, splitIdx);
+    const testSet = shuffled.slice(splitIdx);
+
+    // Logistic regression via gradient descent with convergence checking
     const coefficients: Record<string, number> = { intercept: 0 };
     for (const f of featureNames) {
       coefficients[f] = 0;
     }
     const learningRate = 0.01;
+    const MAX_ITERATIONS = 100;
+    const CONVERGENCE_THRESHOLD = 0.0001;
+    let prevLoss = Infinity;
+    let iterationsRun = 0;
 
-    for (let iter = 0; iter < 20; iter++) {
-      for (const sample of trainingData) {
+    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      let totalLoss = 0;
+
+      for (const sample of trainSet) {
         let logit = coefficients.intercept;
         for (const f of featureNames) {
           logit += (coefficients[f] || 0) * (sample.features[f] || 0);
@@ -4301,14 +4313,28 @@ async function trainConversionModel(
         for (const f of featureNames) {
           coefficients[f] += learningRate * error * (sample.features[f] || 0);
         }
+
+        // Track loss (binary cross-entropy)
+        const clampedPred = Math.max(0.0001, Math.min(0.9999, predicted));
+        totalLoss += -(sample.label * Math.log(clampedPred) + (1 - sample.label) * Math.log(1 - clampedPred));
       }
+
+      totalLoss /= trainSet.length;
+      iterationsRun = iter + 1;
+
+      // Check convergence
+      if (Math.abs(prevLoss - totalLoss) < CONVERGENCE_THRESHOLD) {
+        console.log(`[ML] Converged after ${iterationsRun} iterations (loss: ${totalLoss.toFixed(6)})`);
+        break;
+      }
+      prevLoss = totalLoss;
     }
 
-    // Calculate accuracy
+    // Calculate accuracy on held-out test set
     let correct = 0;
     const predictions: Array<{ predicted: number; actual: number }> = [];
 
-    for (const sample of trainingData) {
+    for (const sample of testSet) {
       let logit = coefficients.intercept;
       for (const f of featureNames) {
         logit += (coefficients[f] || 0) * (sample.features[f] || 0);
@@ -4320,7 +4346,7 @@ async function trainConversionModel(
         correct++;
       }
     }
-    const accuracy = correct / trainingData.length;
+    const accuracy = testSet.length > 0 ? correct / testSet.length : 0;
 
     // AUC approximation: sort by predicted desc, count concordant pairs
     predictions.sort((a, b) => b.predicted - a.predicted);
@@ -4360,6 +4386,12 @@ async function trainConversionModel(
       coefficients: {
         intercept: coefficients.intercept,
         features: featureCoefficients,
+        training_metadata: {
+          iterations: iterationsRun,
+          final_loss: prevLoss,
+          train_samples: trainSet.length,
+          test_samples: testSet.length,
+        },
       },
       feature_names: featureNames,
       training_samples: trainingData.length,
@@ -4370,17 +4402,22 @@ async function trainConversionModel(
       metadata: {
         source_encoding: sourceEncoding,
         learning_rate: learningRate,
-        iterations: 20,
+        iterations: iterationsRun,
+        max_iterations: MAX_ITERATIONS,
+        convergence_threshold: CONVERGENCE_THRESHOLD,
+        converged: iterationsRun < MAX_ITERATIONS,
       },
     });
 
     decisions.push(
       `[ML] Conversion model trained: ${trainingData.length} samples (${positiveCount}+/${negativeCount}-), ` +
+      `train/test split: ${trainSet.length}/${testSet.length}, ` +
+      `${iterationsRun < MAX_ITERATIONS ? `converged at iter ${iterationsRun}` : `ran full ${MAX_ITERATIONS} iters`}, ` +
       `accuracy=${(accuracy * 100).toFixed(1)}%, AUC=${auc.toFixed(3)}. ` +
       `Top features: ${featureNames.filter(f => Math.abs(coefficients[f]) > 0.1).map(f => `${f}=${coefficients[f].toFixed(3)}`).join(', ')}`
     );
 
-    console.log(`[ML] Conversion model trained for user ${userId}: accuracy=${(accuracy * 100).toFixed(1)}%, AUC=${auc.toFixed(3)}`);
+    console.log(`[ML] Model trained: ${iterationsRun} iterations, accuracy=${accuracy.toFixed(3)}, AUC=${auc.toFixed(3)}, samples=${trainingData.length} (${positiveCount} pos / ${negativeCount} neg)`);
 
     return { trained: true, accuracy, auc, decisions };
   } catch (err: any) {
