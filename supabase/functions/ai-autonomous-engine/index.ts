@@ -39,6 +39,21 @@ interface AutonomousSettings {
   auto_prioritize_leads: boolean;
   last_engine_run: string | null;
   engine_interval_minutes: number;
+  manage_lead_journeys?: boolean;
+  journey_max_daily_touches?: number;
+  enable_daily_planning?: boolean;
+  enable_strategic_insights?: boolean;
+  auto_create_rules_from_insights?: boolean;
+  insight_confidence_threshold?: number;
+  briefing_frequency?: string;
+  daily_budget_cents?: number;
+  enable_script_ab_testing?: boolean;
+  perpetual_followup_enabled?: boolean;
+  perpetual_max_days?: number;
+  perpetual_min_gap_days?: number;
+  perpetual_max_gap_days?: number;
+  perpetual_channels?: string[];
+  perpetual_stop_on?: string[];
 }
 
 interface EngineResult {
