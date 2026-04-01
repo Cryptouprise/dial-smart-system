@@ -4492,7 +4492,8 @@ async function predictLeadConversion(
       activeLeads = fetchedLeads || [];
     }
 
-    if (activeLeads.length === 0) {
+    const safeLeads = activeLeads ?? [];
+    if (safeLeads.length === 0) {
       return { scored: 0, decisions: ['[ML] No active leads to score.'] };
     }
 
