@@ -4258,7 +4258,7 @@ async function trainConversionModel(
 
       const features: Record<string, number> = {
         recency_days: Math.min(recencyDays / 90, 1), // Normalize to 0-1 (cap at 90 days)
-        total_calls: Math.min((journey?.total_calls || 1) / 10, 1),
+        total_calls: Math.min((journey?.total_calls || 0) / 10, 1),
         interest_level: Math.min((journey?.interest_level || 0) / 100, 1),
         engagement_score: Math.min((journey?.engagement_score || 0) / 100, 1),
         has_intent_timeline: intent?.has_timeline ? 1 : 0,
@@ -4693,6 +4693,23 @@ async function detectChurnRisk(
 
       // For critical and high risk: auto-queue reengagement
       if (riskLevel === 'critical' || riskLevel === 'high') {
+        // Prevent duplicate reengagement actions - check if one already exists recently
+        const { data: existingAction } = await supabase
+          .from('ai_action_queue')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('action_type', 'journey_ai_sms')
+          .eq('source', 'churn_detection')
+          .in('status', ['pending', 'approved', 'executing'])
+          .filter('action_params->>lead_id', 'eq', lead.lead_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingAction) {
+          // Already has a pending reengagement action, skip
+          continue;
+        }
+
         const channel = lead.preferred_channel || 'sms';
         const urgencyNote = riskLevel === 'critical'
           ? 'CRITICAL: This lead is about to be lost. Send a re-engagement message with value proposition.'

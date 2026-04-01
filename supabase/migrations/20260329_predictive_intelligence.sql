@@ -299,18 +299,22 @@ BEGIN
   -- Start with intercept
   v_logit := COALESCE((v_coeff->>'intercept')::NUMERIC, 0);
 
-  -- Add feature contributions
+  -- Add feature contributions (MUST match TypeScript normalization in trainConversionModel)
+  -- recency_days: normalized to 0-1 by dividing by 90 and capping
   v_logit := v_logit + COALESCE((v_coeff->'features'->>'recency_days')::NUMERIC, 0) *
-    COALESCE(EXTRACT(EPOCH FROM now() - COALESCE(v_journey.last_touch_at, v_lead.created_at)) / 86400, 30);
+    LEAST(COALESCE(EXTRACT(EPOCH FROM now() - COALESCE(v_journey.last_touch_at, v_lead.created_at)) / 86400, 30) / 90.0, 1.0);
 
+  -- total_calls: normalized to 0-1 by dividing by 10 and capping
   v_logit := v_logit + COALESCE((v_coeff->'features'->>'total_calls')::NUMERIC, 0) *
-    COALESCE(v_journey.total_calls, 0);
+    LEAST(COALESCE(v_journey.total_calls, 0)::NUMERIC / 10.0, 1.0);
 
+  -- interest_level: normalized to 0-1 by dividing by 10 (scale is 1-10)
   v_logit := v_logit + COALESCE((v_coeff->'features'->>'interest_level')::NUMERIC, 0) *
-    COALESCE(v_journey.interest_level, 5);
+    LEAST(COALESCE(v_journey.interest_level, 0)::NUMERIC / 10.0, 1.0);
 
+  -- engagement_score: normalized to 0-1 by dividing by 100
   v_logit := v_logit + COALESCE((v_coeff->'features'->>'engagement_score')::NUMERIC, 0) *
-    COALESCE(v_journey.engagement_score, 0);
+    LEAST(COALESCE(v_journey.engagement_score, 0)::NUMERIC / 100.0, 1.0);
 
   v_logit := v_logit + COALESCE((v_coeff->'features'->>'has_intent_timeline')::NUMERIC, 0) *
     CASE WHEN v_intent.intent_timeline IS NOT NULL THEN 1 ELSE 0 END;
