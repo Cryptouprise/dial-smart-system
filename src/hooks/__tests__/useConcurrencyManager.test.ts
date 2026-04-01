@@ -434,7 +434,7 @@ describe('useConcurrencyManager', () => {
 
       // from('system_settings') should not have been called again
       const systemSettingsCalls = vi.mocked(mockSupabase.from).mock.calls.filter(
-        (c) => c[0] === 'system_settings',
+        (c) => c[0] === ('system_settings' as any),
       );
       expect(systemSettingsCalls).toHaveLength(0);
     });

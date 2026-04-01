@@ -4530,7 +4530,7 @@ async function predictLeadConversion(
       features: Record<string, number>;
     }> = [];
 
-    for (const lead of activeLeads) {
+    for (const lead of safeLeads) {
       const journey = Array.isArray(lead.lead_journey_state)
         ? lead.lead_journey_state[0]
         : lead.lead_journey_state;
