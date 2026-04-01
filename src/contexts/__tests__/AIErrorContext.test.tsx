@@ -2,13 +2,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { AIErrorProvider, useAIErrors } from '../AIErrorContext';
-import { supabase } from '@/integrations/supabase/client';
 
-vi.mock('@/integrations/supabase/client');
+// Mock supabase - the error handler writes to guardian_alerts table
+const mockInsert = vi.fn().mockReturnValue({
+  then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
+});
+const mockFrom = vi.fn().mockReturnValue({
+  select: vi.fn().mockReturnThis(),
+  insert: mockInsert,
+  update: vi.fn().mockReturnThis(),
+  delete: vi.fn().mockReturnThis(),
+  eq: vi.fn().mockReturnThis(),
+  single: vi.fn(() => Promise.resolve({ data: null, error: null })),
+});
 
-// The error handler internally calls supabase.from('guardian_alerts').insert(...).then(...)
-// We need .from() to return a chain where .insert() returns a thenable.
-const mockFrom = supabase.from as ReturnType<typeof vi.fn>;
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: (...args: any[]) => mockFrom(...args),
+    functions: {
+      invoke: vi.fn().mockResolvedValue({ data: null, error: null }),
+    },
+  },
+}));
+
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AIErrorProvider>{children}</AIErrorProvider>;
@@ -18,69 +37,22 @@ describe('AIErrorContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    // Provide a chain where .insert() returns a thenable (used by guardian_alerts logging)
-    mockFrom.mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnValue({
-        then: (resolve: any, reject: any) => Promise.resolve({ data: null, error: null }).then(resolve, reject),
-      }),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn(() => Promise.resolve({ data: null, error: null })),
-    });
   });
 
-  // ── Provider Rendering ─────────────────────────────────────────────
+  // ── Provider Renders Children ──────────────────────────────────────
 
   describe('Provider', () => {
-    it('renders children without crashing', () => {
+    it('renders children and provides context', () => {
       const { result } = renderHook(() => useAIErrors(), { wrapper });
       expect(result.current).toBeDefined();
-    });
-  });
-
-  // ── Context Interface ──────────────────────────────────────────────
-
-  describe('Context Interface', () => {
-    it('provides errors array (initially empty)', () => {
-      const { result } = renderHook(() => useAIErrors(), { wrapper });
-      expect(Array.isArray(result.current.errors)).toBe(true);
-      expect(result.current.errors).toHaveLength(0);
-    });
-
-    it('provides settings object with defaults', () => {
-      const { result } = renderHook(() => useAIErrors(), { wrapper });
-      expect(result.current.settings).toEqual({
-        enabled: true,
-        autoFixMode: true,
-        maxRetries: 3,
-        logErrors: true,
-      });
-    });
-
-    it('provides isProcessing boolean', () => {
-      const { result } = renderHook(() => useAIErrors(), { wrapper });
-      expect(typeof result.current.isProcessing).toBe('boolean');
-      expect(result.current.isProcessing).toBe(false);
-    });
-
-    it('provides all action functions', () => {
-      const { result } = renderHook(() => useAIErrors(), { wrapper });
-      expect(typeof result.current.captureError).toBe('function');
-      expect(typeof result.current.analyzeError).toBe('function');
-      expect(typeof result.current.executeFixFromSuggestion).toBe('function');
-      expect(typeof result.current.clearError).toBe('function');
-      expect(typeof result.current.clearAllErrors).toBe('function');
-      expect(typeof result.current.retryError).toBe('function');
-      expect(typeof result.current.updateSettings).toBe('function');
+      expect(result.current.errors).toBeDefined();
     });
   });
 
   // ── Throws Outside Provider ────────────────────────────────────────
 
   describe('useAIErrors outside provider', () => {
-    it('throws when used outside AIErrorProvider', () => {
+    it('throws descriptive error when used outside AIErrorProvider', () => {
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
       expect(() => {
         renderHook(() => useAIErrors());
@@ -89,111 +61,215 @@ describe('AIErrorContext', () => {
     });
   });
 
-  // ── Error Capture ──────────────────────────────────────────────────
+  // ── Initial State ──────────────────────────────────────────────────
 
-  describe('Error Capture', () => {
-    it('captureError adds an error record from Error object', async () => {
+  describe('Initial state', () => {
+    it('errors array is empty', () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+      expect(result.current.errors).toEqual([]);
+    });
+
+    it('isProcessing is false', () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+      expect(result.current.isProcessing).toBe(false);
+    });
+
+    it('settings have correct defaults', () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+      expect(result.current.settings).toEqual({
+        enabled: true,
+        autoFixMode: true,
+        maxRetries: 3,
+        logErrors: true,
+      });
+    });
+  });
+
+  // ── captureError ───────────────────────────────────────────────────
+
+  describe('captureError', () => {
+    it('adds error to errors array from Error object', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
         await result.current.captureError(new Error('Test failure'), 'runtime');
       });
 
-      expect(result.current.errors.length).toBeGreaterThanOrEqual(1);
+      expect(result.current.errors.length).toBe(1);
       const captured = result.current.errors[0];
       expect(captured.message).toBe('Test failure');
       expect(captured.type).toBe('runtime');
       expect(captured.status).toBe('pending');
-      expect(captured.id).toBeTruthy();
+      consoleSpy.mockRestore();
     });
 
-    it('captureError adds an error record from string', async () => {
+    it('adds error to errors array from string', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
         await result.current.captureError('Something broke', 'api');
       });
 
-      expect(result.current.errors.length).toBeGreaterThanOrEqual(1);
+      expect(result.current.errors.length).toBe(1);
       expect(result.current.errors[0].message).toBe('Something broke');
       expect(result.current.errors[0].type).toBe('api');
+      consoleSpy.mockRestore();
     });
 
-    it('captureError includes context when provided', async () => {
+    it('captured error includes id, timestamp, and message', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
-        await result.current.captureError('ctx error', 'ui', { component: 'Dashboard' });
+        await result.current.captureError('Details test', 'ui');
       });
 
       const captured = result.current.errors[0];
-      expect(captured.context).toEqual({ component: 'Dashboard' });
+      expect(captured.id).toBeTruthy();
+      expect(typeof captured.id).toBe('string');
+      expect(captured.timestamp).toBeInstanceOf(Date);
+      expect(captured.message).toBe('Details test');
+      expect(captured.type).toBe('ui');
+      consoleSpy.mockRestore();
     });
 
-    it('captureError ignores errors matching ignored patterns', async () => {
+    it('includes context metadata when provided', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
-        await result.current.captureError('Failed to fetch resource', 'network');
+        await result.current.captureError('ctx error', 'ui', { component: 'Dashboard', page: '/home' });
       });
 
-      // "Failed to fetch" is in the ignored patterns list
-      expect(result.current.errors).toHaveLength(0);
+      const captured = result.current.errors[0];
+      expect(captured.context).toEqual({ component: 'Dashboard', page: '/home' });
+      consoleSpy.mockRestore();
     });
 
-    it('captureError deduplicates same error within window', async () => {
+    it('includes stack trace from Error objects', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
+      const err = new Error('With stack');
 
       await act(async () => {
-        await result.current.captureError('Unique error X', 'runtime');
+        await result.current.captureError(err, 'runtime');
       });
 
-      await act(async () => {
-        await result.current.captureError('Unique error X', 'runtime');
-      });
-
-      // Second identical error within dedupe window should be ignored
-      expect(result.current.errors).toHaveLength(1);
+      const captured = result.current.errors[0];
+      expect(captured.stack).toBeTruthy();
+      expect(captured.stack).toContain('With stack');
+      consoleSpy.mockRestore();
     });
 
-    it('captureError returns null when settings.enabled is false', async () => {
+    it('returns error id on success', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
-      act(() => {
-        result.current.updateSettings({ enabled: false });
-      });
-
-      let errorId: string | null = 'initial';
+      let errorId: string | null = null;
       await act(async () => {
-        errorId = await result.current.captureError('Disabled capture', 'runtime');
+        errorId = await result.current.captureError('Return id test', 'runtime');
       });
 
-      expect(errorId).toBeNull();
-      expect(result.current.errors).toHaveLength(0);
+      expect(errorId).toBeTruthy();
+      expect(typeof errorId).toBe('string');
+      expect(result.current.errors[0].id).toBe(errorId);
+      consoleSpy.mockRestore();
     });
   });
 
-  // ── Error Clearing ─────────────────────────────────────────────────
+  // ── Multiple Errors ────────────────────────────────────────────────
 
-  describe('Error Clearing', () => {
-    it('clearError removes a specific error by ID', async () => {
+  describe('Multiple errors', () => {
+    it('captures two different errors into array', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
-        await result.current.captureError('Error A', 'runtime');
+        await result.current.captureError('Error Alpha', 'runtime');
       });
 
-      const errorId = result.current.errors[0]?.id;
+      await act(async () => {
+        await result.current.captureError('Error Beta', 'api');
+      });
+
+      expect(result.current.errors.length).toBe(2);
+      const messages = result.current.errors.map(e => e.message);
+      expect(messages).toContain('Error Alpha');
+      expect(messages).toContain('Error Beta');
+      consoleSpy.mockRestore();
+    });
+
+    it('deduplicates identical errors within 30s window', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Duplicate error', 'runtime');
+      });
+
+      await act(async () => {
+        await result.current.captureError('Duplicate error', 'runtime');
+      });
+
+      // Second identical error should be deduplicated
+      expect(result.current.errors.length).toBe(1);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── clearError (dismiss specific) ──────────────────────────────────
+
+  describe('clearError', () => {
+    it('removes specific error by id', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Error to dismiss', 'runtime');
+      });
+
+      const errorId = result.current.errors[0].id;
       expect(errorId).toBeTruthy();
 
       act(() => {
         result.current.clearError(errorId);
       });
 
-      expect(result.current.errors.find((e) => e.id === errorId)).toBeUndefined();
+      expect(result.current.errors.find(e => e.id === errorId)).toBeUndefined();
+      expect(result.current.errors.length).toBe(0);
+      consoleSpy.mockRestore();
     });
 
-    it('clearAllErrors removes all errors', async () => {
+    it('leaves other errors intact when removing one', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Keep me', 'runtime');
+      });
+      await act(async () => {
+        await result.current.captureError('Remove me', 'api');
+      });
+
+      const removeId = result.current.errors.find(e => e.message === 'Remove me')!.id;
+
+      act(() => {
+        result.current.clearError(removeId);
+      });
+
+      expect(result.current.errors.length).toBe(1);
+      expect(result.current.errors[0].message).toBe('Keep me');
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── clearAllErrors ─────────────────────────────────────────────────
+
+  describe('clearAllErrors', () => {
+    it('removes all errors from array', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       await act(async () => {
@@ -210,13 +286,58 @@ describe('AIErrorContext', () => {
       });
 
       expect(result.current.errors).toHaveLength(0);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── Ignored Patterns ───────────────────────────────────────────────
+
+  describe('Ignored error patterns', () => {
+    it('ignores errors matching "Failed to fetch"', async () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Failed to fetch resource', 'network');
+      });
+
+      expect(result.current.errors).toHaveLength(0);
+    });
+
+    it('ignores errors matching "ResizeObserver loop"', async () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('ResizeObserver loop completed', 'runtime');
+      });
+
+      expect(result.current.errors).toHaveLength(0);
+    });
+  });
+
+  // ── Disabled Capture ───────────────────────────────────────────────
+
+  describe('Disabled capture', () => {
+    it('returns null and does not add error when settings.enabled is false', async () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      act(() => {
+        result.current.updateSettings({ enabled: false });
+      });
+
+      let errorId: string | null = 'initial';
+      await act(async () => {
+        errorId = await result.current.captureError('Disabled capture', 'runtime');
+      });
+
+      expect(errorId).toBeNull();
+      expect(result.current.errors).toHaveLength(0);
     });
   });
 
   // ── Settings ───────────────────────────────────────────────────────
 
-  describe('Settings', () => {
-    it('updateSettings merges partial updates', () => {
+  describe('updateSettings', () => {
+    it('merges partial updates into existing settings', () => {
       const { result } = renderHook(() => useAIErrors(), { wrapper });
 
       act(() => {
@@ -224,9 +345,21 @@ describe('AIErrorContext', () => {
       });
 
       expect(result.current.settings.maxRetries).toBe(5);
-      // Other settings should remain at defaults
       expect(result.current.settings.enabled).toBe(true);
       expect(result.current.settings.autoFixMode).toBe(true);
+      expect(result.current.settings.logErrors).toBe(true);
+    });
+
+    it('persists settings to localStorage', () => {
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      act(() => {
+        result.current.updateSettings({ maxRetries: 7, logErrors: false });
+      });
+
+      const stored = JSON.parse(localStorage.getItem('ai-error-settings')!);
+      expect(stored.maxRetries).toBe(7);
+      expect(stored.logErrors).toBe(false);
     });
 
     it('reads initial settings from localStorage', () => {
@@ -235,6 +368,51 @@ describe('AIErrorContext', () => {
 
       const { result } = renderHook(() => useAIErrors(), { wrapper });
       expect(result.current.settings).toEqual(custom);
+    });
+  });
+
+  // ── Error Record Structure ─────────────────────────────────────────
+
+  describe('Error record structure', () => {
+    it('error record has retryCount initialized to 0', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Structure test', 'runtime');
+      });
+
+      expect(result.current.errors[0].retryCount).toBe(0);
+      consoleSpy.mockRestore();
+    });
+
+    it('error record has retryable defaulting to true', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('Retryable test', 'api');
+      });
+
+      expect(result.current.errors[0].retryable).toBe(true);
+      consoleSpy.mockRestore();
+    });
+
+    it('newest errors are first in the array', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { result } = renderHook(() => useAIErrors(), { wrapper });
+
+      await act(async () => {
+        await result.current.captureError('First error', 'runtime');
+      });
+      await act(async () => {
+        await result.current.captureError('Second error', 'api');
+      });
+
+      // Errors are prepended (newest first)
+      expect(result.current.errors[0].message).toBe('Second error');
+      expect(result.current.errors[1].message).toBe('First error');
+      consoleSpy.mockRestore();
     });
   });
 });
