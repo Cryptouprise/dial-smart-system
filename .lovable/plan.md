@@ -1,48 +1,55 @@
 
 
-# Plan: Calendar Tool Visibility + Push per Assistant
+# Fix Build Errors Plan
 
-## The Problem
+There are 9 TypeScript errors across 4 edge function files and 3 test files. Here's the fix for each.
 
-The screenshot shows the Telnyx portal's "Add Webhook Tool" dialog. You can see where tools are configured — but our app gives zero feedback about whether the `book_appointment` tool is actually present on each assistant. The sync logic tries to push it, but failures are silent. Your test call booked nothing because the tool likely wasn't there.
+## Edge Function Fixes
 
-## What I'll Build
+### 1. `ai-autonomous-engine/index.ts` — 7 errors
 
-### 1. Per-Assistant Calendar Tool Status Badge
+**Error 1 (line 2516):** `auto_create_rules_from_insights` missing from `AutonomousSettings` interface.
+- **Fix:** Add missing fields to the `AutonomousSettings` interface (lines 29-42): `manage_lead_journeys`, `enable_daily_planning`, `enable_strategic_insights`, `auto_create_rules_from_insights`, `perpetual_followup_enabled`, and related fields that are used throughout the file but never declared.
 
-On each assistant card, add a visual indicator next to the existing tool count:
-- **"📅 Calendar"** (green) — `book_appointment` found in the assistant's tools array
-- **"❌ No Calendar Tool"** (red) — missing, with a "Push" button
+**Errors 2-3 (line 3446):** `callLLMJson` is called with `{ system, prompt, ... }` but expects `{ messages: ChatMessage[] }` per the `LLMCallOptions` interface.
+- **Fix:** Refactor the `optimizeSmsCopy` call (around line 3444) to use `messages` array format instead of `system`/`prompt` shorthand. This also fixes errors on lines 3458-3459 where `improvement.improved_message` and `improvement.reasoning` are typed as `{}` — the generic `T` defaults to `Record<string, unknown>`, so we cast the result properly.
 
-The check is local (tools array already synced from Telnyx), so it's instant — no extra API call.
+**Errors 4-6 (lines 4478, 4483, 4515):** `activeLeads` is possibly `undefined` because the variable is initialized as `leads` (the parameter), which can be undefined, and the `fetchedLeads || []` assignment only happens inside an `if (!activeLeads)` block.
+- **Fix:** Change line 4475 from `activeLeads = fetchedLeads || []` — actually the issue is that after the `if (!activeLeads)` block, TypeScript still considers `activeLeads` could be undefined. Add a non-null assertion or re-declare with explicit type: `const safeLeads = activeLeads ?? []` after the block.
 
-### 2. One-Click "Push Calendar Tool" Button
+### 2. `telnyx-webhook/index.ts` — 1 error (line 191)
 
-When a tool is missing, show a button that calls the existing `provision_calendar_tools` logic but targeted to a single assistant. This will:
-- Fetch current tools from Telnyx API
-- Append `book_appointment` webhook tool if missing
-- Push back to Telnyx via `POST /v2/ai/assistants/{id}`
-- Update local DB
-- Refresh the UI
+**Error:** `signature` is `string | null` from `req.headers.get()`, but `verifyTelnyxSignature` parameter `timestamp` accepts `string | null` while `signature` is being passed to a parameter typed as `string | null`. The actual error says `string | undefined` is not assignable to `string | null`.
+- **Fix:** Looking more carefully, the `timestamp` variable comes from `req.headers.get()` which returns `string | null`. The function signature already accepts `string | null`. Let me re-read the error: "Argument of type 'string | undefined' is not assignable to parameter of type 'string | null'." This means one of the variables is `string | undefined` somewhere. Check: `webhookSecret` comes from `Deno.env.get()` which returns `string | undefined`. The function param is `webhookSecret: string | null`. Fix: pass `webhookSecret ?? null`.
 
-### 3. New `push_calendar_tool` Action (Single Assistant)
+### 3. `voice-broadcast-engine/index.ts` — 1 error (line 658)
 
-Add a targeted action to the edge function that provisions the calendar tool for ONE specific assistant (the existing `provision_calendar_tools` does ALL assistants — we need a surgical version).
+**Error:** `telnyxApiKey` is typed as `string?` (optional) in `ProviderConfig` interface, but the value `|| null` produces `string | null` which isn't assignable to `string | undefined`.
+- **Fix:** Change `|| null` to `|| undefined` on line 658, or change the interface to `telnyxApiKey?: string | null`.
 
-### 4. Telnyx Portal Deep Link
+## Test File Fixes
 
-Add a small external link icon on each assistant card that opens:
-`https://portal.telnyx.com/#/ai/assistants/edit/assistant-{telnyx_id}?tab=agent`
+### 4. `ActionQueuePanel.test.tsx` (line 83) — missing `afterEach`
+- **Fix:** Add `import { afterEach } from 'vitest'` or add `afterEach` to the existing vitest import.
 
-So you can quickly jump to the Telnyx portal to verify tools visually.
+### 5. `useBudgetTracker.test.ts` (lines 240, 490) — mock type mismatch
+- **Fix:** Update the mock return type and property access to match current types.
 
-## Technical Changes
+### 6. `useConcurrencyManager.test.ts` (line 437) — type comparison mismatch
+- **Fix:** Update the comparison to use a valid union member.
 
-### `supabase/functions/telnyx-ai-assistant/index.ts`
-- Add `push_calendar_tool` action: takes `assistant_id`, fetches tools from Telnyx, pushes calendar tool if missing, updates local DB
+## Files to Modify
 
-### `src/components/TelnyxAIManager.tsx`
-- In assistant card metadata row (line ~788): check `a.tools` for `book_appointment`, show green badge or red "Push" button
-- Add `handlePushCalendarTool(assistant)` function
-- Add Telnyx portal deep link icon next to the Edit button
+| File | Changes |
+|------|---------|
+| `supabase/functions/ai-autonomous-engine/index.ts` | Expand `AutonomousSettings` interface; fix `callLLMJson` call to use `messages` format; guard `activeLeads` against undefined |
+| `supabase/functions/telnyx-webhook/index.ts` | Pass `webhookSecret ?? null` to `verifyTelnyxSignature` |
+| `supabase/functions/voice-broadcast-engine/index.ts` | Change `|| null` to `|| undefined` for `telnyxApiKey` |
+| `src/components/__tests__/ActionQueuePanel.test.tsx` | Add `afterEach` to vitest imports |
+| `src/hooks/__tests__/useBudgetTracker.test.ts` | Fix mock type and property access |
+| `src/hooks/__tests__/useConcurrencyManager.test.ts` | Fix invalid type comparison |
+
+## No Database Changes
+
+No migrations or schema changes needed — these are all TypeScript type fixes.
 
