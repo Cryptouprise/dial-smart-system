@@ -4498,7 +4498,7 @@ async function predictLeadConversion(
     }
 
     // Load intent signals
-    const leadIds = activeLeads.map((l: any) => l.id);
+    const leadIds = safeLeads.map((l: any) => l.id);
     const { data: intentSignals } = await supabase
       .from('lead_intent_signals')
       .select('lead_id, has_timeline, is_decision_maker')
