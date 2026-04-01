@@ -504,7 +504,17 @@ function evaluateCondition(fieldValue: any, operator: string, value: any): boole
       return fieldValue == null || fieldValue === '' || fieldValue === false;
 
     case 'between': {
-      const [min, max] = Array.isArray(value) ? value : [0, 0];
+      // Support both array [min, max] and comma-separated string "min,max"
+      let rangeValues: any[];
+      if (Array.isArray(value)) {
+        rangeValues = value;
+      } else if (typeof value === 'string' && value.includes(',')) {
+        rangeValues = value.split(',').map((v: string) => v.trim());
+      } else {
+        console.warn(`[Workflow] Invalid between value (expected array or "min,max"): ${value}`);
+        return false;
+      }
+      const [min, max] = rangeValues;
       const num = Number(fieldValue);
       const numMin = Number(min);
       const numMax = Number(max);
@@ -530,7 +540,9 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
   }
 
   // Single batched fetch: 3 parallel queries instead of 5 sequential ones
-  const [callResult, smsResult, journeyResult] = await Promise.all([
+  let callResult: any = { data: null }, smsResult: any = { data: [] }, journeyResult: any = { data: null };
+  try {
+    [callResult, smsResult, journeyResult] = await Promise.all([
     supabase
       .from('call_logs')
       .select('outcome, disposition, duration_seconds, sentiment_score, created_at')
@@ -549,7 +561,11 @@ async function getLeadContext(supabase: any, lead: any, progress: any): Promise<
       .select('current_stage, interest_level, engagement_score, sentiment_trend, total_calls, sms_sent, last_touch_at')
       .eq('lead_id', lead.id)
       .maybeSingle()
-  ]);
+    ]);
+  } catch (e: any) {
+    console.warn(`[Workflow] getLeadContext queries failed for lead ${lead?.id}: ${e.message}`);
+    // Continue with defaults — context enrichment is non-critical
+  }
 
   // Process last call data
   const lastCall = callResult.data;
@@ -623,7 +639,17 @@ async function evaluateBranchConditions(
 }
 
 async function jumpToStep(supabase: any, progress: any, currentStep: any, targetStepNumber: number) {
-  const { data: targetStep } = await supabase
+  // Validate input
+  if (targetStepNumber == null || targetStepNumber < 1 || !Number.isInteger(targetStepNumber)) {
+    console.warn(`[Workflow] Invalid jump target: ${targetStepNumber}. Completing workflow.`);
+    await supabase
+      .from('lead_workflow_progress')
+      .update({ status: 'completed', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', progress.id);
+    return;
+  }
+
+  const { data: targetStep, error: jumpError } = await supabase
     .from('workflow_steps')
     .select('id, step_type, step_config')
     .eq('workflow_id', currentStep.workflow_id || progress.workflow_id)
@@ -748,6 +774,16 @@ async function executeStep(supabase: any, progress: any) {
       console.log(`[Workflow] Branch for lead ${lead.id}: conditions=${JSON.stringify(conditions)}, result=${evaluationResult}, jumping to step ${targetStep || 'next'}`);
 
       if (targetStep) {
+        // Update nudge tracking before jumping (matches post-switch behavior)
+        try {
+          await supabase.from('lead_nudge_tracking').upsert({
+            lead_id: lead.id,
+            user_id: progress.user_id,
+            last_ai_contact_at: new Date().toISOString(),
+            nudge_count: (progress.nudge_count || 0) + 1,
+          }, { onConflict: 'lead_id' });
+        } catch (e) { /* nudge tracking is non-critical */ }
+
         await jumpToStep(supabase, progress, step, targetStep);
         return { success: true, action: 'branch_taken', branch: evaluationResult ? 'true' : 'false', target_step: targetStep };
       }
@@ -1083,7 +1119,12 @@ async function moveToNextStep(supabase: any, progress: any, currentStep: any) {
   if (loopBackTo != null) {
     // Prevent self-loops (step looping to itself)
     if (loopBackTo === (currentStep.step_number || 0)) {
-      console.warn(`[Workflow] Self-loop detected at step ${loopBackTo}, skipping`);
+      console.warn(`[Workflow] Self-loop detected at step ${loopBackTo}, resetting loop count and moving to next step`);
+      // Reset loop count on self-loop fallthrough so it doesn't carry over
+      await supabase
+        .from('lead_workflow_progress')
+        .update({ loop_count: 0, updated_at: new Date().toISOString() })
+        .eq('id', progress.id);
       // Fall through to normal next-step behavior
     } else {
     const currentLoopCount = progress.loop_count || 0;
