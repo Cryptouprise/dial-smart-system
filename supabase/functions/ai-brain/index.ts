@@ -1348,6 +1348,56 @@ const TOOLS = [
         }
       }
     }
+  },
+  // === AUTONOMOUS CONFIGURATION TOOLS ===
+  {
+    type: "function",
+    function: {
+      name: "configure_autonomous_features",
+      description: "Toggle individual autonomous engine features on/off. Use this when the user wants to enable/disable specific AI capabilities like lead journeys, perpetual follow-up, daily planning, strategic insights, script A/B testing, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          manage_lead_journeys: { type: "boolean", description: "Enable AI-managed lead journey tracking and automated follow-ups" },
+          perpetual_followup_enabled: { type: "boolean", description: "Enable perpetual follow-up (leads never fall off until DNC/booked)" },
+          enable_daily_planning: { type: "boolean", description: "Enable AI daily battle plans and resource allocation" },
+          enable_strategic_insights: { type: "boolean", description: "Enable pattern detection and strategic analysis" },
+          auto_create_rules_from_insights: { type: "boolean", description: "Auto-create playbook rules from discovered patterns" },
+          enable_script_ab_testing: { type: "boolean", description: "Enable script A/B testing with Thompson Sampling" },
+          auto_optimize_calling_times: { type: "boolean", description: "Enable optimal calling time learning" },
+          auto_adjust_pacing: { type: "boolean", description: "Enable adaptive call pacing" },
+          auto_prioritize_leads: { type: "boolean", description: "Enable ML-based lead priority scoring" },
+          auto_execute_recommendations: { type: "boolean", description: "Auto-execute AI recommendations" },
+          daily_goal_calls: { type: "number", description: "Daily call target" },
+          daily_goal_appointments: { type: "number", description: "Daily appointment target" },
+          daily_goal_conversations: { type: "number", description: "Daily conversation target" },
+          autonomy_level: { type: "string", enum: ["full_auto", "approval_required", "suggestions_only"], description: "How much autonomy the AI has" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "setup_full_campaign",
+      description: "Build a complete campaign from a business description. Creates: campaign, workflow with follow-up sequences, enables autonomous features, and configures playbook rules. Use when a user describes their business/product and wants everything built automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          business_description: { type: "string", description: "What the user is selling / their business pitch / use case description" },
+          campaign_name: { type: "string", description: "Name for the campaign (auto-generated if not provided)" },
+          follow_up_strategy: { type: "string", enum: ["aggressive", "balanced", "gentle"], description: "How aggressively to follow up (default: balanced)" },
+          stop_conditions: { type: "array", items: { type: "string" }, description: "When to stop following up (e.g., 'booked', 'not_interested', 'dnc')" },
+          calling_hours_start: { type: "string", description: "e.g., 09:00" },
+          calling_hours_end: { type: "string", description: "e.g., 17:00" },
+          max_attempts: { type: "number", description: "Max call attempts per lead (default 5)" },
+          enable_sms: { type: "boolean", description: "Include SMS follow-ups in workflow (default true)" },
+          enable_ai_sms: { type: "boolean", description: "Use AI-generated personalized SMS (default true)" },
+          enable_perpetual_followup: { type: "boolean", description: "Never stop following up until explicit stop (default true)" }
+        },
+        required: ["business_description"]
+      }
+    }
   }
 ];
 
