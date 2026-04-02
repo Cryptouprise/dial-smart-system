@@ -25,6 +25,10 @@ const Navigation = () => {
     { path: '/help', label: 'Help', icon: HelpCircle },
   ];
 
+  const handleShowcaseClick = () => {
+    window.open('/showcase/index.html', '_blank');
+  };
+
   return (
     <nav className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50 safe-area-top">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -119,8 +123,18 @@ const Navigation = () => {
             <Button
               variant="ghost"
               size="sm"
+              onClick={handleShowcaseClick}
+              className="text-primary hover:text-primary/80"
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Showcase
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={signOut}
-              className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+              className="text-destructive hover:text-destructive/80 hover:bg-destructive/10"
             >
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
