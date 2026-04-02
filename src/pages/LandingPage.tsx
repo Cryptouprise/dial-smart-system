@@ -236,7 +236,7 @@ const LandingPage = () => {
       <section className="relative py-8 md:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div ref={revealPoster} className="reveal-scale video-glow rounded-2xl overflow-hidden border border-border/40">
-            <AutoplayVideo src="/videos/poster-animated.mp4" objectFit="contain" className="aspect-[9/16] sm:aspect-video max-h-[70vh] mx-auto" />
+            <AutoplayVideo src="/videos/poster-animated.mp4" objectFit="contain" className="aspect-[9/16] sm:aspect-video w-full mx-auto" />
           </div>
         </div>
       </section>
