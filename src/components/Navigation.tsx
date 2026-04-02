@@ -134,7 +134,7 @@ const Navigation = () => {
               variant="ghost"
               size="sm"
               onClick={signOut}
-              className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+              className="text-destructive hover:text-destructive/80 hover:bg-destructive/10"
             >
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
