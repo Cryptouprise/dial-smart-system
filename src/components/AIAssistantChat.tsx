@@ -128,7 +128,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     if (isLoading || !text.trim()) return;
     
     console.log('[HandsFree] Auto-sending:', text);
-    setInput('');
+    setInput(''); // Clear the interim preview
     await sendMessage(text);
   }, [isLoading, sendMessage]);
 
