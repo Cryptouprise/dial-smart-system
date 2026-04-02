@@ -51,7 +51,7 @@ const AuthPage = () => {
           description: "You've been signed in successfully.",
         });
 
-        navigate('/');
+        navigate('/dashboard');
       }
     } catch (error: any) {
       toast({
