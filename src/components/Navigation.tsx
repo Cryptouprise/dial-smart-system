@@ -25,6 +25,10 @@ const Navigation = () => {
     { path: '/help', label: 'Help', icon: HelpCircle },
   ];
 
+  const handleShowcaseClick = () => {
+    window.open('/showcase/index.html', '_blank');
+  };
+
   return (
     <nav className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50 safe-area-top">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
