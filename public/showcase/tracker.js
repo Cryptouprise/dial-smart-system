@@ -24,7 +24,73 @@
   }
   
   localStorage.setItem(key, JSON.stringify(data));
-  
+
+  // --- NAV ENHANCEMENTS ---
+  // 1. Add "← Hub" link before the logo on all showcase sub-pages (not hub itself)
+  if (page !== 'hub' && page !== 'demo' && page !== 'unknown') {
+    var navInner = document.querySelector('nav .inner');
+    if (navInner) {
+      var hubLink = document.createElement('a');
+      hubLink.href = '/showcase/';
+      hubLink.textContent = '← Hub';
+      hubLink.style.cssText = 'font-family:"Space Mono",monospace;font-size:11px;letter-spacing:1px;color:#64748b;text-decoration:none;margin-right:16px;transition:color 0.2s;white-space:nowrap';
+      hubLink.addEventListener('mouseenter', function(){ this.style.color='#00f0ff'; });
+      hubLink.addEventListener('mouseleave', function(){ this.style.color='#64748b'; });
+      navInner.insertBefore(hubLink, navInner.firstChild);
+    }
+
+    // 2. Add "next page" + "prev page" breadcrumb hints at bottom of each page
+    var pageOrder = ['problem', 'engines', 'compare', 'roi'];
+    var pageNames = { problem: 'The Problem', engines: '7 Engines', compare: 'Comparison', roi: 'ROI Calculator' };
+    var idx = pageOrder.indexOf(page);
+    
+    if (idx !== -1) {
+      var breadcrumb = document.createElement('div');
+      breadcrumb.style.cssText = 'position:relative;z-index:2;background:rgba(11,16,32,0.95);border-top:1px solid #1e2d45;padding:20px 0';
+      var inner = document.createElement('div');
+      inner.style.cssText = 'max-width:1100px;margin:0 auto;padding:0 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px';
+      
+      if (idx > 0) {
+        var prev = pageOrder[idx - 1];
+        var prevLink = document.createElement('a');
+        prevLink.href = '/showcase/' + prev + '.html';
+        prevLink.innerHTML = '← ' + pageNames[prev];
+        prevLink.style.cssText = 'color:#64748b;text-decoration:none;font-size:13px;font-family:"Space Mono",monospace;letter-spacing:1px;transition:color 0.2s';
+        prevLink.addEventListener('mouseenter', function(){ this.style.color='#00f0ff'; });
+        prevLink.addEventListener('mouseleave', function(){ this.style.color='#64748b'; });
+        inner.appendChild(prevLink);
+      } else {
+        var spacer = document.createElement('div');
+        inner.appendChild(spacer);
+      }
+
+      // Page position indicator
+      var pos = document.createElement('span');
+      pos.textContent = (idx + 1) + ' / ' + pageOrder.length;
+      pos.style.cssText = 'font-family:"Space Mono",monospace;font-size:10px;color:#1e2d45;letter-spacing:2px';
+      inner.appendChild(pos);
+
+      if (idx < pageOrder.length - 1) {
+        var next = pageOrder[idx + 1];
+        var nextLink = document.createElement('a');
+        nextLink.href = '/showcase/' + next + '.html';
+        nextLink.innerHTML = pageNames[next] + ' →';
+        nextLink.style.cssText = 'color:#00f0ff;text-decoration:none;font-size:13px;font-family:"Space Mono",monospace;letter-spacing:1px;font-weight:700;transition:color 0.2s';
+        nextLink.addEventListener('mouseenter', function(){ this.style.color='#fff'; });
+        nextLink.addEventListener('mouseleave', function(){ this.style.color='#00f0ff'; });
+        inner.appendChild(nextLink);
+      }
+
+      breadcrumb.appendChild(inner);
+      // Insert before footer
+      var footer = document.querySelector('footer');
+      if (footer) {
+        footer.parentNode.insertBefore(breadcrumb, footer);
+      }
+    }
+  }
+
+  // --- DEMO CTA BAR ---
   // Inject demo CTA bar on showcase pages (not hub, not demo)
   if (page !== 'hub' && page !== 'demo' && page !== 'unknown') {
     var bar = document.createElement('div');
