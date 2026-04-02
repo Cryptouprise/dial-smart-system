@@ -148,6 +148,43 @@ When user wants to create a voice broadcast, ask these IN ORDER:
 ### 📱 SMS BLAST WIZARD
 Similar flow - purpose, audience, message, compliance, confirmation.
 
+### 🎯 CAMPAIGN ONBOARDING WIZARD (MOST IMPORTANT)
+When a user describes their business, what they're selling, or says anything like "build me a campaign", "set me up", "here's what I'm doing", "I sell X":
+
+**Step 1: Listen and Understand** (DO NOT SKIP)
+Let them talk. They might give you a whole pitch. When they're done:
+"Got it! Let me make sure I understand your business:
+- **What you do**: [summarize in 1-2 sentences]
+- **Who you're calling**: [target audience]
+- **Goal**: [what success looks like - appointments? sales? evaluations?]
+
+Did I get that right?"
+
+**Step 2: Strategy Choice**
+"Now let me set up everything. Quick preference:
+1. **Aggressive** - Call fast, follow up hard, don't let anyone slip (best for time-sensitive offers)
+2. **Balanced** - Professional cadence, mix of calls and texts (recommended for most)
+3. **Gentle** - Spaced out, respectful, relationship-building (best for high-value/sensitive)
+
+Which style fits your business?"
+
+**Step 3: Build Everything** (use setup_full_campaign tool)
+Take everything you learned and call \`setup_full_campaign\` with:
+- Their full business description
+- A smart campaign name
+- Their chosen follow-up strategy
+- Smart defaults for everything else
+
+**Step 4: Next Steps**
+After building, guide them:
+"Everything's built! Now let's get you live:
+1. **Got leads?** I can import them or add from your existing list
+2. **Got a voice AI agent?** Let me connect one or create a new one with a script based on what you just told me
+3. **Got phone numbers?** I can help you buy some in the right area code
+4. **Ready to test?** We can do a test call to make sure everything sounds right"
+
+CRITICAL: When a user describes their business naturally (like telling you a story), you MUST recognize this as a campaign setup request and follow this wizard. Don't make them navigate to a settings page. YOU are the setup page.
+
 ### 🤖 AI VOICE CAMPAIGN WIZARD
 Similar flow - goals, agent config, lead selection, calling parameters, phone numbers, launch.
 
@@ -198,11 +235,20 @@ Based on their setup, proactively suggest improvements.
 ## AUTONOMOUS AGENT SYSTEM
 You have full control over the Autonomous Agent system for AI-powered decisions and goal tracking.
 
+**CRITICAL AUTONOMOUS TOOLS:**
+- \`configure_autonomous_features\` - Toggle individual features (lead journeys, perpetual follow-up, pattern detection, A/B testing, etc.)
+- \`setup_full_campaign\` - THE BIG ONE: Takes a business description and builds EVERYTHING (campaign, workflow, autonomous config, playbook rules)
+- \`toggle_autonomous_mode\` - Master on/off switch
+- \`set_autonomy_level\` - full_auto / approval_required / suggestions_only
+- \`set_autonomous_goal\` - Set daily targets for calls, appointments, conversations
+
 When users ask about "system status", "what's happening", "how are we doing":
 - Include autonomous agent metrics
 - Show today's goal progress
 - Highlight recent AI decisions
 - Share any learning insights
+
+When users describe their business or ask to set something up, USE \`setup_full_campaign\` - don't make them click through menus.
 
 ## SCRIPT & AGENT OPTIMIZATION CAPABILITIES
 
@@ -1346,6 +1392,56 @@ const TOOLS = [
           campaign_name: { type: "string", description: "Campaign name to check phone pool (alternative to agent)" },
           campaign_id: { type: "string", description: "Campaign ID if known" }
         }
+      }
+    }
+  },
+  // === AUTONOMOUS CONFIGURATION TOOLS ===
+  {
+    type: "function",
+    function: {
+      name: "configure_autonomous_features",
+      description: "Toggle individual autonomous engine features on/off. Use this when the user wants to enable/disable specific AI capabilities like lead journeys, perpetual follow-up, daily planning, strategic insights, script A/B testing, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          manage_lead_journeys: { type: "boolean", description: "Enable AI-managed lead journey tracking and automated follow-ups" },
+          perpetual_followup_enabled: { type: "boolean", description: "Enable perpetual follow-up (leads never fall off until DNC/booked)" },
+          enable_daily_planning: { type: "boolean", description: "Enable AI daily battle plans and resource allocation" },
+          enable_strategic_insights: { type: "boolean", description: "Enable pattern detection and strategic analysis" },
+          auto_create_rules_from_insights: { type: "boolean", description: "Auto-create playbook rules from discovered patterns" },
+          enable_script_ab_testing: { type: "boolean", description: "Enable script A/B testing with Thompson Sampling" },
+          auto_optimize_calling_times: { type: "boolean", description: "Enable optimal calling time learning" },
+          auto_adjust_pacing: { type: "boolean", description: "Enable adaptive call pacing" },
+          auto_prioritize_leads: { type: "boolean", description: "Enable ML-based lead priority scoring" },
+          auto_execute_recommendations: { type: "boolean", description: "Auto-execute AI recommendations" },
+          daily_goal_calls: { type: "number", description: "Daily call target" },
+          daily_goal_appointments: { type: "number", description: "Daily appointment target" },
+          daily_goal_conversations: { type: "number", description: "Daily conversation target" },
+          autonomy_level: { type: "string", enum: ["full_auto", "approval_required", "suggestions_only"], description: "How much autonomy the AI has" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "setup_full_campaign",
+      description: "Build a complete campaign from a business description. Creates: campaign, workflow with follow-up sequences, enables autonomous features, and configures playbook rules. Use when a user describes their business/product and wants everything built automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          business_description: { type: "string", description: "What the user is selling / their business pitch / use case description" },
+          campaign_name: { type: "string", description: "Name for the campaign (auto-generated if not provided)" },
+          follow_up_strategy: { type: "string", enum: ["aggressive", "balanced", "gentle"], description: "How aggressively to follow up (default: balanced)" },
+          stop_conditions: { type: "array", items: { type: "string" }, description: "When to stop following up (e.g., 'booked', 'not_interested', 'dnc')" },
+          calling_hours_start: { type: "string", description: "e.g., 09:00" },
+          calling_hours_end: { type: "string", description: "e.g., 17:00" },
+          max_attempts: { type: "number", description: "Max call attempts per lead (default 5)" },
+          enable_sms: { type: "boolean", description: "Include SMS follow-ups in workflow (default true)" },
+          enable_ai_sms: { type: "boolean", description: "Use AI-generated personalized SMS (default true)" },
+          enable_perpetual_followup: { type: "boolean", description: "Never stop following up until explicit stop (default true)" }
+        },
+        required: ["business_description"]
       }
     }
   }
@@ -4066,6 +4162,293 @@ async function executeToolCall(
         return { success: true, result: { recorded: true, message: '📝 Action recorded to session memory' } };
       }
 
+      case 'configure_autonomous_features': {
+        // Build update object from provided args only
+        const updateFields: Record<string, any> = {
+          user_id: userId,
+          updated_at: new Date().toISOString()
+        };
+        
+        const settingKeys = [
+          'manage_lead_journeys', 'perpetual_followup_enabled', 'enable_daily_planning',
+          'enable_strategic_insights', 'auto_create_rules_from_insights', 'enable_script_ab_testing',
+          'auto_optimize_calling_times', 'auto_adjust_pacing', 'auto_prioritize_leads',
+          'auto_execute_recommendations', 'daily_goal_calls', 'daily_goal_appointments',
+          'daily_goal_conversations', 'autonomy_level'
+        ];
+        
+        const changedSettings: string[] = [];
+        for (const key of settingKeys) {
+          if (args[key] !== undefined) {
+            updateFields[key] = args[key];
+            changedSettings.push(`${key}: ${args[key]}`);
+          }
+        }
+        
+        // If enabling autonomous features, also enable the master switch
+        if (changedSettings.length > 0) {
+          updateFields.enabled = true;
+        }
+        
+        const { error } = await supabase
+          .from('autonomous_settings')
+          .upsert(updateFields, { onConflict: 'user_id' });
+        
+        if (error) throw error;
+        
+        // Seed default playbook if enabling lead journeys
+        if (args.manage_lead_journeys === true) {
+          try {
+            await supabase.rpc('seed_default_playbook', { p_user_id: userId });
+          } catch { /* may already exist */ }
+        }
+        
+        return {
+          success: true,
+          result: {
+            message: `✅ Autonomous features updated!\n\nChanges:\n${changedSettings.map(s => `• ${s}`).join('\n')}`,
+            changes: changedSettings,
+            master_enabled: true
+          },
+          location: LOCATION_MAP.autonomous.route
+        };
+      }
+
+      case 'setup_full_campaign': {
+        const desc = args.business_description;
+        const strategy = args.follow_up_strategy || 'balanced';
+        const maxAttempts = args.max_attempts || 5;
+        const enableSms = args.enable_sms !== false;
+        const enableAiSms = args.enable_ai_sms !== false;
+        const enablePerpetual = args.enable_perpetual_followup !== false;
+        
+        // Generate campaign name from description if not provided
+        const campaignName = args.campaign_name || desc.split(/[.!?]/)[0].substring(0, 60).trim();
+        
+        // Step 1: Create the campaign
+        const { data: campaign, error: campError } = await supabase
+          .from('campaigns')
+          .insert({
+            user_id: userId,
+            name: campaignName,
+            description: desc.substring(0, 500),
+            status: 'paused',
+            calling_hours_start: args.calling_hours_start || '09:00',
+            calling_hours_end: args.calling_hours_end || '17:00',
+            max_attempts: maxAttempts,
+            calls_per_minute: 10,
+            provider: 'retell'
+          })
+          .select()
+          .maybeSingle();
+        
+        if (campError) throw campError;
+        
+        // Step 2: Build workflow steps based on strategy
+        const waitDelays: Record<string, number[]> = {
+          aggressive: [0, 5, 30, 120, 1440],    // immediate, 5min, 30min, 2hr, 1day
+          balanced: [0, 15, 120, 1440, 4320],    // immediate, 15min, 2hr, 1day, 3days
+          gentle: [0, 60, 1440, 4320, 10080]     // immediate, 1hr, 1day, 3days, 7days
+        };
+        const delays = waitDelays[strategy] || waitDelays.balanced;
+        
+        const steps: any[] = [];
+        let stepNum = 1;
+        
+        // Step 1: Initial call
+        steps.push({
+          step_number: stepNum++,
+          step_type: 'call',
+          step_config: { timing_mode: 'immediate', max_ring_seconds: 30, leave_voicemail: true }
+        });
+        
+        // Step 2: Wait then SMS if no answer
+        if (enableSms) {
+          steps.push({
+            step_number: stepNum++,
+            step_type: 'wait',
+            step_config: { delay_minutes: delays[1] }
+          });
+          
+          if (enableAiSms) {
+            steps.push({
+              step_number: stepNum++,
+              step_type: 'ai_sms',
+              step_config: {
+                sms_content: `Hi {{first_name}}, I just tried to reach you. ${desc.substring(0, 100)}...`,
+                ai_prompt: `Write a friendly, personalized SMS follow-up for someone we just tried to call. Context: ${desc.substring(0, 200)}. Keep under 160 chars. Sound human, not robotic.`
+              }
+            });
+          } else {
+            steps.push({
+              step_number: stepNum++,
+              step_type: 'sms',
+              step_config: {
+                sms_content: `Hi {{first_name}}, I just tried to reach you about something important. When's a good time to chat for a quick 15 minutes?`
+              }
+            });
+          }
+        }
+        
+        // Steps 4-5: Follow-up calls with waits
+        for (let i = 2; i < Math.min(delays.length, maxAttempts); i++) {
+          steps.push({
+            step_number: stepNum++,
+            step_type: 'wait',
+            step_config: { delay_minutes: delays[i] }
+          });
+          steps.push({
+            step_number: stepNum++,
+            step_type: 'call',
+            step_config: { timing_mode: 'inherit', max_ring_seconds: 30, leave_voicemail: i === 2 }
+          });
+          
+          // Add SMS between later call attempts
+          if (enableSms && enableAiSms && i >= 3) {
+            steps.push({
+              step_number: stepNum++,
+              step_type: 'wait',
+              step_config: { delay_minutes: 60 }
+            });
+            steps.push({
+              step_number: stepNum++,
+              step_type: 'ai_sms',
+              step_config: {
+                sms_content: `Hey {{first_name}}, just circling back...`,
+                ai_prompt: `Write follow-up #${i} SMS. Be creative, don't repeat previous messages. Context: ${desc.substring(0, 200)}. This is attempt ${i}. Keep under 160 chars. If they haven't responded, try a different angle or curiosity hook.`
+              }
+            });
+          }
+        }
+        
+        // Create workflow
+        const { data: workflow, error: wfError } = await supabase
+          .from('campaign_workflows')
+          .insert({
+            user_id: userId,
+            name: `${campaignName} - Auto Workflow`,
+            description: `Auto-generated workflow for: ${desc.substring(0, 200)}`,
+            workflow_type: 'mixed',
+            active: true
+          })
+          .select()
+          .maybeSingle();
+        
+        if (wfError) throw wfError;
+        
+        // Insert workflow steps
+        const stepsToInsert = steps.map(s => ({ ...s, workflow_id: workflow.id }));
+        await supabase.from('workflow_steps').insert(stepsToInsert);
+        
+        // Link workflow to campaign
+        await supabase
+          .from('campaigns')
+          .update({ workflow_id: workflow.id })
+          .eq('id', campaign.id);
+        
+        // Step 3: Configure autonomous settings
+        const autonomousUpdate: Record<string, any> = {
+          user_id: userId,
+          enabled: true,
+          autonomy_level: 'full_auto',
+          manage_lead_journeys: true,
+          auto_prioritize_leads: true,
+          auto_execute_recommendations: true,
+          auto_optimize_calling_times: true,
+          auto_adjust_pacing: true,
+          enable_daily_planning: true,
+          enable_strategic_insights: true,
+          auto_create_rules_from_insights: true,
+          enable_script_ab_testing: true,
+          updated_at: new Date().toISOString()
+        };
+        
+        if (enablePerpetual) {
+          autonomousUpdate.perpetual_followup_enabled = true;
+          autonomousUpdate.perpetual_max_days = 180;
+          autonomousUpdate.perpetual_min_gap_days = 3;
+          autonomousUpdate.perpetual_max_gap_days = 21;
+          autonomousUpdate.perpetual_channels = JSON.stringify(['sms', 'call']);
+          autonomousUpdate.perpetual_stop_on = JSON.stringify(['dnc', 'not_interested', 'unsubscribe', 'booked']);
+        }
+        
+        await supabase
+          .from('autonomous_settings')
+          .upsert(autonomousUpdate, { onConflict: 'user_id' });
+        
+        // Seed default playbook
+        try {
+          await supabase.rpc('seed_default_playbook', { p_user_id: userId });
+        } catch { /* may already exist */ }
+        
+        // Record in session memory
+        await supabase.from('ai_session_memory').insert({
+          user_id: userId,
+          session_id: sessionId,
+          action_type: 'setup_full_campaign',
+          resource_type: 'campaign',
+          resource_id: campaign.id,
+          resource_name: campaignName,
+          action_data: {
+            campaign_id: campaign.id,
+            workflow_id: workflow.id,
+            steps_created: steps.length,
+            strategy,
+            perpetual: enablePerpetual,
+            business_description: desc.substring(0, 300)
+          },
+          can_undo: false
+        });
+        
+        // Save to operational memory
+        try {
+          await supabase.from('ai_operational_memory').insert({
+            user_id: userId,
+            memory_type: 'campaign_result',
+            memory_key: `campaign_setup_${campaign.id}`,
+            memory_value: {
+              campaign_name: campaignName,
+              business: desc.substring(0, 300),
+              strategy,
+              workflow_steps: steps.length,
+              perpetual: enablePerpetual,
+              created_at: new Date().toISOString()
+            },
+            confidence: 9
+          });
+        } catch { /* non-critical */ }
+        
+        return {
+          success: true,
+          result: {
+            message: `🚀 **Campaign Built!** Here's everything I set up:\n\n` +
+              `📋 **Campaign**: "${campaignName}" (paused - ready to launch)\n` +
+              `🔄 **Workflow**: ${steps.length} steps (${strategy} follow-up strategy)\n` +
+              `   • ${steps.filter(s => s.step_type === 'call').length} call attempts\n` +
+              `   • ${steps.filter(s => s.step_type === 'sms' || s.step_type === 'ai_sms').length} SMS follow-ups\n` +
+              `   • ${steps.filter(s => s.step_type === 'wait').length} wait periods\n` +
+              `🤖 **Autonomous Engine**: Full auto enabled\n` +
+              `   • Lead journey tracking ✅\n` +
+              `   • Perpetual follow-up ${enablePerpetual ? '✅' : '❌'}\n` +
+              `   • Pattern detection ✅\n` +
+              `   • Script A/B testing ✅\n` +
+              `   • Optimal time learning ✅\n\n` +
+              `**Next steps:**\n` +
+              `1. Add leads to this campaign\n` +
+              `2. Assign a voice AI agent (Retell/Telnyx)\n` +
+              `3. Make sure you have phone numbers assigned\n` +
+              `4. Say "launch" when ready!`,
+            campaign_id: campaign.id,
+            campaign_name: campaignName,
+            workflow_id: workflow.id,
+            steps_created: steps.length,
+            autonomous_enabled: true,
+            perpetual_enabled: enablePerpetual
+          },
+          location: LOCATION_MAP.campaigns.route
+        };
+      }
+
       default:
         return { success: false, result: { error: `Unknown tool: ${toolName}` } };
     }
@@ -4474,6 +4857,7 @@ serve(async (req) => {
       const memorableActions = new Set([
         'create_campaign', 'launch_now', 'quick_voice_broadcast', 'quick_ai_campaign',
         'purchase_retell_numbers', 'send_sms_blast', 'create_workflow', 'delete_workflow',
+        'setup_full_campaign', 'configure_autonomous_features',
         'classify_phone_number', 'delete_phone_number', 'delete_lead', 'quarantine_number',
         'stop_broadcast', 'pause_broadcast',
       ]);
