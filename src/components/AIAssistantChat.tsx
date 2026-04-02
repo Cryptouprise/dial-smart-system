@@ -141,6 +141,13 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     // In hands-free mode, handleAutoSend handles it
   }, [handsFreeMode]);
 
+  // Handle interim transcript (live preview while speaking)
+  const handleInterimTranscript = useCallback((text: string) => {
+    if (handsFreeMode) {
+      setInput(text);
+    }
+  }, [handsFreeMode]);
+
   // Voice chat integration
   const { 
     isListening, 
