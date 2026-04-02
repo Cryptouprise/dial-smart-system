@@ -54,7 +54,7 @@ const useCounter = (end: number, duration = 2000) => {
 };
 
 // ── Autoplay video component ──
-const AutoplayVideo = ({ src, className = '', poster }: { src: string; className?: string; poster?: string }) => {
+const AutoplayVideo = ({ src, className = '', poster, objectFit = 'cover' }: { src: string; className?: string; poster?: string; objectFit?: 'cover' | 'contain' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMuted, setIsMuted] = useState(true);
