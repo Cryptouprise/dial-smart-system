@@ -4857,6 +4857,7 @@ serve(async (req) => {
       const memorableActions = new Set([
         'create_campaign', 'launch_now', 'quick_voice_broadcast', 'quick_ai_campaign',
         'purchase_retell_numbers', 'send_sms_blast', 'create_workflow', 'delete_workflow',
+        'setup_full_campaign', 'configure_autonomous_features',
         'classify_phone_number', 'delete_phone_number', 'delete_lead', 'quarantine_number',
         'stop_broadcast', 'pause_broadcast',
       ]);
