@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Hub -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  
+  <!-- Core Showcase Pages -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/landing.html</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/problem.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/engines.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/compare.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/roi.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  
+  <!-- Demo -->
+  <url><loc>https://aidialboss1.lovable.app/demo</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  
+  <!-- Industry Pages -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=solar</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=insurance</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=real-estate</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=debt-collection</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=b2b-saas</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  
+  <!-- City Pages -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=miami</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=dallas</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=phoenix</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=los-angeles</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=atlanta</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  
+  <!-- Competitor Comparison Pages -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=vicidial</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=five9</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=phoneburner</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=convoso</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=mojo-dialer</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+</urlset>

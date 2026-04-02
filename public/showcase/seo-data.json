@@ -1,0 +1,163 @@
+{
+  "industries": [
+    {
+      "slug": "solar",
+      "name": "Solar",
+      "title": "AI Dialer for Solar Sales Teams",
+      "description": "Call Boss helps solar companies contact leads within 5 minutes of form fill, follow up automatically, and book more solar consultations on autopilot.",
+      "hero": "Stop Losing Solar Leads to Slow Follow-Up",
+      "painPoints": [
+        "Solar leads decay 90% in the first hour — your reps can't keep up",
+        "Average solar company wastes $40K/month on leads that never get called",
+        "Reps spend 70% of their day on admin, not closing solar deals"
+      ],
+      "stats": { "avgLeadCost": "$45", "decayRate": "90% in 1hr", "repCost": "$5,200/mo" },
+      "keywords": ["solar dialer", "solar sales automation", "AI dialer for solar", "solar lead follow-up"]
+    },
+    {
+      "slug": "insurance",
+      "name": "Insurance",
+      "title": "AI Dialer for Insurance Agencies",
+      "description": "Call Boss auto-dials insurance leads, handles objections with AI, and books policy review appointments — 24/7 without hiring more agents.",
+      "hero": "Your Insurance Leads Deserve a 5-Minute Response",
+      "painPoints": [
+        "Insurance shoppers call 3+ agencies — first to respond wins 78% of the time",
+        "Quoting season overwhelms your team with 10x normal volume",
+        "Licensed agents cost $4K+/month before they write a single policy"
+      ],
+      "stats": { "avgLeadCost": "$35", "decayRate": "78% first-responder wins", "repCost": "$4,800/mo" },
+      "keywords": ["insurance dialer", "insurance sales automation", "AI dialer for insurance", "insurance lead management"]
+    },
+    {
+      "slug": "real-estate",
+      "name": "Real Estate",
+      "title": "AI Dialer for Real Estate Teams",
+      "description": "Call Boss contacts real estate leads instantly, nurtures cold prospects for months, and books showing appointments automatically.",
+      "hero": "Every Minute You Wait, Another Agent Calls Your Lead",
+      "painPoints": [
+        "Zillow and Realtor.com leads go to 3+ agents simultaneously",
+        "ISAs cost $3,500/month and burn out in 6 months",
+        "Database leads from 6 months ago still have 15-20% conversion potential"
+      ],
+      "stats": { "avgLeadCost": "$30", "decayRate": "3+ agents per lead", "repCost": "$3,500/mo ISA" },
+      "keywords": ["real estate dialer", "ISA replacement", "AI dialer for realtors", "real estate lead follow-up"]
+    },
+    {
+      "slug": "debt-collection",
+      "name": "Debt Collection",
+      "title": "AI Dialer for Debt Collection Agencies",
+      "description": "Call Boss automates right-party contact, handles compliance, and increases collection rates with persistent AI-powered follow-up.",
+      "hero": "Reach More Debtors. Collect More. Spend Less.",
+      "painPoints": [
+        "Right-party contact rates under 10% waste 90% of agent time",
+        "TCPA compliance violations cost $500-$1,500 per call",
+        "Agent turnover in collections exceeds 50% annually"
+      ],
+      "stats": { "avgLeadCost": "N/A", "decayRate": "<10% RPC rate", "repCost": "$3,800/mo" },
+      "keywords": ["debt collection dialer", "predictive dialer collections", "AI dialer collections", "TCPA compliant dialer"]
+    },
+    {
+      "slug": "b2b-saas",
+      "name": "B2B SaaS",
+      "title": "AI Dialer for B2B SaaS Sales Teams",
+      "description": "Call Boss helps SaaS SDR teams reach more prospects, book more demos, and follow up with trial users automatically.",
+      "hero": "Your SDRs Are Spending 70% of Their Day Not Selling",
+      "painPoints": [
+        "SDRs make 50-80 dials/day — Call Boss makes 2,000+",
+        "Demo no-show rates hit 30-40% without automated reminders",
+        "Trial-to-paid conversion drops 60% without timely follow-up"
+      ],
+      "stats": { "avgLeadCost": "$50", "decayRate": "60% trial drop-off", "repCost": "$6,500/mo SDR" },
+      "keywords": ["B2B dialer", "SaaS sales automation", "AI SDR", "outbound dialer for SaaS"]
+    }
+  ],
+  "cities": [
+    {
+      "slug": "miami",
+      "name": "Miami",
+      "state": "Florida",
+      "industries": ["Solar", "Real Estate", "Insurance"],
+      "population": "6.1M metro",
+      "keywords": ["AI dialer Miami", "sales automation Miami FL", "predictive dialer Miami"]
+    },
+    {
+      "slug": "dallas",
+      "name": "Dallas",
+      "state": "Texas",
+      "industries": ["Solar", "Insurance", "B2B"],
+      "population": "7.6M metro",
+      "keywords": ["AI dialer Dallas", "sales automation Dallas TX", "predictive dialer Dallas"]
+    },
+    {
+      "slug": "phoenix",
+      "name": "Phoenix",
+      "state": "Arizona",
+      "industries": ["Solar", "Real Estate", "Debt Collection"],
+      "population": "4.8M metro",
+      "keywords": ["AI dialer Phoenix", "sales automation Phoenix AZ", "predictive dialer Phoenix"]
+    },
+    {
+      "slug": "los-angeles",
+      "name": "Los Angeles",
+      "state": "California",
+      "industries": ["Solar", "Real Estate", "Insurance"],
+      "population": "13.2M metro",
+      "keywords": ["AI dialer Los Angeles", "sales automation LA", "predictive dialer Los Angeles"]
+    },
+    {
+      "slug": "atlanta",
+      "name": "Atlanta",
+      "state": "Georgia",
+      "industries": ["Insurance", "B2B SaaS", "Debt Collection"],
+      "population": "6.1M metro",
+      "keywords": ["AI dialer Atlanta", "sales automation Atlanta GA", "predictive dialer Atlanta"]
+    }
+  ],
+  "competitors": [
+    {
+      "slug": "vicidial",
+      "name": "VICIdial",
+      "fullName": "VICIdial",
+      "type": "Open-source predictive dialer",
+      "price": "Free (self-hosted)",
+      "weaknesses": ["Requires dedicated IT team", "No AI capabilities", "1990s interface", "No autonomous follow-up", "Manual everything"],
+      "keywords": ["Call Boss vs VICIdial", "VICIdial alternative", "better than VICIdial"]
+    },
+    {
+      "slug": "five9",
+      "name": "Five9",
+      "fullName": "Five9 Intelligent Cloud Contact Center",
+      "type": "Enterprise cloud contact center",
+      "price": "$149-$229/seat/month",
+      "weaknesses": ["Expensive per-seat pricing", "Requires large teams", "No autonomous AI agent", "Complex setup", "Built for call centers, not sales teams"],
+      "keywords": ["Call Boss vs Five9", "Five9 alternative", "cheaper than Five9"]
+    },
+    {
+      "slug": "phoneburner",
+      "name": "PhoneBurner",
+      "fullName": "PhoneBurner Power Dialer",
+      "type": "Power dialer",
+      "price": "$124-$166/user/month",
+      "weaknesses": ["Power dialer only (not predictive)", "No AI voice agent", "Manual follow-up required", "No autonomous campaigns", "Still requires human reps"],
+      "keywords": ["Call Boss vs PhoneBurner", "PhoneBurner alternative", "AI dialer vs power dialer"]
+    },
+    {
+      "slug": "convoso",
+      "name": "Convoso",
+      "fullName": "Convoso Cloud Contact Center",
+      "type": "Cloud contact center for lead gen",
+      "price": "Custom (expensive)",
+      "weaknesses": ["Built for large call centers", "No AI autonomous agent", "Requires human agents", "Complex pricing", "No self-optimizing campaigns"],
+      "keywords": ["Call Boss vs Convoso", "Convoso alternative", "AI dialer vs Convoso"]
+    },
+    {
+      "slug": "mojo-dialer",
+      "name": "Mojo Dialer",
+      "fullName": "Mojo Selling Solutions",
+      "type": "Triple-line power dialer",
+      "price": "$99/month",
+      "weaknesses": ["Needs human on every call", "No AI voice capability", "No autonomous follow-up", "Real estate focused only", "No SMS automation"],
+      "keywords": ["Call Boss vs Mojo Dialer", "Mojo Dialer alternative", "AI dialer vs Mojo"]
+    }
+  ]
+}
