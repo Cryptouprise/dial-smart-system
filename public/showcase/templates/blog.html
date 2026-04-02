@@ -216,44 +216,40 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
       });
     }
 
-    // Related links
-    var linksEl = document.getElementById('relatedLinks');
-    // Related industries
-    if (post.relatedIndustries) {
-      post.relatedIndustries.forEach(function(indSlug){
-        var ind = data.industries.find(function(i){return i.slug===indSlug});
-        if (ind) {
-          var a = document.createElement('a');
-          a.href = '/showcase/templates/industry.html?industry=' + indSlug;
-          a.textContent = '🏢 AI Dialer for ' + ind.name;
-          linksEl.appendChild(a);
-        }
-      });
+    // Contextual CTA based on post topic
+    var topic = post.category || post.title.split(':')[0];
+    document.getElementById('ctaLabel').textContent = '// WANT TO SEE ' + topic.toUpperCase() + ' IN ACTION?';
+    document.getElementById('ctaTitle').textContent = 'See Call Boss Handle ' + topic;
+    document.getElementById('ctaDesc').textContent = 'Watch the AI dialer put everything from this article into practice — live, with real data.';
+
+    // Back link - if came from another blog, go back; otherwise go to blog index
+    var backLink = document.getElementById('navBack');
+    if (document.referrer && document.referrer.includes('blog.html')) {
+      backLink.href = document.referrer;
+    } else {
+      // Link to hub since there's no blog index yet
+      backLink.href = '/showcase/';
+      backLink.textContent = '← Hub';
     }
-    // Related competitors
-    if (post.relatedCompetitors) {
-      post.relatedCompetitors.forEach(function(compSlug){
-        var comp = data.competitors.find(function(c){return c.slug===compSlug});
-        if (comp) {
-          var a = document.createElement('a');
-          a.href = '/showcase/templates/vs.html?vs=' + compSlug;
-          a.textContent = '⚔️ vs ' + comp.name;
-          linksEl.appendChild(a);
-        }
-      });
+
+    // More blog posts grid (exclude current, show up to 6)
+    var otherPosts = data.blogs.filter(function(b){return b.slug !== slug});
+    // Shuffle for variety
+    for (var i = otherPosts.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = otherPosts[i]; otherPosts[i] = otherPosts[j]; otherPosts[j] = tmp;
     }
-    // Other blog posts
-    var otherPosts = data.blogs.filter(function(b){return b.slug !== slug}).slice(0,3);
-    otherPosts.forEach(function(b){
-      var a = document.createElement('a');
-      a.href = '/showcase/templates/blog.html?post=' + b.slug;
-      a.textContent = '📝 ' + b.title;
-      linksEl.appendChild(a);
+    var blogGrid = document.getElementById('moreBlogPosts');
+    otherPosts.slice(0, 6).forEach(function(b){
+      var card = document.createElement('a');
+      card.href = '/showcase/templates/blog.html?post=' + b.slug;
+      card.className = 'blog-card';
+      card.innerHTML = '<span class="card-cat">' + (b.category || 'Article') + '</span>' +
+        '<div class="card-title">' + b.title + '</div>' +
+        '<div class="card-desc">' + (b.description || '').substring(0, 120) + '...</div>' +
+        '<div class="card-meta">' + b.readTime + ' · ' + new Date(b.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '</div>';
+      blogGrid.appendChild(card);
     });
-    // Core pages
-    var a1 = document.createElement('a'); a1.href = '/demo'; a1.textContent = '▶ Live Demo';
-    var a2 = document.createElement('a'); a2.href = '/showcase/roi.html'; a2.textContent = '💰 ROI Calculator';
-    linksEl.appendChild(a1); linksEl.appendChild(a2);
   });
 })();
 </script>
