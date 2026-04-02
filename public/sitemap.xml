@@ -1,36 +1,117 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <!-- Hub -->
-  <url><loc>https://aidialboss1.lovable.app/showcase/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  
+  <url><loc>https://aidialboss1.lovable.app/showcase/</loc><lastmod>2026-04-02</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+
   <!-- Core Showcase Pages -->
-  <url><loc>https://aidialboss1.lovable.app/showcase/landing.html</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/problem.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/engines.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/compare.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/roi.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  
+  <url><loc>https://aidialboss1.lovable.app/showcase/landing.html</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/problem.html</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/engines.html</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/compare.html</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/roi.html</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+
   <!-- Demo -->
-  <url><loc>https://aidialboss1.lovable.app/demo</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
-  
-  <!-- Industry Pages -->
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=solar</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=insurance</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=real-estate</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=debt-collection</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=b2b-saas</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  
-  <!-- City Pages -->
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=miami</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=dallas</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=phoenix</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=los-angeles</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=atlanta</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  
-  <!-- Competitor Comparison Pages -->
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=vicidial</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=five9</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=phoneburner</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=convoso</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=mojo-dialer</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/demo</loc><lastmod>2026-04-02</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
+
+  <!-- Industry Pages (15) -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=solar</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=insurance</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=real-estate</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=debt-collection</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=b2b-saas</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=roofing</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=home-services</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=mortgage</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=legal</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=healthcare</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=automotive</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=recruiting</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=education</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=financial-services</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/industry.html?industry=home-improvement</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <!-- City Pages (50) -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=miami</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=dallas</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=phoenix</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=los-angeles</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=atlanta</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=houston</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=chicago</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=new-york</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=san-antonio</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=san-diego</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=denver</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=seattle</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=tampa</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=orlando</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=charlotte</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=nashville</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=austin</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=san-jose</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=jacksonville</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=columbus</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=indianapolis</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=san-francisco</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=fort-worth</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=memphis</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=oklahoma-city</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=louisville</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=baltimore</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=milwaukee</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=albuquerque</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=tucson</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=sacramento</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=kansas-city</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=las-vegas</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=virginia-beach</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=raleigh</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=detroit</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=minneapolis</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=st-louis</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=portland</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=pittsburgh</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=cincinnati</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=cleveland</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=new-orleans</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=salt-lake-city</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=boise</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=richmond</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=omaha</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=tulsa</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/city.html?city=honolulu</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+
+  <!-- Competitor Comparison Pages (15) -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=vicidial</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=five9</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=phoneburner</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=convoso</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=mojo-dialer</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=kixie</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=justcall</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=aloware</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=aircall</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=ringcentral</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=dialpad-ai</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=bland-ai</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=retell-ai</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=vapi</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/vs.html?vs=synthflow</loc><lastmod>2026-04-02</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <!-- Blog Posts (15) -->
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=follow-up-leads-dont-answer</loc><lastmod>2026-03-15</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=speed-to-lead-5-minutes</loc><lastmod>2026-03-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=ai-vs-human-sales-reps-2026</loc><lastmod>2026-03-05</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=sales-rep-cost-calculator</loc><lastmod>2026-02-28</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=database-reactivation-guide</loc><lastmod>2026-02-20</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=what-is-ai-voice-agent</loc><lastmod>2026-02-15</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=best-ai-dialers-2026</loc><lastmod>2026-02-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=reduce-sales-rep-turnover</loc><lastmod>2026-02-05</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=tcpa-compliance-ai-dialers</loc><lastmod>2026-01-30</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=ai-appointment-setting</loc><lastmod>2026-01-25</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=cold-calling-dead-replaced</loc><lastmod>2026-01-20</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=ai-sdr-vs-human-sdr</loc><lastmod>2026-01-15</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=cost-of-slow-lead-response</loc><lastmod>2026-01-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=automate-outbound-sales-process</loc><lastmod>2026-01-05</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://aidialboss1.lovable.app/showcase/templates/blog.html?post=predictive-dialing-vs-ai</loc><lastmod>2025-12-28</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
 </urlset>

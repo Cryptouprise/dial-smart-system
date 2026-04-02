@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Blog — Call Boss</title>
+<meta name="description" id="metaDesc" content="">
+<meta property="og:title" id="ogTitle" content="">
+<meta property="og:description" id="ogDesc" content="">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Call Boss">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" id="twTitle" content="">
+<meta name="twitter:description" id="twDesc" content="">
+<link rel="canonical" id="canonical" href="">
+<meta name="robots" content="index, follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script type="application/ld+json" id="schemaArticle"></script>
+<script type="application/ld+json" id="schemaFaq"></script>
+<style>
+:root{--bg:#050810;--surface:#0b1020;--surface2:#111827;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--gold:#f59e0b;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,240,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+.container{max-width:800px;margin:0 auto;padding:0 24px;position:relative;z-index:2}
+.container-wide{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:2}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rgba(5,8,16,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+nav .inner{max-width:1100px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--accent);text-shadow:0 0 20px rgba(0,240,255,0.5);text-decoration:none}.logo span{color:var(--text)}
+.nav-cta{background:var(--accent);color:#000;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));transition:all 0.2s}
+.nav-cta:hover{background:#fff;box-shadow:0 0 30px rgba(0,240,255,0.6)}
+.hero{padding:140px 0 48px;position:relative;z-index:2;border-bottom:1px solid var(--border)}
+.category-badge{display:inline-block;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);border:1px solid rgba(0,240,255,0.3);padding:4px 12px;margin-bottom:16px}
+.hero h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,5vw,56px);letter-spacing:1px;line-height:1.1;margin-bottom:16px}
+.meta{display:flex;align-items:center;gap:16px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.meta-dot{width:4px;height:4px;border-radius:50%;background:var(--border)}
+article{padding:48px 0 64px;position:relative;z-index:2}
+article h2{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:0.5px;line-height:1.1;margin:48px 0 16px;color:var(--text)}
+article h2:first-child{margin-top:0}
+article p{font-size:16px;line-height:1.8;color:var(--muted);margin-bottom:20px}
+article strong{color:var(--text)}
+.faq-section{padding:48px 0;border-top:1px solid var(--border);position:relative;z-index:2}
+.faq-section h2{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.5px;margin-bottom:32px}
+.faq-item{background:var(--surface);padding:24px 28px;margin-bottom:2px}
+.faq-q{font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px}
+.faq-a{font-size:14px;color:var(--muted);line-height:1.7}
+.cta-section{background:var(--surface);padding:64px 0;text-align:center;position:relative;z-index:2;border-top:1px solid var(--border)}
+.btn-primary{display:inline-flex;align-items:center;gap:10px;background:var(--accent);color:#000;padding:14px 32px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));transition:all 0.2s}
+.btn-primary:hover{background:#fff;box-shadow:0 0 40px rgba(0,240,255,0.5);transform:translateY(-2px)}
+.btn-ghost{display:inline-flex;align-items:center;gap:10px;background:transparent;color:var(--text);padding:14px 32px;font-weight:500;font-size:14px;text-decoration:none;border:1px solid var(--border);transition:all 0.2s}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.related-section{padding:64px 0;position:relative;z-index:2}
+.related-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:24px}
+.related-grid a{background:var(--surface);padding:20px;text-decoration:none;color:var(--text);font-size:14px;font-weight:600;transition:all 0.2s;border:1px solid var(--border)}
+.related-grid a:hover{border-color:var(--accent);transform:translateY(-2px)}
+.section-label{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-bottom:16px;font-family:'Space Mono',monospace}
+footer{position:relative;z-index:2;border-top:1px solid var(--border);padding:24px 0;text-align:center}
+footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:var(--accent)}
+</style>
+</head>
+<body>
+<nav><div class="inner"><a href="/showcase/" class="logo">CALL<span>BOSS</span></a><a href="/demo" class="nav-cta">Try Demo →</a></div></nav>
+
+<section class="hero">
+  <div class="container">
+    <span class="category-badge" id="category">Loading...</span>
+    <h1 id="heroTitle">Loading...</h1>
+    <div class="meta">
+      <span id="date"></span>
+      <span class="meta-dot"></span>
+      <span id="readTime"></span>
+      <span class="meta-dot"></span>
+      <span>By Call Boss Team</span>
+    </div>
+  </div>
+</section>
+
+<article>
+  <div class="container" id="articleBody"></div>
+</article>
+
+<section class="faq-section">
+  <div class="container">
+    <h2>Frequently Asked Questions</h2>
+    <div id="faqList"></div>
+  </div>
+</section>
+
+<section class="cta-section">
+  <div class="container-wide">
+    <p class="section-label" style="text-align:center">// READY TO SEE IT IN ACTION?</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:48px;margin-bottom:12px">Try Call Boss Free</h2>
+    <p style="color:var(--muted);font-size:16px;margin-bottom:32px">See the AI dialer that makes 2,000+ calls per day and books appointments autonomously.</p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      <a href="/demo" class="btn-primary">▶ Try the Demo</a>
+      <a href="/showcase/" class="btn-ghost">← Back to Hub</a>
+    </div>
+  </div>
+</section>
+
+<section class="related-section">
+  <div class="container-wide">
+    <p class="section-label">// RELATED READING</p>
+    <div class="related-grid" id="relatedLinks"></div>
+  </div>
+</section>
+
+<footer><div class="container-wide"><p><span>CALL BOSS</span> — Built by Infinite AI</p></div></footer>
+<script src="/showcase/tracker.js"></script>
+<script>
+(function(){
+  var slug = new URLSearchParams(window.location.search).get('post');
+  if (!slug) { document.getElementById('heroTitle').textContent = 'Post not found'; return; }
+
+  fetch('/showcase/seo-data.json').then(function(r){return r.json()}).then(function(data){
+    if (!data.blogs) { document.getElementById('heroTitle').textContent = 'Blog system not available'; return; }
+    var post = data.blogs.find(function(b){ return b.slug === slug; });
+    if (!post) { document.getElementById('heroTitle').textContent = 'Post not found: ' + slug; return; }
+
+    // Meta
+    document.title = post.title + ' — Call Boss Blog';
+    document.getElementById('metaDesc').setAttribute('content', post.description);
+    document.getElementById('ogTitle').setAttribute('content', post.title);
+    document.getElementById('ogDesc').setAttribute('content', post.description);
+    document.getElementById('twTitle').setAttribute('content', post.title);
+    document.getElementById('twDesc').setAttribute('content', post.description);
+    document.getElementById('canonical').setAttribute('href', 'https://aidialboss1.lovable.app/showcase/templates/blog.html?post=' + slug);
+
+    // Hero
+    document.getElementById('category').textContent = post.category || 'Article';
+    document.getElementById('heroTitle').textContent = post.title;
+    document.getElementById('date').textContent = new Date(post.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+    document.getElementById('readTime').textContent = post.readTime + ' read';
+
+    // Article body
+    var html = '';
+    post.sections.forEach(function(s){
+      html += '<h2>' + s.h2 + '</h2><p>' + s.content + '</p>';
+    });
+    document.getElementById('articleBody').innerHTML = html;
+
+    // FAQ
+    var faqHtml = '';
+    var faqSchema = [];
+    if (post.faq) {
+      post.faq.forEach(function(f){
+        faqHtml += '<div class="faq-item"><div class="faq-q">' + f.q + '</div><div class="faq-a">' + f.a + '</div></div>';
+        faqSchema.push({"@type":"Question","name":f.q,"acceptedAnswer":{"@type":"Answer","text":f.a}});
+      });
+    }
+    document.getElementById('faqList').innerHTML = faqHtml;
+
+    // Schema - Article
+    document.getElementById('schemaArticle').textContent = JSON.stringify({
+      "@context":"https://schema.org","@type":"Article",
+      "headline":post.title,
+      "description":post.description,
+      "author":{"@type":"Organization","name":"Call Boss"},
+      "publisher":{"@type":"Organization","name":"Call Boss"},
+      "datePublished":post.date,
+      "dateModified":post.date,
+      "mainEntityOfPage":{"@type":"WebPage","@id":"https://aidialboss1.lovable.app/showcase/templates/blog.html?post="+slug}
+    });
+
+    // Schema - FAQ
+    if (faqSchema.length > 0) {
+      document.getElementById('schemaFaq').textContent = JSON.stringify({
+        "@context":"https://schema.org","@type":"FAQPage","mainEntity":faqSchema
+      });
+    }
+
+    // Related links
+    var linksEl = document.getElementById('relatedLinks');
+    // Related industries
+    if (post.relatedIndustries) {
+      post.relatedIndustries.forEach(function(indSlug){
+        var ind = data.industries.find(function(i){return i.slug===indSlug});
+        if (ind) {
+          var a = document.createElement('a');
+          a.href = '/showcase/templates/industry.html?industry=' + indSlug;
+          a.textContent = '🏢 AI Dialer for ' + ind.name;
+          linksEl.appendChild(a);
+        }
+      });
+    }
+    // Related competitors
+    if (post.relatedCompetitors) {
+      post.relatedCompetitors.forEach(function(compSlug){
+        var comp = data.competitors.find(function(c){return c.slug===compSlug});
+        if (comp) {
+          var a = document.createElement('a');
+          a.href = '/showcase/templates/vs.html?vs=' + compSlug;
+          a.textContent = '⚔️ vs ' + comp.name;
+          linksEl.appendChild(a);
+        }
+      });
+    }
+    // Other blog posts
+    var otherPosts = data.blogs.filter(function(b){return b.slug !== slug}).slice(0,3);
+    otherPosts.forEach(function(b){
+      var a = document.createElement('a');
+      a.href = '/showcase/templates/blog.html?post=' + b.slug;
+      a.textContent = '📝 ' + b.title;
+      linksEl.appendChild(a);
+    });
+    // Core pages
+    var a1 = document.createElement('a'); a1.href = '/demo'; a1.textContent = '▶ Live Demo';
+    var a2 = document.createElement('a'); a2.href = '/showcase/roi.html'; a2.textContent = '💰 ROI Calculator';
+    linksEl.appendChild(a1); linksEl.appendChild(a2);
+  });
+})();
+</script>
+</body>
+</html>
