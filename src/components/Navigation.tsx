@@ -123,6 +123,16 @@ const Navigation = () => {
             <Button
               variant="ghost"
               size="sm"
+              onClick={handleShowcaseClick}
+              className="text-primary hover:text-primary/80"
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Showcase
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={signOut}
               className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
             >
