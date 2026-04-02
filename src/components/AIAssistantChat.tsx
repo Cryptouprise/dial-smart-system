@@ -154,6 +154,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     isSpeaking, 
     isProcessing: isVoiceProcessing,
     isSupported: isVoiceSupported,
+    interimText,
     startListening, 
     stopListening,
     restartListening,
@@ -162,7 +163,9 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   } = useVoiceChat({
     onTranscript: handleVoiceTranscript,
     autoSend: handsFreeMode,
-    onAutoSend: handleAutoSend
+    onAutoSend: handleAutoSend,
+    onInterimTranscript: handleInterimTranscript,
+    silenceTimeout: 2500
   });
 
   // Auto-scroll to bottom
