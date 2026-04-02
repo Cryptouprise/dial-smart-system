@@ -157,7 +157,7 @@ const LandingPage = () => {
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
               <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How It Works</a>
               <a href="#proof" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Results</a>
-              <a href="/showcase/index.html" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Deep Dive</a>
+              <a href="/showcase/landing.html" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Deep Dive</a>
             </div>
             <div className="flex items-center gap-3">
               <ThemeToggle />
@@ -194,7 +194,7 @@ const LandingPage = () => {
             {/* Dual CTA — Education first */}
             <div className="animate-fade-up-delay-3 flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
               <Button size="lg" className="gap-2 text-base px-8 h-14 animate-glow-pulse" asChild>
-                <a href="/showcase/index.html">
+                <a href="/showcase/landing.html">
                   <Layers className="h-4 w-4" />
                   See What Powers It
                 </a>
@@ -551,7 +551,7 @@ const LandingPage = () => {
               <h4 className="font-semibold text-sm mb-3">Learn</h4>
               <div className="space-y-2">
                 <a href="/showcase/problem.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">The Problem</a>
-                <a href="/showcase/index.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Showcase Hub</a>
+                <a href="/showcase/landing.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Showcase Hub</a>
               </div>
             </div>
             <div>
