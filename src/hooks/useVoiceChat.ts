@@ -33,8 +33,10 @@ declare global {
 interface UseVoiceChatOptions {
   voiceId?: string;
   onTranscript?: (text: string) => void;
-  autoSend?: boolean; // New: auto-send transcript immediately
-  onAutoSend?: (text: string) => void; // New: callback for auto-sending
+  autoSend?: boolean;
+  onAutoSend?: (text: string) => void;
+  onInterimTranscript?: (text: string) => void;
+  silenceTimeout?: number; // ms of silence before auto-sending (default 2500)
 }
 
 export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
@@ -42,16 +44,21 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     voiceId = 'EXAVITQu4vr4xnSDxMaL', 
     onTranscript,
     autoSend = false,
-    onAutoSend
+    onAutoSend,
+    onInterimTranscript,
+    silenceTimeout = 2500
   } = options;
   
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [interimText, setInterimText] = useState('');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const shouldRestartRef = useRef(false);
+  const transcriptBufferRef = useRef('');
   const { toast } = useToast();
 
   // Clear any pending restart
@@ -62,16 +69,59 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     }
   }, []);
 
+  // Clear silence timer
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  // Flush the accumulated transcript buffer (send it)
+  const flushBuffer = useCallback(() => {
+    clearSilenceTimer();
+    const text = transcriptBufferRef.current.trim();
+    if (text.length >= 2) {
+      console.log('[Voice] Flushing buffer:', text);
+      onTranscript?.(text);
+      if (autoSend && onAutoSend) {
+        onAutoSend(text);
+      }
+    }
+    transcriptBufferRef.current = '';
+    setInterimText('');
+    onInterimTranscript?.('');
+  }, [autoSend, onAutoSend, onTranscript, onInterimTranscript, clearSilenceTimer]);
+
   // Stop listening completely
   const stopListening = useCallback(() => {
     clearRestartTimeout();
+    clearSilenceTimer();
     shouldRestartRef.current = false;
+    
+    // Flush any remaining buffer before stopping
+    if (transcriptBufferRef.current.trim()) {
+      flushBuffer();
+    }
+    
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     setIsListening(false);
-  }, [clearRestartTimeout]);
+    setInterimText('');
+  }, [clearRestartTimeout, clearSilenceTimer, flushBuffer]);
+
+  // Reset silence timer — called whenever new speech is detected
+  const resetSilenceTimer = useCallback(() => {
+    clearSilenceTimer();
+    if (autoSend) {
+      silenceTimerRef.current = setTimeout(() => {
+        console.log('[Voice] Silence timeout reached, flushing buffer');
+        flushBuffer();
+      }, silenceTimeout);
+    }
+  }, [autoSend, silenceTimeout, clearSilenceTimer, flushBuffer]);
 
   // Initialize speech recognition
   const startListening = useCallback((continuous = false) => {
@@ -90,12 +140,21 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     }
 
     shouldRestartRef.current = continuous;
+    transcriptBufferRef.current = '';
+    setInterimText('');
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     
-    recognition.continuous = false; // Always false to get complete utterances
-    recognition.interimResults = false;
+    // In continuous/hands-free mode: enable continuous + interim results
+    // This prevents cutting the user off after a single phrase
+    if (continuous) {
+      recognition.continuous = true;
+      recognition.interimResults = true;
+    } else {
+      recognition.continuous = false;
+      recognition.interimResults = false;
+    }
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
@@ -104,25 +163,58 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     };
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      console.log('[Voice] Transcript:', transcript);
-      
-      // Always call onTranscript if provided
-      onTranscript?.(transcript);
-      
-      // If auto-send enabled and transcript is meaningful, auto-send
-      if (autoSend && onAutoSend && transcript.trim().length >= 2) {
-        console.log('[Voice] Auto-sending transcript');
-        onAutoSend(transcript.trim());
+      if (continuous) {
+        // In continuous mode: accumulate final results, show interim
+        let finalText = '';
+        let currentInterim = '';
+        
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalText += result[0].transcript + ' ';
+          } else {
+            currentInterim += result[0].transcript;
+          }
+        }
+        
+        // If we got new final text, add to buffer
+        if (finalText.trim()) {
+          transcriptBufferRef.current = finalText.trim();
+          const fullText = transcriptBufferRef.current;
+          setInterimText(fullText);
+          onInterimTranscript?.(fullText);
+          console.log('[Voice] Buffer updated:', fullText);
+        }
+        
+        // Show interim text for live feedback
+        if (currentInterim) {
+          const preview = transcriptBufferRef.current 
+            ? transcriptBufferRef.current + ' ' + currentInterim
+            : currentInterim;
+          setInterimText(preview);
+          onInterimTranscript?.(preview);
+        }
+        
+        // Reset silence timer — user is still talking
+        resetSilenceTimer();
+      } else {
+        // In manual mode: single result, put in input
+        const transcript = event.results[0][0].transcript;
+        console.log('[Voice] Transcript:', transcript);
+        onTranscript?.(transcript);
+        
+        if (autoSend && onAutoSend && transcript.trim().length >= 2) {
+          onAutoSend(transcript.trim());
+        }
       }
     };
 
     recognition.onerror = (event) => {
       console.error('[Voice] Recognition error:', event.error);
-      setIsListening(false);
       
       // Don't show error for no-speech (common in hands-free mode)
       if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        setIsListening(false);
         toast({
           title: 'Voice Error',
           description: `Speech recognition failed: ${event.error}`,
@@ -130,7 +222,7 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
         });
       }
       
-      // In continuous mode, restart after a brief pause
+      // In continuous mode, restart after a brief pause on no-speech
       if (shouldRestartRef.current && event.error === 'no-speech') {
         restartTimeoutRef.current = setTimeout(() => {
           if (shouldRestartRef.current) {
@@ -141,16 +233,31 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      console.log('[Voice] Stopped listening');
+      console.log('[Voice] Recognition ended');
       
-      // In continuous mode, restart after speaking finishes
-      // (The component handles timing via onSpeakEnd callback)
+      // In continuous mode, the browser may stop recognition unexpectedly
+      // Restart automatically if we should still be listening
+      if (shouldRestartRef.current) {
+        // Flush buffer if there's accumulated text and silence timer isn't running
+        if (transcriptBufferRef.current.trim() && !silenceTimerRef.current) {
+          flushBuffer();
+        }
+        
+        // Auto-restart after a brief pause
+        restartTimeoutRef.current = setTimeout(() => {
+          if (shouldRestartRef.current) {
+            console.log('[Voice] Auto-restarting continuous listening');
+            startListening(true);
+          }
+        }, 300);
+      } else {
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [onTranscript, autoSend, onAutoSend, toast]);
+  }, [onTranscript, autoSend, onAutoSend, onInterimTranscript, toast, resetSilenceTimer, flushBuffer]);
 
   // Restart listening (used after LJ finishes speaking in hands-free mode)
   const restartListening = useCallback(() => {
@@ -167,6 +274,13 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
   // Text-to-speech using ElevenLabs
   const speak = useCallback(async (text: string, onEnd?: () => void) => {
     if (!text || isSpeaking) return;
+
+    // Stop listening while LJ speaks to prevent feedback
+    if (recognitionRef.current && shouldRestartRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsListening(false);
+    }
 
     setIsProcessing(true);
     try {
@@ -238,6 +352,7 @@ export const useVoiceChat = (options: UseVoiceChatOptions = {}) => {
     isSpeaking,
     isProcessing,
     isSupported,
+    interimText,
     startListening,
     stopListening,
     restartListening,

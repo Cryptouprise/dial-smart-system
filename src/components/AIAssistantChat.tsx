@@ -451,7 +451,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
                 <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 rounded-lg border border-green-500/20">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   <span className="text-xs text-green-600 font-medium">
-                    Listening... Just speak
+                    {interimText ? '🎤 Still listening... take your time' : 'Listening... Just speak'}
                   </span>
                 </div>
               </div>
