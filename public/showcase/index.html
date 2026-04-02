@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dial Smart System — Product Showcase</title>
+<style>
+:root{--bg:#050810;--surface:#0b1020;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,240,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
+.hub{text-align:center;position:relative;z-index:2;padding:40px 24px}
+.logo{font-size:14px;letter-spacing:4px;color:var(--accent);text-shadow:0 0 30px rgba(0,240,255,0.5);margin-bottom:8px}
+h1{font-size:clamp(40px,8vw,72px);font-weight:900;line-height:1;margin-bottom:8px}
+h1 .cyan{color:var(--accent)}
+h1 .pink{color:var(--accent2)}
+.sub{color:var(--muted);font-size:18px;margin-bottom:48px;max-width:500px;line-height:1.6}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px;max-width:900px;margin:0 auto}
+.card{background:var(--surface);padding:32px 24px;text-decoration:none;color:var(--text);transition:all 0.3s;position:relative;overflow:hidden}
+.card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;transform:scaleX(0);transition:transform 0.3s;transform-origin:left}
+.card:nth-child(1)::after{background:var(--accent)}
+.card:nth-child(2)::after{background:var(--accent2)}
+.card:nth-child(3)::after{background:var(--accent)}
+.card:nth-child(4)::after{background:var(--accent3)}
+.card:nth-child(5)::after{background:#f59e0b}
+.card:hover::after{transform:scaleX(1)}
+.card:hover{background:#0f1929;transform:translateY(-4px)}
+.card-icon{font-size:36px;margin-bottom:12px;display:block}
+.card-title{font-size:16px;font-weight:700;margin-bottom:6px}
+.card-desc{font-size:13px;color:var(--muted);line-height:1.5}
+.card-num{position:absolute;top:12px;right:16px;font-size:11px;letter-spacing:2px;color:var(--border)}
+.enter{display:inline-flex;align-items:center;gap:8px;margin-top:48px;background:var(--accent);color:#000;padding:14px 32px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));transition:all 0.2s}
+.enter:hover{background:#fff;box-shadow:0 0 40px rgba(0,240,255,0.5);transform:translateY(-2px)}
+footer{position:fixed;bottom:16px;font-size:11px;color:var(--border);letter-spacing:1px;z-index:2}
+</style>
+</head>
+<body>
+<div class="hub">
+  <div class="logo">DIAL SMART SYSTEM</div>
+  <h1>The AI That<br><span class="cyan">Never Stops</span><br><span class="pink">Selling.</span></h1>
+  <p class="sub">5-page product showcase. See how it works, what it replaces, and what it's worth.</p>
+  <div class="cards">
+    <a href="/showcase/landing.html" class="card"><span class="card-num">01</span><span class="card-icon">🏠</span><div class="card-title">Overview</div><div class="card-desc">The full picture — lifecycle, engines, stats, use cases.</div></a>
+    <a href="/showcase/problem.html" class="card"><span class="card-num">02</span><span class="card-icon">⚠️</span><div class="card-title">The Problem</div><div class="card-desc">Lead decay, rep costs, follow-up failure — the math.</div></a>
+    <a href="/showcase/engines.html" class="card"><span class="card-num">03</span><span class="card-icon">⚙️</span><div class="card-title">7 Engines</div><div class="card-desc">Deep dive into every autonomous system.</div></a>
+    <a href="/showcase/compare.html" class="card"><span class="card-num">04</span><span class="card-icon">📊</span><div class="card-title">Comparison</div><div class="card-desc">Feature-by-feature vs the competition.</div></a>
+    <a href="/showcase/roi.html" class="card"><span class="card-num">05</span><span class="card-icon">💰</span><div class="card-title">ROI Calculator</div><div class="card-desc">Plug in your numbers. See the savings.</div></a>
+  </div>
+  <a href="/showcase/landing.html" class="enter">▶ Start the Tour</a>
+</div>
+<footer>Built by Infinite AI</footer>
+</body>
+</html>
