@@ -8,106 +8,1144 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #050810;--surface: #0b1020;--surface2: #111827;--border: #1e2d45;
-    --accent: #00f0ff;--accent2: #ff3e6c;--accent3: #7c3aed;
-    --gold: #f59e0b;--text: #e2e8f0;--muted: #64748b;--green: #00ff88;
+    --bg: #050810;
+    --surface: #0b1020;
+    --surface2: #111827;
+    --border: #1e2d45;
+    --accent: #00f0ff;
+    --accent2: #ff3e6c;
+    --accent3: #7c3aed;
+    --gold: #f59e0b;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --green: #00ff88;
   }
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
   html { scroll-behavior: smooth; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow-x: hidden; cursor: default; }
-  body::before { content: ''; position: fixed; inset: 0; background-image: linear-gradient(rgba(0,240,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,240,255,0.03) 1px, transparent 1px); background-size: 60px 60px; pointer-events: none; z-index: 0; }
-  body::after { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px); pointer-events: none; z-index: 1; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    overflow-x: hidden;
+    cursor: default;
+  }
+
+  /* BACKGROUND GRID */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,240,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,240,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* SCANLINE OVERLAY */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
   .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 2; }
-  nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 0; background: rgba(5,8,16,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); }
-  nav .inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 3px; color: var(--accent); text-shadow: 0 0 20px rgba(0,240,255,0.5); }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 16px 0;
+    background: rgba(5,8,16,0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,240,255,0.5);
+    text-decoration: none;
+  }
   .logo span { color: var(--text); }
   nav ul { list-style: none; display: flex; gap: 32px; }
   nav ul a { color: var(--muted); text-decoration: none; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; transition: color 0.2s; }
   nav ul a:hover { color: var(--accent); }
-  .nav-cta { background: var(--accent); color: #000; padding: 8px 20px; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; text-decoration: none; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); transition: all 0.2s; }
+  .nav-cta {
+    background: var(--accent);
+    color: #000;
+    padding: 8px 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    text-decoration: none;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    transition: all 0.2s;
+  }
   .nav-cta:hover { background: #fff; box-shadow: 0 0 30px rgba(0,240,255,0.6); }
-  .hero { min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; position: relative; }
-  .hero-orb { position: absolute; width: 600px; height: 600px; border-radius: 50%; background: radial-gradient(circle, rgba(0,240,255,0.08) 0%, transparent 70%); top: 50%; left: 60%; transform: translate(-50%, -50%); animation: pulse-orb 4s ease-in-out infinite; pointer-events: none; }
-  .hero-orb2 { position: absolute; width: 400px; height: 400px; border-radius: 50%; background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%); top: 30%; left: 20%; transform: translate(-50%, -50%); animation: pulse-orb 6s ease-in-out infinite reverse; pointer-events: none; }
-  @keyframes pulse-orb { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; } 50% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; } }
-  .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(0,240,255,0.08); border: 1px solid rgba(0,240,255,0.2); padding: 6px 16px; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 24px; animation: fadeSlideDown 0.6s ease both; }
-  .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 1.5s ease-in-out infinite; }
+
+  /* HERO */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: 120px 0 80px;
+    position: relative;
+  }
+
+  .hero-orb {
+    position: absolute;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,240,255,0.08) 0%, transparent 70%);
+    top: 50%; left: 60%;
+    transform: translate(-50%, -50%);
+    animation: pulse-orb 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .hero-orb2 {
+    position: absolute;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%);
+    top: 30%; left: 20%;
+    transform: translate(-50%, -50%);
+    animation: pulse-orb 6s ease-in-out infinite reverse;
+    pointer-events: none;
+  }
+
+  @keyframes pulse-orb {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+    50% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,240,255,0.08);
+    border: 1px solid rgba(0,240,255,0.2);
+    padding: 6px 16px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 24px;
+    animation: fadeSlideDown 0.6s ease both;
+  }
+  .badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: blink 1.5s ease-in-out infinite;
+  }
   @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
-  .hero h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(52px, 8vw, 100px); line-height: 0.92; letter-spacing: 2px; animation: fadeSlideDown 0.7s ease 0.1s both; }
+
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(52px, 8vw, 100px);
+    line-height: 0.92;
+    letter-spacing: 2px;
+    animation: fadeSlideDown 0.7s ease 0.1s both;
+  }
   .hero h1 .line1 { display: block; color: var(--text); }
   .hero h1 .line2 { display: block; color: var(--accent); text-shadow: 0 0 40px rgba(0,240,255,0.4); }
   .hero h1 .line3 { display: block; color: var(--accent2); text-shadow: 0 0 40px rgba(255,62,108,0.4); }
-  .hero-sub { font-size: 18px; color: var(--muted); max-width: 560px; line-height: 1.6; margin: 24px 0 40px; font-weight: 300; animation: fadeSlideDown 0.7s ease 0.2s both; }
+
+  .hero-sub {
+    font-size: 18px;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.6;
+    margin: 24px 0 40px;
+    font-weight: 300;
+    animation: fadeSlideDown 0.7s ease 0.2s both;
+  }
   .hero-sub strong { color: var(--text); font-weight: 500; }
-  .hero-actions { display: flex; gap: 16px; flex-wrap: wrap; animation: fadeSlideDown 0.7s ease 0.3s both; }
-  .btn-primary { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #000; padding: 14px 32px; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; text-decoration: none; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); transition: all 0.2s; }
-  .btn-primary:hover { background: #fff; box-shadow: 0 0 40px rgba(0,240,255,0.5); transform: translateY(-2px); }
-  .btn-ghost { display: inline-flex; align-items: center; gap: 10px; background: transparent; color: var(--text); padding: 14px 32px; font-weight: 500; font-size: 14px; text-decoration: none; border: 1px solid var(--border); transition: all 0.2s; }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    animation: fadeSlideDown 0.7s ease 0.3s both;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--accent);
+    color: #000;
+    padding: 14px 32px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-decoration: none;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    transition: all 0.2s;
+    position: relative;
+  }
+  .btn-primary:hover {
+    background: #fff;
+    box-shadow: 0 0 40px rgba(0,240,255,0.5);
+    transform: translateY(-2px);
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    color: var(--text);
+    padding: 14px 32px;
+    font-weight: 500;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
-  .live-strip { position: relative; z-index: 2; background: rgba(0,240,255,0.04); border-top: 1px solid rgba(0,240,255,0.1); border-bottom: 1px solid rgba(0,240,255,0.1); padding: 20px 0; }
-  .live-strip-inner { display: flex; gap: 60px; align-items: center; justify-content: center; flex-wrap: wrap; }
-  .stat-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .stat-num { font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700; color: var(--accent); text-shadow: 0 0 20px rgba(0,240,255,0.4); }
+
+  /* LIVE COUNTER STRIP */
+  .live-strip {
+    position: relative;
+    z-index: 2;
+    background: rgba(0,240,255,0.04);
+    border-top: 1px solid rgba(0,240,255,0.1);
+    border-bottom: 1px solid rgba(0,240,255,0.1);
+    padding: 20px 0;
+    overflow: hidden;
+  }
+  .live-strip-inner {
+    display: flex;
+    gap: 60px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .stat-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,240,255,0.4);
+  }
   .stat-label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
   .stat-divider { width: 1px; height: 40px; background: var(--border); }
+
+  /* PROBLEM SECTION */
   .section { padding: 100px 0; position: relative; z-index: 2; }
-  .section-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent2); margin-bottom: 16px; font-family: 'Space Mono', monospace; }
-  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(36px, 5vw, 64px); letter-spacing: 1px; line-height: 1; margin-bottom: 16px; }
+  .section-label {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 16px;
+    font-family: 'Space Mono', monospace;
+  }
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(36px, 5vw, 64px);
+    letter-spacing: 1px;
+    line-height: 1;
+    margin-bottom: 16px;
+  }
   .section-sub { color: var(--muted); font-size: 17px; max-width: 560px; line-height: 1.6; margin-bottom: 48px; }
-  .engines-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2px; margin-top: 48px; }
-  .engine-card { background: var(--surface); padding: 32px; position: relative; overflow: hidden; transition: all 0.3s; }
-  .engine-card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: var(--accent); transform: scaleX(0); transition: transform 0.3s; transform-origin: left; }
+
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2px;
+  }
+  .problem-card {
+    background: var(--surface);
+    padding: 28px;
+    border-left: 3px solid var(--accent2);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .problem-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,62,108,0.05) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .problem-card:hover::before { opacity: 1; }
+  .problem-card:hover { transform: translateY(-4px); }
+  .problem-pct {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    color: var(--accent2);
+    line-height: 1;
+    text-shadow: 0 0 30px rgba(255,62,108,0.4);
+  }
+  .problem-card h3 { font-size: 15px; font-weight: 600; margin: 8px 0 6px; }
+  .problem-card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* HOW IT WORKS */
+  .flow-section { background: var(--surface); padding: 100px 0; position: relative; z-index: 2; }
+  .flow-section::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  .flow-section::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent3), transparent);
+  }
+
+  .lifecycle {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    margin-top: 48px;
+  }
+
+  .lifecycle-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .lifecycle-step:last-child { border-bottom: none; }
+  .lifecycle-step:hover .step-num { color: var(--accent); text-shadow: 0 0 20px rgba(0,240,255,0.6); }
+  .lifecycle-step:hover .step-bar { background: var(--accent); }
+
+  .step-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px;
+    color: var(--border);
+    line-height: 1;
+    min-width: 64px;
+    transition: all 0.3s;
+  }
+  .step-bar {
+    width: 3px;
+    min-height: 60px;
+    background: var(--border);
+    transition: all 0.3s;
+    margin-top: 4px;
+  }
+  .step-content { flex: 1; }
+  .step-content h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .step-content p { font-size: 14px; color: var(--muted); line-height: 1.6; max-width: 600px; }
+
+  .step-outcomes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .outcome-tag {
+    font-size: 11px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    font-family: 'Space Mono', monospace;
+  }
+  .outcome-tag.green { border-color: rgba(0,255,136,0.3); color: var(--green); background: rgba(0,255,136,0.05); }
+  .outcome-tag.red { border-color: rgba(255,62,108,0.3); color: var(--accent2); background: rgba(255,62,108,0.05); }
+  .outcome-tag.blue { border-color: rgba(0,240,255,0.3); color: var(--accent); background: rgba(0,240,255,0.05); }
+
+  /* 7 ENGINES */
+  .engines-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2px;
+    margin-top: 48px;
+  }
+
+  .engine-card {
+    background: var(--surface);
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+    border-bottom: 2px solid transparent;
+  }
+  .engine-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.3s;
+    transform-origin: left;
+  }
   .engine-card:hover::after { transform: scaleX(1); }
   .engine-card:hover { background: #0f1929; transform: translateY(-4px); }
-  .engine-icon { font-size: 32px; margin-bottom: 16px; display: block; }
-  .engine-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+
+  .engine-icon {
+    font-size: 32px;
+    margin-bottom: 16px;
+    display: block;
+  }
+  .engine-card h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
   .engine-card p { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
-  .engine-highlight { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); letter-spacing: 1px; }
-  .specs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 2px; margin-top: 48px; }
-  .spec-item { background: var(--surface); padding: 28px 24px; text-align: center; transition: all 0.3s; }
+  .engine-highlight {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  /* COMPARISON TABLE */
+  .compare-section { padding: 100px 0; position: relative; z-index: 2; }
+
+  .compare-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-top: 48px;
+    overflow: hidden;
+  }
+  .compare-table th {
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'Space Mono', monospace;
+    font-weight: 400;
+  }
+  .compare-table th:first-child { border-left: 1px solid var(--border); }
+  .compare-table th:last-child { border-right: 1px solid var(--border); }
+  .compare-table th.highlight-col {
+    background: rgba(0,240,255,0.08);
+    color: var(--accent);
+    border-top: 2px solid var(--accent);
+  }
+  .compare-table td {
+    padding: 14px 20px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .compare-table td:first-child {
+    color: var(--text);
+    font-weight: 500;
+    border-left: 1px solid var(--border);
+  }
+  .compare-table td:last-child { border-right: 1px solid var(--border); }
+  .compare-table tr:last-child td { border-bottom: 1px solid var(--border); }
+  .compare-table td.highlight-col {
+    background: rgba(0,240,255,0.05);
+    font-weight: 600;
+  }
+  .compare-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .check { color: var(--green); font-size: 16px; }
+  .cross { color: var(--muted); opacity: 0.4; }
+  .partial { color: var(--gold); }
+
+  /* MATH SECTION */
+  .math-section {
+    background: var(--surface);
+    padding: 100px 0;
+    position: relative;
+    z-index: 2;
+  }
+
+  .math-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin-top: 48px;
+  }
+  @media (max-width: 640px) { .math-grid { grid-template-columns: 1fr; } }
+
+  .math-card {
+    padding: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .math-card.human {
+    background: rgba(255,62,108,0.05);
+    border: 1px solid rgba(255,62,108,0.15);
+  }
+  .math-card.ai {
+    background: rgba(0,240,255,0.05);
+    border: 1px solid rgba(0,240,255,0.15);
+  }
+  .math-card-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .math-card.human .math-card-label { color: var(--accent2); }
+  .math-card.ai .math-card-label { color: var(--accent); }
+
+  .math-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .math-row:last-child { border-bottom: none; }
+  .math-row-label { font-size: 13px; color: var(--muted); }
+  .math-row-val { font-size: 14px; font-weight: 600; font-family: 'Space Mono', monospace; }
+  .math-card.human .math-row-val { color: var(--accent2); }
+  .math-card.ai .math-row-val { color: var(--accent); }
+
+  .savings-banner {
+    margin-top: 2px;
+    background: linear-gradient(135deg, rgba(0,240,255,0.1), rgba(124,58,237,0.1));
+    border: 1px solid rgba(0,240,255,0.2);
+    padding: 32px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .savings-label { font-size: 14px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .savings-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 56px;
+    color: var(--green);
+    text-shadow: 0 0 30px rgba(0,255,136,0.4);
+    line-height: 1;
+  }
+
+  /* TECH SPECS */
+  .specs-strip {
+    position: relative; z-index: 2;
+    padding: 80px 0;
+  }
+  .specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 2px;
+    margin-top: 48px;
+  }
+  .spec-item {
+    background: var(--surface);
+    padding: 28px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .spec-item::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent3), var(--accent));
+    transform: scaleX(0);
+    transition: transform 0.3s;
+  }
+  .spec-item:hover::before { transform: scaleX(1); }
   .spec-item:hover { background: #0f1929; }
-  .spec-num { font-family: 'Bebas Neue', sans-serif; font-size: 40px; color: var(--text); line-height: 1; }
-  .spec-unit { font-size: 14px; color: var(--accent); }
+  .spec-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 40px;
+    color: var(--text);
+    line-height: 1;
+  }
+  .spec-unit { font-size: 14px; color: var(--accent); margin-left: 4px; }
   .spec-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 8px; }
-  .terminal { background: #060c1a; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin: 48px 0; }
-  .terminal-bar { background: var(--surface2); padding: 10px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); }
-  .t-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .t-red { background: #ff5f57; } .t-yellow { background: #febc2e; } .t-green { background: #28c840; }
-  .terminal-title { font-size: 11px; color: var(--muted); letter-spacing: 1px; margin-left: auto; margin-right: auto; }
-  .terminal-body { padding: 24px; font-family: 'Space Mono', monospace; font-size: 13px; line-height: 1.8; }
-  .t-comment { color: #3d5a7a; } .t-user { color: var(--text); } .t-ai { color: var(--green); } .t-result { color: var(--gold); }
-  .scroll-hint { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; animation: fadeSlideDown 1s ease 1s both; opacity: 0.4; }
-  .scroll-hint span { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
-  .scroll-mouse { width: 20px; height: 32px; border: 1px solid var(--muted); border-radius: 10px; position: relative; }
-  .scroll-mouse::after { content: ''; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background: var(--accent); border-radius: 50%; animation: scroll-dot 1.5s ease-in-out infinite; }
-  @keyframes scroll-dot { 0% { top: 6px; opacity: 1; } 100% { top: 18px; opacity: 0; } }
-  @keyframes fadeSlideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-  .fade-in { opacity: 0; transform: translateY(30px); transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
-  .fade-in.visible { opacity: 1; transform: translateY(0); }
-  .cta-section { position: relative; z-index: 2; padding: 120px 0; text-align: center; }
-  footer { position: relative; z-index: 2; border-top: 1px solid var(--border); padding: 32px 0; text-align: center; }
+
+  /* USE CASES */
+  .usecases-section { padding: 100px 0; position: relative; z-index: 2; }
+  .usecases-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2px;
+    margin-top: 48px;
+  }
+  .usecase-card {
+    background: var(--surface);
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .usecase-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--accent), var(--accent3));
+    transform: scaleY(0);
+    transition: transform 0.3s;
+    transform-origin: top;
+  }
+  .usecase-card:hover::before { transform: scaleY(1); }
+  .usecase-card:hover { background: #0f1929; padding-left: 32px; }
+  .usecase-icon { font-size: 28px; margin-bottom: 12px; }
+  .usecase-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .usecase-card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* CTA SECTION */
+  .cta-section {
+    position: relative; z-index: 2;
+    padding: 120px 0;
+    text-align: center;
+    overflow: hidden;
+  }
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 800px; height: 400px;
+    background: radial-gradient(ellipse, rgba(0,240,255,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-section h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(40px, 6vw, 80px);
+    line-height: 1;
+    margin-bottom: 16px;
+  }
+  .cta-section p { color: var(--muted); font-size: 18px; max-width: 500px; margin: 0 auto 40px; }
+  .cta-section .hero-actions { justify-content: center; }
+
+  /* FOOTER */
+  footer {
+    position: relative; z-index: 2;
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+  }
   footer p { font-size: 12px; color: var(--muted); letter-spacing: 1px; }
   footer span { color: var(--accent); }
-  @media (max-width: 768px) { nav ul { display: none; } .hero h1 { font-size: 52px; } }
+
+  /* ANIMATIONS */
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .fade-in {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+  /* TYPING ANIMATION */
+  .typewriter {
+    border-right: 2px solid var(--accent);
+    animation: blink-cursor 0.7s step-end infinite;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  @keyframes blink-cursor { 50% { border-color: transparent; } }
+
+  /* SCROLL INDICATOR */
+  .scroll-hint {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    animation: fadeSlideDown 1s ease 1s both;
+    opacity: 0.4;
+  }
+  .scroll-hint span { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+  .scroll-mouse {
+    width: 20px; height: 32px;
+    border: 1px solid var(--muted);
+    border-radius: 10px;
+    position: relative;
+  }
+  .scroll-mouse::after {
+    content: '';
+    position: absolute;
+    top: 6px; left: 50%;
+    transform: translateX(-50%);
+    width: 4px; height: 4px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: scroll-dot 1.5s ease-in-out infinite;
+  }
+  @keyframes scroll-dot {
+    0% { top: 6px; opacity: 1; }
+    100% { top: 18px; opacity: 0; }
+  }
+
+  /* TERMINAL BLOCK */
+  .terminal {
+    background: #060c1a;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 48px 0;
+  }
+  .terminal-bar {
+    background: var(--surface2);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .t-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .t-red { background: #ff5f57; }
+  .t-yellow { background: #febc2e; }
+  .t-green { background: #28c840; }
+  .terminal-title { font-size: 11px; color: var(--muted); letter-spacing: 1px; margin-left: auto; margin-right: auto; }
+  .terminal-body {
+    padding: 24px;
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .t-comment { color: #3d5a7a; }
+  .t-system { color: var(--accent); }
+  .t-user { color: var(--text); }
+  .t-ai { color: var(--green); }
+  .t-result { color: var(--gold); }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    nav ul { display: none; }
+    .hero h1 { font-size: 52px; }
+    .math-grid { grid-template-columns: 1fr; }
+    .compare-table { font-size: 12px; }
+    .compare-table th, .compare-table td { padding: 10px 12px; }
+  }
 </style>
 </head>
 <body>
-<nav><div class="inner"><div class="logo">DIAL<span>SMART</span></div><ul><li><a href="/showcase/problem.html">Problem</a></li><li><a href="/showcase/engines.html">Engines</a></li><li><a href="/showcase/compare.html">Compare</a></li><li><a href="/showcase/roi.html">ROI</a></li></ul><a href="#cta" class="nav-cta">Get Access →</a></div></nav>
-<section class="hero"><div class="hero-orb"></div><div class="hero-orb2"></div><div class="container"><div class="badge"><span class="badge-dot"></span> Live AI Calling System — Active</div><h1><span class="line1">The AI That</span><span class="line2">Never Stops</span><span class="line3">Selling.</span></h1><p class="hero-sub">Give it <strong>5,000 leads</strong> and a goal. It calls, books, follows up, and gets smarter with every conversation — <strong>without a human touching a phone.</strong></p><div class="hero-actions"><a href="#cta" class="btn-primary"><span>▶</span> See It In Action</a><a href="#engines" class="btn-ghost">Explore the System →</a></div></div><div class="scroll-hint"><div class="scroll-mouse"></div><span>Scroll</span></div></section>
-<div class="live-strip"><div class="live-strip-inner"><div class="stat-item"><span class="stat-num" data-target="5000" data-suffix="+">0</span><span class="stat-label">Calls / Minute</span></div><div class="stat-divider"></div><div class="stat-item"><span class="stat-num" data-target="100" data-suffix="%">0</span><span class="stat-label">Follow-Up Rate</span></div><div class="stat-divider"></div><div class="stat-item"><span class="stat-num" data-target="131000" data-prefix="$" data-suffix="+">0</span><span class="stat-label">Annual Savings vs Reps</span></div><div class="stat-divider"></div><div class="stat-item"><span class="stat-num" data-target="24" data-suffix="/7">0</span><span class="stat-label">Hours Active</span></div><div class="stat-divider"></div><div class="stat-item"><span class="stat-num" data-target="5" data-suffix=" min">0</span><span class="stat-label">Speed-to-Lead</span></div></div></div>
-<div style="position:relative;z-index:2;padding:0 0 40px;"><div class="container"><div class="terminal fade-in"><div class="terminal-bar"><div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green"></div><span class="terminal-title">dial-smart-system — autonomous engine</span></div><div class="terminal-body"><div><span class="t-comment">// Session started — 10,247 leads loaded</span></div><div>&nbsp;</div><div><span class="t-user">YOU: </span>"Here's 5,000 leads. Book solar consultations."</div><div>&nbsp;</div><div><span class="t-ai">AI:  </span>"Got it. Analyzing lead quality... scoring intent signals..."</div><div><span class="t-ai">     </span>"Building speed-to-lead workflow + 19 playbook rules..."</div><div><span class="t-ai">     </span>"Activating voice agents. First calls going out now."</div><div><span class="t-ai">     </span>"Check your dashboard — appointments will start showing up."</div><div>&nbsp;</div><div><span class="t-result">→ 23 appointments booked in first 4 hours.</span></div><div><span class="t-result">→ Script A/B test running. Variant B winning (+14% reply rate).</span></div><div><span class="t-result">→ Thursday 2-4pm converts 3.2x vs Monday AM. Playbook updated.</span></div></div></div></div></div>
-<section class="section" id="engines"><div class="container"><p class="section-label fade-in">// 7 Autonomous Engines</p><h2 class="section-title fade-in">Every Piece <span style="color:var(--accent)">Works Together.</span></h2><p class="section-sub fade-in">Not a collection of features — a fully integrated system where every engine feeds the next.</p><div class="engines-grid"><div class="engine-card fade-in"><span class="engine-icon">🎯</span><h3>AI Strategy Planner</h3><p>Tell it your goal. It builds the workflows, scripts, timing rules, and playbook automatically.</p><div class="engine-highlight">→ "Book solar consultations" = 19 rules auto-built</div></div><div class="engine-card fade-in"><span class="engine-icon">📞</span><h3>Autonomous Dialer</h3><p>50–600 calls per minute with phone number rotation and smart pacing.</p><div class="engine-highlight">→ "Call me Tuesday 2pm" — it will. Exactly.</div></div><div class="engine-card fade-in"><span class="engine-icon">🤖</span><h3>AI Voice Agents</h3><p>Natural conversations powered by Retell AI + Telnyx. Books appointments live.</p><div class="engine-highlight">→ A/B tests scripts — winners get more traffic</div></div><div class="engine-card fade-in"><span class="engine-icon">🔀</span><h3>Workflow Branching</h3><p>13-operator if/then/else logic. Real branching, not linear sequences.</p><div class="engine-highlight">→ Interest > 7? Book now. Else: 24hr follow-up.</div></div><div class="engine-card fade-in"><span class="engine-icon">🧠</span><h3>Predictive ML Engine</h3><p>5 models: conversion probability, churn risk, intent, timing, message effectiveness.</p><div class="engine-highlight">→ Trains weekly on YOUR call history data</div></div><div class="engine-card fade-in"><span class="engine-icon">💬</span><h3>SMS A/B Testing</h3><p>UCB1 bandit algorithm auto-optimizes. Underperformers get AI-rewritten.</p><div class="engine-highlight">→ Proven winners get more sends. Auto.</div></div><div class="engine-card fade-in"><span class="engine-icon">♾️</span><h3>Perpetual Follow-Up</h3><p>No lead ever falls off. Adaptive timing, channel rotation, legal stop conditions.</p><div class="engine-highlight">→ Value-first messaging. Not pitches. Forever.</div></div></div></div></section>
-<section style="padding:80px 0;position:relative;z-index:2"><div class="container"><p class="section-label fade-in" style="text-align:center">// Technical Specs</p><h2 class="section-title fade-in" style="text-align:center">Production-Grade. <span style="color:var(--accent)">Not a Prototype.</span></h2><div class="specs-grid"><div class="spec-item fade-in"><div class="spec-num">144K<span class="spec-unit">TS</span></div><div class="spec-label">Lines of Code</div></div><div class="spec-item fade-in"><div class="spec-num">63</div><div class="spec-label">Edge Functions</div></div><div class="spec-item fade-in"><div class="spec-num">700<span class="spec-unit">+</span></div><div class="spec-label">Automated Tests</div></div><div class="spec-item fade-in"><div class="spec-num">27</div><div class="spec-label">Steps / Engine Cycle</div></div><div class="spec-item fade-in"><div class="spec-num">13</div><div class="spec-label">Workflow Operators</div></div><div class="spec-item fade-in"><div class="spec-num">&lt;10<span class="spec-unit">s</span></div><div class="spec-label">Build Time</div></div></div></div></section>
-<section class="cta-section" id="cta"><div class="container"><p class="section-label fade-in" style="text-align:center">// Ready?</p><h2 class="section-title fade-in" style="text-align:center">This Isn't a Tool.<br><span style="color:var(--accent)">It's An AI Employee.</span></h2><p class="fade-in" style="color:var(--muted);font-size:18px;max-width:500px;margin:0 auto 40px">You set the goal. It does the work. It gets smarter every day.</p><div class="hero-actions fade-in" style="justify-content:center"><a href="#" class="btn-primary"><span>▶</span> Get Early Access</a><a href="#" class="btn-ghost">Book a Demo →</a></div></div></section>
-<footer><div class="container"><p><span>DIAL SMART SYSTEM</span> — The AI That Never Stops Selling · Built by <span>Infinite AI</span></p></div></footer>
+
+<nav><div class="inner"><a href="/showcase/landing.html" class="logo">DIAL<span>SMART</span></a><ul><li><a href="/showcase/problem.html">Problem</a></li><li><a href="/showcase/engines.html">Engines</a></li><li><a href="/showcase/compare.html">Compare</a></li><li><a href="/showcase/roi.html">ROI</a></li></ul><a href="#cta" class="nav-cta">Get Access &rarr;</a></div></nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-orb"></div>
+  <div class="hero-orb2"></div>
+  <div class="container">
+    <div class="badge"><span class="badge-dot"></span> Live AI Calling System &mdash; Active</div>
+    <h1>
+      <span class="line1">The AI That</span>
+      <span class="line2">Never Stops</span>
+      <span class="line3">Selling.</span>
+    </h1>
+    <p class="hero-sub">
+      Give it <strong>5,000 leads</strong> and a goal. It calls, books, follows up, and gets smarter with every conversation &mdash; <strong>without a human touching a phone.</strong>
+    </p>
+    <div class="hero-actions">
+      <a href="#cta" class="btn-primary"><span>&#9654;</span> See It In Action</a>
+      <a href="#engines" class="btn-ghost">Explore the System &rarr;</a>
+    </div>
+  </div>
+  <div class="scroll-hint"><div class="scroll-mouse"></div><span>Scroll</span></div>
+</section>
+
+<!-- LIVE COUNTER STRIP -->
+<div class="live-strip">
+  <div class="live-strip-inner">
+    <div class="stat-item"><span class="stat-num" data-target="5000" data-suffix="+">0</span><span class="stat-label">Calls / Minute</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><span class="stat-num" data-target="100" data-suffix="%">0</span><span class="stat-label">Follow-Up Rate</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><span class="stat-num" data-target="131000" data-prefix="$" data-suffix="+">0</span><span class="stat-label">Annual Savings vs Reps</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><span class="stat-num" data-target="24" data-suffix="/7">0</span><span class="stat-label">Hours Active</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><span class="stat-num" data-target="5" data-suffix=" min">0</span><span class="stat-label">Speed-to-Lead</span></div>
+  </div>
+</div>
+
+<!-- TERMINAL -->
+<div style="position:relative;z-index:2;padding:0 0 40px;">
+  <div class="container">
+    <div class="terminal fade-in">
+      <div class="terminal-bar">
+        <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green"></div>
+        <span class="terminal-title">dial-smart-system &mdash; autonomous engine</span>
+      </div>
+      <div class="terminal-body">
+        <div><span class="t-comment">// Session started &mdash; 10,247 leads loaded</span></div>
+        <div>&nbsp;</div>
+        <div><span class="t-user">YOU: </span>&quot;Here&rsquo;s 5,000 leads. Book solar consultations.&quot;</div>
+        <div>&nbsp;</div>
+        <div><span class="t-ai">AI:  </span>&quot;Got it. Analyzing lead quality... scoring intent signals...&quot;</div>
+        <div><span class="t-ai">     </span>&quot;Building speed-to-lead workflow + 19 playbook rules...&quot;</div>
+        <div><span class="t-ai">     </span>&quot;Activating voice agents. First calls going out now.&quot;</div>
+        <div><span class="t-ai">     </span>&quot;Check your dashboard &mdash; appointments will start showing up.&quot;</div>
+        <div>&nbsp;</div>
+        <div><span class="t-result">&rarr; 23 appointments booked in first 4 hours.</span></div>
+        <div><span class="t-result">&rarr; Script A/B test running. Variant B winning (+14% reply rate).</span></div>
+        <div><span class="t-result">&rarr; Thursday 2-4pm converts 3.2x vs Monday AM. Playbook updated.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROBLEM SECTION -->
+<section class="section">
+  <div class="container">
+    <p class="section-label fade-in">// The Problem</p>
+    <h2 class="section-title fade-in">Your Leads Are Dying<br><span style="color:var(--accent2)">In Your CRM.</span></h2>
+    <p class="section-sub fade-in">Every hour you wait to call a lead, it decays. Your reps can&rsquo;t keep up. The math doesn&rsquo;t work.</p>
+
+    <div class="problem-grid">
+      <div class="problem-card fade-in">
+        <div class="problem-pct">80%</div>
+        <h3>Never Get Called</h3>
+        <p>Your team simply can&rsquo;t keep up with volume. Most leads die untouched in your database.</p>
+      </div>
+      <div class="problem-card fade-in">
+        <div class="problem-pct">100&times;</div>
+        <h3>Better If Called in 5 Min</h3>
+        <p>A lead called within 5 minutes is 100x more likely to convert than one called an hour later.</p>
+      </div>
+      <div class="problem-card fade-in">
+        <div class="problem-pct">35%</div>
+        <h3>Rep Turnover Per Year</h3>
+        <p>Every hire costs $4K+/month. Training takes months. Then they leave &mdash; taking your playbook with them.</p>
+      </div>
+      <div class="problem-card fade-in">
+        <div class="problem-pct">0%</div>
+        <h3>Consistent Follow-Up</h3>
+        <p>Reps forget. Leads slip through cracks. No-shows go unremediated. Follow-up only happens when someone remembers.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS - LIFECYCLE -->
+<section class="flow-section">
+  <div class="container">
+    <p class="section-label fade-in" style="color:var(--accent)">// The Complete Lifecycle</p>
+    <h2 class="section-title fade-in">Every Lead. <span style="color:var(--accent)">Every Outcome.</span></h2>
+    <p class="section-sub fade-in">No lead falls through the cracks. The system handles every scenario, automatically.</p>
+
+    <div class="lifecycle">
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">01</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>Leads Come In</h3>
+          <p>CSV import, CRM sync, API, or manual entry. The system scores and prioritizes every lead before a single call is made.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag blue">CSV Import</span>
+            <span class="outcome-tag blue">CRM Sync</span>
+            <span class="outcome-tag blue">API Push</span>
+            <span class="outcome-tag blue">AI Scoring</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">02</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>AI Calls the Lead</h3>
+          <p>Retell AI voice agent handles the entire conversation naturally &mdash; knows the lead&rsquo;s name, timezone, prior history, and adapts in real time.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag green">BOOKED</span>
+            <span class="outcome-tag green">CALLBACK</span>
+            <span class="outcome-tag red">NOT INTERESTED</span>
+            <span class="outcome-tag">VOICEMAIL</span>
+            <span class="outcome-tag">NO ANSWER</span>
+            <span class="outcome-tag red">DNC</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">03</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>Booked &rarr; Confirmed &rarr; Reminded</h3>
+          <p>Appointment confirmed immediately. Reminder day before. Reminder day of. No-show recovery sequence activated if they miss.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag green">Confirm SMS</span>
+            <span class="outcome-tag green">Day-Before Reminder</span>
+            <span class="outcome-tag green">Day-Of Reminder</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">04</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>Didn&rsquo;t Answer &rarr; Smart Retry</h3>
+          <p>SMS first, then retry call at a statistically better hour based on your call history data. 3 attempts &rarr; monthly nurture loop. Forever.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag blue">SMS Nudge</span>
+            <span class="outcome-tag blue">Retry at Better Hour</span>
+            <span class="outcome-tag green">Monthly Nurture &#9851;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">05</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>System Learns &amp; Optimizes</h3>
+          <p>After every call, the ML engine updates. Best call times shift. Script variants compete. Churn risks get flagged. You get smarter every week.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag green">Script A/B Win &rarr;</span>
+            <span class="outcome-tag blue">Timing Shift &rarr;</span>
+            <span class="outcome-tag green">Playbook Update &rarr;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lifecycle-step fade-in">
+        <div class="step-num">06</div>
+        <div class="step-bar"></div>
+        <div class="step-content">
+          <h3>Nobody Gets Left Behind. Ever.</h3>
+          <p>Every lead &mdash; booked, interested, hesitant, or silent &mdash; gets dispositioned into the right pipeline and followed up with tomorrow. And next week. And next month. The AI never forgets a lead exists. Good calls that didn&rsquo;t convert go into hot pipelines with context intact. Callbacks are scheduled to the minute. Warm leads get value-first nurture SMS until they&rsquo;re ready. Cold leads get a patient 30-day drip. Ghosted leads get a breakup text &mdash; then re-enter nurture if they don&rsquo;t respond. The cycle never stops until they buy, opt out, or are legally DNC&rsquo;d. That&rsquo;s it. No other exit.</p>
+          <div class="step-outcomes">
+            <span class="outcome-tag green">&#9854; Perpetual Nurture</span>
+            <span class="outcome-tag blue">&#128197; Precision Callbacks</span>
+            <span class="outcome-tag red">&#128293; Hot Pipeline Routing</span>
+            <span class="outcome-tag blue">&#128172; Value-First SMS</span>
+            <span class="outcome-tag green">&#9201; Adaptive Timing</span>
+            <span class="outcome-tag red">&#128683; DNC = Only Exit</span>
+          </div>
+          <div style="margin-top:16px;padding:16px;background:rgba(0,240,255,0.04);border-left:2px solid var(--accent);font-size:13px;color:var(--muted);line-height:1.7;font-style:italic">
+            Day 1: Didn&rsquo;t book &rarr; dispositioned &ldquo;Interested, needs time&rdquo; &rarr; callback set for Day 3 at 2pm<br><br>
+            Day 3: Callback fires with full conversation context &rarr; still not ready &rarr; enters 7-day nurture<br><br>
+            Day 10: Value SMS: &ldquo;Quick tip for [their situation]...&rdquo; &rarr; reply detected &rarr; back to hot queue<br><br>
+            Day 30+: Monthly check-in, channel rotation, patience. Until they&rsquo;re ready.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ENGINES -->
+<section class="section" id="engines">
+  <div class="container">
+    <p class="section-label fade-in" style="color:var(--accent)">// 7 Autonomous Engines</p>
+    <h2 class="section-title fade-in">Every Piece <span style="color:var(--accent)">Works Together.</span></h2>
+    <p class="section-sub fade-in">Not a collection of features &mdash; a fully integrated system where every engine feeds the next.</p>
+
+    <div class="engines-grid">
+      <div class="engine-card fade-in"><span class="engine-icon">&#127919;</span><h3>AI Strategy Planner</h3><p>Tell it your goal. It builds the workflows, scripts, timing rules, and playbook. Fully automated in minutes.</p><div class="engine-highlight">&rarr; &ldquo;Book solar consultations&rdquo; = 19 rules auto-built</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#128222;</span><h3>Autonomous Dialer</h3><p>50&ndash;600 calls per minute with phone number rotation to protect caller ID. Smart pacing based on live answer rates.</p><div class="engine-highlight">&rarr; &ldquo;Call me Tuesday 2pm&rdquo; &mdash; it will. Exactly.</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#129302;</span><h3>AI Voice Agents</h3><p>Real conversations powered by Retell AI + Telnyx. Handles objections, detects voicemail, books appointments live.</p><div class="engine-highlight">&rarr; A/B tests scripts &mdash; winners get more traffic</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#128256;</span><h3>Workflow Branching</h3><p>13-operator if/then/else logic. Real branching, not linear sequences. Supports retry loops and nurture cycles.</p><div class="engine-highlight">&rarr; Interest &gt; 7? Book now. Else: 24hr follow-up.</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#129504;</span><h3>Predictive ML Engine</h3><p>5 models running in parallel: conversion probability, churn risk, intent score, timing optimizer, message predictor.</p><div class="engine-highlight">&rarr; Trains weekly on YOUR call history data</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#128172;</span><h3>SMS A/B Testing</h3><p>UCB1 bandit algorithm auto-optimizes message variants. Underperformers get AI-rewritten. Winners scale automatically.</p><div class="engine-highlight">&rarr; Proven winners get more sends. Auto.</div></div>
+      <div class="engine-card fade-in"><span class="engine-icon">&#9854;&#65039;</span><h3>Perpetual Follow-Up</h3><p>No lead ever falls off. Adaptive timing grows from 7-day to 30-day gaps. Channel rotation. Legal stop conditions built in.</p><div class="engine-highlight">&rarr; Value-first messaging. Not pitches. Forever.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section class="compare-section">
+  <div class="container">
+    <p class="section-label fade-in" style="color:var(--accent)">// Competitive Analysis</p>
+    <h2 class="section-title fade-in">Nothing Else <span style="color:var(--accent)">Does This.</span></h2>
+    <p class="section-sub fade-in">The tools you&rsquo;re using were built for humans. Dial Smart was built for AI.</p>
+
+    <table class="compare-table fade-in">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th class="highlight-col">Dial Smart &#10022;</th>
+          <th>VICIdial</th>
+          <th>Five9</th>
+          <th>GoHighLevel</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>AI voice conversations</td><td class="highlight-col"><span class="check">&#10004;</span> Full AI</td><td><span class="cross">&#10008;</span> Human only</td><td><span class="cross">&#10008;</span> Human only</td><td><span class="cross">&#10008;</span> No dialer</td></tr>
+        <tr><td>Autonomous follow-up</td><td class="highlight-col"><span class="check">&#10004;</span> Perpetual</td><td><span class="cross">&#10008;</span> Manual</td><td><span class="cross">&#10008;</span> Manual</td><td><span class="partial">&#9888;</span> Basic only</td></tr>
+        <tr><td>Predictive ML scoring</td><td class="highlight-col"><span class="check">&#10004;</span> 9 features</td><td><span class="cross">&#10008;</span> None</td><td><span class="partial">&#9888;</span> Basic</td><td><span class="cross">&#10008;</span> None</td></tr>
+        <tr><td>Workflow branching</td><td class="highlight-col"><span class="check">&#10004;</span> 13 operators</td><td><span class="cross">&#10008;</span> Linear</td><td><span class="partial">&#9888;</span> Basic</td><td><span class="partial">&#9888;</span> Basic</td></tr>
+        <tr><td>SMS A/B auto-optimization</td><td class="highlight-col"><span class="check">&#10004;</span> UCB1 Bandit</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td><td><span class="partial">&#9888;</span> Manual only</td></tr>
+        <tr><td>Goal-driven AI planner</td><td class="highlight-col"><span class="check">&#10004;</span> Creates everything</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td></tr>
+        <tr><td>Self-optimizing playbook</td><td class="highlight-col"><span class="check">&#10004;</span> Auto-adjusts</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td></tr>
+        <tr><td>Churn risk detection</td><td class="highlight-col"><span class="check">&#10004;</span> 6 risk factors</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td><td><span class="cross">&#10008;</span> None</td></tr>
+        <tr><td>Setup time</td><td class="highlight-col">Minutes</td><td>Weeks</td><td>Days</td><td>Hours</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- THE MATH -->
+<section class="math-section">
+  <div class="container">
+    <p class="section-label fade-in" style="color:var(--green)">// The Math</p>
+    <h2 class="section-title fade-in">AI vs <span style="color:var(--accent2)">Human Reps.</span></h2>
+    <p class="section-sub fade-in">Two human reps cost you $11,440/month and still can&rsquo;t keep up. Run the numbers.</p>
+
+    <div class="math-grid">
+      <div class="math-card human fade-in">
+        <div class="math-card-label">&#9888;&#65039; 2 Human Reps</div>
+        <div class="math-row"><span class="math-row-label">Calls per day</span><span class="math-row-val">200</span></div>
+        <div class="math-row"><span class="math-row-label">Monthly cost</span><span class="math-row-val">$11,440</span></div>
+        <div class="math-row"><span class="math-row-label">Follow-up consistency</span><span class="math-row-val">30%</span></div>
+        <div class="math-row"><span class="math-row-label">Speed to lead</span><span class="math-row-val">2&ndash;4 hours</span></div>
+        <div class="math-row"><span class="math-row-label">Available hours</span><span class="math-row-val">8hrs/day</span></div>
+        <div class="math-row"><span class="math-row-label">Learns from data</span><span class="math-row-val">No</span></div>
+        <div class="math-row"><span class="math-row-label">Annual turnover</span><span class="math-row-val">35%</span></div>
+      </div>
+
+      <div class="math-card ai fade-in">
+        <div class="math-card-label">&#10004; Dial Smart AI</div>
+        <div class="math-row"><span class="math-row-label">Calls per day</span><span class="math-row-val">5,000+</span></div>
+        <div class="math-row"><span class="math-row-label">Monthly cost</span><span class="math-row-val">~$500</span></div>
+        <div class="math-row"><span class="math-row-label">Follow-up consistency</span><span class="math-row-val">100%</span></div>
+        <div class="math-row"><span class="math-row-label">Speed to lead</span><span class="math-row-val">5 minutes</span></div>
+        <div class="math-row"><span class="math-row-label">Available hours</span><span class="math-row-val">24/7</span></div>
+        <div class="math-row"><span class="math-row-label">Learns from data</span><span class="math-row-val">Every 5 min</span></div>
+        <div class="math-row"><span class="math-row-label">Turnover</span><span class="math-row-val">0%</span></div>
+      </div>
+    </div>
+
+    <div class="savings-banner fade-in">
+      <div>
+        <div class="savings-label">Annual Savings vs 2 Human Reps</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Salary + overhead + turnover + training</div>
+      </div>
+      <div class="savings-num">$131,000+</div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH SPECS -->
+<section class="specs-strip">
+  <div class="container">
+    <p class="section-label fade-in" style="text-align:center;color:var(--accent)">// Technical Specs</p>
+    <h2 class="section-title fade-in" style="text-align:center">Production-Grade. <span style="color:var(--accent)">Not a Prototype.</span></h2>
+    <div class="specs-grid">
+      <div class="spec-item fade-in"><div class="spec-num">144K<span class="spec-unit">TS</span></div><div class="spec-label">Lines of Code</div></div>
+      <div class="spec-item fade-in"><div class="spec-num">63</div><div class="spec-label">Edge Functions</div></div>
+      <div class="spec-item fade-in"><div class="spec-num">700<span class="spec-unit">+</span></div><div class="spec-label">Automated Tests</div></div>
+      <div class="spec-item fade-in"><div class="spec-num">27</div><div class="spec-label">Steps / Engine Cycle</div></div>
+      <div class="spec-item fade-in"><div class="spec-num">13</div><div class="spec-label">Workflow Operators</div></div>
+      <div class="spec-item fade-in"><div class="spec-num">&lt;10<span class="spec-unit">s</span></div><div class="spec-label">Build Time</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section class="usecases-section">
+  <div class="container">
+    <p class="section-label fade-in" style="color:var(--accent)">// Use Cases</p>
+    <h2 class="section-title fade-in">Works For <span style="color:var(--accent)">Your Industry.</span></h2>
+    <div class="usecases-grid">
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#9728;&#65039;</div><h3>Solar / Home Services</h3><p>Speed-to-lead + appointment confirmation + no-show recovery. Turn fresh installs into booked consultations automatically.</p></div>
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#127974;</div><h3>Insurance</h3><p>Multi-step qualification workflow + agent handoff for hot leads. Only warm transfers reach your agents.</p></div>
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#127969;</div><h3>Real Estate</h3><p>Database reactivation + nurture drip + appointment reminders. Wake up your dead list and book viewings.</p></div>
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#128176;</div><h3>Precious Metals / Finance</h3><p>Compliant outreach at scale. Speed-to-lead for inbound plus database reactivation for cold lists.</p></div>
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#127970;</div><h3>B2B Sales</h3><p>Decision-maker detection + multi-touch cadence + CRM sync. Qualify and book demos without lifting a finger.</p></div>
+      <div class="usecase-card fade-in"><div class="usecase-icon">&#128260;</div><h3>Database Reactivation</h3><p>Curiosity-driven SMS &rarr; AI call &rarr; breakup text &rarr; monthly nurture. Turn cold leads into revenue again.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section" id="cta">
+  <div class="container">
+    <p class="section-label fade-in" style="text-align:center;color:var(--accent)">// Ready?</p>
+    <h2 class="section-title fade-in" style="text-align:center">This Isn&rsquo;t a Tool.<br><span style="color:var(--accent)">It&rsquo;s An AI Employee.</span></h2>
+    <p class="fade-in" style="color:var(--muted);font-size:18px;max-width:500px;margin:0 auto 40px;line-height:1.6">You set the goal. It does the work. It gets smarter every day. Your leads never die again.</p>
+    <div class="hero-actions fade-in" style="justify-content:center">
+      <a href="#" class="btn-primary"><span>&#9654;</span> Get Early Access</a>
+      <a href="#" class="btn-ghost">Book a Demo &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<footer><div class="container"><p><span>DIAL SMART SYSTEM</span> &mdash; The AI That Never Stops Selling &middot; Built by <span>Infinite AI</span></p></div></footer>
+
 <script>
-const observer=new IntersectionObserver(e=>{e.forEach((e,i)=>{if(e.isIntersecting){e.target.style.transitionDelay=`${(Array.from(e.target.parentElement.children).indexOf(e.target)%4)*80}ms`;e.target.classList.add('visible')}})},{threshold:0.1,rootMargin:'0px 0px -40px 0px'});
-document.querySelectorAll('.fade-in').forEach(el=>observer.observe(el));
-function animateCounter(el){const t=parseInt(el.dataset.target),p=el.dataset.prefix||'',s=el.dataset.suffix||'',d=2000,st=performance.now();function u(time){const e=time-st,pr=Math.min(e/d,1),ea=1-Math.pow(1-pr,4),c=Math.floor(ea*t);el.textContent=t>=1000?p+c.toLocaleString()+s:p+c+s;if(pr<1)requestAnimationFrame(u)}requestAnimationFrame(u)}
-const so=new IntersectionObserver(e=>{e.forEach(e=>{if(e.isIntersecting){e.target.querySelectorAll('.stat-num').forEach(animateCounter);so.unobserve(e.target)}})},{threshold:0.5});
-const strip=document.querySelector('.live-strip');if(strip)so.observe(strip);
-document.addEventListener('mousemove',e=>{const x=(e.clientX/window.innerWidth-0.5)*20,y=(e.clientY/window.innerHeight-0.5)*20;const o=document.querySelector('.hero-orb'),o2=document.querySelector('.hero-orb2');if(o)o.style.transform=`translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;if(o2)o2.style.transform=`translate(calc(-50% + ${-x*0.5}px), calc(-50% + ${-y*0.5}px))`});
+const observer = new IntersectionObserver(e => {
+  e.forEach((e, i) => {
+    if (e.isIntersecting) {
+      e.target.style.transitionDelay = `${(Array.from(e.target.parentElement.children).indexOf(e.target) % 5) * 80}ms`;
+      e.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+function animateCounter(el) {
+  const t = parseInt(el.dataset.target), p = el.dataset.prefix || '', s = el.dataset.suffix || '', d = 2000, st = performance.now();
+  function u(time) {
+    const e = time - st, pr = Math.min(e / d, 1), ea = 1 - Math.pow(1 - pr, 4), c = Math.floor(ea * t);
+    el.textContent = t >= 1000 ? p + c.toLocaleString() + s : p + c + s;
+    if (pr < 1) requestAnimationFrame(u);
+  }
+  requestAnimationFrame(u);
+}
+const so = new IntersectionObserver(e => {
+  e.forEach(e => {
+    if (e.isIntersecting) { e.target.querySelectorAll('.stat-num').forEach(animateCounter); so.unobserve(e.target); }
+  });
+}, { threshold: 0.5 });
+const strip = document.querySelector('.live-strip');
+if (strip) so.observe(strip);
+
+document.addEventListener('mousemove', e => {
+  const x = (e.clientX / window.innerWidth - 0.5) * 20, y = (e.clientY / window.innerHeight - 0.5) * 20;
+  const o = document.querySelector('.hero-orb'), o2 = document.querySelector('.hero-orb2');
+  if (o) o.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  if (o2) o2.style.transform = `translate(calc(-50% + ${-x * 0.5}px), calc(-50% + ${-y * 0.5}px))`;
+});
 </script>
 </body>
 </html>
