@@ -35,6 +35,7 @@ footer{position:relative;z-index:2;border-top:1px solid var(--border);padding:24
 footer p{font-size:12px;color:var(--muted);letter-spacing:1px}
 footer span{color:var(--accent)}
 @media(max-width:768px){nav ul{display:none}}
+@media(max-width:640px){.decision-paths{grid-template-columns:1fr !important}.decision-previews{grid-template-columns:1fr !important}}
 
 /* Hero */
 .page-hero{padding:140px 0 80px;position:relative;z-index:2;border-bottom:1px solid var(--border)}
@@ -326,17 +327,53 @@ footer span{color:var(--accent)}
   </div>
 </section>
 
-<!-- CTA -->
-<section style="position:relative;z-index:2;background:var(--bg);padding:80px 0;text-align:center;border-top:1px solid var(--border)">
+<!-- DECISION SECTION -->
+<section style="position:relative;z-index:2;background:var(--bg);padding:100px 0 40px;border-top:1px solid var(--border)">
   <div class="container">
-    <p class="section-label" style="text-align:center;color:var(--accent2)">// You've Seen Enough</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:clamp(36px,5vw,64px);margin-bottom:16px">Stop Leaving<br><span style="color:var(--accent2)">Revenue On The Table.</span></h2>
-    <p style="color:var(--muted);font-size:16px;margin-bottom:40px;max-width:540px;display:inline-block;line-height:1.7">Every day without Dial Smart is another day your leads decay, your reps forget to follow up, and your competitors call first.</p>
-    <br>
-    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
-      <a href="/showcase/landing.html#cta" class="btn-primary">Get Access Now &rarr;</a>
-      <a href="/showcase/landing.html" class="btn-ghost">&larr; Back to Overview</a>
+    <p class="section-label fade-in" style="text-align:center;color:var(--green)">// What Happens Next</p>
+    <h2 class="fade-in" style="font-family:'Bebas Neue',sans-serif;font-size:clamp(40px,6vw,72px);text-align:center;margin-bottom:12px;line-height:0.95">You've Seen the Numbers.<br><span style="color:var(--green)">Now Pick Your Path.</span></h2>
+    <p class="fade-in" style="color:var(--muted);font-size:16px;text-align:center;max-width:580px;margin:0 auto 56px;line-height:1.7">Every day you wait is another day your leads decay and your competitors call first. Whether you're ready now or want more proof — we've got you covered.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;max-width:900px;margin:0 auto" class="fade-in">
+      <!-- PATH A: READY -->
+      <a href="/demo" style="background:var(--surface);padding:56px 40px;text-decoration:none;color:var(--text);transition:all 0.4s;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;text-align:center" onmouseenter="this.style.background='#0f1929';this.style.transform='translateY(-4px)'" onmouseleave="this.style.background='var(--surface)';this.style.transform='none'">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--green);transform:scaleX(0);transition:transform 0.4s;transform-origin:left" class="path-line-a"></div>
+        <span style="font-size:56px;margin-bottom:20px;display:block">🚀</span>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:1px;color:var(--green);margin-bottom:12px">I've Seen Enough</div>
+        <p style="font-size:15px;color:var(--muted);line-height:1.7;max-width:300px;margin-bottom:24px">Get a live AI demo call right now. Watch it handle objections, book appointments, and follow up — with your actual business context.</p>
+        <span style="display:inline-flex;align-items:center;gap:8px;padding:14px 36px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;background:var(--green);color:#000;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))">▶ Try the Live Demo</span>
+      </a>
+      
+      <!-- PATH B: WANT MORE INFO -->
+      <a href="/showcase/problem.html" style="background:var(--surface);padding:56px 40px;text-decoration:none;color:var(--text);transition:all 0.4s;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;text-align:center" onmouseenter="this.style.background='#0f1929';this.style.transform='translateY(-4px)'" onmouseleave="this.style.background='var(--surface)';this.style.transform='none'">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--accent);transform:scaleX(0);transition:transform 0.4s;transform-origin:left" class="path-line-b"></div>
+        <span style="font-size:56px;margin-bottom:20px;display:block">📖</span>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:1px;color:var(--accent);margin-bottom:12px">Show Me the Full Story</div>
+        <p style="font-size:15px;color:var(--muted);line-height:1.7;max-width:300px;margin-bottom:24px">3 beautifully explained pages with animated breakdowns. Under 2 minutes each. Real data, real case studies, zero fluff.</p>
+        <span style="display:inline-flex;align-items:center;gap:8px;padding:14px 36px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;background:var(--accent);color:#000;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))">Explore the Deep Dive →</span>
+      </a>
     </div>
+
+    <!-- Mini preview cards for the showcase pages -->
+    <div style="max-width:900px;margin:2px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:2px" class="fade-in">
+      <a href="/showcase/problem.html" style="background:rgba(255,62,108,0.05);border:1px solid rgba(255,62,108,0.15);padding:20px;text-decoration:none;color:var(--text);transition:all 0.3s;text-align:center" onmouseenter="this.style.background='rgba(255,62,108,0.1)';this.style.borderColor='rgba(255,62,108,0.4)'" onmouseleave="this.style.background='rgba(255,62,108,0.05)';this.style.borderColor='rgba(255,62,108,0.15)'">
+        <div style="font-size:24px;margin-bottom:6px">⚠️</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">The Problem</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5">Why 80% of leads die untouched & the brutal math of rep costs</div>
+      </a>
+      <a href="/showcase/engines.html" style="background:rgba(0,240,255,0.05);border:1px solid rgba(0,240,255,0.15);padding:20px;text-decoration:none;color:var(--text);transition:all 0.3s;text-align:center" onmouseenter="this.style.background='rgba(0,240,255,0.1)';this.style.borderColor='rgba(0,240,255,0.4)'" onmouseleave="this.style.background='rgba(0,240,255,0.05)';this.style.borderColor='rgba(0,240,255,0.15)'">
+        <div style="font-size:24px;margin-bottom:6px">⚙️</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">7 Engines</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5">Every autonomous system explained with animated breakdowns</div>
+      </a>
+      <a href="/showcase/compare.html" style="background:rgba(124,58,237,0.05);border:1px solid rgba(124,58,237,0.15);padding:20px;text-decoration:none;color:var(--text);transition:all 0.3s;text-align:center" onmouseenter="this.style.background='rgba(124,58,237,0.1)';this.style.borderColor='rgba(124,58,237,0.4)'" onmouseleave="this.style.background='rgba(124,58,237,0.05)';this.style.borderColor='rgba(124,58,237,0.15)'">
+        <div style="font-size:24px;margin-bottom:6px">📊</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">Comparison</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5">Feature-by-feature vs VICIdial, Five9, and every major dialer</div>
+      </a>
+    </div>
+
+    <p class="fade-in" style="text-align:center;margin-top:32px;font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;letter-spacing:1px">// Each page takes under 2 minutes to read. Animated. Data-backed. Zero fluff.</p>
   </div>
 </section>
 
