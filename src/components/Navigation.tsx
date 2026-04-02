@@ -71,7 +71,7 @@ const Navigation = () => {
               </SheetContent>
             </Sheet>
 
-            <Link to="/" className="font-bold text-lg md:text-xl text-primary">
+            <Link to="/dashboard" className="font-bold text-lg md:text-xl text-primary">
               AI Dial Boss
             </Link>
             <DemoBadge />
