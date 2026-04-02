@@ -3,51 +3,206 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dial Smart System — Product Showcase</title>
+<title>Call Boss — AI-Powered Autonomous Dialer That Never Stops Selling</title>
+<meta name="description" content="Call Boss is the AI dialer that calls your leads in under 5 minutes, follows up forever, and books appointments autonomously. Replace 10 reps with one system.">
+<meta property="og:title" content="Call Boss — The AI That Never Stops Selling">
+<meta property="og:description" content="AI-powered autonomous dialer. Calls leads in 5 min, follows up forever, books appointments on autopilot.">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://aidialboss1.lovable.app/showcase/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Call Boss",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "description": "AI-powered autonomous dialer that calls leads in under 5 minutes, follows up forever, and books appointments autonomously.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0.15",
+    "priceCurrency": "USD",
+    "description": "Per minute pricing starting at $0.15/min"
+  },
+  "creator": {
+    "@type": "Organization",
+    "name": "Infinite AI"
+  }
+}
+</script>
 <style>
-:root{--bg:#050810;--surface:#0b1020;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}
+:root{--bg:#050810;--surface:#0b1020;--surface2:#111827;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--gold:#f59e0b;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,240,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
-.hub{text-align:center;position:relative;z-index:2;padding:40px 24px}
-.logo{font-size:14px;letter-spacing:4px;color:var(--accent);text-shadow:0 0 30px rgba(0,240,255,0.5);margin-bottom:8px}
-h1{font-size:clamp(40px,8vw,72px);font-weight:900;line-height:1;margin-bottom:8px}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);pointer-events:none;z-index:1}
+.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:2}
+
+/* Hero */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 24px 40px;position:relative;z-index:2}
+.hero-glow{position:absolute;top:50%;left:50%;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(0,240,255,0.08) 0%,transparent 70%);transform:translate(-50%,-50%);pointer-events:none}
+.brand{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:5px;text-transform:uppercase;color:var(--accent);text-shadow:0 0 30px rgba(0,240,255,0.5);margin-bottom:16px}
+h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,10vw,96px);line-height:0.95;margin-bottom:16px;letter-spacing:1px}
 h1 .cyan{color:var(--accent)}
 h1 .pink{color:var(--accent2)}
-.sub{color:var(--muted);font-size:18px;margin-bottom:48px;max-width:500px;line-height:1.6}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px;max-width:900px;margin:0 auto}
+.subtitle{color:var(--muted);font-size:clamp(16px,2.5vw,20px);max-width:560px;line-height:1.6;margin-bottom:48px;font-weight:300}
+
+/* Two Paths */
+.paths{display:grid;grid-template-columns:1fr 1fr;gap:2px;max-width:800px;width:100%;margin:0 auto}
+.path{background:var(--surface);padding:48px 36px;text-decoration:none;color:var(--text);transition:all 0.4s;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;text-align:center}
+.path::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;transform:scaleX(0);transition:transform 0.4s;transform-origin:left}
+.path:first-child::after{background:var(--accent)}
+.path:last-child::after{background:var(--accent2)}
+.path:hover::after{transform:scaleX(1)}
+.path:hover{background:#0f1929;transform:translateY(-4px)}
+.path-icon{font-size:48px;margin-bottom:16px;display:block}
+.path-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px;margin-bottom:8px}
+.path:first-child .path-title{color:var(--accent)}
+.path:last-child .path-title{color:var(--accent2)}
+.path-desc{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:20px;max-width:280px}
+.path-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));transition:all 0.2s}
+.path:first-child .path-btn{background:var(--accent);color:#000}
+.path:last-child .path-btn{background:var(--accent2);color:#fff}
+.path:hover .path-btn{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,240,255,0.3)}
+
+/* Returning visitor banner */
+.welcome-back{display:none;background:linear-gradient(135deg,rgba(0,240,255,0.1),rgba(124,58,237,0.1));border:1px solid var(--accent);padding:16px 24px;border-radius:4px;margin-bottom:32px;max-width:600px;text-align:center}
+.welcome-back.show{display:block}
+.welcome-back p{font-size:14px;color:var(--accent);margin-bottom:8px}
+.welcome-back a{color:#fff;font-weight:700;text-decoration:none;font-size:13px;letter-spacing:1px;text-transform:uppercase}
+.welcome-back a:hover{color:var(--accent)}
+
+/* Stats Strip */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:64px;max-width:800px;width:100%}
+.stat{background:var(--surface);padding:24px 16px;text-align:center}
+.stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--green);text-shadow:0 0 20px rgba(0,255,136,0.3)}
+.stat-label{font-size:11px;color:var(--muted);letter-spacing:1px;margin-top:4px;text-transform:uppercase}
+
+/* Explore Section */
+.explore{padding:80px 0;position:relative;z-index:2}
+.explore-title{font-family:'Bebas Neue',sans-serif;font-size:36px;text-align:center;margin-bottom:8px;letter-spacing:1px}
+.explore-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:40px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2px}
 .card{background:var(--surface);padding:32px 24px;text-decoration:none;color:var(--text);transition:all 0.3s;position:relative;overflow:hidden}
 .card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;transform:scaleX(0);transition:transform 0.3s;transform-origin:left}
-.card:nth-child(1)::after{background:var(--accent)}
-.card:nth-child(2)::after{background:var(--accent2)}
-.card:nth-child(3)::after{background:var(--accent)}
-.card:nth-child(4)::after{background:var(--accent3)}
-.card:nth-child(5)::after{background:#f59e0b}
+.card:nth-child(1)::after{background:var(--accent2)}
+.card:nth-child(2)::after{background:var(--accent)}
+.card:nth-child(3)::after{background:var(--accent3)}
+.card:nth-child(4)::after{background:var(--gold)}
 .card:hover::after{transform:scaleX(1)}
 .card:hover{background:#0f1929;transform:translateY(-4px)}
-.card-icon{font-size:36px;margin-bottom:12px;display:block}
-.card-title{font-size:16px;font-weight:700;margin-bottom:6px}
+.card-icon{font-size:32px;margin-bottom:12px;display:block}
+.card-title{font-size:15px;font-weight:700;margin-bottom:6px}
 .card-desc{font-size:13px;color:var(--muted);line-height:1.5}
-.card-num{position:absolute;top:12px;right:16px;font-size:11px;letter-spacing:2px;color:var(--border)}
-.enter{display:inline-flex;align-items:center;gap:8px;margin-top:48px;background:var(--accent);color:#000;padding:14px 32px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));transition:all 0.2s}
-.enter:hover{background:#fff;box-shadow:0 0 40px rgba(0,240,255,0.5);transform:translateY(-2px)}
-footer{position:fixed;bottom:16px;font-size:11px;color:var(--border);letter-spacing:1px;z-index:2}
+.card-num{position:absolute;top:12px;right:16px;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--border)}
+
+/* Footer */
+footer{position:relative;z-index:2;border-top:1px solid var(--border);padding:24px 0;text-align:center}
+footer p{font-size:12px;color:var(--muted);letter-spacing:1px}
+footer span{color:var(--accent)}
+
+@media(max-width:640px){
+  .paths{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
-<div class="hub">
-  <div class="logo">DIAL SMART SYSTEM</div>
+
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="brand">CALL BOSS</div>
   <h1>The AI That<br><span class="cyan">Never Stops</span><br><span class="pink">Selling.</span></h1>
-  <p class="sub">5-page product showcase. See how it works, what it replaces, and what it's worth.</p>
-  <div class="cards">
-    <a href="/showcase/landing.html" class="card"><span class="card-num">01</span><span class="card-icon">🏠</span><div class="card-title">Overview</div><div class="card-desc">The full picture — lifecycle, engines, stats, use cases.</div></a>
-    <a href="/showcase/problem.html" class="card"><span class="card-num">02</span><span class="card-icon">⚠️</span><div class="card-title">The Problem</div><div class="card-desc">Lead decay, rep costs, follow-up failure — the math.</div></a>
-    <a href="/showcase/engines.html" class="card"><span class="card-num">03</span><span class="card-icon">⚙️</span><div class="card-title">7 Engines</div><div class="card-desc">Deep dive into every autonomous system.</div></a>
-    <a href="/showcase/compare.html" class="card"><span class="card-num">04</span><span class="card-icon">📊</span><div class="card-title">Comparison</div><div class="card-desc">Feature-by-feature vs the competition.</div></a>
-    <a href="/showcase/roi.html" class="card"><span class="card-num">05</span><span class="card-icon">💰</span><div class="card-title">ROI Calculator</div><div class="card-desc">Plug in your numbers. See the savings.</div></a>
+  <p class="subtitle">Your leads called in under 5 minutes. Followed up forever. Appointments booked on autopilot. No reps required.</p>
+
+  <div class="welcome-back" id="welcomeBack">
+    <p>👋 Welcome back! You've already seen the demo.</p>
+    <a href="/showcase/roi.html">See Your ROI Numbers →</a>
   </div>
-  <a href="/showcase/landing.html" class="enter">▶ Start the Tour</a>
-</div>
-<footer>Built by Infinite AI</footer>
+
+  <div class="paths">
+    <a href="/demo" class="path">
+      <span class="path-icon">🚀</span>
+      <div class="path-title">See It In Action</div>
+      <p class="path-desc">Get a live AI call from our system. Watch it work in real-time with your business context.</p>
+      <span class="path-btn">▶ Try the Demo</span>
+    </a>
+    <a href="/showcase/landing.html" class="path">
+      <span class="path-icon">📖</span>
+      <div class="path-title">How It Works</div>
+      <p class="path-desc">Deep dive into the 7 engines, see the competition comparison, and calculate your ROI.</p>
+      <span class="path-btn">Learn More →</span>
+    </a>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-num">2.4M+</div><div class="stat-label">Calls Made</div></div>
+    <div class="stat"><div class="stat-num">36%</div><div class="stat-label">Answer Rate</div></div>
+    <div class="stat"><div class="stat-num">12K+</div><div class="stat-label">Appointments</div></div>
+    <div class="stat"><div class="stat-num">$0.15</div><div class="stat-label">Per Minute</div></div>
+  </div>
+</section>
+
+<section class="explore">
+  <div class="container">
+    <div class="explore-title">Explore the Platform</div>
+    <p class="explore-sub">Choose your path. Read about it or watch it work — they all connect.</p>
+    <div class="cards">
+      <a href="/showcase/problem.html" class="card">
+        <span class="card-num">01</span>
+        <span class="card-icon">⚠️</span>
+        <div class="card-title">The Problem</div>
+        <div class="card-desc">Lead decay, rep costs, follow-up failure — the brutal math.</div>
+      </a>
+      <a href="/showcase/engines.html" class="card">
+        <span class="card-num">02</span>
+        <span class="card-icon">⚙️</span>
+        <div class="card-title">7 Engines</div>
+        <div class="card-desc">Deep dive into every autonomous system that powers Call Boss.</div>
+      </a>
+      <a href="/showcase/compare.html" class="card">
+        <span class="card-num">03</span>
+        <span class="card-icon">📊</span>
+        <div class="card-title">Comparison</div>
+        <div class="card-desc">Feature-by-feature vs VICIdial, Five9, and the rest.</div>
+      </a>
+      <a href="/showcase/roi.html" class="card">
+        <span class="card-num">04</span>
+        <span class="card-icon">💰</span>
+        <div class="card-title">ROI Calculator</div>
+        <div class="card-desc">Plug in your numbers. See the savings in black and white.</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p><span>CALL BOSS</span> — Built by Infinite AI</p>
+  </div>
+</footer>
+
+<script>
+// Visitor tracking
+(function(){
+  var key = 'callboss_visitor';
+  var data = JSON.parse(localStorage.getItem(key) || '{}');
+  
+  // Track this visit
+  data.visits = (data.visits || 0) + 1;
+  data.lastVisit = new Date().toISOString();
+  data.pagesVisited = data.pagesVisited || [];
+  if (data.pagesVisited.indexOf('hub') === -1) data.pagesVisited.push('hub');
+  localStorage.setItem(key, JSON.stringify(data));
+  
+  // Show welcome back banner for returning demo-completed visitors
+  if (data.demoCompleted) {
+    var el = document.getElementById('welcomeBack');
+    if (el) el.classList.add('show');
+  }
+})();
+</script>
 </body>
 </html>

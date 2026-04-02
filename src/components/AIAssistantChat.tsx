@@ -128,7 +128,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     if (isLoading || !text.trim()) return;
     
     console.log('[HandsFree] Auto-sending:', text);
-    setInput('');
+    setInput(''); // Clear the interim preview
     await sendMessage(text);
   }, [isLoading, sendMessage]);
 
@@ -141,12 +141,20 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     // In hands-free mode, handleAutoSend handles it
   }, [handsFreeMode]);
 
+  // Handle interim transcript (live preview while speaking)
+  const handleInterimTranscript = useCallback((text: string) => {
+    if (handsFreeMode) {
+      setInput(text);
+    }
+  }, [handsFreeMode]);
+
   // Voice chat integration
   const { 
     isListening, 
     isSpeaking, 
     isProcessing: isVoiceProcessing,
     isSupported: isVoiceSupported,
+    interimText,
     startListening, 
     stopListening,
     restartListening,
@@ -155,7 +163,9 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   } = useVoiceChat({
     onTranscript: handleVoiceTranscript,
     autoSend: handsFreeMode,
-    onAutoSend: handleAutoSend
+    onAutoSend: handleAutoSend,
+    onInterimTranscript: handleInterimTranscript,
+    silenceTimeout: 2500
   });
 
   // Auto-scroll to bottom
@@ -441,7 +451,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
                 <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 rounded-lg border border-green-500/20">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   <span className="text-xs text-green-600 font-medium">
-                    Listening... Just speak
+                    {interimText ? '🎤 Still listening... take your time' : 'Listening... Just speak'}
                   </span>
                 </div>
               </div>

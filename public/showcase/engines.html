@@ -490,5 +490,6 @@ const sections=document.querySelectorAll('.engine-block');
 const tabObserver=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){const id=entry.target.id;tabs.forEach(t=>{t.classList.toggle('active',t.getAttribute('href')==='#'+id)});}});},{threshold:0.3,rootMargin:'-100px 0px -50% 0px'});
 sections.forEach(s=>tabObserver.observe(s));
 </script>
+<script src="/showcase/tracker.js"></script>
 </body>
 </html>
