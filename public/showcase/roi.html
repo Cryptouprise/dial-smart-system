@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ROI Calculator &mdash; Dial Smart System</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"><style>:root{--bg:#050810;--surface:#0b1020;--surface2:#111827;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--gold:#f59e0b;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;overflow-x:hidden}body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,240,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);pointer-events:none;z-index:1}.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:2}nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rgba(5,8,16,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}nav .inner{max-width:1100px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--accent);text-shadow:0 0 20px rgba(0,240,255,0.5);text-decoration:none}.logo span{color:var(--text)}nav ul{list-style:none;display:flex;gap:32px}nav ul a{color:var(--muted);text-decoration:none;font-size:13px;letter-spacing:1px;text-transform:uppercase;transition:color 0.2s}nav ul a:hover,nav ul a.active{color:var(--accent)}.nav-cta{background:var(--accent);color:#000;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));transition:all 0.2s}.nav-cta:hover{background:#fff;box-shadow:0 0 30px rgba(0,240,255,0.6)}.section-label{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--accent2);margin-bottom:16px;font-family:'Space Mono',monospace}.section-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(36px,5vw,72px);letter-spacing:1px;line-height:1;margin-bottom:20px}.fade-in{opacity:0;transform:translateY(30px);transition:all 0.7s cubic-bezier(0.16,1,0.3,1)}.fade-in.visible{opacity:1;transform:translateY(0)}.btn-primary{display:inline-flex;align-items:center;gap:10px;background:var(--accent);color:#000;padding:14px 32px;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));transition:all 0.2s}.btn-primary:hover{background:#fff;box-shadow:0 0 40px rgba(0,240,255,0.5);transform:translateY(-2px)}.btn-ghost{display:inline-flex;align-items:center;gap:10px;background:transparent;color:var(--text);padding:14px 32px;font-weight:500;font-size:14px;text-decoration:none;border:1px solid var(--border);transition:all 0.2s}.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}.page-hero{padding:140px 0 80px;position:relative;z-index:2;border-bottom:1px solid var(--border)}.page-hero-bg{position:absolute;inset:0;pointer-events:none}.hero-eyebrow{display:flex;align-items:center;gap:12px;margin-bottom:24px}.page-num{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:2px}.hero-line{width:40px;height:1px;background:var(--border)}footer{position:relative;z-index:2;border-top:1px solid var(--border);padding:24px 0;text-align:center}footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:var(--accent)}@media(max-width:768px){nav ul{display:none}}
+.calc-section{padding:80px 0;position:relative;z-index:2}
+.calc-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}
+.calc-inputs{display:flex;flex-direction:column;gap:24px}
+.input-group{background:var(--surface);padding:24px;border:1px solid var(--border)}
+.input-group label{display:block;font-size:13px;font-weight:600;margin-bottom:12px}
+.input-group .range-row{display:flex;align-items:center;gap:16px}
+.input-group input[type="range"]{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--border);border-radius:2px;outline:none}
+.input-group input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 10px rgba(0,240,255,0.4)}
+.input-group .range-val{font-family:'Space Mono',monospace;font-size:18px;color:var(--accent);min-width:80px;text-align:right}
+.calc-results{display:flex;flex-direction:column;gap:2px}
+.result-card{background:var(--surface);padding:28px;transition:all 0.3s}
+.result-card:hover{background:var(--surface2)}
+.result-label{font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.result-value{font-family:'Bebas Neue',sans-serif;font-size:40px;line-height:1}
+.result-detail{font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5}
+.result-card.highlight{border:1px solid rgba(0,240,255,0.2);background:rgba(0,240,255,0.03)}
+.result-card.highlight .result-value{color:var(--accent);text-shadow:0 0 30px rgba(0,240,255,0.3)}
+.result-card.savings .result-value{color:var(--green);text-shadow:0 0 30px rgba(0,255,136,0.3)}
+.breakdown-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2px;margin-top:48px}
+.bd-card{background:var(--surface);padding:28px;text-align:center;transition:all 0.3s}
+.bd-card:hover{background:var(--surface2)}
+.bd-icon{font-size:28px;margin-bottom:8px}
+.bd-val{font-family:'Bebas Neue',sans-serif;font-size:32px;margin-bottom:4px}
+.bd-label{font-size:12px;color:var(--muted);letter-spacing:1px}
+.testimonial-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2px;margin-top:48px}
+.test-card{background:var(--surface);padding:36px;transition:all 0.3s;position:relative}
+.test-card:hover{background:var(--surface2)}
+.test-metric{font-family:'Bebas Neue',sans-serif;font-size:48px;color:var(--green);margin-bottom:8px}
+.test-context{font-size:15px;font-weight:600;margin-bottom:12px}
+.test-detail{font-size:13px;color:var(--muted);line-height:1.7}
+.test-tag{display:inline-block;font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:1px;margin-top:16px;padding:4px 10px;border:1px solid rgba(0,240,255,0.2)}
+@media(max-width:768px){.calc-grid{grid-template-columns:1fr}}
+</style></head><body>
+<nav><div class="inner"><a href="/showcase/landing.html" class="logo">DIAL<span>SMART</span></a><ul><li><a href="/showcase/problem.html">Problem</a></li><li><a href="/showcase/engines.html">Engines</a></li><li><a href="/showcase/compare.html">Compare</a></li><li><a href="/showcase/roi.html" class="active">ROI</a></li></ul><a href="/showcase/landing.html#cta" class="nav-cta">Get Access &rarr;</a></div></nav>
+<section class="page-hero"><div class="page-hero-bg" style="background:radial-gradient(ellipse at 70% 50%,rgba(0,255,136,0.06) 0%,transparent 60%)"></div><div class="container"><div class="hero-eyebrow fade-in"><span class="page-num">04 / 04</span><div class="hero-line"></div><span class="page-num" style="color:var(--green)">ROI CALCULATOR</span></div><h1 class="section-title fade-in">Do the Math. <span style="color:var(--green)">Keep the Savings.</span></h1><p class="fade-in" style="font-size:18px;color:var(--muted);max-width:640px;line-height:1.6;margin-bottom:32px;font-weight:300">Plug in your numbers. See exactly what it costs to run human reps vs Dial Smart. The math doesn't lie.</p></div></section>
+<section class="calc-section"><div class="container"><p class="section-label fade-in">// Your Numbers</p><h2 class="section-title fade-in" style="font-size:clamp(28px,4vw,48px)">Interactive <span style="color:var(--green)">ROI Calculator.</span></h2>
+<div class="calc-grid fade-in">
+<div class="calc-inputs">
+<div class="input-group"><label>Monthly Leads</label><div class="range-row"><input type="range" id="leads" min="500" max="50000" step="500" value="5000"><span class="range-val" id="leads-val">5,000</span></div></div>
+<div class="input-group"><label>Number of Sales Reps (Current)</label><div class="range-row"><input type="range" id="reps" min="1" max="50" step="1" value="5"><span class="range-val" id="reps-val">5</span></div></div>
+<div class="input-group"><label>Fully-Loaded Cost Per Rep ($/month)</label><div class="range-row"><input type="range" id="repcost" min="2000" max="15000" step="500" value="5000"><span class="range-val" id="repcost-val">$5,000</span></div></div>
+<div class="input-group"><label>Average Calls Per Rep Per Day</label><div class="range-row"><input type="range" id="callsperday" min="20" max="200" step="10" value="80"><span class="range-val" id="callsperday-val">80</span></div></div>
+<div class="input-group"><label>Dial Smart Rate ($/minute)</label><div class="range-row"><input type="range" id="airate" min="0.05" max="0.25" step="0.01" value="0.12"><span class="range-val" id="airate-val">$0.12</span></div></div>
+<div class="input-group"><label>Average Call Duration (minutes)</label><div class="range-row"><input type="range" id="calldur" min="0.5" max="5" step="0.5" value="1.5"><span class="range-val" id="calldur-val">1.5</span></div></div>
+</div>
+<div class="calc-results">
+<div class="result-card"><div class="result-label">Human Rep Cost / Month</div><div class="result-value" id="r-human" style="color:var(--accent2)">$25,000</div><div class="result-detail" id="r-human-detail">5 reps x $5,000/mo</div></div>
+<div class="result-card"><div class="result-label">Dial Smart Cost / Month</div><div class="result-value highlight" id="r-ai" style="color:var(--accent)">$900</div><div class="result-detail" id="r-ai-detail">5,000 calls x 1.5 min x $0.12/min</div></div>
+<div class="result-card savings"><div class="result-label">Monthly Savings</div><div class="result-value" id="r-savings">$24,100</div><div class="result-detail" id="r-savings-detail">96.4% cost reduction</div></div>
+<div class="result-card highlight"><div class="result-label">Annual Savings</div><div class="result-value" id="r-annual">$289,200</div><div class="result-detail" id="r-annual-detail">That's 4.8 rep-years of salary saved</div></div>
+<div class="result-card"><div class="result-label">Calls Per Month (AI)</div><div class="result-value" id="r-calls" style="color:var(--gold)">5,000</div><div class="result-detail" id="r-calls-detail">vs 8,800 human calls (5 reps x 80/day x 22 days)</div></div>
+<div class="result-card"><div class="result-label">Follow-Up Coverage</div><div class="result-value" style="color:var(--green)">100%</div><div class="result-detail">Every lead gets follow-up. Every callback honored. Forever.</div></div>
+</div>
+</div></div></section>
+<section style="padding:0 0 80px;position:relative;z-index:2"><div class="container"><p class="section-label fade-in">// Where the Money Goes</p><h2 class="section-title fade-in" style="font-size:clamp(28px,4vw,48px)">Hidden Costs <span style="color:var(--accent2)">of Human Reps.</span></h2><div class="breakdown-grid"><div class="bd-card fade-in"><div class="bd-icon">&#128176;</div><div class="bd-val" style="color:var(--accent2)">$4-8K</div><div class="bd-label">Base Salary / Mo</div></div><div class="bd-card fade-in"><div class="bd-icon">&#128200;</div><div class="bd-val" style="color:var(--accent2)">20-30%</div><div class="bd-label">Benefits Overhead</div></div><div class="bd-card fade-in"><div class="bd-icon">&#128187;</div><div class="bd-val" style="color:var(--accent2)">$200-500</div><div class="bd-label">Equipment / Mo</div></div><div class="bd-card fade-in"><div class="bd-icon">&#128218;</div><div class="bd-val" style="color:var(--accent2)">60-90 Days</div><div class="bd-label">Ramp-Up Time</div></div><div class="bd-card fade-in"><div class="bd-icon">&#128260;</div><div class="bd-val" style="color:var(--accent2)">35%</div><div class="bd-label">Annual Turnover</div></div><div class="bd-card fade-in"><div class="bd-icon">&#9201;</div><div class="bd-val" style="color:var(--accent2)">4-6 hrs</div><div class="bd-label">Productive Hours / Day</div></div></div></div></section>
+<section style="padding:80px 0;position:relative;z-index:2;border-top:1px solid var(--border)"><div class="container"><p class="section-label fade-in">// Real Results</p><h2 class="section-title fade-in">What Dial Smart <span style="color:var(--green)">Actually Delivers.</span></h2><div class="testimonial-grid"><div class="test-card fade-in"><div class="test-metric">23</div><div class="test-context">Appointments booked in 4 hours</div><div class="test-detail">First production test with 5,000 solar leads. AI built the strategy, made the calls, and booked consultations autonomously.</div><div class="test-tag">SOLAR CAMPAIGN</div></div><div class="test-card fade-in"><div class="test-metric">3.2x</div><div class="test-context">Conversion lift from pattern detection</div><div class="test-detail">ML engine discovered Thursday 2-4pm converts 3.2x better than Monday morning. Auto-updated playbook rules.</div><div class="test-tag">ML INSIGHT</div></div><div class="test-card fade-in"><div class="test-metric">100%</div><div class="test-context">Follow-up coverage</div><div class="test-detail">Every lead gets followed up. Every callback request honored at the exact time requested. No lead falls through the cracks.</div><div class="test-tag">PERPETUAL ENGINE</div></div></div></div></section>
+<section style="position:relative;z-index:2;background:var(--surface);padding:80px 0;text-align:center;border-top:1px solid var(--border)"><div class="container"><p class="section-label" style="text-align:center">// The Decision Is Easy</p><h2 style="font-family:'Bebas Neue',sans-serif;font-size:clamp(36px,5vw,64px);margin-bottom:16px">Stop Paying for <span style="color:var(--accent2)">Phone Calls.</span><br>Start Paying for <span style="color:var(--green)">Results.</span></h2><p style="color:var(--muted);font-size:18px;margin-bottom:40px;max-width:500px;display:inline-block">The AI works 24/7, never calls in sick, never forgets a follow-up, and gets smarter every single day.</p><br><div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap"><a href="/showcase/landing.html#cta" class="btn-primary">Get Early Access &rarr;</a><a href="/showcase/engines.html" class="btn-ghost">See the Engines</a></div></div></section>
+<footer><div class="container"><p><span>DIAL SMART SYSTEM</span> &mdash; The AI That Never Stops Selling</p></div></footer>
+<script>const observer=new IntersectionObserver(e=>{e.forEach(e=>{if(e.isIntersecting){e.target.style.transitionDelay=`${(Array.from(e.target.parentElement?.children||[]).indexOf(e.target)%5)*80}ms`;e.target.classList.add('visible')}})},{threshold:0.1,rootMargin:'0px 0px -40px 0px'});document.querySelectorAll('.fade-in').forEach(el=>observer.observe(el));</script>
+<script>
+const $ = id => document.getElementById(id);
+function fmt(n) { return n.toLocaleString('en-US'); }
+function money(n) { return '$' + fmt(Math.round(n)); }
+
+function calc() {
+  const leads = +$('leads').value;
+  const reps = +$('reps').value;
+  const repCost = +$('repcost').value;
+  const cpd = +$('callsperday').value;
+  const aiRate = +$('airate').value;
+  const dur = +$('calldur').value;
+
+  // Display slider values
+  $('leads-val').textContent = fmt(leads);
+  $('reps-val').textContent = reps;
+  $('repcost-val').textContent = money(repCost);
+  $('callsperday-val').textContent = cpd;
+  $('airate-val').textContent = '$' + aiRate.toFixed(2);
+  $('calldur-val').textContent = dur;
+
+  // Calculations
+  const humanCost = reps * repCost;
+  const humanCalls = reps * cpd * 22;
+  const aiCost = leads * dur * aiRate;
+  const savings = humanCost - aiCost;
+  const annual = savings * 12;
+  const pct = humanCost > 0 ? ((savings / humanCost) * 100).toFixed(1) : 0;
+
+  // Update results
+  $('r-human').textContent = money(humanCost);
+  $('r-human-detail').textContent = reps + ' reps x ' + money(repCost) + '/mo';
+  $('r-ai').textContent = money(aiCost);
+  $('r-ai-detail').textContent = fmt(leads) + ' calls x ' + dur + ' min x $' + aiRate.toFixed(2) + '/min';
+  $('r-savings').textContent = money(savings);
+  $('r-savings-detail').textContent = pct + '% cost reduction';
+  $('r-annual').textContent = money(annual);
+  $('r-annual-detail').textContent = "That's " + (annual / (repCost * 12)).toFixed(1) + ' rep-years of salary saved';
+  $('r-calls').textContent = fmt(leads);
+  $('r-calls-detail').textContent = 'vs ' + fmt(humanCalls) + ' human calls (' + reps + ' reps x ' + cpd + '/day x 22 days)';
+}
+
+// Bind all sliders
+document.querySelectorAll('input[type="range"]').forEach(el => {
+  el.addEventListener('input', calc);
+});
+calc(); // initial
+</script>
+</body></html>
