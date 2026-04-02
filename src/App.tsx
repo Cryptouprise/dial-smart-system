@@ -16,6 +16,7 @@ import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Lazy load all route components for faster initial load
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Demo = lazy(() => import("./pages/Demo"));
@@ -79,11 +80,12 @@ const App = () => (
                         <Suspense fallback={<PageLoader />}>
                           <Routes>
                             {/* Public routes */}
+                            <Route path="/" element={<LandingPage />} />
                             <Route path="/auth" element={<Auth />} />
                             <Route path="/demo" element={<Demo />} />
                             
                             {/* Protected routes */}
-                            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                            <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                             <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
                             <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
                             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

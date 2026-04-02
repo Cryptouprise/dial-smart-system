@@ -16,7 +16,7 @@ const Navigation = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const navLinks = [
-    { path: '/', label: 'Dashboard', icon: Home },
+    { path: '/dashboard', label: 'Dashboard', icon: Home },
     { path: '/sms-conversations', label: 'AI SMS', icon: MessageSquare },
     { path: '/analytics', label: 'Analytics', icon: BarChart3 },
     { path: '/system-testing', label: 'System Testing', icon: Activity },
@@ -71,7 +71,7 @@ const Navigation = () => {
               </SheetContent>
             </Sheet>
 
-            <Link to="/" className="font-bold text-lg md:text-xl text-primary">
+            <Link to="/dashboard" className="font-bold text-lg md:text-xl text-primary">
               AI Dial Boss
             </Link>
             <DemoBadge />

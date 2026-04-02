@@ -6,9 +6,9 @@ const MobileBottomNav = () => {
   const location = useLocation();
 
   // Hide on demo pages - they need full screen real estate
-  if (location.pathname.startsWith('/demo')) return null;
+  if (location.pathname.startsWith('/demo') || location.pathname === '/') return null;
   const navItems = [
-    { path: '/', label: 'Home', icon: Home },
+    { path: '/dashboard', label: 'Home', icon: Home },
     { path: '/sms-conversations', label: 'SMS', icon: MessageSquare },
     { path: '/analytics', label: 'Stats', icon: BarChart3 },
     { path: '/settings', label: 'Settings', icon: Settings },
