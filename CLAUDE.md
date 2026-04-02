@@ -2075,3 +2075,29 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - Several UI widgets call dispatcher with `immediate: true` (not `action: 'dispatch'`), so manual bypass logic must support both payload patterns.
 - Retry-delay scheduling can look like a dispatcher failure unless immediate mode bypasses the schedule gate consistently.
+
+
+---
+
+### April 2, 2026 - Legacy Showcase Root Redirect Fix
+
+**What was built/fixed/changed**
+- Redirected the legacy static showcase hub at `/showcase/` and `/showcase/index.html` back to the real public homepage `/` so stale phone bookmarks, home-screen shortcuts, and cached old links no longer open the wrong page.
+- Updated current app links that previously pointed at the old showcase hub so they now open the intended deep-dive page at `/showcase/landing.html`.
+
+**Key files modified**
+- `public/showcase/index.html`
+- `src/pages/LandingPage.tsx`
+- `src/components/Navigation.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code fixed locally.
+- Build verification still required after edit.
+
+**Gotchas / lessons learned**
+- iPhone/Android home-screen shortcuts save the exact page URL they were created from, so an old shortcut to `/showcase/` will keep opening that path until the app redirects it.
+- Keeping two different “homepage” entry points (`/` and `/showcase/index.html`) creates routing confusion across phones, desktop bookmarks, and cached installs.
