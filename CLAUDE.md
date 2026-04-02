@@ -1632,6 +1632,32 @@ These edge functions were created/modified but NOT deployed:
 
 ---
 
+### April 2, 2026 - Public Root Redirect Fix for Marketing Homepage
+
+**What was built/fixed/changed**
+- Fixed a root-route auth bug where logged-out visitors at `/` were still being redirected to `/auth` by `AuthContext`, which made the main domain appear to show the wrong page even though `LandingPage` was correctly routed in `App.tsx`.
+- Expanded public-route detection so `/`, `/auth`, `/demo`, and `/showcase` paths are treated as public when auth state changes.
+- Confirmed the project publish visibility is already `public`.
+
+**Key files modified**
+- `src/contexts/AuthContext.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code fixed locally.
+- Verified with `npm run build` passing successfully.
+- Preview root now renders the landing page H1: `They Built Tools. We Built a Brain.`
+- Published site will reflect the fix after the next frontend publish/update.
+
+**Gotchas / lessons learned**
+- Route changes in `App.tsx` are not enough when auth guards elsewhere still assume `/` is protected.
+- For public-first marketing architecture, auth redirect logic must explicitly exempt the public homepage.
+
+---
+
 ### January 24, 2026 - Voice AI Campaign Pre-Launch Verification
 
 **Verified for Retell AI Voice Campaign launch:**
