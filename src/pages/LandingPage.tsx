@@ -87,7 +87,7 @@ const AutoplayVideo = ({ src, className = '', poster }: { src: string; className
         loop
         playsInline
         poster={poster}
-        className="w-full h-full object-cover rounded-xl"
+        className={`w-full h-full ${objectFit === 'contain' ? 'object-contain bg-black/90' : 'object-cover'} rounded-xl`}
       />
       <button
         onClick={() => {
