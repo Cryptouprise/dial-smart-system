@@ -171,29 +171,58 @@ const LandingPage = () => {
       </nav>
 
       {/* ═══════════════════ HERO ═══════════════════ */}
-      <section className="relative pt-20 pb-24 md:pt-32 md:pb-36">
+      <section className="relative pt-20 pb-16 md:pt-28 md:pb-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-4xl mx-auto">
+          <div className="text-center max-w-5xl mx-auto">
             <div className="animate-fade-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-border/60 bg-muted/30 text-sm text-muted-foreground mb-8">
               <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-              <span>Built for humans, not for AI</span>
+              <span>6 AI Engines · 1 Autonomous Brain · Your Entire Sales Org — in One System</span>
             </div>
             <h1 className="animate-fade-up-delay-1 text-4xl sm:text-5xl md:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
-              <span className="text-gradient-hero">They Built Tools.</span><br />
-              <span className="text-gradient-accent">We Built a Brain.</span>
+              <span className="text-gradient-hero">Not Just an AI Agent.</span><br />
+              <span className="text-gradient-accent">An Entire Sales Organization.</span>
             </h1>
-            <p className="animate-fade-up-delay-2 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-              The AI-first autonomous dialer that learns from every call, optimizes in real-time, and never stops selling.{' '}
-              <span className="text-foreground font-medium">Your team makes money. Call Boss makes it happen.</span>
+            <p className="animate-fade-up-delay-2 text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-6 leading-relaxed">
+              Imagine an AI employee backed by a predictive dialer, SMS engine, lead journey intelligence, 
+              calendar booking, workflow automation, and a self-optimizing brain that learns from every single interaction.
             </p>
-            <div className="animate-fade-up-delay-3 flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-              <Button size="lg" className="gap-2 text-base px-8 h-12 animate-glow-pulse" asChild>
-                <Link to="/demo"><Play className="h-4 w-4" />Try the Live Demo</Link>
+            <p className="animate-fade-up-delay-2 text-base md:text-lg max-w-2xl mx-auto mb-10 leading-relaxed">
+              <span className="text-foreground font-semibold">Industry templates. AI setup wizards. Autonomous follow-ups.</span>{' '}
+              <span className="text-muted-foreground">Tell it your goal — it builds the campaign, dials the leads, nurtures the pipeline, and books the appointments.</span>
+            </p>
+
+            {/* Dual CTA — Education first */}
+            <div className="animate-fade-up-delay-3 flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
+              <Button size="lg" className="gap-2 text-base px-8 h-14 animate-glow-pulse" asChild>
+                <a href="/showcase/index.html">
+                  <Layers className="h-4 w-4" />
+                  See What Powers It
+                </a>
               </Button>
-              <Button size="lg" variant="outline" className="gap-2 text-base px-8 h-12" asChild>
-                <a href="/showcase/problem.html">See the Problem We Solve<ArrowRight className="h-4 w-4" /></a>
+              <Button size="lg" variant="outline" className="gap-2 text-base px-8 h-14" asChild>
+                <Link to="/demo">
+                  <Play className="h-4 w-4" />
+                  Try the Live Demo
+                </Link>
               </Button>
             </div>
+            <p className="animate-fade-up-delay-3 text-xs text-muted-foreground mb-12">
+              <span className="text-foreground font-medium">★ We recommend starting here</span> — see the full system, then try the demo from any page.
+            </p>
+
+            {/* Capability pills */}
+            <div className="animate-fade-up-delay-4 flex flex-wrap justify-center gap-2 md:gap-3 mb-8">
+              {[
+                'Predictive Dialer', 'AI Voice Agents', 'SMS Nurturing', 'Calendar Booking',
+                'Workflow Automation', 'Lead Scoring', 'Script A/B Testing', 'CRM Integration',
+                'Number Health AI', 'Industry Templates'
+              ].map(tag => (
+                <span key={tag} className="px-3 py-1 rounded-full border border-border/60 bg-muted/20 text-xs text-muted-foreground">
+                  {tag}
+                </span>
+              ))}
+            </div>
+
             <div className="animate-fade-up-delay-4 flex flex-wrap justify-center gap-6 md:gap-10 text-muted-foreground text-sm">
               {['TCPA Compliant', 'Multi-Carrier', 'SOC 2 Ready', 'White-Label Ready'].map(t => (
                 <div key={t} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" />{t}</div>
@@ -207,7 +236,7 @@ const LandingPage = () => {
       <section className="relative py-8 md:py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div ref={revealPoster} className="reveal-scale video-glow rounded-2xl overflow-hidden border border-border/40">
-            <AutoplayVideo src="/videos/poster-animated.mp4" className="aspect-video" />
+            <AutoplayVideo src="/videos/poster-animated.mp4" objectFit="contain" className="aspect-[9/16] sm:aspect-video max-h-[70vh] mx-auto" />
           </div>
         </div>
       </section>
