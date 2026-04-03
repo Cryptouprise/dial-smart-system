@@ -158,6 +158,7 @@ const LandingPage = () => {
               <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How It Works</a>
               <a href="#proof" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Results</a>
               <a href="/showcase/landing.html" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Deep Dive</a>
+              <a href="/showcase/blog-index.html" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Blog</a>
             </div>
             <div className="flex items-center gap-3">
               <ThemeToggle />
