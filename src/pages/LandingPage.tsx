@@ -551,7 +551,7 @@ const LandingPage = () => {
               <h4 className="font-semibold text-sm mb-3">Learn</h4>
               <div className="space-y-2">
                 <a href="/showcase/problem.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">The Problem</a>
-                <a href="/showcase/landing.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Showcase Hub</a>
+                <a href="/showcase/" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Showcase Hub</a>
               </div>
             </div>
             <div>

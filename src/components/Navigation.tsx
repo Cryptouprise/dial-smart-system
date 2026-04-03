@@ -26,7 +26,7 @@ const Navigation = () => {
   ];
 
   const handleShowcaseClick = () => {
-    window.open('/showcase/landing.html', '_blank');
+    window.open('/showcase/', '_blank');
   };
 
   return (

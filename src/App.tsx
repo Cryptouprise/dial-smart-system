@@ -63,6 +63,26 @@ const PageLoader = () => (
   </div>
 );
 
+const ShowcaseRouteBridge = () => {
+  React.useEffect(() => {
+    const { pathname, search, hash } = window.location;
+
+    if (pathname === "/showcase" || pathname === "/showcase/") {
+      window.location.replace("/showcase/index.html");
+      return;
+    }
+
+    if (pathname.startsWith("/showcase/") && pathname.endsWith(".html")) {
+      window.location.replace(`${pathname}${search}${hash}`);
+      return;
+    }
+
+    window.location.replace("/showcase/index.html");
+  }, []);
+
+  return <PageLoader />;
+};
+
 const App = () => (
   <GlobalErrorBoundary>
     <QueryClientProvider client={queryClient}>
@@ -83,6 +103,7 @@ const App = () => (
                             <Route path="/" element={<LandingPage />} />
                             <Route path="/auth" element={<Auth />} />
                             <Route path="/demo" element={<Demo />} />
+                            <Route path="/showcase/*" element={<ShowcaseRouteBridge />} />
                             
                             {/* Protected routes */}
                             <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
