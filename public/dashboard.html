@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Call Boss Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #fff; padding: 20px; min-height: 100vh; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .header h1 { font-size: 2em; font-weight: bold; color: #00d4ff; margin-bottom: 8px; }
+    .header p { color: #ccc; font-size: 1.1em; }
+    .drive-btn { display: inline-block; background: #00d4ff; color: #000; padding: 12px 24px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; text-decoration: none; margin: 15px 0; font-weight: bold; }
+    .drive-btn:hover { background: #00b8d9; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: rgba(255,255,255,0.08); padding: 24px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+    .card h2 { color: #7b68ee; margin-bottom: 12px; font-size: 1.3em; }
+    .card p { margin-bottom: 8px; line-height: 1.6; }
+    .card .status { color: #00ff88; font-weight: bold; }
+    .card code { background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; font-size: 0.9em; word-break: break-all; display: inline-block; margin-top: 4px; }
+    .footer { max-width: 1200px; margin: 30px auto 0; background: rgba(255,255,255,0.08); padding: 24px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+    .footer h2 { color: #00ff88; margin-bottom: 12px; }
+    .footer p { line-height: 1.8; }
+    .footer code { background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; font-size: 0.9em; display: block; margin: 8px 0; }
+    .footer a { color: #00d4ff; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>&#x1F680; Call Boss Content Hub</h1>
+    <p>Your 100 Articles + 377 Prompts + Assets | <strong>Ready for Lovable.dev</strong></p>
+    <a class="drive-btn" href="https://drive.google.com/drive/folders/1SAcy0sDYDe1HrYZ0A1VjGEIgsOj5-5EB" target="_blank" rel="noopener">&#x1F4C2; Open Your Google Drive Folder</a>
+  </div>
+
+  <div class="grid">
+
+    <div class="card">
+      <h2>&#x1F4DD; 100 SEO Articles</h2>
+      <p><strong>50 Legal Bonus + 50 General Industry</strong></p>
+      <p>Status: <span class="status">DONE</span> (Saved on server)</p>
+      <p>Location:<br><code>/root/.openclaw/workspace/content-queue/SEO-BLOG-posts/</code></p>
+    </div>
+
+    <div class="card">
+      <h2>&#x1F3A8; 377 Artwork Prompts</h2>
+      <p>Futuristic SaaS, Dark Mode, Neon</p>
+      <p>Status: <span class="status">DONE</span></p>
+      <p>Location:<br><code>/root/.openclaw/workspace/artwork-prompts-50+.md</code></p>
+    </div>
+
+    <div class="card">
+      <h2>&#x1F3A0; 25 Carousel Concepts</h2>
+      <p>207 Slides for LinkedIn/Instagram</p>
+      <p>Status: <span class="status">DONE</span></p>
+      <p>Location:<br><code>/root/.openclaw/workspace/carousel-concepts-callboss.md</code></p>
+    </div>
+
+    <div class="card">
+      <h2>&#x1F3AC; 40 Video Scripts</h2>
+      <p>15-45s TikTok/Reels/Shorts</p>
+      <p>Status: <span class="status">DONE</span></p>
+      <p>Location:<br><code>/root/.openclaw/workspace/video-scripts-callboss.md</code></p>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <h2>&#x1F3C6; Your Content is READY</h2>
+    <p><strong>All 172 assets are generated and saved.</strong></p>
+    <p>To get them into Google Drive:</p>
+    <p>1. Open your server terminal/SSH</p>
+    <code>cd /root/.openclaw/workspace/content-queue</code>
+    <code>zip -r callboss-content.zip SEO-BLOG-posts/ artwork-prompts-50+.md carousel-concepts-callboss.md video-scripts-callboss.md</code>
+    <p>2. Upload <strong>callboss-content.zip</strong> to your Google Drive:</p>
+    <p><a href="https://drive.google.com/drive/folders/1SAcy0sDYDe1HrYZ0A1VjGEIgsOj5-5EB" target="_blank" rel="noopener">https://drive.google.com/drive/folders/1SAcy0sDYDe1HrYZ0A1VjGEIgsOj5-5EB</a></p>
+    <p><strong>Done in 2 minutes.</strong></p>
+  </div>
+
+</body>
+</html>
