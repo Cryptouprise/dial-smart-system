@@ -14,9 +14,7 @@
 <meta name="robots" content="index, follow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Blog","name":"Call Boss Blog","description":"AI dialer insights, sales automation strategies, and industry guides.","publisher":{"@type":"Organization","name":"Call Boss"},"url":"https://aidialboss1.lovable.app/showcase/blog-index.html"}
-</script>
+<script type="application/ld+json" id="schemaCollection"></script>
 <style>
 :root{--bg:#050810;--surface:#0b1020;--surface2:#111827;--border:#1e2d45;--accent:#00f0ff;--accent2:#ff3e6c;--accent3:#7c3aed;--gold:#f59e0b;--text:#e2e8f0;--muted:#64748b;--green:#00ff88}
 *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
@@ -30,26 +28,27 @@ nav .inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;align-item
 .nav-cta{background:var(--accent);color:#000;padding:8px 20px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));transition:all 0.2s}
 .nav-cta:hover{background:#fff;box-shadow:0 0 30px rgba(0,240,255,0.6)}
 
-.hero{padding:120px 0 48px;text-align:center;position:relative;z-index:2}
+.hero{padding:120px 0 32px;text-align:center;position:relative;z-index:2}
 .hero h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(40px,6vw,72px);letter-spacing:1px;line-height:1;margin-bottom:12px}
 .hero h1 .cyan{color:var(--accent)}
-.hero p{color:var(--muted);font-size:18px;max-width:600px;margin:0 auto 32px}
-.hero .count{font-family:'Space Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:2px}
+.hero p{color:var(--muted);font-size:18px;max-width:600px;margin:0 auto 24px}
+
+.search-bar{max-width:600px;margin:0 auto 24px;position:relative;z-index:2}
+.search-bar input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:16px 20px 16px 48px;font-size:16px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color 0.2s}
+.search-bar input:focus{border-color:var(--accent);box-shadow:0 0 20px rgba(0,240,255,0.1)}
+.search-bar::before{content:'🔍';position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:18px}
+.results-counter{text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:2px;margin-bottom:24px}
 
 .filters{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:40px;position:relative;z-index:2}
 .filter-btn{background:var(--surface);color:var(--muted);border:1px solid var(--border);padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:0.5px;cursor:pointer;transition:all 0.2s;font-family:'DM Sans',sans-serif}
 .filter-btn:hover{border-color:var(--accent);color:var(--text)}
 .filter-btn.active{background:rgba(0,240,255,0.1);border-color:var(--accent);color:var(--accent)}
 
-.search-bar{max-width:500px;margin:0 auto 32px;position:relative;z-index:2}
-.search-bar input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 16px 12px 40px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color 0.2s}
-.search-bar input:focus{border-color:var(--accent)}
-.search-bar::before{content:'🔍';position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:14px}
-
 .blog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;position:relative;z-index:2}
-.blog-card{background:var(--surface);padding:24px;text-decoration:none;color:var(--text);border:1px solid var(--border);transition:all 0.25s;display:flex;flex-direction:column;gap:10px}
+.blog-card{background:var(--surface);text-decoration:none;color:var(--text);border:1px solid var(--border);transition:all 0.25s;display:flex;flex-direction:column;overflow:hidden}
 .blog-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 12px 32px rgba(0,240,255,0.1)}
-.blog-card .card-img{width:100%;height:180px;object-fit:cover;margin-bottom:4px;opacity:0.9}
+.blog-card .card-img{width:100%;height:180px;object-fit:contain;background:var(--surface2)}
+.blog-card .card-body{padding:20px;display:flex;flex-direction:column;gap:10px;flex:1}
 .blog-card .card-cat{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--accent)}
 .blog-card .card-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.5px;line-height:1.1}
 .blog-card .card-desc{font-size:13px;color:var(--muted);line-height:1.6;flex:1}
@@ -80,15 +79,15 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
   <div class="container">
     <h1>The <span class="cyan">Call Boss</span> Blog</h1>
     <p>AI sales automation insights, industry strategies, and the data behind why speed-to-lead changes everything.</p>
-    <div class="count" id="articleCount">Loading articles...</div>
   </div>
 </section>
 
 <div class="container">
   <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="Search articles...">
+    <input type="text" id="searchInput" placeholder="Search 202+ articles on AI sales, legal, solar, debt...">
   </div>
-  
+  <div class="results-counter" id="resultsCounter">Loading articles...</div>
+
   <div class="filters" id="filterBar"></div>
   
   <div class="blog-grid" id="blogGrid"></div>
@@ -111,7 +110,7 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
 
 <script>
 (function(){
-  var PAGE_SIZE = 24;
+  var PAGE_SIZE = 48;
   var currentPage = 0;
   var allPosts = [];
   var filteredPosts = [];
@@ -120,7 +119,19 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
 
   fetch('/showcase/seo-data.json').then(function(r){return r.json()}).then(function(data){
     allPosts = data.blogs || [];
-    document.getElementById('articleCount').textContent = allPosts.length + ' ARTICLES';
+
+    // CollectionPage schema
+    var hasPart = allPosts.slice(0, 50).map(function(b){
+      return {"@type":"BlogPosting","headline":b.title,"url":"https://aidialboss1.lovable.app/showcase/templates/blog.html?post="+b.slug};
+    });
+    document.getElementById('schemaCollection').textContent = JSON.stringify({
+      "@context":"https://schema.org","@type":"CollectionPage",
+      "name":"Call Boss Blog",
+      "description":"200+ articles on AI sales automation, speed-to-lead, and industry strategies.",
+      "url":"https://aidialboss1.lovable.app/showcase/blog-index.html",
+      "publisher":{"@type":"Organization","name":"Call Boss"},
+      "hasPart":hasPart
+    });
     
     // Build category filters
     var cats = {};
@@ -132,7 +143,6 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
     allBtn.onclick = function(){ setCategory('all'); };
     filterBar.appendChild(allBtn);
     
-    // Sort categories by count
     var sortedCats = Object.entries(cats).sort(function(a,b){return b[1]-a[1]});
     sortedCats.forEach(function(entry){
       var btn = document.createElement('button');
@@ -167,9 +177,11 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
       var searchMatch = !searchTerm || 
         b.title.toLowerCase().includes(searchTerm) || 
         (b.description||'').toLowerCase().includes(searchTerm) ||
-        (b.keywords||[]).join(' ').toLowerCase().includes(searchTerm);
+        (b.keywords||[]).join(' ').toLowerCase().includes(searchTerm) ||
+        (b.slug||'').toLowerCase().includes(searchTerm);
       return catMatch && searchMatch;
     });
+    document.getElementById('resultsCounter').textContent = 'SHOWING ' + Math.min(filteredPosts.length, (currentPage+1)*PAGE_SIZE) + ' OF ' + filteredPosts.length + ' ARTICLES';
     renderPage();
   }
 
@@ -187,14 +199,16 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
       card.className = 'blog-card';
       var imgHtml = b.featuredImage ? '<img class="card-img" src="' + b.featuredImage + '" alt="' + b.title + '" loading="lazy">' : '';
       card.innerHTML = imgHtml +
-        '<span class="card-cat">' + (b.category || 'Article') + '</span>' +
+        '<div class="card-body"><span class="card-cat">' + (b.category || 'Article') + '</span>' +
         '<div class="card-title">' + b.title + '</div>' +
         '<div class="card-desc">' + (b.description || '').substring(0, 140) + '</div>' +
-        '<div class="card-meta">' + b.readTime + ' · ' + new Date(b.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '</div>';
+        '<div class="card-meta">' + b.readTime + ' · ' + new Date(b.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + '</div></div>';
       grid.appendChild(card);
     });
     
-    // Load more button
+    // Update counter
+    document.getElementById('resultsCounter').textContent = 'SHOWING ' + Math.min(end, filteredPosts.length) + ' OF ' + filteredPosts.length + ' ARTICLES';
+
     var loadMore = document.getElementById('loadMore');
     if (end < filteredPosts.length) {
       loadMore.style.display = 'block';
