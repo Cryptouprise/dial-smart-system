@@ -1,54 +1,62 @@
 
 
-# Blog System Build Plan
-
-## Current State
-- **163 markdown articles** sitting in `content/` across 6 directories — completely disconnected from the site
-- **9 marketing images** in `content/images/marketing/` — unused
-- **15 blog entries** hardcoded in `seo-data.json` — none from your new articles
-- **No blog index page** — nowhere to browse articles
-- **No links** from homepage or showcase hub to any blog content
-- The blog template (`public/showcase/templates/blog.html`) exists and works, but has nothing to display from the new content
+# Blog SEO Domination: Images, Interlinking, and GEOAEO Optimization
 
 ## What Gets Built
 
-### 1. Parse & Import All 163 Articles into seo-data.json
-A build script reads every markdown file from all 6 directories, extracts title, slug, sections (h2 + content), generates meta descriptions, estimates read time, assigns categories (Legal, Solar/Insurance, Debt/MCA, Cross-Industry, Objection Handlers, ROI/Results, Pain Points), and appends them all to the `blogs` array in `seo-data.json`.
+### 1. Copy Split Images + Assign Featured Images to ALL 202 Blogs
+- Copy 38 images from `content/images/split/` to `public/showcase/images/blog/` (web-accessible)
+- Assign `featuredImage` to the 16 blogs currently missing one via keyword matching against the 47 available images
+- Fix image CSS: change `object-fit: cover` with fixed 180px height to `object-fit: contain` with dark background fill -- stops the "cut off" problem on both blog index cards and individual blog pages
 
-### 2. Build the Blog Index Page
-Create `public/showcase/blog-index.html` — a filterable card grid listing all ~178 articles (15 existing + 163 new). Matches the dark/cyan showcase aesthetic. Category filter tabs at top. Each card shows title, category badge, read time, excerpt. Links to the existing `blog.html?post=slug` template.
+### 2. Blog-to-Blog Interlinking (SEO Power Move)
+- Add a `relatedPosts` array to every blog entry in `seo-data.json` (3-5 related slugs per post)
+- Matching logic: same category first, then keyword overlap, then cross-category for topical authority
+- Update `blog.html` template to render "Related Articles" as clickable links **inside the article body** (not just the random "More from the Blog" grid at the bottom)
+- Add inline contextual links: after every 2nd section (`<h2>`), inject a "You might also like: [Related Title]" link to a same-category post -- this creates a deep internal link mesh that search engines follow
+- The existing "More from the Blog" grid at the bottom switches from random shuffle to **related posts first**, then random fill
 
-### 3. Copy Marketing Images & Assign to Articles
-Move the 9 marketing images from `content/images/marketing/` into `public/showcase/images/blog/` so they're web-accessible. Map them to relevant articles by keyword matching. Update blog template to render featured images in the hero section.
+### 3. FAQ Generation for All 202 Blogs (Currently Only 15 Have FAQs)
+- Generate 3-5 FAQ pairs per blog using title + section headings as source material
+- Each FAQ gets proper `FAQPage` schema.org markup (already wired in blog.html, just needs data)
+- FAQs are the #1 signal for Google's "People Also Ask" and AI answer boxes
 
-### 4. Wire Up All the Interlinking
-- **Showcase Hub** (`index.html`): Add a "Blog" card linking to the blog index
-- **Blog Index** → Hub: Back-link in nav
-- **Blog Template**: Update back-link to point to blog index (not hub)
-- **React Landing Page** (`LandingPage.tsx`): Add a "Read Our Blog" section with 3-4 featured article cards linking into the blog system
-- **Blog posts**: Already have "More from the Blog" grid and demo CTAs — these work automatically once articles are in seo-data.json
-- **tracker.js**: Add blog index to page detection for consistent navigation
+### 4. Enhanced Schema.org Markup
+- **Blog index**: Add `CollectionPage` schema with `hasPart` referencing all articles
+- **Each blog post**: Add `BreadcrumbList` schema (Home > Blog > Category > Article)
+- **Each blog post**: Add `speakable` property for voice search / AEO targeting
+- **Each blog post**: Expand `Article` schema with `articleSection`, `wordCount`, `keywords`, `about` (category topic entity)
 
-### 5. QA Marketing Images
-Verify all 9 images in `content/images/marketing/` are properly sized and not cut off from collage extraction. Fix any that are broken.
+### 5. Geo + AEO Signals
+- Add `about` schema entities linking articles to geographic and industry topics (e.g., `{"@type": "Thing", "name": "AI Sales Automation for Law Firms"}`)
+- Add `mentions` array in schema for key terms (speed-to-lead, database reactivation, etc.) -- helps AI engines understand topical authority
+- Update `sitemap.xml` to include all 202 blog URLs with `lastmod`, `changefreq: weekly`, and `priority: 0.7`
+- Add a `BlogPosting` sitemap section separate from pages for better crawl signaling
+
+### 6. Search Bar Improvement
+- Move search above category filters, make it larger with placeholder "Search 202+ articles..."
+- Add results counter: "Showing X of Y articles"
+- Increase initial page size from 24 to 48
+
+## Files Modified
+- `public/showcase/seo-data.json` -- Add `relatedPosts`, `featuredImage` (16 missing), FAQ data (187 missing)
+- `public/showcase/templates/blog.html` -- Inline related links, related posts grid, breadcrumb schema, speakable, enhanced Article schema
+- `public/showcase/blog-index.html` -- Search improvements, image crop fix, CollectionPage schema
+- `public/sitemap.xml` -- All 202 blog URLs with proper metadata
+- `public/showcase/images/blog/` -- 38 split images copied in
+
+## Files Created
+- Build script (one-time Node script) to generate relatedPosts, FAQs, and image assignments
 
 ## Technical Details
 
-**Article parsing**: Each markdown file uses `##` for section headers. The script splits on `##`, extracts the first line as title (or `#` heading), generates a URL slug from the filename, and builds the seo-data.json entry format matching the existing 15 blogs.
+**Interlinking algorithm**: For each blog, score all other blogs by: +3 same category, +2 per shared keyword, +1 same relatedIndustry. Take top 5 as `relatedPosts`. This creates a dense link graph where every article connects to 5 others, and every article is linked FROM multiple others.
 
-**Category mapping**:
-- `content/blogs/` + `content/articles/` → "Legal"
-- `content/bonus-articles/001-015` → "Legal — Practice Areas"
-- `content/bonus-articles/016-025` → "Objection Handlers"
-- `content/bonus-articles/026-050` → "Data & ROI"
-- `content/cross-industry/` → "Cross-Industry"
-- `content/debt-mca/` → "Debt & MCA"
-- `content/solar-insurance/` → "Solar & Insurance"
+**Inline contextual links**: After every 2nd `<h2>` section in the article body, the template injects a styled "Related Reading" callout linking to a related post. This puts links IN the content flow (not just footer), which search engines weight more heavily.
 
-**Blog index page**: Static HTML, loads from seo-data.json at runtime (same pattern as other showcase pages). No React changes needed for the index itself.
+**FAQ generation**: Template-based from article structure: "What is [section title]?", "How does [topic] work for [industry]?", "Why is [key concept] important?" -- covers the exact queries AI engines pull for featured snippets.
 
-**Files created**: ~3 (blog-index.html, build script, image copies)
-**Files modified**: ~5 (seo-data.json, index.html, blog.html, LandingPage.tsx, tracker.js)
+**Sitemap**: 202 blog URLs + existing showcase pages = 290+ indexed URLs. Each blog URL formatted as `/showcase/templates/blog.html?post=slug` with weekly changefreq.
 
-**Estimated scope**: This is a big one — the bulk is the build script parsing 163 files and generating JSON entries.
+**AEO targeting**: `speakable` schema property marks the first section + description as voice-search-ready content. `mentions` entities create topical authority signals that AI engines (Google SGE, Bing Copilot, Perplexity) use to determine expertise.
 
