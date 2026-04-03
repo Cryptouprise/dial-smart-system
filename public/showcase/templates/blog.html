@@ -180,6 +180,13 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
     document.getElementById('date').textContent = new Date(post.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
     document.getElementById('readTime').textContent = post.readTime + ' read';
 
+    // Featured image
+    if (post.featuredImage) {
+      document.getElementById('heroImage').style.display = 'block';
+      document.getElementById('featuredImg').src = post.featuredImage;
+      document.getElementById('featuredImg').alt = post.title;
+    }
+
     // Article body
     var html = '';
     post.sections.forEach(function(s){
