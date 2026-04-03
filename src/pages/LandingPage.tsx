@@ -542,12 +542,12 @@ const LandingPage = () => {
               <h3 className="font-bold mt-1 mb-2 leading-tight">The Call That Never Gets Answered</h3>
               <p className="text-xs text-muted-foreground">Why 60% of law firm leads go to voicemail — and the 5-second fix.</p>
             </a>
-            <a href="/showcase/templates/blog.html?post=your-debt-leads-cost-40-each-your-call-back-rate-is-8-ai-fi" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
+            <a href="/showcase/templates/blog.html?post=the-math-that-should-make-you-sick" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
               <span className="text-[10px] font-mono tracking-widest text-primary">DEBT & MCA</span>
-              <h3 className="font-bold mt-1 mb-2 leading-tight">Your Debt Leads Cost $40 Each. AI Fixes Both.</h3>
-              <p className="text-xs text-muted-foreground">How AI takes your 8% callback rate to 25-35% on the same leads.</p>
+              <h3 className="font-bold mt-1 mb-2 leading-tight">The Math That Should Make You Sick</h3>
+              <p className="text-xs text-muted-foreground">Your debt leads cost $40 each and your callback rate is 8%. AI fixes both.</p>
             </a>
-            <a href="/showcase/templates/blog.html?post=we-didn-t-build-a-tool-we-built-a-brain-here-s-the-differe" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
+            <a href="/showcase/templates/blog.html?post=there-are-10000-ai-sales-tools-on-the-market-were-not-one-of-them" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
               <span className="text-[10px] font-mono tracking-widest text-primary">CROSS-INDUSTRY</span>
               <h3 className="font-bold mt-1 mb-2 leading-tight">We Didn't Build a Tool. We Built a Brain.</h3>
               <p className="text-xs text-muted-foreground">The difference between a drip sequence and a fully autonomous AI sales engine.</p>
