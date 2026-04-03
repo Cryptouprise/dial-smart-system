@@ -29,12 +29,13 @@
 
   // --- NAV ENHANCEMENTS ---
   // 1. Add "← Hub" link before the logo on all showcase sub-pages (not hub itself)
-  if (page !== 'hub' && page !== 'demo' && page !== 'unknown') {
+  if (page !== 'hub' && page !== 'demo' && page !== 'unknown' && page !== 'blog-index') {
     var navInner = document.querySelector('nav .inner');
     if (navInner) {
       var hubLink = document.createElement('a');
-      hubLink.href = '/showcase/';
-      hubLink.textContent = '← Hub';
+      // Blog posts link back to blog index; other pages link to hub
+      hubLink.href = (page === 'blog-post') ? '/showcase/blog-index.html' : '/showcase/';
+      hubLink.textContent = (page === 'blog-post') ? '← Blog' : '← Hub';
       hubLink.style.cssText = 'font-family:"Space Mono",monospace;font-size:11px;letter-spacing:1px;color:#64748b;text-decoration:none;margin-right:16px;transition:color 0.2s;white-space:nowrap';
       hubLink.addEventListener('mouseenter', function(){ this.style.color='#00f0ff'; });
       hubLink.addEventListener('mouseleave', function(){ this.style.color='#64748b'; });
