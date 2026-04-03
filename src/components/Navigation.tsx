@@ -127,6 +127,16 @@ const Navigation = () => {
             <Button
               variant="ghost"
               size="sm"
+              onClick={handleBlogClick}
+              className="text-primary hover:text-primary/80"
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              Blog
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleShowcaseClick}
               className="text-primary hover:text-primary/80"
             >
