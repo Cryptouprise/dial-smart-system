@@ -2128,3 +2128,28 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - The static showcase architecture depends on `/showcase/` being a real hub, because `tracker.js`, template pages, and internal breadcrumbs all link back to that path.
 - In preview/dev, `/showcase/` can resolve through the SPA router instead of the static directory, so a small route bridge is needed even when the static files themselves are correct.
+
+---
+
+### April 3, 2026 - Showcase Homepage Blog Tab Visibility Fix
+
+**What was built/fixed/changed**
+- Added a visible top navigation bar to `public/showcase/index.html` so the **Blog** link appears on the actual showcase homepage the user lands on.
+- Added a second in-hero **Read the Blog** CTA above the main funnel cards so blog access is visible without scrolling.
+- Kept the existing blog discovery card in the explore grid for redundancy.
+
+**Key files modified**
+- `public/showcase/index.html`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend static showcase updated locally.
+- Build verification still required after this change.
+
+**Gotchas / lessons learned**
+- A blog link buried in the lower card grid is not the same thing as a visible “tab” on the main homepage.
+- For static marketing pages, key destinations like Blog need to be present in the topmost navigation area, not just deeper content sections.
+
