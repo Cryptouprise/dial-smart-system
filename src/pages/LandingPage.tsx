@@ -272,21 +272,26 @@ const LandingPage = () => {
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
               The Math <span className="text-gradient-accent">Doesn't Lie</span>
             </h2>
-            <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-              A human team costs $3,640/day. Call Boss does more for $140.
+            <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
+              To make 2,000 calls a day you'd need <span className="font-semibold text-foreground">36 sales reps</span> at
+              {' '}<span className="font-semibold text-foreground">$100/day each</span> — that's
+              {' '}<span className="font-semibold text-gradient-accent">$3,600/day</span> before
+              overhead, training, sick days, and turnover.
+              <br className="hidden sm:block" />
+              Call Boss does it for <span className="font-semibold text-gradient-accent">~$140/day</span> — 24/7, no breaks, no drama.
             </p>
           </div>
           <div ref={revealROI} className="reveal-scale">
-            <div className="relative max-w-lg mx-auto rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
+            <div className="relative max-w-sm mx-auto rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
               <img
                 src="/videos/roi-comparison.png"
-                alt="Human team at $3,640/day vs Call Boss AI at $140/day — 24/7, never sleeps, 2,000+ calls per day"
+                alt="Human team at $3,600/day vs Call Boss AI at $140/day — 24/7, never sleeps, 2,000+ calls per day"
                 className="w-full h-auto"
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-background/60 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-6 text-center">
-                <Button className="gap-2" asChild>
+              <div className="absolute bottom-0 left-0 right-0 p-4 text-center">
+                <Button className="gap-2" size="sm" asChild>
                   <a href="/showcase/roi.html">
                     Calculate Your Savings
                     <ArrowRight className="h-4 w-4" />
