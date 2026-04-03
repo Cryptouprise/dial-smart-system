@@ -2101,3 +2101,30 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - iPhone/Android home-screen shortcuts save the exact page URL they were created from, so an old shortcut to `/showcase/` will keep opening that path until the app redirects it.
 - Keeping two different “homepage” entry points (`/` and `/showcase/index.html`) creates routing confusion across phones, desktop bookmarks, and cached installs.
+
+---
+
+### April 3, 2026 - Showcase Hub Restoration + Preview Route Bridge
+
+**What was built/fixed/changed**
+- Reverted the `/showcase/index.html` redirect workaround and restored the actual showcase hub page, because the hub is part of the approved marketing funnel and HTML interlinking system.
+- Added a React-side showcase route bridge so preview/app visits to `/showcase/` now forward into the static hub at `/showcase/index.html` instead of falling into the SPA 404 page.
+- Repointed app links back to the real showcase hub where appropriate so the intended hub → deep-dive/demo flow works again.
+
+**Key files modified**
+- `public/showcase/index.html`
+- `src/App.tsx`
+- `src/components/Navigation.tsx`
+- `src/pages/LandingPage.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code fixed locally.
+- Build verification pending after restoration.
+
+**Gotchas / lessons learned**
+- The static showcase architecture depends on `/showcase/` being a real hub, because `tracker.js`, template pages, and internal breadcrumbs all link back to that path.
+- In preview/dev, `/showcase/` can resolve through the SPA router instead of the static directory, so a small route bridge is needed even when the static files themselves are correct.
