@@ -11,7 +11,9 @@
   // Detect current page
   var path = window.location.pathname;
   var page = 'unknown';
-  if (path.includes('landing')) page = 'landing';
+  if (path.includes('blog-index')) page = 'blog-index';
+  else if (path.includes('blog.html')) page = 'blog-post';
+  else if (path.includes('landing')) page = 'landing';
   else if (path.includes('problem')) page = 'problem';
   else if (path.includes('engines')) page = 'engines';
   else if (path.includes('compare')) page = 'compare';
