@@ -25,6 +25,10 @@ const Navigation = () => {
     { path: '/help', label: 'Help', icon: HelpCircle },
   ];
 
+  const handleBlogClick = () => {
+    window.open('/showcase/blog-index.html', '_blank');
+  };
+
   const handleShowcaseClick = () => {
     window.open('/showcase/', '_blank');
   };
