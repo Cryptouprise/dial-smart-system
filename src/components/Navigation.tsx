@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare, LogOut, Activity } from 'lucide-react';
+import { Home, BarChart3, Settings, HelpCircle, Key, Menu, MessageSquare, LogOut, Activity, BookOpen } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import DemoBadge from './DemoBadge';
