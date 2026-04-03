@@ -77,6 +77,7 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
 
 <section class="hero">
   <div class="container">
+    <div id="heroImage" style="display:none;margin-bottom:24px"><img id="featuredImg" style="width:100%;max-height:400px;object-fit:cover;border:1px solid var(--border)" alt=""></div>
     <span class="category-badge" id="category">Loading...</span>
     <h1 id="heroTitle">Loading...</h1>
     <div class="meta">
@@ -179,6 +180,13 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
     document.getElementById('date').textContent = new Date(post.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
     document.getElementById('readTime').textContent = post.readTime + ' read';
 
+    // Featured image
+    if (post.featuredImage) {
+      document.getElementById('heroImage').style.display = 'block';
+      document.getElementById('featuredImg').src = post.featuredImage;
+      document.getElementById('featuredImg').alt = post.title;
+    }
+
     // Article body
     var html = '';
     post.sections.forEach(function(s){
@@ -222,14 +230,14 @@ footer p{font-size:12px;color:var(--muted);letter-spacing:1px}footer span{color:
     document.getElementById('ctaTitle').textContent = 'See Call Boss Handle ' + topic;
     document.getElementById('ctaDesc').textContent = 'Watch the AI dialer put everything from this article into practice — live, with real data.';
 
-    // Back link - if came from another blog, go back; otherwise go to blog index
+    // Back link - go to blog index
     var backLink = document.getElementById('navBack');
-    if (document.referrer && document.referrer.includes('blog.html')) {
+    if (document.referrer && document.referrer.includes('blog-index')) {
       backLink.href = document.referrer;
+      backLink.textContent = '← Blog';
     } else {
-      // Link to hub since there's no blog index yet
-      backLink.href = '/showcase/';
-      backLink.textContent = '← Hub';
+      backLink.href = '/showcase/blog-index.html';
+      backLink.textContent = '← Blog';
     }
 
     // More blog posts grid (exclude current, show up to 6)

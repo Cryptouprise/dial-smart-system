@@ -530,6 +530,35 @@ const LandingPage = () => {
         </div>
       </section>
 
+      {/* ═══════════════════ BLOG SECTION ═══════════════════ */}
+      <section className="py-16 border-t border-border/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-xs font-mono tracking-widest text-primary mb-3">// FROM THE BLOG</p>
+          <h2 className="text-3xl sm:text-4xl font-bold mb-3">200+ Articles on AI Sales Automation</h2>
+          <p className="text-muted-foreground mb-8 max-w-xl mx-auto">Industry strategies, ROI breakdowns, speed-to-lead data, and the playbooks top teams use to close more deals with AI.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-left">
+            <a href="/showcase/templates/blog.html?post=the-call-that-never-gets-answered" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
+              <span className="text-[10px] font-mono tracking-widest text-primary">LEGAL</span>
+              <h3 className="font-bold mt-1 mb-2 leading-tight">The Call That Never Gets Answered</h3>
+              <p className="text-xs text-muted-foreground">Why 60% of law firm leads go to voicemail — and the 5-second fix.</p>
+            </a>
+            <a href="/showcase/templates/blog.html?post=the-math-that-should-make-you-sick" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
+              <span className="text-[10px] font-mono tracking-widest text-primary">DEBT & MCA</span>
+              <h3 className="font-bold mt-1 mb-2 leading-tight">The Math That Should Make You Sick</h3>
+              <p className="text-xs text-muted-foreground">Your debt leads cost $40 each and your callback rate is 8%. AI fixes both.</p>
+            </a>
+            <a href="/showcase/templates/blog.html?post=there-are-10000-ai-sales-tools-on-the-market-were-not-one-of-them" className="block p-5 rounded-lg border border-border/60 bg-card hover:border-primary/40 transition-all hover:-translate-y-0.5">
+              <span className="text-[10px] font-mono tracking-widest text-primary">CROSS-INDUSTRY</span>
+              <h3 className="font-bold mt-1 mb-2 leading-tight">We Didn't Build a Tool. We Built a Brain.</h3>
+              <p className="text-xs text-muted-foreground">The difference between a drip sequence and a fully autonomous AI sales engine.</p>
+            </a>
+          </div>
+          <a href="/showcase/blog-index.html" className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+            Browse All 200+ Articles <ArrowRight className="h-4 w-4" />
+          </a>
+        </div>
+      </section>
+
       {/* ═══════════════════ FOOTER ═══════════════════ */}
       <footer className="border-t border-border/40 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -556,6 +585,7 @@ const LandingPage = () => {
               <h4 className="font-semibold text-sm mb-3">Learn</h4>
               <div className="space-y-2">
                 <a href="/showcase/problem.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">The Problem</a>
+                <a href="/showcase/blog-index.html" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Blog</a>
                 <a href="/showcase/" className="block text-xs text-muted-foreground hover:text-foreground transition-colors">Showcase Hub</a>
               </div>
             </div>
