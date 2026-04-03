@@ -277,7 +277,7 @@ const LandingPage = () => {
             </p>
           </div>
           <div ref={revealROI} className="reveal-scale">
-            <div className="relative max-w-2xl mx-auto rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
+            <div className="relative max-w-lg mx-auto rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
               <img
                 src="/videos/roi-comparison.png"
                 alt="Human team at $3,640/day vs Call Boss AI at $140/day — 24/7, never sleeps, 2,000+ calls per day"
