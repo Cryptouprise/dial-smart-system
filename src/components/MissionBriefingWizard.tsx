@@ -281,6 +281,14 @@ const MissionBriefingWizard: React.FC = () => {
   const updateLeadImport = (partial: Partial<LeadImportConfig>) =>
     setData(prev => ({ ...prev, leadImport: { ...prev.leadImport, ...partial } }));
 
+  const toggleEventAction = (event: keyof EventHandlingConfig, action: DispositionAction) => {
+    setData(prev => {
+      const current = prev.eventHandling[event];
+      const next = current.includes(action) ? current.filter(a => a !== action) : [...current, action];
+      return { ...prev, eventHandling: { ...prev.eventHandling, [event]: next } };
+    });
+  };
+
   const updatePlatform = (pid: PlatformId, partial: Partial<PlatformConfig>) => {
     setData(prev => ({
       ...prev,
