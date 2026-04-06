@@ -228,7 +228,7 @@ const MissionBriefingWizard: React.FC = () => {
       const platformLines = enabledPlatforms.map(([pid, cfg]) => {
         const meta = PLATFORM_META[pid];
         if (pid === 'assistable') {
-          return `- ${meta.label}: ${cfg.trafficPct}% traffic, webhook URL: ${data.assistableWebhookUrl}`;
+          return `- ${meta.label}: ${cfg.trafficPct}% traffic, assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}${data.assistableWebhookUrl ? `, extraction webhook: ${data.assistableWebhookUrl}` : ''}`;
         }
         return `- ${meta.label}: ${cfg.trafficPct}% traffic, agent ID: ${cfg.agentId}`;
       });
@@ -256,7 +256,7 @@ const MissionBriefingWizard: React.FC = () => {
           ? `Use a mix of call and SMS steps in the workflow.`
           : `Only use call and wait steps in the workflow. No SMS at all.`,
         data.platforms.assistable.enabled
-          ? `Include a webhook step in the workflow for Assistable at URL: ${data.assistableWebhookUrl}`
+          ? `Include an assistable_call workflow step for Assistable using assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}. The workflow-executor will call the assistable-make-call edge function which hits the Assistable GHL-Safe API to place the call.${data.assistableWebhookUrl ? ` Also include a webhook step for data extraction at: ${data.assistableWebhookUrl}` : ''}`
           : '',
         ``,
         `Set autonomous settings: daily_goal_calls=${data.dailyCalls}, daily_goal_appointments=${data.dailyTarget}.`,
