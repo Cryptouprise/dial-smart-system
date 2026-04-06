@@ -2153,3 +2153,50 @@ supabase functions deploy ai-autonomous-engine
 - A blog link buried in the lower card grid is not the same thing as a visible “tab” on the main homepage.
 - For static marketing pages, key destinations like Blog need to be present in the topmost navigation area, not just deeper content sections.
 
+
+---
+
+### April 6, 2026 - Assistable Flow Builder + Telnyx Voice Knowledge & Webhook Config UI
+
+**What was built/fixed/changed**
+
+1. **Assistable Flow Builder + Telnyx Voice Integration Knowledge** — Documented how Assistable.ai's Flow Builder connects to Telnyx for voice deployment:
+   - Flow Builder exposes **OpenAI-compatible realtime API endpoints** that Telnyx calls via webhook
+   - Uses **eager streaming** (SSE) for sub-200ms first-token latency
+   - Sessions include conversation history (40 msg cap), flow variables, and current node state
+   - Variables webhook fires at call start for CRM data injection (like our `telnyx-dynamic-vars`)
+   - Best practices: fast models (gpt-4o-mini), concise prompts, static greetings, filler during tool calls
+
+2. **Assistable API Full Surface** — Catalogued all available endpoints:
+   - Assistant CRUD: create, get, update, delete (`/v2/create-assistant`, etc.)
+   - Flow CRUD: create flows (`/v2/create-flow`)
+   - Contact management: create, get, update contacts per location
+   - Messaging: create messages, get conversation history
+   - Chat completions: agent chat completion endpoint
+   - GHL-safe calling: `POST /v2/ghl/make-call` (already integrated)
+
+3. **Transfer & Post-Call Webhook Config** — Added webhook configuration UI to both agent editors:
+   - **Telnyx Assistant Editor** (Calling tab): New "Transfer & Post-Call Webhooks" section with post-call URL, transfer URL, and toggleable field selection badges
+   - **Retell Agent Editor** (Advanced tab): Same webhook config with post-call URL, transfer URL, and clickable field toggles
+   - Both support 12 selectable payload fields: first_name, last_name, phone, email, company, lead_source, status, notes, call_summary, transcript, disposition, custom_fields
+   - Default selection: first_name, last_name, phone, email
+   - Config stored in assistant metadata (Telnyx) and agent config (Retell)
+
+**Key files modified**
+- `src/components/TelnyxAssistantEditor.tsx` — Added webhook config section in Calling tab
+- `src/components/AgentEditDialog.tsx` — Added webhook config section in Advanced tab
+- `CLAUDE.md` — Added this session log
+
+**Database changes made**
+- None (webhook URLs stored in existing metadata/config JSON columns)
+
+**Deployment status**
+- Frontend code updated. Build passes clean.
+- No edge function or migration changes needed.
+
+**Gotchas / lessons learned**
+- Telnyx mid-call webhooks are configured as **Webhook Tools** on the assistant (Integrations tab / Portal), not via our UI — we document this clearly in the info card
+- Assistable Flow Builder uses OpenAI-compatible sub-paths, meaning any platform supporting OpenAI realtime can connect
+- For the campaign transfer use case, the transfer webhook fires with all selected lead fields so the receiving human agent has full context
+- Post-call webhooks are separate from Telnyx's native `call.conversation_insights.generated` event — our webhook is app-level and includes lead DB data, not just call metadata
+- Webhook field configs are stored in metadata JSON, not separate columns, to avoid migration overhead
