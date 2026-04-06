@@ -1159,6 +1159,69 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               </div>
             )}
 
+            {/* ===== WEBHOOKS (Transfer & Post-Call) ===== */}
+            <h4 className="font-semibold text-sm pt-4 flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Transfer & Post-Call Webhooks
+            </h4>
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="py-3 text-xs text-muted-foreground">
+                <Info className="h-3 w-3 inline mr-1" />
+                Configure webhooks to fire during call transfers or after calls end. Lead data (name, phone, email, etc.) is sent as JSON to the URL you specify.
+                For Telnyx, mid-call webhooks are configured as <strong>Webhook Tools</strong> on the assistant — manage those in the Integrations tab or Telnyx Portal.
+              </CardContent>
+            </Card>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Post-Call Webhook URL</Label>
+                <Input
+                  value={(assistant.metadata?.post_call_webhook_url as string) || ''}
+                  onChange={e => {
+                    const meta = { ...(assistant.metadata || {}), post_call_webhook_url: e.target.value };
+                    supabase.from('telnyx_assistants').update({ metadata: meta }).eq('id', assistant.id).then(() => {});
+                  }}
+                  placeholder="https://your-crm.com/api/post-call"
+                />
+                <p className="text-xs text-muted-foreground">Called after every call ends. Sends lead data + call outcome + transcript summary.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Transfer Webhook URL</Label>
+                <Input
+                  value={(assistant.metadata?.transfer_webhook_url as string) || ''}
+                  onChange={e => {
+                    const meta = { ...(assistant.metadata || {}), transfer_webhook_url: e.target.value };
+                    supabase.from('telnyx_assistants').update({ metadata: meta }).eq('id', assistant.id).then(() => {});
+                  }}
+                  placeholder="https://your-crm.com/api/transfer"
+                />
+                <p className="text-xs text-muted-foreground">Called when the AI transfers a call. Sends lead data so the receiving agent has context.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Fields to Include in Webhook Payload</Label>
+                <div className="flex flex-wrap gap-2">
+                  {['first_name', 'last_name', 'phone', 'email', 'company', 'lead_source', 'status', 'notes', 'call_summary', 'transcript', 'disposition', 'custom_fields'].map(field => {
+                    const currentFields: string[] = (assistant.metadata?.webhook_payload_fields as string[]) || ['first_name', 'last_name', 'phone', 'email'];
+                    const isChecked = currentFields.includes(field);
+                    return (
+                      <Badge
+                        key={field}
+                        variant={isChecked ? 'default' : 'outline'}
+                        className="cursor-pointer text-xs"
+                        onClick={() => {
+                          const updated = isChecked ? currentFields.filter(f => f !== field) : [...currentFields, field];
+                          const meta = { ...(assistant.metadata || {}), webhook_payload_fields: updated };
+                          supabase.from('telnyx_assistants').update({ metadata: meta }).eq('id', assistant.id).then(() => {});
+                        }}
+                      >
+                        {field.replace(/_/g, ' ')}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">Click to toggle fields. Selected fields are sent in the webhook JSON body.</p>
+              </div>
+            </div>
+
             <h4 className="font-semibold text-sm pt-4 flex items-center gap-2">
               <Volume2 className="h-4 w-4" />
               Recording Settings
