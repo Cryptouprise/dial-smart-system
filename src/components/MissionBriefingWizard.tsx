@@ -92,6 +92,16 @@ const INITIAL_LEAD_IMPORT: LeadImportConfig = {
   autoTag: true,
 };
 
+const DEFAULT_EVENT_HANDLING: EventHandlingConfig = {
+  appointmentBooked: ['move_pipeline', 'stop_calling', 'send_sms'],
+  interested: ['move_pipeline', 'send_sms'],
+  notInterested: ['stop_calling', 'move_pipeline'],
+  voicemail: ['send_sms'],
+  callbackRequested: ['schedule_callback', 'move_pipeline'],
+  wrongNumber: ['stop_calling', 'move_pipeline'],
+  doNotCall: ['add_to_dnc', 'stop_calling'],
+};
+
 const INITIAL_DATA: WizardData = {
   businessDescription: '',
   goalType: 'appointments',
@@ -113,6 +123,8 @@ const INITIAL_DATA: WizardData = {
   assistableLocationId: '',
   assistableNumberPoolId: '',
   leadImport: { ...INITIAL_LEAD_IMPORT },
+  campaignPriority: 'quality',
+  eventHandling: { ...DEFAULT_EVENT_HANDLING },
 };
 
 const GOAL_LABELS: Record<string, string> = {
