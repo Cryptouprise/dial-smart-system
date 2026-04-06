@@ -39,6 +39,20 @@ interface LeadImportConfig {
   autoTag: boolean;
 }
 
+type DispositionAction = 'move_pipeline' | 'stop_calling' | 'schedule_callback' | 'send_sms' | 'transfer_live' | 'add_to_dnc' | 'do_nothing';
+
+interface EventHandlingConfig {
+  appointmentBooked: DispositionAction[];
+  interested: DispositionAction[];
+  notInterested: DispositionAction[];
+  voicemail: DispositionAction[];
+  callbackRequested: DispositionAction[];
+  wrongNumber: DispositionAction[];
+  doNotCall: DispositionAction[];
+}
+
+type CampaignPriority = 'speed' | 'quality' | 'volume' | 'cost';
+
 interface WizardData {
   businessDescription: string;
   goalType: 'appointments' | 'qualify' | 'callbacks';
@@ -56,6 +70,8 @@ interface WizardData {
   assistableLocationId: string;
   assistableNumberPoolId: string;
   leadImport: LeadImportConfig;
+  campaignPriority: CampaignPriority;
+  eventHandling: EventHandlingConfig;
 }
 
 interface AgentOption {
@@ -74,6 +90,16 @@ const INITIAL_LEAD_IMPORT: LeadImportConfig = {
   ghlSyncAll: false,
   campaignTag: '',
   autoTag: true,
+};
+
+const DEFAULT_EVENT_HANDLING: EventHandlingConfig = {
+  appointmentBooked: ['move_pipeline', 'stop_calling', 'send_sms'],
+  interested: ['move_pipeline', 'send_sms'],
+  notInterested: ['stop_calling', 'move_pipeline'],
+  voicemail: ['send_sms'],
+  callbackRequested: ['schedule_callback', 'move_pipeline'],
+  wrongNumber: ['stop_calling', 'move_pipeline'],
+  doNotCall: ['add_to_dnc', 'stop_calling'],
 };
 
 const INITIAL_DATA: WizardData = {
@@ -97,6 +123,8 @@ const INITIAL_DATA: WizardData = {
   assistableLocationId: '',
   assistableNumberPoolId: '',
   leadImport: { ...INITIAL_LEAD_IMPORT },
+  campaignPriority: 'quality',
+  eventHandling: { ...DEFAULT_EVENT_HANDLING },
 };
 
 const GOAL_LABELS: Record<string, string> = {
@@ -129,6 +157,33 @@ const PLATFORM_META: Record<PlatformId, { label: string; icon: React.ReactNode; 
   telnyx: { label: 'Telnyx', icon: <Zap className="h-4 w-4" />, color: 'text-emerald-600' },
   assistable: { label: 'Assistable', icon: <Globe className="h-4 w-4" />, color: 'text-purple-600' },
 };
+
+const PRIORITY_OPTIONS: Record<CampaignPriority, { label: string; desc: string }> = {
+  speed: { label: 'Speed to Contact', desc: 'Reach every lead ASAP — fastest response wins' },
+  quality: { label: 'Conversation Quality', desc: 'Longer, better conversations that convert' },
+  volume: { label: 'Maximum Volume', desc: 'Blast through the list — quantity over depth' },
+  cost: { label: 'Cost Efficiency', desc: 'Minimize spend per result, optimize ROI' },
+};
+
+const EVENT_LABELS: Record<keyof EventHandlingConfig, { label: string; icon: string; desc: string }> = {
+  appointmentBooked: { label: 'Appointment Booked', icon: '📅', desc: 'Lead agrees to a meeting' },
+  interested: { label: 'Interested', icon: '🔥', desc: 'Shows buying intent but no appointment yet' },
+  notInterested: { label: 'Not Interested', icon: '❌', desc: 'Declines or says no' },
+  voicemail: { label: 'Voicemail', icon: '📞', desc: 'Reached answering machine' },
+  callbackRequested: { label: 'Callback Requested', icon: '🔁', desc: 'Asked to be called back later' },
+  wrongNumber: { label: 'Wrong Number', icon: '🚫', desc: 'Number is invalid or wrong person' },
+  doNotCall: { label: 'Do Not Call', icon: '🛑', desc: 'Explicitly asked to stop contact' },
+};
+
+const ACTION_OPTIONS: { value: DispositionAction; label: string }[] = [
+  { value: 'move_pipeline', label: 'Move to pipeline stage' },
+  { value: 'stop_calling', label: 'Stop all outreach' },
+  { value: 'schedule_callback', label: 'Schedule callback' },
+  { value: 'send_sms', label: 'Send follow-up SMS' },
+  { value: 'transfer_live', label: 'Transfer to live agent' },
+  { value: 'add_to_dnc', label: 'Add to Do Not Call list' },
+  { value: 'do_nothing', label: 'No action (log only)' },
+];
 
 // ── Component ──────────────────────────────────────────────────────────
 
@@ -199,7 +254,7 @@ const MissionBriefingWizard: React.FC = () => {
     [data.platforms]
   );
 
-  const totalSteps = 8; // was 7, added lead import step
+  const totalSteps = 9; // 0-8: desc, goal, leads, import, calls, agents, followup, priorities+events, review
   const progressPct = ((step + 1) / totalSteps) * 100;
 
   const canAdvance = () => {
@@ -225,6 +280,14 @@ const MissionBriefingWizard: React.FC = () => {
   const update = (partial: Partial<WizardData>) => setData(prev => ({ ...prev, ...partial }));
   const updateLeadImport = (partial: Partial<LeadImportConfig>) =>
     setData(prev => ({ ...prev, leadImport: { ...prev.leadImport, ...partial } }));
+
+  const toggleEventAction = (event: keyof EventHandlingConfig, action: DispositionAction) => {
+    setData(prev => {
+      const current = prev.eventHandling[event];
+      const next = current.includes(action) ? current.filter(a => a !== action) : [...current, action];
+      return { ...prev, eventHandling: { ...prev.eventHandling, [event]: next } };
+    });
+  };
 
   const updatePlatform = (pid: PlatformId, partial: Partial<PlatformConfig>) => {
     setData(prev => ({
@@ -355,7 +418,18 @@ const MissionBriefingWizard: React.FC = () => {
         ...platformLines,
         data.splitTest ? `Split traffic across platforms for volume diversification and A/B comparison.` : '',
         ``,
+        `CAMPAIGN PRIORITY: ${PRIORITY_OPTIONS[data.campaignPriority].label} — ${PRIORITY_OPTIONS[data.campaignPriority].desc}`,
+        ``,
+        `EVENT HANDLING (disposition automation rules):`,
+        ...Object.entries(data.eventHandling).map(([event, actions]) => {
+          const eventLabel = EVENT_LABELS[event as keyof EventHandlingConfig]?.label || event;
+          const actionLabels = (actions as DispositionAction[]).map(a => ACTION_OPTIONS.find(o => o.value === a)?.label || a);
+          return `- ${eventLabel}: ${actionLabels.join(', ') || 'No action'}`;
+        }),
+        `Create disposition automation rules in the disposition-router for each of these events.`,
+        ``,
         `Pipeline stages to create: ${PIPELINE_STAGES[data.goalType].join(' → ')}`,
+        `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
         ``,
         enableSms
           ? `Use a mix of call and SMS steps in the workflow.`
@@ -895,8 +969,62 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 7: Review & Build (was step 6) ── */}
+        {/* ── Step 7: Campaign Priorities & Event Handling ── */}
         {step === 7 && (
+          <div className="space-y-4">
+            <Label className="text-base font-semibold">What matters most for this campaign?</Label>
+            <RadioGroup value={data.campaignPriority} onValueChange={(v) => update({ campaignPriority: v as CampaignPriority })}>
+              {Object.entries(PRIORITY_OPTIONS).map(([key, { label, desc }]) => (
+                <div key={key} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value={key} id={`prio-${key}`} />
+                  <Label htmlFor={`prio-${key}`} className="cursor-pointer flex-1">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-muted-foreground text-sm ml-2">— {desc}</span>
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+
+            <div className="pt-2">
+              <Label className="text-base font-semibold">What should happen when…</Label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Configure how the autonomous engine handles each call outcome. Toggle actions on/off for each event.
+              </p>
+
+              <div className="space-y-3">
+                {(Object.entries(EVENT_LABELS) as [keyof EventHandlingConfig, typeof EVENT_LABELS[keyof EventHandlingConfig]][]).map(([eventKey, { label, icon, desc }]) => (
+                  <div key={eventKey} className="p-3 rounded-lg border space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{icon}</span>
+                      <div>
+                        <p className="text-sm font-semibold">{label}</p>
+                        <p className="text-xs text-muted-foreground">{desc}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ACTION_OPTIONS.map(({ value, label: actionLabel }) => {
+                        const isActive = data.eventHandling[eventKey].includes(value);
+                        return (
+                          <Badge
+                            key={value}
+                            variant={isActive ? 'default' : 'outline'}
+                            className={`cursor-pointer text-xs transition-colors ${isActive ? '' : 'opacity-60 hover:opacity-100'}`}
+                            onClick={() => toggleEventAction(eventKey, value)}
+                          >
+                            {actionLabel}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 8: Review & Build ── */}
+        {step === 8 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Review & Build</Label>
 
@@ -914,6 +1042,7 @@ const MissionBriefingWizard: React.FC = () => {
               )}
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily calls</span><span className="font-medium">{data.dailyCalls} ({RAMP_LABELS[data.rampUpBehavior].label} ramp)</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Strategy</span><span className="font-medium">{STRATEGY_LABELS[data.followUpStrategy].label}</span></div>
+              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Priority</span><span className="font-medium">{PRIORITY_OPTIONS[data.campaignPriority].label}</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20">
                 <span className="text-muted-foreground">Platforms</span>
                 <span className="font-medium flex items-center gap-1">
@@ -937,6 +1066,19 @@ const MissionBriefingWizard: React.FC = () => {
                     <Badge variant="secondary" className="text-xs">{stage}</Badge>
                     {i < PIPELINE_STAGES[data.goalType].length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
                   </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
+              <p className="font-medium text-sm">Event Handling Rules</p>
+              <div className="space-y-1 text-xs">
+                {(Object.entries(EVENT_LABELS) as [keyof EventHandlingConfig, typeof EVENT_LABELS[keyof EventHandlingConfig]][]).map(([key, { label, icon }]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span>{icon}</span>
+                    <span className="text-muted-foreground">{label}:</span>
+                    <span className="font-medium">{data.eventHandling[key].map(a => ACTION_OPTIONS.find(o => o.value === a)?.label).join(', ') || 'No action'}</span>
+                  </div>
                 ))}
               </div>
             </div>
