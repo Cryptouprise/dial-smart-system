@@ -418,7 +418,18 @@ const MissionBriefingWizard: React.FC = () => {
         ...platformLines,
         data.splitTest ? `Split traffic across platforms for volume diversification and A/B comparison.` : '',
         ``,
+        `CAMPAIGN PRIORITY: ${PRIORITY_OPTIONS[data.campaignPriority].label} — ${PRIORITY_OPTIONS[data.campaignPriority].desc}`,
+        ``,
+        `EVENT HANDLING (disposition automation rules):`,
+        ...Object.entries(data.eventHandling).map(([event, actions]) => {
+          const eventLabel = EVENT_LABELS[event as keyof EventHandlingConfig]?.label || event;
+          const actionLabels = (actions as DispositionAction[]).map(a => ACTION_OPTIONS.find(o => o.value === a)?.label || a);
+          return `- ${eventLabel}: ${actionLabels.join(', ') || 'No action'}`;
+        }),
+        `Create disposition automation rules in the disposition-router for each of these events.`,
+        ``,
         `Pipeline stages to create: ${PIPELINE_STAGES[data.goalType].join(' → ')}`,
+        `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
         ``,
         enableSms
           ? `Use a mix of call and SMS steps in the workflow.`
