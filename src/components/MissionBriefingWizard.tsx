@@ -254,7 +254,7 @@ const MissionBriefingWizard: React.FC = () => {
     [data.platforms]
   );
 
-  const totalSteps = 8; // was 7, added lead import step
+  const totalSteps = 9; // 0-8: desc, goal, leads, import, calls, agents, followup, priorities+events, review
   const progressPct = ((step + 1) / totalSteps) * 100;
 
   const canAdvance = () => {
