@@ -43,6 +43,9 @@ interface WizardData {
   splitTest: boolean;
   platforms: Record<PlatformId, PlatformConfig>;
   assistableWebhookUrl: string;
+  assistableAssistantId: string;
+  assistableLocationId: string;
+  assistableNumberPoolId: string;
 }
 
 interface AgentOption {
@@ -70,6 +73,9 @@ const INITIAL_DATA: WizardData = {
     assistable: { enabled: false, agentId: '', trafficPct: 0 },
   },
   assistableWebhookUrl: '',
+  assistableAssistantId: '',
+  assistableLocationId: '',
+  assistableNumberPoolId: '',
 };
 
 const GOAL_LABELS: Record<string, string> = {
