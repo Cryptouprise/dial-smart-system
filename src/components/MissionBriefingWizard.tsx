@@ -158,6 +158,33 @@ const PLATFORM_META: Record<PlatformId, { label: string; icon: React.ReactNode; 
   assistable: { label: 'Assistable', icon: <Globe className="h-4 w-4" />, color: 'text-purple-600' },
 };
 
+const PRIORITY_OPTIONS: Record<CampaignPriority, { label: string; desc: string }> = {
+  speed: { label: 'Speed to Contact', desc: 'Reach every lead ASAP — fastest response wins' },
+  quality: { label: 'Conversation Quality', desc: 'Longer, better conversations that convert' },
+  volume: { label: 'Maximum Volume', desc: 'Blast through the list — quantity over depth' },
+  cost: { label: 'Cost Efficiency', desc: 'Minimize spend per result, optimize ROI' },
+};
+
+const EVENT_LABELS: Record<keyof EventHandlingConfig, { label: string; icon: string; desc: string }> = {
+  appointmentBooked: { label: 'Appointment Booked', icon: '📅', desc: 'Lead agrees to a meeting' },
+  interested: { label: 'Interested', icon: '🔥', desc: 'Shows buying intent but no appointment yet' },
+  notInterested: { label: 'Not Interested', icon: '❌', desc: 'Declines or says no' },
+  voicemail: { label: 'Voicemail', icon: '📞', desc: 'Reached answering machine' },
+  callbackRequested: { label: 'Callback Requested', icon: '🔁', desc: 'Asked to be called back later' },
+  wrongNumber: { label: 'Wrong Number', icon: '🚫', desc: 'Number is invalid or wrong person' },
+  doNotCall: { label: 'Do Not Call', icon: '🛑', desc: 'Explicitly asked to stop contact' },
+};
+
+const ACTION_OPTIONS: { value: DispositionAction; label: string }[] = [
+  { value: 'move_pipeline', label: 'Move to pipeline stage' },
+  { value: 'stop_calling', label: 'Stop all outreach' },
+  { value: 'schedule_callback', label: 'Schedule callback' },
+  { value: 'send_sms', label: 'Send follow-up SMS' },
+  { value: 'transfer_live', label: 'Transfer to live agent' },
+  { value: 'add_to_dnc', label: 'Add to Do Not Call list' },
+  { value: 'do_nothing', label: 'No action (log only)' },
+];
+
 // ── Component ──────────────────────────────────────────────────────────
 
 const MissionBriefingWizard: React.FC = () => {
