@@ -43,6 +43,9 @@ interface WizardData {
   splitTest: boolean;
   platforms: Record<PlatformId, PlatformConfig>;
   assistableWebhookUrl: string;
+  assistableAssistantId: string;
+  assistableLocationId: string;
+  assistableNumberPoolId: string;
 }
 
 interface AgentOption {
@@ -70,6 +73,9 @@ const INITIAL_DATA: WizardData = {
     assistable: { enabled: false, agentId: '', trafficPct: 0 },
   },
   assistableWebhookUrl: '',
+  assistableAssistantId: '',
+  assistableLocationId: '',
+  assistableNumberPoolId: '',
 };
 
 const GOAL_LABELS: Record<string, string> = {
@@ -171,9 +177,8 @@ const MissionBriefingWizard: React.FC = () => {
   const canAdvance = () => {
     if (step === 0) return data.businessDescription.trim().length > 10;
     if (step === 4) {
-      // Must have at least one platform enabled with an agent selected (or assistable with webhook)
       return enabledPlatforms.length > 0 && enabledPlatforms.every(([pid, cfg]) => {
-        if (pid === 'assistable') return data.assistableWebhookUrl.trim().length > 5;
+        if (pid === 'assistable') return data.assistableAssistantId.trim().length > 3 && data.assistableLocationId.trim().length > 3;
         return cfg.agentId.length > 0;
       });
     }
@@ -223,7 +228,7 @@ const MissionBriefingWizard: React.FC = () => {
       const platformLines = enabledPlatforms.map(([pid, cfg]) => {
         const meta = PLATFORM_META[pid];
         if (pid === 'assistable') {
-          return `- ${meta.label}: ${cfg.trafficPct}% traffic, webhook URL: ${data.assistableWebhookUrl}`;
+          return `- ${meta.label}: ${cfg.trafficPct}% traffic, assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}${data.assistableWebhookUrl ? `, extraction webhook: ${data.assistableWebhookUrl}` : ''}`;
         }
         return `- ${meta.label}: ${cfg.trafficPct}% traffic, agent ID: ${cfg.agentId}`;
       });
@@ -251,7 +256,7 @@ const MissionBriefingWizard: React.FC = () => {
           ? `Use a mix of call and SMS steps in the workflow.`
           : `Only use call and wait steps in the workflow. No SMS at all.`,
         data.platforms.assistable.enabled
-          ? `Include a webhook step in the workflow for Assistable at URL: ${data.assistableWebhookUrl}`
+          ? `Include an assistable_call workflow step for Assistable using assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}. The workflow-executor will call the assistable-make-call edge function which hits the Assistable GHL-Safe API to place the call.${data.assistableWebhookUrl ? ` Also include a webhook step for data extraction at: ${data.assistableWebhookUrl}` : ''}`
           : '',
         ``,
         `Set autonomous settings: daily_goal_calls=${data.dailyCalls}, daily_goal_appointments=${data.dailyTarget}.`,
@@ -459,7 +464,7 @@ const MissionBriefingWizard: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className={meta.color}>{meta.icon}</span>
                         <Label className="font-semibold">{meta.label}</Label>
-                        {pid === 'assistable' && <Badge variant="outline" className="text-[10px]">Webhook</Badge>}
+                        {pid === 'assistable' && <Badge variant="outline" className="text-[10px]">GHL-Safe API</Badge>}
                       </div>
                       <Switch checked={cfg.enabled} onCheckedChange={v => togglePlatform(pid, v)} />
                     </div>
@@ -510,17 +515,49 @@ const MissionBriefingWizard: React.FC = () => {
 
                         {/* Assistable webhook URL */}
                         {pid === 'assistable' && (
-                          <div>
-                            <Label className="text-sm">Assistable Webhook URL</Label>
-                            <Input
-                              placeholder="https://api.assistable.ai/webhook/..."
-                              value={data.assistableWebhookUrl}
-                              onChange={e => update({ assistableWebhookUrl: e.target.value })}
-                              className="mt-1 text-sm"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              When a lead reaches the Assistable step, we'll POST their info to this URL so your Assistable agent handles the call.
-                            </p>
+                          <div className="space-y-3">
+                            <div>
+                              <Label className="text-sm">Assistant ID <span className="text-destructive">*</span></Label>
+                              <Input
+                                placeholder="asst_12345"
+                                value={data.assistableAssistantId}
+                                onChange={e => update({ assistableAssistantId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-sm">Location ID <span className="text-destructive">*</span></Label>
+                              <Input
+                                placeholder="loc_98765"
+                                value={data.assistableLocationId}
+                                onChange={e => update({ assistableLocationId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-sm">Number Pool ID <span className="text-muted-foreground">(optional)</span></Label>
+                              <Input
+                                placeholder="pool_abc123"
+                                value={data.assistableNumberPoolId}
+                                onChange={e => update({ assistableNumberPoolId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                If you use a group of numbers for caller ID rotation on Assistable's side.
+                              </p>
+                            </div>
+                            <div>
+                              <Label className="text-sm">Extraction Webhook URL <span className="text-muted-foreground">(optional)</span></Label>
+                              <Input
+                                placeholder="https://api.assistable.ai/webhook/..."
+                                value={data.assistableWebhookUrl}
+                                onChange={e => update({ assistableWebhookUrl: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Optional webhook for receiving extracted data (name, email, project details) from Assistable custom tools.
+                              </p>
+                            </div>
                           </div>
                         )}
 
