@@ -780,6 +780,10 @@ async function executeStep(supabase: any, progress: any) {
       stepResult = await executeWebhookStep(supabase, lead, progress, config);
       break;
 
+    case 'assistable_call':
+      stepResult = await executeAssistableCallStep(supabase, lead, progress, config);
+      break;
+
     case 'condition':
     case 'branch': {
       const conditions = step.branch_conditions || config.conditions || [];
