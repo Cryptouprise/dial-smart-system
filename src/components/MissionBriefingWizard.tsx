@@ -39,6 +39,20 @@ interface LeadImportConfig {
   autoTag: boolean;
 }
 
+type DispositionAction = 'move_pipeline' | 'stop_calling' | 'schedule_callback' | 'send_sms' | 'transfer_live' | 'add_to_dnc' | 'do_nothing';
+
+interface EventHandlingConfig {
+  appointmentBooked: DispositionAction[];
+  interested: DispositionAction[];
+  notInterested: DispositionAction[];
+  voicemail: DispositionAction[];
+  callbackRequested: DispositionAction[];
+  wrongNumber: DispositionAction[];
+  doNotCall: DispositionAction[];
+}
+
+type CampaignPriority = 'speed' | 'quality' | 'volume' | 'cost';
+
 interface WizardData {
   businessDescription: string;
   goalType: 'appointments' | 'qualify' | 'callbacks';
@@ -56,6 +70,8 @@ interface WizardData {
   assistableLocationId: string;
   assistableNumberPoolId: string;
   leadImport: LeadImportConfig;
+  campaignPriority: CampaignPriority;
+  eventHandling: EventHandlingConfig;
 }
 
 interface AgentOption {
