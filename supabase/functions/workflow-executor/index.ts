@@ -1072,6 +1072,61 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
   }
 }
 
+async function executeAssistableCallStep(supabase: any, lead: any, progress: any, config: any) {
+  console.log(`[Workflow] Executing Assistable call for lead ${lead?.id}`);
+
+  try {
+    const assistantId = config.assistable_assistant_id || config.assistant_id;
+    const locationId = config.assistable_location_id || config.location_id;
+    
+    if (!assistantId || !locationId) {
+      throw new Error('Assistable assistant_id and location_id are required');
+    }
+
+    // Get GHL contact_id from lead
+    const contactId = lead.ghl_contact_id || lead.custom_fields?.ghl_contact_id || lead.custom_fields?.contact_id;
+    if (!contactId) {
+      console.warn(`[Workflow] Lead ${lead.id} has no GHL contact_id — cannot place Assistable call`);
+      return { success: false, action: 'assistable_call_skipped', error: 'No GHL contact_id on lead' };
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    // Call our assistable-make-call edge function
+    const response = await fetch(`${supabaseUrl}/functions/v1/assistable-make-call`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: lead.user_id || progress.user_id,
+        assistant_id: assistantId,
+        location_id: locationId,
+        contact_id: contactId,
+        number_pool_id: config.number_pool_id || null,
+        lead_id: lead.id,
+        campaign_id: progress.campaign_id || null,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      console.error(`[Workflow] Assistable call failed for lead ${lead.id}:`, result.error);
+      return { success: false, action: 'assistable_call_failed', error: result.error };
+    }
+
+    console.log(`[Workflow] Assistable call placed for lead ${lead.id}: call_id=${result.call_id}`);
+    return { success: true, action: 'assistable_call_placed', call_id: result.call_id };
+
+  } catch (error: any) {
+    console.error(`[Workflow] Assistable call step error for lead ${lead?.id}:`, error);
+    return { success: false, action: 'assistable_call_failed', error: error.message };
+  }
+}
+
 async function executeWebhookStep(supabase: any, lead: any, progress: any, config: any) {
   console.log(`[Workflow] Executing webhook for lead ${lead?.id}`);
 
