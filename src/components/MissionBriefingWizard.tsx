@@ -251,12 +251,12 @@ const MissionBriefingWizard: React.FC = () => {
                 You currently have <strong>{currentNumbers}</strong>.
               </p>
               {deficit > 0 && (
-                <p className="text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-sm text-destructive">
                   ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
                 </p>
               )}
               {deficit === 0 && (
-                <p className="text-sm text-green-600 dark:text-green-400">
+                <p className="text-sm text-primary">
                   ✅ You have enough numbers for this volume.
                 </p>
               )}
