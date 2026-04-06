@@ -61,6 +61,7 @@ const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDash
 const ActionQueuePanel = lazy(() => import('@/components/ActionQueuePanel'));
 const LeadJourneyDashboard = lazy(() => import('@/components/LeadJourneyDashboard'));
 const CampaignStrategistDashboard = lazy(() => import('@/components/CampaignStrategistDashboard'));
+const MissionBriefingWizard = lazy(() => import('@/components/MissionBriefingWizard'));
 
 // Loading fallback for lazy components
 const TabLoader = () => (
@@ -358,6 +359,9 @@ const AutonomousAgentDashboard: React.FC = () => {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <MissionBriefingWizard />
+          </Suspense>
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Goal Progress Card */}
             <Card>
