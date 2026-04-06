@@ -1099,6 +1099,57 @@ AFTER LEAVING THE MESSAGE:
                 />
               </div>
 
+              {/* Transfer & Post-Call Webhooks */}
+              <div className="space-y-3 pt-2 border-t">
+                <h4 className="font-semibold text-sm">Transfer & Post-Call Webhooks</h4>
+                <p className="text-xs text-muted-foreground">
+                  Configure webhooks to fire when calls are transferred or completed. Lead data (name, phone, email, etc.) is sent as JSON.
+                </p>
+
+                <div className="space-y-2">
+                  <Label>Post-Call Webhook URL</Label>
+                  <Input
+                    value={config.post_call_webhook_url || ''}
+                    onChange={(e) => updateConfig('post_call_webhook_url', e.target.value)}
+                    placeholder="https://your-crm.com/api/post-call"
+                  />
+                  <p className="text-xs text-muted-foreground">Called after every call ends with lead data + call outcome.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Transfer Webhook URL</Label>
+                  <Input
+                    value={config.transfer_webhook_url || ''}
+                    onChange={(e) => updateConfig('transfer_webhook_url', e.target.value)}
+                    placeholder="https://your-crm.com/api/transfer"
+                  />
+                  <p className="text-xs text-muted-foreground">Called when the AI transfers a call so the receiving agent has full context.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Fields to Include in Webhook Payload</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {['first_name', 'last_name', 'phone', 'email', 'company', 'lead_source', 'status', 'notes', 'call_summary', 'transcript', 'disposition', 'custom_fields'].map(field => {
+                      const currentFields: string[] = config.webhook_payload_fields || ['first_name', 'last_name', 'phone', 'email'];
+                      const isChecked = currentFields.includes(field);
+                      return (
+                        <span
+                          key={field}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold cursor-pointer transition-colors ${isChecked ? 'bg-primary text-primary-foreground border-transparent' : 'border-border text-foreground hover:bg-accent'}`}
+                          onClick={() => {
+                            const updated = isChecked ? currentFields.filter(f => f !== field) : [...currentFields, field];
+                            updateConfig('webhook_payload_fields', updated);
+                          }}
+                        >
+                          {field.replace(/_/g, ' ')}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Click to toggle. Selected fields are sent in the webhook JSON body.</p>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="data_storage">Data Storage Setting</Label>
                 <Select value={config.data_storage_setting} onValueChange={(v) => updateConfig('data_storage_setting', v)}>
