@@ -363,11 +363,109 @@ curl -X POST https://api.telnyx.com/v2/ai/assistants \
 
 ---
 
+## Async Tools & Add Messages API (Mid-Call Context Injection)
+
+### Async Webhooks
+Set `async: true` on any webhook tool to make it non-blocking. The assistant continues talking while the backend processes.
+
+```json
+{
+  "type": "webhook",
+  "webhook": {
+    "name": "lookup_order_status",
+    "description": "Triggers an async order status lookup. Results delivered automatically.",
+    "url": "https://your-backend.com/order-lookup",
+    "method": "POST",
+    "async": true,
+    "body_parameters": {
+      "type": "object",
+      "properties": {
+        "order_id": { "type": "string", "description": "Order ID" }
+      },
+      "required": ["order_id"]
+    }
+  }
+}
+```
+
+**Backend receives**: Body parameters + `x-telnyx-call-control-id` header (critical for injecting results back).
+
+### Add Messages API (Inject Context Mid-Call)
+```
+POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages
+Authorization: Bearer $TELNYX_API_KEY
+Content-Type: application/json
+
+{
+  "messages": [
+    { "role": "system", "content": "[RESULT] Order shipped. Tracking: 1Z999. ETA: Tomorrow. Share with customer now." }
+  ]
+}
+```
+
+**Message roles**: `system` (instructions/context — recommended), `user` (simulate input), `assistant` (inject responses).
+
+### Combined Async Pattern (CRITICAL for our campaigns)
+1. Assistant triggers async webhook (e.g., CRM lookup, calendar check)
+2. Assistant keeps talking (promotions, qualifying questions)
+3. Backend processes (5-30 seconds)
+4. Backend calls Add Messages API with results
+5. Assistant naturally incorporates: "Great news, I have your info now!"
+
+### Multiple Parallel Lookups
+Trigger multiple async webhooks simultaneously — each completes independently and drips results into the conversation naturally. Instruct assistant: "Call BOTH tools at the same time. Do not wait for one before calling another."
+
+### Edge Cases
+- **Call ended before results**: Add Messages returns 404 — log and move on
+- **Backend**: Return 200 immediately, process async (background workers)
+- **No timeout constraint**: Backend can take as long as needed
+
+### Use Cases for Our Campaigns
+- **Lead qualification**: Async CRM lookup while qualifying on the call
+- **Calendar booking**: Check availability in background while gathering preferences
+- **Transfer context**: Inject lead data before warm transfer
+- **Supervisor intervention**: Human injects guidance during difficult calls
+- **Cross-system triggers**: CRM pushes updates to active call in real-time
+
+---
+
+## Telnyx Developer Portal Structure
+
+### API Fundamentals
+- **Authentication**: Bearer token via `Authorization: Bearer $TELNYX_API_KEY`
+- **SDKs**: Node.js, Python, PHP, Java, Ruby, Go
+- **CLI**: `telnyx` CLI for scripting & automation
+- **Dev Tools**: Postman collections, ngrok tunneling, Node-RED
+
+### AI Assistants Documentation Index
+- [Voice Assistant](https://developers.telnyx.com/docs/inference/ai-assistants/no-code-voice-assistant) — No-code setup
+- [Memory](https://developers.telnyx.com/docs/inference/ai-assistants/memory) — Cross-conversation persistence
+- [Dynamic Variables](https://developers.telnyx.com/docs/inference/ai-assistants/dynamic-variables) — Pre-call context injection
+- [Workflow](https://developers.telnyx.com/docs/inference/ai-assistants/workflows) — Webhook tool configuration
+- [Async Tools](https://developers.telnyx.com/docs/inference/ai-assistants/async-tools) — Non-blocking webhooks + Add Messages API
+- [Agent Handoff](https://developers.telnyx.com/docs/inference/ai-assistants/agent-handoff) — Multi-agent transfer
+- [Voicemail Detection on Transfer](https://developers.telnyx.com/docs/inference/ai-assistants/voicemail-detection-on-transfer) — AMD on transfers
+- [Transcription Settings](https://developers.telnyx.com/docs/inference/ai-assistants/transcription-settings) — STT configuration
+- [Integrations](https://developers.telnyx.com/docs/inference/ai-assistants/integrations) — Third-party connections
+- [Testing & Traffic Distribution](https://developers.telnyx.com/docs/inference/ai-assistants/version-testing-traffic-distribution) — A/B testing & canary deploys
+- [Importing Assistants](https://developers.telnyx.com/docs/inference/ai-assistants/importing) — Import from other platforms
+- [Custom LLMs](https://developers.telnyx.com/docs/inference/ai-assistants/custom-llm) — BYOK model support
+
+### For AI Agents (MCP)
+- Local & Remote MCP servers for AI agents to query Telnyx APIs
+- Agent Skills for extending agent capabilities
+
+### Migration Guides
+- Call Control migration, Messaging migration, **Twilio migration guide**
+
+---
+
 ## Changelog
 
 - **V1.0** (March 2026): Initial 14-section expert reference
 - **V2.0** (March 2026): Added 11 sections (workflows, STIR/SHAKEN, MMS vision, inference, Flow, MCP, custom LLM)
 - **V3.0** (March 2026): Added 11 sections (SDK inventory, GitHub repos, MCP setup, Agent Skills, OpenClaw, buildable apps)
 - **V4.0** (March 2026): Added 4 sections: competitive battle cards, TTS voice catalog (7 providers), webhook event schemas, real-world production examples with code and cost analysis
+- **V5.0** (April 2026): Added async tools & Add Messages API (mid-call context injection), developer portal documentation index
 
-Combined V1-V4: 39 sections covering the entire Telnyx platform from API basics to sales battle cards.
+Combined V1-V5: 41 sections covering the entire Telnyx platform from API basics to async mid-call operations.
