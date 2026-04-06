@@ -464,7 +464,7 @@ const MissionBriefingWizard: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className={meta.color}>{meta.icon}</span>
                         <Label className="font-semibold">{meta.label}</Label>
-                        {pid === 'assistable' && <Badge variant="outline" className="text-[10px]">Webhook</Badge>}
+                        {pid === 'assistable' && <Badge variant="outline" className="text-[10px]">GHL-Safe API</Badge>}
                       </div>
                       <Switch checked={cfg.enabled} onCheckedChange={v => togglePlatform(pid, v)} />
                     </div>
