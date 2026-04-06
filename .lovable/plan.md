@@ -1,111 +1,86 @@
 
 
-# Mission Briefing Wizard — Guided Campaign Builder
+# Assistable AI Integration — Full Plan
 
-## The Problem
-The `setup_full_campaign` tool exists in the backend (ai-brain edge function) and works great via chat, but there is zero visible UI for it. Users have to know to open the AI chat and describe their business. The user wants a step-by-step guided wizard embedded in the Autonomous Agent dashboard that asks smart questions so even a brand-new user can launch a campaign without thinking.
+## What You Pasted & What It Means
 
-## What We're Building
+You've shared the Assistable.ai API docs covering:
+1. **Make AI Call (GHL-Safe)** — `POST https://api.assistable.ai/v2/ghl/make-call` with `assistant_id`, `location_id`, `contact_id`
+2. **Calendar Booking** — Assistable has its own calendar tools that can sync with GHL calendars
+3. **Custom Tools / Extractions** — Assistable agents can extract data (name, email, project details) via custom tools that POST to webhooks
+4. **Pre/Post Call Webhooks** — You mentioned needing these (docs not fully pasted yet)
 
-A multi-step **Mission Briefing Wizard** component that replaces the current blank Overview tab top area with a guided onboarding card. It walks the user through 5-6 focused steps, collects structured answers, then fires `sendMessage()` via `useAIBrainContext` with a fully formed prompt that triggers the existing `setup_full_campaign` tool. No backend changes.
+## Current State
 
-## The Wizard Steps
+The Mission Briefing Wizard already has an "Assistable" platform toggle (step 4) that collects a webhook URL. But it's superficial — it just tells the AI to "include a webhook step." There's no real Assistable API integration.
 
-```text
-Step 1: "What are you selling?"
-  - Text area for plain-English business description
-  - Examples shown as placeholder hints
-  - e.g. "Solar panel installations for homeowners in Florida"
+The `workflow-executor` already supports a `webhook` step type that POSTs lead data (name, phone, email, status) to any URL.
 
-Step 2: "What's your goal?"
-  - Pre-built options (radio buttons):
-    * Book appointments / transfers to live agents
-    * Collect info / qualify leads
-    * Drive to a landing page / generate callbacks
-  - Plus: target number input (e.g. "10-15 transfers/day")
-  - Plus: max cost per result input (e.g. "$20 per transfer")
+## What Needs to Change
 
-Step 3: "How many leads are you starting with, and where are you headed?"
-  - Starting lead count input (e.g. 500)
-  - Ramp-up target input (e.g. 5,000 in 2 weeks)
-  - System auto-suggests phone numbers needed:
-    * Formula: ~1 number per 50-100 calls/day
-    * Shows: "We recommend 10-15 numbers for this volume"
-  - Shows current owned number count from DB for context
+### 1. Upgrade Assistable in the Mission Briefing Wizard (Step 4)
 
-Step 4: "How many calls per day to start, and how should we ramp?"
-  - Starting daily call target slider/input
-  - Ramp-up behavior selector:
-    * Conservative (increase 20%/day if results are good)
-    * Moderate (increase 50%/day)
-    * Aggressive (double daily until target)
-  - The autonomous agent handles the actual ramping
+**Current:** Just a webhook URL field.
+**New:** Collect Assistable-specific fields:
+- **Assistant ID** (required) — `asst_12345`
+- **Location ID** (required for GHL-safe calls) — `loc_98765`
+- **Number Pool ID** (optional) — for caller ID rotation on Assistable's side
+- Keep webhook URL as optional (for custom extraction webhook flows)
 
-Step 5: "How should we follow up?"
-  - Strategy choice (maps to follow_up_strategy param):
-    * Aggressive — call fast, follow up hard
-    * Balanced — professional cadence, calls + texts
-    * Gentle — spaced out, relationship-building
-    * Calls Only — no SMS, just call-wait-call-wait
-  - Provider selector: Retell / Telnyx
+The wizard prompt will then instruct the AI to create workflow steps that call the Assistable API directly (not just a generic webhook).
 
-Step 6: Review & Build
-  - Shows summary of all choices
-  - Lists pipeline stages that will be created
-  - Shows recommended phone numbers
-  - "Build My Campaign" button
-  - User confirms before anything is created
-```
+### 2. New Edge Function: `assistable-make-call`
 
-## How It Works Technically
+A small edge function that wraps `POST https://api.assistable.ai/v2/ghl/make-call`:
+- Takes `assistant_id`, `location_id`, `contact_id`, optional `number_pool_id`
+- Uses stored Assistable API token from secrets
+- Returns `call_id` on success
+- Handles error responses (checking `success` field in body, not just HTTP status)
 
-1. Wizard collects structured data across steps (React state, no DB writes until build)
-2. On "Build My Campaign", constructs a detailed natural-language prompt combining all inputs
-3. Sends via `useAIBrainContext.sendMessage()` — this hits the ai-brain edge function
-4. ai-brain recognizes the campaign setup intent, calls `setup_full_campaign` tool
-5. Campaign, workflow, autonomous settings, and playbook rules are all created
-6. Wizard shows success state with links to the new campaign
+### 3. New Workflow Step Type: `assistable_call`
 
-## Pipeline Confirmation
+Add to `workflow-executor` alongside existing `call`, `sms`, `webhook` types:
+- Looks up the lead's GHL contact ID (from `custom_fields` or `ghl_contact_id` column on leads)
+- Calls the `assistable-make-call` edge function
+- Logs the Assistable `call_id` back to `call_logs` with `provider: 'assistable'`
 
-Before building, the Review step shows the user exactly which pipeline stages will be created (based on their goal type):
-- Appointment booking: New Lead > Contacted > Interested > Appointment Set > Completed
-- Lead qualification: New Lead > Contacted > Qualified > Sent to Team > Closed
-- Custom based on description
+### 4. Calendar Integration Decision
 
-The user sees and approves these before the build fires.
+You mentioned wanting to use your Google Calendar via a custom tool rather than Assistable's built-in calendar. Our existing `calendar-integration` edge function already handles Google Calendar booking. Two options:
 
-## Phone Number Recommendation Logic
+**Option A (Recommended):** Keep using our existing calendar-integration for booking. Assistable agents use a custom tool that calls our `calendar-integration` edge function webhook to check availability and book.
 
-```text
-daily_calls = user input (e.g. 200)
-numbers_needed = ceil(daily_calls / 80)  // ~80 calls per number per day is safe
-current_numbers = query phone_numbers table count
-deficit = numbers_needed - current_numbers
+**Option B:** Let Assistable handle calendar natively via its GHL calendar sync. This means Assistable manages availability independently.
 
-Display: "You'll need ~{numbers_needed} numbers. You currently have {current_numbers}."
-If deficit > 0: "We recommend buying {deficit} more numbers."
-```
+### 5. Pre/Post Call Webhooks
+
+You mentioned wanting to paste more info about these. Once you do, we can:
+- **Pre-call webhook:** Feed lead context (name, history, notes) to Assistable before the call starts — similar to Telnyx's `dynamic-vars` pattern
+- **Post-call webhook:** Receive call outcome, transcript, extracted data from Assistable and route it through our existing `disposition-router` pipeline
 
 ## Files to Create/Modify
 
 | File | Action | What |
 |------|--------|------|
-| `src/components/MissionBriefingWizard.tsx` | NEW | Multi-step wizard component (~400 lines) |
-| `src/components/AutonomousAgentDashboard.tsx` | MODIFY | Import + render wizard at top of Overview tab |
+| `supabase/functions/assistable-make-call/index.ts` | NEW | Wrapper for Assistable Make Call API |
+| `supabase/functions/workflow-executor/index.ts` | MODIFY | Add `assistable_call` step type |
+| `src/components/MissionBriefingWizard.tsx` | MODIFY | Replace webhook URL field with Assistant ID + Location ID fields |
+
+## Secrets Needed
+
+- `ASSISTABLE_API_KEY` — Bearer token for Assistable API auth
 
 ## Safety
 
-- **Zero backend changes** — uses existing `setup_full_campaign` via chat context
-- **Zero database changes** — no migrations
-- **No cascading effects** — wizard is a new component inserted above existing Overview content
-- **Existing Overview content preserved** — Daily Goals, Campaign Health, etc. remain below the wizard
-- **Wizard auto-hides** after a campaign is built (shows a compact "Mission Active" summary instead, with option to create another)
+- Zero changes to existing Retell/Telnyx paths
+- `assistable_call` is a new step type alongside existing ones
+- The edge function is standalone — no modification to `outbound-calling`
+- Backward compatible: existing campaigns without Assistable continue working unchanged
 
-## Scalability
+## What I'm Waiting On
 
-- Each wizard run creates a separate campaign — users can run the wizard multiple times for different verticals (solar, insurance, etc.)
-- The structured prompt format means the ai-brain always gets clean, complete input
-- Phone number recommendations scale with volume inputs
-- Ramp-up preferences are stored in autonomous settings, so the engine respects them on every 5-minute cycle
+1. **Pre/Post call webhook docs** — you said you'd paste more. This determines how we receive call outcomes and feed context.
+2. **Calendar approach** — Option A (our Google Calendar) or Option B (Assistable's GHL calendar)?
+
+Once you paste the webhook docs and confirm the calendar approach, I'll finalize and build.
 
