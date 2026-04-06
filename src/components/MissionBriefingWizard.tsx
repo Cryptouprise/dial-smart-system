@@ -177,9 +177,8 @@ const MissionBriefingWizard: React.FC = () => {
   const canAdvance = () => {
     if (step === 0) return data.businessDescription.trim().length > 10;
     if (step === 4) {
-      // Must have at least one platform enabled with an agent selected (or assistable with webhook)
       return enabledPlatforms.length > 0 && enabledPlatforms.every(([pid, cfg]) => {
-        if (pid === 'assistable') return data.assistableWebhookUrl.trim().length > 5;
+        if (pid === 'assistable') return data.assistableAssistantId.trim().length > 3 && data.assistableLocationId.trim().length > 3;
         return cfg.agentId.length > 0;
       });
     }
@@ -516,17 +515,49 @@ const MissionBriefingWizard: React.FC = () => {
 
                         {/* Assistable webhook URL */}
                         {pid === 'assistable' && (
-                          <div>
-                            <Label className="text-sm">Assistable Webhook URL</Label>
-                            <Input
-                              placeholder="https://api.assistable.ai/webhook/..."
-                              value={data.assistableWebhookUrl}
-                              onChange={e => update({ assistableWebhookUrl: e.target.value })}
-                              className="mt-1 text-sm"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              When a lead reaches the Assistable step, we'll POST their info to this URL so your Assistable agent handles the call.
-                            </p>
+                          <div className="space-y-3">
+                            <div>
+                              <Label className="text-sm">Assistant ID <span className="text-destructive">*</span></Label>
+                              <Input
+                                placeholder="asst_12345"
+                                value={data.assistableAssistantId}
+                                onChange={e => update({ assistableAssistantId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-sm">Location ID <span className="text-destructive">*</span></Label>
+                              <Input
+                                placeholder="loc_98765"
+                                value={data.assistableLocationId}
+                                onChange={e => update({ assistableLocationId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-sm">Number Pool ID <span className="text-muted-foreground">(optional)</span></Label>
+                              <Input
+                                placeholder="pool_abc123"
+                                value={data.assistableNumberPoolId}
+                                onChange={e => update({ assistableNumberPoolId: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                If you use a group of numbers for caller ID rotation on Assistable's side.
+                              </p>
+                            </div>
+                            <div>
+                              <Label className="text-sm">Extraction Webhook URL <span className="text-muted-foreground">(optional)</span></Label>
+                              <Input
+                                placeholder="https://api.assistable.ai/webhook/..."
+                                value={data.assistableWebhookUrl}
+                                onChange={e => update({ assistableWebhookUrl: e.target.value })}
+                                className="mt-1 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Optional webhook for receiving extracted data (name, email, project details) from Assistable custom tools.
+                              </p>
+                            </div>
                           </div>
                         )}
 
