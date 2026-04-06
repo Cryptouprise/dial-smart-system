@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +9,11 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Rocket, ChevronRight, ChevronLeft, Check, Loader2, Phone,
   Target, Users, TrendingUp, MessageSquare, ArrowRight, Sparkles, Plus,
-  Bot, Zap, Globe, Split, AlertCircle, Info
+  Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
@@ -27,7 +26,17 @@ type PlatformId = 'retell' | 'telnyx' | 'assistable';
 interface PlatformConfig {
   enabled: boolean;
   agentId: string;
-  trafficPct: number; // 0-100
+  trafficPct: number;
+}
+
+interface LeadImportConfig {
+  method: 'csv' | 'ghl' | 'both' | 'skip';
+  csvFile: File | null;
+  csvPreviewCount: number;
+  ghlTagFilter: string;
+  ghlSyncAll: boolean;
+  campaignTag: string;
+  autoTag: boolean;
 }
 
 interface WizardData {
@@ -46,6 +55,7 @@ interface WizardData {
   assistableAssistantId: string;
   assistableLocationId: string;
   assistableNumberPoolId: string;
+  leadImport: LeadImportConfig;
 }
 
 interface AgentOption {
@@ -55,6 +65,16 @@ interface AgentOption {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
+
+const INITIAL_LEAD_IMPORT: LeadImportConfig = {
+  method: 'csv',
+  csvFile: null,
+  csvPreviewCount: 0,
+  ghlTagFilter: '',
+  ghlSyncAll: false,
+  campaignTag: '',
+  autoTag: true,
+};
 
 const INITIAL_DATA: WizardData = {
   businessDescription: '',
@@ -76,6 +96,7 @@ const INITIAL_DATA: WizardData = {
   assistableAssistantId: '',
   assistableLocationId: '',
   assistableNumberPoolId: '',
+  leadImport: { ...INITIAL_LEAD_IMPORT },
 };
 
 const GOAL_LABELS: Record<string, string> = {
@@ -119,9 +140,12 @@ const MissionBriefingWizard: React.FC = () => {
   const [currentNumbers, setCurrentNumbers] = useState(0);
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
+  const [csvParsing, setCsvParsing] = useState(false);
+  const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [ghlSyncing, setGhlSyncing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
-  // Fetch phone numbers + agents on mount
   useEffect(() => {
     (async () => {
       const { count } = await supabase
@@ -134,8 +158,6 @@ const MissionBriefingWizard: React.FC = () => {
     (async () => {
       setLoadingAgents(true);
       const agentList: AgentOption[] = [];
-
-      // Retell agents from call_logs distinct agent names, or from campaigns
       try {
         const { data: retellData } = await supabase
           .from('campaigns')
@@ -146,8 +168,6 @@ const MissionBriefingWizard: React.FC = () => {
           agentList.push({ id: id!, name: `Retell Agent (${id!.slice(-8)})`, platform: 'retell' });
         });
       } catch { /* non-critical */ }
-
-      // Telnyx assistants
       try {
         const { data: telnyxData } = await (supabase as any)
           .from('telnyx_assistants')
@@ -157,11 +177,19 @@ const MissionBriefingWizard: React.FC = () => {
           agentList.push({ id: a.telnyx_assistant_id || a.id, name: a.name || 'Telnyx Assistant', platform: 'telnyx' });
         });
       } catch { /* table may not exist */ }
-
       setAgents(agentList);
       setLoadingAgents(false);
     })();
   }, []);
+
+  // Auto-generate campaign tag from business description
+  useEffect(() => {
+    if (data.leadImport.autoTag && data.businessDescription.trim().length > 3) {
+      const words = data.businessDescription.trim().toLowerCase().split(/\s+/).slice(0, 3);
+      const tag = `campaign_${words.join('_').replace(/[^a-z0-9_]/g, '')}_${Date.now().toString(36).slice(-4)}`;
+      updateLeadImport({ campaignTag: tag });
+    }
+  }, [data.businessDescription, data.leadImport.autoTag]);
 
   const numbersNeeded = useMemo(() => Math.ceil(data.dailyCalls / 80), [data.dailyCalls]);
   const deficit = useMemo(() => Math.max(0, numbersNeeded - currentNumbers), [numbersNeeded, currentNumbers]);
@@ -171,12 +199,21 @@ const MissionBriefingWizard: React.FC = () => {
     [data.platforms]
   );
 
-  const totalSteps = 7;
+  const totalSteps = 8; // was 7, added lead import step
   const progressPct = ((step + 1) / totalSteps) * 100;
 
   const canAdvance = () => {
     if (step === 0) return data.businessDescription.trim().length > 10;
-    if (step === 4) {
+    if (step === 3) {
+      // Lead import step - skip is always valid, csv needs file, ghl is always valid
+      const m = data.leadImport.method;
+      if (m === 'skip') return true;
+      if (m === 'csv') return data.leadImport.csvFile !== null;
+      if (m === 'ghl') return true;
+      if (m === 'both') return data.leadImport.csvFile !== null;
+      return true;
+    }
+    if (step === 5) {
       return enabledPlatforms.length > 0 && enabledPlatforms.every(([pid, cfg]) => {
         if (pid === 'assistable') return data.assistableAssistantId.trim().length > 3 && data.assistableLocationId.trim().length > 3;
         return cfg.agentId.length > 0;
@@ -186,21 +223,19 @@ const MissionBriefingWizard: React.FC = () => {
   };
 
   const update = (partial: Partial<WizardData>) => setData(prev => ({ ...prev, ...partial }));
+  const updateLeadImport = (partial: Partial<LeadImportConfig>) =>
+    setData(prev => ({ ...prev, leadImport: { ...prev.leadImport, ...partial } }));
 
   const updatePlatform = (pid: PlatformId, partial: Partial<PlatformConfig>) => {
     setData(prev => ({
       ...prev,
-      platforms: {
-        ...prev.platforms,
-        [pid]: { ...prev.platforms[pid], ...partial },
-      },
+      platforms: { ...prev.platforms, [pid]: { ...prev.platforms[pid], ...partial } },
     }));
   };
 
   const togglePlatform = (pid: PlatformId, enabled: boolean) => {
     setData(prev => {
       const next = { ...prev.platforms, [pid]: { ...prev.platforms[pid], enabled } };
-      // Auto-balance traffic
       const active = (Object.entries(next) as [PlatformId, PlatformConfig][]).filter(([, c]) => c.enabled);
       const share = active.length > 0 ? Math.floor(100 / active.length) : 0;
       let remainder = 100 - share * active.length;
@@ -219,11 +254,76 @@ const MissionBriefingWizard: React.FC = () => {
   const retellAgents = useMemo(() => agents.filter(a => a.platform === 'retell'), [agents]);
   const telnyxAgents = useMemo(() => agents.filter(a => a.platform === 'telnyx'), [agents]);
 
+  // ── CSV parsing ─────────────────────────────────────────────────────
+
+  const handleCsvSelect = async (file: File) => {
+    setCsvParsing(true);
+    updateLeadImport({ csvFile: file });
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(l => l.trim());
+      const rows = lines.slice(0, 6).map(l => l.split(',').map(c => c.trim().replace(/^"|"$/g, '')));
+      setCsvRows(rows);
+      updateLeadImport({ csvPreviewCount: Math.max(0, lines.length - 1) });
+    } catch {
+      toast.error('Failed to parse CSV');
+    } finally {
+      setCsvParsing(false);
+    }
+  };
+
+  // ── GHL sync trigger ───────────────────────────────────────────────
+
+  const handleGhlSync = async () => {
+    setGhlSyncing(true);
+    try {
+      const { data: result, error } = await supabase.functions.invoke('ghl-integration', {
+        body: {
+          action: 'sync_contacts',
+          tags: data.leadImport.ghlTagFilter ? [data.leadImport.ghlTagFilter] : undefined,
+          campaignTag: data.leadImport.campaignTag || undefined,
+        },
+      });
+      if (error) throw error;
+      const count = result?.imported || result?.total || 0;
+      toast.success(`Synced ${count} leads from GoHighLevel`);
+      update({ startingLeads: count });
+    } catch (err: any) {
+      toast.error(err.message || 'GHL sync failed');
+    } finally {
+      setGhlSyncing(false);
+    }
+  };
+
   // ── Build prompt ──────────────────────────────────────────────────────
 
   const handleBuild = async () => {
     setIsBuilding(true);
     try {
+      // If CSV was selected, upload leads first
+      if ((data.leadImport.method === 'csv' || data.leadImport.method === 'both') && data.leadImport.csvFile) {
+        toast.info('Uploading CSV leads…');
+        const formData = new FormData();
+        formData.append('file', data.leadImport.csvFile);
+        if (data.leadImport.campaignTag) {
+          formData.append('campaignTag', data.leadImport.campaignTag);
+        }
+        // CSV upload via edge function
+        const { error: uploadErr } = await supabase.functions.invoke('lead-csv-import', {
+          body: formData,
+        });
+        if (uploadErr) {
+          toast.error('CSV upload failed: ' + uploadErr.message);
+        } else {
+          toast.success(`CSV uploaded with tag: ${data.leadImport.campaignTag}`);
+        }
+      }
+
+      // If GHL selected and not already synced
+      if ((data.leadImport.method === 'ghl' || data.leadImport.method === 'both') && !ghlSyncing) {
+        await handleGhlSync();
+      }
+
       const enableSms = data.followUpStrategy !== 'calls_only';
       const platformLines = enabledPlatforms.map(([pid, cfg]) => {
         const meta = PLATFORM_META[pid];
@@ -245,6 +345,11 @@ const MissionBriefingWizard: React.FC = () => {
         `Ramp-up: ${RAMP_LABELS[data.rampUpBehavior].label} (${RAMP_LABELS[data.rampUpBehavior].desc})`,
         `Follow-up strategy: ${STRATEGY_LABELS[data.followUpStrategy].label}`,
         `Enable SMS: ${enableSms}`,
+        ``,
+        `LEAD IMPORT:`,
+        `Campaign tag: ${data.leadImport.campaignTag || 'none'}`,
+        `Import method: ${data.leadImport.method}`,
+        data.leadImport.method !== 'skip' ? `Use campaign tag "${data.leadImport.campaignTag}" to filter leads for this campaign's analytics and autonomous engine reports.` : '',
         ``,
         `PLATFORMS (${data.splitTest ? 'SPLIT TEST' : 'SINGLE'}):`,
         ...platformLines,
@@ -292,7 +397,7 @@ const MissionBriefingWizard: React.FC = () => {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); }}>
+          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); setCsvRows([]); }}>
             <Plus className="h-4 w-4 mr-1" /> New Mission
           </Button>
         </CardContent>
@@ -402,8 +507,184 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 3: Daily Calls & Ramp-up ── */}
+        {/* ── Step 3: Lead Import & Tagging (NEW) ── */}
         {step === 3 && (
+          <div className="space-y-4">
+            <Label className="text-base font-semibold flex items-center gap-2">
+              <Upload className="h-4 w-4" /> Import & Tag Your Leads
+            </Label>
+
+            <p className="text-sm text-muted-foreground">
+              Import leads and tag them for this campaign so analytics and the autonomous engine can track them separately.
+            </p>
+
+            {/* Import method selector */}
+            <RadioGroup value={data.leadImport.method} onValueChange={(v) => updateLeadImport({ method: v as LeadImportConfig['method'] })}>
+              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="csv" id="import-csv" />
+                <Label htmlFor="import-csv" className="cursor-pointer flex-1 flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-primary" />
+                  <span>Upload CSV file</span>
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="ghl" id="import-ghl" />
+                <Label htmlFor="import-ghl" className="cursor-pointer flex-1 flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-emerald-600" />
+                  <span>Sync from GoHighLevel</span>
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="both" id="import-both" />
+                <Label htmlFor="import-both" className="cursor-pointer flex-1 flex items-center gap-2">
+                  <Split className="h-4 w-4 text-purple-600" />
+                  <span>Both CSV + GHL</span>
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="skip" id="import-skip" />
+                <Label htmlFor="import-skip" className="cursor-pointer flex-1 text-muted-foreground">
+                  Skip — I already have leads in the system
+                </Label>
+              </div>
+            </RadioGroup>
+
+            {/* CSV upload section */}
+            {(data.leadImport.method === 'csv' || data.leadImport.method === 'both') && (
+              <div className="p-4 rounded-lg border space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold">CSV File</Label>
+                  {data.leadImport.csvFile && (
+                    <Badge variant="secondary" className="text-xs">
+                      {data.leadImport.csvPreviewCount.toLocaleString()} leads detected
+                    </Badge>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".csv"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) handleCsvSelect(f);
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={csvParsing}
+                  className="w-full"
+                >
+                  {csvParsing ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Parsing…</>
+                  ) : data.leadImport.csvFile ? (
+                    <><Check className="h-4 w-4 mr-2 text-primary" /> {data.leadImport.csvFile.name}</>
+                  ) : (
+                    <><Upload className="h-4 w-4 mr-2" /> Choose CSV file</>
+                  )}
+                </Button>
+
+                {/* CSV preview */}
+                {csvRows.length > 0 && (
+                  <div className="overflow-x-auto max-h-32">
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr className="border-b">
+                          {csvRows[0].map((h, i) => (
+                            <th key={i} className="text-left p-1 font-semibold text-muted-foreground">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvRows.slice(1, 4).map((row, ri) => (
+                          <tr key={ri} className="border-b border-border/50">
+                            {row.map((cell, ci) => (
+                              <td key={ci} className="p-1 truncate max-w-[120px]">{cell}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Expected columns: first_name, last_name, phone_number, email, company, address, city, state, zip_code
+                </p>
+              </div>
+            )}
+
+            {/* GHL sync section */}
+            {(data.leadImport.method === 'ghl' || data.leadImport.method === 'both') && (
+              <div className="p-4 rounded-lg border space-y-3">
+                <Label className="text-sm font-semibold">GoHighLevel Sync</Label>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Filter by GHL tag (optional)</Label>
+                  <Input
+                    placeholder="e.g. solar_leads, florida_homeowners"
+                    value={data.leadImport.ghlTagFilter}
+                    onChange={e => updateLeadImport({ ghlTagFilter: e.target.value })}
+                    className="mt-1 text-sm"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGhlSync}
+                  disabled={ghlSyncing}
+                  className="w-full"
+                >
+                  {ghlSyncing ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Syncing…</>
+                  ) : (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Sync Now</>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* Campaign tagging */}
+            {data.leadImport.method !== 'skip' && (
+              <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-primary" />
+                  <Label className="text-sm font-semibold">Campaign Tag</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  All imported leads will be tagged with this identifier. The autonomous engine uses it to run isolated analytics, A/B tests, and performance reports for this campaign only.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={data.leadImport.campaignTag}
+                    onChange={e => updateLeadImport({ campaignTag: e.target.value, autoTag: false })}
+                    placeholder="solar_fl_apr2026"
+                    className="text-sm font-mono"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      updateLeadImport({ autoTag: true });
+                      const words = data.businessDescription.trim().toLowerCase().split(/\s+/).slice(0, 3);
+                      const tag = `campaign_${words.join('_').replace(/[^a-z0-9_]/g, '')}_${Date.now().toString(36).slice(-4)}`;
+                      updateLeadImport({ campaignTag: tag });
+                    }}
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <AlertCircle className="h-3 w-3" />
+                  <span>This tag must be unique per campaign for clean reporting</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 4: Daily Calls & Ramp-up (was step 3) ── */}
+        {step === 4 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">How many calls per day to start?</Label>
             <div className="space-y-2">
@@ -438,8 +719,8 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 4: Agent & Platform Setup (NEW) ── */}
-        {step === 4 && (
+        {/* ── Step 5: Agent & Platform Setup (was step 4) ── */}
+        {step === 5 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Which AI agents should we use?</Label>
 
@@ -451,7 +732,6 @@ const MissionBriefingWizard: React.FC = () => {
               </span>
             </div>
 
-            {/* Platform toggles */}
             <div className="space-y-3">
               {(Object.keys(PLATFORM_META) as PlatformId[]).map(pid => {
                 const meta = PLATFORM_META[pid];
@@ -471,7 +751,6 @@ const MissionBriefingWizard: React.FC = () => {
 
                     {cfg.enabled && (
                       <div className="space-y-3 mt-3">
-                        {/* Agent selector for Retell / Telnyx */}
                         {pid !== 'assistable' && (
                           <div>
                             <Label className="text-sm">Select Agent</Label>
@@ -513,7 +792,6 @@ const MissionBriefingWizard: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Assistable webhook URL */}
                         {pid === 'assistable' && (
                           <div className="space-y-3">
                             <div>
@@ -542,9 +820,6 @@ const MissionBriefingWizard: React.FC = () => {
                                 onChange={e => update({ assistableNumberPoolId: e.target.value })}
                                 className="mt-1 text-sm"
                               />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                If you use a group of numbers for caller ID rotation on Assistable's side.
-                              </p>
                             </div>
                             <div>
                               <Label className="text-sm">Extraction Webhook URL <span className="text-muted-foreground">(optional)</span></Label>
@@ -554,14 +829,10 @@ const MissionBriefingWizard: React.FC = () => {
                                 onChange={e => update({ assistableWebhookUrl: e.target.value })}
                                 className="mt-1 text-sm"
                               />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Optional webhook for receiving extracted data (name, email, project details) from Assistable custom tools.
-                              </p>
                             </div>
                           </div>
                         )}
 
-                        {/* Traffic split (only show when multiple enabled) */}
                         {enabledPlatforms.length > 1 && (
                           <div>
                             <Label className="text-xs text-muted-foreground">Traffic share</Label>
@@ -569,7 +840,6 @@ const MissionBriefingWizard: React.FC = () => {
                               <Slider
                                 value={[cfg.trafficPct]}
                                 onValueChange={([v]) => {
-                                  // Redistribute remaining across other enabled platforms
                                   const others = enabledPlatforms.filter(([k]) => k !== pid);
                                   const remaining = 100 - v;
                                   const share = others.length > 0 ? Math.floor(remaining / others.length) : 0;
@@ -607,8 +877,8 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 5: Follow-up Strategy ── */}
-        {step === 5 && (
+        {/* ── Step 6: Follow-up Strategy (was step 5) ── */}
+        {step === 6 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">How should we follow up?</Label>
             <RadioGroup value={data.followUpStrategy} onValueChange={(v) => update({ followUpStrategy: v as WizardData['followUpStrategy'] })}>
@@ -625,8 +895,8 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 6: Review & Build ── */}
-        {step === 6 && (
+        {/* ── Step 7: Review & Build (was step 6) ── */}
+        {step === 7 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Review & Build</Label>
 
@@ -635,6 +905,13 @@ const MissionBriefingWizard: React.FC = () => {
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Goal</span><span className="font-medium">{GOAL_LABELS[data.goalType]}</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily target</span><span className="font-medium">{data.dailyTarget} results @ ≤${data.maxCostPerResult} each</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Leads</span><span className="font-medium">{data.startingLeads.toLocaleString()} → {data.rampUpTarget.toLocaleString()}</span></div>
+              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Import method</span><span className="font-medium capitalize">{data.leadImport.method}</span></div>
+              {data.leadImport.campaignTag && (
+                <div className="flex justify-between p-2 rounded bg-accent/20">
+                  <span className="text-muted-foreground">Campaign tag</span>
+                  <Badge variant="outline" className="text-xs font-mono">{data.leadImport.campaignTag}</Badge>
+                </div>
+              )}
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily calls</span><span className="font-medium">{data.dailyCalls} ({RAMP_LABELS[data.rampUpBehavior].label} ramp)</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Strategy</span><span className="font-medium">{STRATEGY_LABELS[data.followUpStrategy].label}</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20">
