@@ -958,8 +958,62 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 7: Review & Build (was step 6) ── */}
+        {/* ── Step 7: Campaign Priorities & Event Handling ── */}
         {step === 7 && (
+          <div className="space-y-4">
+            <Label className="text-base font-semibold">What matters most for this campaign?</Label>
+            <RadioGroup value={data.campaignPriority} onValueChange={(v) => update({ campaignPriority: v as CampaignPriority })}>
+              {Object.entries(PRIORITY_OPTIONS).map(([key, { label, desc }]) => (
+                <div key={key} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value={key} id={`prio-${key}`} />
+                  <Label htmlFor={`prio-${key}`} className="cursor-pointer flex-1">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-muted-foreground text-sm ml-2">— {desc}</span>
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+
+            <div className="pt-2">
+              <Label className="text-base font-semibold">What should happen when…</Label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Configure how the autonomous engine handles each call outcome. Toggle actions on/off for each event.
+              </p>
+
+              <div className="space-y-3">
+                {(Object.entries(EVENT_LABELS) as [keyof EventHandlingConfig, typeof EVENT_LABELS[keyof EventHandlingConfig]][]).map(([eventKey, { label, icon, desc }]) => (
+                  <div key={eventKey} className="p-3 rounded-lg border space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{icon}</span>
+                      <div>
+                        <p className="text-sm font-semibold">{label}</p>
+                        <p className="text-xs text-muted-foreground">{desc}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ACTION_OPTIONS.map(({ value, label: actionLabel }) => {
+                        const isActive = data.eventHandling[eventKey].includes(value);
+                        return (
+                          <Badge
+                            key={value}
+                            variant={isActive ? 'default' : 'outline'}
+                            className={`cursor-pointer text-xs transition-colors ${isActive ? '' : 'opacity-60 hover:opacity-100'}`}
+                            onClick={() => toggleEventAction(eventKey, value)}
+                          >
+                            {actionLabel}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 8: Review & Build ── */}
+        {step === 8 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Review & Build</Label>
 
@@ -977,6 +1031,7 @@ const MissionBriefingWizard: React.FC = () => {
               )}
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily calls</span><span className="font-medium">{data.dailyCalls} ({RAMP_LABELS[data.rampUpBehavior].label} ramp)</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Strategy</span><span className="font-medium">{STRATEGY_LABELS[data.followUpStrategy].label}</span></div>
+              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Priority</span><span className="font-medium">{PRIORITY_OPTIONS[data.campaignPriority].label}</span></div>
               <div className="flex justify-between p-2 rounded bg-accent/20">
                 <span className="text-muted-foreground">Platforms</span>
                 <span className="font-medium flex items-center gap-1">
@@ -1000,6 +1055,19 @@ const MissionBriefingWizard: React.FC = () => {
                     <Badge variant="secondary" className="text-xs">{stage}</Badge>
                     {i < PIPELINE_STAGES[data.goalType].length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
                   </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
+              <p className="font-medium text-sm">Event Handling Rules</p>
+              <div className="space-y-1 text-xs">
+                {(Object.entries(EVENT_LABELS) as [keyof EventHandlingConfig, typeof EVENT_LABELS[keyof EventHandlingConfig]][]).map(([key, { label, icon }]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span>{icon}</span>
+                    <span className="text-muted-foreground">{label}:</span>
+                    <span className="font-medium">{data.eventHandling[key].map(a => ACTION_OPTIONS.find(o => o.value === a)?.label).join(', ') || 'No action'}</span>
+                  </div>
                 ))}
               </div>
             </div>
