@@ -51,3 +51,17 @@ The full Telnyx Expert Reference V4 is stored at `docs/TELNYX_EXPERT_REFERENCE.m
 
 ### At Scale (10K min/mo)
 Telnyx saves $500-$2,100/month vs every competitor = $6,000-$25,200/year per client.
+
+### Async Tools & Add Messages API (Mid-Call Context Injection)
+- **Async webhooks**: Set `async: true` on webhook tools → assistant keeps talking while backend processes
+- **Add Messages API**: `POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages` → inject context mid-call
+- Backend receives `x-telnyx-call-control-id` header to identify call for result injection
+- Message roles: `system` (recommended for results), `user`, `assistant`
+- No timeout — backend can take 5s-5min, inject when ready
+- Multiple parallel lookups supported (staggered results drip naturally)
+- Use cases: CRM lookup during qualifying, calendar check while chatting, supervisor intervention, transfer context injection
+
+### Developer Portal Doc Index
+- Assistant docs: Voice, Memory, Dynamic Vars, Workflow, Async Tools, Agent Handoff, AMD on Transfer, Transcription, Integrations, Testing/Traffic Distribution, Importing, Custom LLMs
+- MCP Servers for AI agent → Telnyx API access
+- Migration guides: Call Control, Messaging, Twilio

@@ -2200,3 +2200,49 @@ supabase functions deploy ai-autonomous-engine
 - For the campaign transfer use case, the transfer webhook fires with all selected lead fields so the receiving human agent has full context
 - Post-call webhooks are separate from Telnyx's native `call.conversation_insights.generated` event — our webhook is app-level and includes lead DB data, not just call metadata
 - Webhook field configs are stored in metadata JSON, not separate columns, to avoid migration overhead
+
+---
+
+### April 6, 2026 - Telnyx Async Tools, Add Messages API & Developer Portal Knowledge
+
+**What was built/fixed/changed**
+
+1. **Async Tools & Add Messages API** — Documented Telnyx's two critical mid-call capabilities:
+   - **Async webhooks**: Set `async: true` on webhook tools so the assistant keeps talking while backend processes (no blocking). Backend receives `x-telnyx-call-control-id` header to identify the call.
+   - **Add Messages API**: `POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages` injects system/user/assistant messages into an active call at any time. No timeout constraint — backend can take 5s-5min.
+   - **Combined pattern**: Trigger async webhook → assistant keeps qualifying → backend processes CRM/calendar → injects results mid-call → assistant naturally incorporates.
+   - **Multiple parallel lookups**: Fire multiple async webhooks simultaneously, results drip in as each completes.
+   - **Edge cases**: Call ended = 404 response (log and move on). Backend should return 200 immediately, process async.
+
+2. **Developer Portal Documentation Index** — Catalogued the full Telnyx docs structure:
+   - 12 AI Assistant doc pages (Voice, Memory, Dynamic Vars, Workflow, Async Tools, Agent Handoff, AMD on Transfer, Transcription, Integrations, Testing/Traffic, Importing, Custom LLMs)
+   - SDKs: Node.js, Python, PHP, Java, Ruby, Go
+   - CLI, Postman, ngrok, Node-RED dev tools
+   - MCP Servers for AI agent access to Telnyx APIs
+   - Migration guides (Call Control, Messaging, Twilio)
+
+3. **Campaign-Critical Use Cases Documented**:
+   - Lead qualification: Async CRM lookup while qualifying on call
+   - Calendar booking: Background availability check while chatting
+   - Transfer context: Inject all lead data before warm transfer via Add Messages API
+   - Supervisor intervention: Human injects guidance during difficult calls
+   - Cross-system triggers: CRM pushes real-time updates to active calls
+
+**Key files modified**
+- `docs/TELNYX_EXPERT_REFERENCE.md` — Added V5.0: Async Tools section, Add Messages API, Developer Portal index (41 sections total)
+- `.lovable/skills/telnyx-expert-reference.md` — Added async tools summary and dev portal doc index
+- `CLAUDE.md` — Added this session log
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Knowledge/documentation only — no code changes needed.
+
+**Gotchas / lessons learned**
+- The `x-telnyx-call-control-id` header is the critical link between async webhook and Add Messages API — must be captured and passed through
+- Async webhooks have NO timeout — unlike sync webhooks that must respond quickly, async can take minutes
+- Add Messages API works standalone (without async webhooks) for supervisor intervention, scheduled reminders, cross-system triggers
+- For our transfer webhook use case, we can use Add Messages API to inject lead context BEFORE the transfer happens, ensuring the receiving agent has full data
+- Multiple parallel async lookups are supported natively — instruct the assistant to "call BOTH tools at the same time"
+- The dev portal has a complete Twilio migration guide — useful reference for our dual-provider architecture
