@@ -388,24 +388,25 @@ const EnhancedPipelineKanban = () => {
         <DragDropContext onDragEnd={handleDragEnd}>
           <div className="overflow-x-auto pb-4 -mx-1 px-1">
             <div className="flex gap-4 min-w-max">
-              {pipelineBoards.map((board) => {
+              {filteredBoards.map((board: any) => {
                 const boardLeads = groupedLeads[board.id] || [];
                 const stats = getBoardStats(boardLeads);
+                const campaignName = board.campaign?.name;
                 
                 return (
                   <div key={board.id} className="w-80 flex-shrink-0">
                     <Card className="bg-muted/30 border-border h-full">
                       {/* Column Header */}
                       <CardHeader className="p-4 pb-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2 min-w-0">
                             {board.disposition && (
                               <div 
-                                className="w-3 h-3 rounded-full"
+                                className="w-3 h-3 rounded-full flex-shrink-0"
                                 style={{ backgroundColor: board.disposition.color }}
                               />
                             )}
-                            <h3 className="font-semibold text-foreground text-sm">{board.name}</h3>
+                            <h3 className="font-semibold text-foreground text-sm truncate">{board.name}</h3>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant="secondary" className="text-xs font-medium px-2 py-0.5">
