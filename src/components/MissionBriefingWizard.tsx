@@ -670,9 +670,62 @@ const MissionBriefingWizard: React.FC = () => {
                 You currently have <strong>{currentNumbers}</strong>.
               </p>
               {deficit > 0 && (
-                <p className="text-sm text-destructive">
-                  ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">
+                    ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Area code (e.g. 415)"
+                      value={buyAreaCode}
+                      onChange={e => setBuyAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      className="w-28 h-8 text-xs"
+                    />
+                    <Input
+                      type="number"
+                      value={buyQuantity}
+                      onChange={e => setBuyQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                      className="w-16 h-8 text-xs"
+                      min={1}
+                      max={50}
+                    />
+                    <Select value={buyProvider} onValueChange={(v) => setBuyProvider(v as 'retell' | 'telnyx')}>
+                      <SelectTrigger className="w-24 h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="retell">Retell</SelectItem>
+                        <SelectItem value="telnyx">Telnyx</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1"
+                      disabled={buyingNumbers || buyAreaCode.length !== 3}
+                      onClick={async () => {
+                        setBuyingNumbers(true);
+                        try {
+                          const { data: result, error } = await supabase.functions.invoke('phone-number-purchasing', {
+                            body: { areaCode: buyAreaCode, quantity: buyQuantity, provider: buyProvider, purpose: 'voice_ai', callDirection: 'outbound' },
+                          });
+                          if (error) throw error;
+                          if (result?.error) throw new Error(result.error);
+                          const purchased = result?.purchased || buyQuantity;
+                          setCurrentNumbers(prev => prev + purchased);
+                          toast.success(`Purchased ${purchased} numbers in area code ${buyAreaCode}`);
+                        } catch (err: any) {
+                          toast.error(err.message || 'Failed to purchase numbers');
+                        } finally {
+                          setBuyingNumbers(false);
+                        }
+                      }}
+                    >
+                      {buyingNumbers ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      Buy
+                    </Button>
+                  </div>
+                </div>
               )}
               {deficit === 0 && (
                 <p className="text-sm text-primary">
