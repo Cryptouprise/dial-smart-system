@@ -610,18 +610,18 @@ const MissionBriefingWizard: React.FC = () => {
               </div>
               <div className="rounded-lg border bg-background p-3 text-center">
                 <p className="text-2xl font-bold text-primary">{data.dailyTarget || '—'}</p>
-                <p className="text-xs text-muted-foreground">Daily {data.goal === 'transfers' ? 'Transfers' : 'Appointments'} Goal</p>
+                <p className="text-xs text-muted-foreground">Daily {data.goalType === 'appointments' ? 'Appointments' : data.goalType === 'qualify' ? 'Qualifications' : 'Callbacks'} Goal</p>
               </div>
               <div className="rounded-lg border bg-background p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{data.strategy ? STRATEGY_OPTIONS[data.strategy as keyof typeof STRATEGY_OPTIONS]?.label : '—'}</p>
+                <p className="text-2xl font-bold text-primary">{data.followUpStrategy ? STRATEGY_LABELS[data.followUpStrategy]?.label : '—'}</p>
                 <p className="text-xs text-muted-foreground">Strategy</p>
               </div>
-              {data.provider && (
-                <div className="rounded-lg border bg-background p-3 text-center">
-                  <p className="text-2xl font-bold text-primary capitalize">{data.provider}</p>
+              {Object.entries(data.platforms).filter(([, cfg]) => cfg.enabled).map(([key]) => (
+                <div key={key} className="rounded-lg border bg-background p-3 text-center">
+                  <p className="text-2xl font-bold text-primary capitalize">{PLATFORM_META[key as PlatformId]?.label || key}</p>
                   <p className="text-xs text-muted-foreground">Platform</p>
                 </div>
-              )}
+              ))}
               {csvRows.length > 0 && (
                 <div className="rounded-lg border bg-background p-3 text-center">
                   <p className="text-2xl font-bold text-primary">{csvRows.length.toLocaleString()}</p>
