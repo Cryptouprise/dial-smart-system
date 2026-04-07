@@ -49,6 +49,7 @@ interface TransferEventConfig {
 
 interface EventHandlingConfig {
   appointmentBooked: DispositionAction[];
+  transferSuccess: DispositionAction[];
   interested: DispositionAction[];
   notInterested: DispositionAction[];
   voicemail: DispositionAction[];
@@ -100,6 +101,7 @@ const INITIAL_LEAD_IMPORT: LeadImportConfig = {
 
 const DEFAULT_EVENT_HANDLING: EventHandlingConfig = {
   appointmentBooked: ['move_pipeline', 'stop_calling', 'send_sms'],
+  transferSuccess: ['move_pipeline', 'stop_calling'],
   interested: ['move_pipeline', 'send_sms'],
   notInterested: ['stop_calling', 'move_pipeline'],
   voicemail: ['send_sms'],
@@ -152,8 +154,8 @@ const STRATEGY_LABELS: Record<string, { label: string; desc: string }> = {
   calls_only: { label: 'Calls Only', desc: 'No SMS — just call-wait-call-wait' },
 };
 
-const PIPELINE_STAGES: Record<string, string[]> = {
-  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Completed'],
+const DEFAULT_PIPELINE_STAGES: Record<string, string[]> = {
+  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Transferred', 'Completed'],
   qualify: ['New Lead', 'Contacted', 'Qualified', 'Sent to Team', 'Closed'],
   callbacks: ['New Lead', 'Contacted', 'Callback Requested', 'Converted', 'Closed'],
 };
@@ -173,6 +175,7 @@ const PRIORITY_OPTIONS: Record<CampaignPriority, { label: string; desc: string }
 
 const EVENT_LABELS: Record<keyof EventHandlingConfig, { label: string; icon: string; desc: string }> = {
   appointmentBooked: { label: 'Appointment Booked', icon: '📅', desc: 'Lead agrees to a meeting' },
+  transferSuccess: { label: 'Successful Transfer', icon: '📲', desc: 'Call transferred to a live agent' },
   interested: { label: 'Interested', icon: '🔥', desc: 'Shows buying intent but no appointment yet' },
   notInterested: { label: 'Not Interested', icon: '❌', desc: 'Declines or says no' },
   voicemail: { label: 'Voicemail', icon: '📞', desc: 'Reached answering machine' },
