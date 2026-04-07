@@ -68,14 +68,20 @@ serve(async (req) => {
         break
 
       case 'get_pipeline_boards':
-        result = await supabaseClient
+        const boardQuery = supabaseClient
           .from('pipeline_boards')
           .select(`
             *,
-            disposition:dispositions(*)
+            disposition:dispositions(*),
+            campaign:campaigns(id, name, status)
           `)
           .eq('user_id', user.id)
-          .order('position')
+        
+        if (params.campaign_id) {
+          boardQuery.eq('campaign_id', params.campaign_id)
+        }
+        
+        result = await boardQuery.order('position')
         break
 
       case 'get_lead_positions':
