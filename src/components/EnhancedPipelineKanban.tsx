@@ -82,6 +82,13 @@ const EnhancedPipelineKanban = () => {
     fetchCampaigns();
   }, []);
 
+  // Filter boards by campaign
+  const filteredBoards = useMemo(() => {
+    if (filterCampaign === 'all') return pipelineBoards;
+    if (filterCampaign === 'global') return pipelineBoards.filter((b: any) => !b.campaign_id);
+    return pipelineBoards.filter((b: any) => b.campaign_id === filterCampaign);
+  }, [pipelineBoards, filterCampaign]);
+
   // Calculate pipeline metrics
   const pipelineMetrics = useMemo(() => {
     const totalLeads = leadPositions.length;
@@ -96,13 +103,6 @@ const EnhancedPipelineKanban = () => {
       velocity
     };
   }, [leadPositions, filteredBoards]);
-
-  // Filter boards by campaign
-  const filteredBoards = useMemo(() => {
-    if (filterCampaign === 'all') return pipelineBoards;
-    if (filterCampaign === 'global') return pipelineBoards.filter((b: any) => !b.campaign_id);
-    return pipelineBoards.filter((b: any) => b.campaign_id === filterCampaign);
-  }, [pipelineBoards, filterCampaign]);
 
   // Group leads by pipeline board
   const groupedLeads = useMemo(() => {
