@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Rocket, ChevronRight, ChevronLeft, Check, Loader2, Phone,
   Target, Users, TrendingUp, MessageSquare, ArrowRight, Sparkles, Plus,
-  Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet
+  Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet,
+  TestTube, PhoneCall, CheckCircle2, XCircle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
