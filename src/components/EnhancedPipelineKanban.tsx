@@ -13,23 +13,8 @@ import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
 import { supabase } from '@/integrations/supabase/client';
 import { 
-  Plus, 
-  Users, 
-  Phone, 
-  Calendar, 
-  Filter, 
-  Mail, 
-  Building, 
-  Bot, 
-  Clock, 
-  Star, 
-  TrendingUp,
-  Activity,
-  Zap,
-  Target,
-  MoreHorizontal,
-  GripVertical,
-  Layers
+  Plus, Users, Phone, Calendar, Filter, Mail, Building, Bot, Clock, Star,
+  TrendingUp, Activity, Zap, Target, MoreHorizontal, GripVertical, Layers
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format } from 'date-fns';
@@ -42,21 +27,12 @@ interface CampaignOption {
 
 const EnhancedPipelineKanban = () => {
   const { 
-    dispositions, 
-    pipelineBoards, 
-    leadPositions, 
-    isLoading,
-    createDisposition,
-    createPipelineBoard,
-    moveLeadToPipeline,
-    refetch
+    dispositions, pipelineBoards, leadPositions, isLoading,
+    createDisposition, createPipelineBoard, moveLeadToPipeline, refetch
   } = usePipelineManagement();
   
   const [newDisposition, setNewDisposition] = useState({
-    name: '',
-    description: '',
-    color: '#6366f1',
-    pipeline_stage: ''
+    name: '', description: '', color: '#6366f1', pipeline_stage: ''
   });
   
   const [filterDisposition, setFilterDisposition] = useState('all');
@@ -67,7 +43,6 @@ const EnhancedPipelineKanban = () => {
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [isLeadDetailOpen, setIsLeadDetailOpen] = useState(false);
 
-  // Fetch campaigns for filter dropdown
   useEffect(() => {
     const fetchCampaigns = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -82,32 +57,29 @@ const EnhancedPipelineKanban = () => {
     fetchCampaigns();
   }, []);
 
-  // Filter boards by campaign
   const filteredBoards = useMemo(() => {
     if (filterCampaign === 'all') return pipelineBoards;
     if (filterCampaign === 'global') return pipelineBoards.filter((b: any) => !b.campaign_id);
     return pipelineBoards.filter((b: any) => b.campaign_id === filterCampaign);
   }, [pipelineBoards, filterCampaign]);
 
-  // Calculate pipeline metrics
   const pipelineMetrics = useMemo(() => {
-    const totalLeads = leadPositions.length;
+    const relevantLeads = filterCampaign === 'all'
+      ? leadPositions
+      : leadPositions.filter(lp => filteredBoards.some((b: any) => b.id === lp.pipeline_board_id));
+    const totalLeads = relevantLeads.length;
     const activeBoards = filteredBoards.length;
     const conversionRate = totalLeads > 0 ? Math.round((totalLeads * 0.23)) : 0;
     const velocity = Math.floor(totalLeads * 0.15);
-    
     return {
-      totalLeads,
-      activeBoards,
+      totalLeads, activeBoards,
       conversionRate: Math.min(100, (conversionRate / Math.max(totalLeads, 1)) * 100),
       velocity
     };
-  }, [leadPositions, filteredBoards]);
+  }, [leadPositions, filteredBoards, filterCampaign]);
 
-  // Group leads by pipeline board
   const groupedLeads = useMemo(() => {
     const groups: Record<string, any[]> = {};
-    
     filteredBoards.forEach(board => {
       groups[board.id] = leadPositions
         .filter(position => position.pipeline_board_id === board.id)
@@ -115,13 +87,34 @@ const EnhancedPipelineKanban = () => {
           (board.disposition && board.disposition.name === filterDisposition))
         .sort((a, b) => a.position - b.position);
     });
-    
     return groups;
   }, [filteredBoards, leadPositions, filterDisposition]);
 
+  // Build pipeline groups for the horizontal picker
+  const pipelineGroups = useMemo(() => {
+    const groups: { id: string; label: string; boardCount: number; leadCount: number }[] = [];
+    
+    const globalBoards = pipelineBoards.filter((b: any) => !b.campaign_id);
+    if (globalBoards.length > 0) {
+      const globalLeadCount = leadPositions.filter(lp => 
+        globalBoards.some((b: any) => b.id === lp.pipeline_board_id)
+      ).length;
+      groups.push({ id: 'global', label: 'Default Pipeline', boardCount: globalBoards.length, leadCount: globalLeadCount });
+    }
+
+    campaigns.forEach(c => {
+      const campBoards = pipelineBoards.filter((b: any) => b.campaign_id === c.id);
+      const campLeadCount = leadPositions.filter(lp =>
+        campBoards.some((b: any) => b.id === lp.pipeline_board_id)
+      ).length;
+      groups.push({ id: c.id, label: c.name, boardCount: campBoards.length, leadCount: campLeadCount });
+    });
+
+    return groups;
+  }, [pipelineBoards, campaigns, leadPositions]);
+
   const handleCreateDisposition = async () => {
     if (!newDisposition.name.trim()) return;
-    
     setIsCreating(true);
     try {
       const disposition = await createDisposition({
@@ -131,28 +124,16 @@ const EnhancedPipelineKanban = () => {
         pipeline_stage: newDisposition.pipeline_stage || newDisposition.name.toLowerCase().replace(/\s+/g, '_'),
         auto_actions: []
       });
-
       if (disposition) {
         await createPipelineBoard({
           name: newDisposition.name,
           description: newDisposition.description,
           disposition_id: disposition.id,
           position: pipelineBoards.length,
-          settings: {
-            autoMove: false,
-            maxLeads: 100,
-            sortBy: 'created_at',
-            notifications: true
-          }
+          settings: { autoMove: false, maxLeads: 100, sortBy: 'created_at', notifications: true }
         });
       }
-      
-      setNewDisposition({
-        name: '',
-        description: '',
-        color: '#6366f1',
-        pipeline_stage: ''
-      });
+      setNewDisposition({ name: '', description: '', color: '#6366f1', pipeline_stage: '' });
       setIsDialogOpen(false);
       refetch();
     } catch (error) {
@@ -164,18 +145,11 @@ const EnhancedPipelineKanban = () => {
 
   const handleDragEnd = async (result: any) => {
     const { destination, source, draggableId } = result;
-    
     if (!destination) return;
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
-
     const leadPosition = leadPositions.find(pos => pos.id === draggableId);
     if (!leadPosition) return;
-
-    await moveLeadToPipeline(
-      leadPosition.lead_id, 
-      destination.droppableId,
-      'Moved via Kanban board'
-    );
+    await moveLeadToPipeline(leadPosition.lead_id, destination.droppableId, 'Moved via Kanban board');
   };
 
   const handleLeadClick = (lead: any) => {
@@ -188,7 +162,6 @@ const EnhancedPipelineKanban = () => {
     const newLeads = boardLeads.filter(pos => pos.lead?.status === 'new').length;
     const contacted = boardLeads.filter(pos => pos.lead?.last_contacted_at).length;
     const highPriority = boardLeads.filter(pos => pos.lead?.priority && pos.lead.priority > 70).length;
-    
     return { total, newLeads, contacted, highPriority };
   };
 
@@ -213,34 +186,15 @@ const EnhancedPipelineKanban = () => {
     <TooltipProvider>
       <div className="space-y-6 p-1">
         {/* Header Section */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5">
           {/* Title & Actions Row */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="space-y-1">
               <h1 className="text-2xl font-bold text-foreground tracking-tight">Sales Pipeline</h1>
               <p className="text-sm text-muted-foreground">Manage and track your leads through each stage</p>
             </div>
-            
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Campaign Filter */}
-              <div className="flex items-center gap-2">
-                <Layers className="h-4 w-4 text-muted-foreground" />
-                <select
-                  value={filterCampaign}
-                  onChange={(e) => setFilterCampaign(e.target.value)}
-                  className="h-9 px-3 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  <option value="all">All Campaigns</option>
-                  <option value="global">Global (No Campaign)</option>
-                  {campaigns.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.status !== 'active' ? `(${c.status})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
 
-              {/* Stage Filter */}
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
@@ -256,7 +210,7 @@ const EnhancedPipelineKanban = () => {
                   ))}
                 </select>
               </div>
-              
+
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-2">
@@ -276,8 +230,7 @@ const EnhancedPipelineKanban = () => {
                         placeholder="e.g., Qualified Leads"
                         value={newDisposition.name}
                         onChange={(e) => setNewDisposition(prev => ({ 
-                          ...prev, 
-                          name: e.target.value,
+                          ...prev, name: e.target.value,
                           pipeline_stage: e.target.value.toLowerCase().replace(/\s+/g, '_')
                         }))}
                       />
@@ -324,6 +277,54 @@ const EnhancedPipelineKanban = () => {
             </div>
           </div>
 
+          {/* Pipeline Selector - Horizontally Scrollable */}
+          <div className="relative">
+            <div className="overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
+              <div className="flex gap-2 min-w-max">
+                <button
+                  onClick={() => setFilterCampaign('all')}
+                  className={`flex-shrink-0 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                    filterCampaign === 'all'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                      : 'bg-card text-foreground border-border hover:border-primary/50 hover:bg-accent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4" />
+                    <span>All Pipelines</span>
+                    <Badge variant={filterCampaign === 'all' ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 h-5 ml-1">
+                      {pipelineBoards.length}
+                    </Badge>
+                  </div>
+                </button>
+
+                {pipelineGroups.map(group => (
+                  <button
+                    key={group.id}
+                    onClick={() => setFilterCampaign(group.id)}
+                    className={`flex-shrink-0 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                      filterCampaign === group.id
+                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                        : 'bg-card text-foreground border-border hover:border-primary/50 hover:bg-accent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate max-w-[180px]">{group.label}</span>
+                      <Badge variant={filterCampaign === group.id ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 h-5">
+                        {group.boardCount} stages
+                      </Badge>
+                      {group.leadCount > 0 && (
+                        <Badge variant={filterCampaign === group.id ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 h-5">
+                          {group.leadCount} leads
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Metrics Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="bg-card border-border">
@@ -339,7 +340,6 @@ const EnhancedPipelineKanban = () => {
                 </div>
               </CardContent>
             </Card>
-            
             <Card className="bg-card border-border">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -353,7 +353,6 @@ const EnhancedPipelineKanban = () => {
                 </div>
               </CardContent>
             </Card>
-            
             <Card className="bg-card border-border">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -367,7 +366,6 @@ const EnhancedPipelineKanban = () => {
                 </div>
               </CardContent>
             </Card>
-            
             <Card className="bg-card border-border">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -396,7 +394,6 @@ const EnhancedPipelineKanban = () => {
                 return (
                   <div key={board.id} className="w-80 flex-shrink-0">
                     <Card className="bg-muted/30 border-border h-full">
-                      {/* Column Header */}
                       <CardHeader className="p-4 pb-3">
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2 min-w-0">
@@ -417,7 +414,6 @@ const EnhancedPipelineKanban = () => {
                             </Button>
                           </div>
                         </div>
-                        {/* Campaign Badge */}
                         {campaignName && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 mb-1 w-fit truncate max-w-full">
                             📋 {campaignName}
@@ -428,8 +424,6 @@ const EnhancedPipelineKanban = () => {
                             Global
                           </Badge>
                         )}
-                        
-                        {/* Mini Stats */}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
@@ -446,7 +440,6 @@ const EnhancedPipelineKanban = () => {
                         </div>
                       </CardHeader>
                       
-                      {/* Droppable Area */}
                       <Droppable droppableId={board.id}>
                         {(provided, snapshot) => (
                           <CardContent
@@ -459,11 +452,7 @@ const EnhancedPipelineKanban = () => {
                             <ScrollArea className="h-[500px]">
                               <div className="space-y-2 pr-2">
                                 {boardLeads.map((position, index) => (
-                                  <Draggable 
-                                    key={position.id} 
-                                    draggableId={position.id} 
-                                    index={index}
-                                  >
+                                  <Draggable key={position.id} draggableId={position.id} index={index}>
                                     {(provided, snapshot) => (
                                       <div
                                         ref={provided.innerRef}
@@ -477,7 +466,6 @@ const EnhancedPipelineKanban = () => {
                                       >
                                         {position.lead && (
                                           <div className="space-y-2">
-                                            {/* Card Header */}
                                             <div className="flex items-start justify-between gap-2">
                                               <div {...provided.dragHandleProps} className="pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
                                                 <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -491,7 +479,6 @@ const EnhancedPipelineKanban = () => {
                                               <LeadScoreIndicator priority={position.lead.priority} size="sm" />
                                             </div>
                                             
-                                            {/* Contact Info */}
                                             {(position.lead.email || position.lead.company) && (
                                               <div className="space-y-1">
                                                 {position.lead.email && (
@@ -509,7 +496,6 @@ const EnhancedPipelineKanban = () => {
                                               </div>
                                             )}
                                             
-                                            {/* Card Footer */}
                                             <div className="flex items-center justify-between pt-2 border-t border-border">
                                               <div className="flex items-center gap-2">
                                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 capitalize">
@@ -584,16 +570,19 @@ const EnhancedPipelineKanban = () => {
                 );
               })}
               
-              {/* Add Stage Column */}
-              {pipelineBoards.length === 0 && (
+              {filteredBoards.length === 0 && (
                 <div className="w-80 flex-shrink-0">
                   <Card className="bg-muted/20 border-dashed border-2 border-muted-foreground/20 h-full min-h-[500px] flex items-center justify-center">
                     <div className="text-center p-6">
                       <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                         <Plus className="h-5 w-5 text-muted-foreground" />
                       </div>
-                      <h3 className="font-medium text-foreground mb-1">Create Your First Stage</h3>
-                      <p className="text-sm text-muted-foreground mb-4">Set up pipeline stages to organize your leads</p>
+                      <h3 className="font-medium text-foreground mb-1">
+                        {filterCampaign !== 'all' ? 'No stages for this pipeline' : 'Create Your First Stage'}
+                      </h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        {filterCampaign !== 'all' ? 'Add stages to organize leads for this campaign' : 'Set up pipeline stages to organize your leads'}
+                      </p>
                       <Button size="sm" onClick={() => setIsDialogOpen(true)}>
                         <Plus className="h-4 w-4 mr-2" />
                         Add Stage
@@ -606,7 +595,6 @@ const EnhancedPipelineKanban = () => {
           </div>
         </DragDropContext>
 
-        {/* Lead Detail Dialog */}
         <LeadDetailDialog
           lead={selectedLead}
           open={isLeadDetailOpen}
