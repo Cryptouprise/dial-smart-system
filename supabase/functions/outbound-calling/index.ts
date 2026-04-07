@@ -382,6 +382,7 @@ serve(async (req) => {
           // Otherwise log and continue (fail open for backward compatibility)
           console.error('[Outbound Calling] Credit check error (continuing):', creditError);
         }
+        } // end if (!isTestCall && !skipCreditCheck)
         // ========================================================================
 
         // ========================================================================
