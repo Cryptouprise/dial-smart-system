@@ -268,6 +268,17 @@ const MissionBriefingWizard: React.FC = () => {
   const numbersNeeded = useMemo(() => Math.ceil(data.dailyCalls / 80), [data.dailyCalls]);
   const deficit = useMemo(() => Math.max(0, numbersNeeded - currentNumbers), [numbersNeeded, currentNumbers]);
 
+  // Pipeline stages — editable, initialized from defaults when goal changes
+  const pipelineStages = useMemo(() => {
+    if (customPipelineStages.length > 0) return customPipelineStages;
+    return DEFAULT_PIPELINE_STAGES[data.goalType] || DEFAULT_PIPELINE_STAGES.appointments;
+  }, [customPipelineStages, data.goalType]);
+
+  // Reset custom stages when goal type changes
+  useEffect(() => {
+    setCustomPipelineStages([]);
+  }, [data.goalType]);
+
   const enabledPlatforms = useMemo(() =>
     (Object.entries(data.platforms) as [PlatformId, PlatformConfig][]).filter(([, c]) => c.enabled),
     [data.platforms]
