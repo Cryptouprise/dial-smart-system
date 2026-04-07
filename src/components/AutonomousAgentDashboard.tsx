@@ -379,6 +379,49 @@ const AutonomousAgentDashboard: React.FC = () => {
           <Suspense fallback={<TabLoader />}>
             <MissionBriefingWizard />
           </Suspense>
+
+          {/* Recent Campaigns */}
+          {recentCampaigns.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-primary" />
+                    Your Campaigns
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => { window.location.href = '/?tab=campaigns'; }}>
+                    View All
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {recentCampaigns.map(c => (
+                    <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${c.status === 'active' ? 'bg-green-500' : c.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground'}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.provider} · {c.status} · Created {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { window.location.href = `/?tab=campaigns&id=${c.id}`; }}
+                        className="shrink-0"
+                      >
+                        <Pencil className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Goal Progress Card */}
             <Card>
