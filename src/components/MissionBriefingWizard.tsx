@@ -199,6 +199,10 @@ const MissionBriefingWizard: React.FC = () => {
   const [csvParsing, setCsvParsing] = useState(false);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [ghlSyncing, setGhlSyncing] = useState(false);
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [isTestCalling, setIsTestCalling] = useState(false);
+  const [testCallResult, setTestCallResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testCallCount, setTestCallCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
