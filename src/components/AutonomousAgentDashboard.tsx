@@ -112,6 +112,7 @@ const AutonomousAgentDashboard: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
+  const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
   const recommendation = getAdaptiveRecommendation();
 
   // Load phone numbers for AI Engine tab
@@ -154,6 +155,20 @@ const AutonomousAgentDashboard: React.FC = () => {
   useEffect(() => {
     loadDecisionHistory(100);
   }, [loadDecisionHistory]);
+
+  // Load recent campaigns for overview
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: campaigns } = await supabase
+          .from('campaigns')
+          .select('id, name, status, provider, created_at, calls_per_minute, max_calls_per_day')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        setRecentCampaigns(campaigns || []);
+      } catch { /* non-critical */ }
+    })();
+  }, []);
 
   // Load phone numbers when AI Engine tab is selected
   useEffect(() => {
