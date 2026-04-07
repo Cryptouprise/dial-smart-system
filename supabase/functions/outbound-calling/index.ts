@@ -100,6 +100,9 @@ interface OutboundCallRequest {
   userId?: string; // For service-role calls from call-dispatcher
   provider?: 'retell' | 'telnyx'; // Which voice AI provider to use (default: retell)
   telnyxAssistantId?: string; // Local DB ID of telnyx_assistants row
+  isTestCall?: boolean; // Bypass DNC, credit checks, and campaign limits
+  skipDncCheck?: boolean;
+  skipCreditCheck?: boolean;
 }
 
 serve(async (req) => {
