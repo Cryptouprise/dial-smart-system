@@ -85,7 +85,7 @@ const EnhancedPipelineKanban = () => {
   // Calculate pipeline metrics
   const pipelineMetrics = useMemo(() => {
     const totalLeads = leadPositions.length;
-    const activeBoards = pipelineBoards.length;
+    const activeBoards = filteredBoards.length;
     const conversionRate = totalLeads > 0 ? Math.round((totalLeads * 0.23)) : 0;
     const velocity = Math.floor(totalLeads * 0.15);
     
@@ -95,7 +95,7 @@ const EnhancedPipelineKanban = () => {
       conversionRate: Math.min(100, (conversionRate / Math.max(totalLeads, 1)) * 100),
       velocity
     };
-  }, [leadPositions, pipelineBoards]);
+  }, [leadPositions, filteredBoards]);
 
   // Filter boards by campaign
   const filteredBoards = useMemo(() => {

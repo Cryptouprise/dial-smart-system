@@ -764,6 +764,7 @@ const MissionBriefingWizard: React.FC = () => {
         ``,
         `Pipeline stages to create: ${pipelineStages.join(' → ')}`,
         `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
+        `IMPORTANT: Set campaign_id on each pipeline_board so it is associated with THIS campaign.`,
         ``,
         enableSms && enableCalls
           ? `Use a mix of call and SMS steps in the workflow.`
