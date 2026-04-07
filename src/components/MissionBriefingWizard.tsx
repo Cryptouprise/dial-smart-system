@@ -42,8 +42,14 @@ interface LeadImportConfig {
 
 type DispositionAction = 'move_pipeline' | 'stop_calling' | 'schedule_callback' | 'send_sms' | 'transfer_live' | 'add_to_dnc' | 'do_nothing';
 
+// Event for successful live transfer
+interface TransferEventConfig {
+  transferSuccess: DispositionAction[];
+}
+
 interface EventHandlingConfig {
   appointmentBooked: DispositionAction[];
+  transferSuccess: DispositionAction[];
   interested: DispositionAction[];
   notInterested: DispositionAction[];
   voicemail: DispositionAction[];
@@ -95,6 +101,7 @@ const INITIAL_LEAD_IMPORT: LeadImportConfig = {
 
 const DEFAULT_EVENT_HANDLING: EventHandlingConfig = {
   appointmentBooked: ['move_pipeline', 'stop_calling', 'send_sms'],
+  transferSuccess: ['move_pipeline', 'stop_calling'],
   interested: ['move_pipeline', 'send_sms'],
   notInterested: ['stop_calling', 'move_pipeline'],
   voicemail: ['send_sms'],
@@ -147,8 +154,8 @@ const STRATEGY_LABELS: Record<string, { label: string; desc: string }> = {
   calls_only: { label: 'Calls Only', desc: 'No SMS — just call-wait-call-wait' },
 };
 
-const PIPELINE_STAGES: Record<string, string[]> = {
-  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Completed'],
+const DEFAULT_PIPELINE_STAGES: Record<string, string[]> = {
+  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Transferred', 'Completed'],
   qualify: ['New Lead', 'Contacted', 'Qualified', 'Sent to Team', 'Closed'],
   callbacks: ['New Lead', 'Contacted', 'Callback Requested', 'Converted', 'Closed'],
 };
@@ -168,6 +175,7 @@ const PRIORITY_OPTIONS: Record<CampaignPriority, { label: string; desc: string }
 
 const EVENT_LABELS: Record<keyof EventHandlingConfig, { label: string; icon: string; desc: string }> = {
   appointmentBooked: { label: 'Appointment Booked', icon: '📅', desc: 'Lead agrees to a meeting' },
+  transferSuccess: { label: 'Successful Transfer', icon: '📲', desc: 'Call transferred to a live agent' },
   interested: { label: 'Interested', icon: '🔥', desc: 'Shows buying intent but no appointment yet' },
   notInterested: { label: 'Not Interested', icon: '❌', desc: 'Declines or says no' },
   voicemail: { label: 'Voicemail', icon: '📞', desc: 'Reached answering machine' },
@@ -203,6 +211,12 @@ const MissionBriefingWizard: React.FC = () => {
   const [isTestCalling, setIsTestCalling] = useState(false);
   const [testCallResult, setTestCallResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testCallCount, setTestCallCount] = useState(0);
+  const [customPipelineStages, setCustomPipelineStages] = useState<string[]>([]);
+  const [newStageName, setNewStageName] = useState('');
+  const [buyingNumbers, setBuyingNumbers] = useState(false);
+  const [buyAreaCode, setBuyAreaCode] = useState('');
+  const [buyQuantity, setBuyQuantity] = useState(5);
+  const [buyProvider, setBuyProvider] = useState<'retell' | 'telnyx'>('retell');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
@@ -253,6 +267,17 @@ const MissionBriefingWizard: React.FC = () => {
 
   const numbersNeeded = useMemo(() => Math.ceil(data.dailyCalls / 80), [data.dailyCalls]);
   const deficit = useMemo(() => Math.max(0, numbersNeeded - currentNumbers), [numbersNeeded, currentNumbers]);
+
+  // Pipeline stages — editable, initialized from defaults when goal changes
+  const pipelineStages = useMemo(() => {
+    if (customPipelineStages.length > 0) return customPipelineStages;
+    return DEFAULT_PIPELINE_STAGES[data.goalType] || DEFAULT_PIPELINE_STAGES.appointments;
+  }, [customPipelineStages, data.goalType]);
+
+  // Reset custom stages when goal type changes
+  useEffect(() => {
+    setCustomPipelineStages([]);
+  }, [data.goalType]);
 
   const enabledPlatforms = useMemo(() =>
     (Object.entries(data.platforms) as [PlatformId, PlatformConfig][]).filter(([, c]) => c.enabled),
@@ -410,10 +435,27 @@ const MissionBriefingWizard: React.FC = () => {
         setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
       } else {
         // Retell — use outbound-calling with test flag
+        // Need a caller ID - fetch one from the user's active phone numbers
+        let callerId = '';
+        try {
+          const { data: numbers } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('status', 'active')
+            .limit(1);
+          callerId = numbers?.[0]?.number || '';
+        } catch { /* will fail gracefully below */ }
+
+        if (!callerId) {
+          throw new Error('No active phone numbers found. Please purchase numbers first.');
+        }
+
         const { data: result, error } = await supabase.functions.invoke('outbound-calling', {
           body: {
+            action: 'create_call',
             agentId: cfg.agentId,
             phoneNumber: testPhoneNumber.trim(),
+            callerId,
             isTestCall: true,
             skipDncCheck: true,
             skipCreditCheck: true,
@@ -505,7 +547,7 @@ const MissionBriefingWizard: React.FC = () => {
         }),
         `Create disposition automation rules in the disposition-router for each of these events.`,
         ``,
-        `Pipeline stages to create: ${PIPELINE_STAGES[data.goalType].join(' → ')}`,
+        `Pipeline stages to create: ${pipelineStages.join(' → ')}`,
         `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
         ``,
         enableSms
@@ -645,9 +687,62 @@ const MissionBriefingWizard: React.FC = () => {
                 You currently have <strong>{currentNumbers}</strong>.
               </p>
               {deficit > 0 && (
-                <p className="text-sm text-destructive">
-                  ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">
+                    ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Area code (e.g. 415)"
+                      value={buyAreaCode}
+                      onChange={e => setBuyAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      className="w-28 h-8 text-xs"
+                    />
+                    <Input
+                      type="number"
+                      value={buyQuantity}
+                      onChange={e => setBuyQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                      className="w-16 h-8 text-xs"
+                      min={1}
+                      max={50}
+                    />
+                    <Select value={buyProvider} onValueChange={(v) => setBuyProvider(v as 'retell' | 'telnyx')}>
+                      <SelectTrigger className="w-24 h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="retell">Retell</SelectItem>
+                        <SelectItem value="telnyx">Telnyx</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1"
+                      disabled={buyingNumbers || buyAreaCode.length !== 3}
+                      onClick={async () => {
+                        setBuyingNumbers(true);
+                        try {
+                          const { data: result, error } = await supabase.functions.invoke('phone-number-purchasing', {
+                            body: { areaCode: buyAreaCode, quantity: buyQuantity, provider: buyProvider, purpose: 'voice_ai', callDirection: 'outbound' },
+                          });
+                          if (error) throw error;
+                          if (result?.error) throw new Error(result.error);
+                          const purchased = result?.purchased || buyQuantity;
+                          setCurrentNumbers(prev => prev + purchased);
+                          toast.success(`Purchased ${purchased} numbers in area code ${buyAreaCode}`);
+                        } catch (err: any) {
+                          toast.error(err.message || 'Failed to purchase numbers');
+                        } finally {
+                          setBuyingNumbers(false);
+                        }
+                      }}
+                    >
+                      {buyingNumbers ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      Buy
+                    </Button>
+                  </div>
+                </div>
               )}
               {deficit === 0 && (
                 <p className="text-sm text-primary">
@@ -1138,13 +1233,55 @@ const MissionBriefingWizard: React.FC = () => {
                 <Sparkles className="h-4 w-4 text-primary" /> Pipeline Stages
               </p>
               <div className="flex flex-wrap items-center gap-1">
-                {PIPELINE_STAGES[data.goalType].map((stage, i) => (
+                {pipelineStages.map((stage, i) => (
                   <React.Fragment key={stage}>
-                    <Badge variant="secondary" className="text-xs">{stage}</Badge>
-                    {i < PIPELINE_STAGES[data.goalType].length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
+                    <Badge
+                      variant="secondary"
+                      className="text-xs cursor-pointer hover:bg-destructive/20 group relative"
+                      onClick={() => {
+                        const updated = pipelineStages.filter((_, idx) => idx !== i);
+                        setCustomPipelineStages(updated);
+                      }}
+                      title="Click to remove"
+                    >
+                      {stage} <span className="ml-1 opacity-0 group-hover:opacity-100 text-destructive">×</span>
+                    </Badge>
+                    {i < pipelineStages.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
                   </React.Fragment>
                 ))}
               </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Input
+                  placeholder="Add custom stage…"
+                  value={newStageName}
+                  onChange={e => setNewStageName(e.target.value)}
+                  className="h-7 text-xs flex-1"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newStageName.trim()) {
+                      e.preventDefault();
+                      const stages = customPipelineStages.length > 0 ? [...customPipelineStages] : [...(DEFAULT_PIPELINE_STAGES[data.goalType] || [])];
+                      stages.splice(stages.length - 1, 0, newStageName.trim());
+                      setCustomPipelineStages(stages);
+                      setNewStageName('');
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs px-2"
+                  disabled={!newStageName.trim()}
+                  onClick={() => {
+                    const stages = customPipelineStages.length > 0 ? [...customPipelineStages] : [...(DEFAULT_PIPELINE_STAGES[data.goalType] || [])];
+                    stages.splice(stages.length - 1, 0, newStageName.trim());
+                    setCustomPipelineStages(stages);
+                    setNewStageName('');
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Click a stage to remove it. Add custom stages as needed.</p>
             </div>
 
             <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
