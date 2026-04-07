@@ -42,6 +42,11 @@ interface LeadImportConfig {
 
 type DispositionAction = 'move_pipeline' | 'stop_calling' | 'schedule_callback' | 'send_sms' | 'transfer_live' | 'add_to_dnc' | 'do_nothing';
 
+// Event for successful live transfer
+interface TransferEventConfig {
+  transferSuccess: DispositionAction[];
+}
+
 interface EventHandlingConfig {
   appointmentBooked: DispositionAction[];
   interested: DispositionAction[];
