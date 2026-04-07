@@ -97,11 +97,18 @@ const EnhancedPipelineKanban = () => {
     };
   }, [leadPositions, pipelineBoards]);
 
+  // Filter boards by campaign
+  const filteredBoards = useMemo(() => {
+    if (filterCampaign === 'all') return pipelineBoards;
+    if (filterCampaign === 'global') return pipelineBoards.filter((b: any) => !b.campaign_id);
+    return pipelineBoards.filter((b: any) => b.campaign_id === filterCampaign);
+  }, [pipelineBoards, filterCampaign]);
+
   // Group leads by pipeline board
   const groupedLeads = useMemo(() => {
     const groups: Record<string, any[]> = {};
     
-    pipelineBoards.forEach(board => {
+    filteredBoards.forEach(board => {
       groups[board.id] = leadPositions
         .filter(position => position.pipeline_board_id === board.id)
         .filter(position => filterDisposition === 'all' || 
@@ -110,7 +117,7 @@ const EnhancedPipelineKanban = () => {
     });
     
     return groups;
-  }, [pipelineBoards, leadPositions, filterDisposition]);
+  }, [filteredBoards, leadPositions, filterDisposition]);
 
   const handleCreateDisposition = async () => {
     if (!newDisposition.name.trim()) return;
