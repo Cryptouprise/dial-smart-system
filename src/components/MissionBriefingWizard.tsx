@@ -435,10 +435,27 @@ const MissionBriefingWizard: React.FC = () => {
         setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
       } else {
         // Retell — use outbound-calling with test flag
+        // Need a caller ID - fetch one from the user's active phone numbers
+        let callerId = '';
+        try {
+          const { data: numbers } = await supabase
+            .from('phone_numbers')
+            .select('number')
+            .eq('status', 'active')
+            .limit(1);
+          callerId = numbers?.[0]?.number || '';
+        } catch { /* will fail gracefully below */ }
+
+        if (!callerId) {
+          throw new Error('No active phone numbers found. Please purchase numbers first.');
+        }
+
         const { data: result, error } = await supabase.functions.invoke('outbound-calling', {
           body: {
+            action: 'create_call',
             agentId: cfg.agentId,
             phoneNumber: testPhoneNumber.trim(),
+            callerId,
             isTestCall: true,
             skipDncCheck: true,
             skipCreditCheck: true,
