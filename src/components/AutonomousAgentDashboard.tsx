@@ -323,40 +323,42 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-11 gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="strategist" className="flex items-center gap-1">
-            <Target className="h-3 w-3" />
-            <span className="hidden sm:inline">Strategist</span>
-          </TabsTrigger>
-          <TabsTrigger value="journeys" className="flex items-center gap-1">
-            <Users className="h-3 w-3" />
-            <span className="hidden sm:inline">Journeys</span>
-          </TabsTrigger>
-          <TabsTrigger value="decisions">Decisions</TabsTrigger>
-          <TabsTrigger value="ai-engine" className="flex items-center gap-1">
-            <Lightbulb className="h-3 w-3" />
-            <span className="hidden sm:inline">AI Engine</span>
-          </TabsTrigger>
-          <TabsTrigger value="pipeline" className="flex items-center gap-1">
-            <Workflow className="h-3 w-3" />
-            <span className="hidden sm:inline">Pipeline</span>
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="flex items-center gap-1">
-            <Bot className="h-3 w-3" />
-            <span className="hidden sm:inline">Activity</span>
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-1">
-            <FileBarChart className="h-3 w-3" />
-            <span className="hidden sm:inline">Analytics</span>
-          </TabsTrigger>
-          <TabsTrigger value="action-queue" className="flex items-center gap-1">
-            <Shield className="h-3 w-3" />
-            <span className="hidden sm:inline">Actions</span>
-          </TabsTrigger>
-          <TabsTrigger value="goals">Goals</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="inline-flex w-auto min-w-full gap-1 h-auto flex-wrap">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="strategist" className="flex items-center gap-1">
+              <Target className="h-3 w-3" />
+              <span className="hidden sm:inline">Strategist</span>
+            </TabsTrigger>
+            <TabsTrigger value="journeys" className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              <span className="hidden sm:inline">Journeys</span>
+            </TabsTrigger>
+            <TabsTrigger value="decisions">Decisions</TabsTrigger>
+            <TabsTrigger value="ai-engine" className="flex items-center gap-1">
+              <Lightbulb className="h-3 w-3" />
+              <span className="hidden sm:inline">AI Engine</span>
+            </TabsTrigger>
+            <TabsTrigger value="pipeline" className="flex items-center gap-1">
+              <Workflow className="h-3 w-3" />
+              <span className="hidden sm:inline">Pipeline</span>
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="flex items-center gap-1">
+              <Bot className="h-3 w-3" />
+              <span className="hidden sm:inline">Activity</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-1">
+              <FileBarChart className="h-3 w-3" />
+              <span className="hidden sm:inline">Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger value="action-queue" className="flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              <span className="hidden sm:inline">Actions</span>
+            </TabsTrigger>
+            <TabsTrigger value="goals">Goals</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
           <Suspense fallback={<TabLoader />}>
