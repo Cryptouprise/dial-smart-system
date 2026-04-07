@@ -1159,6 +1159,62 @@ const MissionBriefingWizard: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* ── Test Call Panel ── */}
+            <div className="p-4 rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 space-y-3">
+              <div className="flex items-center gap-2">
+                <TestTube className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-semibold text-sm">Test Your Agent Before Launch</p>
+                  <p className="text-xs text-muted-foreground">
+                    Call yourself unlimited times — no limits, no DNC checks, no credit deductions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="+1 (214) 529-1531"
+                  value={testPhoneNumber}
+                  onChange={e => setTestPhoneNumber(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleTestCall}
+                  disabled={isTestCalling || !testPhoneNumber.trim() || enabledPlatforms.length === 0}
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                >
+                  {isTestCalling ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Calling…</>
+                  ) : (
+                    <><PhoneCall className="h-4 w-4" /> Test Call</>
+                  )}
+                </Button>
+              </div>
+
+              {testCallResult && (
+                <div className={`flex items-center gap-2 text-sm p-2 rounded ${testCallResult.success ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                  {testCallResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                  <span>{testCallResult.message}</span>
+                </div>
+              )}
+
+              {testCallCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {testCallCount} test call{testCallCount !== 1 ? 's' : ''} made this session. No limits — test as many times as you need.
+                </p>
+              )}
+
+              {enabledPlatforms.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Testing with: <span className="font-medium">{PLATFORM_META[enabledPlatforms[0][0]].label}</span>
+                  {enabledPlatforms[0][1].agentId || data.assistableAssistantId ? 
+                    <> · Agent: <span className="font-mono text-xs">{enabledPlatforms[0][0] === 'assistable' ? data.assistableAssistantId : enabledPlatforms[0][1].agentId}</span></> : null
+                  }
+                </p>
+              )}
+            </div>
           </div>
         )}
 
