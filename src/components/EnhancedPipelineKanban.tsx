@@ -417,6 +417,17 @@ const EnhancedPipelineKanban = () => {
                             </Button>
                           </div>
                         </div>
+                        {/* Campaign Badge */}
+                        {campaignName && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 mb-1 w-fit truncate max-w-full">
+                            📋 {campaignName}
+                          </Badge>
+                        )}
+                        {!board.campaign_id && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 mb-1 w-fit text-muted-foreground">
+                            Global
+                          </Badge>
+                        )}
                         
                         {/* Mini Stats */}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
