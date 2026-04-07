@@ -909,7 +909,7 @@ const MissionBriefingWizard: React.FC = () => {
   }
 
   return (
-    <Card className="border-primary/30">
+    <Card className="border-primary/30 relative z-0 overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
