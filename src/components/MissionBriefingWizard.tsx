@@ -14,7 +14,7 @@ import {
   Rocket, ChevronRight, ChevronLeft, Check, Loader2, Phone,
   Target, Users, TrendingUp, MessageSquare, ArrowRight, Sparkles, Plus,
   Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet,
-  TestTube, PhoneCall, CheckCircle2, XCircle
+  TestTube, PhoneCall, CheckCircle2, XCircle, Pencil, Clock, Eye
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
@@ -42,11 +42,6 @@ interface LeadImportConfig {
 
 type DispositionAction = 'move_pipeline' | 'stop_calling' | 'schedule_callback' | 'send_sms' | 'transfer_live' | 'add_to_dnc' | 'do_nothing';
 
-// Event for successful live transfer
-interface TransferEventConfig {
-  transferSuccess: DispositionAction[];
-}
-
 interface EventHandlingConfig {
   appointmentBooked: DispositionAction[];
   transferSuccess: DispositionAction[];
@@ -58,18 +53,23 @@ interface EventHandlingConfig {
   doNotCall: DispositionAction[];
 }
 
-type CampaignPriority = 'speed' | 'quality' | 'volume' | 'cost';
+type CampaignPriority = 'speed' | 'quality' | 'volume' | 'cost' | 'custom';
+type GoalType = 'appointments' | 'qualify' | 'callbacks' | 'transfers' | 'custom';
+type FollowUpStrategy = 'aggressive' | 'balanced' | 'gentle' | 'calls_only' | 'sms_only' | 'custom';
+type TransferType = 'warm' | 'cold';
 
 interface WizardData {
   businessDescription: string;
-  goalType: 'appointments' | 'qualify' | 'callbacks';
+  goalType: GoalType;
+  customGoalText: string;
   dailyTarget: number;
   maxCostPerResult: number;
   startingLeads: number;
   rampUpTarget: number;
   dailyCalls: number;
   rampUpBehavior: 'conservative' | 'moderate' | 'aggressive';
-  followUpStrategy: 'aggressive' | 'balanced' | 'gentle' | 'calls_only';
+  followUpStrategy: FollowUpStrategy;
+  customStrategyText: string;
   splitTest: boolean;
   platforms: Record<PlatformId, PlatformConfig>;
   assistableWebhookUrl: string;
@@ -78,13 +78,37 @@ interface WizardData {
   assistableNumberPoolId: string;
   leadImport: LeadImportConfig;
   campaignPriority: CampaignPriority;
+  customPriorityText: string;
   eventHandling: EventHandlingConfig;
+  transferPhoneNumber: string;
+  transferType: TransferType;
+  transferTrigger: string;
+  callingHoursStart: string;
+  callingHoursEnd: string;
+  timezone: string;
+  bypassCallingHours: boolean;
+  workflowSteps: WorkflowStep[];
+}
+
+interface WorkflowStep {
+  id: string;
+  type: 'call' | 'sms' | 'ai_sms' | 'wait';
+  label: string;
+  enabled: boolean;
+  waitHours?: number;
 }
 
 interface AgentOption {
   id: string;
   name: string;
   platform: PlatformId;
+}
+
+interface CreatedResource {
+  type: string;
+  name: string;
+  id: string;
+  tab: string;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -113,6 +137,7 @@ const DEFAULT_EVENT_HANDLING: EventHandlingConfig = {
 const INITIAL_DATA: WizardData = {
   businessDescription: '',
   goalType: 'appointments',
+  customGoalText: '',
   dailyTarget: 10,
   maxCostPerResult: 20,
   startingLeads: 500,
@@ -120,6 +145,7 @@ const INITIAL_DATA: WizardData = {
   dailyCalls: 200,
   rampUpBehavior: 'moderate',
   followUpStrategy: 'balanced',
+  customStrategyText: '',
   splitTest: false,
   platforms: {
     retell: { enabled: true, agentId: '', trafficPct: 100 },
@@ -132,13 +158,24 @@ const INITIAL_DATA: WizardData = {
   assistableNumberPoolId: '',
   leadImport: { ...INITIAL_LEAD_IMPORT },
   campaignPriority: 'quality',
+  customPriorityText: '',
   eventHandling: { ...DEFAULT_EVENT_HANDLING },
+  transferPhoneNumber: '',
+  transferType: 'warm',
+  transferTrigger: '',
+  callingHoursStart: '09:00',
+  callingHoursEnd: '21:00',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
+  bypassCallingHours: false,
+  workflowSteps: [],
 };
 
 const GOAL_LABELS: Record<string, string> = {
-  appointments: 'Book appointments / transfers to live agents',
+  appointments: 'Book appointments / meetings',
   qualify: 'Collect info / qualify leads',
   callbacks: 'Drive to landing page / generate callbacks',
+  transfers: 'Live transfers to sales agents',
+  custom: 'Other (describe below)',
 };
 
 const RAMP_LABELS: Record<string, { label: string; desc: string }> = {
@@ -148,16 +185,20 @@ const RAMP_LABELS: Record<string, { label: string; desc: string }> = {
 };
 
 const STRATEGY_LABELS: Record<string, { label: string; desc: string }> = {
-  aggressive: { label: 'Aggressive', desc: 'Call fast, follow up hard' },
+  aggressive: { label: 'Aggressive', desc: 'Call fast, follow up hard — calls + texts' },
   balanced: { label: 'Balanced', desc: 'Professional cadence, calls + texts' },
-  gentle: { label: 'Gentle', desc: 'Spaced out, relationship-building' },
+  gentle: { label: 'Gentle', desc: 'Spaced out, relationship-building — calls + texts' },
   calls_only: { label: 'Calls Only', desc: 'No SMS — just call-wait-call-wait' },
+  sms_only: { label: 'SMS Only', desc: 'Text-based outreach only — no calls' },
+  custom: { label: 'Custom', desc: 'Describe your ideal cadence below' },
 };
 
 const DEFAULT_PIPELINE_STAGES: Record<string, string[]> = {
-  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Transferred', 'Completed'],
+  appointments: ['New Lead', 'Contacted', 'Interested', 'Appointment Set', 'Completed'],
   qualify: ['New Lead', 'Contacted', 'Qualified', 'Sent to Team', 'Closed'],
   callbacks: ['New Lead', 'Contacted', 'Callback Requested', 'Converted', 'Closed'],
+  transfers: ['New Lead', 'Contacted', 'Interested', 'Transferred', 'Sale Closed', 'Completed'],
+  custom: ['New Lead', 'Contacted', 'In Progress', 'Completed'],
 };
 
 const PLATFORM_META: Record<PlatformId, { label: string; icon: React.ReactNode; color: string }> = {
@@ -171,6 +212,7 @@ const PRIORITY_OPTIONS: Record<CampaignPriority, { label: string; desc: string }
   quality: { label: 'Conversation Quality', desc: 'Longer, better conversations that convert' },
   volume: { label: 'Maximum Volume', desc: 'Blast through the list — quantity over depth' },
   cost: { label: 'Cost Efficiency', desc: 'Minimize spend per result, optimize ROI' },
+  custom: { label: 'Other', desc: 'Describe your priority below' },
 };
 
 const EVENT_LABELS: Record<keyof EventHandlingConfig, { label: string; icon: string; desc: string }> = {
@@ -193,6 +235,87 @@ const ACTION_OPTIONS: { value: DispositionAction; label: string }[] = [
   { value: 'add_to_dnc', label: 'Add to Do Not Call list' },
   { value: 'do_nothing', label: 'No action (log only)' },
 ];
+
+const TIMEZONE_OPTIONS = [
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Phoenix', 'America/Anchorage', 'Pacific/Honolulu', 'America/Puerto_Rico',
+];
+
+// Generate default workflow steps based on strategy
+function generateWorkflowSteps(strategy: FollowUpStrategy): WorkflowStep[] {
+  const id = () => Math.random().toString(36).slice(2, 8);
+  switch (strategy) {
+    case 'aggressive':
+      return [
+        { id: id(), type: 'call', label: 'Initial Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 5 min', enabled: true, waitHours: 0.08 },
+        { id: id(), type: 'sms', label: 'Follow-up SMS', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 30 min', enabled: true, waitHours: 0.5 },
+        { id: id(), type: 'call', label: 'Second Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 2 hours', enabled: true, waitHours: 2 },
+        { id: id(), type: 'call', label: 'Third Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 day', enabled: true, waitHours: 24 },
+        { id: id(), type: 'ai_sms', label: 'AI Follow-up SMS', enabled: true },
+      ];
+    case 'balanced':
+      return [
+        { id: id(), type: 'call', label: 'Initial Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 2 min', enabled: true, waitHours: 0.03 },
+        { id: id(), type: 'sms', label: 'Intro SMS', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 4 hours', enabled: true, waitHours: 4 },
+        { id: id(), type: 'call', label: 'Second Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 day', enabled: true, waitHours: 24 },
+        { id: id(), type: 'call', label: 'Third Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 2 days', enabled: true, waitHours: 48 },
+        { id: id(), type: 'ai_sms', label: 'Value SMS', enabled: true },
+      ];
+    case 'gentle':
+      return [
+        { id: id(), type: 'call', label: 'Initial Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 day', enabled: true, waitHours: 24 },
+        { id: id(), type: 'sms', label: 'Friendly SMS', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 3 days', enabled: true, waitHours: 72 },
+        { id: id(), type: 'call', label: 'Second Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 week', enabled: true, waitHours: 168 },
+        { id: id(), type: 'ai_sms', label: 'Check-in SMS', enabled: true },
+      ];
+    case 'calls_only':
+      return [
+        { id: id(), type: 'call', label: 'First Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 30 min', enabled: true, waitHours: 0.5 },
+        { id: id(), type: 'call', label: 'Second Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 4 hours', enabled: true, waitHours: 4 },
+        { id: id(), type: 'call', label: 'Third Call', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 day', enabled: true, waitHours: 24 },
+        { id: id(), type: 'call', label: 'Final Call', enabled: true },
+      ];
+    case 'sms_only':
+      return [
+        { id: id(), type: 'sms', label: 'Intro Text', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 4 hours', enabled: true, waitHours: 4 },
+        { id: id(), type: 'ai_sms', label: 'AI Follow-up', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 1 day', enabled: true, waitHours: 24 },
+        { id: id(), type: 'sms', label: 'Value Text', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait 3 days', enabled: true, waitHours: 72 },
+        { id: id(), type: 'ai_sms', label: 'Final Text', enabled: true },
+      ];
+    case 'custom':
+      return [
+        { id: id(), type: 'call', label: 'Step 1', enabled: true },
+        { id: id(), type: 'wait', label: 'Wait', enabled: true, waitHours: 1 },
+        { id: id(), type: 'sms', label: 'Step 2', enabled: true },
+      ];
+    default:
+      return [];
+  }
+}
+
+const STEP_TYPE_ICONS: Record<string, string> = {
+  call: '📞',
+  sms: '💬',
+  ai_sms: '🤖',
+  wait: '⏳',
+};
 
 // ── Component ──────────────────────────────────────────────────────────
 
@@ -217,6 +340,9 @@ const MissionBriefingWizard: React.FC = () => {
   const [buyAreaCode, setBuyAreaCode] = useState('');
   const [buyQuantity, setBuyQuantity] = useState(5);
   const [buyProvider, setBuyProvider] = useState<'retell' | 'telnyx'>('retell');
+  const [createdResources, setCreatedResources] = useState<CreatedResource[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [returnToReview, setReturnToReview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
@@ -265,16 +391,19 @@ const MissionBriefingWizard: React.FC = () => {
     }
   }, [data.businessDescription, data.leadImport.autoTag]);
 
+  // Generate workflow steps when strategy changes
+  useEffect(() => {
+    setData(prev => ({ ...prev, workflowSteps: generateWorkflowSteps(prev.followUpStrategy) }));
+  }, [data.followUpStrategy]);
+
   const numbersNeeded = useMemo(() => Math.ceil(data.dailyCalls / 80), [data.dailyCalls]);
   const deficit = useMemo(() => Math.max(0, numbersNeeded - currentNumbers), [numbersNeeded, currentNumbers]);
 
-  // Pipeline stages — editable, initialized from defaults when goal changes
   const pipelineStages = useMemo(() => {
     if (customPipelineStages.length > 0) return customPipelineStages;
     return DEFAULT_PIPELINE_STAGES[data.goalType] || DEFAULT_PIPELINE_STAGES.appointments;
   }, [customPipelineStages, data.goalType]);
 
-  // Reset custom stages when goal type changes
   useEffect(() => {
     setCustomPipelineStages([]);
   }, [data.goalType]);
@@ -284,13 +413,32 @@ const MissionBriefingWizard: React.FC = () => {
     [data.platforms]
   );
 
-  const totalSteps = 9; // 0-8: desc, goal, leads, import, calls, agents, followup, priorities+events, review
+  // Steps: 0=desc, 1=goal, 2=leads, 3=import, 4=calls+hours, 5=agents, 6=followup, 7=workflow preview, 8=priorities+events, 9=review+test
+  const totalSteps = 10;
   const progressPct = ((step + 1) / totalSteps) * 100;
+
+  const needsTransferConfig = data.goalType === 'transfers' || data.eventHandling.transferSuccess.includes('transfer_live');
+
+  const STEP_NAMES: Record<number, string> = {
+    0: 'Business Description',
+    1: 'Campaign Goal',
+    2: 'Leads & Numbers',
+    3: 'Lead Import',
+    4: 'Daily Calls & Hours',
+    5: 'AI Agents',
+    6: 'Follow-up Strategy',
+    7: 'Workflow Preview',
+    8: 'Priorities & Events',
+    9: 'Review & Build',
+  };
 
   const canAdvance = () => {
     if (step === 0) return data.businessDescription.trim().length > 10;
+    if (step === 1) {
+      if (data.goalType === 'custom') return data.customGoalText.trim().length > 5;
+      return true;
+    }
     if (step === 3) {
-      // Lead import step - skip is always valid, csv needs file, ghl is always valid
       const m = data.leadImport.method;
       if (m === 'skip') return true;
       if (m === 'csv') return data.leadImport.csvFile !== null;
@@ -303,6 +451,10 @@ const MissionBriefingWizard: React.FC = () => {
         if (pid === 'assistable') return data.assistableAssistantId.trim().length > 3 && data.assistableLocationId.trim().length > 3;
         return cfg.agentId.length > 0;
       });
+    }
+    if (step === 6) {
+      if (data.followUpStrategy === 'custom') return data.customStrategyText.trim().length > 5;
+      return true;
     }
     return true;
   };
@@ -342,6 +494,20 @@ const MissionBriefingWizard: React.FC = () => {
       }
       return { ...prev, platforms: next, splitTest: active.length > 1 };
     });
+  };
+
+  const handleNextStep = () => {
+    if (returnToReview) {
+      setReturnToReview(false);
+      setStep(9); // go back to review
+    } else {
+      setStep(s => s + 1);
+    }
+  };
+
+  const jumpToStep = (targetStep: number) => {
+    setReturnToReview(true);
+    setStep(targetStep);
   };
 
   const retellAgents = useMemo(() => agents.filter(a => a.platform === 'retell'), [agents]);
@@ -400,27 +566,19 @@ const MissionBriefingWizard: React.FC = () => {
     setTestCallResult(null);
 
     try {
-      // Determine which platform/agent to use for the test
       const primary = enabledPlatforms[0];
       if (!primary) throw new Error('No platform configured');
 
       const [pid, cfg] = primary;
 
       if (pid === 'telnyx') {
-        // Use telnyx-ai-assistant test_call action
         const { data: result, error } = await supabase.functions.invoke('telnyx-ai-assistant', {
-          body: {
-            action: 'test_call',
-            assistantId: cfg.agentId,
-            toNumber: testPhoneNumber.trim(),
-            isTestMode: true,
-          },
+          body: { action: 'test_call', assistantId: cfg.agentId, toNumber: testPhoneNumber.trim(), isTestMode: true },
         });
         if (error) throw error;
         if (result?.error) throw new Error(result.error);
         setTestCallResult({ success: true, message: `Telnyx test call initiated to ${testPhoneNumber}` });
       } else if (pid === 'assistable') {
-        // Use assistable-make-call
         const { data: result, error } = await supabase.functions.invoke('assistable-make-call', {
           body: {
             assistant_id: data.assistableAssistantId,
@@ -434,8 +592,6 @@ const MissionBriefingWizard: React.FC = () => {
         if (result?.error) throw new Error(result.error);
         setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
       } else {
-        // Retell — use outbound-calling with test flag
-        // Need a caller ID - fetch one from the user's active phone numbers
         let callerId = '';
         try {
           const { data: numbers } = await supabase
@@ -477,6 +633,46 @@ const MissionBriefingWizard: React.FC = () => {
     }
   };
 
+  // ── Post-build: fetch created resources ──────────────────────────────
+
+  const fetchCreatedResources = async () => {
+    setLoadingResources(true);
+    const resources: CreatedResource[] = [];
+    try {
+      // Get latest campaign
+      const { data: campaigns } = await supabase
+        .from('campaigns')
+        .select('id, name, status')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (campaigns?.[0]) {
+        resources.push({ type: 'Campaign', name: campaigns[0].name, id: campaigns[0].id, tab: 'campaigns' });
+      }
+
+      // Get latest workflow
+      const { data: workflows } = await supabase
+        .from('campaign_workflows')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (workflows?.[0]) {
+        resources.push({ type: 'Workflow', name: workflows[0].name, id: workflows[0].id, tab: 'workflows' });
+      }
+
+      // Get latest pipeline
+      const { data: pipelines } = await (supabase as any)
+        .from('pipeline_boards')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (pipelines?.[0]) {
+        resources.push({ type: 'Pipeline', name: pipelines[0].name, id: pipelines[0].id, tab: 'pipelines' });
+      }
+    } catch { /* non-critical */ }
+    setCreatedResources(resources);
+    setLoadingResources(false);
+  };
+
   // ── Build prompt ──────────────────────────────────────────────────────
 
   const handleBuild = async () => {
@@ -490,10 +686,7 @@ const MissionBriefingWizard: React.FC = () => {
         if (data.leadImport.campaignTag) {
           formData.append('campaignTag', data.leadImport.campaignTag);
         }
-        // CSV upload via edge function
-        const { error: uploadErr } = await supabase.functions.invoke('lead-csv-import', {
-          body: formData,
-        });
+        const { error: uploadErr } = await supabase.functions.invoke('lead-csv-import', { body: formData });
         if (uploadErr) {
           toast.error('CSV upload failed: ' + uploadErr.message);
         } else {
@@ -501,12 +694,12 @@ const MissionBriefingWizard: React.FC = () => {
         }
       }
 
-      // If GHL selected and not already synced
       if ((data.leadImport.method === 'ghl' || data.leadImport.method === 'both') && !ghlSyncing) {
         await handleGhlSync();
       }
 
       const enableSms = data.followUpStrategy !== 'calls_only';
+      const enableCalls = data.followUpStrategy !== 'sms_only';
       const platformLines = enabledPlatforms.map(([pid, cfg]) => {
         const meta = PLATFORM_META[pid];
         if (pid === 'assistable') {
@@ -515,29 +708,51 @@ const MissionBriefingWizard: React.FC = () => {
         return `- ${meta.label}: ${cfg.trafficPct}% traffic, agent ID: ${cfg.agentId}`;
       });
 
+      const activeSteps = data.workflowSteps.filter(s => s.enabled);
+      const workflowDesc = activeSteps.length > 0
+        ? `Workflow sequence (user-configured): ${activeSteps.map(s => `${s.type}${s.waitHours ? ` (${s.waitHours}h)` : ''}`).join(' → ')}`
+        : '';
+
+      const goalLabel = data.goalType === 'custom' ? data.customGoalText : GOAL_LABELS[data.goalType];
+      const strategyLabel = data.followUpStrategy === 'custom' ? data.customStrategyText : STRATEGY_LABELS[data.followUpStrategy].label;
+      const priorityLabel = data.campaignPriority === 'custom' ? data.customPriorityText : PRIORITY_OPTIONS[data.campaignPriority].label;
+
       const prompt = [
         `BUILD A CAMPAIGN FROM THIS MISSION BRIEFING:`,
         ``,
         `Business: ${data.businessDescription}`,
-        `Goal: ${GOAL_LABELS[data.goalType]}`,
+        `Goal: ${goalLabel}`,
         `Daily target: ${data.dailyTarget} results/day`,
         `Max cost per result: $${data.maxCostPerResult}`,
         `Starting leads: ${data.startingLeads}, ramping to ${data.rampUpTarget}`,
         `Daily calls to start: ${data.dailyCalls}`,
         `Ramp-up: ${RAMP_LABELS[data.rampUpBehavior].label} (${RAMP_LABELS[data.rampUpBehavior].desc})`,
-        `Follow-up strategy: ${STRATEGY_LABELS[data.followUpStrategy].label}`,
+        `Follow-up strategy: ${strategyLabel}`,
         `Enable SMS: ${enableSms}`,
+        `Enable Calls: ${enableCalls}`,
+        ``,
+        `CALLING HOURS: ${data.callingHoursStart} to ${data.callingHoursEnd} (${data.timezone})${data.bypassCallingHours ? ' [BYPASS FOR TESTING]' : ''}`,
         ``,
         `LEAD IMPORT:`,
         `Campaign tag: ${data.leadImport.campaignTag || 'none'}`,
         `Import method: ${data.leadImport.method}`,
-        data.leadImport.method !== 'skip' ? `Use campaign tag "${data.leadImport.campaignTag}" to filter leads for this campaign's analytics and autonomous engine reports.` : '',
+        data.leadImport.method !== 'skip' ? `Use campaign tag "${data.leadImport.campaignTag}" to filter leads.` : '',
         ``,
         `PLATFORMS (${data.splitTest ? 'SPLIT TEST' : 'SINGLE'}):`,
         ...platformLines,
         data.splitTest ? `Split traffic across platforms for volume diversification and A/B comparison.` : '',
         ``,
-        `CAMPAIGN PRIORITY: ${PRIORITY_OPTIONS[data.campaignPriority].label} — ${PRIORITY_OPTIONS[data.campaignPriority].desc}`,
+        needsTransferConfig ? [
+          `TRANSFER CONFIGURATION:`,
+          `Transfer number: ${data.transferPhoneNumber}`,
+          `Transfer type: ${data.transferType === 'warm' ? 'Warm (AI stays on line)' : 'Cold (AI disconnects)'}`,
+          data.transferTrigger ? `Transfer trigger: ${data.transferTrigger}` : '',
+          `Include transfer instructions in the agent prompt. The AI should transfer calls to ${data.transferPhoneNumber} when the lead shows interest.`,
+        ].filter(Boolean).join('\n') : '',
+        ``,
+        `CAMPAIGN PRIORITY: ${priorityLabel}`,
+        ``,
+        workflowDesc,
         ``,
         `EVENT HANDLING (disposition automation rules):`,
         ...Object.entries(data.eventHandling).map(([event, actions]) => {
@@ -550,14 +765,17 @@ const MissionBriefingWizard: React.FC = () => {
         `Pipeline stages to create: ${pipelineStages.join(' → ')}`,
         `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
         ``,
-        enableSms
+        enableSms && enableCalls
           ? `Use a mix of call and SMS steps in the workflow.`
-          : `Only use call and wait steps in the workflow. No SMS at all.`,
+          : enableSms
+            ? `Use SMS steps only in the workflow. No calls.`
+            : `Only use call and wait steps in the workflow. No SMS at all.`,
         data.platforms.assistable.enabled
-          ? `Include an assistable_call workflow step for Assistable using assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}. The workflow-executor will call the assistable-make-call edge function which hits the Assistable GHL-Safe API to place the call.${data.assistableWebhookUrl ? ` Also include a webhook step for data extraction at: ${data.assistableWebhookUrl}` : ''}`
+          ? `Include an assistable_call workflow step for Assistable using assistant_id: ${data.assistableAssistantId}, location_id: ${data.assistableLocationId}${data.assistableNumberPoolId ? `, number_pool_id: ${data.assistableNumberPoolId}` : ''}.`
           : '',
         ``,
         `Set autonomous settings: daily_goal_calls=${data.dailyCalls}, daily_goal_appointments=${data.dailyTarget}.`,
+        `Set calling_hours_start='${data.callingHoursStart}', calling_hours_end='${data.callingHoursEnd}', timezone='${data.timezone}'.`,
         `Enable lead journeys, calling time optimization, and adaptive pacing.`,
         `Create this campaign now using setup_full_campaign.`,
       ].filter(Boolean).join('\n');
@@ -565,6 +783,9 @@ const MissionBriefingWizard: React.FC = () => {
       await sendMessage(prompt);
       setBuildComplete(true);
       toast.success('Campaign build initiated! Check the AI chat for progress.');
+
+      // Fetch created resources after a delay
+      setTimeout(fetchCreatedResources, 5000);
     } catch (err) {
       toast.error('Failed to start campaign build. Please try again.');
       console.error('Mission briefing build error:', err);
@@ -576,15 +797,6 @@ const MissionBriefingWizard: React.FC = () => {
   // ── Render ────────────────────────────────────────────────────────────
 
   if (buildComplete) {
-    const navItems = [
-      { label: 'Campaigns', tab: 'campaigns', icon: '📋', desc: 'View & manage your new campaign' },
-      { label: 'Pipelines', tab: 'pipelines', icon: '🔀', desc: 'Check pipeline stages & lead positions' },
-      { label: 'Workflows', tab: 'workflows', icon: '⚡', desc: 'Review the call/SMS sequence' },
-      { label: 'Autonomous Agent', tab: 'autonomous-agent', icon: '🤖', desc: 'Goals, journeys & engine settings' },
-      { label: 'SMS Conversations', tab: 'sms-conversations', icon: '💬', desc: 'Monitor AI SMS threads' },
-      { label: 'Analytics', tab: 'analytics', icon: '📊', desc: 'Track performance once calls start' },
-    ];
-
     return (
       <div className="space-y-6">
         {/* Success header */}
@@ -597,65 +809,84 @@ const MissionBriefingWizard: React.FC = () => {
               <div>
                 <p className="text-lg font-bold text-foreground">🎉 Mission Launched!</p>
                 <p className="text-sm text-muted-foreground">
-                  The AI is building your campaign right now. Here's what's being created:
+                  The AI is building your campaign. Resources will appear below as they're created.
                 </p>
               </div>
             </div>
 
-            {/* Summary of what was built */}
+            {/* Summary cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
               <div className="rounded-lg border bg-background p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{data.dailyCalls || '—'}</p>
-                <p className="text-xs text-muted-foreground">Daily Call Goal</p>
+                <p className="text-2xl font-bold text-primary">{data.dailyCalls}</p>
+                <p className="text-xs text-muted-foreground">Daily Calls</p>
               </div>
               <div className="rounded-lg border bg-background p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{data.dailyTarget || '—'}</p>
-                <p className="text-xs text-muted-foreground">Daily {data.goalType === 'appointments' ? 'Appointments' : data.goalType === 'qualify' ? 'Qualifications' : 'Callbacks'} Goal</p>
+                <p className="text-2xl font-bold text-primary">{data.dailyTarget}</p>
+                <p className="text-xs text-muted-foreground">Daily {GOAL_LABELS[data.goalType]?.split(' ')[0] || 'Results'} Goal</p>
               </div>
               <div className="rounded-lg border bg-background p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{data.followUpStrategy ? STRATEGY_LABELS[data.followUpStrategy]?.label : '—'}</p>
+                <p className="text-lg font-bold text-primary">{STRATEGY_LABELS[data.followUpStrategy]?.label || data.customStrategyText.slice(0, 20)}</p>
                 <p className="text-xs text-muted-foreground">Strategy</p>
               </div>
-              {Object.entries(data.platforms).filter(([, cfg]) => cfg.enabled).map(([key]) => (
-                <div key={key} className="rounded-lg border bg-background p-3 text-center">
-                  <p className="text-2xl font-bold text-primary capitalize">{PLATFORM_META[key as PlatformId]?.label || key}</p>
-                  <p className="text-xs text-muted-foreground">Platform</p>
-                </div>
-              ))}
-              {csvRows.length > 0 && (
-                <div className="rounded-lg border bg-background p-3 text-center">
-                  <p className="text-2xl font-bold text-primary">{csvRows.length.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">Leads Uploaded</p>
-                </div>
-              )}
-              {customPipelineStages.length > 0 && (
-                <div className="rounded-lg border bg-background p-3 text-center">
-                  <p className="text-2xl font-bold text-primary">{customPipelineStages.length}</p>
-                  <p className="text-xs text-muted-foreground">Pipeline Stages</p>
-                </div>
-              )}
             </div>
 
+            {/* Created resources with edit links */}
+            {createdResources.length > 0 && (
+              <div className="space-y-2 mb-4">
+                <p className="text-sm font-semibold text-foreground">✅ Created Resources</p>
+                {createdResources.map(r => (
+                  <div key={r.id} className="flex items-center justify-between p-2 rounded-lg border bg-background">
+                    <div>
+                      <p className="text-sm font-medium">{r.type}: {r.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{r.id.slice(0, 12)}…</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        window.location.href = `/?tab=${r.tab}`;
+                      }}
+                    >
+                      <Pencil className="h-3 w-3 mr-1" /> Edit
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {loadingResources && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading created resources…
+              </div>
+            )}
+
+            {!loadingResources && createdResources.length === 0 && (
+              <Button variant="outline" size="sm" onClick={fetchCreatedResources} className="mb-4">
+                <RefreshCw className="h-3 w-3 mr-1" /> Check for created resources
+              </Button>
+            )}
+
             <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
-              💡 <strong>Tip:</strong> Open the <strong>AI Assistant chat</strong> (bottom-right bubble) to watch the build in real-time. It will confirm each resource as it's created.
+              💡 <strong>Tip:</strong> Open the <strong>AI Assistant chat</strong> (bottom-right bubble) to watch the build in real-time.
             </div>
           </CardContent>
         </Card>
 
-        {/* Where to go next */}
+        {/* Quick nav */}
         <div>
           <p className="text-sm font-semibold text-foreground mb-3">📍 Where to Go Next</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {navItems.map(item => (
+            {[
+              { label: 'Campaigns', tab: 'campaigns', icon: '📋', desc: 'View & manage your campaign' },
+              { label: 'Pipelines', tab: 'pipelines', icon: '🔀', desc: 'Check pipeline stages' },
+              { label: 'Workflows', tab: 'workflows', icon: '⚡', desc: 'Review the call/SMS sequence' },
+              { label: 'Autonomous Agent', tab: 'autonomous-agent', icon: '🤖', desc: 'Goals & engine settings' },
+              { label: 'SMS', tab: 'sms-conversations', icon: '💬', desc: 'Monitor AI SMS threads' },
+              { label: 'Analytics', tab: 'analytics', icon: '📊', desc: 'Track performance' },
+            ].map(item => (
               <button
                 key={item.tab}
-                onClick={() => {
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('tab', item.tab);
-                  window.history.pushState({}, '', url.toString());
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                  window.location.href = `/dashboard?tab=${item.tab}`;
-                }}
+                onClick={() => { window.location.href = `/?tab=${item.tab}`; }}
                 className="flex items-center gap-3 rounded-lg border bg-background p-3 text-left hover:bg-accent/50 transition-colors"
               >
                 <span className="text-xl">{item.icon}</span>
@@ -668,9 +899,8 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         </div>
 
-        {/* Start over */}
         <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); setCsvRows([]); setCustomPipelineStages([]); }}>
+          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); setCsvRows([]); setCustomPipelineStages([]); setCreatedResources([]); }}>
             <Plus className="h-4 w-4 mr-1" /> Create Another Mission
           </Button>
         </div>
@@ -691,6 +921,11 @@ const MissionBriefingWizard: React.FC = () => {
           </Badge>
         </div>
         <Progress value={progressPct} className="h-1.5 mt-2" />
+        {returnToReview && (
+          <p className="text-xs text-primary mt-1">
+            Editing — press Next to return to Review
+          </p>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -714,7 +949,7 @@ const MissionBriefingWizard: React.FC = () => {
         {step === 1 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">What's your goal?</Label>
-            <RadioGroup value={data.goalType} onValueChange={(v) => update({ goalType: v as WizardData['goalType'] })}>
+            <RadioGroup value={data.goalType} onValueChange={(v) => update({ goalType: v as GoalType })}>
               {Object.entries(GOAL_LABELS).map(([key, label]) => (
                 <div key={key} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
                   <RadioGroupItem value={key} id={`goal-${key}`} />
@@ -722,6 +957,62 @@ const MissionBriefingWizard: React.FC = () => {
                 </div>
               ))}
             </RadioGroup>
+            {data.goalType === 'custom' && (
+              <Textarea
+                value={data.customGoalText}
+                onChange={e => update({ customGoalText: e.target.value })}
+                placeholder="Describe your campaign goal in detail…"
+                className="min-h-[60px] resize-none"
+              />
+            )}
+
+            {/* Transfer config shows when goal is transfers */}
+            {(data.goalType === 'transfers') && (
+              <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  📲 Transfer Configuration
+                </Label>
+                <div>
+                  <Label className="text-sm">Transfer Phone Number <span className="text-destructive">*</span></Label>
+                  <Input
+                    placeholder="+1 (555) 123-4567"
+                    value={data.transferPhoneNumber}
+                    onChange={e => update({ transferPhoneNumber: e.target.value })}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">The number your AI will transfer interested leads to</p>
+                </div>
+                <div>
+                  <Label className="text-sm">Transfer Type</Label>
+                  <RadioGroup value={data.transferType} onValueChange={(v) => update({ transferType: v as TransferType })} className="mt-1">
+                    <div className="flex items-center space-x-2 p-2 rounded border hover:bg-accent/50">
+                      <RadioGroupItem value="warm" id="transfer-warm" />
+                      <Label htmlFor="transfer-warm" className="cursor-pointer flex-1">
+                        <span className="font-medium">Warm Transfer</span>
+                        <span className="text-muted-foreground text-sm ml-2">— AI stays on and introduces the lead</span>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2 p-2 rounded border hover:bg-accent/50">
+                      <RadioGroupItem value="cold" id="transfer-cold" />
+                      <Label htmlFor="transfer-cold" className="cursor-pointer flex-1">
+                        <span className="font-medium">Cold Transfer</span>
+                        <span className="text-muted-foreground text-sm ml-2">— AI disconnects after connecting</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+                <div>
+                  <Label className="text-sm">Transfer Trigger <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    placeholder="e.g. When lead says they're interested in a quote"
+                    value={data.transferTrigger}
+                    onChange={e => update({ transferTrigger: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
                 <Label className="text-sm">Daily target</Label>
@@ -765,29 +1056,17 @@ const MissionBriefingWizard: React.FC = () => {
               <p className="text-sm text-muted-foreground">
                 For <strong>{data.dailyCalls}</strong> calls/day you'll need ~<strong>{numbersNeeded}</strong> numbers.
                 You currently have <strong>{currentNumbers}</strong>.
+                {deficit > 0 && (
+                  <span className="text-destructive font-medium"> Need {deficit} more.</span>
+                )}
               </p>
+
               {deficit > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm text-destructive">
-                    ⚠️ We recommend buying <strong>{deficit}</strong> more numbers before launch.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Area code (e.g. 415)"
-                      value={buyAreaCode}
-                      onChange={e => setBuyAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                      className="w-28 h-8 text-xs"
-                    />
-                    <Input
-                      type="number"
-                      value={buyQuantity}
-                      onChange={e => setBuyQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
-                      className="w-16 h-8 text-xs"
-                      min={1}
-                      max={50}
-                    />
+                <div className="mt-3 p-3 rounded border bg-background space-y-2">
+                  <Label className="text-xs font-semibold">Buy Numbers Now</Label>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Select value={buyProvider} onValueChange={(v) => setBuyProvider(v as 'retell' | 'telnyx')}>
-                      <SelectTrigger className="w-24 h-8 text-xs">
+                      <SelectTrigger className="w-28 h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -795,114 +1074,85 @@ const MissionBriefingWizard: React.FC = () => {
                         <SelectItem value="telnyx">Telnyx</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Input
+                      placeholder="Area code"
+                      value={buyAreaCode}
+                      onChange={e => setBuyAreaCode(e.target.value)}
+                      className="w-24 h-8 text-xs"
+                    />
+                    <Input
+                      type="number"
+                      value={buyQuantity}
+                      onChange={e => setBuyQuantity(parseInt(e.target.value) || 1)}
+                      min={1}
+                      max={50}
+                      className="w-16 h-8 text-xs"
+                    />
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 text-xs gap-1"
-                      disabled={buyingNumbers || buyAreaCode.length !== 3}
+                      className="h-8 text-xs"
+                      disabled={buyingNumbers}
                       onClick={async () => {
                         setBuyingNumbers(true);
                         try {
                           const { data: result, error } = await supabase.functions.invoke('phone-number-purchasing', {
-                            body: { areaCode: buyAreaCode, quantity: buyQuantity, provider: buyProvider, purpose: 'voice_ai', callDirection: 'outbound' },
+                            body: { provider: buyProvider, areaCode: buyAreaCode || undefined, quantity: buyQuantity },
                           });
                           if (error) throw error;
-                          if (result?.error) throw new Error(result.error);
-                          const purchased = result?.purchased || buyQuantity;
+                          const purchased = result?.purchased || result?.count || buyQuantity;
+                          toast.success(`Purchased ${purchased} numbers!`);
                           setCurrentNumbers(prev => prev + purchased);
-                          toast.success(`Purchased ${purchased} numbers in area code ${buyAreaCode}`);
                         } catch (err: any) {
-                          toast.error(err.message || 'Failed to purchase numbers');
+                          toast.error(err.message || 'Failed to buy numbers');
                         } finally {
                           setBuyingNumbers(false);
                         }
                       }}
                     >
-                      {buyingNumbers ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                      Buy
+                      {buyingNumbers ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Buy'}
                     </Button>
                   </div>
                 </div>
-              )}
-              {deficit === 0 && (
-                <p className="text-sm text-primary">
-                  ✅ You have enough numbers for this volume.
-                </p>
               )}
             </div>
           </div>
         )}
 
-        {/* ── Step 3: Lead Import & Tagging (NEW) ── */}
+        {/* ── Step 3: Lead Import ── */}
         {step === 3 && (
           <div className="space-y-4">
-            <Label className="text-base font-semibold flex items-center gap-2">
-              <Upload className="h-4 w-4" /> Import & Tag Your Leads
-            </Label>
-
-            <p className="text-sm text-muted-foreground">
-              Import leads and tag them for this campaign so analytics and the autonomous engine can track them separately.
-            </p>
-
-            {/* Import method selector */}
+            <Label className="text-base font-semibold">How do you want to import leads?</Label>
             <RadioGroup value={data.leadImport.method} onValueChange={(v) => updateLeadImport({ method: v as LeadImportConfig['method'] })}>
-              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
-                <RadioGroupItem value="csv" id="import-csv" />
-                <Label htmlFor="import-csv" className="cursor-pointer flex-1 flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-primary" />
-                  <span>Upload CSV file</span>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
-                <RadioGroupItem value="ghl" id="import-ghl" />
-                <Label htmlFor="import-ghl" className="cursor-pointer flex-1 flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-emerald-600" />
-                  <span>Sync from GoHighLevel</span>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
-                <RadioGroupItem value="both" id="import-both" />
-                <Label htmlFor="import-both" className="cursor-pointer flex-1 flex items-center gap-2">
-                  <Split className="h-4 w-4 text-purple-600" />
-                  <span>Both CSV + GHL</span>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
-                <RadioGroupItem value="skip" id="import-skip" />
-                <Label htmlFor="import-skip" className="cursor-pointer flex-1 text-muted-foreground">
-                  Skip — I already have leads in the system
-                </Label>
-              </div>
+              {[
+                { key: 'csv', label: 'Upload CSV', icon: <FileSpreadsheet className="h-4 w-4" /> },
+                { key: 'ghl', label: 'Sync from GoHighLevel', icon: <RefreshCw className="h-4 w-4" /> },
+                { key: 'both', label: 'CSV + GHL', icon: <Plus className="h-4 w-4" /> },
+                { key: 'skip', label: 'Skip — I already have leads in the system', icon: <Check className="h-4 w-4" /> },
+              ].map(({ key, label, icon }) => (
+                <div key={key} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value={key} id={`import-${key}`} />
+                  <Label htmlFor={`import-${key}`} className="cursor-pointer flex-1 flex items-center gap-2">
+                    {icon} {label}
+                  </Label>
+                </div>
+              ))}
             </RadioGroup>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={e => e.target.files?.[0] && handleCsvSelect(e.target.files[0])}
+            />
 
             {/* CSV upload section */}
             {(data.leadImport.method === 'csv' || data.leadImport.method === 'both') && (
               <div className="p-4 rounded-lg border space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-semibold">CSV File</Label>
-                  {data.leadImport.csvFile && (
-                    <Badge variant="secondary" className="text-xs">
-                      {data.leadImport.csvPreviewCount.toLocaleString()} leads detected
-                    </Badge>
-                  )}
-                </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept=".csv"
-                  className="hidden"
-                  onChange={e => {
-                    const f = e.target.files?.[0];
-                    if (f) handleCsvSelect(f);
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={csvParsing}
-                  className="w-full"
-                >
+                <Label className="text-sm font-semibold">CSV File</Label>
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={csvParsing} className="w-full">
                   {csvParsing ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Parsing…</>
                   ) : data.leadImport.csvFile ? (
@@ -912,7 +1162,6 @@ const MissionBriefingWizard: React.FC = () => {
                   )}
                 </Button>
 
-                {/* CSV preview */}
                 {csvRows.length > 0 && (
                   <div className="overflow-x-auto max-h-32">
                     <table className="text-xs w-full">
@@ -954,13 +1203,7 @@ const MissionBriefingWizard: React.FC = () => {
                     className="mt-1 text-sm"
                   />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGhlSync}
-                  disabled={ghlSyncing}
-                  className="w-full"
-                >
+                <Button variant="outline" size="sm" onClick={handleGhlSync} disabled={ghlSyncing} className="w-full">
                   {ghlSyncing ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Syncing…</>
                   ) : (
@@ -978,7 +1221,7 @@ const MissionBriefingWizard: React.FC = () => {
                   <Label className="text-sm font-semibold">Campaign Tag</Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  All imported leads will be tagged with this identifier. The autonomous engine uses it to run isolated analytics, A/B tests, and performance reports for this campaign only.
+                  All imported leads will be tagged with this identifier for isolated analytics.
                 </p>
                 <div className="flex items-center gap-2">
                   <Input
@@ -1000,16 +1243,12 @@ const MissionBriefingWizard: React.FC = () => {
                     <RefreshCw className="h-3 w-3" />
                   </Button>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <AlertCircle className="h-3 w-3" />
-                  <span>This tag must be unique per campaign for clean reporting</span>
-                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ── Step 4: Daily Calls & Ramp-up (was step 3) ── */}
+        {/* ── Step 4: Daily Calls, Ramp-up & Calling Hours ── */}
         {step === 4 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">How many calls per day to start?</Label>
@@ -1042,10 +1281,45 @@ const MissionBriefingWizard: React.FC = () => {
                 </div>
               ))}
             </RadioGroup>
+
+            {/* Calling Hours & Timezone */}
+            <div className="p-4 rounded-lg border bg-accent/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-primary" />
+                <Label className="text-sm font-semibold">Calling Hours & Timezone</Label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Start time</Label>
+                  <Input type="time" value={data.callingHoursStart} onChange={e => update({ callingHoursStart: e.target.value })} className="mt-1" />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">End time</Label>
+                  <Input type="time" value={data.callingHoursEnd} onChange={e => update({ callingHoursEnd: e.target.value })} className="mt-1" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Timezone</Label>
+                <Select value={data.timezone} onValueChange={v => update({ timezone: v })}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEZONE_OPTIONS.map(tz => (
+                      <SelectItem key={tz} value={tz}>{tz.replace('America/', '').replace('Pacific/', '').replace(/_/g, ' ')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={data.bypassCallingHours} onCheckedChange={v => update({ bypassCallingHours: v })} />
+                <Label className="text-xs text-muted-foreground">Bypass calling hours for testing</Label>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* ── Step 5: Agent & Platform Setup (was step 4) ── */}
+        {/* ── Step 5: Agent & Platform Setup ── */}
         {step === 5 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Which AI agents should we use?</Label>
@@ -1054,7 +1328,6 @@ const MissionBriefingWizard: React.FC = () => {
               <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
               <span>
                 You can run one platform or <strong>split test</strong> multiple platforms on the same campaign.
-                Splitting volume across providers lets you make more calls without tripping rate limits, and compare which AI performs better.
               </span>
             </div>
 
@@ -1122,39 +1395,19 @@ const MissionBriefingWizard: React.FC = () => {
                           <div className="space-y-3">
                             <div>
                               <Label className="text-sm">Assistant ID <span className="text-destructive">*</span></Label>
-                              <Input
-                                placeholder="asst_12345"
-                                value={data.assistableAssistantId}
-                                onChange={e => update({ assistableAssistantId: e.target.value })}
-                                className="mt-1 text-sm"
-                              />
+                              <Input placeholder="asst_12345" value={data.assistableAssistantId} onChange={e => update({ assistableAssistantId: e.target.value })} className="mt-1 text-sm" />
                             </div>
                             <div>
                               <Label className="text-sm">Location ID <span className="text-destructive">*</span></Label>
-                              <Input
-                                placeholder="loc_98765"
-                                value={data.assistableLocationId}
-                                onChange={e => update({ assistableLocationId: e.target.value })}
-                                className="mt-1 text-sm"
-                              />
+                              <Input placeholder="loc_98765" value={data.assistableLocationId} onChange={e => update({ assistableLocationId: e.target.value })} className="mt-1 text-sm" />
                             </div>
                             <div>
                               <Label className="text-sm">Number Pool ID <span className="text-muted-foreground">(optional)</span></Label>
-                              <Input
-                                placeholder="pool_abc123"
-                                value={data.assistableNumberPoolId}
-                                onChange={e => update({ assistableNumberPoolId: e.target.value })}
-                                className="mt-1 text-sm"
-                              />
+                              <Input placeholder="pool_abc123" value={data.assistableNumberPoolId} onChange={e => update({ assistableNumberPoolId: e.target.value })} className="mt-1 text-sm" />
                             </div>
                             <div>
                               <Label className="text-sm">Extraction Webhook URL <span className="text-muted-foreground">(optional)</span></Label>
-                              <Input
-                                placeholder="https://api.assistable.ai/webhook/..."
-                                value={data.assistableWebhookUrl}
-                                onChange={e => update({ assistableWebhookUrl: e.target.value })}
-                                className="mt-1 text-sm"
-                              />
+                              <Input placeholder="https://api.assistable.ai/webhook/..." value={data.assistableWebhookUrl} onChange={e => update({ assistableWebhookUrl: e.target.value })} className="mt-1 text-sm" />
                             </div>
                           </div>
                         )}
@@ -1196,18 +1449,17 @@ const MissionBriefingWizard: React.FC = () => {
                 <Split className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600" />
                 <span>
                   <strong>Split test active.</strong> Volume will be distributed across {enabledPlatforms.length} platforms ({enabledPlatforms.map(([, c]) => `${c.trafficPct}%`).join(' / ')}).
-                  This diversifies your calling infrastructure and lets you compare AI performance head-to-head.
                 </span>
               </div>
             )}
           </div>
         )}
 
-        {/* ── Step 6: Follow-up Strategy (was step 5) ── */}
+        {/* ── Step 6: Follow-up Strategy ── */}
         {step === 6 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">How should we follow up?</Label>
-            <RadioGroup value={data.followUpStrategy} onValueChange={(v) => update({ followUpStrategy: v as WizardData['followUpStrategy'] })}>
+            <RadioGroup value={data.followUpStrategy} onValueChange={(v) => update({ followUpStrategy: v as FollowUpStrategy })}>
               {Object.entries(STRATEGY_LABELS).map(([key, { label, desc }]) => (
                 <div key={key} className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
                   <RadioGroupItem value={key} id={`strat-${key}`} />
@@ -1218,11 +1470,64 @@ const MissionBriefingWizard: React.FC = () => {
                 </div>
               ))}
             </RadioGroup>
+            {data.followUpStrategy === 'custom' && (
+              <Textarea
+                value={data.customStrategyText}
+                onChange={e => update({ customStrategyText: e.target.value })}
+                placeholder="Describe your ideal follow-up cadence… e.g. 'Call once, wait 2 hours, text, wait 1 day, call again, then weekly texts for a month'"
+                className="min-h-[80px] resize-none"
+              />
+            )}
           </div>
         )}
 
-        {/* ── Step 7: Campaign Priorities & Event Handling ── */}
+        {/* ── Step 7: Workflow Preview ── */}
         {step === 7 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-primary" />
+              <Label className="text-base font-semibold">Workflow Preview</Label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This is the exact sequence that will be built. Toggle steps on/off to customize.
+            </p>
+
+            <div className="space-y-1">
+              {data.workflowSteps.map((ws, i) => (
+                <div
+                  key={ws.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${ws.enabled ? 'bg-background' : 'bg-muted/30 opacity-50'}`}
+                >
+                  <Switch
+                    checked={ws.enabled}
+                    onCheckedChange={v => {
+                      setData(prev => ({
+                        ...prev,
+                        workflowSteps: prev.workflowSteps.map((s, idx) => idx === i ? { ...s, enabled: v } : s),
+                      }));
+                    }}
+                  />
+                  <span className="text-lg">{STEP_TYPE_ICONS[ws.type] || '❓'}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{ws.label}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{ws.type}{ws.waitHours ? ` — ${ws.waitHours >= 24 ? `${Math.round(ws.waitHours / 24)} day(s)` : ws.waitHours >= 1 ? `${ws.waitHours} hour(s)` : `${Math.round(ws.waitHours * 60)} min`}` : ''}</p>
+                  </div>
+                  {i < data.workflowSteps.length - 1 && ws.enabled && (
+                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 rounded-lg bg-accent/20 border text-xs text-muted-foreground">
+              💡 Active steps: {data.workflowSteps.filter(s => s.enabled).length} of {data.workflowSteps.length}. 
+              The AI will build this exact sequence as your campaign workflow.
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 8: Campaign Priorities & Event Handling ── */}
+        {step === 8 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">What matters most for this campaign?</Label>
             <RadioGroup value={data.campaignPriority} onValueChange={(v) => update({ campaignPriority: v as CampaignPriority })}>
@@ -1236,6 +1541,27 @@ const MissionBriefingWizard: React.FC = () => {
                 </div>
               ))}
             </RadioGroup>
+            {data.campaignPriority === 'custom' && (
+              <Input
+                value={data.customPriorityText}
+                onChange={e => update({ customPriorityText: e.target.value })}
+                placeholder="Describe your campaign priority…"
+              />
+            )}
+
+            {/* Transfer config reminder */}
+            {needsTransferConfig && !data.transferPhoneNumber && data.goalType !== 'transfers' && (
+              <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 space-y-2">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">⚠️ Transfer number needed</p>
+                <p className="text-xs text-muted-foreground">You have "Transfer to live agent" in your event handling but no transfer number configured.</p>
+                <Input
+                  placeholder="+1 (555) 123-4567"
+                  value={data.transferPhoneNumber}
+                  onChange={e => update({ transferPhoneNumber: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            )}
 
             <div className="pt-2">
               <Label className="text-base font-semibold">What should happen when…</Label>
@@ -1275,28 +1601,47 @@ const MissionBriefingWizard: React.FC = () => {
           </div>
         )}
 
-        {/* ── Step 8: Review & Build ── */}
-        {step === 8 && (
+        {/* ── Step 9: Review & Build ── */}
+        {step === 9 && (
           <div className="space-y-4">
             <Label className="text-base font-semibold">Review & Build</Label>
+            <p className="text-xs text-muted-foreground">Click any row to edit that section.</p>
 
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Business</span><span className="font-medium text-right max-w-[60%] truncate">{data.businessDescription.slice(0, 80)}{data.businessDescription.length > 80 ? '…' : ''}</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Goal</span><span className="font-medium">{GOAL_LABELS[data.goalType]}</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily target</span><span className="font-medium">{data.dailyTarget} results @ ≤${data.maxCostPerResult} each</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Leads</span><span className="font-medium">{data.startingLeads.toLocaleString()} → {data.rampUpTarget.toLocaleString()}</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Import method</span><span className="font-medium capitalize">{data.leadImport.method}</span></div>
-              {data.leadImport.campaignTag && (
-                <div className="flex justify-between p-2 rounded bg-accent/20">
-                  <span className="text-muted-foreground">Campaign tag</span>
-                  <Badge variant="outline" className="text-xs font-mono">{data.leadImport.campaignTag}</Badge>
+              {[
+                { label: 'Business', value: data.businessDescription.slice(0, 80) + (data.businessDescription.length > 80 ? '…' : ''), stepNum: 0 },
+                { label: 'Goal', value: data.goalType === 'custom' ? data.customGoalText.slice(0, 50) : GOAL_LABELS[data.goalType], stepNum: 1 },
+                { label: 'Daily target', value: `${data.dailyTarget} results @ ≤$${data.maxCostPerResult} each`, stepNum: 1 },
+                { label: 'Leads', value: `${data.startingLeads.toLocaleString()} → ${data.rampUpTarget.toLocaleString()}`, stepNum: 2 },
+                { label: 'Import method', value: data.leadImport.method, stepNum: 3 },
+                { label: 'Daily calls', value: `${data.dailyCalls} (${RAMP_LABELS[data.rampUpBehavior].label} ramp)`, stepNum: 4 },
+                { label: 'Calling hours', value: `${data.callingHoursStart}–${data.callingHoursEnd} ${data.timezone.split('/').pop()?.replace(/_/g, ' ')}${data.bypassCallingHours ? ' ⚠️ BYPASS' : ''}`, stepNum: 4 },
+                { label: 'Strategy', value: data.followUpStrategy === 'custom' ? data.customStrategyText.slice(0, 40) : STRATEGY_LABELS[data.followUpStrategy].label, stepNum: 6 },
+                { label: 'Workflow', value: `${data.workflowSteps.filter(s => s.enabled).length} active steps`, stepNum: 7 },
+                { label: 'Priority', value: data.campaignPriority === 'custom' ? data.customPriorityText.slice(0, 40) : PRIORITY_OPTIONS[data.campaignPriority].label, stepNum: 8 },
+              ].map(({ label, value, stepNum }) => (
+                <div
+                  key={label}
+                  className="flex justify-between items-center p-2 rounded bg-accent/20 cursor-pointer hover:bg-accent/40 transition-colors group"
+                  onClick={() => jumpToStep(stepNum)}
+                >
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    {label}
+                    <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                  </span>
+                  <span className="font-medium text-right max-w-[60%] truncate">{value}</span>
                 </div>
-              )}
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Daily calls</span><span className="font-medium">{data.dailyCalls} ({RAMP_LABELS[data.rampUpBehavior].label} ramp)</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Strategy</span><span className="font-medium">{STRATEGY_LABELS[data.followUpStrategy].label}</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Priority</span><span className="font-medium">{PRIORITY_OPTIONS[data.campaignPriority].label}</span></div>
-              <div className="flex justify-between p-2 rounded bg-accent/20">
-                <span className="text-muted-foreground">Platforms</span>
+              ))}
+
+              {/* Platforms row */}
+              <div
+                className="flex justify-between items-center p-2 rounded bg-accent/20 cursor-pointer hover:bg-accent/40 transition-colors group"
+                onClick={() => jumpToStep(5)}
+              >
+                <span className="text-muted-foreground flex items-center gap-1">
+                  Platforms
+                  <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                </span>
                 <span className="font-medium flex items-center gap-1">
                   {enabledPlatforms.map(([pid, cfg]) => (
                     <Badge key={pid} variant="secondary" className="text-xs">
@@ -1305,9 +1650,28 @@ const MissionBriefingWizard: React.FC = () => {
                   ))}
                 </span>
               </div>
-              <div className="flex justify-between p-2 rounded bg-accent/20"><span className="text-muted-foreground">Numbers</span><span className="font-medium">{currentNumbers} owned / {numbersNeeded} recommended</span></div>
+
+              {/* Transfer info */}
+              {needsTransferConfig && data.transferPhoneNumber && (
+                <div
+                  className="flex justify-between items-center p-2 rounded bg-accent/20 cursor-pointer hover:bg-accent/40 transition-colors group"
+                  onClick={() => jumpToStep(1)}
+                >
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    Transfer
+                    <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                  </span>
+                  <span className="font-medium">{data.transferType === 'warm' ? '🔥 Warm' : '❄️ Cold'} → {data.transferPhoneNumber}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between p-2 rounded bg-accent/20">
+                <span className="text-muted-foreground">Numbers</span>
+                <span className="font-medium">{currentNumbers} owned / {numbersNeeded} recommended</span>
+              </div>
             </div>
 
+            {/* Pipeline stages - editable inline */}
             <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
               <p className="font-medium text-sm flex items-center gap-1">
                 <Sparkles className="h-4 w-4 text-primary" /> Pipeline Stages
@@ -1361,11 +1725,17 @@ const MissionBriefingWizard: React.FC = () => {
                   <Plus className="h-3 w-3 mr-1" /> Add
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">Click a stage to remove it. Add custom stages as needed.</p>
             </div>
 
-            <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
-              <p className="font-medium text-sm">Event Handling Rules</p>
+            {/* Event handling summary - clickable to edit */}
+            <div
+              className="p-3 rounded-lg border bg-accent/10 space-y-2 cursor-pointer hover:bg-accent/20 transition-colors"
+              onClick={() => jumpToStep(8)}
+            >
+              <p className="font-medium text-sm flex items-center gap-1">
+                Event Handling Rules
+                <Pencil className="h-3 w-3 text-muted-foreground" />
+              </p>
               <div className="space-y-1 text-xs">
                 {(Object.entries(EVENT_LABELS) as [keyof EventHandlingConfig, typeof EVENT_LABELS[keyof EventHandlingConfig]][]).map(([key, { label, icon }]) => (
                   <div key={key} className="flex items-center gap-2">
@@ -1419,14 +1789,14 @@ const MissionBriefingWizard: React.FC = () => {
 
               {testCallCount > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {testCallCount} test call{testCallCount !== 1 ? 's' : ''} made this session. No limits — test as many times as you need.
+                  {testCallCount} test call{testCallCount !== 1 ? 's' : ''} made this session.
                 </p>
               )}
 
               {enabledPlatforms.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   Testing with: <span className="font-medium">{PLATFORM_META[enabledPlatforms[0][0]].label}</span>
-                  {enabledPlatforms[0][1].agentId || data.assistableAssistantId ? 
+                  {enabledPlatforms[0][1].agentId || data.assistableAssistantId ?
                     <> · Agent: <span className="font-mono text-xs">{enabledPlatforms[0][0] === 'assistable' ? data.assistableAssistantId : enabledPlatforms[0][1].agentId}</span></> : null
                   }
                 </p>
@@ -1440,14 +1810,21 @@ const MissionBriefingWizard: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setStep(s => s - 1)}
+            onClick={() => {
+              if (returnToReview) {
+                setReturnToReview(false);
+                setStep(9);
+              } else {
+                setStep(s => s - 1);
+              }
+            }}
             disabled={step === 0}
           >
-            <ChevronLeft className="h-4 w-4 mr-1" /> Back
+            <ChevronLeft className="h-4 w-4 mr-1" /> {returnToReview ? 'Back to Review' : 'Back'}
           </Button>
 
           {step < totalSteps - 1 ? (
-            <Button size="sm" onClick={() => setStep(s => s + 1)} disabled={!canAdvance()}>
+            <Button size="sm" onClick={handleNextStep} disabled={!canAdvance()}>
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
