@@ -30,7 +30,8 @@ import {
   Bot,
   Workflow,
   Users,
-  Shield
+  Shield,
+  Pencil
 } from 'lucide-react';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
