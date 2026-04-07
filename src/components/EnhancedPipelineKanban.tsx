@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { usePipelineManagement } from '@/hooks/usePipelineManagement';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Plus, 
   Users, 
@@ -27,10 +28,17 @@ import {
   Zap,
   Target,
   MoreHorizontal,
-  GripVertical
+  GripVertical,
+  Layers
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format } from 'date-fns';
+
+interface CampaignOption {
+  id: string;
+  name: string;
+  status: string;
+}
 
 const EnhancedPipelineKanban = () => {
   const { 
@@ -52,15 +60,39 @@ const EnhancedPipelineKanban = () => {
   });
   
   const [filterDisposition, setFilterDisposition] = useState('all');
+  const [filterCampaign, setFilterCampaign] = useState('all');
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [isLeadDetailOpen, setIsLeadDetailOpen] = useState(false);
 
+  // Fetch campaigns for filter dropdown
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, name, status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (data) setCampaigns(data);
+    };
+    fetchCampaigns();
+  }, []);
+
+  // Filter boards by campaign
+  const filteredBoards = useMemo(() => {
+    if (filterCampaign === 'all') return pipelineBoards;
+    if (filterCampaign === 'global') return pipelineBoards.filter((b: any) => !b.campaign_id);
+    return pipelineBoards.filter((b: any) => b.campaign_id === filterCampaign);
+  }, [pipelineBoards, filterCampaign]);
+
   // Calculate pipeline metrics
   const pipelineMetrics = useMemo(() => {
     const totalLeads = leadPositions.length;
-    const activeBoards = pipelineBoards.length;
+    const activeBoards = filteredBoards.length;
     const conversionRate = totalLeads > 0 ? Math.round((totalLeads * 0.23)) : 0;
     const velocity = Math.floor(totalLeads * 0.15);
     
@@ -70,13 +102,13 @@ const EnhancedPipelineKanban = () => {
       conversionRate: Math.min(100, (conversionRate / Math.max(totalLeads, 1)) * 100),
       velocity
     };
-  }, [leadPositions, pipelineBoards]);
+  }, [leadPositions, filteredBoards]);
 
   // Group leads by pipeline board
   const groupedLeads = useMemo(() => {
     const groups: Record<string, any[]> = {};
     
-    pipelineBoards.forEach(board => {
+    filteredBoards.forEach(board => {
       groups[board.id] = leadPositions
         .filter(position => position.pipeline_board_id === board.id)
         .filter(position => filterDisposition === 'all' || 
@@ -85,7 +117,7 @@ const EnhancedPipelineKanban = () => {
     });
     
     return groups;
-  }, [pipelineBoards, leadPositions, filterDisposition]);
+  }, [filteredBoards, leadPositions, filterDisposition]);
 
   const handleCreateDisposition = async () => {
     if (!newDisposition.name.trim()) return;
@@ -189,7 +221,26 @@ const EnhancedPipelineKanban = () => {
               <p className="text-sm text-muted-foreground">Manage and track your leads through each stage</p>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Campaign Filter */}
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={filterCampaign}
+                  onChange={(e) => setFilterCampaign(e.target.value)}
+                  className="h-9 px-3 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="all">All Campaigns</option>
+                  <option value="global">Global (No Campaign)</option>
+                  {campaigns.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.status !== 'active' ? `(${c.status})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stage Filter */}
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
@@ -337,24 +388,25 @@ const EnhancedPipelineKanban = () => {
         <DragDropContext onDragEnd={handleDragEnd}>
           <div className="overflow-x-auto pb-4 -mx-1 px-1">
             <div className="flex gap-4 min-w-max">
-              {pipelineBoards.map((board) => {
+              {filteredBoards.map((board: any) => {
                 const boardLeads = groupedLeads[board.id] || [];
                 const stats = getBoardStats(boardLeads);
+                const campaignName = board.campaign?.name;
                 
                 return (
                   <div key={board.id} className="w-80 flex-shrink-0">
                     <Card className="bg-muted/30 border-border h-full">
                       {/* Column Header */}
                       <CardHeader className="p-4 pb-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2 min-w-0">
                             {board.disposition && (
                               <div 
-                                className="w-3 h-3 rounded-full"
+                                className="w-3 h-3 rounded-full flex-shrink-0"
                                 style={{ backgroundColor: board.disposition.color }}
                               />
                             )}
-                            <h3 className="font-semibold text-foreground text-sm">{board.name}</h3>
+                            <h3 className="font-semibold text-foreground text-sm truncate">{board.name}</h3>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant="secondary" className="text-xs font-medium px-2 py-0.5">
@@ -365,6 +417,17 @@ const EnhancedPipelineKanban = () => {
                             </Button>
                           </div>
                         </div>
+                        {/* Campaign Badge */}
+                        {campaignName && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 mb-1 w-fit truncate max-w-full">
+                            📋 {campaignName}
+                          </Badge>
+                        )}
+                        {!board.campaign_id && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 mb-1 w-fit text-muted-foreground">
+                            Global
+                          </Badge>
+                        )}
                         
                         {/* Mini Stats */}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">

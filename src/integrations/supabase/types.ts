@@ -5025,6 +5025,7 @@ export type Database = {
       }
       pipeline_boards: {
         Row: {
+          campaign_id: string | null
           created_at: string | null
           description: string | null
           disposition_id: string | null
@@ -5036,6 +5037,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          campaign_id?: string | null
           created_at?: string | null
           description?: string | null
           disposition_id?: string | null
@@ -5047,6 +5049,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          campaign_id?: string | null
           created_at?: string | null
           description?: string | null
           disposition_id?: string | null
@@ -5058,6 +5061,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "pipeline_boards_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pipeline_boards_disposition_id_fkey"
             columns: ["disposition_id"]
