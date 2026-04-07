@@ -290,8 +290,8 @@ serve(async (req) => {
           console.log('[Outbound Calling] TEST CALL MODE — skipping credit checks and DNC validation');
         }
 
+        if (!isTestCall && !skipCreditCheck) {
         try {
-          // Get organization from user
           const { data: orgUser } = await supabaseAdmin
             .from('organization_users')
             .select('organization_id')
