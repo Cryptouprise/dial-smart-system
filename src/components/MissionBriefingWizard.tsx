@@ -363,6 +363,78 @@ const MissionBriefingWizard: React.FC = () => {
     }
   };
 
+  // ── Test Call ──────────────────────────────────────────────────────────
+
+  const handleTestCall = async () => {
+    if (!testPhoneNumber.trim()) {
+      toast.error('Enter your phone number to test');
+      return;
+    }
+
+    setIsTestCalling(true);
+    setTestCallResult(null);
+
+    try {
+      // Determine which platform/agent to use for the test
+      const primary = enabledPlatforms[0];
+      if (!primary) throw new Error('No platform configured');
+
+      const [pid, cfg] = primary;
+
+      if (pid === 'telnyx') {
+        // Use telnyx-ai-assistant test_call action
+        const { data: result, error } = await supabase.functions.invoke('telnyx-ai-assistant', {
+          body: {
+            action: 'test_call',
+            assistantId: cfg.agentId,
+            toNumber: testPhoneNumber.trim(),
+            isTestMode: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Telnyx test call initiated to ${testPhoneNumber}` });
+      } else if (pid === 'assistable') {
+        // Use assistable-make-call
+        const { data: result, error } = await supabase.functions.invoke('assistable-make-call', {
+          body: {
+            assistant_id: data.assistableAssistantId,
+            location_id: data.assistableLocationId,
+            number_pool_id: data.assistableNumberPoolId || undefined,
+            phone_number: testPhoneNumber.trim(),
+            is_test: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
+      } else {
+        // Retell — use outbound-calling with test flag
+        const { data: result, error } = await supabase.functions.invoke('outbound-calling', {
+          body: {
+            agentId: cfg.agentId,
+            phoneNumber: testPhoneNumber.trim(),
+            isTestCall: true,
+            skipDncCheck: true,
+            skipCreditCheck: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Retell test call initiated to ${testPhoneNumber}` });
+      }
+
+      setTestCallCount(prev => prev + 1);
+      toast.success('Test call initiated! Check your phone.');
+    } catch (err: any) {
+      const msg = err.message || 'Test call failed';
+      setTestCallResult({ success: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setIsTestCalling(false);
+    }
+  };
+
   // ── Build prompt ──────────────────────────────────────────────────────
 
   const handleBuild = async () => {
