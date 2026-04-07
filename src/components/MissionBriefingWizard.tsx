@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Rocket, ChevronRight, ChevronLeft, Check, Loader2, Phone,
   Target, Users, TrendingUp, MessageSquare, ArrowRight, Sparkles, Plus,
-  Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet
+  Bot, Zap, Globe, Split, AlertCircle, Info, Upload, RefreshCw, Tag, FileSpreadsheet,
+  TestTube, PhoneCall, CheckCircle2, XCircle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
@@ -198,6 +199,10 @@ const MissionBriefingWizard: React.FC = () => {
   const [csvParsing, setCsvParsing] = useState(false);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [ghlSyncing, setGhlSyncing] = useState(false);
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [isTestCalling, setIsTestCalling] = useState(false);
+  const [testCallResult, setTestCallResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testCallCount, setTestCallCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
@@ -355,6 +360,78 @@ const MissionBriefingWizard: React.FC = () => {
       toast.error(err.message || 'GHL sync failed');
     } finally {
       setGhlSyncing(false);
+    }
+  };
+
+  // ── Test Call ──────────────────────────────────────────────────────────
+
+  const handleTestCall = async () => {
+    if (!testPhoneNumber.trim()) {
+      toast.error('Enter your phone number to test');
+      return;
+    }
+
+    setIsTestCalling(true);
+    setTestCallResult(null);
+
+    try {
+      // Determine which platform/agent to use for the test
+      const primary = enabledPlatforms[0];
+      if (!primary) throw new Error('No platform configured');
+
+      const [pid, cfg] = primary;
+
+      if (pid === 'telnyx') {
+        // Use telnyx-ai-assistant test_call action
+        const { data: result, error } = await supabase.functions.invoke('telnyx-ai-assistant', {
+          body: {
+            action: 'test_call',
+            assistantId: cfg.agentId,
+            toNumber: testPhoneNumber.trim(),
+            isTestMode: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Telnyx test call initiated to ${testPhoneNumber}` });
+      } else if (pid === 'assistable') {
+        // Use assistable-make-call
+        const { data: result, error } = await supabase.functions.invoke('assistable-make-call', {
+          body: {
+            assistant_id: data.assistableAssistantId,
+            location_id: data.assistableLocationId,
+            number_pool_id: data.assistableNumberPoolId || undefined,
+            phone_number: testPhoneNumber.trim(),
+            is_test: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
+      } else {
+        // Retell — use outbound-calling with test flag
+        const { data: result, error } = await supabase.functions.invoke('outbound-calling', {
+          body: {
+            agentId: cfg.agentId,
+            phoneNumber: testPhoneNumber.trim(),
+            isTestCall: true,
+            skipDncCheck: true,
+            skipCreditCheck: true,
+          },
+        });
+        if (error) throw error;
+        if (result?.error) throw new Error(result.error);
+        setTestCallResult({ success: true, message: `Retell test call initiated to ${testPhoneNumber}` });
+      }
+
+      setTestCallCount(prev => prev + 1);
+      toast.success('Test call initiated! Check your phone.');
+    } catch (err: any) {
+      const msg = err.message || 'Test call failed';
+      setTestCallResult({ success: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setIsTestCalling(false);
     }
   };
 
@@ -1081,6 +1158,62 @@ const MissionBriefingWizard: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── Test Call Panel ── */}
+            <div className="p-4 rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 space-y-3">
+              <div className="flex items-center gap-2">
+                <TestTube className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-semibold text-sm">Test Your Agent Before Launch</p>
+                  <p className="text-xs text-muted-foreground">
+                    Call yourself unlimited times — no limits, no DNC checks, no credit deductions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="+1 (214) 529-1531"
+                  value={testPhoneNumber}
+                  onChange={e => setTestPhoneNumber(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleTestCall}
+                  disabled={isTestCalling || !testPhoneNumber.trim() || enabledPlatforms.length === 0}
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                >
+                  {isTestCalling ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Calling…</>
+                  ) : (
+                    <><PhoneCall className="h-4 w-4" /> Test Call</>
+                  )}
+                </Button>
+              </div>
+
+              {testCallResult && (
+                <div className={`flex items-center gap-2 text-sm p-2 rounded ${testCallResult.success ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                  {testCallResult.success ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                  <span>{testCallResult.message}</span>
+                </div>
+              )}
+
+              {testCallCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {testCallCount} test call{testCallCount !== 1 ? 's' : ''} made this session. No limits — test as many times as you need.
+                </p>
+              )}
+
+              {enabledPlatforms.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Testing with: <span className="font-medium">{PLATFORM_META[enabledPlatforms[0][0]].label}</span>
+                  {enabledPlatforms[0][1].agentId || data.assistableAssistantId ? 
+                    <> · Agent: <span className="font-mono text-xs">{enabledPlatforms[0][0] === 'assistable' ? data.assistableAssistantId : enabledPlatforms[0][1].agentId}</span></> : null
+                  }
+                </p>
+              )}
             </div>
           </div>
         )}

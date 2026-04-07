@@ -100,6 +100,9 @@ interface OutboundCallRequest {
   userId?: string; // For service-role calls from call-dispatcher
   provider?: 'retell' | 'telnyx'; // Which voice AI provider to use (default: retell)
   telnyxAssistantId?: string; // Local DB ID of telnyx_assistants row
+  isTestCall?: boolean; // Bypass DNC, credit checks, and campaign limits
+  skipDncCheck?: boolean;
+  skipCreditCheck?: boolean;
 }
 
 serve(async (req) => {
@@ -197,6 +200,9 @@ serve(async (req) => {
       retellCallId,
       provider: requestedProvider,
       telnyxAssistantId,
+      isTestCall,
+      skipDncCheck,
+      skipCreditCheck,
     }: OutboundCallRequest = body;
 
     // Determine provider: explicit request > auto-detect from agentId
@@ -275,12 +281,17 @@ serve(async (req) => {
 
         // ========================================================================
         // CREDIT SYSTEM: Pre-call balance check and reservation
+        // (Skipped for test calls from Mission Briefing Wizard)
         // ========================================================================
         let organizationId: string | null = null;
         let creditReserved = false;
 
+        if (isTestCall) {
+          console.log('[Outbound Calling] TEST CALL MODE — skipping credit checks and DNC validation');
+        }
+
+        if (!isTestCall && !skipCreditCheck) {
         try {
-          // Get organization from user
           const { data: orgUser } = await supabaseAdmin
             .from('organization_users')
             .select('organization_id')
@@ -371,6 +382,7 @@ serve(async (req) => {
           // Otherwise log and continue (fail open for backward compatibility)
           console.error('[Outbound Calling] Credit check error (continuing):', creditError);
         }
+        } // end if (!isTestCall && !skipCreditCheck)
         // ========================================================================
 
         // ========================================================================
