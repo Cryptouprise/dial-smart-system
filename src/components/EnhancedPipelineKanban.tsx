@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { usePipelineManagement } from '@/hooks/usePipelineManagement';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Plus, 
   Users, 
@@ -27,10 +28,17 @@ import {
   Zap,
   Target,
   MoreHorizontal,
-  GripVertical
+  GripVertical,
+  Layers
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format } from 'date-fns';
+
+interface CampaignOption {
+  id: string;
+  name: string;
+  status: string;
+}
 
 const EnhancedPipelineKanban = () => {
   const { 
@@ -52,10 +60,27 @@ const EnhancedPipelineKanban = () => {
   });
   
   const [filterDisposition, setFilterDisposition] = useState('all');
+  const [filterCampaign, setFilterCampaign] = useState('all');
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [isLeadDetailOpen, setIsLeadDetailOpen] = useState(false);
+
+  // Fetch campaigns for filter dropdown
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, name, status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (data) setCampaigns(data);
+    };
+    fetchCampaigns();
+  }, []);
 
   // Calculate pipeline metrics
   const pipelineMetrics = useMemo(() => {
