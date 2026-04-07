@@ -221,7 +221,26 @@ const EnhancedPipelineKanban = () => {
               <p className="text-sm text-muted-foreground">Manage and track your leads through each stage</p>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Campaign Filter */}
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={filterCampaign}
+                  onChange={(e) => setFilterCampaign(e.target.value)}
+                  className="h-9 px-3 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="all">All Campaigns</option>
+                  <option value="global">Global (No Campaign)</option>
+                  {campaigns.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.status !== 'active' ? `(${c.status})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stage Filter */}
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
