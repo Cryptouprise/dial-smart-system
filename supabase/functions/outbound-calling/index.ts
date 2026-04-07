@@ -200,6 +200,9 @@ serve(async (req) => {
       retellCallId,
       provider: requestedProvider,
       telnyxAssistantId,
+      isTestCall,
+      skipDncCheck,
+      skipCreditCheck,
     }: OutboundCallRequest = body;
 
     // Determine provider: explicit request > auto-detect from agentId
