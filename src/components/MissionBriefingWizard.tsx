@@ -576,25 +576,105 @@ const MissionBriefingWizard: React.FC = () => {
   // ── Render ────────────────────────────────────────────────────────────
 
   if (buildComplete) {
+    const navItems = [
+      { label: 'Campaigns', tab: 'campaigns', icon: '📋', desc: 'View & manage your new campaign' },
+      { label: 'Pipelines', tab: 'pipelines', icon: '🔀', desc: 'Check pipeline stages & lead positions' },
+      { label: 'Workflows', tab: 'workflows', icon: '⚡', desc: 'Review the call/SMS sequence' },
+      { label: 'Autonomous Agent', tab: 'autonomous-agent', icon: '🤖', desc: 'Goals, journeys & engine settings' },
+      { label: 'SMS Conversations', tab: 'sms-conversations', icon: '💬', desc: 'Monitor AI SMS threads' },
+      { label: 'Analytics', tab: 'analytics', icon: '📊', desc: 'Track performance once calls start' },
+    ];
+
     return (
-      <Card className="border-primary/30 bg-primary/5">
-        <CardContent className="flex items-center justify-between p-6">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-              <Check className="h-5 w-5 text-primary" />
+      <div className="space-y-6">
+        {/* Success header */}
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <Rocket className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="text-lg font-bold text-foreground">🎉 Mission Launched!</p>
+                <p className="text-sm text-muted-foreground">
+                  The AI is building your campaign right now. Here's what's being created:
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-semibold text-foreground">Mission Active</p>
-              <p className="text-sm text-muted-foreground">
-                Your campaign is being built by the AI. Check the chat panel for status.
-              </p>
+
+            {/* Summary of what was built */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg border bg-background p-3 text-center">
+                <p className="text-2xl font-bold text-primary">{data.dailyCalls || '—'}</p>
+                <p className="text-xs text-muted-foreground">Daily Call Goal</p>
+              </div>
+              <div className="rounded-lg border bg-background p-3 text-center">
+                <p className="text-2xl font-bold text-primary">{data.dailyTarget || '—'}</p>
+                <p className="text-xs text-muted-foreground">Daily {data.goal === 'transfers' ? 'Transfers' : 'Appointments'} Goal</p>
+              </div>
+              <div className="rounded-lg border bg-background p-3 text-center">
+                <p className="text-2xl font-bold text-primary">{data.strategy ? STRATEGY_OPTIONS[data.strategy as keyof typeof STRATEGY_OPTIONS]?.label : '—'}</p>
+                <p className="text-xs text-muted-foreground">Strategy</p>
+              </div>
+              {data.provider && (
+                <div className="rounded-lg border bg-background p-3 text-center">
+                  <p className="text-2xl font-bold text-primary capitalize">{data.provider}</p>
+                  <p className="text-xs text-muted-foreground">Platform</p>
+                </div>
+              )}
+              {csvRows.length > 0 && (
+                <div className="rounded-lg border bg-background p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{csvRows.length.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Leads Uploaded</p>
+                </div>
+              )}
+              {customPipelineStages.length > 0 && (
+                <div className="rounded-lg border bg-background p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{customPipelineStages.length}</p>
+                  <p className="text-xs text-muted-foreground">Pipeline Stages</p>
+                </div>
+              )}
             </div>
+
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+              💡 <strong>Tip:</strong> Open the <strong>AI Assistant chat</strong> (bottom-right bubble) to watch the build in real-time. It will confirm each resource as it's created.
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Where to go next */}
+        <div>
+          <p className="text-sm font-semibold text-foreground mb-3">📍 Where to Go Next</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {navItems.map(item => (
+              <button
+                key={item.tab}
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('tab', item.tab);
+                  window.history.pushState({}, '', url.toString());
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                  window.location.href = `/dashboard?tab=${item.tab}`;
+                }}
+                className="flex items-center gap-3 rounded-lg border bg-background p-3 text-left hover:bg-accent/50 transition-colors"
+              >
+                <span className="text-xl">{item.icon}</span>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{item.label}</p>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+              </button>
+            ))}
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); setCsvRows([]); }}>
-            <Plus className="h-4 w-4 mr-1" /> New Mission
+        </div>
+
+        {/* Start over */}
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={() => { setBuildComplete(false); setStep(0); setData(INITIAL_DATA); setCsvRows([]); setCustomPipelineStages([]); }}>
+            <Plus className="h-4 w-4 mr-1" /> Create Another Mission
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
