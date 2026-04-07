@@ -30,7 +30,8 @@ import {
   Bot,
   Workflow,
   Users,
-  Shield
+  Shield,
+  Pencil
 } from 'lucide-react';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
@@ -112,6 +113,7 @@ const AutonomousAgentDashboard: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
+  const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
   const recommendation = getAdaptiveRecommendation();
 
   // Load phone numbers for AI Engine tab
@@ -154,6 +156,20 @@ const AutonomousAgentDashboard: React.FC = () => {
   useEffect(() => {
     loadDecisionHistory(100);
   }, [loadDecisionHistory]);
+
+  // Load recent campaigns for overview
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: campaigns } = await supabase
+          .from('campaigns')
+          .select('id, name, status, provider, created_at, calls_per_minute, max_calls_per_day')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        setRecentCampaigns(campaigns || []);
+      } catch { /* non-critical */ }
+    })();
+  }, []);
 
   // Load phone numbers when AI Engine tab is selected
   useEffect(() => {
@@ -323,45 +339,90 @@ const AutonomousAgentDashboard: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-11 gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="strategist" className="flex items-center gap-1">
-            <Target className="h-3 w-3" />
-            <span className="hidden sm:inline">Strategist</span>
-          </TabsTrigger>
-          <TabsTrigger value="journeys" className="flex items-center gap-1">
-            <Users className="h-3 w-3" />
-            <span className="hidden sm:inline">Journeys</span>
-          </TabsTrigger>
-          <TabsTrigger value="decisions">Decisions</TabsTrigger>
-          <TabsTrigger value="ai-engine" className="flex items-center gap-1">
-            <Lightbulb className="h-3 w-3" />
-            <span className="hidden sm:inline">AI Engine</span>
-          </TabsTrigger>
-          <TabsTrigger value="pipeline" className="flex items-center gap-1">
-            <Workflow className="h-3 w-3" />
-            <span className="hidden sm:inline">Pipeline</span>
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="flex items-center gap-1">
-            <Bot className="h-3 w-3" />
-            <span className="hidden sm:inline">Activity</span>
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-1">
-            <FileBarChart className="h-3 w-3" />
-            <span className="hidden sm:inline">Analytics</span>
-          </TabsTrigger>
-          <TabsTrigger value="action-queue" className="flex items-center gap-1">
-            <Shield className="h-3 w-3" />
-            <span className="hidden sm:inline">Actions</span>
-          </TabsTrigger>
-          <TabsTrigger value="goals">Goals</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="inline-flex w-auto min-w-full gap-1 h-auto flex-wrap">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="strategist" className="flex items-center gap-1">
+              <Target className="h-3 w-3" />
+              <span className="hidden sm:inline">Strategist</span>
+            </TabsTrigger>
+            <TabsTrigger value="journeys" className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              <span className="hidden sm:inline">Journeys</span>
+            </TabsTrigger>
+            <TabsTrigger value="decisions">Decisions</TabsTrigger>
+            <TabsTrigger value="ai-engine" className="flex items-center gap-1">
+              <Lightbulb className="h-3 w-3" />
+              <span className="hidden sm:inline">AI Engine</span>
+            </TabsTrigger>
+            <TabsTrigger value="pipeline" className="flex items-center gap-1">
+              <Workflow className="h-3 w-3" />
+              <span className="hidden sm:inline">Pipeline</span>
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="flex items-center gap-1">
+              <Bot className="h-3 w-3" />
+              <span className="hidden sm:inline">Activity</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-1">
+              <FileBarChart className="h-3 w-3" />
+              <span className="hidden sm:inline">Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger value="action-queue" className="flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              <span className="hidden sm:inline">Actions</span>
+            </TabsTrigger>
+            <TabsTrigger value="goals">Goals</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
           <Suspense fallback={<TabLoader />}>
             <MissionBriefingWizard />
           </Suspense>
+
+          {/* Recent Campaigns */}
+          {recentCampaigns.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-primary" />
+                    Your Campaigns
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => { window.location.href = '/?tab=campaigns'; }}>
+                    View All
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {recentCampaigns.map(c => (
+                    <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${c.status === 'active' ? 'bg-green-500' : c.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground'}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.provider} · {c.status} · Created {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { window.location.href = `/?tab=campaigns&id=${c.id}`; }}
+                        className="shrink-0"
+                      >
+                        <Pencil className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Goal Progress Card */}
             <Card>
