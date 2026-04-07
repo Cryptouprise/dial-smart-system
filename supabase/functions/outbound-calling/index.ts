@@ -281,9 +281,14 @@ serve(async (req) => {
 
         // ========================================================================
         // CREDIT SYSTEM: Pre-call balance check and reservation
+        // (Skipped for test calls from Mission Briefing Wizard)
         // ========================================================================
         let organizationId: string | null = null;
         let creditReserved = false;
+
+        if (isTestCall) {
+          console.log('[Outbound Calling] TEST CALL MODE — skipping credit checks and DNC validation');
+        }
 
         try {
           // Get organization from user
