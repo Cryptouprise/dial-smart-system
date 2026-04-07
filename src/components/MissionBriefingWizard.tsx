@@ -530,7 +530,7 @@ const MissionBriefingWizard: React.FC = () => {
         }),
         `Create disposition automation rules in the disposition-router for each of these events.`,
         ``,
-        `Pipeline stages to create: ${PIPELINE_STAGES[data.goalType].join(' → ')}`,
+        `Pipeline stages to create: ${pipelineStages.join(' → ')}`,
         `Create pipeline boards for each stage and link dispositions to the appropriate stages.`,
         ``,
         enableSms
@@ -1163,13 +1163,55 @@ const MissionBriefingWizard: React.FC = () => {
                 <Sparkles className="h-4 w-4 text-primary" /> Pipeline Stages
               </p>
               <div className="flex flex-wrap items-center gap-1">
-                {PIPELINE_STAGES[data.goalType].map((stage, i) => (
+                {pipelineStages.map((stage, i) => (
                   <React.Fragment key={stage}>
-                    <Badge variant="secondary" className="text-xs">{stage}</Badge>
-                    {i < PIPELINE_STAGES[data.goalType].length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
+                    <Badge
+                      variant="secondary"
+                      className="text-xs cursor-pointer hover:bg-destructive/20 group relative"
+                      onClick={() => {
+                        const updated = pipelineStages.filter((_, idx) => idx !== i);
+                        setCustomPipelineStages(updated);
+                      }}
+                      title="Click to remove"
+                    >
+                      {stage} <span className="ml-1 opacity-0 group-hover:opacity-100 text-destructive">×</span>
+                    </Badge>
+                    {i < pipelineStages.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
                   </React.Fragment>
                 ))}
               </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Input
+                  placeholder="Add custom stage…"
+                  value={newStageName}
+                  onChange={e => setNewStageName(e.target.value)}
+                  className="h-7 text-xs flex-1"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newStageName.trim()) {
+                      e.preventDefault();
+                      const stages = customPipelineStages.length > 0 ? [...customPipelineStages] : [...(DEFAULT_PIPELINE_STAGES[data.goalType] || [])];
+                      stages.splice(stages.length - 1, 0, newStageName.trim());
+                      setCustomPipelineStages(stages);
+                      setNewStageName('');
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs px-2"
+                  disabled={!newStageName.trim()}
+                  onClick={() => {
+                    const stages = customPipelineStages.length > 0 ? [...customPipelineStages] : [...(DEFAULT_PIPELINE_STAGES[data.goalType] || [])];
+                    stages.splice(stages.length - 1, 0, newStageName.trim());
+                    setCustomPipelineStages(stages);
+                    setNewStageName('');
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Click a stage to remove it. Add custom stages as needed.</p>
             </div>
 
             <div className="p-3 rounded-lg border bg-accent/10 space-y-2">
