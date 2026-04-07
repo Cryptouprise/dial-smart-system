@@ -211,6 +211,12 @@ const MissionBriefingWizard: React.FC = () => {
   const [isTestCalling, setIsTestCalling] = useState(false);
   const [testCallResult, setTestCallResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testCallCount, setTestCallCount] = useState(0);
+  const [customPipelineStages, setCustomPipelineStages] = useState<string[]>([]);
+  const [newStageName, setNewStageName] = useState('');
+  const [buyingNumbers, setBuyingNumbers] = useState(false);
+  const [buyAreaCode, setBuyAreaCode] = useState('');
+  const [buyQuantity, setBuyQuantity] = useState(5);
+  const [buyProvider, setBuyProvider] = useState<'retell' | 'telnyx'>('retell');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
 
