@@ -319,6 +319,7 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                 setSelectedLeads([]);
                 setSearchQuery('');
                 setStatusFilter('all');
+                setTagFilter('');
                 setAvailableLeads([]);
                 setHasMoreAvailable(true);
                 setAvailablePage(0);
@@ -351,7 +352,7 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                     />
                   </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[150px]">
+                    <SelectTrigger className="w-[130px]">
                       <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
@@ -359,6 +360,22 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                       {uniqueStatuses.map((status) => (
                         <SelectItem key={status} value={status}>
                           {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={tagFilter} onValueChange={setTagFilter}>
+                    <SelectTrigger className="w-[130px]">
+                      <div className="flex items-center gap-1.5">
+                        <Tag className="h-3 w-3" />
+                        <span>{tagFilter || 'All tags'}</span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_tags">All tags</SelectItem>
+                      {availableTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
                         </SelectItem>
                       ))}
                     </SelectContent>
