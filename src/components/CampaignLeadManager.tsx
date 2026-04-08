@@ -364,7 +364,7 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select value={tagFilter} onValueChange={setTagFilter}>
+                  <Select value={tagFilter || 'all_tags'} onValueChange={(v) => setTagFilter(v === 'all_tags' ? '' : v)}>
                     <SelectTrigger className="w-[130px]">
                       <div className="flex items-center gap-1.5">
                         <Tag className="h-3 w-3" />
