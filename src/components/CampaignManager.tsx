@@ -1146,7 +1146,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={isLoading || (formData.provider === 'retell' ? !formData.agent_id : !formData.telnyx_assistant_id)}>
+                <Button type="submit" disabled={isLoading || (formData.provider === 'retell' ? !formData.agent_id : !formData.telnyx_assistant_id)} className="flex-1">
                   {editingCampaign ? 'Update' : 'Create'} Campaign
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
