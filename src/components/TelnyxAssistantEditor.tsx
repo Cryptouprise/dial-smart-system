@@ -18,6 +18,7 @@ import {
   Play, RefreshCw, Search, ChevronDown, Info,
 } from 'lucide-react';
 import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
+import AgentToolBuilder from './AgentToolBuilder';
 
 interface TelnyxAssistant {
   id: string;
@@ -673,31 +674,17 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               </CardContent>
             </Card>
 
-            {/* Tools */}
-            <Card className="border-dashed">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Tools</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {assistant.tools && assistant.tools.length > 0 ? (
-                  <div className="space-y-2">
-                    {assistant.tools.map((tool: any, i: number) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        <Badge variant="secondary">{tool.type || 'webhook'}</Badge>
-                        <span className="font-medium">{tool.name}</span>
-                        <span className="text-muted-foreground text-xs truncate">{tool.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Calendar booking tools are auto-added on creation. Add more tools via the Telnyx portal.</p>
-                )}
-                {telnyxPortalUrl && (
-                  <Button variant="outline" size="sm" className="mt-3 gap-1" onClick={() => window.open(telnyxPortalUrl, '_blank')}>
-                    <ExternalLink className="h-3 w-3" />Manage Tools in Telnyx Portal
-                  </Button>
-                )}
-              </CardContent>
+            {/* Tools — Full Tool Builder */}
+            <AgentToolBuilder
+              provider="telnyx"
+              agentId={assistant.id}
+              providerAgentId={assistant.telnyx_assistant_id || ''}
+              tools={assistant.tools || []}
+              onToolsChange={(tools) => {
+                // Update the assistant object in parent via metadata or direct tool state
+                // The tool builder handles push-to-provider internally
+              }}
+            />
             </Card>
 
             {/* Knowledge Bases */}
