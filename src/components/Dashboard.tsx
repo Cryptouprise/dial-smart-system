@@ -34,6 +34,7 @@ const SpamDetectionManager = lazy(() => import('@/components/SpamDetectionManage
 const AIDecisionEngine = lazy(() => import('@/components/AIDecisionEngine'));
 const PredictiveDialingDashboard = lazy(() => import('@/components/PredictiveDialingDashboard'));
 const RetellAIManager = lazy(() => import('@/components/RetellAIManager'));
+const EnhancedPipelineKanban = lazy(() => import('@/components/EnhancedPipelineKanban'));
 const PipelineKanban = lazy(() => import('@/components/PipelineKanban'));
 const SmsMessaging = lazy(() => import('@/components/SmsMessaging'));
 const DailyReports = lazy(() => import('@/components/DailyReports'));
@@ -380,7 +381,8 @@ const Dashboard = () => {
       case 'leads':
         return <TabErrorBoundary tabName="Leads"><Suspense fallback={<TabLoader />}><EnhancedLeadManager /></Suspense></TabErrorBoundary>;
       case 'pipeline':
-        return <TabErrorBoundary tabName="Pipeline"><Suspense fallback={<TabLoader />}><PipelineKanban /></Suspense></TabErrorBoundary>;
+      case 'pipelines':
+        return <TabErrorBoundary tabName="Pipeline"><Suspense fallback={<TabLoader />}><EnhancedPipelineKanban /></Suspense></TabErrorBoundary>;
       case 'predictive':
         return <TabErrorBoundary tabName="Predictive Dialing"><Suspense fallback={<TabLoader />}><PredictiveDialingDashboard /></Suspense></TabErrorBoundary>;
       case 'retell':
@@ -416,6 +418,7 @@ const Dashboard = () => {
       case 'reachability':
         return <TabErrorBoundary tabName="Reachability"><Suspense fallback={<TabLoader />}><ReachabilityDashboard /></Suspense></TabErrorBoundary>;
       case 'campaign-results':
+      case 'campaigns':
         return <TabErrorBoundary tabName="Campaign Results"><Suspense fallback={<TabLoader />}><CampaignResultsDashboard /></Suspense></TabErrorBoundary>;
       case 'live-monitor':
         return <TabErrorBoundary tabName="Live Monitor"><Suspense fallback={<TabLoader />}><LiveCampaignMonitor /></Suspense></TabErrorBoundary>;
