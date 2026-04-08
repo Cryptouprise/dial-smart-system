@@ -1717,6 +1717,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
           campaignName={editingWorkflowCampaign.name}
         />
       )}
+
+      {/* Quick Lead Loader */}
+      {quickLoadCampaign && (
+        <QuickLeadLoader
+          open={!!quickLoadCampaign}
+          onOpenChange={(open) => !open && setQuickLoadCampaign(null)}
+          campaignId={quickLoadCampaign.id}
+          campaignName={quickLoadCampaign.name}
+        />
+      )}
     </div>
   );
 };
