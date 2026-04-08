@@ -685,7 +685,8 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 // The tool builder handles push-to-provider internally
               }}
             />
-            </Card>
+
+
 
             {/* Knowledge Bases */}
             <Card className="border-dashed">
