@@ -787,7 +787,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                     if (window.history.length > 1) {
                       window.history.back();
                     } else {
-                      window.location.href = '/?tab=campaigns';
+                      window.location.href = '/dashboard?tab=campaign-results';
                     }
                   }}
                   className="gap-1"
@@ -872,7 +872,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 if (window.history.length > 1) {
                   window.history.back();
                 } else {
-                  window.location.href = '/?tab=campaigns';
+                  window.location.href = '/dashboard?tab=campaign-results';
                 }
                 return;
               }

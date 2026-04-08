@@ -845,7 +845,8 @@ const MissionBriefingWizard: React.FC = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        window.location.href = `/?tab=${r.tab}`;
+                        const tabMap: Record<string, string> = { campaigns: 'campaign-results', pipelines: 'pipeline', 'sms-conversations': 'sms' };
+                        window.location.href = `/dashboard?tab=${tabMap[r.tab] || r.tab}`;
                       }}
                     >
                       <Pencil className="h-3 w-3 mr-1" /> Edit
@@ -878,16 +879,16 @@ const MissionBriefingWizard: React.FC = () => {
           <p className="text-sm font-semibold text-foreground mb-3">📍 Where to Go Next</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {[
-              { label: 'Campaigns', tab: 'campaigns', icon: '📋', desc: 'View & manage your campaign' },
-              { label: 'Pipelines', tab: 'pipelines', icon: '🔀', desc: 'Check pipeline stages' },
+              { label: 'Campaigns', tab: 'campaign-results', icon: '📋', desc: 'View & manage your campaign' },
+              { label: 'Pipelines', tab: 'pipeline', icon: '🔀', desc: 'Check pipeline stages' },
               { label: 'Workflows', tab: 'workflows', icon: '⚡', desc: 'Review the call/SMS sequence' },
               { label: 'Autonomous Agent', tab: 'autonomous-agent', icon: '🤖', desc: 'Goals & engine settings' },
-              { label: 'SMS', tab: 'sms-conversations', icon: '💬', desc: 'Monitor AI SMS threads' },
+              { label: 'SMS', tab: 'sms', icon: '💬', desc: 'Monitor AI SMS threads' },
               { label: 'Analytics', tab: 'analytics', icon: '📊', desc: 'Track performance' },
             ].map(item => (
               <button
                 key={item.tab}
-                onClick={() => { window.location.href = `/?tab=${item.tab}`; }}
+                onClick={() => { window.location.href = `/dashboard?tab=${item.tab}`; }}
                 className="flex items-center gap-3 rounded-lg border bg-background p-3 text-left hover:bg-accent/50 transition-colors"
               >
                 <span className="text-xl">{item.icon}</span>

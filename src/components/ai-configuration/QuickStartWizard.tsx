@@ -88,7 +88,7 @@ export const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ onComplete, 
       if (onComplete) {
         onComplete();
       } else {
-        window.location.href = '/?tab=campaigns';
+        window.location.href = '/dashboard?tab=campaign-results';
       }
     }
   };
