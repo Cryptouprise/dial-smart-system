@@ -996,6 +996,15 @@ const AutonomousAgentDashboard: React.FC = () => {
           </Suspense>
         </TabsContent>
       </Tabs>
+
+      {quickLoadCampaign && (
+        <QuickLeadLoader
+          open={!!quickLoadCampaign}
+          onOpenChange={(open) => !open && setQuickLoadCampaign(null)}
+          campaignId={quickLoadCampaign.id}
+          campaignName={quickLoadCampaign.name}
+        />
+      )}
     </div>
   );
 };

@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, X, User, Phone, Search, CheckSquare } from 'lucide-react';
+import { Plus, X, User, Phone, Search, CheckSquare, Tag } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { Badge } from '@/components/ui/badge';
 
 interface Lead {
   id: string;
