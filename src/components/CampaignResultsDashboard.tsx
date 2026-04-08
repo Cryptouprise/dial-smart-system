@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useCampaignResults, CampaignMetrics } from '@/hooks/useCampaignResults';
 import { supabase } from '@/integrations/supabase/client';
 import { useSearchParams } from 'react-router-dom';
+import { getProviderMeta } from '@/lib/providerUtils';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
@@ -30,7 +31,7 @@ export const CampaignResultsDashboard: React.FC = () => {
   const loadCampaigns = async () => {
     const { data } = await supabase
       .from('campaigns')
-      .select('id, name, status')
+      .select('id, name, status, provider')
       .order('created_at', { ascending: false });
     setCampaigns(data || []);
 
@@ -68,8 +69,13 @@ export const CampaignResultsDashboard: React.FC = () => {
             <SelectContent>
               {campaigns.map(c => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                  <Badge variant="outline" className="ml-2">{c.status}</Badge>
+                  <span className="flex items-center gap-2">
+                    {c.name}
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getProviderMeta(c.provider).badgeClass}`}>
+                      {getProviderMeta(c.provider).label}
+                    </Badge>
+                    <Badge variant="outline" className="ml-1">{c.status}</Badge>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
