@@ -116,6 +116,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [callOutcome, setCallOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [retellAgentOpen, setRetellAgentOpen] = useState(false);
+  const [telnyxAssistantOpen, setTelnyxAssistantOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
