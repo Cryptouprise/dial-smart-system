@@ -1225,6 +1225,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       }
                       return null;
                     })()}
+                    {campaign.telnyx_assistant_id && (() => {
+                      const assistant = telnyxAssistants.find(a => a.id === campaign.telnyx_assistant_id);
+                      if (assistant) {
+                        return (
+                          <Badge variant="outline" className={getProviderMeta('telnyx').badgeClass}>
+                            <Bot className="h-3 w-3 mr-1" />
+                            {assistant.name}
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
                     {campaign.workflow_id && (() => {
                       const workflow = workflows.find(w => w.id === campaign.workflow_id);
                       if (workflow) {
