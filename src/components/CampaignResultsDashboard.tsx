@@ -7,6 +7,7 @@ import { Phone, PhoneIncoming, Clock, Calendar, MessageSquare, TrendingUp, Refre
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { useCampaignResults, CampaignMetrics } from '@/hooks/useCampaignResults';
 import { supabase } from '@/integrations/supabase/client';
+import { useSearchParams } from 'react-router-dom';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
