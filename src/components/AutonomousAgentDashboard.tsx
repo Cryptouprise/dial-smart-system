@@ -40,6 +40,7 @@ import { useAutonomousPrioritization } from '@/hooks/useAutonomousPrioritization
 import { useAutonomousCampaignOptimizer } from '@/hooks/useAutonomousCampaignOptimizer';
 import { getSolarTestSettingsPreset, SOLAR_TEST_CALL_TARGET } from '@/lib/autonomousSettingsPresets';
 import { supabase } from '@/integrations/supabase/client';
+import { getProviderMeta } from '@/lib/providerUtils';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 

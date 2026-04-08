@@ -28,6 +28,7 @@ import { DispatcherActivityFeed } from './DispatcherActivityFeed';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAIErrors } from '@/contexts/AIErrorContext';
+import { getProviderMeta } from '@/lib/providerUtils';
 
 interface Campaign {
   id: string;
