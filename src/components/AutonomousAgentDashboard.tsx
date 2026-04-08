@@ -117,6 +117,8 @@ const AutonomousAgentDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
+  const [quickLoadCampaign, setQuickLoadCampaign] = useState<{ id: string; name: string } | null>(null);
+  const [togglingCampaignId, setTogglingCampaignId] = useState<string | null>(null);
   const recommendation = getAdaptiveRecommendation();
 
   // Load phone numbers for AI Engine tab
