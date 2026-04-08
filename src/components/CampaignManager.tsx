@@ -1079,8 +1079,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     </Badge>
                   </CardTitle>
                   
-                  {/* Agent and workflow badges on separate line for better layout */}
+                  {/* Provider, agent and workflow badges on separate line for better layout */}
                   <div className="flex items-center gap-2 flex-wrap mt-2">
+                    {/* Provider badge */}
+                    {(() => {
+                      const meta = getProviderMeta(campaign.provider);
+                      return (
+                        <Badge variant="outline" className={meta.badgeClass}>
+                          <Bot className="h-3 w-3 mr-1" />
+                          {meta.label}
+                        </Badge>
+                      );
+                    })()}
                     {campaign.agent_id && (() => {
                       const agent = agents.find(a => a.agent_id === campaign.agent_id);
                       if (agent) {

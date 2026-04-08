@@ -403,9 +403,12 @@ const AutonomousAgentDashboard: React.FC = () => {
                         <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${c.status === 'active' ? 'bg-green-500' : c.status === 'paused' ? 'bg-yellow-500' : 'bg-muted-foreground'}`} />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {c.provider} · {c.status} · Created {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
-                          </p>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getProviderMeta(c.provider).badgeClass}`}>
+                              {getProviderMeta(c.provider).label}
+                            </Badge>
+                            <span>· {c.status} · Created {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
+                          </div>
                         </div>
                       </div>
                       <Button

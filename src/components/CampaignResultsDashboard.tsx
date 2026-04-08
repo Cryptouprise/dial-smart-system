@@ -30,7 +30,7 @@ export const CampaignResultsDashboard: React.FC = () => {
   const loadCampaigns = async () => {
     const { data } = await supabase
       .from('campaigns')
-      .select('id, name, status')
+      .select('id, name, status, provider')
       .order('created_at', { ascending: false });
     setCampaigns(data || []);
 
