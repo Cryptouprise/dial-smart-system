@@ -15,6 +15,7 @@ export const CampaignResultsDashboard: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const { fetchCampaignResults, metrics, isLoading } = useCampaignResults();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     loadCampaigns();
@@ -32,7 +33,12 @@ export const CampaignResultsDashboard: React.FC = () => {
       .select('id, name, status')
       .order('created_at', { ascending: false });
     setCampaigns(data || []);
-    if (data && data.length > 0 && !selectedCampaignId) {
+
+    // Deep-link: if URL has ?id=..., preselect that campaign
+    const deepLinkId = searchParams.get('id');
+    if (deepLinkId && data?.some(c => c.id === deepLinkId)) {
+      setSelectedCampaignId(deepLinkId);
+    } else if (data && data.length > 0 && !selectedCampaignId) {
       setSelectedCampaignId(data[0].id);
     }
   };
