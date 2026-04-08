@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock, Upload, Copy } from 'lucide-react';
+import { QuickLeadLoader } from './QuickLeadLoader';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
@@ -395,6 +396,36 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     await updateCampaign(campaign.id, { status: newStatus });
     loadCampaigns();
     onRefresh?.();
+  };
+
+  const [quickLoadCampaign, setQuickLoadCampaign] = useState<Campaign | null>(null);
+
+  const handleCloneCampaign = async (campaign: Campaign) => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase.from('campaigns').insert({
+        user_id: userId,
+        name: `${campaign.name} (Copy)`,
+        description: campaign.description || '',
+        status: 'draft',
+        agent_id: campaign.agent_id,
+        workflow_id: campaign.workflow_id,
+        calls_per_minute: campaign.calls_per_minute,
+        max_attempts: campaign.max_attempts,
+        calling_hours_start: campaign.calling_hours_start,
+        calling_hours_end: campaign.calling_hours_end,
+        timezone: campaign.timezone,
+        provider: campaign.provider || 'retell',
+        telnyx_assistant_id: campaign.telnyx_assistant_id,
+        sms_from_number: campaign.sms_from_number,
+      }).select().single();
+      if (error) throw error;
+      toast({ title: 'Campaign Cloned', description: `"${data.name}" created as draft. Add leads and activate when ready.` });
+      loadCampaigns();
+    } catch (err: any) {
+      console.error('Clone campaign error:', err);
+      toast({ title: 'Clone Failed', description: err.message || 'Failed to clone campaign', variant: 'destructive' });
+    }
   };
 
   const handleDeleteCampaign = async (campaignId: string) => {
@@ -1140,11 +1171,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   )}
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex gap-1.5 flex-wrap">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleEdit(campaign)}
+                    title="Edit"
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
@@ -1154,6 +1186,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       size="sm"
                       variant="outline"
                       onClick={() => handleStatusChange(campaign, 'paused')}
+                      title="Pause"
                     >
                       <Pause className="h-4 w-4" />
                     </Button>
@@ -1161,15 +1194,33 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     <Button
                       size="sm"
                       onClick={() => handleStatusChange(campaign, 'active')}
+                      title="Activate"
                     >
                       <Play className="h-4 w-4" />
                     </Button>
                   )}
 
-                  {/* Delete Button */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setQuickLoadCampaign(campaign)}
+                    title="Load Leads"
+                  >
+                    <Upload className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleCloneCampaign(campaign)}
+                    title="Clone Campaign"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="destructive">
+                      <Button size="sm" variant="destructive" title="Delete">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>

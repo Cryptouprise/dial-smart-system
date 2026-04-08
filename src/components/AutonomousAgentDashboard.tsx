@@ -31,8 +31,10 @@ import {
   Workflow,
   Users,
   Shield,
-  Pencil
+  Pencil,
+  Upload
 } from 'lucide-react';
+import { QuickLeadLoader } from './QuickLeadLoader';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
