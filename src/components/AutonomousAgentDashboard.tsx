@@ -390,7 +390,7 @@ const AutonomousAgentDashboard: React.FC = () => {
                     <Zap className="h-5 w-5 text-primary" />
                     Your Campaigns
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { window.location.href = '/?tab=campaigns'; }}>
+                  <Button variant="outline" size="sm" onClick={() => { window.location.href = '/dashboard?tab=campaign-results'; }}>
                     View All
                   </Button>
                 </div>
@@ -411,7 +411,7 @@ const AutonomousAgentDashboard: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => { window.location.href = `/?tab=campaigns&id=${c.id}`; }}
+                        onClick={() => { window.location.href = `/dashboard?tab=campaign-results&id=${c.id}`; }}
                         className="shrink-0"
                       >
                         <Pencil className="h-3 w-3 mr-1" /> Edit
