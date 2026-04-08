@@ -172,6 +172,10 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
         query = query.eq('status', statusFilter);
       }
 
+      if (tagFilter) {
+        query = query.contains('tags', [tagFilter]);
+      }
+
       const normalizedSearch = sanitizeSearch(debouncedSearch);
       if (normalizedSearch) {
         query = query.or(
