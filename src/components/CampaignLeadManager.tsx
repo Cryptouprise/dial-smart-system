@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, X, User, Phone, Search, CheckSquare } from 'lucide-react';
+import { Plus, X, User, Phone, Search, CheckSquare, Tag } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { Badge } from '@/components/ui/badge';
 
 interface Lead {
   id: string;
@@ -38,6 +39,8 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
   const [isLoadingAvailable, setIsLoadingAvailable] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('');
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [availablePage, setAvailablePage] = useState(0);
   const [hasMoreAvailable, setHasMoreAvailable] = useState(true);
   const debouncedSearch = useDebounce(searchQuery, 300);
@@ -87,10 +90,19 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
     const load = async () => {
       const latestAssignedIds = await loadAssignedLeadIds();
       await loadAvailableLeads(0, true, latestAssignedIds);
+      // Load available tags for filter
+      try {
+        const { data } = await supabase.from('leads').select('tags').not('tags', 'is', null).limit(500);
+        const tagSet = new Set<string>();
+        (data || []).forEach((row: any) => {
+          if (Array.isArray(row.tags)) row.tags.forEach((t: string) => tagSet.add(t));
+        });
+        setAvailableTags(Array.from(tagSet).sort());
+      } catch { /* non-critical */ }
     };
 
     void load();
-  }, [showAddDialog, campaignId, debouncedSearch, statusFilter]);
+  }, [showAddDialog, campaignId, debouncedSearch, statusFilter, tagFilter]);
 
   const loadCampaignLeads = async () => {
     try {
@@ -158,6 +170,10 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
 
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter);
+      }
+
+      if (tagFilter) {
+        query = query.contains('tags', [tagFilter]);
       }
 
       const normalizedSearch = sanitizeSearch(debouncedSearch);
@@ -303,6 +319,7 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                 setSelectedLeads([]);
                 setSearchQuery('');
                 setStatusFilter('all');
+                setTagFilter('');
                 setAvailableLeads([]);
                 setHasMoreAvailable(true);
                 setAvailablePage(0);
@@ -335,7 +352,7 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                     />
                   </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[150px]">
+                    <SelectTrigger className="w-[130px]">
                       <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
@@ -343,6 +360,22 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
                       {uniqueStatuses.map((status) => (
                         <SelectItem key={status} value={status}>
                           {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={tagFilter || 'all_tags'} onValueChange={(v) => setTagFilter(v === 'all_tags' ? '' : v)}>
+                    <SelectTrigger className="w-[130px]">
+                      <div className="flex items-center gap-1.5">
+                        <Tag className="h-3 w-3" />
+                        <span>{tagFilter || 'All tags'}</span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_tags">All tags</SelectItem>
+                      {availableTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -31,8 +31,10 @@ import {
   Workflow,
   Users,
   Shield,
-  Pencil
+  Pencil,
+  Upload
 } from 'lucide-react';
+import { QuickLeadLoader } from './QuickLeadLoader';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
@@ -115,6 +117,8 @@ const AutonomousAgentDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   const [recentCampaigns, setRecentCampaigns] = useState<any[]>([]);
+  const [quickLoadCampaign, setQuickLoadCampaign] = useState<{ id: string; name: string } | null>(null);
+  const [togglingCampaignId, setTogglingCampaignId] = useState<string | null>(null);
   const recommendation = getAdaptiveRecommendation();
 
   // Load phone numbers for AI Engine tab
@@ -412,14 +416,61 @@ const AutonomousAgentDashboard: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => { window.location.href = `/dashboard?tab=campaign-results&id=${c.id}`; }}
-                        className="shrink-0"
-                      >
-                        <Pencil className="h-3 w-3 mr-1" /> Edit
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {c.status === 'active' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={togglingCampaignId === c.id}
+                            onClick={async () => {
+                              setTogglingCampaignId(c.id);
+                              try {
+                                await supabase.from('campaigns').update({ status: 'paused' }).eq('id', c.id);
+                                setRecentCampaigns(prev => prev.map(camp => camp.id === c.id ? { ...camp, status: 'paused' } : camp));
+                                toast({ title: 'Campaign Paused' });
+                              } catch { toast({ title: 'Failed', variant: 'destructive' }); }
+                              finally { setTogglingCampaignId(null); }
+                            }}
+                            title="Pause"
+                          >
+                            <Pause className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={togglingCampaignId === c.id}
+                            onClick={async () => {
+                              setTogglingCampaignId(c.id);
+                              try {
+                                await supabase.from('campaigns').update({ status: 'active' }).eq('id', c.id);
+                                setRecentCampaigns(prev => prev.map(camp => camp.id === c.id ? { ...camp, status: 'active' } : camp));
+                                toast({ title: 'Campaign Activated' });
+                              } catch { toast({ title: 'Failed', variant: 'destructive' }); }
+                              finally { setTogglingCampaignId(null); }
+                            }}
+                            title="Activate"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setQuickLoadCampaign({ id: c.id, name: c.name })}
+                          title="Load Leads"
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => { window.location.href = `/dashboard?tab=campaign-results&id=${c.id}`; }}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -945,6 +996,15 @@ const AutonomousAgentDashboard: React.FC = () => {
           </Suspense>
         </TabsContent>
       </Tabs>
+
+      {quickLoadCampaign && (
+        <QuickLeadLoader
+          open={!!quickLoadCampaign}
+          onOpenChange={(open) => !open && setQuickLoadCampaign(null)}
+          campaignId={quickLoadCampaign.id}
+          campaignName={quickLoadCampaign.name}
+        />
+      )}
     </div>
   );
 };
