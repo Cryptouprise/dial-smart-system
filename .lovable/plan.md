@@ -1,71 +1,45 @@
 
 
-# Quick-Add Leads + Relaunch Campaigns (Day 2+ Workflow)
+# Campaign Edit: Full Provider + Agent Visibility
 
 ## Problem
-
-On day 2 or 3, a user comes back and needs to do one of three things:
-
-1. **Load more leads** into an existing campaign (upload CSV or add by tag)
-2. **Relaunch a paused/completed campaign** with the same or new leads
-3. **Clone a campaign** to run the same agent/settings against a fresh batch
-
-Today, loading leads requires bouncing between Leads tab and Campaign Manager. Relaunching requires manually changing status back to active and hoping leads are still queued. There's no clone button. The Autonomous Agent "Your Campaigns" cards only show Edit — no Play/Pause/Load Leads.
+1. **Edit dialog is either/or** — when you hit the pencil icon, the provider dropdown forces Retell OR Telnyx. Switching clears the agent. You can't see what's configured on the other side or set both.
+2. **No agent search** — the agent dropdown is a flat list with no search/filter. With many agents, finding the right one is painful.
 
 ## Changes
 
-### 1. Add quick actions to Autonomous Agent campaign cards
-**File: `src/components/AutonomousAgentDashboard.tsx`**
-- Currently each campaign card only has an "Edit" button
-- Add three inline action buttons:
-  - **Play/Pause** toggle — activate or pause the campaign directly from this view (calls the same `handleStatusChange` logic CampaignManager uses)
-  - **Load Leads** — opens the QuickLeadLoader dialog (from change #3)
-  - Keep **Edit** as-is
-- Show the campaign status dot + provider badge (already done) so it's clear what state each campaign is in
-
-### 2. Add "Load Leads" and "Clone" buttons to CampaignManager cards
+### 1. Show BOTH providers in edit dialog (not either/or)
 **File: `src/components/CampaignManager.tsx`**
-- Add a **Load Leads** button (Upload icon) next to Edit/Play/Pause/Delete on each campaign card
-  - Opens QuickLeadLoader dialog for that campaign
-- Add a **Clone** button (Copy icon) that duplicates the campaign with a new name (`{name} (Copy)`) in draft status
-  - Same agent, provider, settings — just new leads needed
-  - Quick way to run the same playbook against a fresh list
+- Replace the single "Voice AI Provider" dropdown with a clear two-section layout:
+  - **Retell AI Agent** section — always visible, shows the Retell agent dropdown (or "None selected")
+  - **Telnyx AI Assistant** section — always visible, shows the Telnyx assistant dropdown (or "None selected")
+- Add a "Primary Provider" toggle (Retell / Telnyx) that determines which provider is used for outbound calls — but both agent selectors remain visible so you can see and configure both
+- When saving, the `provider` field maps to whichever is set as primary
+- This way you can see at a glance: "This campaign uses Retell agent X, and if I switch to Telnyx it'll use assistant Y" — both are always configured and visible
 
-### 3. Create QuickLeadLoader component
-**New file: `src/components/QuickLeadLoader.tsx`**
-- Dialog with two tabs:
-  - **Upload CSV** — file picker + tag input (auto-suggests the campaign's existing tag). Calls `lead-csv-import` edge function, then auto-assigns imported leads to the campaign via `campaign_leads` insert.
-  - **Add by Tag** — type a tag, see count of matching unassigned leads, click "Add All" to bulk-assign to campaign
-- Shows progress and success toast with count
-- Reusable from both CampaignManager and AutonomousAgentDashboard
+### 2. Add searchable agent dropdowns
+**File: `src/components/CampaignManager.tsx`**
+- Replace the basic `<Select>` for both Retell agents and Telnyx assistants with a searchable combobox pattern (using the existing `Command`/`Popover` components from shadcn)
+- Type to filter agents by name
+- Still shows phone status icons (green phone / no phone) for Retell agents
 
-### 4. Add tag filter to CampaignLeadManager's "Add Leads" dialog
-**File: `src/components/CampaignLeadManager.tsx`**
-- Add a tag dropdown/search alongside the existing status filter in the "Add Leads" dialog
-- Filter leads by tag so users can find their tagged batch instantly instead of scrolling
+### 3. Show agent config summary in edit dialog
+**File: `src/components/CampaignManager.tsx`**
+- Below each agent selector, show a mini info card with key details of the selected agent:
+  - Retell: agent name, voice, LLM model, phone number
+  - Telnyx: assistant name, model, voice
+- Add a "View/Edit Agent" link button that opens the respective agent editor (AgentEditDialog for Retell, TelnyxAssistantEditor for Telnyx) directly from the campaign edit — so agent settings are accessible ("sacred") from this tab
 
-## User Flow After This Change
-
-**Scenario A — Load more leads (day 2):**
-1. Open Dashboard → Autonomous Agent (or Campaign Manager)
-2. Find your running campaign → click **Load Leads**
-3. Upload a CSV (auto-tagged) or type a tag name
-4. See "247 leads matched" → click **Add All**
-5. Campaign continues with fresh leads
-
-**Scenario B — Relaunch a paused campaign:**
-1. Open Autonomous Agent → see your paused campaign (yellow dot)
-2. Click **Play** → campaign goes active immediately
-3. If you need more leads, click **Load Leads** first
-
-**Scenario C — Clone and rerun:**
-1. Open Campaign Manager → find completed campaign
-2. Click **Clone** → new draft campaign with same settings
-3. Load leads → activate → running
+### 4. Campaign card: show both agents when configured
+**File: `src/components/CampaignManager.tsx`**
+- In the campaign card badges row (lines 1114-1167), if BOTH a retell agent_id AND telnyx_assistant_id are set, show both agent badges (with their respective provider color) so it's clear the campaign has both configured
 
 ## Files to Change
-1. `src/components/QuickLeadLoader.tsx` (new)
-2. `src/components/CampaignManager.tsx` (add Load Leads + Clone buttons)
-3. `src/components/AutonomousAgentDashboard.tsx` (add Play/Pause + Load Leads buttons)
-4. `src/components/CampaignLeadManager.tsx` (add tag filter to Add Leads dialog)
+1. `src/components/CampaignManager.tsx` (edit dialog rework + searchable dropdowns + agent info cards + card badges)
+
+## Result
+- Hit the pencil icon → see BOTH Retell and Telnyx agents side by side, always visible
+- Search/filter agents by name instead of scrolling
+- See agent details and jump to agent editor directly from the campaign edit
+- Campaign cards show both configured agents when applicable
 
