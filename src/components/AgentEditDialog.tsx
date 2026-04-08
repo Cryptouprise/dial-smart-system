@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Plus, Trash2, DollarSign, Mic, MessageSquare, Play, Volume2, Phone, PhoneOff, Upload, FileText, Book, Square, Copy, Wand2, CheckCircle2, Calendar, ExternalLink, AlertCircle, RefreshCw, Voicemail, Bot, ChevronDown, ChevronRight } from 'lucide-react';
 import { VoicemailDetectionSettings } from './VoicemailDetectionSettings';
+import AgentToolBuilder from './AgentToolBuilder';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -966,7 +967,7 @@ AFTER LEAVING THE MESSAGE:
               <TabsTrigger value="call">Call</TabsTrigger>
               <TabsTrigger value="calendar">Calendar</TabsTrigger>
               <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
-              <TabsTrigger value="mcp">MCP</TabsTrigger>
+              <TabsTrigger value="tools">Tools</TabsTrigger>
               <TabsTrigger value="test">Test</TabsTrigger>
             </TabsList>
 
@@ -2304,77 +2305,43 @@ AFTER LEAVING THE MESSAGE:
               </Card>
             </TabsContent>
 
-            {/* MCP Tools Tab */}
-            <TabsContent value="mcp" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    MCP Tools (Model Context Protocol)
-                  </CardTitle>
-                  <CardDescription>
-                    Connect external tools and APIs to extend your agent's capabilities
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {config.mcp_servers?.map((server: any, index: number) => (
-                    <div key={index} className="p-4 border rounded-lg space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="font-semibold">MCP Server {index + 1}</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeMcpServer(index)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Server Name</Label>
-                        <Input
-                          value={server.name || ''}
-                          onChange={(e) => updateMcpServer(index, 'name', e.target.value)}
-                          placeholder="e.g., Calendar, CRM, Database"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Server URL</Label>
-                        <Input
-                          value={server.url || ''}
-                          onChange={(e) => updateMcpServer(index, 'url', e.target.value)}
-                          placeholder="https://your-mcp-server.com"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Description</Label>
-                        <Textarea
-                          value={server.description || ''}
-                          onChange={(e) => updateMcpServer(index, 'description', e.target.value)}
-                          placeholder="What does this MCP server do?"
-                          rows={2}
-                        />
-                      </div>
-                    </div>
-                  ))}
+            {/* Tools Tab (replaces old MCP tab) */}
+            <TabsContent value="tools" className="space-y-4">
+              <AgentToolBuilder
+                provider="retell"
+                agentId={agent?.agent_id || ''}
+                providerAgentId={agent?.agent_id || ''}
+                llmId={agent?.response_engine?.llm_id || ''}
+                tools={config._retellTools || []}
+                onToolsChange={(tools) => updateConfig('_retellTools', tools)}
+              />
 
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={addMcpServer}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add MCP Server
-                  </Button>
-
-                  <div className="p-4 bg-muted/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      MCP (Model Context Protocol) allows your agent to interact with external systems like calendars, CRMs, databases, and more during calls. 
-                      <a href="https://docs.retellai.com" target="_blank" rel="noopener noreferrer" className="text-primary ml-1 hover:underline">
-                        Learn more →
-                      </a>
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Legacy MCP servers (kept for backward compat) */}
+              {config.mcp_servers?.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Legacy MCP Servers</CardTitle>
+                    <CardDescription>These MCP servers are saved in the agent config. Use the Tool Builder above for provider-synced tools.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {config.mcp_servers.map((server: any, index: number) => (
+                      <div key={index} className="p-3 border rounded-lg space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-semibold text-xs">MCP Server {index + 1}</Label>
+                          <Button variant="ghost" size="sm" onClick={() => removeMcpServer(index)}>
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </div>
+                        <Input value={server.name || ''} onChange={(e) => updateMcpServer(index, 'name', e.target.value)} placeholder="Name" className="h-8 text-sm" />
+                        <Input value={server.url || ''} onChange={(e) => updateMcpServer(index, 'url', e.target.value)} placeholder="URL" className="h-8 text-sm" />
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+              <Button variant="outline" size="sm" onClick={addMcpServer}>
+                <Plus className="h-3 w-3 mr-1" />Add Legacy MCP Server
+              </Button>
             </TabsContent>
 
             {/* Knowledge Base Tab */}

@@ -13,7 +13,9 @@ const DEFAULT_WEBHOOK_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/retell
 const CALENDAR_FUNCTION_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`;
 
 interface RetellAgentRequest {
-  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'get_agent' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings' | 'list_voices';
+  action: 'create' | 'list' | 'update' | 'delete' | 'get' | 'get_agent' | 'preview_voice' | 'configure_calendar' | 'test_chat' | 'get_llm' | 'update_voicemail_settings' | 'get_voicemail_settings' | 'list_voices' | 'update_tools' | 'delete_tool';
+  tools?: any[]; // For update_tools action
+  toolName?: string; // For delete_tool action
   agentName?: string;
   agentId?: string;
   voiceId?: string;
@@ -56,7 +58,7 @@ serve(async (req) => {
       }
     }
 
-    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, message, webhookUrl, userId }: RetellAgentRequest = await req.json();
+    const { action, agentName, agentId, voiceId, llmId, agentConfig, text, message, webhookUrl, userId, tools: toolsPayload, toolName }: RetellAgentRequest = await req.json();
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -643,6 +645,87 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+
+      case 'update_tools': {
+        if (!llmId) throw new Error('LLM ID is required for update_tools');
+        if (!toolsPayload) throw new Error('tools array is required');
+        
+        console.log(`[Retell Agent] Updating tools on LLM ${llmId} — ${toolsPayload.length} tools`);
+        
+        // Convert our tool format to Retell's general_tools format
+        const retellTools = toolsPayload.map((t: any) => {
+          const retellTool: any = {
+            type: t.type === 'webhook' ? 'custom' : t.type,
+            name: t.name,
+            description: t.description || '',
+          };
+          if (t.type === 'webhook' || t.type === 'custom') {
+            retellTool.type = 'custom';
+            retellTool.url = t.url || '';
+            retellTool.speak_during_execution = false;
+            retellTool.speak_after_execution = true;
+          }
+          if (t.type === 'transfer_call') {
+            retellTool.number = t.number || t.phone_number || '';
+          }
+          if (t.type === 'end_call') {
+            retellTool.type = 'end_call';
+          }
+          return retellTool;
+        });
+
+        const updateToolsResp = await fetch(`${baseUrl}/update-retell-llm/${llmId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ general_tools: retellTools }),
+        });
+        
+        if (!updateToolsResp.ok) {
+          const errText = await updateToolsResp.text();
+          console.error(`[Retell Agent] update_tools failed: ${errText}`);
+          throw new Error(`Failed to update tools: ${errText}`);
+        }
+        
+        const updatedLlmTools = await updateToolsResp.json();
+        console.log(`[Retell Agent] Tools updated — ${updatedLlmTools.general_tools?.length || 0} tools on LLM`);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          tools_count: updatedLlmTools.general_tools?.length || 0,
+          general_tools: updatedLlmTools.general_tools,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      case 'delete_tool': {
+        if (!llmId) throw new Error('LLM ID is required for delete_tool');
+        if (!toolName) throw new Error('toolName is required');
+        
+        console.log(`[Retell Agent] Deleting tool "${toolName}" from LLM ${llmId}`);
+        
+        // Fetch current tools
+        const getLlmResp = await fetch(`${baseUrl}/get-retell-llm/${llmId}`, { method: 'GET', headers });
+        if (!getLlmResp.ok) throw new Error('Failed to fetch LLM for tool deletion');
+        const currentLlm = await getLlmResp.json();
+        
+        const filteredTools = (currentLlm.general_tools || []).filter((t: any) => t.name !== toolName);
+        
+        const delToolResp = await fetch(`${baseUrl}/update-retell-llm/${llmId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ general_tools: filteredTools }),
+        });
+        
+        if (!delToolResp.ok) {
+          const errText = await delToolResp.text();
+          throw new Error(`Failed to delete tool: ${errText}`);
+        }
+        
+        const afterDel = await delToolResp.json();
+        return new Response(JSON.stringify({
+          success: true,
+          tools_count: afterDel.general_tools?.length || 0,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
       default:
         throw new Error(`Unsupported action: ${action}`);

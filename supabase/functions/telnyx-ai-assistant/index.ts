@@ -1889,6 +1889,93 @@ serve(async (req) => {
         break;
       }
 
+      case 'update_tools': {
+        const { assistant_id: utAssistantId, tools: newTools } = body;
+        if (!utAssistantId) throw new Error('assistant_id required');
+        if (!newTools) throw new Error('tools array required');
+
+        console.log(`[Telnyx AI] Updating tools on assistant ${utAssistantId} — ${newTools.length} tools`);
+
+        // Get the telnyx_assistant_id from local DB
+        const { data: localAsst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('telnyx_assistant_id, tools')
+          .eq('id', utAssistantId)
+          .maybeSingle();
+
+        const telnyxId = localAsst?.telnyx_assistant_id;
+        if (!telnyxId) throw new Error('Assistant not found or not synced with Telnyx');
+
+        // Map tools to Telnyx format
+        const telnyxTools = newTools.map((t: any) => {
+          const tool: any = { type: t.type, name: t.name, description: t.description || '' };
+          if (t.type === 'webhook') {
+            tool.url = t.url || '';
+            tool.method = (t.method || 'POST').toUpperCase();
+            if (t.async) tool.async = true;
+          }
+          if (t.type === 'transfer_call') tool.number = t.number || t.phone_number || '';
+          if (t.type === 'handoff') {
+            tool.assistant_id = t.assistant_id || '';
+            if (t.voice_mode) tool.voice_mode = t.voice_mode;
+          }
+          return tool;
+        });
+
+        // Push to Telnyx API
+        const utResp = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey, {
+          method: 'POST',
+          body: JSON.stringify({ tools: telnyxTools }),
+        });
+        if (!utResp.ok) {
+          const errText = await utResp.text();
+          throw new Error(`Telnyx update_tools failed: ${errText}`);
+        }
+
+        // Update local DB
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({ tools: telnyxTools, updated_at: new Date().toISOString() })
+          .eq('id', utAssistantId);
+
+        result = { success: true, tools_count: telnyxTools.length };
+        break;
+      }
+
+      case 'delete_tool': {
+        const { assistant_id: dtAssistantId, tool_name: dtToolName } = body;
+        if (!dtAssistantId) throw new Error('assistant_id required');
+        if (!dtToolName) throw new Error('tool_name required');
+
+        const { data: dtAsst } = await supabaseAdmin
+          .from('telnyx_assistants')
+          .select('telnyx_assistant_id, tools')
+          .eq('id', dtAssistantId)
+          .maybeSingle();
+
+        const dtTelnyxId = dtAsst?.telnyx_assistant_id;
+        if (!dtTelnyxId) throw new Error('Assistant not found');
+
+        const filteredTools = (dtAsst?.tools || []).filter((t: any) => t.name !== dtToolName);
+
+        const dtResp = await telnyxFetch(`/ai/assistants/${dtTelnyxId}`, apiKey, {
+          method: 'POST',
+          body: JSON.stringify({ tools: filteredTools }),
+        });
+        if (!dtResp.ok) {
+          const errText = await dtResp.text();
+          throw new Error(`Telnyx delete_tool failed: ${errText}`);
+        }
+
+        await supabaseAdmin
+          .from('telnyx_assistants')
+          .update({ tools: filteredTools, updated_at: new Date().toISOString() })
+          .eq('id', dtAssistantId);
+
+        result = { success: true, tools_count: filteredTools.length };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
