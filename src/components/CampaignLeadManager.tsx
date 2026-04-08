@@ -90,10 +90,19 @@ export const CampaignLeadManager = ({ campaignId, campaignName }: CampaignLeadMa
     const load = async () => {
       const latestAssignedIds = await loadAssignedLeadIds();
       await loadAvailableLeads(0, true, latestAssignedIds);
+      // Load available tags for filter
+      try {
+        const { data } = await supabase.from('leads').select('tags').not('tags', 'is', null).limit(500);
+        const tagSet = new Set<string>();
+        (data || []).forEach((row: any) => {
+          if (Array.isArray(row.tags)) row.tags.forEach((t: string) => tagSet.add(t));
+        });
+        setAvailableTags(Array.from(tagSet).sort());
+      } catch { /* non-critical */ }
     };
 
     void load();
-  }, [showAddDialog, campaignId, debouncedSearch, statusFilter]);
+  }, [showAddDialog, campaignId, debouncedSearch, statusFilter, tagFilter]);
 
   const loadCampaignLeads = async () => {
     try {
