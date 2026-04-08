@@ -779,102 +779,183 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
-              {/* Provider Selection */}
+              {/* Primary Provider Toggle */}
               <div>
                 <label className="text-sm font-medium text-foreground">
-                  Voice AI Provider *
+                  Primary Provider for Outbound Calls
                 </label>
-                <Select
-                  value={formData.provider}
-                  onValueChange={(value: 'retell' | 'telnyx') => setFormData({ ...formData, provider: value, agent_id: '', telnyx_assistant_id: '' })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="retell">
-                      <span className="flex items-center gap-2">
-                        <Bot className="h-4 w-4" /> Retell AI
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="telnyx">
-                      <span className="flex items-center gap-2">
-                        <Bot className="h-4 w-4" /> Telnyx AI
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2 mt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'retell' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'retell' })}
+                    className="flex-1"
+                  >
+                    <Bot className="h-4 w-4 mr-1" /> Retell AI
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'telnyx' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'telnyx' })}
+                    className="flex-1"
+                  >
+                    <Bot className="h-4 w-4 mr-1" /> Telnyx AI
+                  </Button>
+                </div>
               </div>
 
-              {/* Agent Selection - conditional on provider */}
-              {formData.provider === 'retell' ? (
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    Retell AI Agent *
-                  </label>
-                  <Select
-                    value={formData.agent_id}
-                    onValueChange={(value) => setFormData({ ...formData, agent_id: value })}
-                    disabled={loadingAgents}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent"} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background z-50">
-                      {agents.map((agent) => (
-                        <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                          <div className="flex items-center gap-2">
-                            {agent.hasActivePhone ? (
-                              <Phone className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <PhoneOff className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <span>{agent.agent_name}</span>
-                            {!agent.hasActivePhone && (
-                              <span className="text-xs text-muted-foreground">(No active phone)</span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {formData.agent_id && !agents.find(a => a.agent_id === formData.agent_id)?.hasActivePhone && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      This agent has no active phone number in Retell - calls won't work
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    Telnyx AI Assistant *
-                  </label>
-                  <Select
-                    value={formData.telnyx_assistant_id}
-                    onValueChange={(value) => setFormData({ ...formData, telnyx_assistant_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a Telnyx assistant" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background z-50">
-                      {telnyxAssistants.map((assistant) => (
-                        <SelectItem key={assistant.id} value={assistant.id}>
-                          <div className="flex items-center gap-2">
-                            <Bot className="h-4 w-4 text-primary" />
-                            <span>{assistant.name}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {telnyxAssistants.length === 0 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* Retell AI Agent — always visible */}
+              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'retell' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                  <Bot className="h-4 w-4" /> Retell AI Agent
+                  {formData.provider === 'retell' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
+                </label>
+                <Popover open={retellAgentOpen} onOpenChange={setRetellAgentOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={retellAgentOpen}
+                      className="w-full justify-between font-normal"
+                      disabled={loadingAgents}
+                    >
+                      {loadingAgents ? 'Loading agents...' : (
+                        formData.agent_id
+                          ? agents.find(a => a.agent_id === formData.agent_id)?.agent_name || 'Unknown agent'
+                          : 'Select Retell agent...'
+                      )}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search agents..." />
+                      <CommandList>
+                        <CommandEmpty>No agents found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="__none_retell__"
+                            onSelect={() => {
+                              setFormData({ ...formData, agent_id: '' });
+                              setRetellAgentOpen(false);
+                            }}
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${!formData.agent_id ? 'opacity-100' : 'opacity-0'}`} />
+                            None
+                          </CommandItem>
+                          {agents.map((agent) => (
+                            <CommandItem
+                              key={agent.agent_id}
+                              value={agent.agent_name}
+                              onSelect={() => {
+                                setFormData({ ...formData, agent_id: agent.agent_id });
+                                setRetellAgentOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${formData.agent_id === agent.agent_id ? 'opacity-100' : 'opacity-0'}`} />
+                              <div className="flex items-center gap-2">
+                                {agent.hasActivePhone ? (
+                                  <Phone className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <PhoneOff className="h-3 w-3 text-muted-foreground" />
+                                )}
+                                <span>{agent.agent_name}</span>
+                                {!agent.hasActivePhone && (
+                                  <span className="text-xs text-muted-foreground">(No phone)</span>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {formData.agent_id && (() => {
+                  const agent = agents.find(a => a.agent_id === formData.agent_id);
+                  if (!agent) return null;
+                  return (
+                    <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
+                      {agent.voice_id && <div>Voice: {agent.voice_id}</div>}
+                      {agent.phoneNumber && <div>Phone: <span className="font-mono">{agent.phoneNumber}</span></div>}
+                      {!agent.hasActivePhone && (
+                        <p className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> No active phone — calls won't work
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Telnyx AI Assistant — always visible */}
+              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'telnyx' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                  <Bot className="h-4 w-4" /> Telnyx AI Assistant
+                  {formData.provider === 'telnyx' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
+                </label>
+                <Popover open={telnyxAssistantOpen} onOpenChange={setTelnyxAssistantOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={telnyxAssistantOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {formData.telnyx_assistant_id
+                        ? telnyxAssistants.find(a => a.id === formData.telnyx_assistant_id)?.name || 'Unknown assistant'
+                        : 'Select Telnyx assistant...'
+                      }
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search assistants..." />
+                      <CommandList>
+                        <CommandEmpty>No assistants found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="__none_telnyx__"
+                            onSelect={() => {
+                              setFormData({ ...formData, telnyx_assistant_id: '' });
+                              setTelnyxAssistantOpen(false);
+                            }}
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${!formData.telnyx_assistant_id ? 'opacity-100' : 'opacity-0'}`} />
+                            None
+                          </CommandItem>
+                          {telnyxAssistants.map((assistant) => (
+                            <CommandItem
+                              key={assistant.id}
+                              value={assistant.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, telnyx_assistant_id: assistant.id });
+                                setTelnyxAssistantOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${formData.telnyx_assistant_id === assistant.id ? 'opacity-100' : 'opacity-0'}`} />
+                              <div className="flex items-center gap-2">
+                                <Bot className="h-3 w-3 text-primary" />
+                                <span>{assistant.name}</span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {telnyxAssistants.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No Telnyx assistants found. Create one in the Telnyx Voice AI section first.
+                  </p>
+                )}
+              </div>
 
               {/* Workflow Selector */}
               <div>
