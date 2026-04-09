@@ -20,6 +20,8 @@ const REMOVE_ALL_DISPOSITIONS = [
   'deceased', 'business_closed', 'invalid_number', 'disconnected',
   // Renters/non-homeowners - can't make installation decisions
   'renter', 'tenant', 'not_homeowner', 'not_the_homeowner',
+  // Bad/invalid numbers - terminal
+  'bad_number', 'bad number',
   
   // Positive terminal outcomes - lead is handled, stop the sequence!
   'appointment_set', 'appointment_booked', 'appointment_scheduled', 'appointment',
@@ -31,7 +33,10 @@ const REMOVE_ALL_DISPOSITIONS = [
 // Dispositions that should PAUSE (not remove) the workflow - lead needs more nurturing later
 const PAUSE_WORKFLOW_DISPOSITIONS = [
   'follow_up', 'potential_prospect', 'needs_more_info', 'timing_not_right',
-  'send_info', 'left_voicemail', 'nurture', 'voicemail', 'dropped_call', 'not_connected'
+  'send_info', 'send_more_info', 'send more info', 'left_voicemail', 'nurture', 'voicemail',
+  'dropped_call', 'dropped_call_positive', 'dropped call positive',
+  'not_connected', 'call_not_connected', 'call not connected',
+  'busy_signal', 'busy signal', 'busy'
 ];
 
 serve(async (req) => {
