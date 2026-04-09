@@ -6,38 +6,71 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ── DEFAULT DISPOSITION RULES (fallback when DB has no auto_actions) ──────────
 // Dispositions that should trigger full DNC (block all future calls)
-const DNC_DISPOSITIONS = [
+const DEFAULT_DNC_DISPOSITIONS = [
   'dnc', 'do_not_call', 'stop', 'remove',
   'threatening', 'rude', 'hostile', 'abusive'
 ];
 
 // Dispositions that should remove from all active campaigns/workflows
-// Includes BOTH negative outcomes AND positive terminal outcomes (appointment, callback, etc.)
-const REMOVE_ALL_DISPOSITIONS = [
-  // Negative outcomes - stop calling, they're not interested
+const DEFAULT_REMOVE_ALL_DISPOSITIONS = [
   'not_interested', 'wrong_number', 'already_has_solar', 'already_has_service',
   'deceased', 'business_closed', 'invalid_number', 'disconnected',
-  // Renters/non-homeowners - can't make installation decisions
   'renter', 'tenant', 'not_homeowner', 'not_the_homeowner',
-  // Bad/invalid numbers - terminal
   'bad_number', 'bad number',
-  
-  // Positive terminal outcomes - lead is handled, stop the sequence!
   'appointment_set', 'appointment_booked', 'appointment_scheduled', 'appointment',
   'callback_requested', 'callback_scheduled', 'callback',
   'converted', 'sale', 'closed_won', 'qualified', 'booked',
   'transferred', 'spoke_with_decision_maker', 'hot_lead'
 ];
 
-// Dispositions that should PAUSE (not remove) the workflow - lead needs more nurturing later
-const PAUSE_WORKFLOW_DISPOSITIONS = [
+// Dispositions that should PAUSE (not remove) the workflow
+const DEFAULT_PAUSE_WORKFLOW_DISPOSITIONS = [
   'follow_up', 'potential_prospect', 'needs_more_info', 'timing_not_right',
   'send_info', 'send_more_info', 'send more info', 'left_voicemail', 'nurture', 'voicemail',
   'dropped_call', 'dropped_call_positive', 'dropped call positive',
   'not_connected', 'call_not_connected', 'call not connected',
   'busy_signal', 'busy signal', 'busy'
 ];
+
+/**
+ * Build dynamic disposition rule sets from the DB dispositions table.
+ * Any disposition with auto_actions JSONB containing remove_from_queue, pause_workflow, or add_to_dnc
+ * will be merged into the corresponding rule set at runtime.
+ */
+async function buildDispositionRules(supabase: any, userId: string) {
+  const dncDispositions = [...DEFAULT_DNC_DISPOSITIONS];
+  const removeAllDispositions = [...DEFAULT_REMOVE_ALL_DISPOSITIONS];
+  const pauseWorkflowDispositions = [...DEFAULT_PAUSE_WORKFLOW_DISPOSITIONS];
+
+  try {
+    const { data: dbDispositions } = await supabase
+      .from('dispositions')
+      .select('name, auto_actions')
+      .eq('user_id', userId);
+
+    for (const d of dbDispositions || []) {
+      const normalized = d.name?.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      if (!normalized) continue;
+      const actions = d.auto_actions || {};
+
+      if (actions.add_to_dnc && !dncDispositions.includes(normalized)) {
+        dncDispositions.push(normalized);
+      }
+      if (actions.remove_from_queue && !removeAllDispositions.includes(normalized)) {
+        removeAllDispositions.push(normalized);
+      }
+      if (actions.pause_workflow && !pauseWorkflowDispositions.includes(normalized)) {
+        pauseWorkflowDispositions.push(normalized);
+      }
+    }
+  } catch (err) {
+    console.error('[DispositionRouter] Failed to load DB dispositions, using defaults:', err);
+  }
+
+  return { dncDispositions, removeAllDispositions, pauseWorkflowDispositions };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
