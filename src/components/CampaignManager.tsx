@@ -800,6 +800,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 <label className="text-sm font-medium text-foreground">
                   Primary Provider for Outbound Calls
                 </label>
+                <p className="text-xs text-muted-foreground mb-1">
+                  You can assign both a Retell agent and a Telnyx assistant. The primary provider handles outbound calls.
+                </p>
                 <div className="flex gap-2 mt-1">
                   <Button
                     type="button"
@@ -823,10 +826,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               {/* Retell AI Agent — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'retell' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'retell' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Retell AI Agent
                   {formData.provider === 'retell' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
+                  {formData.provider !== 'retell' && formData.agent_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={retellAgentOpen} onOpenChange={setRetellAgentOpen}>
                   <PopoverTrigger asChild>
@@ -908,10 +912,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               {/* Telnyx AI Assistant — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'telnyx' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'telnyx' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Telnyx AI Assistant
                   {formData.provider === 'telnyx' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
+                  {formData.provider !== 'telnyx' && formData.telnyx_assistant_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={telnyxAssistantOpen} onOpenChange={setTelnyxAssistantOpen}>
                   <PopoverTrigger asChild>
@@ -1162,21 +1167,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" disabled={isLoading || (formData.provider === 'retell' ? !formData.agent_id : !formData.telnyx_assistant_id)} className="flex-1">
+                <Button type="submit" disabled={isLoading || (!formData.agent_id && !formData.telnyx_assistant_id)} className="flex-1">
                   {editingCampaign ? 'Update' : 'Create'} Campaign
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
                 </Button>
               </div>
-              {formData.provider === 'retell' && !formData.agent_id && (
+              {!formData.agent_id && !formData.telnyx_assistant_id && (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
-                  Please select a Retell AI agent to continue
-                </p>
-              )}
-              {formData.provider === 'telnyx' && !formData.telnyx_assistant_id && (
-                <p className="text-sm text-amber-600 dark:text-amber-400">
-                  Please select a Telnyx AI assistant to continue
+                  Please select at least one AI agent or assistant to continue
                 </p>
               )}
             </form>
