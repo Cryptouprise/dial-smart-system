@@ -1,55 +1,66 @@
 
 
-# Fix Campaign Dispatch, Retry Delay, Clear History, and Force Requeue
+## Problem Diagnosis
 
-## What's actually broken (root causes)
+**Retell API 400 Error: "Got empty url"**
 
-1. **Retry delay = 300 minutes (5 hours)** — The original migration `20251208` set `DEFAULT 300` on `campaigns.retry_delay_minutes`. The campaign create/edit form never includes `retry_delay_minutes`, so every campaign inherits 300 from the DB. After a first call attempt fails, the next attempt is scheduled 5 hours later. The dispatcher UI warning shows it, but there's no way to change it.
+The edge function logs show the exact error:
+```
+Retell AI API error: 400 - {"status":"error","message":"Got empty url"}
+```
 
-2. **Clear History → TypeError** — `clearWorkflowHistory()` deletes from `lead_workflow_progress` using `.eq('campaign_id', campaignId)` but does NOT filter by `user_id`. The RLS policy requires `auth.uid() = user_id`. Without that filter, the Supabase client can't match rows → returns an error the UI catches as a generic TypeError.
+The payload being sent includes `"webhook_url":""` (empty string). Retell's API rejects empty strings for URL fields — it expects either a valid URL or the field to be omitted entirely.
 
-3. **Force Requeue fails** — `forceRequeueLeads()` deletes old queue entries then re-inserts, but if the delete silently fails (RLS), the subsequent insert hits the `(campaign_id, lead_id)` unique constraint → error.
+**Root cause**: `AgentEditDialog.tsx` line 546 initializes `webhook_url: agent.webhook_url || ''`, and the `handleSave` function (line 579) only sanitizes `pii_config` but passes all empty URL strings through untouched.
 
-4. **Dispatch Now → "No calls to dispatch"** — Because retry_delay is 300 min, all retried leads are scheduled far in the future. Manual dispatch already bypasses `scheduled_at`, but if leads have status `completed` or `failed` (not `pending`), they won't be found. The real issue is a cascade: high retry delay → leads get scheduled far out → even with bypass, if the requeue/clear failed, no pending leads exist.
+## Plan
 
-## Implementation plan
+### Task 1: Fix Retell Agent Save — Sanitize Empty URLs
 
-### Step 1: Fix the retry_delay_minutes DB default and existing campaigns
-- Migration: `ALTER TABLE campaigns ALTER COLUMN retry_delay_minutes SET DEFAULT 15`
-- Migration: `UPDATE campaigns SET retry_delay_minutes = 15 WHERE retry_delay_minutes = 300`
-- This fixes all existing campaigns and future ones immediately.
+**File: `supabase/functions/retell-agent-management/index.ts`**
 
-### Step 2: Add retry_delay_minutes to the campaign form
-- Add a `retry_delay_minutes` field to `formData` (default: 15).
-- Add it to `resetForm()` and `handleEdit()`.
-- Add a number input in the campaign create/edit dialog (near max_attempts), labeled "Retry Delay (minutes)", with min=1, max=60.
-- Include it in `submitData` so it actually saves.
+In the `update` case (around line 137), after building `updateData`, strip out any fields with empty string values that Retell treats as URLs. This is the safest place to fix it (server-side) so it catches all callers:
 
-### Step 3: Fix Clear History RLS issue
-- In `clearWorkflowHistory()`, get the user first (already done), then add `.eq('user_id', user.id)` to the `lead_workflow_progress` delete query so RLS can match rows.
+- Before sending to Retell API, iterate over `updateData` and delete any key where:
+  - The value is `""` (empty string)
+  - AND the key matches URL-related fields: `webhook_url`, `post_call_webhook_url`, `transfer_webhook_url`
+- Also strip the internal `_retellTools` key (if present) since that's our UI-only field, not a Retell API field — sending unknown keys could cause issues.
+- Apply the same sanitization in the `create` case for safety.
 
-### Step 4: Fix Force Requeue
-- In `forceRequeueLeads()`, use `.upsert()` instead of `.insert()` for the queue entries, with `onConflict: 'campaign_id,lead_id'`. This handles the case where old entries weren't cleaned up.
-- Also add user auth check at the top so the delete operations pass RLS.
+### Task 2: Frontend Sanitization Belt-and-Suspenders
 
-### Step 5: Clamp retry delay in the dispatcher
-- The dispatcher already clamps to 1-60 minutes at line 1440. Keep this as defense-in-depth, but with the DB fix it won't be needed for normal operation.
+**File: `src/components/AgentEditDialog.tsx`**
 
-### Step 6: Add a "Fix Retry Delay" quick-action button
-- In the warning banner that shows "Retry delay is 300 minutes", add a button that immediately updates the campaign's `retry_delay_minutes` to 15 and refreshes. This gives a one-click fix for any campaign that somehow ends up with a bad value.
+In `handleSave` (line 579), add URL sanitization before calling `onSave`:
+- Delete `webhook_url` if it's empty string
+- Delete `post_call_webhook_url` and `transfer_webhook_url` if empty
+- Delete `_retellTools` (internal UI state, not an API field)
 
-## Files to modify
+### Task 3: Campaign Launch / Dispatch / Calling Audit
 
-| File | Change |
-|------|--------|
-| New migration | Change default from 300→15, update all existing campaigns |
-| `src/components/CampaignManager.tsx` | Add retry_delay_minutes to form, fix clearWorkflowHistory, add quick-fix button |
-| `src/hooks/useCallDispatcher.ts` | Fix forceRequeueLeads to use upsert |
+Based on my review of the full dispatch chain, the following are confirmed working:
 
-## Technical details
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `call-dispatcher` number rotation | OK | Retell fallback to all active numbers, Telnyx provider-specific pool |
+| `call-dispatcher` provider routing | OK | Both/Retell/Telnyx/Assistable paths all have agent validation |
+| `call-dispatcher` dedup check | OK | 30-min recent answered call check prevents repeat dials |
+| `call-dispatcher` concurrency | OK | Capacity-aware batch sizing |
+| `outbound-calling` Retell path | OK | Standard Retell create-call API |
+| `outbound-calling` Telnyx path | OK | TeXML AI calls endpoint (fixed in prior session) |
+| `outbound-calling` DNC validation | OK | Checks before calling |
+| Number daily limit reset | OK | `reset_stale_daily_calls` RPC called before dispatch |
+| Queue recycling | OK | Upsert on campaign_id+lead_id for terminal rows |
+| Manual dispatch bypass | OK | Both `action: 'dispatch'` and `immediate: true` bypass schedule gate |
 
-- The `dialing_queues` unique constraint `(campaign_id, lead_id)` means upsert is the correct pattern for requeue
-- RLS on `lead_workflow_progress` requires `user_id = auth.uid()` — all delete queries must include this filter
-- The dispatcher's 1-60 minute clamp on retry delay is good defense-in-depth but the root fix is the DB default + form control
-- No edge function changes needed — the dispatcher already handles manual dispatch correctly once leads are in `pending` status with reasonable scheduling
+No additional dispatch/calling issues found. The only blocker is the Retell save error.
+
+### Task 4: Deploy and Verify
+
+- Deploy `retell-agent-management` edge function
+- Verify build passes
+
+## Summary
+
+Two small edits fix the 400 error — sanitize empty URL strings both server-side (retell-agent-management) and client-side (AgentEditDialog). The campaign launch/dispatch/calling pipeline is solid.
 
