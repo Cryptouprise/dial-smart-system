@@ -583,16 +583,24 @@ AFTER LEAVING THE MESSAGE:
     if (sanitizedConfig.pii_config) {
       const mode = sanitizedConfig.pii_config.mode;
       if (!mode || mode === 'off') {
-        // Retell only accepts specific modes; omit config when "off"
         delete sanitizedConfig.pii_config;
       } else if (mode !== 'post_call') {
-        // Fallback to supported mode if an unsupported one is selected
         sanitizedConfig.pii_config = {
           ...sanitizedConfig.pii_config,
           mode: 'post_call',
         };
       }
     }
+
+    // Sanitize empty URL strings — Retell API rejects "" for URL fields
+    const urlFields = ['webhook_url', 'post_call_webhook_url', 'transfer_webhook_url'];
+    for (const field of urlFields) {
+      if ((sanitizedConfig as any)[field] === '') {
+        delete (sanitizedConfig as any)[field];
+      }
+    }
+    // Remove internal UI-only key
+    delete (sanitizedConfig as any)._retellTools;
 
     await onSave(sanitizedConfig);
   };
