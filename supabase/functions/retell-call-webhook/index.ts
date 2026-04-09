@@ -10,6 +10,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendManagerNotification } from '../_shared/manager-notify.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1423,6 +1424,29 @@ serve(async (req) => {
             outcome,
             error: ghlError.message,
           });
+        }
+
+        // 9. Manager SMS notifications (best-effort, never blocks)
+        if (outcome === 'transfer' || outcome === 'transferred') {
+          const leadName = currentLead?.first_name
+            ? `${currentLead.first_name} ${currentLead.last_name || ''}`.trim()
+            : call.to_number || 'Unknown';
+          await sendManagerNotification(
+            supabase,
+            userId,
+            'transfer',
+            `📞 TRANSFER: ${leadName} (${call.to_number || ''}) is ready to speak with you now!`,
+          );
+        } else if (outcome === 'appointment_set' || outcome === 'converted') {
+          const leadName = currentLead?.first_name
+            ? `${currentLead.first_name} ${currentLead.last_name || ''}`.trim()
+            : call.to_number || 'Unknown';
+          await sendManagerNotification(
+            supabase,
+            userId,
+            'appointment',
+            `📅 APPOINTMENT: ${leadName} just booked an appointment via AI call.`,
+          );
         }
       }
     }

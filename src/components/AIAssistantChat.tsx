@@ -185,7 +185,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
   // Keyboard shortcut: Cmd+K to open
   useEffect(() => {
     if (embedded) return;
-    
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -203,6 +203,20 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ embedded = fal
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, openChat, closeChat, embedded]);
+
+  // Listen for open-ai-chat events dispatched by CommandCenter quick-prompt chips
+  useEffect(() => {
+    if (embedded) return;
+    const handleOpenWithPrompt = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      openChat();
+      if (detail?.prompt) {
+        setInput(detail.prompt);
+      }
+    };
+    window.addEventListener('open-ai-chat', handleOpenWithPrompt);
+    return () => window.removeEventListener('open-ai-chat', handleOpenWithPrompt);
+  }, [embedded, openChat]);
 
   // Auto-speak LJ's responses when voice is enabled
   useEffect(() => {

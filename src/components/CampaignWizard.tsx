@@ -13,8 +13,164 @@ import { useToast } from '@/hooks/use-toast';
 import { WorkflowPreview } from './WorkflowPreview';
 import { 
   Rocket, ChevronRight, ChevronLeft, Check, Users, 
-  Workflow, Phone, Settings2, Sparkles, Zap
+  Workflow, Phone, Settings2, Sparkles, Zap, Sun, Database, Flame, Bell, CreditCard, RefreshCw
 } from 'lucide-react';
+
+// ─── Campaign Profile Presets ─────────────────────────────────────────────────
+// Each preset pre-fills the wizard so users don't have to guess settings.
+interface CampaignProfile {
+  id: string;
+  name: string;
+  tagline: string;
+  icon: React.ElementType;
+  iconColor: string;
+  gradient: string;
+  defaults: {
+    description: string;
+    callingHoursStart: string;
+    callingHoursEnd: string;
+    maxCallsPerDay: number;
+    smsOnNoAnswer: boolean;
+    smsTemplate: string;
+  };
+  recommendedTemplate: string; // matches a WORKFLOW_TEMPLATES id
+  tips: string[];
+}
+
+const CAMPAIGN_PROFILES: CampaignProfile[] = [
+  {
+    id: 'solar_qualified',
+    name: 'Solar / Home Services',
+    tagline: 'Warm opt-in leads — be persistent, they want to hear from you',
+    icon: Sun,
+    iconColor: 'text-yellow-500',
+    gradient: 'from-yellow-500/20 to-orange-500/20',
+    defaults: {
+      description: 'Qualified solar / home services opt-in leads. High intent, worth multiple attempts.',
+      callingHoursStart: '09:00',
+      callingHoursEnd: '21:00',
+      maxCallsPerDay: 4,
+      smsOnNoAnswer: true,
+      smsTemplate: "Hi {{first_name}}, I'm following up about your solar savings inquiry. When's a good 5 minutes to chat?",
+    },
+    recommendedTemplate: 'speed_to_lead',
+    tips: [
+      'Call within 5 minutes of lead delivery for 100x better connect rate',
+      'Rotate between 3+ numbers per lead to avoid spam flags',
+      'SMS after every unanswered call — 25% reply rate',
+    ],
+  },
+  {
+    id: 'database_blast',
+    name: 'Database / Cold List',
+    tagline: 'Large list, low engagement — one clean pass, no harassment',
+    icon: Database,
+    iconColor: 'text-blue-500',
+    gradient: 'from-blue-500/20 to-cyan-500/20',
+    defaults: {
+      description: 'Large database or homeowner list. Call once, leave a voicemail, move on.',
+      callingHoursStart: '10:00',
+      callingHoursEnd: '17:00',
+      maxCallsPerDay: 1,
+      smsOnNoAnswer: false,
+      smsTemplate: "Hi {{first_name}}, this is {{agent_name}}. I tried calling about {{service}}. Give me a call back when you get a chance!",
+    },
+    recommendedTemplate: 'nurture_sequence',
+    tips: [
+      'Single-pass only — these leads didn\'t opt in, respect that',
+      'Keep calling hours tight (10am–5pm) to avoid complaints',
+      'Volume game — focus on answer rate, not persistence',
+    ],
+  },
+  {
+    id: 'speed_to_lead',
+    name: 'Speed-to-Lead / Internet Leads',
+    tagline: 'Fresh internet leads — call in under 5 minutes or lose them',
+    icon: Flame,
+    iconColor: 'text-red-500',
+    gradient: 'from-red-500/20 to-orange-500/20',
+    defaults: {
+      description: 'Fresh internet leads from web forms. Speed is everything — call immediately.',
+      callingHoursStart: '08:00',
+      callingHoursEnd: '21:00',
+      maxCallsPerDay: 3,
+      smsOnNoAnswer: true,
+      smsTemplate: "Hi {{first_name}}, I saw you just requested info about {{service}}. I'm calling now — call me back at {{caller_id}} or I'll try you again shortly!",
+    },
+    recommendedTemplate: 'speed_to_lead',
+    tips: [
+      'First call should happen within 2 minutes of lead creation',
+      'If no answer, SMS immediately AND call again in 30 minutes',
+      'Lead value drops 90% after the first hour',
+    ],
+  },
+  {
+    id: 'appointment_reminder',
+    name: 'Appointment Confirmation',
+    tagline: 'People who have appointments — confirm and reduce no-shows',
+    icon: Bell,
+    iconColor: 'text-purple-500',
+    gradient: 'from-purple-500/20 to-violet-500/20',
+    defaults: {
+      description: 'Existing appointments needing confirmation. Reduce no-show rate.',
+      callingHoursStart: '09:00',
+      callingHoursEnd: '18:00',
+      maxCallsPerDay: 2,
+      smsOnNoAnswer: true,
+      smsTemplate: "Hi {{first_name}}! Confirming your appointment tomorrow at {{appointment_time}}. Reply YES to confirm or call us to reschedule.",
+    },
+    recommendedTemplate: 'no_show_followup',
+    tips: [
+      'Confirm 24h and 2h before appointment',
+      'SMS confirmation gets better response than calls',
+      'Offer easy reschedule link to prevent cancellations',
+    ],
+  },
+  {
+    id: 'collections',
+    name: 'Collections / Past Due',
+    tagline: 'Past-due accounts — persistent but compliant follow-up',
+    icon: CreditCard,
+    iconColor: 'text-teal-500',
+    gradient: 'from-teal-500/20 to-green-500/20',
+    defaults: {
+      description: 'Collections or payment reminder campaign. Compliant, persistent follow-up.',
+      callingHoursStart: '08:00',
+      callingHoursEnd: '21:00',
+      maxCallsPerDay: 3,
+      smsOnNoAnswer: true,
+      smsTemplate: "Hi {{first_name}}, this is a reminder about your account with {{company_name}}. Please call us at your earliest convenience.",
+    },
+    recommendedTemplate: 'nurture_sequence',
+    tips: [
+      'Follow FDCPA regulations — no calls before 8am or after 9pm',
+      'Document all contact attempts',
+      'Offer a payment plan option upfront',
+    ],
+  },
+  {
+    id: 'reactivation',
+    name: 'Database Reactivation',
+    tagline: 'Old leads who went cold — re-engage with fresh messaging',
+    icon: RefreshCw,
+    iconColor: 'text-green-500',
+    gradient: 'from-green-500/20 to-emerald-500/20',
+    defaults: {
+      description: 'Previous leads or customers who went cold. Re-engage with fresh angle.',
+      callingHoursStart: '10:00',
+      callingHoursEnd: '19:00',
+      maxCallsPerDay: 2,
+      smsOnNoAnswer: true,
+      smsTemplate: "Hi {{first_name}}, it's been a while! We have some exciting updates about {{service}} I think you'll love. Got 5 minutes this week?",
+    },
+    recommendedTemplate: 'ai_conversation',
+    tips: [
+      'Lead with something new — a new offer, price drop, or feature',
+      'Acknowledge the time gap, don\'t pretend it didn\'t happen',
+      'AI conversation works great here — feels personal, not scripted',
+    ],
+  },
+];
 
 interface CampaignWizardProps {
   open: boolean;
@@ -89,7 +245,9 @@ const WORKFLOW_TEMPLATES = [
 
 export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, onComplete }) => {
   const { toast } = useToast();
+  // Step 0 = profile picker, steps 1-4 = original wizard steps
   const [currentStep, setCurrentStep] = useState(0);
+  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [agents, setAgents] = useState<Array<{ agent_id: string; agent_name: string }>>([]);
   const [telnyxAssistants, setTelnyxAssistants] = useState<Array<{ id: string; name: string }>>([]);
@@ -111,11 +269,26 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
   });
 
   const steps = [
+    { title: 'Campaign Type', icon: Zap },
     { title: 'Campaign Info', icon: Settings2 },
     { title: 'Select Workflow', icon: Workflow },
     { title: 'AI Agent', icon: Sparkles },
     { title: 'Launch', icon: Rocket },
   ];
+
+  const applyProfile = (profileId: string) => {
+    const profile = CAMPAIGN_PROFILES.find(p => p.id === profileId);
+    if (!profile) {
+      console.warn(`CampaignWizard: unknown profile id "${profileId}"`);
+      return;
+    }
+    setSelectedProfile(profileId);
+    setWizardState(prev => ({
+      ...prev,
+      ...profile.defaults,
+    }));
+    setSelectedTemplate(profile.recommendedTemplate);
+  };
 
   useEffect(() => {
     if (open) {
@@ -267,9 +440,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: return wizardState.name.length > 0;
-      case 1: return wizardState.workflowId.length > 0;
-      case 2: return wizardState.provider === 'retell' ? wizardState.agentId.length > 0 : wizardState.telnyxAssistantId.length > 0;
+      case 0: return selectedProfile !== null; // must pick a profile
+      case 1: return wizardState.name.length > 0;
+      case 2: return wizardState.workflowId.length > 0;
+      case 3: return wizardState.provider === 'retell' ? wizardState.agentId.length > 0 : wizardState.telnyxAssistantId.length > 0;
       default: return true;
     }
   };
@@ -321,7 +495,68 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
 
         {/* Step Content */}
         <div className="min-h-[300px]">
+          {/* ── STEP 0: Campaign Profile Picker ── */}
           {currentStep === 0 && (
+            <div className="space-y-4">
+              <div className="text-center pb-2">
+                <p className="text-sm text-muted-foreground">
+                  Pick the type of campaign that matches your leads — the wizard will pre-fill all the right settings for you.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {CAMPAIGN_PROFILES.map((profile) => {
+                  const Icon = profile.icon;
+                  const isSelected = selectedProfile === profile.id;
+                  return (
+                    <Card
+                      key={profile.id}
+                      className={`cursor-pointer transition-all hover:shadow-md bg-gradient-to-br ${profile.gradient} ${
+                        isSelected ? 'ring-2 ring-primary border-primary shadow-md' : 'hover:border-primary/40'
+                      }`}
+                      onClick={() => applyProfile(profile.id)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-lg bg-background/70 shrink-0">
+                            <Icon className={`h-5 w-5 ${profile.iconColor}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-semibold text-sm">{profile.name}</h4>
+                              {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{profile.tagline}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              {selectedProfile && (() => {
+                const profile = CAMPAIGN_PROFILES.find(p => p.id === selectedProfile)!;
+                return (
+                  <div className="mt-2 p-3 rounded-lg bg-muted/40 border border-dashed border-primary/30 space-y-1.5">
+                    <p className="text-xs font-semibold text-primary">Pre-configured settings for {profile.name}:</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>🕐 Calling hours: {profile.defaults.callingHoursStart} – {profile.defaults.callingHoursEnd}</span>
+                      <span>📞 Max daily calls: {profile.defaults.maxCallsPerDay}×</span>
+                      <span>💬 SMS on no-answer: {profile.defaults.smsOnNoAnswer ? 'Yes' : 'No'}</span>
+                      <span>🔄 Workflow: {WORKFLOW_TEMPLATES.find(t => t.id === profile.recommendedTemplate)?.name}</span>
+                    </div>
+                    <div className="pt-1 space-y-0.5">
+                      {profile.tips.map((tip, i) => (
+                        <p key={i} className="text-xs text-muted-foreground">💡 {tip}</p>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ── STEP 1: Campaign Info (was step 0) ── */}
+          {currentStep === 1 && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Campaign Name *</Label>
@@ -360,7 +595,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
             </div>
           )}
 
-          {currentStep === 1 && (
+          {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Quick Start Templates</Label>
@@ -418,7 +653,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
             </div>
           )}
 
-          {currentStep === 2 && (
+          {currentStep === 3 && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Voice AI Provider</Label>
@@ -499,7 +734,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
             </div>
           )}
 
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <div className="space-y-4">
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="p-4">

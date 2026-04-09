@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendManagerNotification } from '../_shared/manager-notify.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1359,18 +1360,26 @@ serve(async (req) => {
               .eq('id', broadcastId);
 
             await createSystemAlert(
-              supabase, 
-              user.id, 
-              'high_error_rate', 
+              supabase,
+              user.id,
+              'high_error_rate',
               'critical',
               'Campaign Auto-Paused',
               `Campaign paused due to ${(recentErrorRate * 100).toFixed(1)}% error rate. Please check your configuration.`,
               broadcastId
             );
 
+            // Notify manager that campaign was auto-paused
+            await sendManagerNotification(
+              supabase,
+              user.id,
+              'campaign_error',
+              `⚠️ ISSUE: "${broadcast.name || broadcastId}" paused — ${(recentErrorRate * 100).toFixed(0)}% error rate. Check your configuration.`,
+            );
+
             return new Response(
-              JSON.stringify({ 
-                success: false, 
+              JSON.stringify({
+                success: false,
                 status: 'paused',
                 error: `Campaign auto-paused due to high error rate (${(recentErrorRate * 100).toFixed(1)}%)`,
                 errorRate: recentErrorRate,
@@ -1941,16 +1950,24 @@ serve(async (req) => {
         if (stats.pending === 0 && stats.calling === 0 && stats.total > 0) {
           const { data: currentBroadcast } = await supabase
             .from('voice_broadcasts')
-            .select('status')
+            .select('status, name')
             .eq('id', broadcastId)
             .maybeSingle();
-          
+
           if (currentBroadcast?.status === 'active') {
             console.log(`Auto-completing broadcast ${broadcastId} - all calls finished`);
             await supabase
               .from('voice_broadcasts')
               .update({ status: 'completed' })
               .eq('id', broadcastId);
+
+            // Notify manager that campaign finished
+            await sendManagerNotification(
+              supabase,
+              user.id,
+              'campaign_complete',
+              `✅ DONE: "${currentBroadcast.name || broadcastId}" finished all leads. Check your results!`,
+            );
           }
         }
 
