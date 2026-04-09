@@ -2352,6 +2352,112 @@ supabase functions deploy ai-autonomous-engine
 
 ---
 
+### April 9, 2026 - Public REST API + MCP Server (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+
+Added a complete external-access layer so Claude Code, other AI agents (Manus, Cursor, Windsurf, etc.), and arbitrary third-party tools can drive the Dial Smart platform via either REST or the Model Context Protocol. Built primarily for personal use (Charles unleashing Claude on his own app), but the architecture is customer-ready.
+
+**Three pieces shipped together:**
+
+1. **`api_keys` infrastructure** — `dsk_live_<32 random chars>` token format. SHA-256 hash stored, plaintext shown once at creation. Per-key scopes array (admin / read / write / `<domain>:read|write`), per-key rate limit, expiry, revocation, audit log. RLS so users can only manage their own keys.
+
+2. **`api-gateway` edge function** — single dispatching edge function exposing a versioned REST surface under `/v1`. Authenticates with `Authorization: Bearer dsk_live_...` (NOT Supabase JWT — must be deployed with `--no-verify-jwt`). All queries are scoped to the API key's `user_id`. Service-role used internally for table reads/writes.
+
+3. **`@dialsmart/mcp-server`** — standalone Node TypeScript MCP server in `mcp-server/`. Wraps the REST API with 18 typed tools. Stdio transport (works with every MCP client). Single env var: `DIALSMART_API_KEY`. Builds clean with `tsc` (validated).
+
+**REST routes (`/v1`):**
+
+| Method | Path | Scope | Purpose |
+|---|---|---|---|
+| GET | `/health` | none | Smoke test (public) |
+| GET | `/me` | any | Identity, scopes |
+| GET | `/leads` | leads:read | List/search/filter |
+| GET | `/leads/:id` | leads:read | Full lead record |
+| POST | `/leads` | leads:write | Create |
+| PATCH | `/leads/:id` | leads:write | Partial update |
+| POST | `/leads/:id/dnc` | leads:write | DNC + dnc_list insert |
+| GET | `/campaigns` | campaigns:read | List |
+| GET | `/campaigns/:id` | campaigns:read | Full config |
+| POST | `/campaigns/:id/launch` | campaigns:write | status=active |
+| POST | `/campaigns/:id/pause` | campaigns:write | status=paused |
+| GET | `/calls` | calls:read | List call_logs |
+| GET | `/calls/:id` | calls:read | Transcript + AI analysis |
+| POST | `/calls` | calls:write | Place call (proxies to outbound-calling) |
+| GET | `/sms` | sms:read | List sms_messages |
+| POST | `/sms` | sms:write | Send (proxies to sms-messaging) |
+| GET | `/phone-numbers` | system:read | Phone inventory |
+| GET | `/system/stats` | system:read | 24h dashboard snapshot |
+| GET | `/credits/balance` | system:read | Org credit balance |
+
+**MCP tools (18 total)**: `dialsmart_whoami`, `dialsmart_system_stats`, `dialsmart_credits_balance`, `dialsmart_list_phone_numbers`, `dialsmart_list_leads`, `dialsmart_get_lead`, `dialsmart_create_lead`, `dialsmart_update_lead`, `dialsmart_mark_lead_dnc`, `dialsmart_list_campaigns`, `dialsmart_get_campaign`, `dialsmart_launch_campaign`, `dialsmart_pause_campaign`, `dialsmart_list_calls`, `dialsmart_get_call`, `dialsmart_place_call`, `dialsmart_list_sms`, `dialsmart_send_sms`.
+
+**Scope hierarchy** (in `_shared/api-auth.ts`):
+- `admin` → everything
+- `write` → all `<domain>:write` and `<domain>:read`
+- `read` → all `<domain>:read`
+- `<domain>:write` → grants `<domain>:read` of same domain
+- Otherwise: exact match required
+
+**Key files created**
+- `supabase/migrations/20260409020305_api_keys.sql` (94 lines) — `api_keys`, `api_key_audit_log`, `touch_api_key()`, RLS, indexes
+- `supabase/functions/_shared/api-auth.ts` (155 lines) — `hashApiKey`, `generateApiKey`, `authenticateApiKey`, `requireScope`, `logApiRequest`
+- `supabase/functions/api-gateway/index.ts` (~480 lines) — full router + handlers
+- `mcp-server/package.json`, `tsconfig.json`, `.gitignore`
+- `mcp-server/src/index.ts` — MCP server bootstrap (stdio transport)
+- `mcp-server/src/client.ts` — REST client with timeout, error normalization
+- `mcp-server/src/tools/index.ts` — tool registry
+- `mcp-server/src/tools/{system,leads,campaigns,calls,sms}.ts` — tool definitions
+- `mcp-server/README.md` — full setup walkthrough including SQL key issuance, Claude Code/Desktop/Cursor wiring, security notes
+
+**Database changes made**
+- New tables: `public.api_keys`, `public.api_key_audit_log`
+- New function: `public.touch_api_key(uuid, text)`
+- New trigger: `trg_api_keys_touch_updated_at`
+- RLS enabled on both new tables (users only manage their own keys)
+
+**Deployment required**
+```bash
+# 1. Run migration
+supabase db push   # or: supabase migration apply 20260409020305_api_keys
+
+# 2. Deploy edge function (CRITICAL: must skip JWT verification)
+supabase functions deploy api-gateway --no-verify-jwt
+
+# 3. Generate yourself an admin API key (SQL in mcp-server/README.md)
+# 4. Build the MCP server
+cd mcp-server && npm install && npm run build
+
+# 5. Add to your MCP client config (Claude Code, Desktop, etc.) — see README
+```
+
+**Validation**
+- `tsc --noEmit` on `mcp-server/` passes clean
+- `tsc` build emits dist/ successfully
+- Smoke test: `DIALSMART_API_KEY=dsk_live_TEST node dist/index.js < /dev/null` connects and registers all 18 tools
+- Edge function not yet deployed; needs migration applied first
+
+**How to use it (the whole point)**
+
+After deploying + generating a key + adding to Claude Code's MCP config:
+
+> *"Pull system stats. Then find every lead with status='callback' and next_callback_at in the past, and reschedule them for tomorrow at 10am."*
+
+Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filter, then loops `dialsmart_update_lead` for each. No more bouncing between Lovable, GitHub, and Claude — Claude can directly inspect and operate the running app.
+
+**Gotchas / lessons learned**
+- The api-gateway MUST be deployed with `--no-verify-jwt` because it uses its own API key system, not Supabase Auth. Forgetting this returns 401 from Supabase before our handler runs.
+- API key plaintext is shown ONCE at creation via `RAISE NOTICE` (in the SQL DO block). The README also includes a pipe-operator version for newer PG.
+- The `api_key_audit_log` writes are non-blocking (`.then(() => {})`). Never let auditing fail a request.
+- The `place_call` and `send_sms` routes proxy to existing edge functions (`outbound-calling`, `sms-messaging`) using the service role rather than reimplementing the business logic. This means future improvements to those functions automatically apply.
+- The `requireScope` helper does hierarchical matching: `admin > write > read > <domain>:write > <domain>:read`. Fine-grained scopes were chosen from day one because they're easy to add but hard to retrofit later.
+- For codebase monitoring (separate from this MCP, which monitors the running app): use Claude Code on the web with the GitHub integration, or add a `.github/workflows/claude-review.yml` for auto-review on PRs.
+- The MCP server is published as `@dialsmart/mcp-server` in package.json but NOT YET pushed to npm. For now, install locally via `npm install && npm run build` in the `mcp-server/` directory.
+
+**Branch:** `claude/api-mcp-integration-WoM88`
+
+---
+
 ### April 9, 2026 - Dispatcher rotation_enabled Blocking Fix + Repeated Call Prevention
 
 **What was built/fixed/changed**
