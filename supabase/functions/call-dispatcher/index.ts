@@ -1157,7 +1157,7 @@ serve(async (req) => {
         
         // ============= NUMBER ROTATION LOGIC =============
         // Select best caller ID based on rotation, spam status, and local presence
-        const toPhone = lead?.phone_number || queueItem.phone_number;
+        // toPhone already declared above in dedup check
         const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
         
         // Score each number from provider-specific pool
