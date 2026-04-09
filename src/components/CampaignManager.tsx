@@ -934,13 +934,13 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   );
                 })()}
               </div>
+              )}
 
-              {/* Telnyx AI Assistant — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'telnyx' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
+              {/* Telnyx AI Assistant — visible for telnyx/both */}
+              {(formData.provider === 'telnyx' || formData.provider === 'both') && (
+              <div className={`rounded-lg border p-3 space-y-2 border-primary bg-primary/5`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Telnyx AI Assistant
-                  {formData.provider === 'telnyx' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
-                  {formData.provider !== 'telnyx' && formData.telnyx_assistant_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={telnyxAssistantOpen} onOpenChange={setTelnyxAssistantOpen}>
                   <PopoverTrigger asChild>
@@ -1001,6 +1001,35 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </p>
                 )}
               </div>
+              )}
+
+              {/* Assistable Config — visible for assistable provider */}
+              {formData.provider === 'assistable' && (
+              <div className="rounded-lg border p-3 space-y-3 border-primary bg-primary/5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                  <Webhook className="h-4 w-4" /> Assistable Configuration
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Calls are handled entirely by Assistable via webhook. Provide your Agent ID and Number Pool ID from Assistable.
+                </p>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Agent ID</label>
+                  <Input
+                    value={formData.assistable_agent_id}
+                    onChange={(e) => setFormData({ ...formData, assistable_agent_id: e.target.value })}
+                    placeholder="e.g. ast_abc123..."
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Number Pool ID</label>
+                  <Input
+                    value={formData.assistable_number_pool_id}
+                    onChange={(e) => setFormData({ ...formData, assistable_number_pool_id: e.target.value })}
+                    placeholder="e.g. np_xyz789..."
+                  />
+                </div>
+              </div>
+              )}
 
               {/* Workflow Selector */}
               <div>
