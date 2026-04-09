@@ -155,6 +155,22 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   }, [isDemoMode]);
 
+  // Auto-open edit dialog when editCampaignId is in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get('editCampaignId');
+    if (editId && campaigns.length > 0 && !editingCampaign) {
+      const campaign = campaigns.find(c => c.id === editId);
+      if (campaign) {
+        handleEdit(campaign);
+        // Clean up URL param
+        params.delete('editCampaignId');
+        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [campaigns]);
+
   const loadWorkflows = async () => {
     if (!userId) return;
     try {

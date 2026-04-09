@@ -465,7 +465,7 @@ const AutonomousAgentDashboard: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => { window.location.href = `/dashboard?tab=campaign-results&id=${c.id}`; }}
+                          onClick={() => { window.location.href = `/dashboard?tab=dialer&editCampaignId=${c.id}`; }}
                           title="Edit"
                         >
                           <Pencil className="h-3 w-3" />

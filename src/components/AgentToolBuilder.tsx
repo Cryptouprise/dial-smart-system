@@ -132,19 +132,20 @@ interface ToolFormProps {
 }
 
 const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider, tool, onSave }) => {
-  const [form, setForm] = useState<AgentTool>(tool || { name: '', type: 'webhook', description: '' });
+  const defaultTool: AgentTool = { name: '', type: 'webhook', description: '' };
+  const [form, setForm] = useState<AgentTool>({ ...defaultTool, ...tool });
   const isEdit = !!tool;
 
   useEffect(() => {
     if (open) {
-      setForm(tool || { name: '', type: 'webhook', description: '' });
+      setForm({ ...defaultTool, ...tool });
     }
   }, [open, tool]);
 
   const update = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
 
   const handleSave = () => {
-    if (!form.name.trim()) return;
+    if (!(form.name || '').trim()) return;
     onSave(form);
     onOpenChange(false);
   };
@@ -259,7 +260,7 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave} disabled={!form.name.trim()}>
+          <Button onClick={handleSave} disabled={!(form.name || '').trim()}>
             <Save className="h-4 w-4 mr-2" />{isEdit ? 'Update' : 'Add'} Tool
           </Button>
         </DialogFooter>

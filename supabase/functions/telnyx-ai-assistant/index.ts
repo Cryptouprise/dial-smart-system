@@ -1592,10 +1592,24 @@ serve(async (req) => {
 
         console.log(`[Telnyx AI] Pre-call diagnostic passed (${diagnosticWarnings.length} warning(s)): ${diagnosticWarnings.join('; ') || 'all clear'}`);
 
-        // Determine From number
+        // Determine From number — prefer assistant's assigned number
         let callerNumber = from_number;
+        if (!callerNumber && testAssistant.assigned_phone_number_ids?.length > 0) {
+          // Use the assistant's own assigned number
+          const { data: assignedNum } = await supabaseAdmin
+            .from('phone_numbers')
+            .select('number')
+            .in('id', testAssistant.assigned_phone_number_ids)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          callerNumber = assignedNum?.number;
+          if (callerNumber) {
+            console.log(`[Telnyx AI] Using assistant's assigned number: ${callerNumber}`);
+          }
+        }
         if (!callerNumber) {
-          // Try to get a Telnyx number from phone_numbers table
+          // Fallback: any active Telnyx number owned by user
           const { data: phoneNum } = await supabaseAdmin
             .from('phone_numbers')
             .select('number')
