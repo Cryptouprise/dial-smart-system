@@ -850,12 +850,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 </div>
               </div>
 
-              {/* Retell AI Agent — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'retell' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
+              {/* Retell AI Agent — visible for retell/both */}
+              {(formData.provider === 'retell' || formData.provider === 'both') && (
+              <div className={`rounded-lg border p-3 space-y-2 border-primary bg-primary/5`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Retell AI Agent
-                  {formData.provider === 'retell' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
-                  {formData.provider !== 'retell' && formData.agent_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={retellAgentOpen} onOpenChange={setRetellAgentOpen}>
                   <PopoverTrigger asChild>
