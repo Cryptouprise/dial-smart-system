@@ -19,6 +19,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
 import { toast } from 'sonner';
+import { executeTestCall } from '@/lib/testCallUtils';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
