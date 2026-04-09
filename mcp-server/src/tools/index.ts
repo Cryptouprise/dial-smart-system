@@ -4,6 +4,7 @@ import { campaignTools } from "./campaigns.js";
 import { callTools } from "./calls.js";
 import { smsTools } from "./sms.js";
 import { systemTools } from "./system.js";
+import { opsTools } from "./ops.js";
 
 export interface ToolDefinition {
   name: string;
@@ -25,4 +26,5 @@ export const allTools: ToolDefinition[] = [
   ...campaignTools,
   ...callTools,
   ...smsTools,
+  ...opsTools,
 ];

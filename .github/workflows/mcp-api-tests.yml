@@ -1,0 +1,58 @@
+name: MCP + API Gateway Tests
+
+on:
+  push:
+    paths:
+      - "mcp-server/**"
+      - "supabase/functions/api-gateway/**"
+      - "supabase/functions/_shared/api-auth.ts"
+      - "supabase/functions/_shared/api-auth.test.ts"
+      - "supabase/functions/_shared/utils.ts"
+      - "supabase/migrations/20260409020305_api_keys.sql"
+      - ".github/workflows/mcp-api-tests.yml"
+  pull_request:
+    paths:
+      - "mcp-server/**"
+      - "supabase/functions/api-gateway/**"
+      - "supabase/functions/_shared/api-auth.ts"
+      - "supabase/functions/_shared/api-auth.test.ts"
+      - "supabase/functions/_shared/utils.ts"
+
+jobs:
+  mcp-server:
+    name: MCP server (Node + Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type-check + build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+  api-gateway-shared:
+    name: _shared/api-auth.ts (Deno)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Deno unit tests
+        run: deno test --allow-net=none supabase/functions/_shared/api-auth.test.ts
+
+      - name: Deno type check api-gateway
+        run: deno check supabase/functions/api-gateway/index.ts
