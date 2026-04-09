@@ -1,75 +1,83 @@
 
 
-# Agent Tool Builder: Full Tool Parity with Provider Portals
+# Plan: Finish Dispatcher Logic, Solar Dispositions & Quick Test Feature
 
-## Problem
+## Current State
 
-Right now, tools configured on your Retell or Telnyx agents (transfers, webhooks, hangups, etc.) are invisible or read-only in our platform. You have to go to each provider's portal to add/edit tools. There's no way to:
+**What's already done:**
+- Campaign Manager UI has the 4-way provider toggle (Retell / Telnyx / Both / Assistable) with all form fields
+- Dispatcher already routes Retell vs Telnyx calls correctly based on `campaign.provider`
+- Disposition router already clears leads from all queues (broadcast, dialing, workflow)
+- `assistable-make-call` edge function exists and works
+- MissionBriefingWizard already has a test call feature for Retell, Telnyx, and Assistable
+- Dispositions table already has most solar dispositions (Transferred is missing, Dropped Call Positive is missing, Send More Info is missing)
 
-1. **See** what tools are on an agent from our UI (Retell shows nothing, Telnyx shows read-only badges)
-2. **Create** new tools (webhook, transfer, hangup, etc.) without leaving the platform
-3. **Sync** tools so what's on the provider matches what our platform expects
-4. **Verify** that webhook URLs point to the right endpoints
+**What's NOT done:**
+1. `createCampaign` in `usePredictiveDialing` doesn't pass `provider`, `telnyx_assistant_id`, `sms_from_number`, or `workflow_id` to the DB
+2. Dispatcher doesn't handle `provider: 'both'` (alternating Retell/Telnyx) or `provider: 'assistable'`
+3. Campaigns table has no column for Assistable metadata (agent_id, number_pool_id) — needs `metadata` JSONB column or dedicated columns
+4. Missing solar dispositions: Transferred, Dropped Call Positive, Send More Info, Bad Number, Busy Signal, Call Not Connected
+5. No standalone "Quick Test" button on campaign cards for instant test calls
 
-## What We'll Build
+---
 
-### 1. Tool Builder UI (new component)
-**New file: `src/components/AgentToolBuilder.tsx`**
+## Implementation Steps
 
-A reusable tool management panel that works for both Retell and Telnyx agents. Supports creating, editing, deleting, and syncing tools.
+### 1. Add Missing Solar Dispositions (DB insert)
+Insert the missing dispositions into the `dispositions` table for the user:
+- **Transferred** → pipeline_stage: `transferred` (terminal - remove from queues)
+- **Dropped Call Positive** → pipeline_stage: `hot_leads` (pause workflow, follow up)
+- **Bad Number** → pipeline_stage: `invalid_leads` (terminal)
+- **Busy Signal** → pipeline_stage: `callbacks` (pause, retry later)
+- **Call Not Connected** → pipeline_stage: `callbacks` (pause, retry later)
+- **Send More Info** → pipeline_stage: `follow_up` (pause workflow)
 
-**Tool types supported:**
-- **Webhook** — URL, method (GET/POST), headers, parameters, description, async toggle (Telnyx)
-- **Transfer** — Phone number(s), warm/cold, description
-- **Hangup** — Trigger conditions, description
-- **Handoff** — Target assistant ID, voice mode (Telnyx)
-- **Send Message** — SMS during call (Telnyx)
-- **DTMF** — Send tones (Telnyx)
-- **MCP Server** — URL, description (both)
-- **Retrieval/Knowledge Base** — Connect KB (Telnyx)
+Update the disposition router's `REMOVE_ALL_DISPOSITIONS` to include `transferred` and `bad_number`. Update `PAUSE_WORKFLOW_DISPOSITIONS` to include `dropped_call_positive`, `busy_signal`, `send_more_info`, `call_not_connected`.
 
-Each tool type gets a form with the relevant fields. The builder knows which tool types are available per provider (Retell supports webhook + transfer; Telnyx supports all 10 types).
+### 2. Fix Campaign Create/Update to Pass All Provider Fields
+Update `usePredictiveDialing.createCampaign()` to pass `provider`, `telnyx_assistant_id`, `sms_from_number`, and `workflow_id` to the database insert. Currently these fields are silently dropped.
 
-### 2. Sync tools from provider
-**Files: `AgentToolBuilder.tsx` + edge functions**
+### 3. Add `metadata` JSONB Column to Campaigns Table
+Add a `metadata` JSONB column to `campaigns` for storing Assistable config (`assistable_agent_id`, `assistable_number_pool_id`) and future extensibility. Update the save logic in CampaignManager to write/read Assistable fields from this column.
 
-- **Pull from provider**: "Sync Tools" button fetches live tool config from Retell (via `get_llm` → `general_tools`) or Telnyx (via `get_assistant` → `tools`) and displays them
-- **Push to provider**: When you create/edit a tool in our UI, it pushes the update to the provider API:
-  - Retell: `PATCH /update-retell-llm/{llm_id}` with updated `general_tools` array
-  - Telnyx: `POST /ai/assistants/{id}` with updated `tools` array
-- Visual diff: Shows which tools exist on provider vs locally, highlights mismatches
+### 4. Dispatcher: Handle "Both" Provider (Retell + Telnyx Alternation)
+In `call-dispatcher`, when `campaign.provider === 'both'`:
+- Load BOTH Retell and Telnyx number pools
+- For each call, alternate between providers using a simple round-robin (odd attempt = Retell, even = Telnyx, or vice versa based on queue position)
+- Use the correct agent ID for each provider (`agent_id` for Retell, `telnyx_assistant_id` for Telnyx)
+- Pass the correct `provider` field to `outbound-calling`
 
-### 3. Integrate into both agent editors
-- **Retell (`AgentEditDialog.tsx`)**: Replace the current MCP-only tab with a full "Tools" tab showing all `general_tools` from the LLM, with add/edit/delete capability
-- **Telnyx (`TelnyxAssistantEditor.tsx`)**: Replace the read-only tool badges + "Manage in Portal" link with the full Tool Builder, inline in the Integrations tab
+### 5. Dispatcher: Handle "Assistable" Provider
+In `call-dispatcher`, when `campaign.provider === 'assistable'`:
+- Read `assistable_agent_id` and `assistable_number_pool_id` from campaign metadata
+- Instead of calling `outbound-calling`, invoke `assistable-make-call` directly with the agent ID, number pool ID, and lead phone number
+- Mark queue item as `calling`, track the call in `call_logs` with `provider: 'assistable'`
 
-### 4. Webhook URL validation
-- When a webhook tool is displayed, auto-check if the URL points to our Supabase edge functions
-- Show green check if it matches our endpoints, yellow warning if it points elsewhere, red if URL is broken
-- "Auto-fix" button to update webhook URLs to point to the correct platform endpoints (e.g., `calendar-integration`, `call-tracking-webhook`)
+### 6. Quick Test Button on Campaign Cards
+Add a "Test" button (phone icon) to each campaign card in CampaignManager that:
+- Opens a small popover/dialog asking for your phone number
+- Calls you immediately using the campaign's configured agent and provider
+- Bypasses all queuing, DNC checks, scheduling, and credit checks
+- Works for all 4 provider types (Retell, Telnyx, Both, Assistable)
+- Shows result inline (success/failure toast)
+- Reuses the same test call logic from MissionBriefingWizard
 
-### 5. Edge function updates
-**Files: `retell-agent-management/index.ts`, `telnyx-ai-assistant/index.ts`**
+### 7. Deploy & Verify
+- Deploy `call-dispatcher` and `disposition-router`
+- Verify the stuck queue entry (attempts 9 >= max 2) gets marked failed
+- Test a campaign launch with a single test number
 
-- Add `update_tools` action to Retell edge function — fetches current LLM `general_tools`, merges changes, pushes back
-- Add `update_tools` action to Telnyx edge function — updates the tools array on the assistant
-- Add `delete_tool` action to both — removes a tool by name from the array and pushes
+---
 
-## User Flow
+## Technical Details
 
-1. Open Agent Editor (Retell or Telnyx) → go to **Tools** tab
-2. See all tools currently configured on the provider (synced live)
-3. Click **Add Tool** → pick type (Webhook, Transfer, Hangup, etc.)
-4. Fill in the form (URL, phone number, description, parameters)
-5. Click **Save** → tool is pushed to the provider API immediately
-6. Webhook URLs auto-validated with status indicators
-7. Edit or delete any existing tool inline
+**Files to modify:**
+- `supabase/functions/call-dispatcher/index.ts` — Add `both` alternation logic and `assistable` dispatch path
+- `supabase/functions/disposition-router/index.ts` — Add missing disposition strings to the correct arrays
+- `src/hooks/usePredictiveDialing.ts` — Fix `createCampaign` to pass all fields
+- `src/components/CampaignManager.tsx` — Add Quick Test button, fix metadata save/load
+- `supabase/migrations/` — Add `metadata` JSONB column to campaigns
 
-## Files to Create/Change
-
-1. `src/components/AgentToolBuilder.tsx` (new — tool management UI)
-2. `src/components/AgentEditDialog.tsx` (replace MCP tab with full Tools tab using AgentToolBuilder)
-3. `src/components/TelnyxAssistantEditor.tsx` (replace read-only tools section with AgentToolBuilder)
-4. `supabase/functions/retell-agent-management/index.ts` (add `update_tools` and `delete_tool` actions)
-5. `supabase/functions/telnyx-ai-assistant/index.ts` (add `update_tools` and `delete_tool` actions)
+**Dispositions already correct (no changes needed):**
+- Hot Lead, Potential Prospect, Follow Up, Not Interested, Wrong Number, Dropped Call, Not Connected, Voicemail, Do Not Call, Callback Requested, Appointment Booked
 
