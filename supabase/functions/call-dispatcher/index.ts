@@ -85,28 +85,39 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   const userCampaignIds = (userCampaigns || []).map((c: any) => c.id);
 
   let resetQueueCount = 0;
+  let maxedOutCount = 0;
   if (userCampaignIds.length > 0) {
-    const { data: resetQueues, error: resetError } = await supabase
+    // First, mark any stuck 'calling' items that have exceeded max_attempts as FAILED (not pending!)
+    const { data: maxedOutQueues, error: maxedOutError } = await supabase
       .from('dialing_queues')
-      .update({
-        status: 'pending',
-        scheduled_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .select('id, attempts, max_attempts')
       .in('campaign_id', userCampaignIds)
       .eq('status', 'calling')
-      .lt('updated_at', twoMinutesAgo)
-      .select('id');
+      .lt('updated_at', twoMinutesAgo);
 
-    if (resetError) {
-      console.error('[Dispatcher Cleanup] Queue reset error:', resetError);
-    } else {
-      resetQueueCount = resetQueues?.length || 0;
+    if (!maxedOutError && maxedOutQueues) {
+      for (const q of maxedOutQueues) {
+        const maxAttempts = q.max_attempts || 3;
+        if ((q.attempts || 0) >= maxAttempts) {
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'failed', updated_at: new Date().toISOString(), notes: `Max attempts (${maxAttempts}) reached` })
+            .eq('id', q.id);
+          maxedOutCount++;
+        } else {
+          // Only reset to pending if under max_attempts
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'pending', scheduled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', q.id);
+          resetQueueCount++;
+        }
+      }
     }
   }
 
-  if (cleanedCount > 0 || resetQueueCount > 0) {
-    console.log(`[Dispatcher Cleanup] Cleaned ${cleanedCount} stuck calls; reset ${resetQueueCount} stuck queue entries`);
+  if (cleanedCount > 0 || resetQueueCount > 0 || maxedOutCount > 0) {
+    console.log(`[Dispatcher Cleanup] Cleaned ${cleanedCount} stuck calls; reset ${resetQueueCount} stuck queue entries; marked ${maxedOutCount} as max-attempts-reached`);
   }
 
   return { cleanedCount, resetQueueCount };
@@ -1032,7 +1043,20 @@ serve(async (req) => {
 
     if (queueError) throw queueError;
 
-    console.log(`[Dispatcher] Processing ${queuedCalls?.length || 0} queued calls`);
+    // CRITICAL: Filter out items that have exceeded max_attempts (defense in depth)
+    const eligibleCalls = (queuedCalls || []).filter((q: any) => {
+      const attempts = q.attempts || 0;
+      const maxAttempts = q.max_attempts || 3;
+      if (attempts >= maxAttempts) {
+        console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
+        // Async mark as failed
+        supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`[Dispatcher] Processing ${eligibleCalls.length} queued calls (filtered from ${queuedCalls?.length || 0})`);
 
     // ============= DIAGNOSTICS FOR ZERO DISPATCHED =============
     // If no queued calls are eligible NOW, check if there are any scheduled for later
@@ -1072,12 +1096,33 @@ serve(async (req) => {
     let dispatched = 0;
     const dispatchResults: any[] = [];
 
-    for (const queueItem of queuedCalls || []) {
+    for (const queueItem of eligibleCalls) {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
         const campaignProvider = campaign?.provider || 'retell';
         const isTelnyx = campaignProvider === 'telnyx';
+        
+        // CRITICAL DEDUP: Check if this lead was already answered/completed recently
+        const toPhone = lead?.phone_number || queueItem.phone_number;
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: recentAnswered } = await supabase
+          .from('call_logs')
+          .select('id, status, duration_seconds')
+          .eq('phone_number', toPhone)
+          .eq('user_id', user.id)
+          .in('status', ['completed', 'answered', 'in_progress'])
+          .gte('created_at', thirtyMinAgo)
+          .limit(1);
+        
+        if (recentAnswered && recentAnswered.length > 0) {
+          console.log(`[Dispatcher] DEDUP: Skipping lead ${queueItem.lead_id} — phone ${toPhone} was answered recently (call ${recentAnswered[0].id})`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'completed', updated_at: nowIso, notes: 'Lead already answered recently - dedup' })
+            .eq('id', queueItem.id);
+          continue;
+        }
         
         // Validate agent configuration based on provider
         const hasAgent = isTelnyx ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
@@ -1224,6 +1269,22 @@ serve(async (req) => {
         });
 
         console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
+
+        // CRITICAL: Mark queue item as 'calling' (successfully dispatched)
+        // The retell-call-webhook will update to 'completed' or schedule retry
+        // But if webhook never fires, cleanup will handle it with max_attempts check
+        const currentAttempts = (queueItem.attempts || 0) + 1;
+        const maxAttempts = queueItem.max_attempts || 3;
+        
+        // If this was the last allowed attempt, mark as completed immediately
+        // (webhook can still update disposition, but no more retries)
+        if (currentAttempts >= maxAttempts) {
+          console.log(`[Dispatcher] Lead ${queueItem.lead_id} reached max attempts (${currentAttempts}/${maxAttempts}) - marking queue completed`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'completed', updated_at: nowIso, notes: `Completed after ${currentAttempts} attempts` })
+            .eq('id', queueItem.id);
+        }
 
         // Update daily_calls on the phone number (with auto-reset if date changed)
         await supabase.rpc('increment_daily_calls_with_reset', { phone_number_id: selectedNumber.id });
