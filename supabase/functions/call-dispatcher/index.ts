@@ -1043,7 +1043,20 @@ serve(async (req) => {
 
     if (queueError) throw queueError;
 
-    console.log(`[Dispatcher] Processing ${queuedCalls?.length || 0} queued calls`);
+    // CRITICAL: Filter out items that have exceeded max_attempts (defense in depth)
+    const eligibleCalls = (queuedCalls || []).filter((q: any) => {
+      const attempts = q.attempts || 0;
+      const maxAttempts = q.max_attempts || 3;
+      if (attempts >= maxAttempts) {
+        console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
+        // Async mark as failed
+        supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`[Dispatcher] Processing ${eligibleCalls.length} queued calls (filtered from ${queuedCalls?.length || 0})`);
 
     // ============= DIAGNOSTICS FOR ZERO DISPATCHED =============
     // If no queued calls are eligible NOW, check if there are any scheduled for later
