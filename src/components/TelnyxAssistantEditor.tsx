@@ -15,7 +15,7 @@ import {
   Save, X, Loader2, Bot, Mic, Phone, BarChart3, Settings,
   PhoneCall, Shield, Volume2, Clock, AlertCircle, MessageSquare,
   Globe, Puzzle, FlaskConical, Wrench, ExternalLink, Eye,
-  Play, RefreshCw, Search, ChevronDown, Info,
+  Play, RefreshCw, Search, ChevronDown, Info, Plus,
 } from 'lucide-react';
 import { DynamicVariablesInput } from '@/components/ui/dynamic-variables-input';
 import AgentToolBuilder from './AgentToolBuilder';
