@@ -2646,3 +2646,29 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 **Gotchas / lessons learned**
 - The dispatcher had asymmetric logic: Telnyx numbers gracefully fell back when no rotation-enabled numbers existed, but Retell numbers hard-failed. This caused every test campaign to silently fail.
 - `rotation_enabled` was originally meant for high-volume number rotation safety, but it was blocking ALL campaign launches including single-number test calls.
+
+---
+
+### April 9, 2026 - Predictive Dial Button Dispatch Fix + Badge Ref Warning
+
+**What was built/fixed/changed**
+- Fixed the live predictive dial blocker for Telnyx campaigns: `outbound-calling` was sending Telnyx campaign calls to `POST /v2/calls` with a TeXML app ID as `connection_id`, which Telnyx rejects with error `10015`.
+- Switched the Telnyx campaign path to the same working TeXML AI call flow already used by test calls: `POST /v2/texml/ai_calls/{texml_app_id}` with `AIAssistantId` and injected lead dynamic variables.
+- Preserved lead personalization/callback context on Telnyx campaign calls so production dispatch behavior matches test-call behavior.
+- Fixed the React ref warning / UI type noise by converting `Badge` to `React.forwardRef`, which resolves the `Function components cannot be given refs` warning seen from `LiveCampaignStatusMonitor`.
+
+**Key files modified**
+- `supabase/functions/outbound-calling/index.ts`
+- `src/components/ui/badge.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Code updated locally for frontend + edge function.
+- Build verification still required after this patch.
+
+**Gotchas / lessons learned**
+- Telnyx `default_texml_app_id` is a TeXML AI Calls app identifier, not a Call Control `connection_id`; using it with `/v2/calls` causes the exact `10015 Invalid value for connection_id` failure seen in dispatcher logs.
+- The quickest safe fix was to make campaign dispatch use the same Telnyx path already proven by the working test-call feature, rather than inventing a second outbound pattern.
