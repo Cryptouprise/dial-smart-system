@@ -802,32 +802,50 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
-              {/* Primary Provider Toggle */}
+               {/* Primary Provider Toggle */}
               <div>
                 <label className="text-sm font-medium text-foreground">
-                  Primary Provider for Outbound Calls
+                  Provider for Outbound Calls
                 </label>
                 <p className="text-xs text-muted-foreground mb-1">
-                  You can assign both a Retell agent and a Telnyx assistant. The primary provider handles outbound calls.
+                  Choose which provider handles outbound calls. "Both" rotates between Retell and Telnyx numbers.
                 </p>
-                <div className="flex gap-2 mt-1">
+                <div className="flex gap-2 mt-1 flex-wrap">
                   <Button
                     type="button"
                     size="sm"
                     variant={formData.provider === 'retell' ? 'default' : 'outline'}
                     onClick={() => setFormData({ ...formData, provider: 'retell' })}
-                    className="flex-1"
+                    className="flex-1 min-w-[80px]"
                   >
-                    <Bot className="h-4 w-4 mr-1" /> Retell AI
+                    <Bot className="h-4 w-4 mr-1" /> Retell
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant={formData.provider === 'telnyx' ? 'default' : 'outline'}
                     onClick={() => setFormData({ ...formData, provider: 'telnyx' })}
-                    className="flex-1"
+                    className="flex-1 min-w-[80px]"
                   >
-                    <Bot className="h-4 w-4 mr-1" /> Telnyx AI
+                    <Bot className="h-4 w-4 mr-1" /> Telnyx
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'both' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'both' })}
+                    className="flex-1 min-w-[80px]"
+                  >
+                    <Zap className="h-4 w-4 mr-1" /> Both
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'assistable' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'assistable' })}
+                    className="flex-1 min-w-[80px]"
+                  >
+                    <Webhook className="h-4 w-4 mr-1" /> Assistable
                   </Button>
                 </div>
               </div>
