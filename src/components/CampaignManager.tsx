@@ -305,10 +305,28 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Build metadata for provider-specific fields
+    const metadata: Record<string, any> = {};
+    if (formData.provider === 'assistable') {
+      metadata.assistable_agent_id = formData.assistable_agent_id || '';
+      metadata.assistable_number_pool_id = formData.assistable_number_pool_id || '';
+    }
+
+    const submitData: any = {
+      ...formData,
+      workflow_id: formData.workflow_id || null,
+      sms_from_number: formData.sms_from_number || null,
+      telnyx_assistant_id: formData.telnyx_assistant_id || null,
+      metadata,
+    };
+    // Remove UI-only keys not in DB
+    delete submitData.assistable_agent_id;
+    delete submitData.assistable_number_pool_id;
+
     if (editingCampaign) {
-      await updateCampaign(editingCampaign.id, formData);
+      await updateCampaign(editingCampaign.id, submitData);
     } else {
-      await createCampaign({ ...formData, status: 'draft' });
+      await createCampaign({ ...submitData, status: 'draft' });
     }
     
     setShowCreateDialog(false);
