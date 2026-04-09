@@ -135,6 +135,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     provider: 'retell' as 'retell' | 'telnyx' | 'both' | 'assistable',
     assistable_agent_id: '',
     assistable_number_pool_id: '',
+    assistable_location_id: 'boXe5LQTgfuXIRfrFTja',
     telnyx_assistant_id: '',
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
@@ -312,6 +313,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     if (formData.provider === 'assistable') {
       metadata.assistable_agent_id = formData.assistable_agent_id || '';
       metadata.assistable_number_pool_id = formData.assistable_number_pool_id || '';
+      metadata.assistable_location_id = formData.assistable_location_id || 'boXe5LQTgfuXIRfrFTja';
     }
 
     const submitData: any = {
@@ -324,6 +326,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     // Remove UI-only keys not in DB
     delete submitData.assistable_agent_id;
     delete submitData.assistable_number_pool_id;
+    delete submitData.assistable_location_id;
 
     if (editingCampaign) {
       await updateCampaign(editingCampaign.id, submitData);
@@ -1390,7 +1393,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                 const { data, error } = await supabase.functions.invoke('assistable-make-call', {
                                   body: {
                                     assistant_id: meta.assistable_agent_id,
-                                    location_id: 'default',
+                                    location_id: meta.assistable_location_id || 'boXe5LQTgfuXIRfrFTja',
                                     contact_id: testCallPhone,
                                     number_pool_id: meta.assistable_number_pool_id || undefined,
                                   },
