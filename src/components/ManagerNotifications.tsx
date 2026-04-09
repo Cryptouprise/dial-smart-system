@@ -120,12 +120,12 @@ export const ManagerNotifications: React.FC = () => {
 
       const { data } = await supabase
         .from('autonomous_settings')
-        .select('manager_phone, notification_prefs')
+        .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (data) {
-        const savedPrefs = (data.notification_prefs as Partial<NotificationPrefs>) || {};
+        const savedPrefs = ((data as any).notification_prefs as Partial<NotificationPrefs>) || {};
         setPrefs({
           ...DEFAULT_PREFS,
           ...savedPrefs,
