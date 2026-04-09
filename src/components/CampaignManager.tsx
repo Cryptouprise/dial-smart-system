@@ -399,6 +399,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       telnyx_assistant_id: '',
       assistable_agent_id: '',
       assistable_number_pool_id: '',
+      assistable_location_id: 'boXe5LQTgfuXIRfrFTja',
     });
   };
 
@@ -420,6 +421,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       telnyx_assistant_id: campaign.telnyx_assistant_id || '',
       assistable_agent_id: meta.assistable_agent_id || '',
       assistable_number_pool_id: meta.assistable_number_pool_id || '',
+      assistable_location_id: meta.assistable_location_id || 'boXe5LQTgfuXIRfrFTja',
     });
     setShowCreateDialog(true);
   };
