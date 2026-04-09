@@ -1947,6 +1947,7 @@ export type Database = {
           id: string
           max_attempts: number | null
           max_calls_per_day: number | null
+          metadata: Json | null
           name: string
           provider: string
           retry_delay_minutes: number | null
@@ -1971,6 +1972,7 @@ export type Database = {
           id?: string
           max_attempts?: number | null
           max_calls_per_day?: number | null
+          metadata?: Json | null
           name: string
           provider?: string
           retry_delay_minutes?: number | null
@@ -1995,6 +1997,7 @@ export type Database = {
           id?: string
           max_attempts?: number | null
           max_calls_per_day?: number | null
+          metadata?: Json | null
           name?: string
           provider?: string
           retry_delay_minutes?: number | null
