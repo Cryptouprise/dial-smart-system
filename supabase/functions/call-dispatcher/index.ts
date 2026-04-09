@@ -1096,7 +1096,7 @@ serve(async (req) => {
     let dispatched = 0;
     const dispatchResults: any[] = [];
 
-    for (const queueItem of queuedCalls || []) {
+    for (const queueItem of eligibleCalls) {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
