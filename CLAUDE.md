@@ -2297,3 +2297,29 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - The old UI made it look like picking Retell disabled Telnyx and vice versa, even though both dropdowns were always visible.
 - The submit button was gated on the primary provider's agent only, which blocked saves when the user had the other provider configured instead.
+
+---
+
+### April 9, 2026 - Telnyx Number Assignment State Fix
+
+**What was built/fixed/changed**
+- Fixed a Telnyx assignment bug where the edge function was PATCHing `/phone_numbers/{id}` with the app's local database UUID instead of the real Telnyx phone-number ID.
+- Fixed a second bug where the edge function updated local `assigned_phone_number_ids` even when the Telnyx API assignment failed, which caused false “already assigned” conflicts on the next attempt.
+- Fixed the Telnyx assistant editor to read assigned phone IDs from the real `assigned_phone_number_ids` column instead of only looking in `metadata`, so the assignment state now reflects what the DB actually stores.
+- Hardened the editor-side edge-function helper so JSON error payloads are surfaced cleanly instead of collapsing into a generic edge-function failure.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `src/components/TelnyxAssistantEditor.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend build verified clean with `npm run build`.
+- No schema or migration work required.
+
+**Gotchas / lessons learned**
+- Telnyx phone assignment must use the provider's phone-number resource ID, not the local `phone_numbers.id` UUID.
+- Local assignment tracking should only be updated after a successful Telnyx API assignment, otherwise the UI drifts from provider reality and creates fake conflict errors.
