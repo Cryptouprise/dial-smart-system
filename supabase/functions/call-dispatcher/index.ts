@@ -116,8 +116,8 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
     }
   }
 
-  if (cleanedCount > 0 || resetQueueCount > 0) {
-    console.log(`[Dispatcher Cleanup] Cleaned ${cleanedCount} stuck calls; reset ${resetQueueCount} stuck queue entries`);
+  if (cleanedCount > 0 || resetQueueCount > 0 || maxedOutCount > 0) {
+    console.log(`[Dispatcher Cleanup] Cleaned ${cleanedCount} stuck calls; reset ${resetQueueCount} stuck queue entries; marked ${maxedOutCount} as max-attempts-reached`);
   }
 
   return { cleanedCount, resetQueueCount };
