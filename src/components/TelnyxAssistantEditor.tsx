@@ -102,21 +102,25 @@ const PhoneNumberAssignment: React.FC<{
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [unassigning, setUnassigning] = useState<string | null>(null);
+  const [buyAreaCode, setBuyAreaCode] = useState('');
+  const [buyQuantity, setBuyQuantity] = useState(1);
+  const [buying, setBuying] = useState(false);
+  const [showBuy, setShowBuy] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from('phone_numbers')
-          .select('id, number, friendly_name, provider, status, call_direction')
-          .in('provider', ['telnyx', 'Telnyx'])
-          .eq('status', 'active')
-          .order('number');
-        setPhoneNumbers(data || []);
-      } catch { /* ignore */ }
-      setLoading(false);
-    })();
-  }, []);
+  const loadNumbers = async () => {
+    try {
+      const { data } = await supabase
+        .from('phone_numbers')
+        .select('id, number, friendly_name, provider, status, call_direction')
+        .in('provider', ['telnyx', 'Telnyx'])
+        .eq('status', 'active')
+        .order('number');
+      setPhoneNumbers(data || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadNumbers(); }, []);
 
   const formatPhone = (n: string) => {
     const d = n.replace(/\D/g, '');
@@ -130,7 +134,8 @@ const PhoneNumberAssignment: React.FC<{
     try {
       await callEdgeFunction('telnyx-ai-assistant', {
         action: 'assign_number',
-        params: { assistant_id: assistantId, phone_number_id: phoneId },
+        assistant_id: assistantId,
+        phone_number_id: phoneId,
       });
       toast({ title: 'Number Assigned', description: `Phone number assigned to ${assistantName}` });
       onUpdate();
@@ -145,7 +150,8 @@ const PhoneNumberAssignment: React.FC<{
     try {
       await callEdgeFunction('telnyx-ai-assistant', {
         action: 'unassign_number',
-        params: { assistant_id: assistantId, phone_number_id: phoneId },
+        assistant_id: assistantId,
+        phone_number_id: phoneId,
       });
       toast({ title: 'Number Unassigned', description: `Phone number removed from ${assistantName}` });
       onUpdate();
@@ -155,21 +161,88 @@ const PhoneNumberAssignment: React.FC<{
     setUnassigning(null);
   };
 
+  const handleBuyNumbers = async () => {
+    if (!buyAreaCode.trim() || buyAreaCode.trim().length !== 3) {
+      toast({ title: 'Invalid Area Code', description: 'Enter a valid 3-digit US area code', variant: 'destructive' });
+      return;
+    }
+    setBuying(true);
+    try {
+      const data = await callEdgeFunction('telnyx-ai-assistant', {
+        action: 'purchase_number',
+        area_code: buyAreaCode.trim(),
+        quantity: buyQuantity,
+      });
+      toast({ title: '✅ Numbers Purchased', description: data.message || `Purchased ${buyQuantity} number(s)` });
+      setBuyAreaCode('');
+      setShowBuy(false);
+      await loadNumbers();
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: 'Purchase Failed', description: err.message, variant: 'destructive' });
+    }
+    setBuying(false);
+  };
+
   const assigned = phoneNumbers.filter(p => assignedPhoneIds.includes(p.id));
   const available = phoneNumbers.filter(p => !assignedPhoneIds.includes(p.id));
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Phone className="h-4 w-4" />
-          Phone Numbers
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Assign Telnyx phone numbers to this assistant for inbound routing.
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Phone className="h-4 w-4" />
+              Phone Numbers
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Assign Telnyx phone numbers to this assistant for inbound routing.
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowBuy(!showBuy)}>
+            <Plus className="h-3 w-3 mr-1" />
+            Buy Numbers
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {showBuy && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="py-3 space-y-3">
+              <Label className="text-xs font-medium">Buy Telnyx Numbers</Label>
+              <div className="flex items-end gap-2">
+                <div className="space-y-1 flex-1">
+                  <Label className="text-xs text-muted-foreground">Area Code</Label>
+                  <Input
+                    value={buyAreaCode}
+                    onChange={e => setBuyAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    placeholder="e.g. 415"
+                    className="h-8 text-sm"
+                    maxLength={3}
+                  />
+                </div>
+                <div className="space-y-1 w-20">
+                  <Label className="text-xs text-muted-foreground">Qty</Label>
+                  <Select value={String(buyQuantity)} onValueChange={v => setBuyQuantity(parseInt(v))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 5, 10].map(n => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button size="sm" className="h-8" onClick={handleBuyNumbers} disabled={buying}>
+                  {buying ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                  {buying ? 'Buying...' : 'Buy'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">~$1/mo per number. Numbers are added to your Telnyx account and ready to assign.</p>
+            </CardContent>
+          </Card>
+        )}
+
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />Loading numbers...
@@ -223,7 +296,7 @@ const PhoneNumberAssignment: React.FC<{
               </div>
             )}
             {phoneNumbers.length === 0 && (
-              <p className="text-sm text-muted-foreground">No Telnyx numbers found. Sync your numbers first from the main Telnyx AI tab.</p>
+              <p className="text-sm text-muted-foreground">No Telnyx numbers found. Buy numbers above or sync from the main Telnyx AI tab.</p>
             )}
           </>
         )}
@@ -231,7 +304,6 @@ const PhoneNumberAssignment: React.FC<{
     </Card>
   );
 };
-
 const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voices, onSave, onClose }) => {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
