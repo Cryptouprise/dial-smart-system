@@ -1036,8 +1036,8 @@ serve(async (req) => {
       .from('dialing_queues')
       .select(`
         *,
-        leads (id, phone_number, first_name, last_name),
-        campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id)
+        leads (id, phone_number, first_name, last_name, ghl_contact_id),
+        campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
       `)
       .in('campaign_id', campaignIds)
       .eq('status', 'pending');
@@ -1164,10 +1164,18 @@ serve(async (req) => {
             .eq('id', queueItem.id);
 
           // Invoke assistable-make-call
+          // Use GHL contact_id from lead if available; fall back to phone number
+          const ghlContactId = lead?.ghl_contact_id || toPhone;
+          const assistableLocationId = meta.assistable_location_id || 'boXe5LQTgfuXIRfrFTja';
+          
+          if (!lead?.ghl_contact_id) {
+            console.warn(`[Dispatcher] Lead ${queueItem.lead_id} has no ghl_contact_id — using phone number as fallback`);
+          }
+          
           const assistableBody: any = {
             assistant_id: assistableAgentId,
-            location_id: 'default', // GHL location — can be made dynamic later
-            contact_id: toPhone,
+            location_id: assistableLocationId,
+            contact_id: ghlContactId,
             lead_id: queueItem.lead_id,
             campaign_id: queueItem.campaign_id,
             user_id: user.id,

@@ -153,10 +153,12 @@ const Dashboard = () => {
         let provider: 'twilio' | 'retell' | 'telnyx' | 'unknown' = 'unknown';
         if (num.retell_phone_id) {
           provider = 'retell';
-        } else if (num.carrier_name?.toLowerCase().includes('telnyx')) {
+        } else if (num.provider?.toLowerCase() === 'telnyx' || num.carrier_name?.toLowerCase().includes('telnyx')) {
           provider = 'telnyx';
-        } else {
+        } else if (num.provider?.toLowerCase() === 'twilio' || num.twilio_sid) {
           provider = 'twilio';
+        } else {
+          provider = num.provider as any || 'unknown';
         }
         
         return {
