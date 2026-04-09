@@ -802,33 +802,24 @@ serve(async (req) => {
     const hasRetellCampaign = activeCampaigns.some((c: any) => !c.provider || c.provider === 'retell');
 
     if (hasRetellCampaign) {
-      // Retell campaigns must use numbers imported into Retell.
-      // Prefer rotation-enabled numbers, but fall back to active imported numbers
-      // so valid Retell-native setups are not blocked when rotation is off.
+      // Retell campaigns must use numbers imported into Retell + rotation enabled
       const { data: retellNumbers, error: retellError } = await supabase
         .from('phone_numbers')
         .select('id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
         .eq('user_id', user.id)
         .eq('status', 'active')
+        .eq('rotation_enabled', true)
         .not('retell_phone_id', 'is', null);
 
       if (retellError) {
         console.error('[Dispatcher] Error fetching Retell phone numbers:', retellError);
       } else {
         const maxDailyDefault = 100;
-        const retellWithinLimits = (retellNumbers || []).filter((n: any) => {
+        retellAvailableNumbers = (retellNumbers || []).filter((n: any) => {
           const maxCalls = n.max_daily_calls || maxDailyDefault;
           const currentCalls = n.daily_calls || 0;
           return currentCalls < maxCalls;
         });
-
-        const rotationEnabledRetell = retellWithinLimits.filter((n: any) => n.rotation_enabled === true);
-        retellAvailableNumbers = rotationEnabledRetell.length > 0 ? rotationEnabledRetell : retellWithinLimits;
-
-        if (rotationEnabledRetell.length === 0 && retellWithinLimits.length > 0) {
-          console.warn('[Dispatcher] No rotation-enabled Retell numbers found; using active imported Retell numbers for launch continuity');
-        }
-
         console.log(`[Dispatcher] ${retellAvailableNumbers.length}/${retellNumbers?.length || 0} Retell numbers available`);
       }
     }

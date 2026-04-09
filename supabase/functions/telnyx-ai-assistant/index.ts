@@ -1347,6 +1347,43 @@ serve(async (req) => {
 
         if (!phoneNumber) throw new Error('Phone number not found in local database. Sync your numbers first.');
 
+        const telnyxNumberLookup = await telnyxFetch(
+          `/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber.number)}&page[size]=1`,
+          apiKey!
+        );
+
+        if (!telnyxNumberLookup.ok) {
+          throw new Error(`Telnyx API error: ${telnyxNumberLookup.error}`);
+        }
+
+        const telnyxPhoneNumber = telnyxNumberLookup.data?.data?.[0];
+        if (!telnyxPhoneNumber?.id) {
+          throw new Error(`Could not find ${phoneNumber.number} in your Telnyx account. Sync your numbers first.`);
+        }
+
+        if (telnyxPhoneNumber.connection_id === assistant.telnyx_texml_app_id) {
+          const existingIds = assistant.assigned_phone_number_ids || [];
+          if (!existingIds.includes(phone_number_id)) {
+            const { error: syncAssignmentError } = await supabaseAdmin
+              .from('telnyx_assistants')
+              .update({
+                assigned_phone_number_ids: [...existingIds, phone_number_id],
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', assistant_id)
+              .eq('user_id', userId);
+
+            if (syncAssignmentError) throw syncAssignmentError;
+          }
+
+          result = {
+            assigned: true,
+            already_assigned: true,
+            phone_number: phoneNumber.number,
+          };
+          break;
+        }
+
         // Check if this number is already assigned to ANOTHER assistant
         const { data: conflictingAssistants } = await supabaseAdmin
           .from('telnyx_assistants')
@@ -1363,21 +1400,28 @@ serve(async (req) => {
 
         // Update phone number on Telnyx to use this TeXML app
         const updateRes = await telnyxFetch(
-          `/phone_numbers/${phone_number_id}`,
+          `/phone_numbers/${telnyxPhoneNumber.id}`,
           apiKey!, 'PATCH',
           { connection_id: assistant.telnyx_texml_app_id }
         );
 
+        if (!updateRes.ok) {
+          throw new Error(`Telnyx API error: ${updateRes.error}`);
+        }
+
         // Update local tracking
         const existingIds = assistant.assigned_phone_number_ids || [];
         if (!existingIds.includes(phone_number_id)) {
-          await supabaseAdmin
+          const { error: updateAssignmentError } = await supabaseAdmin
             .from('telnyx_assistants')
             .update({
               assigned_phone_number_ids: [...existingIds, phone_number_id],
               updated_at: new Date().toISOString(),
             })
-            .eq('id', assistant_id);
+            .eq('id', assistant_id)
+            .eq('user_id', userId);
+
+          if (updateAssignmentError) throw updateAssignmentError;
         }
 
         result = { assigned: true, phone_number: phoneNumber.number };

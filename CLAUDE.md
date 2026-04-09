@@ -2300,24 +2300,26 @@ supabase functions deploy ai-autonomous-engine
 
 ---
 
-### April 9, 2026 - Retell Launch Blocker Fix for Active Imported Numbers
+### April 9, 2026 - Telnyx Number Assignment State Fix
 
 **What was built/fixed/changed**
-- Fixed `call-dispatcher` so Retell campaigns no longer require `rotation_enabled=true` to use valid imported Retell numbers.
-- Dispatcher now prefers rotation-enabled Retell numbers when available, but safely falls back to any active imported Retell number with a `retell_phone_id` so manual launches and dispatches are not blocked.
-- This addresses the launch failure pattern where the UI showed numbers as Retell-ready but dispatch returned no available numbers and no calls were placed.
+- Fixed a Telnyx assignment bug where the edge function was PATCHing `/phone_numbers/{id}` with the app's local database UUID instead of the real Telnyx phone-number ID.
+- Fixed a second bug where the edge function updated local `assigned_phone_number_ids` even when the Telnyx API assignment failed, which caused false “already assigned” conflicts on the next attempt.
+- Fixed the Telnyx assistant editor to read assigned phone IDs from the real `assigned_phone_number_ids` column instead of only looking in `metadata`, so the assignment state now reflects what the DB actually stores.
+- Hardened the editor-side edge-function helper so JSON error payloads are surfaced cleanly instead of collapsing into a generic edge-function failure.
 
 **Key files modified**
-- `supabase/functions/call-dispatcher/index.ts`
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `src/components/TelnyxAssistantEditor.tsx`
 - `CLAUDE.md`
 
 **Database changes made**
 - None.
 
 **Deployment status**
-- Edge function code updated locally in project.
-- Build verification pending after this fix.
+- Frontend build verified clean with `npm run build`.
+- No schema or migration work required.
 
 **Gotchas / lessons learned**
-- Retell-native setups may intentionally leave `rotation_enabled` off, so treating it as a hard requirement blocks otherwise valid caller IDs.
-- Provider-specific selection should prefer rotation flags, not hard-fail on them, unless the product explicitly enforces that policy in the UI and readiness checks.
+- Telnyx phone assignment must use the provider's phone-number resource ID, not the local `phone_numbers.id` UUID.
+- Local assignment tracking should only be updated after a successful Telnyx API assignment, otherwise the UI drifts from provider reality and creates fake conflict errors.
