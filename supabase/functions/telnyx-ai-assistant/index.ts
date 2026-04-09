@@ -247,7 +247,9 @@ serve(async (req) => {
       });
     }
 
-    const { action, ...params } = bodyJson;
+    const { action, params: nestedParams, ...restParams } = bodyJson;
+    // Support both flat params and nested { params: { ... } } from frontend
+    const params = (nestedParams && typeof nestedParams === 'object') ? { ...restParams, ...nestedParams } : restParams;
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
     const rawApiKey = Deno.env.get('TELNYX_API_KEY');
