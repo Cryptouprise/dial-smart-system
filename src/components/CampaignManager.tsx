@@ -1050,8 +1050,17 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Input
                     value={formData.assistable_number_pool_id}
                     onChange={(e) => setFormData({ ...formData, assistable_number_pool_id: e.target.value })}
-                    placeholder="e.g. np_xyz789..."
+                    placeholder="e.g. 1775669044619x825372690876203000"
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">GHL Location ID</label>
+                  <Input
+                    value={formData.assistable_location_id}
+                    onChange={(e) => setFormData({ ...formData, assistable_location_id: e.target.value })}
+                    placeholder="e.g. boXe5LQTgfuXIRfrFTja"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Your GoHighLevel location ID. Contact ID will be pulled from each lead's GHL contact.</p>
                 </div>
               </div>
               )}
