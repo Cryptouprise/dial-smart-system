@@ -147,6 +147,16 @@ serve(async (req) => {
             };
           }
         }
+
+        // Sanitize: remove empty URL strings (Retell rejects empty strings for URL fields)
+        const urlFields = ['webhook_url', 'post_call_webhook_url', 'transfer_webhook_url'];
+        for (const field of urlFields) {
+          if (updateData[field] === '') {
+            delete updateData[field];
+          }
+        }
+        // Remove internal UI-only keys that are not Retell API fields
+        delete updateData._retellTools;
         
         console.log(`[Retell Agent] Updating agent ${agentId} with:`, JSON.stringify(updateData));
         
