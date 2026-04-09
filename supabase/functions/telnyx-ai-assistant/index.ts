@@ -2014,13 +2014,9 @@ serve(async (req) => {
 
         const filteredTools = (dtAsst?.tools || []).filter((t: any) => t.name !== dtToolName);
 
-        const dtResp = await telnyxFetch(`/ai/assistants/${dtTelnyxId}`, apiKey, {
-          method: 'POST',
-          body: JSON.stringify({ tools: filteredTools }),
-        });
+        const dtResp = await telnyxFetch(`/ai/assistants/${dtTelnyxId}`, apiKey!, 'POST', { tools: filteredTools });
         if (!dtResp.ok) {
-          const errText = await dtResp.text();
-          throw new Error(`Telnyx delete_tool failed: ${errText}`);
+          throw new Error(`Telnyx delete_tool failed: ${dtResp.error}`);
         }
 
         await supabaseAdmin
