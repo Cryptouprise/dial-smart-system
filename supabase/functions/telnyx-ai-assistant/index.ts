@@ -247,7 +247,9 @@ serve(async (req) => {
       });
     }
 
-    const { action, ...params } = bodyJson;
+    const { action, params: nestedParams, ...restParams } = bodyJson;
+    // Support both flat params and nested { params: { ... } } from frontend
+    const params = (nestedParams && typeof nestedParams === 'object') ? { ...restParams, ...nestedParams } : restParams;
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
     const rawApiKey = Deno.env.get('TELNYX_API_KEY');
@@ -1828,7 +1830,7 @@ serve(async (req) => {
           callPayload.AIAssistantDynamicVariables = mergedVars;
         }
 
-        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}`);
+        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}, AIAssistantId=${testAssistant.telnyx_assistant_id}, assistant_name="${testAssistant.name}", model=${testAssistant.model}, voice=${testAssistant.voice}`);
 
         const callRes = await telnyxFetch(
           `/texml/ai_calls/${finalTexmlId}`,
