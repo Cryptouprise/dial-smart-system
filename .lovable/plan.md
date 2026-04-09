@@ -1,81 +1,55 @@
 
-Goal: stop the app from “erroring out” during test calls, fix the real launch blockers first, then do a short reliability sweep so the common call/testing flows are safe.
 
-What I verified
-- There is a real current blocker in deployed logs: `outbound-calling` is receiving a test call request and failing with `Phone number and caller ID are required`.
-- The immediate root cause is in `CampaignManager.tsx`: the campaign-card Quick Test sends `phoneNumber` and `provider`, but does not send `callerId` for Retell/Telnyx/Both.
-- I also found two more broken test-call paths:
-  1. `MissionBriefingWizard.tsx` sends Telnyx test calls with `assistantId` / `toNumber`, but `telnyx-ai-assistant` expects `assistant_id` / `to_number`.
-  2. `MissionBriefingWizard.tsx` sends Assistable test calls with `phone_number`, but `assistable-make-call` requires `contact_id`.
-- A secondary but noisy app issue is also present on the homepage: `LandingPage.tsx` is generating the React ref warning around `AutoplayVideo`, which can trip Guardian and make the app feel unstable.
+# Fix Campaign Dispatch, Retry Delay, Clear History, and Force Requeue
 
-Implementation plan
-1. Fix the immediate test-call failure
-- Update the Campaign Manager Quick Test flow so it always resolves and passes a valid `callerId` before invoking `outbound-calling`.
-- Provider rules:
-  - Retell: use an active number with `retell_phone_id`
-  - Telnyx: use an active Telnyx number (`provider='telnyx'` or carrier match)
-  - Both: choose the active provider first, then use the same fallback logic as dispatcher
-- If no valid caller ID exists, stop before the edge function call and show a clear toast instead of letting the function fail.
+## What's actually broken (root causes)
 
-2. Standardize all test-call entry points
-- Create one shared frontend helper for test-call payload building so all buttons use the same logic.
-- Apply it to:
-  - `CampaignManager`
-  - `MissionBriefingWizard`
-  - any other direct `outbound-calling` / `assistable-make-call` / `telnyx-ai-assistant test_call` entry points found in the sweep
-- This removes the current mismatch where different screens send different field names and requirements.
+1. **Retry delay = 300 minutes (5 hours)** — The original migration `20251208` set `DEFAULT 300` on `campaigns.retry_delay_minutes`. The campaign create/edit form never includes `retry_delay_minutes`, so every campaign inherits 300 from the DB. After a first call attempt fails, the next attempt is scheduled 5 hours later. The dispatcher UI warning shows it, but there's no way to change it.
 
-3. Fix the known payload mismatches
-- Telnyx test calls: send `assistant_id` and `to_number` consistently.
-- Assistable test calls: stop sending raw `phone_number` to `assistable-make-call`.
-- For Assistable quick tests, use the same GHL-safe rule as the dispatcher:
-  - prefer a real `ghl_contact_id`
-  - if unavailable, fail gracefully with an exact message explaining that Assistable test calls need a mapped GHL contact
-- If there is already enough integration data in the project to resolve/create a GHL contact safely, wire that in; otherwise keep the failure explicit and actionable instead of silent.
+2. **Clear History → TypeError** — `clearWorkflowHistory()` deletes from `lead_workflow_progress` using `.eq('campaign_id', campaignId)` but does NOT filter by `user_id`. The RLS policy requires `auth.uid() = user_id`. Without that filter, the Supabase client can't match rows → returns an error the UI catches as a generic TypeError.
 
-4. Harden edge-function error handling so the UI does not feel broken
-- Update `outbound-calling` and `assistable-make-call` to return structured operational errors more safely for non-auth/non-billing failures.
-- Keep the response parseable by the frontend with:
-  - clear `error`
-  - optional `error_code`
-  - provider-specific fix hint
-- This keeps test failures inside the toast/UI layer instead of looking like the whole app stopped.
+3. **Force Requeue fails** — `forceRequeueLeads()` deletes old queue entries then re-inserts, but if the delete silently fails (RLS), the subsequent insert hits the `(campaign_id, lead_id)` unique constraint → error.
 
-5. Remove the recurring homepage error noise
-- Fix the `LandingPage` / `AutoplayVideo` ref warning so Guardian stops surfacing that issue on normal browsing.
-- Keep this scoped and surgical: just remove the ref misuse or make the component ref-safe.
+4. **Dispatch Now → "No calls to dispatch"** — Because retry_delay is 300 min, all retried leads are scheduled far in the future. Manual dispatch already bypasses `scheduled_at`, but if leads have status `completed` or `failed` (not `pending`), they won't be found. The real issue is a cascade: high retry delay → leads get scheduled far out → even with bypass, if the requeue/clear failed, no pending leads exist.
 
-6. Do a launch-readiness sweep on the risky call/testing flows
-- Search all direct test-call invocations and verify each one has:
-  - correct field names
-  - provider-specific caller ID
-  - correct agent/assistant identifiers
-  - correct Assistable contact handling
-  - correct test flags (`isTestCall`, skip flags where intended)
-- Also verify the UI readiness messaging is provider-aware so you can see missing Retell/Telnyx/Assistable prerequisites before clicking.
+## Implementation plan
 
-7. Verify after implementation
-- Re-test campaign-card Quick Test for:
-  - Retell
-  - Telnyx
-  - Both
-  - Assistable
-- Confirm the outbound-calling logs no longer show `Phone number and caller ID are required`.
-- Confirm Mission Briefing test calls no longer fail from bad payload names.
-- Confirm the homepage ref warning is gone.
-- Do a short smoke pass through the core screens you’re actively using so normal usage no longer gets interrupted by obvious runtime errors.
+### Step 1: Fix the retry_delay_minutes DB default and existing campaigns
+- Migration: `ALTER TABLE campaigns ALTER COLUMN retry_delay_minutes SET DEFAULT 15`
+- Migration: `UPDATE campaigns SET retry_delay_minutes = 15 WHERE retry_delay_minutes = 300`
+- This fixes all existing campaigns and future ones immediately.
 
-Technical details
-- Files likely to change:
-  - `src/components/CampaignManager.tsx`
-  - `src/components/MissionBriefingWizard.tsx`
-  - `src/pages/LandingPage.tsx`
-  - `supabase/functions/outbound-calling/index.ts`
-  - `supabase/functions/assistable-make-call/index.ts`
-  - possibly a shared helper such as `src/lib/testCallUtils.ts`
-  - `CLAUDE.md`
-- Guardrails:
-  - keep changes on the real production paths (edge functions), not the provider stub adapters
-  - keep quick-test provider fallback aligned with dispatcher behavior
-  - treat Assistable as GHL-contact-based, not raw-phone-based
+### Step 2: Add retry_delay_minutes to the campaign form
+- Add a `retry_delay_minutes` field to `formData` (default: 15).
+- Add it to `resetForm()` and `handleEdit()`.
+- Add a number input in the campaign create/edit dialog (near max_attempts), labeled "Retry Delay (minutes)", with min=1, max=60.
+- Include it in `submitData` so it actually saves.
+
+### Step 3: Fix Clear History RLS issue
+- In `clearWorkflowHistory()`, get the user first (already done), then add `.eq('user_id', user.id)` to the `lead_workflow_progress` delete query so RLS can match rows.
+
+### Step 4: Fix Force Requeue
+- In `forceRequeueLeads()`, use `.upsert()` instead of `.insert()` for the queue entries, with `onConflict: 'campaign_id,lead_id'`. This handles the case where old entries weren't cleaned up.
+- Also add user auth check at the top so the delete operations pass RLS.
+
+### Step 5: Clamp retry delay in the dispatcher
+- The dispatcher already clamps to 1-60 minutes at line 1440. Keep this as defense-in-depth, but with the DB fix it won't be needed for normal operation.
+
+### Step 6: Add a "Fix Retry Delay" quick-action button
+- In the warning banner that shows "Retry delay is 300 minutes", add a button that immediately updates the campaign's `retry_delay_minutes` to 15 and refreshes. This gives a one-click fix for any campaign that somehow ends up with a bad value.
+
+## Files to modify
+
+| File | Change |
+|------|--------|
+| New migration | Change default from 300→15, update all existing campaigns |
+| `src/components/CampaignManager.tsx` | Add retry_delay_minutes to form, fix clearWorkflowHistory, add quick-fix button |
+| `src/hooks/useCallDispatcher.ts` | Fix forceRequeueLeads to use upsert |
+
+## Technical details
+
+- The `dialing_queues` unique constraint `(campaign_id, lead_id)` means upsert is the correct pattern for requeue
+- RLS on `lead_workflow_progress` requires `user_id = auth.uid()` — all delete queries must include this filter
+- The dispatcher's 1-60 minute clamp on retry delay is good defense-in-depth but the root fix is the DB default + form control
+- No edge function changes needed — the dispatcher already handles manual dispatch correctly once leads are in `pending` status with reasonable scheduling
+
