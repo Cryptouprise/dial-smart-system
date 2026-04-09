@@ -429,28 +429,166 @@ serve(async (req) => {
             telnyx_assistant_id: telnyxAssistant.telnyx_assistant_id,
           }).eq('id', callLog.id);
 
-          // Get AMD settings
-          const { data: telnyxSettings } = await supabaseAdmin
-            .from('telnyx_settings')
-            .select('amd_enabled, amd_type')
-            .eq('user_id', userId)
-            .maybeSingle();
-
-          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-
-          // Make the outbound call via Telnyx Call Control
-          const telnyxCallPayload: any = {
-            connection_id: telnyxAssistant.telnyx_texml_app_id,
-            to: finalPhone,
-            from: callerId,
-            webhook_url: `${supabaseUrl}/functions/v1/telnyx-webhook`,
-          };
-
-          if (telnyxSettings?.amd_enabled !== false) {
-            telnyxCallPayload.answering_machine_detection = telnyxSettings?.amd_type || 'premium';
+          if (!telnyxAssistant.telnyx_texml_app_id) {
+            await supabaseAdmin.from('call_logs').update({
+              status: 'failed', ended_at: new Date().toISOString(),
+              notes: 'Telnyx assistant is missing a TeXML app ID',
+            }).eq('id', callLog.id);
+            throw new Error('Telnyx assistant has no TeXML app configured. Re-sync it in Telnyx AI Manager.');
           }
 
-          const telnyxRes = await fetch('https://api.telnyx.com/v2/calls', {
+          let dynamicVariables: Record<string, string> = {};
+          let resolvedLeadId = leadId;
+          let lead = null;
+
+          if (leadId) {
+            const { data: leadById } = await supabaseAdmin
+              .from('leads')
+              .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
+              .eq('id', leadId)
+              .maybeSingle();
+            lead = leadById;
+          }
+
+          if (!lead && finalPhone) {
+            const phoneDigits = finalPhone.replace(/\D/g, '');
+            const { data: leadByPhone } = await supabaseAdmin
+              .from('leads')
+              .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
+              .eq('user_id', userId)
+              .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
+              .limit(1)
+              .maybeSingle();
+
+            if (leadByPhone) {
+              lead = leadByPhone;
+              resolvedLeadId = leadByPhone.id;
+            }
+          }
+
+          if (lead) {
+            const firstName = String(lead.first_name || '');
+            const lastName = String(lead.last_name || '');
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
+            const email = String(lead.email || '');
+            const phone = String(lead.phone_number || finalPhone || '');
+            const company = String(lead.company || '');
+            const leadSource = String(lead.lead_source || '');
+            const notes = String(lead.notes || '');
+            const tags = Array.isArray(lead.tags) ? lead.tags.join(', ') : '';
+            const preferredContactTime = String(lead.preferred_contact_time || '');
+            const timezone = String(lead.timezone || 'America/New_York');
+            const address = String(lead.address || '');
+            const city = String(lead.city || '');
+            const state = String(lead.state || '');
+            const zipCode = String(lead.zip_code || '');
+            const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+
+            const currentTimeFormatted = new Date().toLocaleString('en-US', {
+              timeZone: timezone,
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZoneName: 'short'
+            });
+
+            dynamicVariables = {
+              current_time: currentTimeFormatted,
+              current_time_iso: new Date().toISOString(),
+              current_timezone: timezone,
+              first_name: firstName,
+              last_name: lastName,
+              full_name: fullName,
+              name: fullName,
+              email,
+              phone,
+              phone_number: phone,
+              company,
+              lead_source: leadSource,
+              notes,
+              tags,
+              preferred_contact_time: preferredContactTime,
+              timezone,
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              full_address: fullAddress,
+              'contact.first_name': firstName,
+              'contact.last_name': lastName,
+              'contact.full_name': fullName,
+              'contact.email': email,
+              'contact.phone': phone,
+              'contact.company': company,
+              'contact.lead_source': leadSource,
+              'contact.notes': notes,
+              'contact.tags': tags,
+              'contact.timezone': timezone,
+            };
+
+            if (lead.custom_fields && typeof lead.custom_fields === 'object') {
+              for (const [rawKey, rawVal] of Object.entries(lead.custom_fields as Record<string, unknown>)) {
+                const key = String(rawKey || '').trim();
+                if (!key) continue;
+
+                const value =
+                  rawVal === null || rawVal === undefined
+                    ? ''
+                    : typeof rawVal === 'string'
+                      ? rawVal
+                      : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
+                        ? String(rawVal)
+                        : JSON.stringify(rawVal);
+
+                dynamicVariables[key] = value;
+                dynamicVariables[`contact.${key}`] = value;
+              }
+            }
+
+            const isCallback = lead.next_callback_at && new Date(lead.next_callback_at) <= new Date(Date.now() + 5 * 60 * 1000);
+            if (isCallback) {
+              const { data: lastCall } = await supabaseAdmin
+                .from('call_logs')
+                .select('notes, ended_at, outcome')
+                .eq('lead_id', resolvedLeadId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              const lastCallDate = lastCall?.ended_at
+                ? new Date(lastCall.ended_at).toLocaleString('en-US', { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' })
+                : 'recently';
+              const previousConversation = String(lastCall?.notes || '');
+              const conversationSummary = previousConversation.length > 500
+                ? `${previousConversation.substring(0, 500)}...`
+                : previousConversation;
+
+              dynamicVariables['is_callback'] = 'true';
+              dynamicVariables['callback_context'] = 'This is a callback - the customer previously requested we call them back.';
+              dynamicVariables['last_call_date'] = lastCallDate;
+              dynamicVariables['previous_conversation'] = conversationSummary;
+              dynamicVariables['previous_outcome'] = String(lastCall?.outcome || 'callback_requested');
+              dynamicVariables['contact.is_callback'] = 'true';
+            } else {
+              dynamicVariables['is_callback'] = 'false';
+              dynamicVariables['contact.is_callback'] = 'false';
+            }
+          }
+
+          const telnyxCallPayload: Record<string, unknown> = {
+            From: callerId,
+            To: finalPhone,
+            AIAssistantId: telnyxAssistant.telnyx_assistant_id,
+          };
+
+          if (Object.keys(dynamicVariables).length > 0) {
+            telnyxCallPayload.AIAssistantDynamicVariables = dynamicVariables;
+          }
+
+          const telnyxRes = await fetch(`https://api.telnyx.com/v2/texml/ai_calls/${telnyxAssistant.telnyx_texml_app_id}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${telnyxApiKey}`,
@@ -471,17 +609,18 @@ serve(async (req) => {
           const telnyxCallData = await telnyxRes.json();
           const tCallData = telnyxCallData.data;
 
-          console.log('[Outbound Calling] Telnyx call initiated:', tCallData.call_control_id);
+          console.log('[Outbound Calling] Telnyx call initiated:', tCallData.call_control_id || tCallData.call_sid || tCallData.sid);
 
           // Update call log with Telnyx IDs
           await supabaseAdmin.from('call_logs').update({
-            telnyx_call_control_id: tCallData.call_control_id,
-            telnyx_call_session_id: tCallData.call_session_id,
+            lead_id: resolvedLeadId || callLog.lead_id,
+            telnyx_call_control_id: tCallData.call_control_id || null,
+            telnyx_call_session_id: tCallData.call_session_id || null,
             status: 'ringing',
           }).eq('id', callLog.id);
 
           result = {
-            call_id: tCallData.call_control_id,
+            call_id: tCallData.call_control_id || tCallData.call_sid || tCallData.sid,
             call_log_id: callLog.id,
             status: 'created',
             provider: 'telnyx',
