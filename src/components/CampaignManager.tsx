@@ -32,6 +32,7 @@ import { useDemoData } from '@/hooks/useDemoData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAIErrors } from '@/contexts/AIErrorContext';
 import { getProviderMeta } from '@/lib/providerUtils';
+import { executeTestCall } from '@/lib/testCallUtils';
 
 interface Campaign {
   id: string;
@@ -1400,36 +1401,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                               const provider = campaign.provider || 'retell';
                               const meta = (campaign as any).metadata || {};
 
-                              if (provider === 'assistable') {
-                                const { data, error } = await supabase.functions.invoke('assistable-make-call', {
-                                  body: {
-                                    assistant_id: meta.assistable_agent_id,
-                                    location_id: meta.assistable_location_id || 'boXe5LQTgfuXIRfrFTja',
-                                    contact_id: testCallPhone,
-                                    number_pool_id: meta.assistable_number_pool_id || undefined,
-                                  },
-                                });
-                                if (error) throw error;
-                                if (data?.error) throw new Error(data.error);
-                                toast({ title: 'Test Call Initiated', description: `Assistable call started (ID: ${data?.call_id || 'pending'})` });
-                              } else {
-                                // Retell / Telnyx / Both — use outbound-calling
-                                const effectiveProvider = provider === 'both' ? 'retell' : provider;
-                                const body: any = {
-                                  action: 'create_call',
-                                  phoneNumber: testCallPhone,
-                                  provider: effectiveProvider,
-                                };
-                                if (effectiveProvider === 'telnyx') {
-                                  body.telnyxAssistantId = campaign.telnyx_assistant_id;
-                                } else {
-                                  body.agentId = campaign.agent_id;
-                                }
-                                const { data, error } = await supabase.functions.invoke('outbound-calling', { body });
-                                if (error) throw error;
-                                if (data?.error) throw new Error(data.error);
-                                toast({ title: 'Test Call Initiated', description: `${effectiveProvider} call started successfully` });
-                              }
+                              const result = await executeTestCall({
+                                provider,
+                                phoneNumber: testCallPhone,
+                                agentId: campaign.agent_id,
+                                telnyxAssistantId: campaign.telnyx_assistant_id,
+                                assistableAssistantId: meta.assistable_agent_id,
+                                assistableLocationId: meta.assistable_location_id,
+                                assistableNumberPoolId: meta.assistable_number_pool_id,
+                              });
+
+                              if (!result.success) throw new Error(result.message);
+                              toast({ title: 'Test Call Initiated', description: result.message });
                             } catch (err: any) {
                               toast({ title: 'Test Call Failed', description: err.message || 'Unknown error', variant: 'destructive' });
                             } finally {

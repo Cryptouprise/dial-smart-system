@@ -19,6 +19,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
 import { toast } from 'sonner';
+import { executeTestCall } from '@/lib/testCallUtils';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -556,7 +557,7 @@ const MissionBriefingWizard: React.FC = () => {
 
   // ── Test Call ──────────────────────────────────────────────────────────
 
-  const handleTestCall = async () => {
+   const handleTestCall = async () => {
     if (!testPhoneNumber.trim()) {
       toast.error('Enter your phone number to test');
       return;
@@ -571,57 +572,18 @@ const MissionBriefingWizard: React.FC = () => {
 
       const [pid, cfg] = primary;
 
-      if (pid === 'telnyx') {
-        const { data: result, error } = await supabase.functions.invoke('telnyx-ai-assistant', {
-          body: { action: 'test_call', assistantId: cfg.agentId, toNumber: testPhoneNumber.trim(), isTestMode: true },
-        });
-        if (error) throw error;
-        if (result?.error) throw new Error(result.error);
-        setTestCallResult({ success: true, message: `Telnyx test call initiated to ${testPhoneNumber}` });
-      } else if (pid === 'assistable') {
-        const { data: result, error } = await supabase.functions.invoke('assistable-make-call', {
-          body: {
-            assistant_id: data.assistableAssistantId,
-            location_id: data.assistableLocationId,
-            number_pool_id: data.assistableNumberPoolId || undefined,
-            phone_number: testPhoneNumber.trim(),
-            is_test: true,
-          },
-        });
-        if (error) throw error;
-        if (result?.error) throw new Error(result.error);
-        setTestCallResult({ success: true, message: `Assistable test call initiated to ${testPhoneNumber}` });
-      } else {
-        let callerId = '';
-        try {
-          const { data: numbers } = await supabase
-            .from('phone_numbers')
-            .select('number')
-            .eq('status', 'active')
-            .limit(1);
-          callerId = numbers?.[0]?.number || '';
-        } catch { /* will fail gracefully below */ }
+      const result = await executeTestCall({
+        provider: pid,
+        phoneNumber: testPhoneNumber.trim(),
+        agentId: cfg.agentId,
+        telnyxAssistantId: cfg.agentId, // For telnyx, the agentId is the assistant DB id
+        assistableAssistantId: pid === 'assistable' ? data.assistableAssistantId : undefined,
+        assistableLocationId: pid === 'assistable' ? data.assistableLocationId : undefined,
+        assistableNumberPoolId: pid === 'assistable' ? data.assistableNumberPoolId : undefined,
+      });
 
-        if (!callerId) {
-          throw new Error('No active phone numbers found. Please purchase numbers first.');
-        }
-
-        const { data: result, error } = await supabase.functions.invoke('outbound-calling', {
-          body: {
-            action: 'create_call',
-            agentId: cfg.agentId,
-            phoneNumber: testPhoneNumber.trim(),
-            callerId,
-            isTestCall: true,
-            skipDncCheck: true,
-            skipCreditCheck: true,
-          },
-        });
-        if (error) throw error;
-        if (result?.error) throw new Error(result.error);
-        setTestCallResult({ success: true, message: `Retell test call initiated to ${testPhoneNumber}` });
-      }
-
+      if (!result.success) throw new Error(result.message);
+      setTestCallResult({ success: true, message: result.message });
       setTestCallCount(prev => prev + 1);
       toast.success('Test call initiated! Check your phone.');
     } catch (err: any) {

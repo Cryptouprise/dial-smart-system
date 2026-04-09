@@ -235,7 +235,14 @@ serve(async (req) => {
         const isTelnyxProvider = provider === 'telnyx';
 
         if (!phoneNumber || !callerId) {
-          throw new Error('Phone number and caller ID are required');
+          return new Response(
+            JSON.stringify({
+              error: 'Phone number and caller ID are required',
+              error_code: 'MISSING_CALLER_ID',
+              hint: 'Pass a callerId from your phone_numbers table. For Retell, use a number with retell_phone_id. For Telnyx, use a provider=telnyx number.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
         if (!isTelnyxProvider && !agentId) {
