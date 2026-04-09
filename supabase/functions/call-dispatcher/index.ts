@@ -85,23 +85,34 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   const userCampaignIds = (userCampaigns || []).map((c: any) => c.id);
 
   let resetQueueCount = 0;
+  let maxedOutCount = 0;
   if (userCampaignIds.length > 0) {
-    const { data: resetQueues, error: resetError } = await supabase
+    // First, mark any stuck 'calling' items that have exceeded max_attempts as FAILED (not pending!)
+    const { data: maxedOutQueues, error: maxedOutError } = await supabase
       .from('dialing_queues')
-      .update({
-        status: 'pending',
-        scheduled_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .select('id, attempts, max_attempts')
       .in('campaign_id', userCampaignIds)
       .eq('status', 'calling')
-      .lt('updated_at', twoMinutesAgo)
-      .select('id');
+      .lt('updated_at', twoMinutesAgo);
 
-    if (resetError) {
-      console.error('[Dispatcher Cleanup] Queue reset error:', resetError);
-    } else {
-      resetQueueCount = resetQueues?.length || 0;
+    if (!maxedOutError && maxedOutQueues) {
+      for (const q of maxedOutQueues) {
+        const maxAttempts = q.max_attempts || 3;
+        if ((q.attempts || 0) >= maxAttempts) {
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'failed', updated_at: new Date().toISOString(), notes: `Max attempts (${maxAttempts}) reached` })
+            .eq('id', q.id);
+          maxedOutCount++;
+        } else {
+          // Only reset to pending if under max_attempts
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'pending', scheduled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', q.id);
+          resetQueueCount++;
+        }
+      }
     }
   }
 
