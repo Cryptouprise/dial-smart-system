@@ -64,6 +64,8 @@ const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
 const ClientPortal = lazy(() => import('@/components/ClientPortal'));
 const AdminSettings = lazy(() => import('@/components/AdminSettings'));
 const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
+const CommandCenter = lazy(() => import('@/components/CommandCenter'));
+const ManagerNotifications = lazy(() => import('@/components/ManagerNotifications'));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -96,7 +98,7 @@ export const openAIChatWithPrompt = (prompt: string) => {
 
 const Dashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'command-center');
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const { toast } = useToast();
   const { isSimpleMode, onModeChange } = useSimpleMode();
@@ -106,13 +108,13 @@ const Dashboard = () => {
   useEffect(() => {
     const unsubscribe = onModeChange((isSimple) => {
       if (isSimple) {
-        const simpleTabs = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads'];
+        const simpleTabs = ['command-center', 'overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'manager-notifications'];
         if (!simpleTabs.includes(activeTab)) {
-          setActiveTab('overview');
-          setSearchParams({ tab: 'overview' });
+          setActiveTab('command-center');
+          setSearchParams({ tab: 'command-center' });
           toast({
             title: 'Switched to Simple Mode',
-            description: 'Redirected to Dashboard',
+            description: 'Redirected to Command Center',
           });
         }
       }
@@ -207,6 +209,22 @@ const Dashboard = () => {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'command-center':
+        return (
+          <TabErrorBoundary tabName="Command Center">
+            <Suspense fallback={<TabLoader />}>
+              <CommandCenter onNavigate={handleTabChange} onOpenAIChat={openAIChatWithPrompt} />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'manager-notifications':
+        return (
+          <TabErrorBoundary tabName="Manager Notifications">
+            <Suspense fallback={<TabLoader />}>
+              <ManagerNotifications />
+            </Suspense>
+          </TabErrorBoundary>
+        );
       case 'overview':
         return (
           <TabErrorBoundary tabName="Overview">

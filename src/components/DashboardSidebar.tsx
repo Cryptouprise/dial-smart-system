@@ -36,6 +36,7 @@ import {
   UserCircle,
   Lock,
   Play,
+  Bell,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -82,6 +83,7 @@ const navigationGroups: NavGroup[] = [
     label: 'Overview',
     defaultOpen: true,
     items: [
+      { title: '⚡ Command Center', value: 'command-center', icon: Zap, simpleMode: true },
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
       { title: 'Try Demo', value: 'demo', icon: Play, simpleMode: true, route: '/demo' },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
@@ -148,6 +150,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { title: 'System Testing', value: 'system-testing', icon: Beaker, simpleMode: true, route: '/system-testing' },
+      { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell, simpleMode: true },
       { title: 'System Health', value: 'health', icon: Activity },
       { title: 'Settings', value: 'settings', icon: Settings },
       { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
