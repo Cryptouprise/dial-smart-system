@@ -130,7 +130,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
     timezone: 'America/New_York',
-    provider: 'retell' as 'retell' | 'telnyx',
+    provider: 'retell' as 'retell' | 'telnyx' | 'both' | 'assistable',
+    assistable_agent_id: '',
+    assistable_number_pool_id: '',
     telnyx_assistant_id: '',
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
@@ -372,11 +374,14 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       timezone: 'America/New_York',
       provider: 'retell',
       telnyx_assistant_id: '',
+      assistable_agent_id: '',
+      assistable_number_pool_id: '',
     });
   };
 
   const handleEdit = (campaign: Campaign) => {
     setEditingCampaign(campaign);
+    const meta = (campaign as any).metadata || {};
     setFormData({
       name: campaign.name,
       description: campaign.description || '',
@@ -388,8 +393,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       calling_hours_start: campaign.calling_hours_start,
       calling_hours_end: campaign.calling_hours_end,
       timezone: campaign.timezone,
-      provider: (campaign.provider as 'retell' | 'telnyx') || 'retell',
+      provider: (campaign.provider as 'retell' | 'telnyx' | 'both' | 'assistable') || 'retell',
       telnyx_assistant_id: campaign.telnyx_assistant_id || '',
+      assistable_agent_id: meta.assistable_agent_id || '',
+      assistable_number_pool_id: meta.assistable_number_pool_id || '',
     });
     setShowCreateDialog(true);
   };
