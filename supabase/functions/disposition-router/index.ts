@@ -114,9 +114,9 @@ serve(async (req) => {
         timestamp: new Date().toISOString(),
         function: 'disposition-router',
         capabilities: ['process_disposition'],
-        dnc_dispositions: DNC_DISPOSITIONS.length,
-        remove_all_dispositions: REMOVE_ALL_DISPOSITIONS.length,
-        pause_workflow_dispositions: PAUSE_WORKFLOW_DISPOSITIONS.length,
+        dnc_dispositions: DEFAULT_DNC_DISPOSITIONS.length,
+        remove_all_dispositions: DEFAULT_REMOVE_ALL_DISPOSITIONS.length,
+        pause_workflow_dispositions: DEFAULT_PAUSE_WORKFLOW_DISPOSITIONS.length,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -125,6 +125,10 @@ serve(async (req) => {
     if (action === 'process_disposition') {
       const normalizedDisposition = dispositionName?.toLowerCase().replace(/[^a-z0-9]/g, '_') || '';
       const actions: string[] = [];
+      
+      // Build dynamic disposition rules from DB + defaults
+      const { dncDispositions, removeAllDispositions, pauseWorkflowDispositions } = 
+        await buildDispositionRules(supabase, userId);
       
       // Get lead's current state for before/after tracking
       const { data: leadBefore } = await supabase
