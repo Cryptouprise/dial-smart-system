@@ -2,7 +2,13 @@
 -- Generates a dsk_live_ + 32 random base62 chars plaintext key, SHA-256
 -- hashes it, inserts the row, and RETURNS the plaintext exactly once.
 --
--- Usage:
+-- Usage (read-only key — default):
+--   SELECT * FROM public.mint_api_key(
+--     p_user_id => '<auth.users.id>',
+--     p_name    => 'My Read Key'
+--   );
+--
+-- Usage (admin key — must be explicit):
 --   SELECT * FROM public.mint_api_key(
 --     p_user_id => '<auth.users.id>',
 --     p_name    => 'Claude Code (admin)',
@@ -15,7 +21,7 @@
 CREATE OR REPLACE FUNCTION public.mint_api_key(
   p_user_id         UUID,
   p_name            TEXT,
-  p_scopes          TEXT[] DEFAULT ARRAY['admin']::TEXT[],
+  p_scopes          TEXT[] DEFAULT ARRAY['read']::TEXT[],  -- safe default; pass ARRAY['admin'] explicitly for admin keys
   p_organization_id UUID   DEFAULT NULL,
   p_rate_limit      INTEGER DEFAULT 600,
   p_expires_at      TIMESTAMPTZ DEFAULT NULL

@@ -313,6 +313,15 @@ async function createLead(rc: RouteContext): Promise<Response> {
   const body = await safeJson(rc.req);
   if (!body.phone_number) throw new ValidationError("phone_number is required");
 
+  // Validate phone number — strip common formatting chars then check digit count.
+  const phoneStr = String(body.phone_number).trim();
+  const digitsOnly = phoneStr.replace(/[\s\-().+]/g, "");
+  if (!/^\d{7,15}$/.test(digitsOnly)) {
+    throw new ValidationError(
+      "phone_number must be 7–15 digits. E.164 format preferred (e.g. +12125551234).",
+    );
+  }
+
   const insert: Record<string, unknown> = {
     user_id: rc.ctx.userId,
     phone_number: String(body.phone_number),
@@ -515,7 +524,35 @@ async function placeCall(rc: RouteContext): Promise<Response> {
     throw new ValidationError("Lead is marked do_not_call");
   }
 
-  // Proxy to outbound-calling edge function with service-role auth
+  const provider = body.provider ?? (body.telnyx_assistant_id ? "telnyx" : "retell");
+
+  // Resolve caller ID: use from_number if provided, else pick the first active
+  // phone number for the requested provider.
+  let callerId: string = body.from_number ?? "";
+  if (!callerId) {
+    const numQ = rc.supabase
+      .from("phone_numbers")
+      .select("number")
+      .eq("user_id", rc.ctx.userId)
+      .eq("status", "active")
+      .eq("is_spam", false)
+      .limit(1);
+    if (provider === "telnyx") {
+      numQ.eq("provider", "telnyx");
+    } else {
+      numQ.not("retell_phone_id", "is", null);
+    }
+    const { data: nums } = await numQ;
+    callerId = (nums as any)?.[0]?.number ?? "";
+  }
+  if (!callerId) {
+    throw new ValidationError(
+      "No available phone numbers for caller ID. Add an active phone number or pass from_number.",
+    );
+  }
+
+  // Proxy to outbound-calling using the exact field names it expects for a
+  // service-role create_call request (camelCase, action required, userId not user_id).
   const upstream = await fetch(`${SUPABASE_URL}/functions/v1/outbound-calling`, {
     method: "POST",
     headers: {
@@ -523,12 +560,15 @@ async function placeCall(rc: RouteContext): Promise<Response> {
       Authorization: `Bearer ${SERVICE_KEY}`,
     },
     body: JSON.stringify({
-      lead_id: lead.id,
-      user_id: rc.ctx.userId,
-      agent_id: body.agent_id,
-      telnyx_assistant_id: body.telnyx_assistant_id,
-      provider: body.provider ?? (body.telnyx_assistant_id ? "telnyx" : "retell"),
-      from_api: true,
+      action: "create_call",
+      leadId: lead.id,
+      userId: rc.ctx.userId,
+      phoneNumber: (lead as any).phone_number,
+      callerId,
+      agentId: body.agent_id ?? null,
+      telnyxAssistantId: body.telnyx_assistant_id ?? null,
+      campaignId: body.campaign_id ?? null,
+      provider,
     }),
   });
   const result = await upstream.json().catch(() => ({}));
@@ -570,6 +610,24 @@ async function sendSms(rc: RouteContext): Promise<Response> {
   if (!body.to_number) throw new ValidationError("to_number is required");
   if (!body.body) throw new ValidationError("body is required");
 
+  // Resolve sender: use from_number if provided, else pick first active number.
+  // sms-messaging reads request.to / request.from (not to_number / from_number).
+  let fromNumber: string = body.from_number ?? "";
+  if (!fromNumber) {
+    const { data: nums } = await rc.supabase
+      .from("phone_numbers")
+      .select("number")
+      .eq("user_id", rc.ctx.userId)
+      .eq("status", "active")
+      .limit(1);
+    fromNumber = (nums as any)?.[0]?.number ?? "";
+  }
+  if (!fromNumber) {
+    throw new ValidationError(
+      "No available phone numbers for sender. Add an active phone number or pass from_number.",
+    );
+  }
+
   const upstream = await fetch(`${SUPABASE_URL}/functions/v1/sms-messaging`, {
     method: "POST",
     headers: {
@@ -579,8 +637,9 @@ async function sendSms(rc: RouteContext): Promise<Response> {
     body: JSON.stringify({
       action: "send_sms",
       user_id: rc.ctx.userId,
-      to_number: body.to_number,
-      from_number: body.from_number,
+      // sms-messaging expects `to` and `from`, not `to_number` / `from_number`
+      to: body.to_number,
+      from: fromNumber,
       body: body.body,
       lead_id: body.lead_id ?? null,
     }),
@@ -1013,6 +1072,21 @@ async function forceDispatch(rc: RouteContext, id: string): Promise<Response> {
   if (error) throw error;
   if (!camp) throw new NotFoundError(`Campaign ${id} not found`);
 
+  // Reset scheduled_at to NOW() for all pending items in this campaign so they
+  // are not blocked behind a future scheduled_at when the dispatcher runs.
+  // Without this, the internal-call path respects scheduled_at and silently
+  // skips items that aren't due yet.
+  const nowIso = new Date().toISOString();
+  await rc.supabase
+    .from("dialing_queues")
+    .update({ scheduled_at: nowIso, updated_at: nowIso })
+    .eq("campaign_id", id)
+    .eq("status", "pending");
+
+  // call-dispatcher requires internal=true + userId to authenticate via service
+  // role key (instead of a user JWT). The dispatcher will run its normal loop
+  // for this user; all campaigns may be processed, but the target campaign's
+  // queue items are now guaranteed to be eligible.
   const upstream = await fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`, {
     method: "POST",
     headers: {
@@ -1021,7 +1095,6 @@ async function forceDispatch(rc: RouteContext, id: string): Promise<Response> {
     },
     body: JSON.stringify({
       action: "dispatch",
-      immediate: true,
       internal: true,
       userId: rc.ctx.userId,
       campaignId: id,
@@ -1186,15 +1259,26 @@ async function findStuckCalls(rc: RouteContext): Promise<Response> {
   const minutes = Math.max(1, Math.min(parseInt(rc.url.searchParams.get("minutes") ?? "5", 10) || 5, 60));
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
 
-  // Stuck entries in dialing_queues
-  const { data: stuckQueue } = await rc.supabase
-    .from("dialing_queues")
-    .select("id,campaign_id,lead_id,phone_number,status,updated_at,attempts")
-    .eq("status", "calling")
-    .lt("updated_at", cutoff)
-    .limit(200);
+  // dialing_queues has no user_id column — scope via campaign ownership.
+  const { data: userCampaigns } = await rc.supabase
+    .from("campaigns")
+    .select("id")
+    .eq("user_id", rc.ctx.userId);
+  const campaignIds = ((userCampaigns ?? []) as any[]).map((c) => c.id);
 
-  // Stuck entries in call_logs (started but never ended)
+  let stuckQueue: any[] = [];
+  if (campaignIds.length > 0) {
+    const { data } = await rc.supabase
+      .from("dialing_queues")
+      .select("id,campaign_id,lead_id,phone_number,status,updated_at,attempts")
+      .in("campaign_id", campaignIds)
+      .eq("status", "calling")
+      .lt("updated_at", cutoff)
+      .limit(200);
+    stuckQueue = data ?? [];
+  }
+
+  // Stuck entries in call_logs (started but never ended) — already user-scoped
   const { data: stuckCalls } = await rc.supabase
     .from("call_logs")
     .select("id,campaign_id,lead_id,phone_number,status,started_at,caller_id,provider")
@@ -1206,9 +1290,9 @@ async function findStuckCalls(rc: RouteContext): Promise<Response> {
 
   return successResponse({
     cutoff_minutes: minutes,
-    stuck_in_queue: stuckQueue ?? [],
+    stuck_in_queue: stuckQueue,
     stuck_in_call_logs: stuckCalls ?? [],
-    total_stuck: (stuckQueue?.length ?? 0) + (stuckCalls?.length ?? 0),
+    total_stuck: stuckQueue.length + (stuckCalls?.length ?? 0),
   });
 }
 
@@ -1290,7 +1374,18 @@ async function deepHealthCheck(rc: RouteContext): Promise<Response> {
     if (error) throw error;
   });
   await probe("dialing_queues_read", async () => {
-    const { error } = await rc.supabase.from("dialing_queues").select("id", { count: "exact", head: true });
+    // dialing_queues has no user_id column; scope via a single owned campaign.
+    const { data: camp } = await rc.supabase
+      .from("campaigns")
+      .select("id")
+      .eq("user_id", rc.ctx.userId)
+      .limit(1)
+      .maybeSingle();
+    if (!camp) return; // No campaigns yet — nothing to probe, that's fine
+    const { error } = await rc.supabase
+      .from("dialing_queues")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", (camp as any).id);
     if (error) throw error;
   });
   await probe("audit_log_write", async () => {
