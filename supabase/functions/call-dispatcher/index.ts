@@ -1115,9 +1115,22 @@ serve(async (req) => {
         const isAssistable = campaignProvider === 'assistable';
         
         // For "both" mode: alternate between retell and telnyx using attempt count
+        // With fallback: if the chosen provider has no agent configured, use the other
         if (isBothMode) {
           const attemptNum = (queueItem.attempts || 0);
-          campaignProvider = attemptNum % 2 === 0 ? 'retell' : 'telnyx';
+          const preferredProvider = attemptNum % 2 === 0 ? 'retell' : 'telnyx';
+          const hasRetellAgent = !!campaign?.agent_id;
+          const hasTelnyxAgent = !!campaign?.telnyx_assistant_id;
+          
+          if (preferredProvider === 'retell' && !hasRetellAgent && hasTelnyxAgent) {
+            campaignProvider = 'telnyx';
+            console.log(`[Dispatcher] Both mode fallback: no Retell agent, using Telnyx`);
+          } else if (preferredProvider === 'telnyx' && !hasTelnyxAgent && hasRetellAgent) {
+            campaignProvider = 'retell';
+            console.log(`[Dispatcher] Both mode fallback: no Telnyx agent, using Retell`);
+          } else {
+            campaignProvider = preferredProvider;
+          }
           console.log(`[Dispatcher] Both mode: attempt ${attemptNum} → using ${campaignProvider}`);
         }
         
