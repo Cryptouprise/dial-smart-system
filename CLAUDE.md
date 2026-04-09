@@ -15,6 +15,39 @@
 
 This file provides persistent context for Claude Code when working with the dial-smart-system codebase.
 
+## Dial Smart MCP Tools (ACTIVE)
+
+> **If you need to read or operate the LIVE Dial Smart application** (campaigns, leads, calls, SMS, phone numbers, dispositions, system health) **use the `dialsmart_*` MCP tools.** They wrap the production REST API and are scoped to Charles's account.
+
+The Dial Smart MCP server (`mcp-server/`) exposes 29 tools that hit the deployed `api-gateway` edge function. They are the right way to investigate problems, audit campaigns, retry failed calls, and pull real-time stats — DO NOT try to query Supabase directly or guess at the state of the system when these tools exist.
+
+**Most useful tools by intent:**
+
+| When the user asks... | Call this tool |
+|---|---|
+| "Is the system healthy?" | `dialsmart_health_check` |
+| "What's happening today?" | `dialsmart_system_stats` |
+| "Is campaign X safe to launch?" | `dialsmart_pre_launch_audit` (or `dialsmart_validate_campaign`) |
+| "How is campaign X doing right now?" | `dialsmart_campaign_live_stats` |
+| "What dispositions are we seeing this hour?" | `dialsmart_disposition_breakdown` |
+| "Retry the failed calls from the last hour" | `dialsmart_retry_failed_calls` |
+| "Force a dispatch to test this campaign" | `dialsmart_force_dispatch` |
+| "Simulate this campaign before launching" | `dialsmart_dry_run_campaign` |
+| "Are any of my numbers getting flagged?" | `dialsmart_phone_number_health` |
+| "Are there any stuck calls?" | `dialsmart_find_stuck_calls` |
+| "Find every lead that hasn't been touched in 48h" | `dialsmart_search_leads` |
+| Lead CRUD | `dialsmart_list_leads`, `dialsmart_get_lead`, `dialsmart_create_lead`, `dialsmart_update_lead`, `dialsmart_mark_lead_dnc` |
+| Campaign control | `dialsmart_list_campaigns`, `dialsmart_get_campaign`, `dialsmart_launch_campaign`, `dialsmart_pause_campaign` |
+| Single calls / SMS | `dialsmart_place_call`, `dialsmart_send_sms`, `dialsmart_list_calls`, `dialsmart_get_call`, `dialsmart_list_sms` |
+| Credit balance | `dialsmart_credits_balance` |
+| Phone inventory | `dialsmart_list_phone_numbers` |
+
+**Setup (one-time):** see `mcp-server/DEPLOY.md`. Once the API key is minted and `claude mcp add dialsmart ...` has been run, all 29 tools are available in any Claude Code session opened in this repo.
+
+**If `dialsmart_*` tools are NOT available** in your session, they haven't been registered yet. Tell Charles to run the `claude mcp add` command from `mcp-server/DEPLOY.md` section 6.
+
+---
+
 ## Voice Broadcast Playbook (ACTIVE)
 
 **Trigger Phrases → Automatic Actions:**

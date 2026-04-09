@@ -196,17 +196,69 @@ read-only smoke test and accidentally create test data.
 
 ## 6. Wire into Claude Code (or any MCP client)
 
-### Claude Code (local)
+### Claude Code (CLI) — recommended
 
-Add to your Claude Code MCP config (`~/.config/claude-code/mcp.json` on
-Linux/Mac, `%APPDATA%\claude-code\mcp.json` on Windows):
+Use the official `claude mcp add` command. This stores the server in your
+user-level config and embeds your API key safely (never touches the repo).
+
+**Windows (cmd.exe or PowerShell):**
+
+```cmd
+claude mcp add dialsmart --scope user --env DIALSMART_API_KEY=dsk_live_...your_key... -- node "C:\Users\charl\dial-smart-system\mcp-server\dist\index.js"
+```
+
+**macOS / Linux:**
+
+```bash
+claude mcp add dialsmart \
+  --scope user \
+  --env DIALSMART_API_KEY=dsk_live_...your_key... \
+  -- node /absolute/path/to/dial-smart-system/mcp-server/dist/index.js
+```
+
+**Verify it loaded:**
+
+```bash
+claude mcp list
+# expect: dialsmart  user  stdio  node ...
+
+claude mcp get dialsmart
+# expect: full server details with the env var redacted
+```
+
+**Test it from inside Claude Code:**
+
+Start `claude` in any directory and type:
+
+```
+/mcp
+```
+
+You should see `dialsmart` listed as connected. Then ask:
+
+> "Run dialsmart_health_check and tell me if the stack is healthy."
+
+Claude Code will invoke the tool and print the response. If you see all
+7 probes pass, you're done.
+
+**To remove or re-add later:**
+
+```bash
+claude mcp remove dialsmart --scope user
+# then re-add with a new key if rotating
+```
+
+### Claude Desktop
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
+`~/Library/Application Support/Claude/claude_desktop_config.json` (Mac):
 
 ```json
 {
   "mcpServers": {
     "dialsmart": {
       "command": "node",
-      "args": ["/absolute/path/to/dial-smart-system/mcp-server/dist/index.js"],
+      "args": ["C:\\Users\\charl\\dial-smart-system\\mcp-server\\dist\\index.js"],
       "env": {
         "DIALSMART_API_KEY": "dsk_live_...your_key..."
       }
@@ -215,17 +267,21 @@ Linux/Mac, `%APPDATA%\claude-code\mcp.json` on Windows):
 }
 ```
 
-Restart Claude Code. Ask: *"Run dialsmart_health_check"* — you should
-see all 7 probes pass.
-
-### Claude Desktop
-
-Same config but in `~/Library/Application Support/Claude/claude_desktop_config.json`.
+Restart Claude Desktop. The dialsmart tools will appear in the tools
+menu.
 
 ### Cursor / Windsurf / Zed
 
-Each has its own MCP config location — check their docs. The JSON shape
-is the same.
+Each has its own MCP config UI. The JSON shape above works in all of
+them — just put it in their respective config files. Use forward
+slashes in paths even on Windows; Node handles them fine.
+
+### Other AI agents (Manus, etc.)
+
+If the agent supports MCP via stdio, point it at
+`node /path/to/mcp-server/dist/index.js` with `DIALSMART_API_KEY` in
+the environment. If it only supports HTTP/SSE, you'll need to wrap the
+stdio server with a stdio→HTTP bridge — out of scope for this doc.
 
 ---
 
