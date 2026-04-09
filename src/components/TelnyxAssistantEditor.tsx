@@ -39,6 +39,7 @@ interface TelnyxAssistant {
   updated_at: string;
   metadata?: any;
   dynamic_variables?: any;
+  assigned_phone_number_ids?: string[];
 }
 
 interface EditorProps {
@@ -63,8 +64,8 @@ async function callEdgeFunction(functionName: string, body: any) {
       body: JSON.stringify(body),
     }
   );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Edge function error');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.error) throw new Error(data?.error || data?.message || 'Edge function error');
   return data;
 }
 
@@ -1144,12 +1145,12 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           {/* ===== CALLING TAB ===== */}
           <TabsContent value="calling" className="space-y-4">
             {/* Phone Number Assignment */}
-            <PhoneNumberAssignment
-              assistantId={assistant.id}
-              assistantName={assistant.name}
-              assignedPhoneIds={assistant.metadata?.assigned_phone_number_ids || []}
-              onUpdate={onSave}
-            />
+              <PhoneNumberAssignment
+                assistantId={assistant.id}
+                assistantName={assistant.name}
+                assignedPhoneIds={assistant.assigned_phone_number_ids || assistant.metadata?.assigned_phone_number_ids || []}
+                onUpdate={onSave}
+              />
 
             <h4 className="font-semibold text-sm flex items-center gap-2">
               <PhoneCall className="h-4 w-4" />
