@@ -2272,3 +2272,28 @@ supabase functions deploy ai-autonomous-engine
 - The real campaign editor lives under `tab=predictive`, not `tab=dialer`.
 - Leaving legacy deep links unaliased drops users into Dashboard's default empty-state message, which feels like a broken app.
 
+
+---
+
+### April 9, 2026 - Campaign Manager Dual-Provider UI Clarification
+
+**What was built/fixed/changed**
+- Updated the Campaign Manager edit dialog so users can assign BOTH a Retell agent AND a Telnyx assistant to the same campaign simultaneously.
+- The "Primary Provider" toggle now clearly indicates it only controls which provider handles outbound calls — both sections remain fully editable.
+- Added helper text explaining the dual-provider setup and "Backup" badges on the non-primary provider when an agent is assigned.
+- Submit button now requires at least one agent (either provider), not specifically the primary provider's agent.
+- Removed separate per-provider validation messages in favor of a single "select at least one" prompt.
+
+**Key files modified**
+- `src/components/CampaignManager.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated. Build verified clean.
+
+**Gotchas / lessons learned**
+- The old UI made it look like picking Retell disabled Telnyx and vice versa, even though both dropdowns were always visible.
+- The submit button was gated on the primary provider's agent only, which blocked saves when the user had the other provider configured instead.
