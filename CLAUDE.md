@@ -2323,3 +2323,29 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - Telnyx phone assignment must use the provider's phone-number resource ID, not the local `phone_numbers.id` UUID.
 - Local assignment tracking should only be updated after a successful Telnyx API assignment, otherwise the UI drifts from provider reality and creates fake conflict errors.
+
+---
+
+### April 9, 2026 - Telnyx Silent Call Fix: Broken telnyxFetch in update_tools/delete_tool
+
+**What was built/fixed/changed**
+- Fixed a critical bug in `update_tools` and `delete_tool` actions where `telnyxFetch()` was called with a raw options object `{method, body}` as the 3rd argument instead of separate `method` and `body` args. This caused every tool save to silently fail — the assistant's tools (and potentially voice/greeting config pushed alongside) never reached the Telnyx portal.
+- Also fixed `utResp.text()` / `dtResp.text()` calls that don't exist on `telnyxFetch`'s return type (it returns `{ok, status, data, error}`).
+- Deployed `telnyx-ai-assistant`, `telnyx-webhook`, and `telnyx-dynamic-vars` edge functions.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- `telnyx-ai-assistant` deployed ✅
+- `telnyx-webhook` deployed ✅
+- `telnyx-dynamic-vars` deployed ✅
+- Frontend build verified clean.
+
+**Gotchas / lessons learned**
+- `telnyxFetch(path, apiKey, method, body)` expects 4 separate args — passing a fetch-style options object silently corrupts the HTTP method to `[object Object]` and drops the body entirely.
+- Silent calls are typically caused by the Telnyx portal having stale/missing voice or greeting config because saves from the UI never reached the API.

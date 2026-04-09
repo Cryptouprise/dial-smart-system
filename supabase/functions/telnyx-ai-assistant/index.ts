@@ -1983,13 +1983,9 @@ serve(async (req) => {
         });
 
         // Push to Telnyx API
-        const utResp = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey, {
-          method: 'POST',
-          body: JSON.stringify({ tools: telnyxTools }),
-        });
+        const utResp = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey!, 'POST', { tools: telnyxTools });
         if (!utResp.ok) {
-          const errText = await utResp.text();
-          throw new Error(`Telnyx update_tools failed: ${errText}`);
+          throw new Error(`Telnyx update_tools failed: ${utResp.error}`);
         }
 
         // Update local DB
@@ -2018,13 +2014,9 @@ serve(async (req) => {
 
         const filteredTools = (dtAsst?.tools || []).filter((t: any) => t.name !== dtToolName);
 
-        const dtResp = await telnyxFetch(`/ai/assistants/${dtTelnyxId}`, apiKey, {
-          method: 'POST',
-          body: JSON.stringify({ tools: filteredTools }),
-        });
+        const dtResp = await telnyxFetch(`/ai/assistants/${dtTelnyxId}`, apiKey!, 'POST', { tools: filteredTools });
         if (!dtResp.ok) {
-          const errText = await dtResp.text();
-          throw new Error(`Telnyx delete_tool failed: ${errText}`);
+          throw new Error(`Telnyx delete_tool failed: ${dtResp.error}`);
         }
 
         await supabaseAdmin
