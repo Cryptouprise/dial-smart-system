@@ -97,10 +97,10 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
 
-      const [{ data: campaigns }, { data: callLogs }, { data: appointments }] = await Promise.all([
+      const [{ data: campaigns }, { data: callLogs }, { data: todayAppts }] = await Promise.all([
         supabase.from('campaigns').select('id, name, status, provider, telnyx_assistant_id, agent_id').eq('user_id', user.id).in('status', ['active', 'running', 'paused']).order('created_at', { ascending: false }).limit(5),
         supabase.from('call_logs').select('status, outcome, campaign_id').eq('user_id', user.id).gte('created_at', todayISO),
-        supabase.from('calendar_appointments').select('id').eq('user_id', user.id).gte('created_at', todayISO),
+        supabase.from('calendar_appointments').select('id, lead_id, leads(campaign_id)').eq('user_id', user.id).gte('created_at', todayISO),
       ]);
 
       const calls = callLogs || [];
@@ -108,30 +108,47 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
       const connected = calls.filter(c => c.status === 'completed' || c.outcome === 'answered').length;
       const transfers = calls.filter(c => c.outcome === 'transfer' || c.outcome === 'transferred').length;
 
+      // Build per-campaign appointment counts from the joined query
+      const apptsByCampaign: Record<string, number> = {};
+      for (const a of todayAppts || []) {
+        const campaignId = (a.leads as { campaign_id?: string } | null)?.campaign_id;
+        if (campaignId) apptsByCampaign[campaignId] = (apptsByCampaign[campaignId] || 0) + 1;
+      }
+
       setTodayStats({
         totalCalls,
         transfers,
-        appointments: (appointments || []).length,
+        appointments: (todayAppts || []).length,
         answerRate: totalCalls > 0 ? Math.round((connected / totalCalls) * 100) : 0,
       });
 
       if (campaigns && campaigns.length > 0) {
-        const enriched: ActiveCampaign[] = await Promise.all(
-          campaigns.map(async (c) => {
-            const { count: totalLeads } = await supabase.from('leads').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id);
-            const campaignCalls = calls.filter(cl => cl.campaign_id === c.id);
-            return {
-              id: c.id,
-              name: c.name,
-              status: c.status,
-              totalLeads: totalLeads || 0,
-              callsMade: campaignCalls.length,
-              transfers: campaignCalls.filter(cl => cl.outcome === 'transfer' || cl.outcome === 'transferred').length,
-              appointments: 0,
-              provider: c.provider || (c.telnyx_assistant_id ? 'telnyx' : 'retell'),
-            };
-          })
-        );
+        const campaignIds = campaigns.map(c => c.id);
+
+        // Single query for all lead counts — avoids N+1
+        const { data: leadRows } = await supabase
+          .from('leads')
+          .select('campaign_id')
+          .in('campaign_id', campaignIds);
+
+        const leadsByCampaign: Record<string, number> = {};
+        for (const row of leadRows || []) {
+          if (row.campaign_id) leadsByCampaign[row.campaign_id] = (leadsByCampaign[row.campaign_id] || 0) + 1;
+        }
+
+        const enriched: ActiveCampaign[] = campaigns.map((c) => {
+          const campaignCalls = calls.filter(cl => cl.campaign_id === c.id);
+          return {
+            id: c.id,
+            name: c.name,
+            status: c.status,
+            totalLeads: leadsByCampaign[c.id] || 0,
+            callsMade: campaignCalls.length,
+            transfers: campaignCalls.filter(cl => cl.outcome === 'transfer' || cl.outcome === 'transferred').length,
+            appointments: apptsByCampaign[c.id] || 0,
+            provider: c.provider || (c.telnyx_assistant_id ? 'telnyx' : 'retell'),
+          };
+        });
         setActiveCampaigns(enriched);
       }
     } catch (e) {
