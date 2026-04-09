@@ -2352,6 +2352,279 @@ supabase functions deploy ai-autonomous-engine
 
 ---
 
+### April 9, 2026 (Part 3) - MCP v0.2.1: Pre-Deployment Hardening (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+
+Hardening pass before the first real deploy of the MCP stack. Five targeted improvements that address the risk list from the previous session's state-of-play without expanding scope:
+
+1. **`runCampaignValidation()` extracted as a pure function.** `preLaunchAudit` previously called `validateCampaign()` (which returns a `Response`) and then re-parsed the body with `.json()`. Refactored into a pure `runCampaignValidation(rc, id) -> { campaign, checks }` helper, with `validateCampaign()` as a thin Response wrapper and `preLaunchAudit` now calling the pure function directly. Cleaner and removes the "body already consumed" risk.
+
+2. **In-memory rate limit enforcement.** `api_keys.rate_limit_per_minute` column already existed but was never checked. Now wired into the auth flow: after `authenticateApiKey`, the gateway calls `checkRateLimit('apikey:${id}', ctx.rateLimitPerMinute, 60_000)` from `_shared/utils.ts`. Per-instance (not distributed) — fine for single-user and acts as a runaway-loop safety net. Throws `RateLimitError` → 429, which is in the MCP client's `RETRYABLE_STATUSES` set so the client backs off automatically.
+
+3. **Audit log retention helper.** New SQL function `prune_api_key_audit_log(p_retention_days)` deletes rows older than the retention window. Documented for pg_cron scheduling. Prevents unbounded growth.
+
+4. **Reusable `mint_api_key()` SQL function.** New migration `20260409030000_mint_api_key_helper.sql` replaces the ugly DO-block key minting from DEPLOY.md with a proper `SECURITY DEFINER` function. Returns the plaintext exactly once via `RETURNS TABLE`. Usage: `SELECT * FROM public.mint_api_key(p_user_id => ..., p_name => 'Claude Code', p_scopes => ARRAY['admin'])`. Also includes `mcp-server/scripts/mint-admin-key.sql` as a one-paste helper.
+
+5. **Opt-in write-path smoke test.** New `mcp-server/src/smoke-write.ts` exercises create/update/re-fetch/search/DNC against a live API. Uses reserved test phone `+15555555XXX` range so it can NEVER accidentally dial real numbers. Refuses to run unless `CONFIRM=yes` env var set — muscle-memory safety. Run via `npm run smoke:write`. Closes the write-path validation gap in the main read-only smoke test.
+
+**Key files created**
+
+| File | Lines | Purpose |
+|---|---|---|
+| `supabase/migrations/20260409030000_mint_api_key_helper.sql` | 110 | `mint_api_key()` + `prune_api_key_audit_log()` |
+| `mcp-server/scripts/mint-admin-key.sql` | 30 | Copy-paste one-liner key minter |
+| `mcp-server/src/smoke-write.ts` | 175 | Write-path smoke test with CONFIRM gate |
+
+**Key files modified**
+
+| File | Change |
+|---|---|
+| `supabase/functions/api-gateway/index.ts` | Extracted `runCampaignValidation()`; wired `checkRateLimit()` into auth flow; import added |
+| `mcp-server/package.json` | Added `smoke:write` script |
+| `mcp-server/DEPLOY.md` | Step 3 now uses `mint_api_key()` function; added step 5b (write-path smoke) |
+| `CLAUDE.md` | This session log |
+
+**Database changes made**
+
+- New migration `20260409030000_mint_api_key_helper.sql` adds two SQL functions (no schema changes).
+
+**Deployment status**
+
+Not deployed. Both migrations still pending `supabase db push`. The `api-gateway` function needs redeployment to pick up the rate limit + refactor changes.
+
+**Validation**
+
+- `npm run build` — PASSES clean (tsc 0 errors)
+- `npm test` — PASSES 16/16 in 1.51s
+- `npm run smoke:write` without `CONFIRM=yes` — correctly refuses to run
+
+**Gotchas / lessons learned**
+
+- `mint_api_key()` uses `SECURITY DEFINER` so it works from the SQL Editor regardless of the caller's role, but permissions are revoked from PUBLIC and only granted to `service_role` — users can't escalate their own scopes.
+- The test phone range `+15555555XXX` is not actually reserved by the NANP as "non-dialable" for all carriers, but most providers reject 555-555-XXXX numbers. Combined with setting `do_not_call=true` at the end of the test, the lead can never be dialed through the dispatcher.
+- In-memory rate limiting means a function cold-start resets the counter. For single-user use this is acceptable — the goal is loop safety, not billing accuracy.
+- `checkRateLimit()` in `_shared/utils.ts` uses a module-level `Map`, so it's per-instance. If the edge function scales out, different instances have independent counters. For Charles's personal use this is fine.
+- The extracted `runCampaignValidation()` returns `any` for the campaign because the Supabase generated types don't cover all the selected columns cleanly. Not ideal but pragmatic; the handler just forwards `campaign.name` and `campaign.status`.
+
+---
+
+### April 9, 2026 - MCP v0.2.0: Campaign-Operational Tools + Test Suite + CI (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+
+Upgraded the Public REST API + MCP server from a prototype-grade v0.1.0 into a daily-driver tool designed specifically for running and testing real campaigns repeatedly. Three layers of work in one session:
+
+**1. Eleven new campaign-operational endpoints on `api-gateway`:**
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/v1/campaigns/:id/validate` | GET | Pre-launch checklist: agent assigned, retries configured, calling hours, pacing sanity, queue depth, provider-aware phone number availability |
+| `/v1/campaigns/:id/live-stats` | GET | Live snapshot: queue pending/calling/completed/failed, calls + answer rate in last 1h, actual pace over last 5 min vs configured, last call |
+| `/v1/campaigns/:id/disposition-breakdown` | GET | Counts by status/outcome/disposition/AMD result over configurable window (1h default, 168h max) |
+| `/v1/campaigns/:id/retry-failed` | POST | Bulk requeue no_answer/busy/failed dialing_queue entries within N minutes that still have attempts available |
+| `/v1/campaigns/:id/force-dispatch` | POST | Trigger immediate `call-dispatcher` run with `immediate:true` to bypass scheduled_at gating |
+| `/v1/campaigns/:id/dry-run` | POST | Simulate: returns would_dispatch_now count + estimated minutes to drain queue, places ZERO real calls |
+| `/v1/campaigns/:id/pre-launch-audit` | GET | Meta-audit: validate + number health + credit balance in one call, returns passed/warnings/failures tally |
+| `/v1/phone-numbers/health` | GET | Per-number health classification (healthy/watch/unhealthy) with flags: spam_flagged, quarantined, at_daily_cap, rotation_disabled |
+| `/v1/calls/stuck` | GET | Find calls in `calling` status for > N minutes in BOTH dialing_queues and call_logs |
+| `/v1/leads/search` | POST | Rich search: statuses[], tags[], last_contacted_before/after/is_null, next_callback_before/after, phone_like, free-text |
+| `/v1/system/health-check` | GET | Deep self-test: probes leads/campaigns/call_logs/sms/phone_numbers/dialing_queues + audit log write. Returns per-probe timing |
+
+**2. Reliability + observability upgrades:**
+
+- MCP HTTP client (`mcp-server/src/client.ts`) now has: 30s abort-based timeout, exponential backoff with jitter on GET retries (500ms → 5s), retry on 408/425/429/500/502/503/504 only, POST/PATCH/DELETE NOT retried by default (non-idempotent) but callers can opt in via `{retry: true}`, `DialSmartApiError` surfaces status+path+message+details for clean error reports.
+- `api-gateway/index.ts` now emits structured JSON log lines with `component`, `level`, `event`, `request_id`, `key_id`, `user_id`, `method`, `path`, `status`, `duration_ms`. One line per request = greppable in Supabase logs: `grep '"component":"api-gateway"' | jq '.'`.
+- `createLead` now propagates `organization_id` from the API key context when set (phase 2 multi-tenancy safety).
+
+**3. Full test suite + smoke script + CI:**
+
+- `mcp-server/test/client.test.ts` — 10 Vitest unit tests covering response unwrapping, error mapping, GET retry on 503, no-retry on 401, POST no-retry by default, POST retry on opt-in, auth header + user agent, query string building, network error mapping.
+- `mcp-server/test/tools.test.ts` — 6 Vitest tests verifying tool registry integrity: name uniqueness, `dialsmart_` prefix, valid JSON schemas, required fields exist in properties, every handler successfully invokes the client, all 11 ops tools are registered.
+- `supabase/functions/_shared/api-auth.test.ts` — 17 Deno tests covering hash determinism, key format, scope hierarchy edge cases (admin, global write/read, domain:write → domain:read implication, missing scope rejection), and full `authenticateApiKey` flow with mocked Supabase (missing header, wrong format, unknown key, revoked, expired, valid, DB error).
+- `mcp-server/src/smoke.ts` — Node script that runs every read-only endpoint against a live API with color output. Exit code 0 on success, 1 on failure, 2 on misconfig. Runs as `npm run smoke` or `DIALSMART_API_KEY=... node dist/smoke.js`. Does NOT place calls or send SMS.
+- `.github/workflows/mcp-api-tests.yml` — New CI workflow. Runs on any push/PR that touches `mcp-server/`, `api-gateway/`, `_shared/api-auth.ts`, or the migration. Two jobs: Node (tsc build + Vitest) and Deno (type check api-gateway + run api-auth.test.ts).
+- `mcp-server/DEPLOY.md` — Definitive ordered deployment checklist: migration → deploy with `--no-verify-jwt` → mint key via SQL → build → smoke test → wire into Claude Code. Includes the "gotchas learned the hard way" section.
+
+**4. New MCP tools (total now 29, up from 18):**
+
+`dialsmart_validate_campaign`, `dialsmart_campaign_live_stats`, `dialsmart_disposition_breakdown`, `dialsmart_retry_failed_calls`, `dialsmart_force_dispatch`, `dialsmart_dry_run_campaign`, `dialsmart_pre_launch_audit`, `dialsmart_phone_number_health`, `dialsmart_find_stuck_calls`, `dialsmart_search_leads`, `dialsmart_health_check`.
+
+**Key files modified**
+
+| File | Change |
+|---|---|
+| `supabase/functions/api-gateway/index.ts` | +700 lines: 11 new handlers, structured logging, org_id fix, request IDs. Bumped to v0.2.0. |
+| `mcp-server/src/client.ts` | +80 lines: retry + timeout + exponential backoff + RETRYABLE_STATUSES set |
+| `mcp-server/src/index.ts` | Version bump to 0.2.0 |
+| `mcp-server/src/tools/index.ts` | Registers `opsTools` |
+| `mcp-server/package.json` | +vitest devDep, test + smoke scripts, version 0.2.0 |
+| `mcp-server/vitest.config.ts` | Overrides parent repo's postcss config so Vitest doesn't trip on tailwind lookup |
+| `mcp-server/tsconfig.json` | Excludes `*.test.ts` and `test/**` from prod build |
+
+**Key files created**
+
+| File | Lines | Purpose |
+|---|---|---|
+| `mcp-server/src/tools/ops.ts` | 177 | 11 campaign-operational MCP tool definitions |
+| `mcp-server/src/smoke.ts` | 135 | Live-API read-only smoke test runner |
+| `mcp-server/test/client.test.ts` | 148 | Vitest unit tests for DialSmartClient |
+| `mcp-server/test/tools.test.ts` | 102 | Vitest tool registry integrity tests |
+| `mcp-server/vitest.config.ts` | 19 | Vitest config with postcss override |
+| `mcp-server/DEPLOY.md` | 245 | Ordered deployment + smoke test checklist |
+| `supabase/functions/_shared/api-auth.test.ts` | 263 | Deno unit tests for hash/generate/scope hierarchy/authenticateApiKey |
+| `.github/workflows/mcp-api-tests.yml` | 50 | CI: Node (Vitest) + Deno (type check + tests) on path-filtered pushes |
+
+**Database changes made**
+
+None. Uses existing tables from the v0.1.0 migration (`api_keys`, `api_key_audit_log`). The `preLaunchAudit` handler reads `organization_credits` which already exists from the white-label credit system migration.
+
+**Deployment status**
+
+Not deployed. Needs one step before Charles can use it in production:
+
+```bash
+# From repo root — once the schema is in sync:
+supabase functions deploy api-gateway --no-verify-jwt
+```
+
+Then from `mcp-server/`:
+
+```bash
+npm install && npm run build
+DIALSMART_API_KEY=dsk_live_... npm run smoke   # expect 13/13 green
+```
+
+**Validation**
+
+- `npm run build` — PASSES (`tsc` clean, 0 errors)
+- `npm test` — PASSES (16/16 Vitest tests green in 3.89s)
+- Deno tests — not run locally (Deno not installed in sandbox); CI will run them on push
+- Smoke script executes cleanly and gives the right error messages on missing key / unreachable API
+
+**Gotchas / lessons learned**
+
+- **Vitest + monorepo**: running vitest inside `mcp-server/` walked up the directory tree and tried to load the parent repo's `postcss.config.js`, which requires `tailwindcss`. Fixed by adding `css.postcss: { plugins: [] }` in `vitest.config.ts` to override. Tempting to try `css: false` — that does NOT work; you have to provide an explicit empty postcss config.
+- **`--no-verify-jwt` is still mandatory**: This didn't change from v0.1.0 but it's worth re-emphasizing. Every request returns 401 without it.
+- **POST retries are off by default**: Because `place_call`, `send_sms`, `createLead`, and `updateLead` are non-idempotent. If you want retry on an idempotent POST (like the new `dry_run_campaign`), pass `{retry: true}` to `client.post()`. Didn't need to for any ops tool so far.
+- **`preLaunchAudit` reads the `Response` body from `validateCampaign`**: slightly ugly but works. If it becomes a perf issue under load, refactor validate to return `CheckResult[]` and have the handler wrap it.
+- **`slog()` helper writes plain `console.log` with JSON**: Supabase edge function logs ingest plain stdout fine. No dependency needed. Greppable with `jq` via `| grep '"component":"api-gateway"' | jq .`.
+- **Structured request_id on every log line**: 8-char UUIDv4 prefix. Enough entropy for request correlation across `api-gateway` → upstream edge function calls (outbound-calling, sms-messaging, call-dispatcher).
+- **CI workflow uses path filters**: only runs when MCP or api-gateway files change, so it doesn't contribute to CI minutes for unrelated commits. Works on any branch (not just main).
+- **The `dialing_queues` table doesn't have a `user_id` column** — it's implicitly scoped via `campaign_id` → `campaigns.user_id`. That's why some of the new handlers (`retryFailedCalls`, `findStuckCalls` queue half) verify campaign ownership first and then use `campaign_id` as the filter.
+- **`find_stuck_calls` checks BOTH `dialing_queues` AND `call_logs`**: because a call can be stuck in either. The dialing_queues entry is scoped by campaign (which we verify is the user's), and call_logs has `user_id` directly.
+- **Smoke test intentionally excludes writes**: don't want CI or a daily verification run accidentally creating test leads in prod. If you need end-to-end write validation, do it once manually from the DEPLOY.md instructions.
+
+**Branch:** `claude/api-mcp-integration-WoM88`
+
+---
+
+### April 9, 2026 - Public REST API + MCP Server (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+
+Added a complete external-access layer so Claude Code, other AI agents (Manus, Cursor, Windsurf, etc.), and arbitrary third-party tools can drive the Dial Smart platform via either REST or the Model Context Protocol. Built primarily for personal use (Charles unleashing Claude on his own app), but the architecture is customer-ready.
+
+**Three pieces shipped together:**
+
+1. **`api_keys` infrastructure** — `dsk_live_<32 random chars>` token format. SHA-256 hash stored, plaintext shown once at creation. Per-key scopes array (admin / read / write / `<domain>:read|write`), per-key rate limit, expiry, revocation, audit log. RLS so users can only manage their own keys.
+
+2. **`api-gateway` edge function** — single dispatching edge function exposing a versioned REST surface under `/v1`. Authenticates with `Authorization: Bearer dsk_live_...` (NOT Supabase JWT — must be deployed with `--no-verify-jwt`). All queries are scoped to the API key's `user_id`. Service-role used internally for table reads/writes.
+
+3. **`@dialsmart/mcp-server`** — standalone Node TypeScript MCP server in `mcp-server/`. Wraps the REST API with 18 typed tools. Stdio transport (works with every MCP client). Single env var: `DIALSMART_API_KEY`. Builds clean with `tsc` (validated).
+
+**REST routes (`/v1`):**
+
+| Method | Path | Scope | Purpose |
+|---|---|---|---|
+| GET | `/health` | none | Smoke test (public) |
+| GET | `/me` | any | Identity, scopes |
+| GET | `/leads` | leads:read | List/search/filter |
+| GET | `/leads/:id` | leads:read | Full lead record |
+| POST | `/leads` | leads:write | Create |
+| PATCH | `/leads/:id` | leads:write | Partial update |
+| POST | `/leads/:id/dnc` | leads:write | DNC + dnc_list insert |
+| GET | `/campaigns` | campaigns:read | List |
+| GET | `/campaigns/:id` | campaigns:read | Full config |
+| POST | `/campaigns/:id/launch` | campaigns:write | status=active |
+| POST | `/campaigns/:id/pause` | campaigns:write | status=paused |
+| GET | `/calls` | calls:read | List call_logs |
+| GET | `/calls/:id` | calls:read | Transcript + AI analysis |
+| POST | `/calls` | calls:write | Place call (proxies to outbound-calling) |
+| GET | `/sms` | sms:read | List sms_messages |
+| POST | `/sms` | sms:write | Send (proxies to sms-messaging) |
+| GET | `/phone-numbers` | system:read | Phone inventory |
+| GET | `/system/stats` | system:read | 24h dashboard snapshot |
+| GET | `/credits/balance` | system:read | Org credit balance |
+
+**MCP tools (18 total)**: `dialsmart_whoami`, `dialsmart_system_stats`, `dialsmart_credits_balance`, `dialsmart_list_phone_numbers`, `dialsmart_list_leads`, `dialsmart_get_lead`, `dialsmart_create_lead`, `dialsmart_update_lead`, `dialsmart_mark_lead_dnc`, `dialsmart_list_campaigns`, `dialsmart_get_campaign`, `dialsmart_launch_campaign`, `dialsmart_pause_campaign`, `dialsmart_list_calls`, `dialsmart_get_call`, `dialsmart_place_call`, `dialsmart_list_sms`, `dialsmart_send_sms`.
+
+**Scope hierarchy** (in `_shared/api-auth.ts`):
+- `admin` → everything
+- `write` → all `<domain>:write` and `<domain>:read`
+- `read` → all `<domain>:read`
+- `<domain>:write` → grants `<domain>:read` of same domain
+- Otherwise: exact match required
+
+**Key files created**
+- `supabase/migrations/20260409020305_api_keys.sql` (94 lines) — `api_keys`, `api_key_audit_log`, `touch_api_key()`, RLS, indexes
+- `supabase/functions/_shared/api-auth.ts` (155 lines) — `hashApiKey`, `generateApiKey`, `authenticateApiKey`, `requireScope`, `logApiRequest`
+- `supabase/functions/api-gateway/index.ts` (~480 lines) — full router + handlers
+- `mcp-server/package.json`, `tsconfig.json`, `.gitignore`
+- `mcp-server/src/index.ts` — MCP server bootstrap (stdio transport)
+- `mcp-server/src/client.ts` — REST client with timeout, error normalization
+- `mcp-server/src/tools/index.ts` — tool registry
+- `mcp-server/src/tools/{system,leads,campaigns,calls,sms}.ts` — tool definitions
+- `mcp-server/README.md` — full setup walkthrough including SQL key issuance, Claude Code/Desktop/Cursor wiring, security notes
+
+**Database changes made**
+- New tables: `public.api_keys`, `public.api_key_audit_log`
+- New function: `public.touch_api_key(uuid, text)`
+- New trigger: `trg_api_keys_touch_updated_at`
+- RLS enabled on both new tables (users only manage their own keys)
+
+**Deployment required**
+```bash
+# 1. Run migration
+supabase db push   # or: supabase migration apply 20260409020305_api_keys
+
+# 2. Deploy edge function (CRITICAL: must skip JWT verification)
+supabase functions deploy api-gateway --no-verify-jwt
+
+# 3. Generate yourself an admin API key (SQL in mcp-server/README.md)
+# 4. Build the MCP server
+cd mcp-server && npm install && npm run build
+
+# 5. Add to your MCP client config (Claude Code, Desktop, etc.) — see README
+```
+
+**Validation**
+- `tsc --noEmit` on `mcp-server/` passes clean
+- `tsc` build emits dist/ successfully
+- Smoke test: `DIALSMART_API_KEY=dsk_live_TEST node dist/index.js < /dev/null` connects and registers all 18 tools
+- Edge function not yet deployed; needs migration applied first
+
+**How to use it (the whole point)**
+
+After deploying + generating a key + adding to Claude Code's MCP config:
+
+> *"Pull system stats. Then find every lead with status='callback' and next_callback_at in the past, and reschedule them for tomorrow at 10am."*
+
+Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filter, then loops `dialsmart_update_lead` for each. No more bouncing between Lovable, GitHub, and Claude — Claude can directly inspect and operate the running app.
+
+**Gotchas / lessons learned**
+- The api-gateway MUST be deployed with `--no-verify-jwt` because it uses its own API key system, not Supabase Auth. Forgetting this returns 401 from Supabase before our handler runs.
+- API key plaintext is shown ONCE at creation via `RAISE NOTICE` (in the SQL DO block). The README also includes a pipe-operator version for newer PG.
+- The `api_key_audit_log` writes are non-blocking (`.then(() => {})`). Never let auditing fail a request.
+- The `place_call` and `send_sms` routes proxy to existing edge functions (`outbound-calling`, `sms-messaging`) using the service role rather than reimplementing the business logic. This means future improvements to those functions automatically apply.
+- The `requireScope` helper does hierarchical matching: `admin > write > read > <domain>:write > <domain>:read`. Fine-grained scopes were chosen from day one because they're easy to add but hard to retrofit later.
+- For codebase monitoring (separate from this MCP, which monitors the running app): use Claude Code on the web with the GitHub integration, or add a `.github/workflows/claude-review.yml` for auto-review on PRs.
+- The MCP server is published as `@dialsmart/mcp-server` in package.json but NOT YET pushed to npm. For now, install locally via `npm install && npm run build` in the `mcp-server/` directory.
+
+**Branch:** `claude/api-mcp-integration-WoM88`
+
+---
+
 ### April 9, 2026 - Dispatcher rotation_enabled Blocking Fix + Repeated Call Prevention
 
 **What was built/fixed/changed**
