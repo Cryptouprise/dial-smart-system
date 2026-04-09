@@ -54,7 +54,7 @@ const useCounter = (end: number, duration = 2000) => {
 };
 
 // ── Autoplay video component ──
-const AutoplayVideo = ({ src, className = '', poster, objectFit = 'cover' }: { src: string; className?: string; poster?: string; objectFit?: 'cover' | 'contain' }) => {
+const AutoplayVideo = React.memo(({ src, className = '', poster, objectFit = 'cover' }: { src: string; className?: string; poster?: string; objectFit?: 'cover' | 'contain' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMuted, setIsMuted] = useState(true);
@@ -101,7 +101,8 @@ const AutoplayVideo = ({ src, className = '', poster, objectFit = 'cover' }: { s
       </button>
     </div>
   );
-};
+});
+AutoplayVideo.displayName = 'AutoplayVideo';
 
 const features = [
   { icon: Brain, title: 'Autonomous AI Brain', description: 'Self-optimizing engine that learns from every call. Adjusts scripts, timing, and pacing in real-time.', accent: 'from-blue-500/20 to-purple-500/20' },
