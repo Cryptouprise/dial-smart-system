@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock, Upload, Copy, Check, ChevronsUpDown, ExternalLink } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock, Upload, Copy, Check, ChevronsUpDown, ExternalLink, Webhook } from 'lucide-react';
 import { QuickLeadLoader } from './QuickLeadLoader';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
@@ -130,7 +130,9 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
     timezone: 'America/New_York',
-    provider: 'retell' as 'retell' | 'telnyx',
+    provider: 'retell' as 'retell' | 'telnyx' | 'both' | 'assistable',
+    assistable_agent_id: '',
+    assistable_number_pool_id: '',
     telnyx_assistant_id: '',
   });
   const [twilioNumbers, setTwilioNumbers] = useState<{number: string; friendly_name?: string; webhook_configured?: boolean; a2p_registered?: boolean; is_ready?: boolean; status_details?: string}[]>([]);
@@ -372,11 +374,14 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       timezone: 'America/New_York',
       provider: 'retell',
       telnyx_assistant_id: '',
+      assistable_agent_id: '',
+      assistable_number_pool_id: '',
     });
   };
 
   const handleEdit = (campaign: Campaign) => {
     setEditingCampaign(campaign);
+    const meta = (campaign as any).metadata || {};
     setFormData({
       name: campaign.name,
       description: campaign.description || '',
@@ -388,8 +393,10 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       calling_hours_start: campaign.calling_hours_start,
       calling_hours_end: campaign.calling_hours_end,
       timezone: campaign.timezone,
-      provider: (campaign.provider as 'retell' | 'telnyx') || 'retell',
+      provider: (campaign.provider as 'retell' | 'telnyx' | 'both' | 'assistable') || 'retell',
       telnyx_assistant_id: campaign.telnyx_assistant_id || '',
+      assistable_agent_id: meta.assistable_agent_id || '',
+      assistable_number_pool_id: meta.assistable_number_pool_id || '',
     });
     setShowCreateDialog(true);
   };
@@ -795,42 +802,59 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 />
               </div>
 
-              {/* Primary Provider Toggle */}
+               {/* Primary Provider Toggle */}
               <div>
                 <label className="text-sm font-medium text-foreground">
-                  Primary Provider for Outbound Calls
+                  Provider for Outbound Calls
                 </label>
                 <p className="text-xs text-muted-foreground mb-1">
-                  You can assign both a Retell agent and a Telnyx assistant. The primary provider handles outbound calls.
+                  Choose which provider handles outbound calls. "Both" rotates between Retell and Telnyx numbers.
                 </p>
-                <div className="flex gap-2 mt-1">
+                <div className="flex gap-2 mt-1 flex-wrap">
                   <Button
                     type="button"
                     size="sm"
                     variant={formData.provider === 'retell' ? 'default' : 'outline'}
                     onClick={() => setFormData({ ...formData, provider: 'retell' })}
-                    className="flex-1"
+                    className="flex-1 min-w-[80px]"
                   >
-                    <Bot className="h-4 w-4 mr-1" /> Retell AI
+                    <Bot className="h-4 w-4 mr-1" /> Retell
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant={formData.provider === 'telnyx' ? 'default' : 'outline'}
                     onClick={() => setFormData({ ...formData, provider: 'telnyx' })}
-                    className="flex-1"
+                    className="flex-1 min-w-[80px]"
                   >
-                    <Bot className="h-4 w-4 mr-1" /> Telnyx AI
+                    <Bot className="h-4 w-4 mr-1" /> Telnyx
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'both' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'both' })}
+                    className="flex-1 min-w-[80px]"
+                  >
+                    <Zap className="h-4 w-4 mr-1" /> Both
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={formData.provider === 'assistable' ? 'default' : 'outline'}
+                    onClick={() => setFormData({ ...formData, provider: 'assistable' })}
+                    className="flex-1 min-w-[80px]"
+                  >
+                    <Webhook className="h-4 w-4 mr-1" /> Assistable
                   </Button>
                 </div>
               </div>
 
-              {/* Retell AI Agent — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'retell' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
+              {/* Retell AI Agent — visible for retell/both */}
+              {(formData.provider === 'retell' || formData.provider === 'both') && (
+              <div className={`rounded-lg border p-3 space-y-2 border-primary bg-primary/5`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Retell AI Agent
-                  {formData.provider === 'retell' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
-                  {formData.provider !== 'retell' && formData.agent_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={retellAgentOpen} onOpenChange={setRetellAgentOpen}>
                   <PopoverTrigger asChild>
@@ -910,13 +934,13 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   );
                 })()}
               </div>
+              )}
 
-              {/* Telnyx AI Assistant — always visible */}
-              <div className={`rounded-lg border p-3 space-y-2 ${formData.provider === 'telnyx' ? 'border-primary bg-primary/5' : 'border-border opacity-80'}`}>
+              {/* Telnyx AI Assistant — visible for telnyx/both */}
+              {(formData.provider === 'telnyx' || formData.provider === 'both') && (
+              <div className={`rounded-lg border p-3 space-y-2 border-primary bg-primary/5`}>
                 <label className="text-sm font-medium text-foreground flex items-center gap-1">
                   <Bot className="h-4 w-4" /> Telnyx AI Assistant
-                  {formData.provider === 'telnyx' && <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0">Primary</Badge>}
-                  {formData.provider !== 'telnyx' && formData.telnyx_assistant_id && <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Backup</Badge>}
                 </label>
                 <Popover open={telnyxAssistantOpen} onOpenChange={setTelnyxAssistantOpen}>
                   <PopoverTrigger asChild>
@@ -977,6 +1001,35 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </p>
                 )}
               </div>
+              )}
+
+              {/* Assistable Config — visible for assistable provider */}
+              {formData.provider === 'assistable' && (
+              <div className="rounded-lg border p-3 space-y-3 border-primary bg-primary/5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                  <Webhook className="h-4 w-4" /> Assistable Configuration
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Calls are handled entirely by Assistable via webhook. Provide your Agent ID and Number Pool ID from Assistable.
+                </p>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Agent ID</label>
+                  <Input
+                    value={formData.assistable_agent_id}
+                    onChange={(e) => setFormData({ ...formData, assistable_agent_id: e.target.value })}
+                    placeholder="e.g. ast_abc123..."
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Number Pool ID</label>
+                  <Input
+                    value={formData.assistable_number_pool_id}
+                    onChange={(e) => setFormData({ ...formData, assistable_number_pool_id: e.target.value })}
+                    placeholder="e.g. np_xyz789..."
+                  />
+                </div>
+              </div>
+              )}
 
               {/* Workflow Selector */}
               <div>
