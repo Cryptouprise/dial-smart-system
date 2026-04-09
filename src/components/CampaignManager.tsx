@@ -92,6 +92,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
   const { captureError } = useAIErrors();
+  const [testCallPhone, setTestCallPhone] = useState('');
+  const [testCallLoading, setTestCallLoading] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<AgentWithPhoneStatus[]>([]);
@@ -1356,6 +1358,77 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 </div>
                 
                 <div className="flex gap-1.5 flex-wrap">
+                  {/* Quick Test Call Button */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="outline" title="Quick Test Call" className="text-green-600 border-green-600 hover:bg-green-50">
+                        <Phone className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72" align="end">
+                      <div className="space-y-3">
+                        <div>
+                          <h4 className="font-medium text-sm">Quick Test Call</h4>
+                          <p className="text-xs text-muted-foreground">Call your phone using this campaign's agent. Bypasses queues and DNC.</p>
+                        </div>
+                        <Input
+                          placeholder="+1234567890"
+                          value={testCallPhone}
+                          onChange={(e) => setTestCallPhone(e.target.value)}
+                        />
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          disabled={!testCallPhone || testCallLoading === campaign.id}
+                          onClick={async () => {
+                            setTestCallLoading(campaign.id);
+                            try {
+                              const provider = campaign.provider || 'retell';
+                              const meta = (campaign as any).metadata || {};
+
+                              if (provider === 'assistable') {
+                                const { data, error } = await supabase.functions.invoke('assistable-make-call', {
+                                  body: {
+                                    assistant_id: meta.assistable_agent_id,
+                                    location_id: 'default',
+                                    contact_id: testCallPhone,
+                                    number_pool_id: meta.assistable_number_pool_id || undefined,
+                                  },
+                                });
+                                if (error) throw error;
+                                if (data?.error) throw new Error(data.error);
+                                toast({ title: 'Test Call Initiated', description: `Assistable call started (ID: ${data?.call_id || 'pending'})` });
+                              } else {
+                                // Retell / Telnyx / Both — use outbound-calling
+                                const effectiveProvider = provider === 'both' ? 'retell' : provider;
+                                const body: any = {
+                                  action: 'create_call',
+                                  phoneNumber: testCallPhone,
+                                  provider: effectiveProvider,
+                                };
+                                if (effectiveProvider === 'telnyx') {
+                                  body.telnyxAssistantId = campaign.telnyx_assistant_id;
+                                } else {
+                                  body.agentId = campaign.agent_id;
+                                }
+                                const { data, error } = await supabase.functions.invoke('outbound-calling', { body });
+                                if (error) throw error;
+                                if (data?.error) throw new Error(data.error);
+                                toast({ title: 'Test Call Initiated', description: `${effectiveProvider} call started successfully` });
+                              }
+                            } catch (err: any) {
+                              toast({ title: 'Test Call Failed', description: err.message || 'Unknown error', variant: 'destructive' });
+                            } finally {
+                              setTestCallLoading(null);
+                            }
+                          }}
+                        >
+                          {testCallLoading === campaign.id ? 'Calling...' : 'Call Now'}
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
                   <Button
                     size="sm"
                     variant="outline"
