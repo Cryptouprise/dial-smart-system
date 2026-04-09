@@ -1103,6 +1103,27 @@ serve(async (req) => {
         const campaignProvider = campaign?.provider || 'retell';
         const isTelnyx = campaignProvider === 'telnyx';
         
+        // CRITICAL DEDUP: Check if this lead was already answered/completed recently
+        const toPhone = lead?.phone_number || queueItem.phone_number;
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: recentAnswered } = await supabase
+          .from('call_logs')
+          .select('id, status, duration_seconds')
+          .eq('phone_number', toPhone)
+          .eq('user_id', user.id)
+          .in('status', ['completed', 'answered', 'in_progress'])
+          .gte('created_at', thirtyMinAgo)
+          .limit(1);
+        
+        if (recentAnswered && recentAnswered.length > 0) {
+          console.log(`[Dispatcher] DEDUP: Skipping lead ${queueItem.lead_id} — phone ${toPhone} was answered recently (call ${recentAnswered[0].id})`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'completed', updated_at: nowIso, notes: 'Lead already answered recently - dedup' })
+            .eq('id', queueItem.id);
+          continue;
+        }
+        
         // Validate agent configuration based on provider
         const hasAgent = isTelnyx ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
         if (!hasAgent) {
