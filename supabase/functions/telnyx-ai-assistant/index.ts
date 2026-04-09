@@ -296,6 +296,7 @@ serve(async (req) => {
           greeting: greeting || undefined,
           voice_settings: {
             voice: voice || 'Telnyx.NaturalHD.Ava',
+            ...(voice && voice.startsWith('Telnyx.Ultra.') ? { expressive_mode: true } : {}),
           },
           transcription: {
             model: transcription_model || 'telnyx_deepgram_nova3',
@@ -421,7 +422,11 @@ serve(async (req) => {
               dbUpdate[key] = value;
               break;
             case 'voice':
-              telnyxUpdate.voice_settings = { ...(telnyxUpdate.voice_settings || {}), voice: value };
+              telnyxUpdate.voice_settings = {
+                ...(telnyxUpdate.voice_settings || {}),
+                voice: value,
+                ...(typeof value === 'string' && value.startsWith('Telnyx.Ultra.') ? { expressive_mode: true } : {}),
+              };
               dbUpdate.voice = value;
               break;
             case 'voice_speed':
