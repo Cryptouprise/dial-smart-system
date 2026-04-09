@@ -1830,7 +1830,7 @@ serve(async (req) => {
           callPayload.AIAssistantDynamicVariables = mergedVars;
         }
 
-        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}`);
+        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}, AIAssistantId=${testAssistant.telnyx_assistant_id}, assistant_name="${testAssistant.name}", model=${testAssistant.model}, voice=${testAssistant.voice}`);
 
         const callRes = await telnyxFetch(
           `/texml/ai_calls/${finalTexmlId}`,
