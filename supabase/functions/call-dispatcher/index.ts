@@ -556,7 +556,7 @@ serve(async (req) => {
 
     const { data: activeCampaigns, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, name, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id')
+      .select('id, name, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id, metadata')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
@@ -808,9 +808,10 @@ serve(async (req) => {
     let retellAvailableNumbers: any[] = [];
     let telnyxAvailableNumbers: any[] = [];
 
-    // Check if any active campaign uses Telnyx
-    const hasTelnyxCampaign = activeCampaigns.some((c: any) => c.provider === 'telnyx');
-    const hasRetellCampaign = activeCampaigns.some((c: any) => !c.provider || c.provider === 'retell');
+    // Check if any active campaign uses each provider type
+    const hasTelnyxCampaign = activeCampaigns.some((c: any) => c.provider === 'telnyx' || c.provider === 'both');
+    const hasRetellCampaign = activeCampaigns.some((c: any) => !c.provider || c.provider === 'retell' || c.provider === 'both');
+    const hasAssistableCampaign = activeCampaigns.some((c: any) => c.provider === 'assistable');
 
     if (hasRetellCampaign) {
       // Retell campaigns use numbers imported into Retell.
