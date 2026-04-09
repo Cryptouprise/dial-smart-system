@@ -1,0 +1,1 @@
+UPDATE phone_numbers SET rotation_enabled = true WHERE user_id = '5969774f-5340-4e4f-8517-bcc89fa6b1eb' AND retell_phone_id IS NOT NULL AND status = 'active' AND rotation_enabled = false;
