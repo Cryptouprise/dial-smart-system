@@ -2246,3 +2246,29 @@ supabase functions deploy ai-autonomous-engine
 - For our transfer webhook use case, we can use Add Messages API to inject lead context BEFORE the transfer happens, ensuring the receiving agent has full data
 - Multiple parallel async lookups are supported natively — instruct the assistant to "call BOTH tools at the same time"
 - The dev portal has a complete Twilio migration guide — useful reference for our dual-provider architecture
+
+---
+
+### April 9, 2026 - Autonomous Agent Campaign Edit Route Fix
+
+**What was built/fixed/changed**
+- Fixed the Autonomous Agent overview pencil icon so campaign edit now routes to the real Predictive Dialing campaign editor instead of the dead `tab=dialer` route.
+- Added a dashboard compatibility alias so any stale links using `?tab=dialer` now resolve to the Predictive Dialing dashboard instead of showing the generic sidebar placeholder.
+- Existing `editCampaignId` auto-open behavior in `CampaignManager` remains the loader for the selected campaign.
+
+**Key files modified**
+- `src/components/AutonomousAgentDashboard.tsx`
+- `src/components/Dashboard.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally.
+- Build verification executed after the route fix.
+
+**Gotchas / lessons learned**
+- The real campaign editor lives under `tab=predictive`, not `tab=dialer`.
+- Leaving legacy deep links unaliased drops users into Dashboard's default empty-state message, which feels like a broken app.
+
