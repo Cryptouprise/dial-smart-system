@@ -130,6 +130,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     sms_from_number: '',
     calls_per_minute: 5,
     max_attempts: 3,
+    retry_delay_minutes: 15,
     calling_hours_start: '09:00',
     calling_hours_end: '17:00',
     timezone: 'America/New_York',
@@ -393,6 +394,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       sms_from_number: '',
       calls_per_minute: 5,
       max_attempts: 3,
+      retry_delay_minutes: 15,
       calling_hours_start: '09:00',
       calling_hours_end: '17:00',
       timezone: 'America/New_York',
@@ -415,6 +417,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       sms_from_number: campaign.sms_from_number || '',
       calls_per_minute: campaign.calls_per_minute,
       max_attempts: campaign.max_attempts,
+      retry_delay_minutes: (campaign as any).retry_delay_minutes || 15,
       calling_hours_start: campaign.calling_hours_start,
       calling_hours_end: campaign.calling_hours_end,
       timezone: campaign.timezone,
@@ -687,11 +690,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Delete workflow progress for leads in this campaign
+      // Delete workflow progress for leads in this campaign (include user_id for RLS)
       const { error: progressError } = await supabase
         .from('lead_workflow_progress')
         .delete()
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
 
       if (progressError) throw progressError;
 
@@ -1230,6 +1234,20 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                 </div>
               </div>
 
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Retry Delay (minutes)
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={formData.retry_delay_minutes}
+                  onChange={(e) => setFormData({ ...formData, retry_delay_minutes: parseInt(e.target.value) || 15 })}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Time between retry attempts for unanswered calls</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1633,6 +1651,25 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                               Retry delay is {(campaign as any).retry_delay_minutes} minutes - leads won't be re-called until then
                             </span>
                           </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-orange-300 text-orange-800 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-200"
+                            onClick={async () => {
+                              try {
+                                await supabase
+                                  .from('campaigns')
+                                  .update({ retry_delay_minutes: 15 })
+                                  .eq('id', campaign.id);
+                                toast({ title: 'Fixed', description: 'Retry delay set to 15 minutes' });
+                                loadCampaigns();
+                              } catch (err: any) {
+                                toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                              }
+                            }}
+                          >
+                            Fix to 15 min
+                          </Button>
                         </div>
                       )}
 

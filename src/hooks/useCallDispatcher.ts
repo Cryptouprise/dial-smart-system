@@ -250,7 +250,7 @@ export const useCallDispatcher = () => {
           console.warn('[Force Requeue] Failed to reset lead status:', leadResetError);
         }
 
-        // 4. Re-add leads to queue with immediate scheduling
+        // 4. Re-add leads to queue with immediate scheduling (upsert to handle leftover rows)
         const queueEntries = campaignLeadData
           .filter((cl: any) => cl.leads?.phone_number)
           .map((cl: any) => ({
@@ -267,7 +267,7 @@ export const useCallDispatcher = () => {
         if (queueEntries.length > 0) {
           const { error: insertError } = await supabase
             .from('dialing_queues')
-            .insert(queueEntries);
+            .upsert(queueEntries, { onConflict: 'campaign_id,lead_id' });
 
           if (insertError) throw insertError;
         }
