@@ -1249,6 +1249,22 @@ serve(async (req) => {
 
         console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
 
+        // CRITICAL: Mark queue item as 'calling' (successfully dispatched)
+        // The retell-call-webhook will update to 'completed' or schedule retry
+        // But if webhook never fires, cleanup will handle it with max_attempts check
+        const currentAttempts = (queueItem.attempts || 0) + 1;
+        const maxAttempts = queueItem.max_attempts || 3;
+        
+        // If this was the last allowed attempt, mark as completed immediately
+        // (webhook can still update disposition, but no more retries)
+        if (currentAttempts >= maxAttempts) {
+          console.log(`[Dispatcher] Lead ${queueItem.lead_id} reached max attempts (${currentAttempts}/${maxAttempts}) - marking queue completed`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'completed', updated_at: nowIso, notes: `Completed after ${currentAttempts} attempts` })
+            .eq('id', queueItem.id);
+        }
+
         // Update daily_calls on the phone number (with auto-reset if date changed)
         await supabase.rpc('increment_daily_calls_with_reset', { phone_number_id: selectedNumber.id });
 
