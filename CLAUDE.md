@@ -2297,3 +2297,27 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - The old UI made it look like picking Retell disabled Telnyx and vice versa, even though both dropdowns were always visible.
 - The submit button was gated on the primary provider's agent only, which blocked saves when the user had the other provider configured instead.
+
+---
+
+### April 9, 2026 - Retell Launch Blocker Fix for Active Imported Numbers
+
+**What was built/fixed/changed**
+- Fixed `call-dispatcher` so Retell campaigns no longer require `rotation_enabled=true` to use valid imported Retell numbers.
+- Dispatcher now prefers rotation-enabled Retell numbers when available, but safely falls back to any active imported Retell number with a `retell_phone_id` so manual launches and dispatches are not blocked.
+- This addresses the launch failure pattern where the UI showed numbers as Retell-ready but dispatch returned no available numbers and no calls were placed.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge function code updated locally in project.
+- Build verification pending after this fix.
+
+**Gotchas / lessons learned**
+- Retell-native setups may intentionally leave `rotation_enabled` off, so treating it as a hard requirement blocks otherwise valid caller IDs.
+- Provider-specific selection should prefer rotation flags, not hard-fail on them, unless the product explicitly enforces that policy in the UI and readiness checks.
