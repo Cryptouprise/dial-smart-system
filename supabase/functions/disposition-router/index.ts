@@ -208,6 +208,15 @@ serve(async (req) => {
           .in('status', ['pending', 'scheduled', 'calling'])
           .lt('priority', 2); // Only remove non-callback entries
 
+        // CRITICAL: Also remove from broadcast_queue so voice broadcasts stop calling this lead
+        await supabase
+          .from('broadcast_queue')
+          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .eq('lead_id', leadId)
+          .in('status', ['pending', 'scheduled', 'calling']);
+
+        console.log(`[DispositionRouter] Removed lead ${leadId} from all queues (broadcast + dialing)`);
+
         // Update lead status so they won't be re-queued by automations
         await supabase
           .from('leads')
@@ -217,7 +226,7 @@ serve(async (req) => {
           })
           .eq('id', leadId);
 
-        actions.push('Removed from workflow (callbacks preserved)');
+        actions.push('Removed from all queues including broadcasts');
       }
       
       // 3b. Check for PAUSE workflow trigger (continue nurturing later)
