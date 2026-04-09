@@ -2349,3 +2349,27 @@ supabase functions deploy ai-autonomous-engine
 **Gotchas / lessons learned**
 - `telnyxFetch(path, apiKey, method, body)` expects 4 separate args — passing a fetch-style options object silently corrupts the HTTP method to `[object Object]` and drops the body entirely.
 - Silent calls are typically caused by the Telnyx portal having stale/missing voice or greeting config because saves from the UI never reached the API.
+
+---
+
+### April 9, 2026 - Dispatcher rotation_enabled Blocking Fix + Repeated Call Prevention
+
+**What was built/fixed/changed**
+- Fixed the root cause of "no calls to dispatch" errors: the dispatcher required `rotation_enabled=true` for Retell numbers, but ALL 12 Retell numbers had it set to `false`. This made every Retell campaign fail with "CRITICAL: No phone numbers available."
+- Updated the Retell number selection logic to match the Telnyx fallback pattern: prefer rotation-enabled numbers, but fall back to all active Retell numbers when none have rotation enabled.
+- Enabled `rotation_enabled=true` on all 12 active Retell numbers via migration.
+- Previous session fixes (repeated call blasts, disposition queue cleanup) remain in place.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts` — Retell number query no longer requires `rotation_enabled=true`; falls back to all active Retell numbers
+- `CLAUDE.md`
+
+**Database changes made**
+- `UPDATE phone_numbers SET rotation_enabled = true` for all 12 active Retell numbers
+
+**Deployment status**
+- `call-dispatcher` deployed ✅
+
+**Gotchas / lessons learned**
+- The dispatcher had asymmetric logic: Telnyx numbers gracefully fell back when no rotation-enabled numbers existed, but Retell numbers hard-failed. This caused every test campaign to silently fail.
+- `rotation_enabled` was originally meant for high-volume number rotation safety, but it was blocking ALL campaign launches including single-number test calls.
