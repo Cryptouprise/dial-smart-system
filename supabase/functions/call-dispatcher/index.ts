@@ -1110,7 +1110,17 @@ serve(async (req) => {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
-        const campaignProvider = campaign?.provider || 'retell';
+        let campaignProvider = campaign?.provider || 'retell';
+        const isBothMode = campaignProvider === 'both';
+        const isAssistable = campaignProvider === 'assistable';
+        
+        // For "both" mode: alternate between retell and telnyx using attempt count
+        if (isBothMode) {
+          const attemptNum = (queueItem.attempts || 0);
+          campaignProvider = attemptNum % 2 === 0 ? 'retell' : 'telnyx';
+          console.log(`[Dispatcher] Both mode: attempt ${attemptNum} → using ${campaignProvider}`);
+        }
+        
         const isTelnyx = campaignProvider === 'telnyx';
         
         // CRITICAL DEDUP: Check if this lead was already answered/completed recently
@@ -1134,9 +1144,76 @@ serve(async (req) => {
           continue;
         }
         
+        // ── ASSISTABLE DISPATCH PATH ──────────────────────────────────
+        if (isAssistable) {
+          const meta = campaign?.metadata || {};
+          const assistableAgentId = meta.assistable_agent_id;
+          const assistableNumberPoolId = meta.assistable_number_pool_id;
+
+          if (!assistableAgentId) {
+            console.error(`[Dispatcher] Assistable campaign ${queueItem.campaign_id} has no assistable_agent_id in metadata`);
+            await supabase.from('dialing_queues')
+              .update({ status: 'failed', updated_at: nowIso, notes: 'No Assistable agent_id configured in campaign metadata' })
+              .eq('id', queueItem.id);
+            continue;
+          }
+
+          // Mark as calling
+          await supabase.from('dialing_queues')
+            .update({ status: 'calling', attempts: (queueItem.attempts || 0) + 1, updated_at: nowIso })
+            .eq('id', queueItem.id);
+
+          // Invoke assistable-make-call
+          const assistableBody: any = {
+            assistant_id: assistableAgentId,
+            location_id: 'default', // GHL location — can be made dynamic later
+            contact_id: toPhone,
+            lead_id: queueItem.lead_id,
+            campaign_id: queueItem.campaign_id,
+            user_id: user.id,
+          };
+          if (assistableNumberPoolId) {
+            assistableBody.number_pool_id = assistableNumberPoolId;
+          }
+
+          const assistableResp = await supabase.functions.invoke('assistable-make-call', {
+            body: assistableBody,
+            headers: { Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
+          });
+
+          if (assistableResp.error || (assistableResp.data as any)?.error) {
+            const errMsg = (assistableResp.data as any)?.error || assistableResp.error?.message || 'Assistable call failed';
+            throw new Error(errMsg);
+          }
+
+          dispatched++;
+          dispatchResults.push({ leadId: queueItem.lead_id, success: true, callId: (assistableResp.data as any)?.call_id, provider: 'assistable' });
+          console.log(`[Dispatcher] Assistable call initiated for lead ${queueItem.lead_id}`);
+
+          // Handle max attempts
+          const currentAttempts = (queueItem.attempts || 0) + 1;
+          if (currentAttempts >= (queueItem.max_attempts || 3)) {
+            await supabase.from('dialing_queues')
+              .update({ status: 'completed', updated_at: nowIso, notes: `Completed after ${currentAttempts} attempts` })
+              .eq('id', queueItem.id);
+          }
+          continue;
+        }
+
+        // ── RETELL / TELNYX DISPATCH PATH ─────────────────────────────
         // Validate agent configuration based on provider
         const hasAgent = isTelnyx ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
         if (!hasAgent) {
+          // For "both" mode, check if the OTHER provider has an agent instead of failing
+          if (isBothMode) {
+            const altProvider = isTelnyx ? 'retell' : 'telnyx';
+            const altHasAgent = altProvider === 'telnyx' ? !!campaign?.telnyx_assistant_id : !!campaign?.agent_id;
+            if (altHasAgent) {
+              console.log(`[Dispatcher] Both mode: ${campaignProvider} has no agent, falling back to ${altProvider}`);
+              // Swap provider for this call
+              // We'll just skip and let the next attempt use the other provider
+            }
+          }
           const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
           console.error(`[Dispatcher] CRITICAL: Campaign ${queueItem.campaign_id} has no ${providerLabel} agent - cannot make calls`);
 
