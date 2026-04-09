@@ -1,83 +1,81 @@
 
+Goal: stop the app from “erroring out” during test calls, fix the real launch blockers first, then do a short reliability sweep so the common call/testing flows are safe.
 
-# Plan: Finish Dispatcher Logic, Solar Dispositions & Quick Test Feature
+What I verified
+- There is a real current blocker in deployed logs: `outbound-calling` is receiving a test call request and failing with `Phone number and caller ID are required`.
+- The immediate root cause is in `CampaignManager.tsx`: the campaign-card Quick Test sends `phoneNumber` and `provider`, but does not send `callerId` for Retell/Telnyx/Both.
+- I also found two more broken test-call paths:
+  1. `MissionBriefingWizard.tsx` sends Telnyx test calls with `assistantId` / `toNumber`, but `telnyx-ai-assistant` expects `assistant_id` / `to_number`.
+  2. `MissionBriefingWizard.tsx` sends Assistable test calls with `phone_number`, but `assistable-make-call` requires `contact_id`.
+- A secondary but noisy app issue is also present on the homepage: `LandingPage.tsx` is generating the React ref warning around `AutoplayVideo`, which can trip Guardian and make the app feel unstable.
 
-## Current State
+Implementation plan
+1. Fix the immediate test-call failure
+- Update the Campaign Manager Quick Test flow so it always resolves and passes a valid `callerId` before invoking `outbound-calling`.
+- Provider rules:
+  - Retell: use an active number with `retell_phone_id`
+  - Telnyx: use an active Telnyx number (`provider='telnyx'` or carrier match)
+  - Both: choose the active provider first, then use the same fallback logic as dispatcher
+- If no valid caller ID exists, stop before the edge function call and show a clear toast instead of letting the function fail.
 
-**What's already done:**
-- Campaign Manager UI has the 4-way provider toggle (Retell / Telnyx / Both / Assistable) with all form fields
-- Dispatcher already routes Retell vs Telnyx calls correctly based on `campaign.provider`
-- Disposition router already clears leads from all queues (broadcast, dialing, workflow)
-- `assistable-make-call` edge function exists and works
-- MissionBriefingWizard already has a test call feature for Retell, Telnyx, and Assistable
-- Dispositions table already has most solar dispositions (Transferred is missing, Dropped Call Positive is missing, Send More Info is missing)
+2. Standardize all test-call entry points
+- Create one shared frontend helper for test-call payload building so all buttons use the same logic.
+- Apply it to:
+  - `CampaignManager`
+  - `MissionBriefingWizard`
+  - any other direct `outbound-calling` / `assistable-make-call` / `telnyx-ai-assistant test_call` entry points found in the sweep
+- This removes the current mismatch where different screens send different field names and requirements.
 
-**What's NOT done:**
-1. `createCampaign` in `usePredictiveDialing` doesn't pass `provider`, `telnyx_assistant_id`, `sms_from_number`, or `workflow_id` to the DB
-2. Dispatcher doesn't handle `provider: 'both'` (alternating Retell/Telnyx) or `provider: 'assistable'`
-3. Campaigns table has no column for Assistable metadata (agent_id, number_pool_id) — needs `metadata` JSONB column or dedicated columns
-4. Missing solar dispositions: Transferred, Dropped Call Positive, Send More Info, Bad Number, Busy Signal, Call Not Connected
-5. No standalone "Quick Test" button on campaign cards for instant test calls
+3. Fix the known payload mismatches
+- Telnyx test calls: send `assistant_id` and `to_number` consistently.
+- Assistable test calls: stop sending raw `phone_number` to `assistable-make-call`.
+- For Assistable quick tests, use the same GHL-safe rule as the dispatcher:
+  - prefer a real `ghl_contact_id`
+  - if unavailable, fail gracefully with an exact message explaining that Assistable test calls need a mapped GHL contact
+- If there is already enough integration data in the project to resolve/create a GHL contact safely, wire that in; otherwise keep the failure explicit and actionable instead of silent.
 
----
+4. Harden edge-function error handling so the UI does not feel broken
+- Update `outbound-calling` and `assistable-make-call` to return structured operational errors more safely for non-auth/non-billing failures.
+- Keep the response parseable by the frontend with:
+  - clear `error`
+  - optional `error_code`
+  - provider-specific fix hint
+- This keeps test failures inside the toast/UI layer instead of looking like the whole app stopped.
 
-## Implementation Steps
+5. Remove the recurring homepage error noise
+- Fix the `LandingPage` / `AutoplayVideo` ref warning so Guardian stops surfacing that issue on normal browsing.
+- Keep this scoped and surgical: just remove the ref misuse or make the component ref-safe.
 
-### 1. Add Missing Solar Dispositions (DB insert)
-Insert the missing dispositions into the `dispositions` table for the user:
-- **Transferred** → pipeline_stage: `transferred` (terminal - remove from queues)
-- **Dropped Call Positive** → pipeline_stage: `hot_leads` (pause workflow, follow up)
-- **Bad Number** → pipeline_stage: `invalid_leads` (terminal)
-- **Busy Signal** → pipeline_stage: `callbacks` (pause, retry later)
-- **Call Not Connected** → pipeline_stage: `callbacks` (pause, retry later)
-- **Send More Info** → pipeline_stage: `follow_up` (pause workflow)
+6. Do a launch-readiness sweep on the risky call/testing flows
+- Search all direct test-call invocations and verify each one has:
+  - correct field names
+  - provider-specific caller ID
+  - correct agent/assistant identifiers
+  - correct Assistable contact handling
+  - correct test flags (`isTestCall`, skip flags where intended)
+- Also verify the UI readiness messaging is provider-aware so you can see missing Retell/Telnyx/Assistable prerequisites before clicking.
 
-Update the disposition router's `REMOVE_ALL_DISPOSITIONS` to include `transferred` and `bad_number`. Update `PAUSE_WORKFLOW_DISPOSITIONS` to include `dropped_call_positive`, `busy_signal`, `send_more_info`, `call_not_connected`.
+7. Verify after implementation
+- Re-test campaign-card Quick Test for:
+  - Retell
+  - Telnyx
+  - Both
+  - Assistable
+- Confirm the outbound-calling logs no longer show `Phone number and caller ID are required`.
+- Confirm Mission Briefing test calls no longer fail from bad payload names.
+- Confirm the homepage ref warning is gone.
+- Do a short smoke pass through the core screens you’re actively using so normal usage no longer gets interrupted by obvious runtime errors.
 
-### 2. Fix Campaign Create/Update to Pass All Provider Fields
-Update `usePredictiveDialing.createCampaign()` to pass `provider`, `telnyx_assistant_id`, `sms_from_number`, and `workflow_id` to the database insert. Currently these fields are silently dropped.
-
-### 3. Add `metadata` JSONB Column to Campaigns Table
-Add a `metadata` JSONB column to `campaigns` for storing Assistable config (`assistable_agent_id`, `assistable_number_pool_id`) and future extensibility. Update the save logic in CampaignManager to write/read Assistable fields from this column.
-
-### 4. Dispatcher: Handle "Both" Provider (Retell + Telnyx Alternation)
-In `call-dispatcher`, when `campaign.provider === 'both'`:
-- Load BOTH Retell and Telnyx number pools
-- For each call, alternate between providers using a simple round-robin (odd attempt = Retell, even = Telnyx, or vice versa based on queue position)
-- Use the correct agent ID for each provider (`agent_id` for Retell, `telnyx_assistant_id` for Telnyx)
-- Pass the correct `provider` field to `outbound-calling`
-
-### 5. Dispatcher: Handle "Assistable" Provider
-In `call-dispatcher`, when `campaign.provider === 'assistable'`:
-- Read `assistable_agent_id` and `assistable_number_pool_id` from campaign metadata
-- Instead of calling `outbound-calling`, invoke `assistable-make-call` directly with the agent ID, number pool ID, and lead phone number
-- Mark queue item as `calling`, track the call in `call_logs` with `provider: 'assistable'`
-
-### 6. Quick Test Button on Campaign Cards
-Add a "Test" button (phone icon) to each campaign card in CampaignManager that:
-- Opens a small popover/dialog asking for your phone number
-- Calls you immediately using the campaign's configured agent and provider
-- Bypasses all queuing, DNC checks, scheduling, and credit checks
-- Works for all 4 provider types (Retell, Telnyx, Both, Assistable)
-- Shows result inline (success/failure toast)
-- Reuses the same test call logic from MissionBriefingWizard
-
-### 7. Deploy & Verify
-- Deploy `call-dispatcher` and `disposition-router`
-- Verify the stuck queue entry (attempts 9 >= max 2) gets marked failed
-- Test a campaign launch with a single test number
-
----
-
-## Technical Details
-
-**Files to modify:**
-- `supabase/functions/call-dispatcher/index.ts` — Add `both` alternation logic and `assistable` dispatch path
-- `supabase/functions/disposition-router/index.ts` — Add missing disposition strings to the correct arrays
-- `src/hooks/usePredictiveDialing.ts` — Fix `createCampaign` to pass all fields
-- `src/components/CampaignManager.tsx` — Add Quick Test button, fix metadata save/load
-- `supabase/migrations/` — Add `metadata` JSONB column to campaigns
-
-**Dispositions already correct (no changes needed):**
-- Hot Lead, Potential Prospect, Follow Up, Not Interested, Wrong Number, Dropped Call, Not Connected, Voicemail, Do Not Call, Callback Requested, Appointment Booked
-
+Technical details
+- Files likely to change:
+  - `src/components/CampaignManager.tsx`
+  - `src/components/MissionBriefingWizard.tsx`
+  - `src/pages/LandingPage.tsx`
+  - `supabase/functions/outbound-calling/index.ts`
+  - `supabase/functions/assistable-make-call/index.ts`
+  - possibly a shared helper such as `src/lib/testCallUtils.ts`
+  - `CLAUDE.md`
+- Guardrails:
+  - keep changes on the real production paths (edge functions), not the provider stub adapters
+  - keep quick-test provider fallback aligned with dispatcher behavior
+  - treat Assistable as GHL-contact-based, not raw-phone-based
