@@ -125,14 +125,14 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
       if (campaigns && campaigns.length > 0) {
         const campaignIds = campaigns.map(c => c.id);
 
-        // Single query for all lead counts — avoids N+1
+        // Get lead counts per campaign via campaign_leads join table
         const { data: leadRows } = await supabase
-          .from('leads')
+          .from('campaign_leads')
           .select('campaign_id')
           .in('campaign_id', campaignIds);
 
         const leadsByCampaign: Record<string, number> = {};
-        for (const row of leadRows || []) {
+        for (const row of (leadRows || []) as any[]) {
           if (row.campaign_id) leadsByCampaign[row.campaign_id] = (leadsByCampaign[row.campaign_id] || 0) + 1;
         }
 

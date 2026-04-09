@@ -98,9 +98,10 @@ const SMS_FIELDS =
 const PHONE_FIELDS =
   "id,user_id,number,area_code,status,provider,purpose,daily_calls,max_daily_calls,is_spam,rotation_enabled,allowed_uses,friendly_name,last_call_at,created_at";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface RouteContext {
   ctx: ApiKeyContext;
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   url: URL;
   req: Request;
   requestId: string;
