@@ -202,7 +202,7 @@ serve(async (req) => {
       }
 
       // 2. Check for DNC trigger
-      if (DNC_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+      if (dncDispositions.some(d => normalizedDisposition.includes(d))) {
         // Add to DNC list
         const { data: lead } = await supabase
           .from('leads')
@@ -229,7 +229,7 @@ serve(async (req) => {
       }
 
       // 3. Check for remove from all campaigns trigger
-      if (REMOVE_ALL_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+      if (removeAllDispositions.some(d => normalizedDisposition.includes(d))) {
         // Remove from all active workflows
         await supabase
           .from('lead_workflow_progress')
@@ -272,8 +272,8 @@ serve(async (req) => {
       }
       
       // 3b. Check for PAUSE workflow trigger (continue nurturing later)
-      if (PAUSE_WORKFLOW_DISPOSITIONS.some(d => normalizedDisposition.includes(d)) && 
-          !REMOVE_ALL_DISPOSITIONS.some(d => normalizedDisposition.includes(d))) {
+      if (pauseWorkflowDispositions.some(d => normalizedDisposition.includes(d)) && 
+          !removeAllDispositions.some(d => normalizedDisposition.includes(d))) {
         // Pause (not remove) active workflows for later follow-up
         await supabase
           .from('lead_workflow_progress')
