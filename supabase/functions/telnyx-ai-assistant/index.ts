@@ -1983,13 +1983,9 @@ serve(async (req) => {
         });
 
         // Push to Telnyx API
-        const utResp = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey, {
-          method: 'POST',
-          body: JSON.stringify({ tools: telnyxTools }),
-        });
+        const utResp = await telnyxFetch(`/ai/assistants/${telnyxId}`, apiKey!, 'POST', { tools: telnyxTools });
         if (!utResp.ok) {
-          const errText = await utResp.text();
-          throw new Error(`Telnyx update_tools failed: ${errText}`);
+          throw new Error(`Telnyx update_tools failed: ${utResp.error}`);
         }
 
         // Update local DB
