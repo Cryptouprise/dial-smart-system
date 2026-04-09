@@ -44,6 +44,7 @@ import {
 } from "../_shared/api-auth.ts";
 import {
   AuthenticationError,
+  checkRateLimit,
   corsHeaders,
   errorResponse,
   NotFoundError,
@@ -133,6 +134,11 @@ serve(async (req) => {
 
   try {
     ctx = await authenticateApiKey(req, supabase);
+
+    // Per-key rate limit. Uses the in-memory limiter from _shared/utils.ts;
+    // this is per-instance (not distributed) which is fine for personal use
+    // and acts as a runaway-loop safety net. Throws RateLimitError -> 429.
+    checkRateLimit(`apikey:${ctx.apiKeyId}`, ctx.rateLimitPerMinute, 60_000);
 
     const routeCtx: RouteContext = { ctx, supabase, url, req, requestId };
     const response = await dispatch(path, req.method, routeCtx);
@@ -679,6 +685,27 @@ interface CheckResult {
 }
 
 async function validateCampaign(rc: RouteContext, id: string): Promise<Response> {
+  const { campaign, checks } = await runCampaignValidation(rc, id);
+  const ready = checks.every((c) => c.status !== "fail");
+  const hasWarnings = checks.some((c) => c.status === "warn");
+  return successResponse({
+    campaign_id: id,
+    campaign_name: campaign.name,
+    status: campaign.status,
+    ready,
+    has_warnings: hasWarnings,
+    checks,
+  });
+}
+
+/**
+ * Pure campaign validation: returns checks + the loaded campaign so callers
+ * (like preLaunchAudit) can reuse the work without re-reading a Response.
+ */
+async function runCampaignValidation(
+  rc: RouteContext,
+  id: string,
+): Promise<{ campaign: any; checks: CheckResult[] }> {
   requireScope(rc.ctx, "campaigns:read");
   const checks: CheckResult[] = [];
 
@@ -807,17 +834,7 @@ async function validateCampaign(rc: RouteContext, id: string): Promise<Response>
     });
   }
 
-  const ready = checks.every((c) => c.status !== "fail");
-  const hasWarnings = checks.some((c) => c.status === "warn");
-
-  return successResponse({
-    campaign_id: id,
-    campaign_name: campaign.name,
-    status: campaign.status,
-    ready,
-    has_warnings: hasWarnings,
-    checks,
-  });
+  return { campaign, checks };
 }
 
 async function campaignLiveStats(rc: RouteContext, id: string): Promise<Response> {
@@ -1058,10 +1075,8 @@ async function dryRunCampaign(rc: RouteContext, id: string): Promise<Response> {
 async function preLaunchAudit(rc: RouteContext, id: string): Promise<Response> {
   requireScope(rc.ctx, "campaigns:read");
 
-  // Reuse validate and bolt on number health + budget
-  const validateResp = await validateCampaign(rc, id);
-  const validateJson = await validateResp.json();
-  const checks: CheckResult[] = validateJson?.data?.checks ?? [];
+  // Reuse validation logic directly — no Response juggling.
+  const { checks } = await runCampaignValidation(rc, id);
 
   // Number health snapshot
   const { data: numbers } = await rc.supabase

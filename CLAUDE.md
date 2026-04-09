@@ -2352,6 +2352,63 @@ supabase functions deploy ai-autonomous-engine
 
 ---
 
+### April 9, 2026 (Part 3) - MCP v0.2.1: Pre-Deployment Hardening (NOT DEPLOYED)
+
+**What was built/fixed/changed**
+
+Hardening pass before the first real deploy of the MCP stack. Five targeted improvements that address the risk list from the previous session's state-of-play without expanding scope:
+
+1. **`runCampaignValidation()` extracted as a pure function.** `preLaunchAudit` previously called `validateCampaign()` (which returns a `Response`) and then re-parsed the body with `.json()`. Refactored into a pure `runCampaignValidation(rc, id) -> { campaign, checks }` helper, with `validateCampaign()` as a thin Response wrapper and `preLaunchAudit` now calling the pure function directly. Cleaner and removes the "body already consumed" risk.
+
+2. **In-memory rate limit enforcement.** `api_keys.rate_limit_per_minute` column already existed but was never checked. Now wired into the auth flow: after `authenticateApiKey`, the gateway calls `checkRateLimit('apikey:${id}', ctx.rateLimitPerMinute, 60_000)` from `_shared/utils.ts`. Per-instance (not distributed) — fine for single-user and acts as a runaway-loop safety net. Throws `RateLimitError` → 429, which is in the MCP client's `RETRYABLE_STATUSES` set so the client backs off automatically.
+
+3. **Audit log retention helper.** New SQL function `prune_api_key_audit_log(p_retention_days)` deletes rows older than the retention window. Documented for pg_cron scheduling. Prevents unbounded growth.
+
+4. **Reusable `mint_api_key()` SQL function.** New migration `20260409030000_mint_api_key_helper.sql` replaces the ugly DO-block key minting from DEPLOY.md with a proper `SECURITY DEFINER` function. Returns the plaintext exactly once via `RETURNS TABLE`. Usage: `SELECT * FROM public.mint_api_key(p_user_id => ..., p_name => 'Claude Code', p_scopes => ARRAY['admin'])`. Also includes `mcp-server/scripts/mint-admin-key.sql` as a one-paste helper.
+
+5. **Opt-in write-path smoke test.** New `mcp-server/src/smoke-write.ts` exercises create/update/re-fetch/search/DNC against a live API. Uses reserved test phone `+15555555XXX` range so it can NEVER accidentally dial real numbers. Refuses to run unless `CONFIRM=yes` env var set — muscle-memory safety. Run via `npm run smoke:write`. Closes the write-path validation gap in the main read-only smoke test.
+
+**Key files created**
+
+| File | Lines | Purpose |
+|---|---|---|
+| `supabase/migrations/20260409030000_mint_api_key_helper.sql` | 110 | `mint_api_key()` + `prune_api_key_audit_log()` |
+| `mcp-server/scripts/mint-admin-key.sql` | 30 | Copy-paste one-liner key minter |
+| `mcp-server/src/smoke-write.ts` | 175 | Write-path smoke test with CONFIRM gate |
+
+**Key files modified**
+
+| File | Change |
+|---|---|
+| `supabase/functions/api-gateway/index.ts` | Extracted `runCampaignValidation()`; wired `checkRateLimit()` into auth flow; import added |
+| `mcp-server/package.json` | Added `smoke:write` script |
+| `mcp-server/DEPLOY.md` | Step 3 now uses `mint_api_key()` function; added step 5b (write-path smoke) |
+| `CLAUDE.md` | This session log |
+
+**Database changes made**
+
+- New migration `20260409030000_mint_api_key_helper.sql` adds two SQL functions (no schema changes).
+
+**Deployment status**
+
+Not deployed. Both migrations still pending `supabase db push`. The `api-gateway` function needs redeployment to pick up the rate limit + refactor changes.
+
+**Validation**
+
+- `npm run build` — PASSES clean (tsc 0 errors)
+- `npm test` — PASSES 16/16 in 1.51s
+- `npm run smoke:write` without `CONFIRM=yes` — correctly refuses to run
+
+**Gotchas / lessons learned**
+
+- `mint_api_key()` uses `SECURITY DEFINER` so it works from the SQL Editor regardless of the caller's role, but permissions are revoked from PUBLIC and only granted to `service_role` — users can't escalate their own scopes.
+- The test phone range `+15555555XXX` is not actually reserved by the NANP as "non-dialable" for all carriers, but most providers reject 555-555-XXXX numbers. Combined with setting `do_not_call=true` at the end of the test, the lead can never be dialed through the dispatcher.
+- In-memory rate limiting means a function cold-start resets the counter. For single-user use this is acceptable — the goal is loop safety, not billing accuracy.
+- `checkRateLimit()` in `_shared/utils.ts` uses a module-level `Map`, so it's per-instance. If the edge function scales out, different instances have independent counters. For Charles's personal use this is fine.
+- The extracted `runCampaignValidation()` returns `any` for the campaign because the Supabase generated types don't cover all the selected columns cleanly. Not ideal but pragmatic; the handler just forwards `campaign.name` and `campaign.status`.
+
+---
+
 ### April 9, 2026 - MCP v0.2.0: Campaign-Operational Tools + Test Suite + CI (NOT DEPLOYED)
 
 **What was built/fixed/changed**

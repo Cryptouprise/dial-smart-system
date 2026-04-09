@@ -62,50 +62,38 @@ If you get a 401, the `--no-verify-jwt` flag was missed. Redeploy.
 
 ## 3. Mint yourself an API key
 
-The migration ships with helper functions to create keys with specific
-scopes. For personal admin use, grant the `admin` scope — it implies
-everything else.
+Migration `20260409030000_mint_api_key_helper.sql` (also applied in
+step 1) gives you a reusable `public.mint_api_key()` function. For
+personal admin use, grant the `admin` scope — it implies everything.
 
-Run this in the Supabase SQL editor:
+**Option A — open `mcp-server/scripts/mint-admin-key.sql`**, replace
+`YOUR_EMAIL@example.com` with your email, and run it in the Supabase
+SQL Editor.
+
+**Option B — run this one-liner directly** in the SQL Editor:
 
 ```sql
--- Replace <YOUR_AUTH_USER_ID> with your auth.users.id (find with:
--- select id, email from auth.users where email = 'your@email.com')
-DO $$
-DECLARE
-  v_user_id uuid := '<YOUR_AUTH_USER_ID>';
-  v_org_id uuid := (
-    select organization_id from public.organization_users
-    where user_id = v_user_id limit 1
-  );
-  v_plaintext text;
-  v_hash text;
-  v_prefix text;
-BEGIN
-  -- Generate a random key
-  v_plaintext := 'dsk_live_' || encode(gen_random_bytes(24), 'base64');
-  v_plaintext := replace(replace(replace(v_plaintext, '/', ''), '+', ''), '=', '');
-  v_plaintext := substring(v_plaintext for 41); -- dsk_live_ + 32 chars
-  v_hash := encode(digest(v_plaintext, 'sha256'), 'hex');
-  v_prefix := substring(v_plaintext for 12);
-
-  INSERT INTO public.api_keys (
-    user_id, organization_id, name, key_hash, key_prefix, scopes, rate_limit_per_minute
-  ) VALUES (
-    v_user_id, v_org_id, 'Claude Code (admin)', v_hash, v_prefix, ARRAY['admin'], 600
-  );
-
-  RAISE NOTICE '';
-  RAISE NOTICE '═══════════════════════════════════════════════════';
-  RAISE NOTICE 'YOUR API KEY (copy it now — shown ONCE):';
-  RAISE NOTICE '  %', v_plaintext;
-  RAISE NOTICE '═══════════════════════════════════════════════════';
-  RAISE NOTICE '';
-END $$;
+SELECT *
+FROM public.mint_api_key(
+  p_user_id => (SELECT id FROM auth.users WHERE email = 'YOUR_EMAIL@example.com' LIMIT 1),
+  p_name    => 'Claude Code (admin)',
+  p_scopes  => ARRAY['admin']::TEXT[]
+);
 ```
 
-Copy the `dsk_live_...` value from the NOTICE output. **This is the only
-time it will ever be shown.** Store it in your password manager.
+The result row contains a `plaintext` column — that's your key. **It
+is shown exactly once.** Copy it immediately and store it in your
+password manager.
+
+To list your active keys later (no plaintext — just metadata):
+
+```sql
+SELECT id, name, key_prefix, scopes, rate_limit_per_minute,
+       last_used_at, created_at, expires_at
+FROM public.api_keys
+WHERE revoked_at IS NULL
+ORDER BY created_at DESC;
+```
 
 ---
 
@@ -170,6 +158,41 @@ Common issues:
 | Network error on `public health check` | Function not deployed. Re-run step 2. |
 
 ---
+
+## 5b. (Optional) Validate the write path
+
+After the read-only smoke test passes, run the write-path smoke test
+ONCE to confirm create/update/search/DNC all work end-to-end. It
+creates a throwaway lead with phone `+15555555XXX` (reserved test
+range, can never actually dial), updates it, verifies the update,
+searches for it by tag, and marks it DNC for cleanup. No real calls
+are placed.
+
+```bash
+# Still in mcp-server/
+CONFIRM=yes DIALSMART_API_KEY=dsk_live_... npm run smoke:write
+```
+
+Expected output:
+
+```
+  ✔ create_lead (tagged mcp-write-smoke)     147ms
+  ✔ update_lead (set priority + notes)       112ms
+  ✔ get_lead (verify update persisted)        89ms
+  ✔ search_leads (tag = mcp-write-smoke)     134ms
+  ✔ mark_lead_dnc (cleanup)                  121ms
+  ✔ get_lead (verify DNC stuck)               91ms
+
+All 6 write-path probes passed.
+```
+
+The test lead stays in your DB as an audit record, tagged
+`mcp-write-smoke` and marked DNC. It is safe to leave it there — you
+can query it later with `SELECT * FROM leads WHERE tags @> ARRAY['mcp-write-smoke']::text[]`.
+
+**Why CONFIRM=yes?** Without the flag the script refuses to run. This
+prevents muscle-memory mistakes where you think you're running the
+read-only smoke test and accidentally create test data.
 
 ## 6. Wire into Claude Code (or any MCP client)
 

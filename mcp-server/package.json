@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "node dist/smoke.js",
+    "smoke:write": "node dist/smoke-write.js",
     "prepublishOnly": "npm run build && npm run test"
   },
   "files": [
