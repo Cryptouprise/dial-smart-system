@@ -384,6 +384,7 @@ const Dashboard = () => {
       case 'pipelines':
         return <TabErrorBoundary tabName="Pipeline"><Suspense fallback={<TabLoader />}><EnhancedPipelineKanban /></Suspense></TabErrorBoundary>;
       case 'predictive':
+      case 'dialer':
         return <TabErrorBoundary tabName="Predictive Dialing"><Suspense fallback={<TabLoader />}><PredictiveDialingDashboard /></Suspense></TabErrorBoundary>;
       case 'retell':
         return <TabErrorBoundary tabName="Retell AI"><Suspense fallback={<TabLoader />}><RetellAIManager /></Suspense></TabErrorBoundary>;
