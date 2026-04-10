@@ -2699,24 +2699,24 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 
 ---
 
-### April 10, 2026 - Telnyx Test Call Rejection Fix (Nested contact object)
+### April 10, 2026 - Telnyx Silent Outbound Test Call Fix (Direct assistant calls first)
 
 **What was built/fixed/changed**
-- Fixed the immediate Telnyx test-call failure where calls appeared to do nothing because Telnyx was rejecting `AIAssistantDynamicVariables` with: `Value for key 'contact' must be a boolean, string, or integer`.
-- Removed the nested `contact` object from the Telnyx test-call payload in `telnyx-ai-assistant` and added scalar-only sanitization so only string/number/boolean values are sent.
-- Applied the same Telnyx dynamic-variable sanitization to the Telnyx branch in `outbound-calling` so manual/campaign Telnyx calls do not fail on the same provider rule.
+- Fixed the Telnyx **test_call** path so it now uses the same working outbound strategy as the production Telnyx caller: **direct AI Assistant Calls first**, with **TeXML only as fallback**.
+- Removed the old requirement that a TeXML app must exist before a test call can even start; TeXML is now treated as a backup path instead of the primary path.
+- Added clearer result metadata so test-call responses now report whether the call used `direct_assistant_calls` or `texml_fallback`.
 
 **Key files modified**
 - `supabase/functions/telnyx-ai-assistant/index.ts`
-- `supabase/functions/outbound-calling/index.ts`
 - `CLAUDE.md`
 
 **Database changes made**
 - None.
 
 **Deployment status**
-- Edge functions updated locally and ready for redeploy in this session.
+- Edge-function code updated locally in this session.
+- Syntax sanity check passed on `supabase/functions/telnyx-ai-assistant/index.ts` after the patch.
 
 **Gotchas / lessons learned**
-- Telnyx dynamic variables for outbound assistant calls must be scalar values only; nested objects like `contact: { ... }` are rejected even when dotted keys such as `contact.first_name` are accepted.
-- When Telnyx rejects the payload at call creation time, the UI can look like “nothing happened” unless the exact provider error is surfaced from logs.
+- The inbound/callback flow can appear healthy even when the outbound **test_call** path is wrong, because they do not necessarily use the exact same Telnyx call creation endpoint.
+- In this project, the safer architecture is to keep Telnyx test calls aligned with the already-working outbound calling path: direct assistant calls first, TeXML as fallback.
