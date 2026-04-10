@@ -49,9 +49,10 @@ serve(async (req) => {
         })
       });
 
-      const updateResult = await updateResp.json();
-      console.log('Update result status:', updateResp.status);
-      console.log('New webhook_url:', updateResult.webhook_url);
+      const updateText = await updateResp.text();
+      console.log('Update result status:', updateResp.status, 'body:', updateText.substring(0, 500));
+      let updateResult: any = {};
+      try { updateResult = JSON.parse(updateText); } catch(e) { console.error('Failed to parse update response'); }
 
       return new Response(JSON.stringify({
         success: updateResp.ok,
