@@ -51,4 +51,32 @@ export const campaignTools: ToolDefinition[] = [
     },
     handler: (c, args) => c.post(`/v1/campaigns/${args.id}/pause`),
   },
+
+  {
+    name: "dialsmart_create_campaign",
+    description:
+      "Create a new campaign in draft status. Requires a name and provider. Returns the full campaign object with its UUID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Campaign name" },
+        description: { type: "string", description: "Optional description" },
+        provider: { type: "string", description: "retell | telnyx | twilio (default: retell)" },
+        agent_id: { type: "string", description: "Retell agent ID" },
+        telnyx_assistant_id: { type: "string", description: "Telnyx assistant UUID" },
+        script: { type: "string", description: "Call script text" },
+        calls_per_minute: { type: "number", description: "Pacing (default: 5)" },
+        max_attempts: { type: "number", description: "Max retry attempts (default: 3)" },
+        retry_delay_minutes: { type: "number", description: "Minutes between retries (default: 60)" },
+        calling_hours_start: { type: "string", description: "e.g. 09:00 (default)" },
+        calling_hours_end: { type: "string", description: "e.g. 21:00 (default)" },
+        timezone: { type: "string", description: "e.g. America/New_York (default)" },
+        sms_on_no_answer: { type: "boolean", description: "Send SMS on no answer" },
+        sms_template: { type: "string", description: "SMS template text" },
+        workflow_id: { type: "string", description: "Workflow UUID to attach" },
+      },
+      required: ["name"],
+    },
+    handler: (c, args) => c.post("/v1/campaigns", args),
+  },
 ];
