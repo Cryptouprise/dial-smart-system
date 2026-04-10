@@ -429,12 +429,10 @@ serve(async (req) => {
             telnyx_assistant_id: telnyxAssistant.telnyx_assistant_id,
           }).eq('id', callLog.id);
 
-          if (!telnyxAssistant.telnyx_texml_app_id) {
-            await supabaseAdmin.from('call_logs').update({
-              status: 'failed', ended_at: new Date().toISOString(),
-              notes: 'Telnyx assistant is missing a TeXML app ID',
-            }).eq('id', callLog.id);
-            throw new Error('Telnyx assistant has no TeXML app configured. Re-sync it in Telnyx AI Manager.');
+          // TeXML app ID is optional now — we fall back to direct assistant calls if missing or invalid
+          const hasTexmlApp = !!telnyxAssistant.telnyx_texml_app_id;
+          if (!hasTexmlApp) {
+            console.log('[Outbound Calling] No TeXML app ID — will use direct AI Assistant Calls endpoint');
           }
 
           let dynamicVariables: Record<string, string> = {};
