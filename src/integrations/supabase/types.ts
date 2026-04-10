@@ -868,6 +868,118 @@ export type Database = {
           },
         ]
       }
+      api_key_audit_log: {
+        Row: {
+          api_key_id: string
+          created_at: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          ip_address: string | null
+          method: string
+          path: string
+          status_code: number | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key_id: string
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          ip_address?: string | null
+          method: string
+          path: string
+          status_code?: number | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          ip_address?: string | null
+          method?: string
+          path?: string
+          status_code?: number | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_key_audit_log_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "api_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      api_keys: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          key_hash: string
+          key_prefix: string
+          last_used_at: string | null
+          last_used_ip: string | null
+          name: string
+          organization_id: string | null
+          rate_limit_per_minute: number
+          revoked_at: string | null
+          revoked_reason: string | null
+          scopes: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          key_hash: string
+          key_prefix: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          name: string
+          organization_id?: string | null
+          rate_limit_per_minute?: number
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          scopes?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          key_hash?: string
+          key_prefix?: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          name?: string
+          organization_id?: string | null
+          rate_limit_per_minute?: number
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          scopes?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       autonomous_goals: {
         Row: {
           appointments_achieved: number | null
@@ -7812,9 +7924,29 @@ export type Database = {
         Returns: number
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      mint_api_key: {
+        Args: {
+          p_expires_in?: string
+          p_name?: string
+          p_rate_limit?: number
+          p_scopes?: string[]
+          p_user_id: string
+        }
+        Returns: {
+          id: string
+          key_prefix: string
+          name: string
+          plaintext: string
+          scopes: string[]
+        }[]
+      }
       normalize_opener_text: { Args: { p_opener: string }; Returns: string }
       predict_lead_conversion: {
         Args: { p_lead_id: string; p_user_id: string }
+        Returns: number
+      }
+      prune_api_key_audit_log: {
+        Args: { p_retention_days?: number }
         Returns: number
       }
       rebalance_variant_weights: {
@@ -7882,6 +8014,10 @@ export type Database = {
         }[]
       }
       sigmoid: { Args: { x: number }; Returns: number }
+      touch_api_key: {
+        Args: { p_ip?: string; p_key_id: string }
+        Returns: undefined
+      }
       update_opener_analytics: {
         Args: {
           p_agent_id: string
