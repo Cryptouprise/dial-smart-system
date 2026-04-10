@@ -2696,3 +2696,27 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 **Gotchas / lessons learned**
 - Telnyx `default_texml_app_id` is a TeXML AI Calls app identifier, not a Call Control `connection_id`; using it with `/v2/calls` causes the exact `10015 Invalid value for connection_id` failure seen in dispatcher logs.
 - The quickest safe fix was to make campaign dispatch use the same Telnyx path already proven by the working test-call feature, rather than inventing a second outbound pattern.
+
+---
+
+### April 10, 2026 - Telnyx Test Call Rejection Fix (Nested contact object)
+
+**What was built/fixed/changed**
+- Fixed the immediate Telnyx test-call failure where calls appeared to do nothing because Telnyx was rejecting `AIAssistantDynamicVariables` with: `Value for key 'contact' must be a boolean, string, or integer`.
+- Removed the nested `contact` object from the Telnyx test-call payload in `telnyx-ai-assistant` and added scalar-only sanitization so only string/number/boolean values are sent.
+- Applied the same Telnyx dynamic-variable sanitization to the Telnyx branch in `outbound-calling` so manual/campaign Telnyx calls do not fail on the same provider rule.
+
+**Key files modified**
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `supabase/functions/outbound-calling/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge functions updated locally and ready for redeploy in this session.
+
+**Gotchas / lessons learned**
+- Telnyx dynamic variables for outbound assistant calls must be scalar values only; nested objects like `contact: { ... }` are rejected even when dotted keys such as `contact.first_name` are accepted.
+- When Telnyx rejects the payload at call creation time, the UI can look like “nothing happened” unless the exact provider error is surfaced from logs.
