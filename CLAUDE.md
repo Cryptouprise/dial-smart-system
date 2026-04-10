@@ -2720,3 +2720,27 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 **Gotchas / lessons learned**
 - The inbound/callback flow can appear healthy even when the outbound **test_call** path is wrong, because they do not necessarily use the exact same Telnyx call creation endpoint.
 - In this project, the safer architecture is to keep Telnyx test calls aligned with the already-working outbound calling path: direct assistant calls first, TeXML as fallback.
+
+### April 10, 2026 - Telnyx Tool Builder Empty Tool Fix
+
+**What was built/fixed/changed**
+- Fixed the Telnyx tool builder rendering bug where existing provider-side tools appeared as blank/empty rows in the editor even though the assistant had populated tools in the Telnyx portal.
+- Added Telnyx tool normalization in the frontend so provider-native nested tool payloads (especially `webhook` tools under `tool.webhook`) are converted into the flat editor shape before rendering.
+- Fixed the Telnyx assistant editor to keep a live local `assistantTools` state, so sync/add/edit/delete actions immediately update the visible tool list instead of staying stuck on the original prop snapshot.
+- Updated Telnyx sync to prefer fresh provider tools from `get_assistant.telnyx.tools` instead of only the stale local DB copy.
+
+**Key files modified**
+- `src/components/AgentToolBuilder.tsx`
+- `src/components/TelnyxAssistantEditor.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification still required after the patch.
+
+**Gotchas / lessons learned**
+- Telnyx tools are not consistently stored in one flat schema; webhook tools commonly arrive nested as `tool.webhook.{name,url,method}` while the editor expects flat fields.
+- Passing `assistant.tools` directly from props into the builder is not enough for an interactive editor; the tools panel needs its own local state or sync results will not visibly update.

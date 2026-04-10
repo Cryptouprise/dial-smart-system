@@ -312,6 +312,7 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
   const [loadingTelnyx, setLoadingTelnyx] = useState(true);
   const [activeTab, setActiveTab] = useState('agent');
   const [telnyxData, setTelnyxData] = useState<any>(null);
+  const [assistantTools, setAssistantTools] = useState<any[]>(assistant.tools || []);
 
   // Agent tab
   const [name, setName] = useState(assistant.name);
@@ -385,6 +386,11 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
           assistant_id: assistant.id,
         });
         setTelnyxData(data.telnyx);
+        if (data.telnyx?.tools) {
+          setAssistantTools(data.telnyx.tools);
+        } else if (data.assistant?.tools) {
+          setAssistantTools(data.assistant.tools);
+        }
         
         if (data.telnyx) {
           const t = data.telnyx;
@@ -752,10 +758,9 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               provider="telnyx"
               agentId={assistant.id}
               providerAgentId={assistant.telnyx_assistant_id || ''}
-              tools={assistant.tools || []}
+              tools={assistantTools}
               onToolsChange={(tools) => {
-                // Update the assistant object in parent via metadata or direct tool state
-                // The tool builder handles push-to-provider internally
+                setAssistantTools(tools);
               }}
             />
 

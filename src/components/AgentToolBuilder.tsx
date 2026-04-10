@@ -172,6 +172,101 @@ function normalizeRetellType(apiType: string): string {
   return apiType;
 }
 
+function normalizeTelnyxTool(tool: any): AgentTool {
+  const type = tool?.type || 'webhook';
+
+  if (type === 'webhook') {
+    const webhook = tool?.webhook || tool;
+    return {
+      id: tool?.id,
+      name: webhook?.name || tool?.name || '',
+      type: 'webhook',
+      description: webhook?.description || tool?.description || '',
+      url: webhook?.url || tool?.url || '',
+      method: webhook?.method || tool?.method || 'POST',
+      async: tool?.async || webhook?.async || false,
+      parameters: webhook?.body_parameters || tool?.body_parameters,
+    };
+  }
+
+  if (type === 'transfer' || type === 'transfer_call') {
+    const destination = Array.isArray(tool?.destinations) ? tool.destinations[0] : undefined;
+    return {
+      id: tool?.id,
+      name: tool?.name || destination?.name || '',
+      type: 'transfer_call',
+      description: tool?.description || '',
+      phone_number: tool?.number || tool?.phone_number || destination?.to || destination?.number || '',
+    };
+  }
+
+  if (type === 'hangup' || type === 'end_call') {
+    return {
+      id: tool?.id,
+      name: tool?.name || 'hangup',
+      type: 'end_call',
+      description: tool?.description || '',
+    };
+  }
+
+  if (type === 'handoff') {
+    return {
+      id: tool?.id,
+      name: tool?.name || '',
+      type: 'handoff',
+      description: tool?.description || '',
+      assistant_id: tool?.assistant_id || '',
+      voice_mode: tool?.voice_mode || 'unified',
+    };
+  }
+
+  if (type === 'dtmf') {
+    return {
+      id: tool?.id,
+      name: tool?.name || '',
+      type: 'dtmf',
+      description: tool?.description || '',
+    };
+  }
+
+  if (type === 'send_message') {
+    return {
+      id: tool?.id,
+      name: tool?.name || '',
+      type: 'send_message',
+      description: tool?.description || '',
+    };
+  }
+
+  if (type === 'retrieval') {
+    return {
+      id: tool?.id,
+      name: tool?.name || '',
+      type: 'retrieval',
+      description: tool?.description || '',
+    };
+  }
+
+  if (type === 'mcp_server') {
+    return {
+      id: tool?.id,
+      name: tool?.name || '',
+      type: 'mcp_server',
+      description: tool?.description || '',
+      url: tool?.url || '',
+    };
+  }
+
+  return {
+    id: tool?.id,
+    name: tool?.name || tool?.webhook?.name || '',
+    type,
+    description: tool?.description || tool?.webhook?.description || '',
+    url: tool?.url || tool?.webhook?.url || '',
+    method: tool?.method || tool?.webhook?.method || undefined,
+  };
+}
+
 // ────────────────────────────────────────────────────────────
 //  Tool Form Dialog
 // ────────────────────────────────────────────────────────────
@@ -596,7 +691,11 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
   const [editingIndex, setEditingIndex] = useState<number>(-1);
 
   // Annotate webhook statuses
-  const annotatedTools = tools.map(t => ({
+  const normalizedTools = provider === 'telnyx'
+    ? tools.map(normalizeTelnyxTool)
+    : tools;
+
+  const annotatedTools = normalizedTools.map(t => ({
     ...t,
     _webhookStatus: (t.type === 'webhook' || t.type === 'custom') && t.url ? validateWebhookUrl(t.url) : ('unknown' as const),
   }));
@@ -645,18 +744,8 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
           body: { action: 'get_assistant', assistant_id: agentId },
         });
         if (res.error) throw res.error;
-        const data = res.data?.assistant || res.data;
-        fetchedTools = (data?.tools || []).map((t: any) => ({
-          name: t.name || '',
-          type: t.type || 'webhook',
-          description: t.description || '',
-          url: t.url || '',
-          method: t.method || 'POST',
-          async: t.async || false,
-          phone_number: t.number || t.phone_number || '',
-          assistant_id: t.assistant_id || '',
-          voice_mode: t.voice_mode || '',
-        }));
+        const rawTools = res.data?.telnyx?.tools || res.data?.assistant?.tools || res.data?.tools || [];
+        fetchedTools = rawTools.map(normalizeTelnyxTool);
       }
 
       onToolsChange(fetchedTools);
@@ -733,21 +822,21 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
 
   // ──── CRUD handlers ────
   const handleAddTool = (tool: AgentTool) => {
-    const updated = [...tools, tool];
+    const updated = [...normalizedTools, tool];
     onToolsChange(updated);
     pushToProvider(updated);
   };
 
   const handleEditTool = (tool: AgentTool) => {
     if (editingIndex < 0) return;
-    const updated = [...tools];
+    const updated = [...normalizedTools];
     updated[editingIndex] = tool;
     onToolsChange(updated);
     pushToProvider(updated);
   };
 
   const handleDeleteTool = (index: number) => {
-    const updated = tools.filter((_, i) => i !== index);
+    const updated = normalizedTools.filter((_, i) => i !== index);
     onToolsChange(updated);
     pushToProvider(updated);
   };
