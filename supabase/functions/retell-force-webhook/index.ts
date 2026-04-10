@@ -41,11 +41,7 @@ serve(async (req) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          webhook_url: WEBHOOK_URL,
-          post_call_analysis_data: [
-            { type: "transcript", name: "transcript" },
-            { type: "custom_analysis_data", name: "call_analysis" }
-          ]
+          webhook_url: WEBHOOK_URL
         })
       });
 
