@@ -68,7 +68,7 @@ serve(async (req) => {
     if (action === 'make_test_call') {
       const { to_number, from_number } = body;
       
-      const callResp = await fetch('https://api.retellai.com/v2/create-phone-call', {
+      const callResp = await fetch('https://api.retellai.com/create-phone-call', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${RETELL_API_KEY}`,
@@ -95,7 +95,7 @@ serve(async (req) => {
     }
 
     if (action === 'check_agent') {
-      const getResp = await fetch(`https://api.retellai.com/v2/get-agent/${agent_id}`, {
+      const getResp = await fetch(`https://api.retellai.com/get-agent/${agent_id}`, {
         headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
       });
       const agent = await getResp.json();
