@@ -64,7 +64,7 @@ serve(async (req) => {
     if (action === 'make_test_call') {
       const { to_number, from_number } = body;
       
-      const callResp = await fetch('https://api.retellai.com/create-phone-call', {
+      const callResp = await fetch('https://api.retellai.com/v2/create-phone-call', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${RETELL_API_KEY}`,
