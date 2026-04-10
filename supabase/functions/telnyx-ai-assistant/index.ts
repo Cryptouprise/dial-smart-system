@@ -1808,31 +1808,6 @@ serve(async (req) => {
               day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
             });
 
-            const contactPayload = {
-              first_name: firstName,
-              firstName,
-              last_name: lastName,
-              lastName,
-              full_name: fullName,
-              fullName,
-              name: fullName,
-              email: String(leadRecord.email || customFields.email || ''),
-              phone: String(leadRecord.phone_number || normalizedTo),
-              phone_number: String(leadRecord.phone_number || normalizedTo),
-              company: String(leadRecord.company || customFields.company || ''),
-              lead_source: String(leadRecord.lead_source || customFields.lead_source || ''),
-              notes: String(leadRecord.notes || customFields.notes || ''),
-              tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
-              preferred_contact_time: String(leadRecord.preferred_contact_time || customFields.preferred_contact_time || ''),
-              timezone: tz,
-              address,
-              city,
-              state,
-              zip_code: zipCode,
-              zip: zipCode,
-              full_address: fullAddress,
-            };
-
             leadVars = {
               current_time: currentTime,
               current_time_iso: new Date().toISOString(),
@@ -1866,7 +1841,6 @@ serve(async (req) => {
               state,
               zip_code: zipCode,
               full_address: fullAddress,
-              contact: contactPayload,
               'contact.address': address,
               'contact.city': city,
               'contact.state': state,
@@ -1892,6 +1866,20 @@ serve(async (req) => {
 
         // Merge: lead DB data first, then manual overrides on top (manual wins)
         const mergedVars = { ...leadVars, ...(dynVars && typeof dynVars === 'object' ? dynVars : {}) };
+        const sanitizedMergedVars = Object.fromEntries(
+          Object.entries(mergedVars).flatMap(([key, value]) => {
+            if (value === null || value === undefined) return [[key, '']];
+            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+              return [[key, value]];
+            }
+            if (Array.isArray(value)) {
+              return [[key, value.map((item) => String(item ?? '')).join(', ')]];
+            }
+
+            console.warn(`[Telnyx AI] Dropping non-scalar dynamic variable "${key}" from test call payload`);
+            return [];
+          })
+        );
 
         // Make the outbound AI call via TeXML
         const callPayload: any = {
@@ -1901,8 +1889,8 @@ serve(async (req) => {
         };
 
         // Include merged dynamic variables
-        if (Object.keys(mergedVars).length > 0) {
-          callPayload.AIAssistantDynamicVariables = mergedVars;
+        if (Object.keys(sanitizedMergedVars).length > 0) {
+          callPayload.AIAssistantDynamicVariables = sanitizedMergedVars;
         }
 
         console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}, AIAssistantId=${testAssistant.telnyx_assistant_id}, assistant_name="${testAssistant.name}", model=${testAssistant.model}, voice=${testAssistant.voice}`);
