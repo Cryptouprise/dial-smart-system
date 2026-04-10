@@ -221,7 +221,10 @@ async function dispatch(
   if (path === "/v1/leads/search" && method === "POST") return searchLeads(rc);
 
   // ── Campaigns ───────────────────────────────────────────────────────────────
-  if (path === "/v1/campaigns" && method === "GET") return listCampaigns(rc);
+  if (path === "/v1/campaigns") {
+    if (method === "GET") return listCampaigns(rc);
+    if (method === "POST") return createCampaign(rc);
+  }
   const campMatch = path.match(
     /^\/v1\/campaigns\/([0-9a-f-]{36})(\/(launch|pause|validate|live-stats|disposition-breakdown|retry-failed|force-dispatch|dry-run|pre-launch-audit))?$/,
   );
