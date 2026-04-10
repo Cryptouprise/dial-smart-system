@@ -16,6 +16,7 @@
  *
  *   GET    /v1/campaigns              ?status
  *   GET    /v1/campaigns/:id
+ *   POST   /v1/campaigns              body: { name*, provider?, agent_id?, ... }
  *   POST   /v1/campaigns/:id/launch
  *   POST   /v1/campaigns/:id/pause
  *
@@ -221,7 +222,10 @@ async function dispatch(
   if (path === "/v1/leads/search" && method === "POST") return searchLeads(rc);
 
   // ── Campaigns ───────────────────────────────────────────────────────────────
-  if (path === "/v1/campaigns" && method === "GET") return listCampaigns(rc);
+  if (path === "/v1/campaigns") {
+    if (method === "GET") return listCampaigns(rc);
+    if (method === "POST") return createCampaign(rc);
+  }
   const campMatch = path.match(
     /^\/v1\/campaigns\/([0-9a-f-]{36})(\/(launch|pause|validate|live-stats|disposition-breakdown|retry-failed|force-dispatch|dry-run|pre-launch-audit))?$/,
   );
@@ -468,7 +472,50 @@ async function setCampaignStatus(
   return successResponse(data);
 }
 
+async function createCampaign(rc: RouteContext): Promise<Response> {
+  requireScope(rc.ctx, "campaigns:write");
+  const body = await safeJson(rc.req);
+  if (!body.name) throw new ValidationError("name is required");
+
+  const validProviders = ["retell", "telnyx", "twilio"];
+  const provider = body.provider ?? "retell";
+  if (!validProviders.includes(provider)) {
+    throw new ValidationError(`provider must be one of: ${validProviders.join(", ")}`);
+  }
+
+  const insert: Record<string, unknown> = {
+    user_id: rc.ctx.userId,
+    name: String(body.name),
+    description: body.description ?? null,
+    status: body.status ?? "draft",
+    provider,
+    agent_id: body.agent_id ?? null,
+    telnyx_assistant_id: body.telnyx_assistant_id ?? null,
+    script: body.script ?? null,
+    calls_per_minute: body.calls_per_minute ?? 5,
+    max_attempts: body.max_attempts ?? 3,
+    max_calls_per_day: body.max_calls_per_day ?? null,
+    retry_delay_minutes: body.retry_delay_minutes ?? 60,
+    calling_hours_start: body.calling_hours_start ?? "09:00",
+    calling_hours_end: body.calling_hours_end ?? "21:00",
+    timezone: body.timezone ?? "America/New_York",
+    sms_on_no_answer: body.sms_on_no_answer ?? false,
+    sms_template: body.sms_template ?? null,
+    sms_from_number: body.sms_from_number ?? null,
+    workflow_id: body.workflow_id ?? null,
+  };
+
+  const { data, error } = await rc.supabase
+    .from("campaigns")
+    .insert(insert)
+    .select(CAMPAIGN_FIELDS)
+    .single();
+  if (error) throw error;
+  return successResponse(data, 201);
+}
+
 // ─── Calls ─────────────────────────────────────────────────────────────────────
+
 
 async function listCalls(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "calls:read");
