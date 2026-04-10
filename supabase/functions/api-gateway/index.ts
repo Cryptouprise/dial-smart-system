@@ -16,6 +16,7 @@
  *
  *   GET    /v1/campaigns              ?status
  *   GET    /v1/campaigns/:id
+ *   POST   /v1/campaigns              body: { name*, provider?, agent_id?, ... }
  *   POST   /v1/campaigns/:id/launch
  *   POST   /v1/campaigns/:id/pause
  *
