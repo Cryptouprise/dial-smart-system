@@ -34,7 +34,7 @@ serve(async (req) => {
       try { currentAgent = JSON.parse(getRespText); } catch(e) { console.error('Failed to parse GET response'); }
 
       // Update the agent with webhook URL
-      const updateResp = await fetch(`https://api.retellai.com/v2/update-agent/${agent_id}`, {
+      const updateResp = await fetch(`https://api.retellai.com/update-agent/${agent_id}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${RETELL_API_KEY}`,
