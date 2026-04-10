@@ -1372,14 +1372,15 @@ serve(async (req) => {
         // contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
         const TERMINAL_DISPOSITIONS = [
           'callback_requested', 'callback', 'appointment_set', 
-          'converted', 'not_interested', 'dnc', 'do_not_call', 'failed'
+          'converted', 'not_interested', 'dnc', 'do_not_call', 'failed',
+          'transferred', 'transfer'
         ];
         
         // Dispositions that should remove lead from campaigns
         // Using valid DB outcome values only
         const CAMPAIGN_REMOVAL_DISPOSITIONS = [
           'not_interested', 'dnc', 'do_not_call', 'failed',
-          'appointment_set', 'converted'
+          'appointment_set', 'converted', 'transferred', 'transfer'
         ];
         
         if (TERMINAL_DISPOSITIONS.includes(outcome)) {
