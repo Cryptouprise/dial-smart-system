@@ -77,8 +77,10 @@ serve(async (req) => {
         })
       });
 
-      const callResult = await callResp.json();
-      console.log('Call result:', JSON.stringify(callResult));
+      const callText = await callResp.text();
+      console.log('Call result status:', callResp.status, 'body:', callText.substring(0, 500));
+      let callResult: any = {};
+      try { callResult = JSON.parse(callText); } catch(e) { return new Response(JSON.stringify({ success: false, error: callText.substring(0, 200) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
 
       return new Response(JSON.stringify({
         success: callResp.ok,
