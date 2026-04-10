@@ -429,12 +429,10 @@ serve(async (req) => {
             telnyx_assistant_id: telnyxAssistant.telnyx_assistant_id,
           }).eq('id', callLog.id);
 
-          if (!telnyxAssistant.telnyx_texml_app_id) {
-            await supabaseAdmin.from('call_logs').update({
-              status: 'failed', ended_at: new Date().toISOString(),
-              notes: 'Telnyx assistant is missing a TeXML app ID',
-            }).eq('id', callLog.id);
-            throw new Error('Telnyx assistant has no TeXML app configured. Re-sync it in Telnyx AI Manager.');
+          // TeXML app ID is optional now — we fall back to direct assistant calls if missing or invalid
+          const hasTexmlApp = !!telnyxAssistant.telnyx_texml_app_id;
+          if (!hasTexmlApp) {
+            console.log('[Outbound Calling] No TeXML app ID — will use direct AI Assistant Calls endpoint');
           }
 
           let dynamicVariables: Record<string, string> = {};
@@ -604,10 +602,6 @@ serve(async (req) => {
             }
           }
 
-          // ================================================================
-          // TELNYX OUTBOUND CALL: Try TeXML AI Calls first, fall back to
-          // direct AI Assistant Calls endpoint if TeXML app is invalid.
-          // ================================================================
           const telnyxCallPayload: Record<string, unknown> = {
             From: callerId,
             To: finalPhone,
@@ -618,13 +612,13 @@ serve(async (req) => {
             telnyxCallPayload.AIAssistantDynamicVariables = dynamicVariables;
           }
 
-          let telnyxRes: Response | null = null;
-          let usedEndpoint = 'texml';
+          let telnyxCallData: any;
+          let usedFallback = false;
 
-          // Strategy 1: TeXML AI Calls (requires valid TeXML app with webhook)
-          if (telnyxAssistant.telnyx_texml_app_id) {
-            console.log('[Outbound Calling] Trying TeXML AI Calls endpoint with app:', telnyxAssistant.telnyx_texml_app_id);
-            telnyxRes = await fetch(`https://api.telnyx.com/v2/texml/ai_calls/${telnyxAssistant.telnyx_texml_app_id}`, {
+          // --- Attempt 1: TeXML AI Calls endpoint (if TeXML app ID is available) ---
+          if (hasTexmlApp) {
+            console.log('[Outbound Calling] Trying TeXML AI Calls endpoint...');
+            const telnyxRes = await fetch(`https://api.telnyx.com/v2/texml/ai_calls/${telnyxAssistant.telnyx_texml_app_id}`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${telnyxApiKey}`,
@@ -633,77 +627,77 @@ serve(async (req) => {
               body: JSON.stringify(telnyxCallPayload),
             });
 
-            if (!telnyxRes.ok) {
+            if (telnyxRes.ok) {
+              telnyxCallData = await telnyxRes.json();
+            } else {
               const errText = await telnyxRes.text();
-              const is10015 = errText.includes('10015') || errText.includes('connection_id');
+              const is10015 = errText.includes('10015') || errText.includes('connection_id') || errText.includes('Call Control App');
+              console.warn(`[Outbound Calling] TeXML endpoint failed (${telnyxRes.status}): ${errText}`);
+
               if (is10015) {
-                console.warn('[Outbound Calling] TeXML app invalid (10015), falling back to AI Assistant Calls endpoint');
-                telnyxRes = null; // trigger fallback
+                console.log('[Outbound Calling] Error 10015 detected — falling back to direct AI Assistant Calls endpoint');
               } else {
-                await supabaseAdmin.from('call_logs').update({
-                  status: 'failed', ended_at: new Date().toISOString(),
-                  notes: `Telnyx API error: ${errText}`,
-                }).eq('id', callLog.id);
-                throw new Error(`Telnyx API error: ${errText}`);
+                // Non-10015 error — still try fallback
+                console.log('[Outbound Calling] Non-10015 error — attempting direct AI Assistant Calls fallback');
               }
             }
           }
 
-          // Strategy 2: Direct AI Assistant Calls endpoint (no TeXML app needed)
-          if (!telnyxRes || !telnyxRes.ok) {
-            console.log('[Outbound Calling] Using AI Assistant Calls endpoint for assistant:', telnyxAssistant.telnyx_assistant_id);
-            usedEndpoint = 'ai_assistant';
+          // --- Attempt 2: Direct AI Assistant Calls endpoint (fallback) ---
+          if (!telnyxCallData) {
+            usedFallback = true;
+            console.log('[Outbound Calling] Using direct AI Assistant Calls endpoint: POST /v2/ai/assistants/{id}/calls');
 
-            const aiCallPayload: Record<string, unknown> = {
-              telnyx_agent_target: callerId,
-              telnyx_end_user_target: finalPhone,
-              telnyx_conversation_channel: 'phone_call',
+            const directPayload: Record<string, unknown> = {
+              assistant_id: telnyxAssistant.telnyx_assistant_id,
+              from: callerId,
+              to: finalPhone,
             };
 
             if (Object.keys(dynamicVariables).length > 0) {
-              aiCallPayload.dynamic_variables = dynamicVariables;
+              directPayload.dynamic_variables = dynamicVariables;
             }
 
-            telnyxRes = await fetch(`https://api.telnyx.com/v2/ai/assistants/${telnyxAssistant.telnyx_assistant_id}/calls`, {
+            const directRes = await fetch(`https://api.telnyx.com/v2/ai/assistants/${telnyxAssistant.telnyx_assistant_id}/calls`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${telnyxApiKey}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify(aiCallPayload),
+              body: JSON.stringify(directPayload),
             });
 
-            if (!telnyxRes.ok) {
-              const errText = await telnyxRes.text();
+            if (!directRes.ok) {
+              const errText = await directRes.text();
               await supabaseAdmin.from('call_logs').update({
                 status: 'failed', ended_at: new Date().toISOString(),
-                notes: `Telnyx AI Assistant call error: ${errText}`,
+                notes: `Telnyx API error (direct assistant calls): ${errText}`,
               }).eq('id', callLog.id);
-              throw new Error(`Telnyx AI Assistant call error: ${errText}`);
+              throw new Error(`Telnyx API error (direct assistant calls): ${errText}`);
             }
+
+            telnyxCallData = await directRes.json();
           }
 
-          const telnyxCallData = await telnyxRes.json();
-          const tCallData = telnyxCallData.data || telnyxCallData;
+          const tCallData = telnyxCallData.data;
 
-          const callControlId = tCallData.call_control_id || tCallData.call_sid || tCallData.sid || tCallData.id;
-          console.log(`[Outbound Calling] Telnyx call initiated via ${usedEndpoint}:`, callControlId);
+          console.log(`[Outbound Calling] Telnyx call initiated${usedFallback ? ' (via direct fallback)' : ' (via TeXML)'}: ${tCallData.call_control_id || tCallData.call_sid || tCallData.sid}`);
 
           // Update call log with Telnyx IDs
           await supabaseAdmin.from('call_logs').update({
             lead_id: resolvedLeadId || callLog.lead_id,
-            telnyx_call_control_id: callControlId || null,
+            telnyx_call_control_id: tCallData.call_control_id || null,
             telnyx_call_session_id: tCallData.call_session_id || null,
             status: 'ringing',
           }).eq('id', callLog.id);
 
           result = {
-            call_id: callControlId,
+            call_id: tCallData.call_control_id || tCallData.call_sid || tCallData.sid,
             call_log_id: callLog.id,
             status: 'created',
             provider: 'telnyx',
             assistant_name: telnyxAssistant.name,
-            endpoint_used: usedEndpoint,
+            used_fallback: usedFallback,
           };
           break;
         }

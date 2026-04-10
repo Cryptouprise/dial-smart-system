@@ -21,6 +21,9 @@ The full Telnyx Expert Reference V4 is stored at `docs/TELNYX_EXPERT_REFERENCE.m
 - MiniMax: `Minimax.speech-2.6-turbo.[voice_name]`
 - ResembleAI: `Resemble.Pro.[voice_name]`
 
+### ⚠️ CRITICAL: Silent Voice Warning
+**Voice model 'astra' is SILENT** — it produces NO audio on calls. NEVER use `Telnyx.NaturalHD.astra` or any voice containing 'astra'. Use KokoroTTS (af_heart, af_bella, am_adam) or NaturalHD (andersen_johan, Estelle) instead.
+
 ### Voice Selection Priority
 - Speed first → KokoroTTS (included, lowest latency)
 - Balance → NaturalHD (included, very good quality)
@@ -28,12 +31,28 @@ The full Telnyx Expert Reference V4 is stored at `docs/TELNYX_EXPERT_REFERENCE.m
 - Multilingual → Azure Neural (add-on)
 - Cost optimize → AWS Polly (add-on)
 
+### Outbound Calling Methods (3 Methods)
+1. **TeXML AI Calls** (Primary): `POST /v2/texml/ai_calls/{texml_app_id}` — requires TeXML app ID, sends `AIAssistantId` + `AIAssistantDynamicVariables`
+2. **Call Control + AI Assistant Start** (Two-step): Create call via Call Control, then start AI assistant on it
+3. **Direct AI Assistant Calls** (Fallback): `POST /v2/ai/assistants/{assistant_id}/calls` — uses assistant_id directly, sends `from`, `to`, `dynamic_variables`. No TeXML app ID needed.
+
+**Our Implementation**: Uses Method 1 (TeXML) as primary, with automatic fallback to Method 3 (Direct) when error 10015 (invalid connection_id/TeXML app ID) is detected.
+
 ### Webhook Events
 - Call lifecycle: call.initiated, call.answered, call.bridged, call.hangup
 - AMD: call.machine.detection.ended (result: human/machine/not_sure)
 - AI: ai_assistant.conversation_ended, ai_assistant.tool.invoked, ai_assistant.insights.ready, ai_assistant.transfer.initiated
 - Auth: Ed25519 signatures via telnyx-signature-ed25519 header
 - Always return 200 OK immediately, process async. Events may be delivered more than once — deduplicate by event ID.
+
+### Async Tools & Add Messages API (Mid-Call Context Injection)
+- **Async webhooks**: Set `async: true` on webhook tools → assistant keeps talking while backend processes
+- **Add Messages API**: `POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages` → inject context mid-call
+- Backend receives `x-telnyx-call-control-id` header to identify call for result injection
+- Message roles: `system` (recommended for results), `user`, `assistant`
+- No timeout — backend can take 5s-5min, inject when ready
+- Multiple parallel lookups supported (staggered results drip naturally)
+- Use cases: CRM lookup during qualifying, calendar check while chatting, supervisor intervention, transfer context injection
 
 ### Key Telnyx Differentiators
 - Only platform owning entire stack (AI model to phone line)
@@ -52,14 +71,10 @@ The full Telnyx Expert Reference V4 is stored at `docs/TELNYX_EXPERT_REFERENCE.m
 ### At Scale (10K min/mo)
 Telnyx saves $500-$2,100/month vs every competitor = $6,000-$25,200/year per client.
 
-### Async Tools & Add Messages API (Mid-Call Context Injection)
-- **Async webhooks**: Set `async: true` on webhook tools → assistant keeps talking while backend processes
-- **Add Messages API**: `POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages` → inject context mid-call
-- Backend receives `x-telnyx-call-control-id` header to identify call for result injection
-- Message roles: `system` (recommended for results), `user`, `assistant`
-- No timeout — backend can take 5s-5min, inject when ready
-- Multiple parallel lookups supported (staggered results drip naturally)
-- Use cases: CRM lookup during qualifying, calendar check while chatting, supervisor intervention, transfer context injection
+### Known Error Codes & Fixes
+- **Error 10015** ("Invalid value for connection_id"): TeXML app ID is invalid or expired. Fix: use direct AI Assistant Calls endpoint as fallback.
+- **Silent calls**: Usually caused by 'astra' voice model or missing TTS configuration. Fix: switch to KokoroTTS or NaturalHD voice.
+- **No greeting**: Assistant's `greeting` field is empty. Fix: set a greeting message in assistant config.
 
 ### Developer Portal Doc Index
 - Assistant docs: Voice, Memory, Dynamic Vars, Workflow, Async Tools, Agent Handoff, AMD on Transfer, Transcription, Integrations, Testing/Traffic Distribution, Importing, Custom LLMs

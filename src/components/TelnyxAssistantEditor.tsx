@@ -800,14 +800,27 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
               <div className="space-y-2 md:col-span-2">
                 <Label>Voice</Label>
                 <div className="flex gap-2">
-                  <Select value={voice} onValueChange={setVoice}>
+                  <Select value={voice} onValueChange={(v) => {
+                    if (v.toLowerCase().includes('astra')) {
+                      toast({
+                        title: '⚠️ Voice "astra" is SILENT',
+                        description: 'The astra voice model produces no audio. Choose KokoroTTS or NaturalHD instead.',
+                        variant: 'destructive',
+                      });
+                      return;
+                    }
+                    setVoice(v);
+                  }}>
                     <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {filteredVoiceOptions.map(v => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.name} ({v.provider}, {v.gender})
-                        </SelectItem>
-                      ))}
+                      {filteredVoiceOptions.map(v => {
+                        const isAstra = v.id.toLowerCase().includes('astra');
+                        return (
+                          <SelectItem key={v.id} value={v.id} disabled={isAstra}>
+                            {v.name} ({v.provider}, {v.gender}){isAstra ? ' ⚠️ SILENT' : ''}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   <Button
