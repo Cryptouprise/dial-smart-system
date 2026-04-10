@@ -1596,11 +1596,11 @@ serve(async (req) => {
           diagnosticWarnings.push('❌ No STT/transcription configured — the AI cannot hear the caller. Enable transcription in Voice or Advanced settings.');
         }
 
-        // Check telephony / TeXML app
+        // Check telephony / TeXML app (fallback only — direct assistant calls are primary)
         const telephonySettings = assistantConfig?.telephony_settings;
         const texmlId = telephonySettings?.default_texml_app_id || testAssistant.telnyx_texml_app_id;
         if (!texmlId) {
-          throw new Error('No TeXML app found for this assistant. Ensure telephony is enabled in the Telnyx portal.');
+          diagnosticWarnings.push('⚠️ No TeXML app found — direct assistant calls can still work, but TeXML fallback is unavailable if the primary endpoint fails.');
         }
 
         // Check model
@@ -1881,30 +1881,64 @@ serve(async (req) => {
           })
         );
 
-        // Make the outbound AI call via TeXML
-        const callPayload: any = {
+        const directPayload: Record<string, unknown> = {
+          assistant_id: testAssistant.telnyx_assistant_id,
+          from: formattedFrom,
+          to: formattedTo,
+        };
+
+        if (Object.keys(sanitizedMergedVars).length > 0) {
+          directPayload.dynamic_variables = sanitizedMergedVars;
+        }
+
+        const texmlPayload: Record<string, unknown> = {
           From: formattedFrom,
           To: formattedTo,
           AIAssistantId: testAssistant.telnyx_assistant_id,
         };
 
-        // Include merged dynamic variables
         if (Object.keys(sanitizedMergedVars).length > 0) {
-          callPayload.AIAssistantDynamicVariables = sanitizedMergedVars;
+          texmlPayload.AIAssistantDynamicVariables = sanitizedMergedVars;
         }
 
-        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} via TeXML ${finalTexmlId}, AIAssistantId=${testAssistant.telnyx_assistant_id}, assistant_name="${testAssistant.name}", model=${testAssistant.model}, voice=${testAssistant.voice}`);
+        let callData: any = null;
+        let endpointUsed: 'direct_assistant_calls' | 'texml_fallback' | null = null;
 
-        const callRes = await telnyxFetch(
-          `/texml/ai_calls/${finalTexmlId}`,
-          apiKey!, 'POST', callPayload
+        console.log(`[Telnyx AI] Test call: ${formattedFrom} → ${formattedTo} using direct AI Assistant Calls endpoint first, assistant_name="${testAssistant.name}", model=${testAssistant.model}, voice=${testAssistant.voice}`);
+
+        const directRes = await telnyxFetch(
+          `/ai/assistants/${testAssistant.telnyx_assistant_id}/calls`,
+          apiKey!,
+          'POST',
+          directPayload
         );
 
-        if (!callRes.ok) {
-          throw new Error(`Test call failed: ${callRes.error || JSON.stringify(callRes.data)}`);
+        if (directRes.ok) {
+          callData = directRes.data?.data || directRes.data;
+          endpointUsed = 'direct_assistant_calls';
+        } else {
+          console.warn(`[Telnyx AI] Direct AI Assistant Calls endpoint failed (${directRes.status}): ${directRes.error || JSON.stringify(directRes.data)}`);
+
+          if (finalTexmlId) {
+            console.log(`[Telnyx AI] Test call: falling back to TeXML ${finalTexmlId}`);
+            const texmlRes = await telnyxFetch(
+              `/texml/ai_calls/${finalTexmlId}`,
+              apiKey!,
+              'POST',
+              texmlPayload
+            );
+
+            if (!texmlRes.ok) {
+              throw new Error(`Test call failed on both endpoints. Direct: ${directRes.error || JSON.stringify(directRes.data)} | TeXML: ${texmlRes.error || JSON.stringify(texmlRes.data)}`);
+            }
+
+            callData = texmlRes.data?.data || texmlRes.data;
+            endpointUsed = 'texml_fallback';
+          } else {
+            throw new Error(`Test call failed on direct assistant calls endpoint and no TeXML fallback is configured: ${directRes.error || JSON.stringify(directRes.data)}`);
+          }
         }
 
-        const callData = callRes.data?.data || callRes.data;
         const hasLeadData = Object.keys(leadVars).length > 0;
         result = {
           success: true,
@@ -1913,16 +1947,19 @@ serve(async (req) => {
           from: formattedFrom,
           to: formattedTo,
           assistant: testAssistant.name,
+          endpoint_used: endpointUsed,
+          used_fallback: endpointUsed === 'texml_fallback',
           lead_found: hasLeadData,
           variables_injected: Object.keys(mergedVars).length,
           message: hasLeadData
-            ? `Test call initiated! Found lead "${mergedVars.full_name || mergedVars.first_name}" — injecting ${Object.keys(mergedVars).length} variables. Your phone should ring shortly.`
-            : `Test call initiated! No lead found for ${formattedTo} — using manual variables only. Your phone should ring shortly.`,
+            ? `Test call initiated! Found lead "${mergedVars.full_name || mergedVars.first_name}" — injecting ${Object.keys(mergedVars).length} variables via ${endpointUsed === 'texml_fallback' ? 'TeXML fallback' : 'direct assistant calls'}. Your phone should ring shortly.`
+            : `Test call initiated! No lead found for ${formattedTo} — using manual variables only via ${endpointUsed === 'texml_fallback' ? 'TeXML fallback' : 'direct assistant calls'}. Your phone should ring shortly.`,
           warnings: diagnosticWarnings.length > 0 ? diagnosticWarnings : undefined,
           assistant_config_snapshot: {
             voice: voiceSettings?.voice || null,
             transcription_provider: transcription?.provider || null,
             model: assistantConfig?.model || null,
+            texml_app_id: texmlId || null,
           },
         };
         break;
