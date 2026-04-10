@@ -25,12 +25,13 @@ serve(async (req) => {
 
     if (action === 'update_webhook') {
       // First GET the agent to see current config
-      const getResp = await fetch(`https://api.retellai.com/v2/get-agent/${agent_id}`, {
+      const getResp = await fetch(`https://api.retellai.com/get-agent/${agent_id}`, {
         headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
       });
-      const currentAgent = await getResp.json();
-      console.log('Current agent webhook_url:', currentAgent.webhook_url);
-      console.log('Current agent post_call_analysis_data:', currentAgent.post_call_analysis_data);
+      const getRespText = await getResp.text();
+      console.log('GET agent status:', getResp.status, 'body:', getRespText.substring(0, 500));
+      let currentAgent: any = {};
+      try { currentAgent = JSON.parse(getRespText); } catch(e) { console.error('Failed to parse GET response'); }
 
       // Update the agent with webhook URL
       const updateResp = await fetch(`https://api.retellai.com/v2/update-agent/${agent_id}`, {
