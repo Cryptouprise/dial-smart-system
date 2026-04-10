@@ -511,6 +511,30 @@ See `WHITE_LABEL_SYSTEM.md` for:
 **Audit Confidence**: Very High (comprehensive codebase analysis)
 **Credit System Version**: 3.0.0 (Agent-Specific Pricing)
 
+### April 10, 2026 - Telnyx Contact Variable Address Fallback + Nested Contact Payload
+
+**What was built/fixed/changed**
+- Fixed Telnyx dynamic variable building so lead personalization now falls back to `custom_fields` when base lead columns are blank for key contact data.
+- Added a real nested `contact` object to Telnyx variable payloads in all active TeXML paths, so prompts/tools that reference contact-scoped fields can read address data correctly.
+- Address fields now resolve from either standard lead columns or custom-field aliases like `address`, `street_address`, `street`, `zip`, and `postal_code`.
+
+**Key files modified**
+- `supabase/functions/telnyx-dynamic-vars/index.ts`
+- `supabase/functions/outbound-calling/index.ts`
+- `supabase/functions/telnyx-ai-assistant/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge-function code updated locally.
+- Frontend build verified clean with `npm run build` before the patch; Telnyx runtime retest still required against a live call.
+
+**Gotchas / lessons learned**
+- Telnyx variable consumers may expect a nested `contact` object, not only flat keys like `contact.address`.
+- Some imported leads store address/name data only in `custom_fields`, so relying on base lead columns alone drops personalization even when the data exists.
+
 ## Recent Fixes Log
 
 ### March 29, 2026 - Predictive ML Functions for Autonomous Engine (NOT DEPLOYED)

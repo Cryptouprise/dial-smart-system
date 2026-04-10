@@ -141,16 +141,54 @@ serve(async (req) => {
     }
 
     if (lead) {
-      const firstName = String(lead.first_name || '');
-      const lastName = String(lead.last_name || '');
-      const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-      const tz = lead.timezone || defaultTz;
+      const customFields = (lead.custom_fields && typeof lead.custom_fields === 'object')
+        ? (lead.custom_fields as Record<string, unknown>)
+        : {};
+      const firstName = String(lead.first_name || customFields.first_name || customFields.firstname || customFields.contact_first_name || '').trim();
+      const lastName = String(lead.last_name || customFields.last_name || customFields.lastname || customFields.contact_last_name || '').trim();
+      const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+      const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+      const email = String(lead.email || customFields.email || '').trim();
+      const phone = String(lead.phone_number || normalizedPhone).trim();
+      const company = String(lead.company || customFields.company || '').trim();
+      const leadSource = String(lead.lead_source || customFields.lead_source || customFields.source || '').trim();
+      const notes = String(lead.notes || customFields.notes || '').trim();
+      const tags = Array.isArray(lead.tags) ? lead.tags.join(', ') : '';
+      const preferredContactTime = String(lead.preferred_contact_time || customFields.preferred_contact_time || '').trim();
+      const address = String(lead.address || customFields.address || customFields.street_address || customFields.street || '').trim();
+      const city = String(lead.city || customFields.city || '').trim();
+      const state = String(lead.state || customFields.state || '').trim();
+      const zipCode = String(lead.zip_code || customFields.zip_code || customFields.zip || customFields.postal_code || '').trim();
+      const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+      const tz = String(lead.timezone || customFields.timezone || defaultTz).trim() || defaultTz;
 
       // Recalculate time in lead's timezone
       const currentTime = new Date().toLocaleString('en-US', {
         timeZone: tz, weekday: 'long', year: 'numeric', month: 'long',
         day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
       });
+
+      const contact = {
+        first_name: firstName,
+        last_name: lastName,
+        full_name: fullName,
+        name: fullName,
+        email,
+        phone,
+        phone_number: phone,
+        company,
+        lead_source: leadSource,
+        notes,
+        tags,
+        preferred_contact_time: preferredContactTime,
+        timezone: tz,
+        address,
+        city,
+        state,
+        zip_code: zipCode,
+        zip: zipCode,
+        full_address: fullAddress,
+      };
 
       response.dynamic_variables = {
         // Time
@@ -165,22 +203,26 @@ serve(async (req) => {
         last_name: lastName,
         full_name: fullName,
         name: fullName,
-        email: String(lead.email || ''),
-        phone: String(lead.phone_number || normalizedPhone),
-        phone_number: String(lead.phone_number || normalizedPhone),
-        company: String(lead.company || ''),
-        lead_source: String(lead.lead_source || ''),
-        notes: String(lead.notes || ''),
-        tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
-        preferred_contact_time: String(lead.preferred_contact_time || ''),
+        email,
+        phone,
+        phone_number: phone,
+        company,
+        lead_source: leadSource,
+        notes,
+        tags,
+        preferred_contact_time: preferredContactTime,
         timezone: tz,
 
         // Address
-        address: String(lead.address || ''),
-        city: String(lead.city || ''),
-        state: String(lead.state || ''),
-        zip_code: String(lead.zip_code || ''),
-        full_address: [lead.address, lead.city, lead.state, lead.zip_code].filter(Boolean).join(', '),
+        address,
+        city,
+        state,
+        zip_code: zipCode,
+        zip: zipCode,
+        full_address: fullAddress,
+
+        // Nested contact object for templates that expect contact.address, contact.first_name, etc.
+        contact,
 
         // System
         lead_id: lead.id,

@@ -467,22 +467,47 @@ serve(async (req) => {
           }
 
           if (lead) {
-            const firstName = String(lead.first_name || '');
-            const lastName = String(lead.last_name || '');
-            const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-            const email = String(lead.email || '');
-            const phone = String(lead.phone_number || finalPhone || '');
-            const company = String(lead.company || '');
-            const leadSource = String(lead.lead_source || '');
-            const notes = String(lead.notes || '');
+            const customFields = (lead.custom_fields && typeof lead.custom_fields === 'object')
+              ? (lead.custom_fields as Record<string, unknown>)
+              : {};
+            const firstName = String(lead.first_name || customFields.first_name || customFields.firstname || customFields.contact_first_name || '').trim();
+            const lastName = String(lead.last_name || customFields.last_name || customFields.lastname || customFields.contact_last_name || '').trim();
+            const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+            const email = String(lead.email || customFields.email || '').trim();
+            const phone = String(lead.phone_number || finalPhone || '').trim();
+            const company = String(lead.company || customFields.company || '').trim();
+            const leadSource = String(lead.lead_source || customFields.lead_source || customFields.source || '').trim();
+            const notes = String(lead.notes || customFields.notes || '').trim();
             const tags = Array.isArray(lead.tags) ? lead.tags.join(', ') : '';
-            const preferredContactTime = String(lead.preferred_contact_time || '');
-            const timezone = String(lead.timezone || 'America/New_York');
-            const address = String(lead.address || '');
-            const city = String(lead.city || '');
-            const state = String(lead.state || '');
-            const zipCode = String(lead.zip_code || '');
+            const preferredContactTime = String(lead.preferred_contact_time || customFields.preferred_contact_time || '').trim();
+            const timezone = String(lead.timezone || customFields.timezone || 'America/New_York').trim() || 'America/New_York';
+            const address = String(lead.address || customFields.address || customFields.street_address || customFields.street || '').trim();
+            const city = String(lead.city || customFields.city || '').trim();
+            const state = String(lead.state || customFields.state || '').trim();
+            const zipCode = String(lead.zip_code || customFields.zip_code || customFields.zip || customFields.postal_code || '').trim();
             const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+            const contactPayload = {
+              first_name: firstName,
+              last_name: lastName,
+              full_name: fullName,
+              name: fullName,
+              email,
+              phone,
+              phone_number: phone,
+              company,
+              lead_source: leadSource,
+              notes,
+              tags,
+              preferred_contact_time: preferredContactTime,
+              timezone,
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              zip: zipCode,
+              full_address: fullAddress,
+            };
 
             const currentTimeFormatted = new Date().toLocaleString('en-US', {
               timeZone: timezone,
@@ -517,6 +542,7 @@ serve(async (req) => {
               state,
               zip_code: zipCode,
               full_address: fullAddress,
+              contact: contactPayload,
               'contact.first_name': firstName,
               'contact.last_name': lastName,
               'contact.full_name': fullName,
@@ -734,24 +760,57 @@ serve(async (req) => {
         }
         
         if (lead) {
-          const firstName = String(lead.first_name || '');
-          const lastName = String(lead.last_name || '');
-          const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'there';
-          const email = String(lead.email || '');
-          const phone = String(lead.phone_number || finalPhone || '');
-          const company = String(lead.company || '');
-          const leadSource = String(lead.lead_source || '');
-          const notes = String(lead.notes || '');
+            const customFields = (lead.custom_fields && typeof lead.custom_fields === 'object')
+              ? (lead.custom_fields as Record<string, unknown>)
+              : {};
+            const firstName = String(lead.first_name || customFields.first_name || customFields.firstname || customFields.contact_first_name || '').trim();
+            const lastName = String(lead.last_name || customFields.last_name || customFields.lastname || customFields.contact_last_name || '').trim();
+            const fallbackFullName = String(customFields.full_name || customFields.name || '').trim();
+            const fullName = [firstName, lastName].filter(Boolean).join(' ') || fallbackFullName || 'there';
+            const email = String(lead.email || customFields.email || '').trim();
+            const phone = String(lead.phone_number || finalPhone || '').trim();
+            const company = String(lead.company || customFields.company || '').trim();
+            const leadSource = String(lead.lead_source || customFields.lead_source || customFields.source || '').trim();
+            const notes = String(lead.notes || customFields.notes || '').trim();
           const tags = Array.isArray(lead.tags) ? lead.tags.join(', ') : '';
-          const preferredContactTime = String(lead.preferred_contact_time || '');
-          const timezone = String(lead.timezone || 'America/New_York');
+            const preferredContactTime = String(lead.preferred_contact_time || customFields.preferred_contact_time || '').trim();
+            const timezone = String(lead.timezone || customFields.timezone || 'America/New_York').trim() || 'America/New_York';
           
           // Address fields
-          const address = String(lead.address || '');
-          const city = String(lead.city || '');
-          const state = String(lead.state || '');
-          const zipCode = String(lead.zip_code || '');
+            const address = String(lead.address || customFields.address || customFields.street_address || customFields.street || '').trim();
+            const city = String(lead.city || customFields.city || '').trim();
+            const state = String(lead.state || customFields.state || '').trim();
+            const zipCode = String(lead.zip_code || customFields.zip_code || customFields.zip || customFields.postal_code || '').trim();
           const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
+            const contactPayload = {
+              first_name: firstName,
+              firstName,
+              last_name: lastName,
+              lastName,
+              full_name: fullName,
+              fullName,
+              name: fullName,
+              email,
+              phone,
+              phoneNumber: phone,
+              phone_number: phone,
+              company,
+              companyName: company,
+              source: leadSource,
+              leadSource,
+              lead_source: leadSource,
+              timezone,
+              notes,
+              tags,
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              zipCode,
+              zip: zipCode,
+              full_address: fullAddress,
+              fullAddress,
+            };
 
           // Generate current time in user's timezone for agent awareness
           const currentTimeFormatted = new Date().toLocaleString('en-US', {
@@ -800,6 +859,7 @@ serve(async (req) => {
             zip: zipCode,
             full_address: fullAddress,
             fullAddress: fullAddress,
+            contact: contactPayload,
 
             // GoHighLevel-style contact.* variables
             'contact.first_name': firstName,

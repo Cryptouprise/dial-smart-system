@@ -1808,6 +1808,31 @@ serve(async (req) => {
               day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
             });
 
+            const contactPayload = {
+              first_name: firstName,
+              firstName,
+              last_name: lastName,
+              lastName,
+              full_name: fullName,
+              fullName,
+              name: fullName,
+              email: String(leadRecord.email || customFields.email || ''),
+              phone: String(leadRecord.phone_number || normalizedTo),
+              phone_number: String(leadRecord.phone_number || normalizedTo),
+              company: String(leadRecord.company || customFields.company || ''),
+              lead_source: String(leadRecord.lead_source || customFields.lead_source || ''),
+              notes: String(leadRecord.notes || customFields.notes || ''),
+              tags: Array.isArray(leadRecord.tags) ? (leadRecord.tags as string[]).join(', ') : '',
+              preferred_contact_time: String(leadRecord.preferred_contact_time || customFields.preferred_contact_time || ''),
+              timezone: tz,
+              address,
+              city,
+              state,
+              zip_code: zipCode,
+              zip: zipCode,
+              full_address: fullAddress,
+            };
+
             leadVars = {
               current_time: currentTime,
               current_time_iso: new Date().toISOString(),
@@ -1841,6 +1866,7 @@ serve(async (req) => {
               state,
               zip_code: zipCode,
               full_address: fullAddress,
+              contact: contactPayload,
               'contact.address': address,
               'contact.city': city,
               'contact.state': state,
