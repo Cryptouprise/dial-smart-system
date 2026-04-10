@@ -89,6 +89,26 @@ async function logError(
   }
 }
 
+function sanitizeTelnyxDynamicVariables(
+  variables: Record<string, unknown>,
+  context: string,
+): Record<string, string | number | boolean> {
+  return Object.fromEntries(
+    Object.entries(variables).flatMap(([key, value]) => {
+      if (value === null || value === undefined) return [[key, '']];
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return [[key, value]];
+      }
+      if (Array.isArray(value)) {
+        return [[key, value.map((item) => String(item ?? '')).join(', ')]];
+      }
+
+      console.warn(`[${context}] Dropping non-scalar Telnyx dynamic variable "${key}"`);
+      return [];
+    }),
+  );
+}
+
 interface OutboundCallRequest {
   action: 'create_call' | 'get_call_status' | 'end_call' | 'health_check';
   campaignId?: string;
@@ -435,7 +455,7 @@ serve(async (req) => {
             console.log('[Outbound Calling] No TeXML app ID — will use direct AI Assistant Calls endpoint');
           }
 
-          let dynamicVariables: Record<string, string> = {};
+          let dynamicVariables: Record<string, unknown> = {};
           let resolvedLeadId = leadId;
           let lead = null;
 
@@ -485,28 +505,6 @@ serve(async (req) => {
             const state = String(lead.state || customFields.state || '').trim();
             const zipCode = String(lead.zip_code || customFields.zip_code || customFields.zip || customFields.postal_code || '').trim();
             const fullAddress = [address, city, state, zipCode].filter(Boolean).join(', ');
-            const contactPayload = {
-              first_name: firstName,
-              last_name: lastName,
-              full_name: fullName,
-              name: fullName,
-              email,
-              phone,
-              phone_number: phone,
-              company,
-              lead_source: leadSource,
-              notes,
-              tags,
-              preferred_contact_time: preferredContactTime,
-              timezone,
-              address,
-              city,
-              state,
-              zip_code: zipCode,
-              zip: zipCode,
-              full_address: fullAddress,
-            };
-
             const currentTimeFormatted = new Date().toLocaleString('en-US', {
               timeZone: timezone,
               weekday: 'long',
@@ -540,7 +538,6 @@ serve(async (req) => {
               state,
               zip_code: zipCode,
               full_address: fullAddress,
-              contact: contactPayload,
               'contact.first_name': firstName,
               'contact.last_name': lastName,
               'contact.full_name': fullName,
@@ -608,8 +605,10 @@ serve(async (req) => {
             AIAssistantId: telnyxAssistant.telnyx_assistant_id,
           };
 
-          if (Object.keys(dynamicVariables).length > 0) {
-            telnyxCallPayload.AIAssistantDynamicVariables = dynamicVariables;
+          const sanitizedDynamicVariables = sanitizeTelnyxDynamicVariables(dynamicVariables, 'Outbound Calling');
+
+          if (Object.keys(sanitizedDynamicVariables).length > 0) {
+            telnyxCallPayload.AIAssistantDynamicVariables = sanitizedDynamicVariables;
           }
 
           let telnyxCallData: any;
@@ -624,8 +623,8 @@ serve(async (req) => {
             to: finalPhone,
           };
 
-          if (Object.keys(dynamicVariables).length > 0) {
-            directPayload.dynamic_variables = dynamicVariables;
+          if (Object.keys(sanitizedDynamicVariables).length > 0) {
+            directPayload.dynamic_variables = sanitizedDynamicVariables;
           }
 
           const directRes = await fetch(`https://api.telnyx.com/v2/ai/assistants/${telnyxAssistant.telnyx_assistant_id}/calls`, {
