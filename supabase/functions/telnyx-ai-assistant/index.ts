@@ -2084,6 +2084,18 @@ serve(async (req) => {
         break;
       }
 
+      case 'list_tests': {
+        // Return assistant tests if any exist on Telnyx
+        const listTestsAssistantId = body.assistant_id;
+        if (listTestsAssistantId) {
+          const testsResp = await telnyxFetch(`/ai/assistants/${listTestsAssistantId}/tests`, apiKey);
+          result = { tests: testsResp.ok ? (testsResp.data?.data || []) : [] };
+        } else {
+          result = { tests: [] };
+        }
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
