@@ -84,10 +84,10 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: '⚡ Command Center', value: 'command-center', icon: Zap, simpleMode: true },
-      { title: 'Dashboard', value: 'overview', icon: LayoutDashboard, simpleMode: true },
-      { title: 'Try Demo', value: 'demo', icon: Play, simpleMode: true, route: '/demo' },
-      { title: 'Setup Wizard', value: 'onboarding', icon: Rocket, simpleMode: true },
-      { title: 'AI Setup', value: 'ai-setup', icon: Sparkles, simpleMode: true },
+      { title: 'Dashboard', value: 'overview', icon: LayoutDashboard },
+      { title: 'Try Demo', value: 'demo', icon: Play, route: '/demo' },
+      { title: 'Setup Wizard', value: 'onboarding', icon: Rocket },
+      { title: 'AI Setup', value: 'ai-setup', icon: Sparkles },
     ],
   },
   {
@@ -95,7 +95,7 @@ const navigationGroups: NavGroup[] = [
     simpleModeLabel: 'Calling',
     defaultOpen: true,
     items: [
-      { title: 'Voice Broadcast', value: 'broadcast', icon: Radio, simpleMode: true },
+      { title: 'Voice Broadcast', value: 'broadcast', icon: Radio },
       { title: 'AI Campaigns', value: 'predictive', icon: Target, simpleMode: true },
       { title: 'Number Rotation', value: 'rotation', icon: RotateCw },
       { title: 'Spam Detection', value: 'spam', icon: Shield },
@@ -119,8 +119,8 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
-      { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch, simpleMode: true },
-      { title: 'Telnyx Voice AI', value: 'telnyx-ai', icon: Bot, simpleMode: true },
+      { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch },
+      { title: 'Telnyx Voice AI', value: 'telnyx-ai', icon: Bot },
       { title: 'Retell AI', value: 'retell', icon: Settings },
       { title: 'Workflows', value: 'workflows', icon: Zap },
       { title: 'Automation', value: 'automation', icon: Calendar },
@@ -135,24 +135,24 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { title: 'Campaign Results', value: 'campaign-results', icon: BarChart3, simpleMode: true },
-      { title: 'Call History', value: 'call-history', icon: History, simpleMode: true },
+      { title: 'Call History', value: 'call-history', icon: History },
       { title: 'Call Analytics', value: 'analytics', icon: BarChart3 },
       { title: 'Daily Reports', value: 'reports', icon: FileText },
       { title: 'Live Monitor', value: 'live-monitor', icon: Activity },
       { title: 'A/B Testing', value: 'ab-testing', icon: Beaker },
       { title: 'Budget Manager', value: 'budget', icon: DollarSign },
-      { title: 'Credits & Billing', value: 'credits', icon: Wallet, simpleMode: true },
-      { title: 'Client Portal', value: 'client-portal', icon: UserCircle, simpleMode: true },
+      { title: 'Credits & Billing', value: 'credits', icon: Wallet },
+      { title: 'Client Portal', value: 'client-portal', icon: UserCircle },
     ],
   },
   {
     label: 'System & Settings',
     defaultOpen: false,
     items: [
-      { title: 'System Testing', value: 'system-testing', icon: Beaker, simpleMode: true, route: '/system-testing' },
-      { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell, simpleMode: true },
+      { title: 'System Testing', value: 'system-testing', icon: Beaker, route: '/system-testing' },
+      { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell },
       { title: 'System Health', value: 'health', icon: Activity },
-      { title: 'Settings', value: 'settings', icon: Settings },
+      { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true },
       { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
     ],
   },
@@ -235,7 +235,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
           </span>
           <Badge variant="outline" className="text-[10px] h-5">
-            {isSimpleMode ? '5 tabs' : '20+ tabs'}
+            {isSimpleMode ? '8 tabs' : '20+ tabs'}
           </Badge>
         </Button>
       </SidebarHeader>
