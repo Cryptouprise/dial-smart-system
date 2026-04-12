@@ -108,7 +108,7 @@ const Dashboard = () => {
   useEffect(() => {
     const unsubscribe = onModeChange((isSimple) => {
       if (isSimple) {
-        const simpleTabs = ['command-center', 'overview', 'broadcast', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'manager-notifications'];
+        const simpleTabs = ['command-center', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'autonomous-agent', 'settings'];
         if (!simpleTabs.includes(activeTab)) {
           setActiveTab('command-center');
           setSearchParams({ tab: 'command-center' });
