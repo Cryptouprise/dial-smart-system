@@ -70,6 +70,7 @@ export interface AgentTool {
   content?: string;
   // Webhook validation
   _webhookStatus?: 'valid' | 'warning' | 'unknown';
+  _providerRaw?: Record<string, any>;
 }
 
 interface AgentToolBuilderProps {
@@ -170,6 +171,88 @@ function getToolTypeLabel(type: string): string {
 function normalizeRetellType(apiType: string): string {
   if (apiType === 'custom') return 'webhook';
   return apiType;
+}
+
+function deepClone<T>(value: T): T {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function stripUiOnlyFields<T extends Record<string, any>>(value: T): T {
+  const cloned = deepClone(value);
+  if (!cloned || typeof cloned !== 'object') return cloned;
+  delete cloned._webhookStatus;
+  delete cloned._providerRaw;
+  return cloned;
+}
+
+function buildRetellToolPayload(tool: AgentTool): Record<string, any> {
+  const rawBase = tool._providerRaw && typeof tool._providerRaw === 'object'
+    ? deepClone(tool._providerRaw)
+    : {};
+
+  const retellTool: Record<string, any> = {
+    ...rawBase,
+    type: tool.type === 'webhook' ? 'custom' : tool.type,
+    name: tool.name,
+    description: tool.description || '',
+  };
+
+  if (tool.type === 'webhook' || tool.type === 'custom' || retellTool.type === 'custom') {
+    retellTool.type = 'custom';
+    if (tool.url !== undefined) retellTool.url = tool.url || '';
+    if (tool.method !== undefined) retellTool.method = tool.method || 'POST';
+    if (tool.speak_during_execution !== undefined) retellTool.speak_during_execution = tool.speak_during_execution;
+    if (tool.speak_after_execution !== undefined) retellTool.speak_after_execution = tool.speak_after_execution;
+    if (tool.execution_message_description !== undefined) retellTool.execution_message_description = tool.execution_message_description || undefined;
+    if (tool.timeout_ms !== undefined) retellTool.timeout_ms = tool.timeout_ms;
+    if (tool.parameters !== undefined) retellTool.parameters = tool.parameters;
+  }
+
+  if (tool.type === 'transfer_call') {
+    retellTool.type = 'transfer_call';
+    if (tool.transfer_destination !== undefined) {
+      retellTool.transfer_destination = tool.transfer_destination;
+    } else if (tool.phone_number) {
+      retellTool.transfer_destination = {
+        type: 'predefined',
+        number: tool.phone_number,
+      };
+    }
+
+    if (tool.transfer_option !== undefined) {
+      retellTool.transfer_option = tool.transfer_option;
+    }
+  }
+
+  if (tool.type === 'end_call') {
+    retellTool.type = 'end_call';
+  }
+
+  if (tool.type === 'check_availability_cal' || tool.type === 'book_appointment_cal') {
+    retellTool.type = tool.type;
+    if (tool.cal_api_key !== undefined) retellTool.cal_api_key = tool.cal_api_key || '';
+    if (tool.event_type_id !== undefined) retellTool.event_type_id = tool.event_type_id;
+    if (tool.timezone !== undefined) retellTool.timezone = tool.timezone || 'America/New_York';
+  }
+
+  if (tool.type === 'send_sms') {
+    retellTool.type = 'send_sms';
+    if (tool.content !== undefined) retellTool.content = tool.content;
+    if (tool.phone_number !== undefined) retellTool.number = tool.phone_number;
+  }
+
+  if (tool.type === 'press_digit') {
+    retellTool.type = 'press_digit';
+  }
+
+  Object.keys(retellTool).forEach((key) => {
+    if (retellTool[key] === undefined) {
+      delete retellTool[key];
+    }
+  });
+
+  return stripUiOnlyFields(retellTool);
 }
 
 function normalizeTelnyxTool(tool: any): AgentTool {
@@ -287,6 +370,7 @@ function mapRetellToolToAgentTool(tool: any): AgentTool {
     timezone: tool?.timezone,
     content: tool?.content,
     parameters: tool?.parameters,
+    _providerRaw: deepClone(tool),
   };
 }
 
@@ -311,6 +395,7 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
   const defaultTool: AgentTool = { name: '', type: 'webhook', description: '' };
   const [form, setForm] = useState<AgentTool>({ ...defaultTool, ...tool });
   const [parametersText, setParametersText] = useState('');
+  const [rawToolText, setRawToolText] = useState('');
   const isEdit = !!tool;
 
   useEffect(() => {
@@ -318,8 +403,9 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
       const nextForm = { ...defaultTool, ...tool };
       setForm(nextForm);
       setParametersText(nextForm.parameters ? JSON.stringify(nextForm.parameters, null, 2) : '');
+      setRawToolText(provider === 'retell' ? JSON.stringify(buildRetellToolPayload(nextForm), null, 2) : '');
     }
-  }, [open, tool]);
+  }, [open, provider, tool]);
 
   const update = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }));
   const updateNested = (path: string[], value: any) => {
@@ -340,6 +426,7 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
 
     let nextTool = { ...form };
     const nextParametersText = parametersText.trim();
+    const nextRawToolText = rawToolText.trim();
 
     if (nextParametersText) {
       try {
@@ -354,6 +441,31 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
       }
     } else {
       delete nextTool.parameters;
+    }
+
+    if (provider === 'retell') {
+      let parsedRawTool = nextTool._providerRaw;
+
+      if (nextRawToolText) {
+        try {
+          parsedRawTool = JSON.parse(nextRawToolText);
+        } catch {
+          toast({
+            title: 'Invalid Retell tool JSON',
+            description: 'Raw Retell tool JSON must be valid before saving.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
+      nextTool = {
+        ...nextTool,
+        _providerRaw: buildRetellToolPayload({
+          ...nextTool,
+          _providerRaw: parsedRawTool,
+        }),
+      };
     }
 
     onSave(nextTool);
@@ -446,6 +558,20 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
                   onChange={(e) => setParametersText(e.target.value)}
                   placeholder={'{\n  "type": "object",\n  "properties": {}\n}'}
                   rows={10}
+                  className="font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Raw Retell Tool JSON</Label>
+                <p className="text-xs text-muted-foreground">
+                  One-button sync now preserves the full provider payload for every tool. Edit this if Retell has fields not surfaced in the form.
+                </p>
+                <Textarea
+                  value={rawToolText}
+                  onChange={(e) => setRawToolText(e.target.value)}
+                  placeholder={'{\n  "type": "custom",\n  "name": "my_tool"\n}'}
+                  rows={12}
                   className="font-mono text-xs"
                 />
               </div>
@@ -891,25 +1017,7 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
           body: {
             action: 'update_tools',
             llmId: activeLlmId,
-            tools: updatedTools.map(t => ({
-              name: t.name,
-              type: t.type === 'custom' ? 'webhook' : t.type,
-              description: t.description || '',
-              url: t.url || undefined,
-              method: t.method || undefined,
-              phone_number: t.phone_number || undefined,
-              speak_during_execution: t.speak_during_execution,
-              speak_after_execution: t.speak_after_execution,
-              execution_message_description: t.execution_message_description,
-              timeout_ms: t.timeout_ms,
-              parameters: t.parameters,
-              transfer_destination: t.transfer_destination || undefined,
-              transfer_option: t.transfer_option || undefined,
-              cal_api_key: t.cal_api_key,
-              event_type_id: t.event_type_id,
-              timezone: t.timezone,
-              content: t.content,
-            })),
+            tools: updatedTools.map(buildRetellToolPayload),
           },
         });
         if (res.error) throw res.error;
