@@ -758,6 +758,14 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
     }
   }, [provider, agentId, llmId, onToolsChange, toast]);
 
+  // Auto-load tools from provider on mount if no tools are passed
+  useEffect(() => {
+    if (tools.length === 0 && !readOnly && (provider === 'retell' ? !!llmId : !!agentId)) {
+      syncFromProvider();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, agentId, llmId]);
+
   // ──── Push tools to provider ────
   const pushToProvider = useCallback(async (updatedTools: AgentTool[]) => {
     setIsSaving(true);

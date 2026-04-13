@@ -1190,7 +1190,7 @@ serve(async (req) => {
       // Always fetch current lead for notes
       const { data: currentLead } = await supabase
         .from('leads')
-        .select('notes, first_name')
+        .select('notes, first_name, last_name')
         .eq('id', leadId)
         .maybeSingle();
       

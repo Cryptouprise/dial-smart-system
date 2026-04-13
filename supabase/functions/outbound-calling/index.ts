@@ -691,7 +691,7 @@ serve(async (req) => {
             status: 'created',
             provider: 'telnyx',
             assistant_name: telnyxAssistant.name,
-            used_fallback: usedFallback,
+            used_fallback: usedTexml,
           };
           break;
         }
@@ -900,7 +900,7 @@ serve(async (req) => {
             zip: zipCode,
             full_address: fullAddress,
             fullAddress: fullAddress,
-            contact: contactPayload,
+            contact: JSON.stringify(contactPayload),
 
             // GoHighLevel-style contact.* variables
             'contact.first_name': firstName,
