@@ -928,10 +928,17 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
             <div className="space-y-2">
               {annotatedTools.map((tool, i) => (
                 <div key={i} className="flex items-center justify-between p-2 rounded-md border bg-card hover:bg-accent/30 transition-colors group">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-muted-foreground">{TOOL_TYPE_ICONS[tool.type] || <Wrench className="h-4 w-4" />}</span>
                     <Badge variant="secondary" className="text-[10px] shrink-0">{getToolTypeLabel(tool.type)}</Badge>
-                    <span className="font-medium text-sm truncate">{tool.name}</span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-sm truncate block">{tool.name}</span>
+                      {tool.parameters?.properties && (
+                        <span className="text-[10px] text-muted-foreground truncate block">
+                          params: {Object.keys(tool.parameters.properties).join(', ')}
+                        </span>
+                      )}
+                    </div>
                     {/* Transfer type badge */}
                     {tool.type === 'transfer_call' && tool.transfer_option?.type && (
                       <Badge variant="outline" className="text-[10px] shrink-0">
