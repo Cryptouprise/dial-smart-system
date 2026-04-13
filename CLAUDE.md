@@ -2767,3 +2767,26 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 **Gotchas / lessons learned**
 - The earlier sync logs were already proving Retell returned the full parameter schema; the missing piece was the editor UI not rendering that schema.
 - Sync and save both need to resolve the live LLM ID from the current agent, otherwise a stale prop can make the UI and Retell drift apart.
+
+### April 13, 2026 - Permanent Retell Full-Tool Sync Round-Trip Fix
+
+**What was built/fixed/changed**
+- Fixed Retell one-button sync/save so all tools now round-trip using the full provider payload instead of a partial hand-mapped subset.
+- Added raw Retell tool JSON preservation in the frontend, so fields not explicitly modeled in the form still survive sync, edit, and save.
+- Updated the `retell-agent-management` edge function to preserve provider-native tool fields during `update_tools`, preventing transfer tools and other advanced tools from losing settings on save.
+
+**Key files modified**
+- `src/components/AgentToolBuilder.tsx`
+- `supabase/functions/retell-agent-management/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend and edge-function code updated locally in this session.
+- Frontend build verified successfully with `npm run build`.
+
+**Gotchas / lessons learned**
+- The root issue was not just missing UI fields; it was destructive normalization during sync/save that dropped provider-only fields.
+- For Retell tools, especially transfer tools, the safest architecture is payload preservation first and form-level editing second.
