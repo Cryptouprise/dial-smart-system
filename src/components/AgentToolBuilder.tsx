@@ -690,6 +690,14 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
   const [editingTool, setEditingTool] = useState<AgentTool | undefined>(undefined);
   const [editingIndex, setEditingIndex] = useState<number>(-1);
 
+  // Auto-load tools from provider on mount if no tools are passed
+  useEffect(() => {
+    if (tools.length === 0 && !readOnly && (provider === 'retell' ? !!llmId : !!agentId)) {
+      syncFromProvider();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, agentId, llmId]);
+
   // Annotate webhook statuses
   const normalizedTools = provider === 'telnyx'
     ? tools.map(normalizeTelnyxTool)
