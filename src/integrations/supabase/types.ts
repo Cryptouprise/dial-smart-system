@@ -2554,6 +2554,7 @@ export type Database = {
           id: string
           lead_id: string
           max_attempts: number
+          notes: string | null
           phone_number: string
           priority: number
           scheduled_at: string
@@ -2567,6 +2568,7 @@ export type Database = {
           id?: string
           lead_id: string
           max_attempts?: number
+          notes?: string | null
           phone_number: string
           priority?: number
           scheduled_at?: string
@@ -2580,6 +2582,7 @@ export type Database = {
           id?: string
           lead_id?: string
           max_attempts?: number
+          notes?: string | null
           phone_number?: string
           priority?: number
           scheduled_at?: string
@@ -5433,6 +5436,89 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      retell_agents: {
+        Row: {
+          agent_name: string
+          agent_snapshot: Json | null
+          ambient_sound_volume: number | null
+          begin_message: string | null
+          begin_message_delay_ms: number | null
+          created_at: string
+          end_call_after_silence_ms: number | null
+          general_prompt: string | null
+          general_tools: Json | null
+          id: string
+          last_synced_at: string | null
+          llm_model: string | null
+          llm_snapshot: Json | null
+          organization_id: string | null
+          retell_agent_id: string
+          retell_llm_id: string | null
+          status: string | null
+          updated_at: string
+          user_id: string
+          voice_id: string | null
+          voicemail_detection: Json | null
+          webhook_url: string | null
+        }
+        Insert: {
+          agent_name: string
+          agent_snapshot?: Json | null
+          ambient_sound_volume?: number | null
+          begin_message?: string | null
+          begin_message_delay_ms?: number | null
+          created_at?: string
+          end_call_after_silence_ms?: number | null
+          general_prompt?: string | null
+          general_tools?: Json | null
+          id?: string
+          last_synced_at?: string | null
+          llm_model?: string | null
+          llm_snapshot?: Json | null
+          organization_id?: string | null
+          retell_agent_id: string
+          retell_llm_id?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id: string
+          voice_id?: string | null
+          voicemail_detection?: Json | null
+          webhook_url?: string | null
+        }
+        Update: {
+          agent_name?: string
+          agent_snapshot?: Json | null
+          ambient_sound_volume?: number | null
+          begin_message?: string | null
+          begin_message_delay_ms?: number | null
+          created_at?: string
+          end_call_after_silence_ms?: number | null
+          general_prompt?: string | null
+          general_tools?: Json | null
+          id?: string
+          last_synced_at?: string | null
+          llm_model?: string | null
+          llm_snapshot?: Json | null
+          organization_id?: string | null
+          retell_agent_id?: string
+          retell_llm_id?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+          voice_id?: string | null
+          voicemail_detection?: Json | null
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retell_agents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
