@@ -662,74 +662,44 @@ serve(async (req) => {
         
         console.log(`[Retell Agent] Updating tools on LLM ${llmId} — ${toolsPayload.length} tools`);
         
-        // Convert our tool format to Retell's general_tools format with FULL property support
-        const retellTools = toolsPayload.map((t: any) => {
-          const retellTool: any = {
-            type: t.type === 'webhook' ? 'custom' : t.type,
-            name: t.name,
-            description: t.description || '',
-          };
+        // Preserve the full Retell provider payload whenever possible so sync/save round-trips every tool identically.
+        const retellTools = toolsPayload.map((inputTool: any) => {
+          const retellTool: any = JSON.parse(JSON.stringify(inputTool || {}));
 
-          // Custom / webhook tool
-          if (t.type === 'webhook' || t.type === 'custom') {
-            retellTool.type = 'custom';
-            retellTool.url = t.url || '';
-            retellTool.speak_during_execution = t.speak_during_execution ?? false;
-            retellTool.speak_after_execution = t.speak_after_execution ?? true;
-            retellTool.execution_message_description = t.execution_message_description || undefined;
-            if (t.parameters) retellTool.parameters = t.parameters;
-            if (t.timeout_ms) retellTool.timeout_ms = t.timeout_ms;
+          retellTool.type = retellTool.type === 'webhook' ? 'custom' : retellTool.type;
+          retellTool.name = retellTool.name || '';
+          retellTool.description = retellTool.description || '';
+
+          if (retellTool.type === 'custom') {
+            retellTool.url = retellTool.url || '';
+            retellTool.speak_during_execution = retellTool.speak_during_execution ?? false;
+            retellTool.speak_after_execution = retellTool.speak_after_execution ?? true;
           }
 
-          // Transfer call — full Retell schema
-          if (t.type === 'transfer_call') {
-            // transfer_destination
-            if (t.transfer_destination) {
-              retellTool.transfer_destination = t.transfer_destination;
-            } else {
-              // Backward compat: simple phone_number → predefined destination
-              const num = t.number || t.phone_number || '';
-              retellTool.transfer_destination = {
-                type: 'predefined',
-                number: num,
-              };
-            }
-            // transfer_option (warm/cold)
-            if (t.transfer_option) {
-              retellTool.transfer_option = t.transfer_option;
-            }
+          if (retellTool.type === 'transfer_call' && !retellTool.transfer_destination) {
+            const num = retellTool.number || retellTool.phone_number || '';
+            retellTool.transfer_destination = {
+              type: 'predefined',
+              number: num,
+            };
           }
 
-          // End call
-          if (t.type === 'end_call') {
-            retellTool.type = 'end_call';
+          if ((retellTool.type === 'check_availability_cal' || retellTool.type === 'book_appointment_cal')) {
+            retellTool.cal_api_key = retellTool.cal_api_key || '';
+            retellTool.timezone = retellTool.timezone || 'America/New_York';
           }
 
-          // Check availability (Cal.com)
-          if (t.type === 'check_availability_cal') {
-            retellTool.cal_api_key = t.cal_api_key || '';
-            retellTool.event_type_id = t.event_type_id;
-            retellTool.timezone = t.timezone || 'America/New_York';
+          if (retellTool.type === 'send_sms' && retellTool.phone_number && !retellTool.number) {
+            retellTool.number = retellTool.phone_number;
           }
 
-          // Book appointment (Cal.com)
-          if (t.type === 'book_appointment_cal') {
-            retellTool.cal_api_key = t.cal_api_key || '';
-            retellTool.event_type_id = t.event_type_id;
-            retellTool.timezone = t.timezone || 'America/New_York';
-          }
+          delete retellTool.phone_number;
+          delete retellTool._webhookStatus;
+          delete retellTool._providerRaw;
 
-          // Send SMS
-          if (t.type === 'send_sms') {
-            retellTool.type = 'send_sms';
-            if (t.content) retellTool.content = t.content;
-            if (t.number) retellTool.number = t.number;
-          }
-
-          // Press digit (DTMF during IVR navigation)
-          if (t.type === 'press_digit') {
-            retellTool.type = 'press_digit';
-          }
+          Object.keys(retellTool).forEach((key) => {
+            if (retellTool[key] === undefined) delete retellTool[key];
+          });
 
           return retellTool;
         });
