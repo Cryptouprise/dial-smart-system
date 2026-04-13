@@ -710,34 +710,66 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
       let fetchedTools: AgentTool[] = [];
 
       if (provider === 'retell') {
-        if (!llmId) {
-          toast({ title: 'Missing LLM ID', description: 'Cannot sync tools without an LLM ID.', variant: 'destructive' });
+        // Step 1: Fetch the agent directly to get the CURRENT LLM ID from Retell
+        // This prevents stale llmId from showing old/wrong tools
+        let activeLlmId = llmId;
+
+        if (providerAgentId) {
+          console.log('[ToolSync] Fetching agent to get current LLM ID:', providerAgentId);
+          const agentRes = await supabase.functions.invoke('retell-agent-management', {
+            body: { action: 'get_agent', agentId: providerAgentId },
+          });
+          if (!agentRes.error && agentRes.data) {
+            const freshLlmId = agentRes.data?.response_engine?.llm_id;
+            if (freshLlmId) {
+              if (freshLlmId !== llmId) {
+                console.log(`[ToolSync] LLM ID mismatch! Props: ${llmId}, Agent has: ${freshLlmId}. Using fresh.`);
+              }
+              activeLlmId = freshLlmId;
+            }
+          }
+        }
+
+        if (!activeLlmId) {
+          toast({ title: 'Missing LLM ID', description: 'Cannot sync tools — no LLM found on agent.', variant: 'destructive' });
           return;
         }
+
+        // Step 2: Fetch tools from the correct LLM
+        console.log('[ToolSync] Fetching tools from LLM:', activeLlmId);
         const res = await supabase.functions.invoke('retell-agent-management', {
-          body: { action: 'get_llm', llmId },
+          body: { action: 'get_llm', llmId: activeLlmId },
         });
         if (res.error) throw res.error;
         const llmData = res.data;
-        fetchedTools = (llmData?.general_tools || []).map((t: any) => ({
-          name: t.name || '',
-          type: normalizeRetellType(t.type || 'webhook'),
-          description: t.description || '',
-          url: t.url || '',
-          method: t.method || 'POST',
-          phone_number: t.transfer_destination?.number || t.number || t.phone_number || '',
-          speak_during_execution: t.speak_during_execution,
-          speak_after_execution: t.speak_after_execution,
-          execution_message_description: t.execution_message_description,
-          timeout_ms: t.timeout_ms,
-          parameters: t.parameters,
-          transfer_destination: t.transfer_destination || undefined,
-          transfer_option: t.transfer_option || undefined,
-          cal_api_key: t.cal_api_key,
-          event_type_id: t.event_type_id,
-          timezone: t.timezone,
-          content: t.content,
-        }));
+        console.log('[ToolSync] Raw general_tools from Retell:', JSON.stringify(llmData?.general_tools?.length || 0), 'tools');
+
+        fetchedTools = (llmData?.general_tools || []).map((t: any) => {
+          const mapped: AgentTool = {
+            name: t.name || '',
+            type: normalizeRetellType(t.type || 'webhook'),
+            description: t.description || '',
+            url: t.url || '',
+            method: t.method || 'POST',
+            phone_number: t.transfer_destination?.number || t.number || t.phone_number || '',
+            speak_during_execution: t.speak_during_execution,
+            speak_after_execution: t.speak_after_execution,
+            execution_message_description: t.execution_message_description,
+            timeout_ms: t.timeout_ms,
+            transfer_destination: t.transfer_destination || undefined,
+            transfer_option: t.transfer_option || undefined,
+            cal_api_key: t.cal_api_key,
+            event_type_id: t.event_type_id,
+            timezone: t.timezone,
+            content: t.content,
+          };
+          // Preserve parameters exactly as Retell returns them (JSON Schema with properties, required, etc.)
+          if (t.parameters) {
+            mapped.parameters = t.parameters;
+          }
+          console.log(`[ToolSync] Tool "${t.name}" type=${t.type} params=${t.parameters ? Object.keys(t.parameters.properties || {}).length + ' props' : 'none'}`);
+          return mapped;
+        });
       } else {
         // Telnyx: get_assistant
         const res = await supabase.functions.invoke('telnyx-ai-assistant', {
@@ -756,7 +788,7 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
     } finally {
       setIsSyncing(false);
     }
-  }, [provider, agentId, llmId, onToolsChange, toast]);
+  }, [provider, agentId, providerAgentId, llmId, onToolsChange, toast]);
 
   // Auto-load tools from provider on mount if no tools are passed
   useEffect(() => {
@@ -896,10 +928,17 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
             <div className="space-y-2">
               {annotatedTools.map((tool, i) => (
                 <div key={i} className="flex items-center justify-between p-2 rounded-md border bg-card hover:bg-accent/30 transition-colors group">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-muted-foreground">{TOOL_TYPE_ICONS[tool.type] || <Wrench className="h-4 w-4" />}</span>
                     <Badge variant="secondary" className="text-[10px] shrink-0">{getToolTypeLabel(tool.type)}</Badge>
-                    <span className="font-medium text-sm truncate">{tool.name}</span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-sm truncate block">{tool.name}</span>
+                      {tool.parameters?.properties && (
+                        <span className="text-[10px] text-muted-foreground truncate block">
+                          params: {Object.keys(tool.parameters.properties).join(', ')}
+                        </span>
+                      )}
+                    </div>
                     {/* Transfer type badge */}
                     {tool.type === 'transfer_call' && tool.transfer_option?.type && (
                       <Badge variant="outline" className="text-[10px] shrink-0">
