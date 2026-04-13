@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Boss — The AI That Never Stops Selling | Pitch Deck</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cyan: #00f0ff;
+  --pink: #ff3e6c;
+  --purple: #7c3aed;
+  --green: #00ff88;
+  --gold: #f59e0b;
+  --dark: #050810;
+  --dark2: #0a1020;
+  --dark3: #0f1830;
+  --dark4: #141e35;
+  --muted: #4a5568;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+  width:100%; height:100%;
+  background:var(--dark);
+  color:var(--text);
+  font-family:'DM Sans', sans-serif;
+  overflow:hidden;
+}
+
+/* ── DECK SHELL ─────────────────────────────────────────────── */
+#deck {
+  width:100vw; height:100vh;
+  position:relative;
+  overflow:hidden;
+}
+
+.slide {
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  padding:60px 80px;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 0.6s ease, transform 0.6s ease;
+  transform:translateY(30px);
+}
+.slide.active {
+  opacity:1;
+  pointer-events:all;
+  transform:translateY(0);
+}
+.slide.exit {
+  opacity:0;
+  transform:translateY(-30px);
+}
+
+/* ── NAV ─────────────────────────────────────────────────────── */
+#nav {
+  position:fixed;
+  bottom:30px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  gap:8px;
+  z-index:1000;
+  background:rgba(5,8,16,0.8);
+  backdrop-filter:blur(12px);
+  border:1px solid rgba(0,240,255,0.15);
+  border-radius:50px;
+  padding:10px 16px;
+}
+.dot {
+  width:8px; height:8px;
+  border-radius:50%;
+  background:var(--muted);
+  cursor:pointer;
+  transition:all 0.3s;
+}
+.dot.active { background:var(--cyan); transform:scale(1.4); }
+
+#slide-counter {
+  position:fixed;
+  top:24px;
+  right:30px;
+  font-family:'Space Mono', monospace;
+  font-size:11px;
+  color:var(--text-dim);
+  z-index:1000;
+  letter-spacing:2px;
+}
+
+#brand-badge {
+  position:fixed;
+  top:24px;
+  left:30px;
+  font-family:'Bebas Neue', sans-serif;
+  font-size:20px;
+  letter-spacing:3px;
+  color:var(--cyan);
+  z-index:1000;
+  text-shadow:0 0 20px rgba(0,240,255,0.4);
+}
+
+/* Arrow nav */
+.arrow {
+  position:fixed;
+  top:50%;
+  transform:translateY(-50%);
+  background:rgba(0,240,255,0.08);
+  border:1px solid rgba(0,240,255,0.2);
+  color:var(--cyan);
+  width:44px; height:44px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  z-index:1000;
+  font-size:20px;
+  transition:all 0.2s;
+}
+.arrow:hover { background:rgba(0,240,255,0.2); transform:translateY(-50%) scale(1.1); }
+#prev { left:16px; }
+#next { right:16px; }
+
+/* ── SCANLINE OVERLAY ─────────────────────────────────────────── */
+body::after {
+  content:'';
+  position:fixed;
+  inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);
+  pointer-events:none;
+  z-index:9999;
+}
+
+/* ── TYPOGRAPHY HELPERS ────────────────────────────────────────── */
+.headline {
+  font-family:'Bebas Neue', sans-serif;
+  line-height:0.95;
+  letter-spacing:1px;
+}
+.mono { font-family:'Space Mono', monospace; }
+.cyan { color:var(--cyan); }
+.pink { color:var(--pink); }
+.purple { color:var(--purple); }
+.green { color:var(--green); }
+.gold { color:var(--gold); }
+
+.tag {
+  display:inline-block;
+  font-family:'Space Mono', monospace;
+  font-size:10px;
+  letter-spacing:2px;
+  padding:4px 10px;
+  border-radius:3px;
+  text-transform:uppercase;
+  border:1px solid;
+  margin-bottom:16px;
+}
+.tag-cyan { color:var(--cyan); border-color:rgba(0,240,255,0.4); background:rgba(0,240,255,0.06); }
+.tag-pink { color:var(--pink); border-color:rgba(255,62,108,0.4); background:rgba(255,62,108,0.06); }
+.tag-green { color:var(--green); border-color:rgba(0,255,136,0.4); background:rgba(0,255,136,0.06); }
+.tag-gold { color:var(--gold); border-color:rgba(245,158,11,0.4); background:rgba(245,158,11,0.06); }
+.tag-purple { color:var(--purple); border-color:rgba(124,58,237,0.4); background:rgba(124,58,237,0.06); }
+
+/* ── GLOW HELPERS ─────────────────────────────────────────────── */
+.glow-cyan { text-shadow:0 0 30px rgba(0,240,255,0.5); }
+.glow-pink { text-shadow:0 0 30px rgba(255,62,108,0.5); }
+.glow-green { text-shadow:0 0 30px rgba(0,255,136,0.5); }
+
+/* ── CARDS ─────────────────────────────────────────────────────── */
+.card {
+  background:rgba(14,20,40,0.7);
+  border:1px solid rgba(0,240,255,0.12);
+  border-radius:12px;
+  padding:24px;
+  backdrop-filter:blur(10px);
+}
+.card-pink { border-color:rgba(255,62,108,0.2); }
+.card-green { border-color:rgba(0,255,136,0.2); }
+.card-gold { border-color:rgba(245,158,11,0.2); }
+.card-purple { border-color:rgba(124,58,237,0.2); }
+
+/* ── GRID HELPERS ─────────────────────────────────────────────── */
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; width:100%; }
+.g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; width:100%; }
+.g4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:14px; width:100%; }
+
+/* ── STAT PILL ─────────────────────────────────────────────────── */
+.stat-pill {
+  text-align:center;
+  padding:20px 16px;
+}
+.stat-pill .num {
+  font-family:'Bebas Neue', sans-serif;
+  font-size:48px;
+  line-height:1;
+  margin-bottom:4px;
+}
+.stat-pill .lbl {
+  font-size:11px;
+  color:var(--text-dim);
+  text-transform:uppercase;
+  letter-spacing:1.5px;
+  font-family:'Space Mono', monospace;
+}
+
+/* ── PROGRESS BAR ─────────────────────────────────────────────── */
+.bar-wrap { width:100%; background:rgba(255,255,255,0.05); border-radius:4px; height:6px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:4px; transition:width 1s ease 0.5s; }
+
+/* ── FEATURE ROW ──────────────────────────────────────────────── */
+.feat-row {
+  display:flex;
+  align-items:flex-start;
+  gap:14px;
+  padding:14px 0;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.feat-row:last-child { border-bottom:none; }
+.feat-icon {
+  width:36px; height:36px;
+  border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:18px;
+  flex-shrink:0;
+}
+
+/* ── CODE BLOCK ────────────────────────────────────────────────── */
+.code-block {
+  background:#060c1a;
+  border:1px solid rgba(0,240,255,0.15);
+  border-radius:8px;
+  padding:20px;
+  font-family:'Space Mono', monospace;
+  font-size:12px;
+  color:#94a3b8;
+  line-height:1.8;
+  overflow:hidden;
+}
+.code-block .kw { color:var(--purple); }
+.code-block .str { color:var(--green); }
+.code-block .num { color:var(--gold); }
+.code-block .comment { color:#4a5568; }
+.code-block .fn { color:var(--cyan); }
+
+/* ── BADGE ──────────────────────────────────────────────────────── */
+.badge {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px;
+  border-radius:20px;
+  font-size:12px;
+  font-weight:600;
+  font-family:'Space Mono', monospace;
+}
+.badge-cyan { background:rgba(0,240,255,0.1); color:var(--cyan); border:1px solid rgba(0,240,255,0.3); }
+.badge-green { background:rgba(0,255,136,0.1); color:var(--green); border:1px solid rgba(0,255,136,0.3); }
+.badge-pink { background:rgba(255,62,108,0.1); color:var(--pink); border:1px solid rgba(255,62,108,0.3); }
+.badge-gold { background:rgba(245,158,11,0.1); color:var(--gold); border:1px solid rgba(245,158,11,0.3); }
+
+/* ── TIMELINE ──────────────────────────────────────────────────── */
+.timeline { display:flex; flex-direction:column; gap:0; width:100%; }
+.tl-item { display:flex; align-items:flex-start; gap:16px; padding:12px 0; }
+.tl-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+.tl-line { width:2px; flex:1; background:rgba(255,255,255,0.08); }
+.tl-content { flex:1; }
+
+/* ── COMPARISON TABLE ──────────────────────────────────────────── */
+.comp-table { width:100%; border-collapse:collapse; font-size:13px; }
+.comp-table th { padding:12px 16px; font-family:'Space Mono', monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); text-align:left; }
+.comp-table td { padding:12px 16px; border-top:1px solid rgba(255,255,255,0.05); }
+.comp-table tr.us td { background:rgba(0,240,255,0.04); border-top:1px solid rgba(0,240,255,0.1); }
+.comp-table tr.us td:first-child { border-left:2px solid var(--cyan); }
+.check { color:var(--green); }
+.cross { color:var(--muted); }
+.partial { color:var(--gold); }
+
+/* ── FLOW DIAGRAM ──────────────────────────────────────────────── */
+.flow { display:flex; align-items:center; gap:0; flex-wrap:wrap; justify-content:center; }
+.flow-step {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding:14px 20px;
+  background:rgba(14,20,40,0.8);
+  border:1px solid rgba(0,240,255,0.15);
+  border-radius:10px;
+  text-align:center;
+  min-width:110px;
+}
+.flow-arrow { color:var(--cyan); font-size:18px; padding:0 8px; }
+
+/* ── NEW BADGE ──────────────────────────────────────────────────── */
+.new-badge {
+  display:inline-block;
+  background:linear-gradient(135deg, var(--pink), var(--purple));
+  color:#fff;
+  font-family:'Space Mono', monospace;
+  font-size:9px;
+  letter-spacing:2px;
+  padding:2px 7px;
+  border-radius:3px;
+  text-transform:uppercase;
+  vertical-align:middle;
+  margin-left:8px;
+  animation:pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity:1; }
+  50% { opacity:0.6; }
+}
+
+/* ── BG GRID ─────────────────────────────────────────────────────── */
+.bg-grid {
+  position:absolute;
+  inset:0;
+  background-image:linear-gradient(rgba(0,240,255,0.03) 1px, transparent 1px),
+                   linear-gradient(90deg, rgba(0,240,255,0.03) 1px, transparent 1px);
+  background-size:60px 60px;
+  pointer-events:none;
+}
+
+/* ── GRADIENT ORBS ─────────────────────────────────────────────── */
+.orb {
+  position:absolute;
+  border-radius:50%;
+  filter:blur(80px);
+  opacity:0.12;
+  pointer-events:none;
+}
+
+/* ── SLIDE-SPECIFIC STYLES ─────────────────────────────────────── */
+
+/* Slide 1 – Title */
+#s1 { text-align:center; }
+#s1 .main-title { font-size:clamp(60px,10vw,110px); }
+#s1 .sub { font-size:clamp(16px,2vw,22px); color:var(--text-dim); margin:20px 0 36px; max-width:640px; line-height:1.5; }
+#s1 .stats-strip { display:flex; gap:40px; margin-top:40px; }
+#s1 .stats-strip .st { text-align:center; }
+#s1 .stats-strip .num { font-family:'Bebas Neue'; font-size:38px; }
+
+/* Slide 2 – Problem */
+#s2 .decay-bar { display:flex; align-items:flex-end; gap:8px; height:140px; margin:24px 0; }
+#s2 .decay-col { display:flex; flex-direction:column; align-items:center; gap:6px; }
+#s2 .decay-col .bar { width:50px; border-radius:4px 4px 0 0; transition:height 1s ease; }
+#s2 .decay-col .lbl { font-size:10px; color:var(--text-dim); font-family:'Space Mono'; text-align:center; }
+#s2 .decay-col .pct { font-family:'Bebas Neue'; font-size:18px; }
+
+/* Slide 3 – Platform Overview */
+
+/* Slide 4 – New Features callout */
+
+/* Slide 5 – Mission Briefing */
+
+/* Slide 6 – Simple Mode */
+
+/* Slide 7 – Autonomous Agent */
+
+/* Slide 8 – MCP */
+
+/* Slide 9 – Predictive Dialing */
+
+/* Slide 10 – AI Voice */
+
+/* Slide 11 – Intelligence */
+
+/* Slide 12 – White Label */
+
+/* Slide 13 – Competitive */
+
+/* Slide 14 – Architecture */
+
+/* Slide 15 – ROI */
+
+/* Slide 16 – CTA */
+
+/* ── PRINT ─────────────────────────────────────────────────────── */
+@media print {
+  .slide { position:relative; opacity:1; transform:none; page-break-after:always; height:100vh; pointer-events:auto; }
+  #nav, .arrow, #slide-counter, #brand-badge { display:none; }
+}
+</style>
+</head>
+<body>
+
+<div id="brand-badge">CALL BOSS</div>
+<div id="slide-counter">01 / 16</div>
+
+<button class="arrow" id="prev">&#8592;</button>
+<button class="arrow" id="next">&#8594;</button>
+
+<div id="deck">
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 1 — TITLE                                         -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide active" id="s1">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:600px;height:600px;background:var(--cyan);top:-200px;left:-150px;"></div>
+  <div class="orb" style="width:400px;height:400px;background:var(--purple);bottom:-100px;right:-100px;"></div>
+
+  <div class="tag tag-cyan">CONFIDENTIAL INVESTOR BRIEF — 2026</div>
+
+  <h1 class="headline main-title glow-cyan cyan">THE AI THAT<br><span style="color:#fff">NEVER STOPS</span><br><span class="pink glow-pink">SELLING.</span></h1>
+
+  <p class="sub">Your leads called in under 5 minutes. Followed up forever. Appointments booked on autopilot. No reps required. Now with full MCP agent control — Claude, Cursor, or any AI can run the entire operation.</p>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:32px;">
+    <span class="badge badge-cyan">🤖 AI-Native</span>
+    <span class="badge badge-green">📞 Predictive Dialing</span>
+    <span class="badge badge-pink">🧠 Self-Learning</span>
+    <span class="badge badge-gold">🔗 MCP Agent Control</span>
+  </div>
+
+  <div style="display:flex;gap:48px;flex-wrap:wrap;justify-content:center;">
+    <div class="stat-pill">
+      <div class="num cyan">2.4M+</div>
+      <div class="lbl">Calls Made</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num green">36%</div>
+      <div class="lbl">Answer Rate</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num pink">12K+</div>
+      <div class="lbl">Appts Booked</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num gold">$0.15</div>
+      <div class="lbl">Per Minute</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num" style="color:var(--purple)">81</div>
+      <div class="lbl">Edge Functions</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 2 — THE PROBLEM                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--pink);top:-200px;right:-100px;"></div>
+
+  <div class="tag tag-pink">THE PROBLEM</div>
+  <h2 class="headline" style="font-size:clamp(40px,6vw,72px);">YOUR LEADS ARE DECAYING<br><span class="pink">RIGHT NOW.</span></h2>
+  <p style="color:var(--text-dim);margin:12px 0 28px;font-size:15px;max-width:700px;text-align:center;">Physics of lead decay are working against you every single hour. Speed-to-lead is not a best practice — it's survival.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div>
+      <div style="display:flex;align-items:flex-end;gap:10px;height:120px;margin-bottom:16px;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:var(--green)">100%</div>
+          <div style="width:44px;height:100px;background:var(--green);border-radius:4px 4px 0 0;opacity:0.8;"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">5 min</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:var(--gold)">40%</div>
+          <div style="width:44px;height:40px;background:var(--gold);border-radius:4px 4px 0 0;opacity:0.8;"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">30 min</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:orange">20%</div>
+          <div style="width:44px;height:20px;background:orange;border-radius:4px 4px 0 0;opacity:0.8;"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">1 hr</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:var(--pink)">10%</div>
+          <div style="width:44px;height:10px;background:var(--pink);border-radius:4px 4px 0 0;opacity:0.8;"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">2 hr</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:var(--pink)">5%</div>
+          <div style="width:44px;height:5px;background:var(--pink);border-radius:4px 4px 0 0;opacity:0.8;"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">4 hr</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:var(--muted)">2%</div>
+          <div style="width:44px;height:2px;background:var(--muted);border-radius:4px 4px 0 0;opacity:0.8;margin-bottom:3px"></div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:'Space Mono'">next day</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);font-family:'Space Mono'">SOURCE: MIT LEAD RESPONSE STUDY + HARVARD BUSINESS REVIEW</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="card" style="padding:16px;">
+        <div style="color:var(--pink);font-family:'Bebas Neue';font-size:32px;line-height:1;">80%</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:2px;">of leads never get called back</div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="color:var(--gold);font-family:'Bebas Neue';font-size:32px;line-height:1;">100×</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:2px;">better odds in first 5 minutes</div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="color:var(--cyan);font-family:'Bebas Neue';font-size:32px;line-height:1;">$4K+</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:2px;">per rep per month fully loaded</div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="color:var(--purple);font-family:'Bebas Neue';font-size:32px;line-height:1;">35%</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:2px;">annual rep turnover rate</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 3 — WHAT IS CALL BOSS                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s3">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--cyan);bottom:-200px;left:-150px;opacity:0.1;"></div>
+
+  <div class="tag tag-cyan">THE SOLUTION</div>
+  <h2 class="headline" style="font-size:clamp(36px,5.5vw,66px);text-align:center;margin-bottom:16px;">THEY BUILT TOOLS.<br><span class="cyan glow-cyan">WE BUILT A BRAIN.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;max-width:640px;margin-bottom:36px;">Call Boss is an enterprise-grade, AI-first autonomous dialing platform. 144,000+ lines of TypeScript. 81 edge functions. 231 components. One goal — convert leads into revenue on autopilot.</p>
+
+  <div class="g3" style="max-width:960px;width:100%;">
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">📞</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--cyan);margin-bottom:6px;">PREDICTIVE DIALER</div>
+      <div style="font-size:13px;color:var(--text-dim);">50–600 calls/min, adaptive pacing, AMD detection, FCC-compliant, local presence, number rotation</div>
+    </div>
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">🤖</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--pink);margin-bottom:6px;">AI VOICE AGENTS</div>
+      <div style="font-size:13px;color:var(--text-dim);">Retell AI + Telnyx + Assistable, real conversations, calendar booking, disposition routing, perpetual follow-up</div>
+    </div>
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">🧠</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--purple);margin-bottom:6px;">AUTONOMOUS AGENT</div>
+      <div style="font-size:13px;color:var(--text-dim);">Self-learning ML, daily battle plans, strategic pattern detection, goal-driven execution, full-auto mode</div>
+    </div>
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">🔗</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--green);margin-bottom:6px;">MCP AGENT CONTROL</div>
+      <div style="font-size:13px;color:var(--text-dim);">Claude, Cursor, Windsurf, Manus — any AI agent can run your entire dialing operation via 29 typed tools</div>
+    </div>
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">📊</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--gold);margin-bottom:6px;">INTELLIGENCE ENGINE</div>
+      <div style="font-size:13px;color:var(--text-dim);">6 pattern detection algorithms, ROI tracking, number health prediction, A/B script testing, strategic briefings</div>
+    </div>
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:10px;">🏷️</div>
+      <div style="font-family:'Bebas Neue';font-size:22px;color:var(--cyan);margin-bottom:6px;">WHITE-LABEL READY</div>
+      <div style="font-size:13px;color:var(--text-dim);">Credit reservation system, 70–200% margin, per-org pricing, Stripe integration, full reseller infrastructure</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 4 — WHAT'S NEW (PAST 3 WEEKS)                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s4">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:600px;height:600px;background:var(--pink);top:-200px;right:-200px;opacity:0.08;"></div>
+  <div class="orb" style="width:400px;height:400px;background:var(--cyan);bottom:-150px;left:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-pink">NEW IN APRIL 2026 <span class="new-badge">HOT</span></div>
+  <h2 class="headline" style="font-size:clamp(36px,5vw,60px);text-align:center;margin-bottom:8px;">FOUR GAME-CHANGING<br><span class="pink">DROPS THIS MONTH.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:30px;font-size:14px;">These aren't incremental updates. Each one changes what's possible.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div class="card" style="border-color:rgba(0,240,255,0.3);padding:22px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:28px;">🎯</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--cyan);">MISSION BRIEFING WIZARD</div>
+          <span class="new-badge">NEW</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">10-step guided campaign creation. Choose your goal → import leads → configure AI agents (Retell/Telnyx/Assistable) → set follow-up strategy → generate workflows automatically. Test call before launch. Zero-to-live in minutes.</p>
+    </div>
+    <div class="card" style="border-color:rgba(0,255,136,0.3);padding:22px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:28px;">⚡</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--green);">SIMPLE MODE</div>
+          <span class="new-badge">NEW</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">8 daily-driver tabs. Command Center, AI Campaigns, SMS, Leads, Appointments, Autonomous Agent, Results, Settings. All the power, zero complexity. One toggle — full mode or simple mode. Default on for new users.</p>
+    </div>
+    <div class="card" style="border-color:rgba(124,58,237,0.3);padding:22px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:28px;">🔗</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--purple);">MCP API — AI AGENT CONTROL</div>
+          <span class="new-badge">NEW</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">29 typed MCP tools. Claude Code or any AI agent can list campaigns, place calls, search leads, retry failed dials, run pre-launch audits, and more — all via natural language. The system runs itself.</p>
+    </div>
+    <div class="card" style="border-color:rgba(245,158,11,0.3);padding:22px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:28px;">🏗️</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--gold);">PUBLIC REST API v0.2</div>
+          <span class="new-badge">NEW</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">20+ REST endpoints behind `dsk_live_` API keys with SHA-256 storage. Scope hierarchy (admin/write/read/domain), audit logging, rate limiting. Full third-party & n8n/webhook integration. Enterprise-grade from day one.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 5 — MISSION BRIEFING DEEP DIVE                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s5">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--cyan);top:-150px;left:-150px;opacity:0.09;"></div>
+
+  <div class="tag tag-cyan">DEEP DIVE — NEW FEATURE</div>
+  <h2 class="headline" style="font-size:clamp(36px,5vw,58px);text-align:center;margin-bottom:6px;"><span class="cyan">MISSION BRIEFING</span> WIZARD</h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:24px;font-size:14px;">From zero to live campaign in a single guided session. 10 steps. Zero ambiguity.</p>
+
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:28px;max-width:960px;width:100%;">
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">01</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Business</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">02</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Goal</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">03</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Leads</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">04</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Import</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">05</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Schedule</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;border-color:rgba(255,62,108,0.4);">
+      <div style="font-size:11px;color:var(--pink);font-family:'Space Mono'">06</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">AI Agents</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">07</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Strategy</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">08</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Workflow</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;">
+      <div style="font-size:11px;color:var(--cyan);font-family:'Space Mono'">09</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Events</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="padding:10px 14px;min-width:80px;border-color:rgba(0,255,136,0.4);">
+      <div style="font-size:11px;color:var(--green);font-family:'Space Mono'">10</div>
+      <div style="font-size:11px;font-weight:600;color:#fff;">Launch</div>
+    </div>
+  </div>
+
+  <div class="g3" style="max-width:960px;width:100%;">
+    <div class="card card-pink" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--pink);margin-bottom:8px;">🎛️ MULTI-PROVIDER AI</div>
+      <p style="font-size:12px;color:var(--text-dim);">Assign Retell, Telnyx, and Assistable simultaneously with traffic splits. A/B test providers at launch.</p>
+    </div>
+    <div class="card" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--cyan);margin-bottom:8px;">⚡ AUTO-WORKFLOWS</div>
+      <p style="font-size:12px;color:var(--text-dim);">Choose Aggressive, Balanced, Gentle, Calls-Only, or SMS-Only. Sequence auto-generates. Visual preview before launch.</p>
+    </div>
+    <div class="card card-green" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--green);margin-bottom:8px;">🎯 EVENT AUTOMATION</div>
+      <p style="font-size:12px;color:var(--text-dim);">8 disposition events: appointment booked, transfer success, not interested, voicemail, callback... each triggers automated actions.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 6 — SIMPLE MODE + AUTONOMY                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s6">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--green);bottom:-200px;right:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-green">UX REVOLUTION</div>
+  <h2 class="headline" style="font-size:clamp(32px,4.5vw,54px);text-align:center;margin-bottom:24px;"><span class="green">SIMPLE MODE</span> × <span class="cyan">AUTONOMY LEVELS</span></h2>
+
+  <div class="g2" style="max-width:960px;width:100%;gap:28px;">
+    <div>
+      <div class="card card-green" style="padding:20px;margin-bottom:14px;">
+        <div style="font-family:'Bebas Neue';font-size:18px;color:var(--green);margin-bottom:10px;">⚡ SIMPLE MODE — 8 TABS</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">⚡ Command Center</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">🎯 AI Campaigns</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">📱 SMS Messaging</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">👥 Leads</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">📅 Appointments</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">🧠 Autonomous Agent</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">📊 Campaign Results</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(0,255,136,0.06);border-radius:6px;font-size:12px;font-weight:600;">⚙️ Settings</div>
+        </div>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:10px;">Toggle to Full Mode for 20+ power tabs. Default on for new users.</p>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'Bebas Neue';font-size:18px;color:var(--cyan);margin-bottom:14px;text-align:center;">THREE AUTONOMY LEVELS</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:14px;">
+          <div style="width:44px;height:44px;background:rgba(0,255,136,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid rgba(0,255,136,0.3);">🟢</div>
+          <div>
+            <div style="font-family:'Bebas Neue';font-size:18px;color:var(--green);">FULL AUTO</div>
+            <div style="font-size:12px;color:var(--text-dim);">AI executes everything autonomously. Calls leads, sends SMS, moves pipeline stages, optimizes pacing — all without human input.</div>
+          </div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:14px;">
+          <div style="width:44px;height:44px;background:rgba(245,158,11,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid rgba(245,158,11,0.3);">🟡</div>
+          <div>
+            <div style="font-family:'Bebas Neue';font-size:18px;color:var(--gold);">APPROVAL REQUIRED</div>
+            <div style="font-size:12px;color:var(--text-dim);">AI surfaces action queue. Human reviews and approves each batch. Complete audit trail with AI reasoning documented.</div>
+          </div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;align-items:center;gap:14px;">
+          <div style="width:44px;height:44px;background:rgba(124,58,237,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid rgba(124,58,237,0.3);">🔵</div>
+          <div>
+            <div style="font-family:'Bebas Neue';font-size:18px;color:var(--purple);">SUGGESTIONS ONLY</div>
+            <div style="font-size:12px;color:var(--text-dim);">AI recommends. Humans decide. Perfect for teams that want intelligence without automation. Learning still active.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 7 — AUTONOMOUS AGENT DEEP DIVE                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s7">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:600px;height:600px;background:var(--purple);top:-200px;left:-200px;opacity:0.1;"></div>
+
+  <div class="tag tag-purple">AUTONOMOUS ENGINE</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,58px);text-align:center;margin-bottom:10px;"><span class="purple">THE AI THAT THINKS</span><br><span style="color:white">LIKE A CAMPAIGN MANAGER.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:28px;max-width:700px;font-size:14px;">Runs every 5 minutes. Goal assessment → lead scoring → pacing → journeys → funnel → number health → transcripts → playbook → battle plan → patterns → memory.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">📅</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--cyan);">DAILY BATTLE PLANS</div>
+          <div style="font-size:12px;color:var(--text-dim);">AI generates a complete daily resource allocation plan: which numbers, which leads, what sequence, what budget. LLM-powered with rule-based fallback.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">🔬</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--pink);">STRATEGIC PATTERN DETECTION</div>
+          <div style="font-size:12px;color:var(--text-dim);">6 algorithms: timing patterns, attempt-gap optimization, sequence effectiveness, source performance, lead decay curves, number area code analysis.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">🔄</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--green);">PERPETUAL FOLLOW-UP</div>
+          <div style="font-size:12px;color:var(--text-dim);">Leads never fall off. Adaptive gap timing: starts at 7 days, grows to 30 days. Channel rotation (SMS/call). Legal stop conditions enforced automatically.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">📈</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--gold);">PREDICTIVE ML MODELS</div>
+          <div style="font-size:12px;color:var(--text-dim);">Logistic regression training on call outcomes. Lead conversion scoring. Churn risk detection. Auto-queues re-engagement for at-risk leads.</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">✉️</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--cyan);">SMS A/B TESTING — UCB1</div>
+          <div style="font-size:12px;color:var(--text-dim);">UCB1 bandit algorithm selects best SMS variant. Auto-generates improved copy when variants underperform (&lt;5% reply rate). Up to 4 variants per context.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">🎯</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--pink);">GOAL-DRIVEN STRATEGY BUILDER</div>
+          <div style="font-size:12px;color:var(--text-dim);">Tell it "Book solar appointments for 5,000 leads." AI analyzes data, creates pipelines, workflows, playbook rules — automatically. LLM or rule-based fallback.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">💊</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--green);">NUMBER HEALTH PREDICTION</div>
+          <div style="font-size:12px;color:var(--text-dim);">Proactive spam risk formula: velocity + answer rate + voicemail rate. Auto-quarantines before flagging. Health score 0-100 per number.</div>
+        </div>
+      </div>
+      <div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;">
+        <span style="font-size:24px;">🔑</span>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;color:var(--gold);">SELF-OPTIMIZING PLAYBOOK</div>
+          <div style="font-size:12px;color:var(--text-dim);">Tracks every rule's performance. Underperformers flagged (&lt;2% response after 20 fires). AI rewrites copy. Changes logged with full reasoning trail.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 8 — MCP / AI AGENT CONTROL                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s8">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--cyan);bottom:-200px;right:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-cyan">MODEL CONTEXT PROTOCOL</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,58px);text-align:center;margin-bottom:8px;">ANY AI CAN RUN<br><span class="cyan glow-cyan">YOUR ENTIRE OPERATION.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:24px;max-width:700px;font-size:14px;">Claude Code, Claude Desktop, Cursor, Windsurf, Manus, n8n — connect once, operate everything. 29 typed tools. Full API key auth system. Zero-trust architecture.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;gap:24px;">
+    <div>
+      <div class="code-block">
+<span class="comment">// Claude says:</span>
+<span class="str">"Show me today's stats, find campaigns with </span>
+<span class="str"> low answer rates, retry failed calls on the </span>
+<span class="str"> top performer, and DM me the results."</span>
+
+<span class="comment">// Claude executes:</span>
+<span class="fn">dialsmart_system_stats</span>() → <span class="num">✓</span>
+<span class="fn">dialsmart_list_campaigns</span>({ filter:<span class="str">"active"</span> }) → <span class="num">✓</span>
+<span class="fn">dialsmart_campaign_live_stats</span>({ id }) → <span class="num">✓</span>
+<span class="fn">dialsmart_retry_failed_calls</span>({ id }) → <span class="num">✓</span>
+<span class="fn">dialsmart_pre_launch_audit</span>({ id }) → <span class="num">✓</span>
+      </div>
+
+      <div style="margin-top:14px;" class="code-block">
+<span class="comment">// Architecture:</span>
+<span class="kw">Claude Code</span>
+  → <span class="str">MCP stdio JSON-RPC</span>
+  → <span class="fn">@dialsmart/mcp-server</span>
+  → <span class="str">HTTPS Bearer dsk_live_...</span>
+  → <span class="fn">api-gateway</span> edge fn
+  → <span class="str">Postgres + 81 edge functions</span>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--cyan);margin-bottom:12px;">29 AVAILABLE TOOLS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="cyan">●</span> system_stats</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="green">●</span> list_leads</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="cyan">●</span> health_check</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="green">●</span> create_lead</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="pink">●</span> launch_campaign</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="green">●</span> mark_lead_dnc</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="pink">●</span> pause_campaign</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="gold">●</span> place_call</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> validate_campaign</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="gold">●</span> send_sms</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> live_stats</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> force_dispatch</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> retry_failed</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> dry_run</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> pre_launch_audit</div>
+        <div class="card" style="padding:10px 12px;font-size:11px;"><span class="purple">●</span> find_stuck_calls</div>
+      </div>
+      <div style="margin-top:10px;padding:10px 14px;background:rgba(0,240,255,0.06);border-radius:8px;border:1px solid rgba(0,240,255,0.15);font-size:11px;color:var(--text-dim);">
+        🔐 SHA-256 key storage &nbsp;|&nbsp; Scope hierarchy &nbsp;|&nbsp; Full audit log &nbsp;|&nbsp; 300 req/min rate limit
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 9 — PREDICTIVE DIALING ENGINE                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s9">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:600px;height:600px;background:var(--pink);top:-150px;right:-150px;opacity:0.08;"></div>
+
+  <div class="tag tag-pink">CORE ENGINE</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,58px);text-align:center;margin-bottom:24px;">PREDICTIVE DIALING <span class="pink">AT SCALE.</span></h2>
+
+  <div class="g3" style="max-width:960px;width:100%;margin-bottom:20px;">
+    <div class="card" style="text-align:center;padding:20px;">
+      <div style="font-family:'Bebas Neue';font-size:48px;color:var(--cyan);">600</div>
+      <div style="font-size:11px;color:var(--text-dim);font-family:'Space Mono';letter-spacing:1px;">CALLS / MINUTE MAX</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text);">Adaptive pacing — slows down when answer rate drops, speeds up when agents are ready</div>
+    </div>
+    <div class="card" style="text-align:center;padding:20px;">
+      <div style="font-family:'Bebas Neue';font-size:48px;color:var(--green);">+40%</div>
+      <div style="font-size:11px;color:var(--text-dim);font-family:'Space Mono';letter-spacing:1px;">LOCAL PRESENCE LIFT</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text);">Area code matching. Leads see a local number. 40% higher answer rates vs. out-of-state numbers</div>
+    </div>
+    <div class="card" style="text-align:center;padding:20px;">
+      <div style="font-family:'Bebas Neue';font-size:48px;color:var(--gold);">+30%</div>
+      <div style="font-size:11px;color:var(--text-dim);font-family:'Space Mono';letter-spacing:1px;">AMD EFFICIENCY GAIN</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text);">Answer Machine Detection filters voicemail automatically. AI only connects on live picks</div>
+    </div>
+  </div>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--text-dim);letter-spacing:2px;margin-bottom:4px;">DIALING CAPABILITIES</div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(0,240,255,0.1);">📞</div>
+        <div><div style="font-weight:600;font-size:13px;">Predictive Dialing</div><div style="font-size:11px;color:var(--text-dim);">VICIdial-style ratios 1.0–3.5x with FCC ≤3% abandonment enforcement</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(255,62,108,0.1);">📻</div>
+        <div><div style="font-weight:600;font-size:13px;">Voice Broadcast</div><div style="font-size:11px;color:var(--text-dim);">One-way message delivery. Press 1 to connect. Twilio + Telnyx multi-carrier</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(0,255,136,0.1);">💬</div>
+        <div><div style="font-weight:600;font-size:13px;">AI SMS Sequences</div><div style="font-size:11px;color:var(--text-dim);">Intelligent two-way SMS with opt-out handling, auto-reply workflows, and UCB1 A/B testing</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(245,158,11,0.1);">🔄</div>
+        <div><div style="font-weight:600;font-size:13px;">Number Rotation</div><div style="font-size:11px;color:var(--text-dim);">Health-aware rotation. Proactive quarantine before spam flagging. Daily call caps per number</div></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--text-dim);letter-spacing:2px;margin-bottom:4px;">COMPLIANCE & PROTECTION</div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(0,255,136,0.1);">✅</div>
+        <div><div style="font-weight:600;font-size:13px;">TCPA / FCC / FTC</div><div style="font-size:11px;color:var(--text-dim);">Real-time abandonment monitoring. Timezone-aware calling windows. DNC pre-check</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(0,240,255,0.1);">🛡️</div>
+        <div><div style="font-weight:600;font-size:13px;">STIR/SHAKEN</div><div style="font-size:11px;color:var(--text-dim);">Verified caller ID attestation. A/B/C attestation levels. Carrier-level trust signals</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(255,62,108,0.1);">🚨</div>
+        <div><div style="font-weight:600;font-size:13px;">Spam Detection</div><div style="font-size:11px;color:var(--text-dim);">ML spam scoring. Real-time third-party lookup. Scheduled batch checks. Proactive quarantine</div></div>
+      </div>
+      <div class="feat-row" style="padding:10px 0;">
+        <div class="feat-icon" style="background:rgba(124,58,237,0.1);">📊</div>
+        <div><div style="font-weight:600;font-size:13px;">Campaign Health Score</div><div style="font-size:11px;color:var(--text-dim);">6-metric 0-100 score: answer rate, conversion, lead quality, agent performance, compliance, efficiency</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 10 — AI VOICE PROVIDERS                          -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s10">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--purple);bottom:-200px;left:-100px;opacity:0.1;"></div>
+
+  <div class="tag tag-purple">AI VOICE INFRASTRUCTURE</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,56px);text-align:center;margin-bottom:8px;">THREE PROVIDERS.<br><span class="purple">ONE INTELLIGENT ROUTER.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:28px;font-size:14px;">No vendor lock-in. Split traffic. A/B test providers. Auto-failover. One API.</p>
+
+  <div class="g3" style="max-width:960px;width:100%;margin-bottom:20px;">
+    <div class="card" style="padding:22px;border-color:rgba(0,240,255,0.3);">
+      <div style="font-family:'Bebas Neue';font-size:24px;color:var(--cyan);margin-bottom:6px;">RETELL AI</div>
+      <div class="badge badge-cyan" style="margin-bottom:12px;font-size:10px;">PRIMARY</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <div>🧠 Context-aware conversations</div>
+        <div>📅 Native calendar booking</div>
+        <div>🎙️ ElevenLabs voices</div>
+        <div>📊 Sentiment analysis</div>
+        <div>🔄 Full transcript + analysis</div>
+        <div>⚡ Agent builder UI</div>
+      </div>
+    </div>
+    <div class="card" style="padding:22px;border-color:rgba(124,58,237,0.3);">
+      <div style="font-family:'Bebas Neue';font-size:24px;color:var(--purple);margin-bottom:6px;">TELNYX VOICE AI</div>
+      <div class="badge badge-gold" style="margin-bottom:12px;font-size:10px;">$0.09/MIN ALL-IN</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <div>⚡ Sub-200ms latency</div>
+        <div>🧩 27 voices, 18 LLM models</div>
+        <div>🗃️ Knowledge base RAG</div>
+        <div>📡 Async tool calls</div>
+        <div>💬 Add Messages mid-call API</div>
+        <div>🤖 Multi-agent handoff</div>
+      </div>
+    </div>
+    <div class="card" style="padding:22px;border-color:rgba(0,255,136,0.3);">
+      <div style="font-family:'Bebas Neue';font-size:24px;color:var(--green);margin-bottom:6px;">ASSISTABLE</div>
+      <div class="badge badge-green" style="margin-bottom:12px;font-size:10px;">FLOW BUILDER</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <div>🔀 Visual flow builder</div>
+        <div>⚡ OpenAI-compatible streaming</div>
+        <div>📞 GHL-native calling</div>
+        <div>🎯 Eager streaming (&lt;200ms)</div>
+        <div>🔗 CRM variable injection</div>
+        <div>📱 SMS + voice unified</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:960px;">
+    <span class="badge badge-cyan">Dynamic Variable Injection</span>
+    <span class="badge badge-cyan">Post-Call Insight Webhooks</span>
+    <span class="badge badge-cyan">Transfer + Context Handoff</span>
+    <span class="badge badge-cyan">Scheduled Callback Events</span>
+    <span class="badge badge-cyan">AMD — Free (Telnyx Standard)</span>
+    <span class="badge badge-cyan">Real-time Memory System</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 11 — INTEGRATIONS & PLATFORM                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s11">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--gold);top:-200px;left:-100px;opacity:0.07;"></div>
+
+  <div class="tag tag-gold">PLATFORM ECOSYSTEM</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,56px);text-align:center;margin-bottom:24px;">EVERYTHING CONNECTS.<br><span class="gold">NOTHING FALLS THROUGH.</span></h2>
+
+  <div class="g4" style="max-width:960px;width:100%;margin-bottom:20px;">
+    <div class="card card-gold" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">📊</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--gold);">GO HIGH LEVEL</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Bi-directional sync, batch callbacks, pipeline stage mapping, 29K+ contacts</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">📅</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--cyan);">GOOGLE CALENDAR</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">OAuth integration, AI books appointments, availability checking, timezone-aware</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">💳</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--green);">STRIPE</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">White-label billing, auto-recharge, webhook payment processing</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">📋</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--purple);">AIRTABLE</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Webhook-based sync, lead import, custom field mapping</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">📞</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--cyan);">TWILIO</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">SMS, AMD webhooks, DTMF/IVR, inbound routing, number purchase</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">🔗</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--gold);">n8n / WEBHOOKS</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">REST API v0.2, inbound transfer webhooks, event-driven automation</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">🟡</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--gold);">YELLOWSTONE</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Lead source sync, pipeline integration</div>
+    </div>
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">🤖</div>
+      <div style="font-family:'Bebas Neue';font-size:14px;color:var(--pink);">OPENROUTER AI</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Claude, GPT-4.1, Gemini, Llama — multi-model intelligence routing</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:960px;">
+    <span class="badge badge-cyan">81 Edge Functions</span>
+    <span class="badge badge-green">231 React Components</span>
+    <span class="badge badge-pink">150+ DB Migrations</span>
+    <span class="badge badge-gold">Real-time Subscriptions</span>
+    <span class="badge badge-purple">Row-Level Security</span>
+    <span class="badge badge-cyan">Multi-Tenancy</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 12 — WHITE LABEL & BUSINESS MODEL                 -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s12">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--green);bottom:-150px;right:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-green">BUSINESS MODEL</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,56px);text-align:center;margin-bottom:8px;">RESELL AI VOICE MINUTES.<br><span class="green">KEEP 70-200% MARGIN.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:28px;font-size:14px;">Enterprise-grade prepaid credit system. Race-condition prevention. Full audit trail. Stripe integration. Ready to resell day one.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div>
+      <div class="card card-green" style="padding:24px;margin-bottom:14px;">
+        <div style="font-family:'Bebas Neue';font-size:18px;color:var(--green);margin-bottom:14px;">💰 MARGIN STRUCTURE</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,136,0.05);border-radius:6px;">
+            <span style="font-size:13px;color:var(--text-dim);">Your cost (Retell enterprise)</span>
+            <span style="font-family:'Bebas Neue';font-size:20px;color:var(--pink);">$0.05–0.07</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,136,0.08);border-radius:6px;">
+            <span style="font-size:13px;color:var(--text-dim);">Customer price (your markup)</span>
+            <span style="font-family:'Bebas Neue';font-size:20px;color:var(--cyan);">$0.12–0.18</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(0,255,136,0.12);border-radius:8px;border:1px solid rgba(0,255,136,0.3);">
+            <span style="font-size:14px;font-weight:700;color:var(--green);">Your margin per minute</span>
+            <span style="font-family:'Bebas Neue';font-size:28px;color:var(--green);">70–200%</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--gold);">Per-Org</div>
+          <div style="font-size:11px;color:var(--text-dim);">Isolated credit balances</div>
+        </div>
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--cyan);">Auto</div>
+          <div style="font-size:11px;color:var(--text-dim);">Recharge triggers</div>
+        </div>
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--pink);">0</div>
+          <div style="font-size:11px;color:var(--text-dim);">Race conditions (FOR UPDATE)</div>
+        </div>
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:20px;color:var(--green);">100%</div>
+          <div style="font-size:11px;color:var(--text-dim);">Audit trail coverage</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--text-dim);letter-spacing:2px;">CREDIT FLOW</div>
+      <div style="display:flex;flex-direction:column;gap:0;">
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;">
+          <div style="width:28px;height:28px;background:rgba(0,240,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);flex-shrink:0;border:1px solid rgba(0,240,255,0.3);">1</div>
+          <div style="font-size:12px;"><strong>check_credit_balance()</strong> — Is there enough? Block call if not.</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="width:28px;height:28px;background:rgba(0,240,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);flex-shrink:0;border:1px solid rgba(0,240,255,0.3);">2</div>
+          <div style="font-size:12px;"><strong>reserve_credits()</strong> — Lock estimated amount with FOR UPDATE</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="width:28px;height:28px;background:rgba(0,240,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);flex-shrink:0;border:1px solid rgba(0,240,255,0.3);">3</div>
+          <div style="font-size:12px;"><strong>Call proceeds</strong> — Retell API, full AI conversation</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="width:28px;height:28px;background:rgba(0,240,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--cyan);flex-shrink:0;border:1px solid rgba(0,240,255,0.3);">4</div>
+          <div style="font-size:12px;"><strong>finalize_call_cost()</strong> — Fetch real cost from Retell, release reservation, deduct actual</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="width:28px;height:28px;background:rgba(0,255,136,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--green);flex-shrink:0;border:1px solid rgba(0,255,136,0.3);">5</div>
+          <div style="font-size:12px;color:var(--green);"><strong>Margin logged</strong> — Cost vs. customer price. Full transaction audit trail.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 13 — COMPETITIVE COMPARISON                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s13">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:400px;height:400px;background:var(--cyan);bottom:-150px;left:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-cyan">COMPETITIVE ANALYSIS</div>
+  <h2 class="headline" style="font-size:clamp(30px,4.5vw,52px);text-align:center;margin-bottom:20px;">FEATURE-BY-FEATURE.<br><span class="cyan">NO HAND-WAVING.</span></h2>
+
+  <div style="max-width:960px;width:100%;overflow-x:auto;">
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>CAPABILITY</th>
+          <th style="color:var(--cyan);">CALL BOSS</th>
+          <th>FIVE9</th>
+          <th>VICIDIAL</th>
+          <th>GHL</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Autonomous AI Decision Engine</td>
+          <td class="check">✓ Full Auto Mode</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Mission Briefing (Zero-to-Launch Wizard)</td>
+          <td class="check">✓ 10-Step Guided</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="partial">⚡ Basic</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">MCP / AI Agent API Control</td>
+          <td class="check">✓ 29 Tools</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Self-Learning ML (5 models)</td>
+          <td class="check">✓ Weekly Training</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Number Health Prediction</td>
+          <td class="check">✓ Proactive</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">SMS Copy A/B Testing (UCB1)</td>
+          <td class="check">✓ Auto-Optimize</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="partial">⚡ Manual</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Perpetual Follow-Up Sequences</td>
+          <td class="check">✓ Adaptive Gap</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="partial">⚡ Basic</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Daily Battle Plan (AI Resource Alloc.)</td>
+          <td class="check">✓ LLM-Powered</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">White-Label Credit System</td>
+          <td class="check">✓ 70-200% Margin</td>
+          <td class="cross">✗</td>
+          <td class="cross">✗</td>
+          <td class="partial">⚡ Limited</td>
+        </tr>
+        <tr class="us">
+          <td style="font-weight:600;font-size:12px;">Predictive Dialing</td>
+          <td class="check">✓ 50–600 CPM</td>
+          <td class="check">✓ Enterprise</td>
+          <td class="check">✓ Legacy</td>
+          <td class="partial">⚡ Basic</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;font-size:12px;">Pricing</td>
+          <td style="color:var(--green);font-weight:700;">$0.15/min</td>
+          <td style="color:var(--muted);">$150+/seat/mo</td>
+          <td style="color:var(--muted);">Free* + hosting</td>
+          <td style="color:var(--muted);">$97-497/mo</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:11px;color:var(--text-dim);margin-top:12px;font-family:'Space Mono'">✓ FULL NATIVE &nbsp;|&nbsp; ⚡ PARTIAL/LIMITED &nbsp;|&nbsp; ✗ NOT AVAILABLE</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 14 — TECHNICAL ARCHITECTURE                       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s14">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--purple);top:-150px;right:-100px;opacity:0.1;"></div>
+
+  <div class="tag tag-purple">TECHNICAL ARCHITECTURE</div>
+  <h2 class="headline" style="font-size:clamp(28px,4vw,50px);text-align:center;margin-bottom:20px;"><span class="purple">ENTERPRISE-GRADE</span><br>FROM THE GROUND UP.</h2>
+
+  <div class="g3" style="max-width:960px;width:100%;margin-bottom:18px;">
+    <div class="card card-purple" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--purple);margin-bottom:12px;">🖥️ FRONTEND</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim);">
+        <div>React 18 + TypeScript 5.5</div>
+        <div>Vite build (~10s build time)</div>
+        <div>Tailwind CSS + Radix UI</div>
+        <div>231 TSX components</div>
+        <div>56 custom hooks</div>
+        <div>React Query + real-time subs</div>
+        <div style="color:var(--cyan);">Bundle: 778KB (52% reduction)</div>
+      </div>
+    </div>
+    <div class="card" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--cyan);margin-bottom:12px;">⚙️ BACKEND</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim);">
+        <div>Supabase PostgreSQL</div>
+        <div>81 Deno Edge Functions</div>
+        <div>150+ DB migrations</div>
+        <div>Row-Level Security (all tables)</div>
+        <div>Real-time PostgRES subscriptions</div>
+        <div>pg_cron for scheduled tasks</div>
+        <div style="color:var(--green);">0 TypeScript errors</div>
+      </div>
+    </div>
+    <div class="card" style="padding:18px;">
+      <div style="font-family:'Bebas Neue';font-size:16px;color:var(--green);margin-bottom:12px;">🔒 SECURITY</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim);">
+        <div>CodeQL: 0 vulnerabilities</div>
+        <div>SHA-256 API key hashing</div>
+        <div>Full audit log per request</div>
+        <div>Scope hierarchy (admin→read)</div>
+        <div>Rate limiting per API key</div>
+        <div>Multi-tenant RLS isolation</div>
+        <div style="color:var(--green);">TCPA/FCC/FTC compliant</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-block" style="max-width:960px;width:100%;font-size:11px;line-height:1.7;">
+<span class="comment">// System Scale (April 2026)</span>
+<span class="kw">Components</span>: <span class="num">231</span> TSX &nbsp;|&nbsp; <span class="kw">Edge Functions</span>: <span class="num">81</span> Deno &nbsp;|&nbsp; <span class="kw">Hooks</span>: <span class="num">56</span> custom &nbsp;|&nbsp; <span class="kw">Migrations</span>: <span class="num">150+</span>
+<span class="kw">Lines of Code</span>: <span class="num">144,137</span> TS/JS &nbsp;|&nbsp; <span class="kw">Total</span>: <span class="num">194K</span> (inc. SQL, MD, JSON) &nbsp;|&nbsp; <span class="kw">Build</span>: ~<span class="num">10</span>s
+<span class="kw">Providers</span>: <span class="fn">Retell</span> + <span class="fn">Telnyx</span> + <span class="fn">Twilio</span> + <span class="fn">GHL</span> + <span class="fn">Stripe</span> + <span class="fn">Airtable</span> + <span class="fn">Google Calendar</span> + <span class="fn">OpenRouter</span>
+<span class="kw">AI Models</span>: <span class="fn">Claude</span> + <span class="fn">GPT-4.1</span> + <span class="fn">Gemini 2.5</span> + <span class="fn">Llama 4</span> + <span class="fn">Qwen 3</span> + <span class="fn">DeepSeek</span> (18 total via Telnyx)
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 15 — ROI CALCULATOR                               -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s15">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:500px;height:500px;background:var(--gold);bottom:-200px;left:-100px;opacity:0.08;"></div>
+
+  <div class="tag tag-gold">ROI ANALYSIS</div>
+  <h2 class="headline" style="font-size:clamp(32px,5vw,56px);text-align:center;margin-bottom:8px;">THE NUMBERS<br><span class="gold">DON'T LIE.</span></h2>
+  <p style="color:var(--text-dim);text-align:center;margin-bottom:28px;font-size:14px;">100 leads/day. What does the model look like? Let's run it.</p>
+
+  <div class="g2" style="max-width:960px;width:100%;">
+    <div>
+      <div class="card card-pink" style="padding:20px;margin-bottom:14px;">
+        <div style="font-family:'Bebas Neue';font-size:18px;color:var(--pink);margin-bottom:12px;">❌ TRADITIONAL REP MODEL</div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">2 sales reps</span>
+          <span style="color:var(--pink);">$8,000–12,000/mo</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Leads worked per day</span>
+          <span style="color:var(--pink);">~40–60</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Follow-up after attempt 3</span>
+          <span style="color:var(--pink);">0%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Time-to-first-call</span>
+          <span style="color:var(--pink);">90+ minutes avg</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;">
+          <span style="color:var(--text-dim);">Works 24/7?</span>
+          <span style="color:var(--pink);">No</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card card-green" style="padding:20px;margin-bottom:14px;">
+        <div style="font-family:'Bebas Neue';font-size:18px;color:var(--green);margin-bottom:12px;">✓ CALL BOSS MODEL</div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">100 leads/day @ ~3 min avg</span>
+          <span style="color:var(--green);">~$45/day</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Leads worked per day</span>
+          <span style="color:var(--green);">100% (all of them)</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Follow-up after attempt 3</span>
+          <span style="color:var(--green);">Forever (adaptive)</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">
+          <span style="color:var(--text-dim);">Time-to-first-call</span>
+          <span style="color:var(--green);">&lt; 5 minutes</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;">
+          <span style="color:var(--text-dim);">Works 24/7?</span>
+          <span style="color:var(--green);">Yes</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="card" style="padding:14px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:32px;color:var(--gold);">95%</div>
+          <div style="font-size:11px;color:var(--text-dim);">Cost reduction vs 2-rep team</div>
+        </div>
+        <div class="card" style="padding:14px;text-align:center;">
+          <div style="font-family:'Bebas Neue';font-size:32px;color:var(--green);">10×</div>
+          <div style="font-size:11px;color:var(--text-dim);">More leads touched per day</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SLIDE 16 — CALL TO ACTION                               -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<section class="slide" id="s16">
+  <div class="bg-grid"></div>
+  <div class="orb" style="width:800px;height:800px;background:var(--cyan);top:-300px;left:-300px;opacity:0.08;"></div>
+  <div class="orb" style="width:600px;height:600px;background:var(--pink);bottom:-250px;right:-200px;opacity:0.08;"></div>
+
+  <div class="tag tag-pink">LET'S GO</div>
+
+  <h1 class="headline" style="font-size:clamp(50px,9vw,100px);text-align:center;margin-bottom:16px;line-height:0.9;">
+    <span class="cyan glow-cyan">YOUR LEADS</span><br>
+    <span style="color:white">NEVER DIE</span><br>
+    <span class="pink glow-pink">AGAIN.</span>
+  </h1>
+
+  <p style="color:var(--text-dim);text-align:center;max-width:600px;font-size:16px;margin-bottom:32px;line-height:1.6;">
+    You set the goal. It does the work. It gets smarter every day.<br>
+    Now with Simple Mode, Mission Briefing, and full MCP agent control —<br>
+    <strong style="color:white;">any AI can run the whole thing.</strong>
+  </p>
+
+  <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-bottom:36px;">
+    <div class="card" style="padding:16px 28px;text-align:center;border-color:rgba(0,240,255,0.4);cursor:pointer;" onclick="window.open('https://callboss.ai','_blank')">
+      <div style="font-family:'Bebas Neue';font-size:18px;color:var(--cyan);">🚀 SEE IT IN ACTION</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Live demo — 2,000+ calls/day</div>
+    </div>
+    <div class="card" style="padding:16px 28px;text-align:center;border-color:rgba(0,255,136,0.4);cursor:pointer;" onclick="window.open('./index.html','_blank')">
+      <div style="font-family:'Bebas Neue';font-size:18px;color:var(--green);">📊 EXPLORE THE PLATFORM</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Showcase hub, ROI calculator, 200+ blog posts</div>
+    </div>
+    <div class="card" style="padding:16px 28px;text-align:center;border-color:rgba(245,158,11,0.4);cursor:pointer;" onclick="window.open('./roi.html','_blank')">
+      <div style="font-family:'Bebas Neue';font-size:18px;color:var(--gold);">💰 CALCULATE YOUR ROI</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Plug in your numbers → see the payback</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;">
+    <div class="stat-pill">
+      <div class="num cyan">144K</div>
+      <div class="lbl">Lines of Code</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num pink">81</div>
+      <div class="lbl">Edge Functions</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num green">29</div>
+      <div class="lbl">MCP Tools</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num gold">0</div>
+      <div class="lbl">Vulnerabilities</div>
+    </div>
+    <div class="stat-pill">
+      <div class="num" style="color:var(--purple)">∞</div>
+      <div class="lbl">Follow-Ups</div>
+    </div>
+  </div>
+
+  <div style="margin-top:28px;font-family:'Space Mono';font-size:11px;color:var(--text-dim);text-align:center;letter-spacing:2px;">
+    BUILT BY INFINITE AI &nbsp;·&nbsp; CALL BOSS / DIAL SMART SYSTEM &nbsp;·&nbsp; 2026
+  </div>
+</section>
+
+</div><!-- end #deck -->
+
+<!-- ── DOT NAV ─── -->
+<nav id="nav">
+  <div class="dot active" onclick="goTo(0)" title="Title"></div>
+  <div class="dot" onclick="goTo(1)" title="Problem"></div>
+  <div class="dot" onclick="goTo(2)" title="What Is It"></div>
+  <div class="dot" onclick="goTo(3)" title="What's New"></div>
+  <div class="dot" onclick="goTo(4)" title="Mission Briefing"></div>
+  <div class="dot" onclick="goTo(5)" title="Simple Mode"></div>
+  <div class="dot" onclick="goTo(6)" title="Autonomous Agent"></div>
+  <div class="dot" onclick="goTo(7)" title="MCP"></div>
+  <div class="dot" onclick="goTo(8)" title="Predictive Dialing"></div>
+  <div class="dot" onclick="goTo(9)" title="AI Voice"></div>
+  <div class="dot" onclick="goTo(10)" title="Integrations"></div>
+  <div class="dot" onclick="goTo(11)" title="White Label"></div>
+  <div class="dot" onclick="goTo(12)" title="Comparison"></div>
+  <div class="dot" onclick="goTo(13)" title="Architecture"></div>
+  <div class="dot" onclick="goTo(14)" title="ROI"></div>
+  <div class="dot" onclick="goTo(15)" title="CTA"></div>
+</nav>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const dots = document.querySelectorAll('.dot');
+const counter = document.getElementById('slide-counter');
+let current = 0;
+let transitioning = false;
+
+function goTo(n) {
+  if (transitioning || n === current) return;
+  transitioning = true;
+
+  // Exit current
+  slides[current].classList.remove('active');
+  slides[current].classList.add('exit');
+
+  dots[current].classList.remove('active');
+
+  current = n;
+  counter.textContent = String(n + 1).padStart(2, '0') + ' / ' + slides.length;
+
+  // Remove exit from new slide (cleanup), then activate
+  slides[current].classList.remove('exit');
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      slides[current].classList.add('active');
+      dots[current].classList.add('active');
+    });
+  });
+
+  // Clean up exit class after transition
+  setTimeout(() => {
+    document.querySelectorAll('.slide.exit').forEach(s => s.classList.remove('exit'));
+    transitioning = false;
+  }, 700);
+}
+
+function next() { if (current < slides.length - 1) goTo(current + 1); }
+function prev() { if (current > 0) goTo(current - 1); }
+
+document.getElementById('next').addEventListener('click', next);
+document.getElementById('prev').addEventListener('click', prev);
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); next(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); prev(); }
+  if (e.key === 'Home') goTo(0);
+  if (e.key === 'End') goTo(slides.length - 1);
+  // Number keys 1-9
+  const num = parseInt(e.key);
+  if (!isNaN(num) && num >= 1 && num <= slides.length) goTo(num - 1);
+});
+
+// Touch / swipe
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
+document.addEventListener('touchend', e => {
+  const diff = touchStartX - e.changedTouches[0].screenX;
+  if (Math.abs(diff) > 50) { diff > 0 ? next() : prev(); }
+});
+
+// Tooltip on dots
+dots.forEach((d, i) => {
+  d.setAttribute('title', d.getAttribute('title') || `Slide ${i + 1}`);
+});
+</script>
+
+</body>
+</html>
