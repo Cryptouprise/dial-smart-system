@@ -407,7 +407,7 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
             />
           </div>
 
-          {provider === 'retell' && (form.type === 'webhook' || form.type === 'custom' || !!form.parameters) && (
+          {provider === 'retell' && (
             <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
               <div>
                 <Label>Parameters</Label>
