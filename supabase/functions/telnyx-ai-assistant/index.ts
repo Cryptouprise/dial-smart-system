@@ -2006,7 +2006,7 @@ serve(async (req) => {
       }
 
       case 'update_tools': {
-        const { assistant_id: utAssistantId, tools: newTools } = body;
+        const { assistant_id: utAssistantId, tools: newTools } = params;
         if (!utAssistantId) throw new Error('assistant_id required');
         if (!newTools) throw new Error('tools array required');
 
@@ -2055,7 +2055,7 @@ serve(async (req) => {
       }
 
       case 'delete_tool': {
-        const { assistant_id: dtAssistantId, tool_name: dtToolName } = body;
+        const { assistant_id: dtAssistantId, tool_name: dtToolName } = params;
         if (!dtAssistantId) throw new Error('assistant_id required');
         if (!dtToolName) throw new Error('tool_name required');
 
@@ -2086,9 +2086,9 @@ serve(async (req) => {
 
       case 'list_tests': {
         // Return assistant tests if any exist on Telnyx
-        const listTestsAssistantId = body.assistant_id;
+        const listTestsAssistantId = params.assistant_id;
         if (listTestsAssistantId) {
-          const testsResp = await telnyxFetch(`/ai/assistants/${listTestsAssistantId}/tests`, apiKey);
+          const testsResp = await telnyxFetch(`/ai/assistants/${listTestsAssistantId}/tests`, apiKey!);
           result = { tests: testsResp.ok ? (testsResp.data?.data || []) : [] };
         } else {
           result = { tests: [] };

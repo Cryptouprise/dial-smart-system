@@ -1054,7 +1054,7 @@ async function dispositionBreakdown(rc: RouteContext, id: string): Promise<Respo
 
 async function retryFailedCalls(rc: RouteContext, id: string): Promise<Response> {
   requireScope(rc.ctx, "campaigns:write");
-  const body = await safeJson(rc.req).catch(() => ({}));
+  const body: Record<string, any> = await safeJson(rc.req).catch(() => ({}));
   const withinMinutes = Math.max(1, Math.min(parseInt(String(body.within_minutes ?? "60"), 10) || 60, 1440));
   const maxRequeue = Math.max(1, Math.min(parseInt(String(body.max ?? "500"), 10) || 500, 2000));
 
@@ -1293,9 +1293,9 @@ async function phoneNumberHealth(rc: RouteContext): Promise<Response> {
 
   return successResponse({
     total: enriched.length,
-    healthy: enriched.filter((n) => n.health === "healthy").length,
-    watch: enriched.filter((n) => n.health === "watch").length,
-    unhealthy: enriched.filter((n) => n.health === "unhealthy").length,
+    healthy: enriched.filter((n: any) => n.health === "healthy").length,
+    watch: enriched.filter((n: any) => n.health === "watch").length,
+    unhealthy: enriched.filter((n: any) => n.health === "unhealthy").length,
     numbers: enriched,
   });
 }
