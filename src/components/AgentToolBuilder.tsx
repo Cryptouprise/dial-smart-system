@@ -267,6 +267,33 @@ function normalizeTelnyxTool(tool: any): AgentTool {
   };
 }
 
+function mapRetellToolToAgentTool(tool: any): AgentTool {
+  return {
+    id: tool?.id,
+    name: tool?.name || '',
+    type: normalizeRetellType(tool?.type || 'webhook'),
+    description: tool?.description || '',
+    url: tool?.url || '',
+    method: tool?.method || 'POST',
+    phone_number: tool?.transfer_destination?.number || tool?.number || tool?.phone_number || '',
+    speak_during_execution: tool?.speak_during_execution,
+    speak_after_execution: tool?.speak_after_execution,
+    execution_message_description: tool?.execution_message_description,
+    timeout_ms: tool?.timeout_ms,
+    transfer_destination: tool?.transfer_destination || undefined,
+    transfer_option: tool?.transfer_option || undefined,
+    cal_api_key: tool?.cal_api_key,
+    event_type_id: tool?.event_type_id,
+    timezone: tool?.timezone,
+    content: tool?.content,
+    parameters: tool?.parameters,
+  };
+}
+
+function getParameterEntries(parameters: any): Array<[string, any]> {
+  return Object.entries(parameters?.properties || {});
+}
+
 // ────────────────────────────────────────────────────────────
 //  Tool Form Dialog
 // ────────────────────────────────────────────────────────────
@@ -280,13 +307,17 @@ interface ToolFormProps {
 }
 
 const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider, tool, onSave }) => {
+  const { toast } = useToast();
   const defaultTool: AgentTool = { name: '', type: 'webhook', description: '' };
   const [form, setForm] = useState<AgentTool>({ ...defaultTool, ...tool });
+  const [parametersText, setParametersText] = useState('');
   const isEdit = !!tool;
 
   useEffect(() => {
     if (open) {
-      setForm({ ...defaultTool, ...tool });
+      const nextForm = { ...defaultTool, ...tool };
+      setForm(nextForm);
+      setParametersText(nextForm.parameters ? JSON.stringify(nextForm.parameters, null, 2) : '');
     }
   }, [open, tool]);
 
@@ -306,13 +337,34 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
 
   const handleSave = () => {
     if (!(form.name || '').trim()) return;
-    onSave(form);
+
+    let nextTool = { ...form };
+    const nextParametersText = parametersText.trim();
+
+    if (nextParametersText) {
+      try {
+        nextTool.parameters = JSON.parse(nextParametersText);
+      } catch {
+        toast({
+          title: 'Invalid parameters schema',
+          description: 'Parameters must be valid JSON Schema before saving.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } else {
+      delete nextTool.parameters;
+    }
+
+    onSave(nextTool);
     onOpenChange(false);
   };
 
   const transferDest = form.transfer_destination || { type: 'predefined' as const, number: form.phone_number || '' };
   const transferOpt = form.transfer_option || { type: 'cold_transfer' as const };
   const warmOpts = transferOpt.warm_transfer_option || {};
+  const parameterEntries = getParameterEntries(form.parameters);
+  const requiredParameters = new Set(Array.isArray(form.parameters?.required) ? form.parameters.required : []);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -354,6 +406,51 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
               rows={2}
             />
           </div>
+
+          {provider === 'retell' && (form.type === 'webhook' || form.type === 'custom' || !!form.parameters) && (
+            <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
+              <div>
+                <Label>Parameters</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This is the exact JSON Schema Retell uses for the tool arguments.
+                </p>
+              </div>
+
+              {parameterEntries.length > 0 ? (
+                <div className="space-y-2">
+                  {parameterEntries.map(([paramName, paramConfig]) => (
+                    <div key={paramName} className="rounded-md border bg-background p-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-medium">{paramName}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {paramConfig?.type || 'any'}
+                        </Badge>
+                        {requiredParameters.has(paramName) && (
+                          <Badge variant="secondary" className="text-[10px]">required</Badge>
+                        )}
+                      </div>
+                      {paramConfig?.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{paramConfig.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No parameters are currently defined on this tool.</p>
+              )}
+
+              <div className="space-y-2">
+                <Label>Parameters JSON Schema</Label>
+                <Textarea
+                  value={parametersText}
+                  onChange={(e) => setParametersText(e.target.value)}
+                  placeholder={'{\n  "type": "object",\n  "properties": {}\n}'}
+                  rows={10}
+                  className="font-mono text-xs"
+                />
+              </div>
+            </div>
+          )}
 
           {/* ── Webhook / MCP fields ── */}
           {(form.type === 'webhook' || form.type === 'custom' || form.type === 'mcp_server') && (
@@ -690,6 +787,29 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
   const [editingTool, setEditingTool] = useState<AgentTool | undefined>(undefined);
   const [editingIndex, setEditingIndex] = useState<number>(-1);
 
+  const resolveActiveRetellLlmId = useCallback(async () => {
+    let activeLlmId = llmId;
+
+    if (providerAgentId) {
+      console.log('[ToolSync] Fetching agent to get current LLM ID:', providerAgentId);
+      const agentRes = await supabase.functions.invoke('retell-agent-management', {
+        body: { action: 'get_agent', agentId: providerAgentId },
+      });
+
+      if (!agentRes.error && agentRes.data) {
+        const freshLlmId = agentRes.data?.response_engine?.llm_id;
+        if (freshLlmId) {
+          if (freshLlmId !== llmId) {
+            console.log(`[ToolSync] LLM ID mismatch! Props: ${llmId}, Agent has: ${freshLlmId}. Using fresh.`);
+          }
+          activeLlmId = freshLlmId;
+        }
+      }
+    }
+
+    return activeLlmId;
+  }, [llmId, providerAgentId]);
+
   // Annotate webhook statuses
   const normalizedTools = provider === 'telnyx'
     ? tools.map(normalizeTelnyxTool)
@@ -710,25 +830,7 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
       let fetchedTools: AgentTool[] = [];
 
       if (provider === 'retell') {
-        // Step 1: Fetch the agent directly to get the CURRENT LLM ID from Retell
-        // This prevents stale llmId from showing old/wrong tools
-        let activeLlmId = llmId;
-
-        if (providerAgentId) {
-          console.log('[ToolSync] Fetching agent to get current LLM ID:', providerAgentId);
-          const agentRes = await supabase.functions.invoke('retell-agent-management', {
-            body: { action: 'get_agent', agentId: providerAgentId },
-          });
-          if (!agentRes.error && agentRes.data) {
-            const freshLlmId = agentRes.data?.response_engine?.llm_id;
-            if (freshLlmId) {
-              if (freshLlmId !== llmId) {
-                console.log(`[ToolSync] LLM ID mismatch! Props: ${llmId}, Agent has: ${freshLlmId}. Using fresh.`);
-              }
-              activeLlmId = freshLlmId;
-            }
-          }
-        }
+        const activeLlmId = await resolveActiveRetellLlmId();
 
         if (!activeLlmId) {
           toast({ title: 'Missing LLM ID', description: 'Cannot sync tools — no LLM found on agent.', variant: 'destructive' });
@@ -745,28 +847,7 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
         console.log('[ToolSync] Raw general_tools from Retell:', JSON.stringify(llmData?.general_tools?.length || 0), 'tools');
 
         fetchedTools = (llmData?.general_tools || []).map((t: any) => {
-          const mapped: AgentTool = {
-            name: t.name || '',
-            type: normalizeRetellType(t.type || 'webhook'),
-            description: t.description || '',
-            url: t.url || '',
-            method: t.method || 'POST',
-            phone_number: t.transfer_destination?.number || t.number || t.phone_number || '',
-            speak_during_execution: t.speak_during_execution,
-            speak_after_execution: t.speak_after_execution,
-            execution_message_description: t.execution_message_description,
-            timeout_ms: t.timeout_ms,
-            transfer_destination: t.transfer_destination || undefined,
-            transfer_option: t.transfer_option || undefined,
-            cal_api_key: t.cal_api_key,
-            event_type_id: t.event_type_id,
-            timezone: t.timezone,
-            content: t.content,
-          };
-          // Preserve parameters exactly as Retell returns them (JSON Schema with properties, required, etc.)
-          if (t.parameters) {
-            mapped.parameters = t.parameters;
-          }
+          const mapped = mapRetellToolToAgentTool(t);
           console.log(`[ToolSync] Tool "${t.name}" type=${t.type} params=${t.parameters ? Object.keys(t.parameters.properties || {}).length + ' props' : 'none'}`);
           return mapped;
         });
@@ -803,11 +884,13 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
     setIsSaving(true);
     try {
       if (provider === 'retell') {
-        if (!llmId) throw new Error('LLM ID required to update Retell tools');
+        const activeLlmId = await resolveActiveRetellLlmId();
+        if (!activeLlmId) throw new Error('LLM ID required to update Retell tools');
+
         const res = await supabase.functions.invoke('retell-agent-management', {
           body: {
             action: 'update_tools',
-            llmId,
+            llmId: activeLlmId,
             tools: updatedTools.map(t => ({
               name: t.name,
               type: t.type === 'custom' ? 'webhook' : t.type,
@@ -830,6 +913,10 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
           },
         });
         if (res.error) throw res.error;
+
+        if (Array.isArray(res.data?.general_tools)) {
+          onToolsChange(res.data.general_tools.map(mapRetellToolToAgentTool));
+        }
       } else {
         const res = await supabase.functions.invoke('telnyx-ai-assistant', {
           body: {
@@ -849,6 +936,10 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
           },
         });
         if (res.error) throw res.error;
+
+        if (Array.isArray(res.data?.tools)) {
+          onToolsChange(res.data.tools.map(normalizeTelnyxTool));
+        }
       }
 
       toast({ title: 'Tools saved', description: `Tools pushed to ${provider === 'retell' ? 'Retell' : 'Telnyx'} successfully.` });
@@ -858,7 +949,7 @@ const AgentToolBuilder: React.FC<AgentToolBuilderProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [provider, agentId, llmId, toast]);
+  }, [provider, agentId, onToolsChange, resolveActiveRetellLlmId, toast]);
 
   // ──── CRUD handlers ────
   const handleAddTool = (tool: AgentTool) => {

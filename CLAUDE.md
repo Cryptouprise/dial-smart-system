@@ -2744,3 +2744,26 @@ Claude calls `dialsmart_system_stats`, then `dialsmart_list_leads` with the filt
 **Gotchas / lessons learned**
 - Telnyx tools are not consistently stored in one flat schema; webhook tools commonly arrive nested as `tool.webhook.{name,url,method}` while the editor expects flat fields.
 - Passing `assistant.tools` directly from props into the builder is not enough for an interactive editor; the tools panel needs its own local state or sync results will not visibly update.
+
+### April 13, 2026 - Retell Tool Parameter Visibility + Live LLM Save Fix
+
+**What was built/fixed/changed**
+- Fixed the Retell tool edit dialog so synced JSON-schema parameters now render inside the tool editor instead of being hidden.
+- Added a raw JSON Schema editor for Retell tool parameters so provider-side argument schemas can be reviewed and edited directly from the UI.
+- Fixed Retell tool saves to resolve the agent's current live `response_engine.llm_id` before pushing updates, preventing edits from being written to a stale LLM.
+- After save, the tool list now refreshes from the provider response so the UI stays aligned with Retell immediately.
+
+**Key files modified**
+- `src/components/AgentToolBuilder.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification pending after the patch.
+
+**Gotchas / lessons learned**
+- The earlier sync logs were already proving Retell returned the full parameter schema; the missing piece was the editor UI not rendering that schema.
+- Sync and save both need to resolve the live LLM ID from the current agent, otherwise a stale prop can make the UI and Retell drift apart.
