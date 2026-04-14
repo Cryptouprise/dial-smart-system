@@ -614,7 +614,7 @@ const ToolFormDialog: React.FC<ToolFormProps> = ({ open, onOpenChange, provider,
                           <Label>Speak During Execution</Label>
                           <p className="text-xs text-muted-foreground">Agent talks while webhook processes</p>
                         </div>
-                        <Switch checked={form.speak_during_execution ?? false} onCheckedChange={(v) => update('speak_during_execution', v)} />
+                        <Switch checked={form.speak_during_execution ?? true} onCheckedChange={(v) => update('speak_during_execution', v)} />
                       </div>
                       <div className="flex items-center justify-between">
                         <div>
