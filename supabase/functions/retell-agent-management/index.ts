@@ -682,7 +682,7 @@ serve(async (req) => {
 
           if (retellTool.type === 'custom') {
             retellTool.url = retellTool.url || '';
-            retellTool.speak_during_execution = retellTool.speak_during_execution ?? false;
+            retellTool.speak_during_execution = retellTool.speak_during_execution ?? true;
             retellTool.speak_after_execution = retellTool.speak_after_execution ?? true;
           }
 
