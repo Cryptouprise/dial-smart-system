@@ -71,6 +71,24 @@ const EnhancedLeadManager = () => {
     loadLeadsForCurrentFilter();
   }, [selectedSmartList, builtInFilter]);
 
+  // Server-side search with debounce
+  useEffect(() => {
+    if (!searchQuery.trim()) return; // Don't search on empty — loadData handles initial load
+    const timer = setTimeout(async () => {
+      const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
+      const results = await getLeads({ search: searchQuery.trim(), status: statusParam });
+      if (results) setLeads(results);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, statusFilter]);
+
+  // When search is cleared, reload all leads
+  useEffect(() => {
+    if (searchQuery === '' && !selectedSmartList) {
+      loadLeadsForCurrentFilter();
+    }
+  }, [searchQuery]);
+
   const loadData = async () => {
     const [leadsData, campaignsData] = await Promise.all([
       getLeads(),
@@ -311,16 +329,12 @@ const EnhancedLeadManager = () => {
     return parts.length > 0 ? parts.join(', ') : null;
   };
 
-  // Filter leads based on search and status
+  // Filtering is now server-side; just apply status filter for non-search cases
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = searchQuery === '' || 
-      getLeadDisplayName(lead).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.phone_number.includes(searchQuery) ||
-      (lead.email?.toLowerCase().includes(searchQuery.toLowerCase()));
-    
+    // When searching, server already filtered — just apply status if not sent server-side
+    if (searchQuery.trim()) return true;
     const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
+    return matchesStatus;
   });
 
   return (
