@@ -56,6 +56,9 @@ const EnhancedLeadManager = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedSmartList, setSelectedSmartList] = useState<SmartList | null>(null);
   const [builtInFilter, setBuiltInFilter] = useState<'all' | 'new' | 'hot' | 'recent'>('all');
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
