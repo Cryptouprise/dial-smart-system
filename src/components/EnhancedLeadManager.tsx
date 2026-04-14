@@ -15,7 +15,8 @@ import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
 import { supabase } from '@/integrations/supabase/client';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2 } from 'lucide-react';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus } from 'lucide-react';
+import { LeadImportDialog } from '@/components/LeadImportDialog';
 
 interface Lead {
   id: string;
