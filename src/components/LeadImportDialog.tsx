@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Upload, Tag, CheckCircle2, Loader2, List, Megaphone, FileText, ArrowRight, X } from 'lucide-react';
+import { Upload, Tag, CheckCircle2, Loader2, List, Megaphone, FileText, ArrowRight, X, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useSmartLists } from '@/hooks/useSmartLists';
