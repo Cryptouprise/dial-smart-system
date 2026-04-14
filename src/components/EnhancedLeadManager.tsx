@@ -15,7 +15,8 @@ import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
 import { supabase } from '@/integrations/supabase/client';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2 } from 'lucide-react';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus } from 'lucide-react';
+import { LeadImportDialog } from '@/components/LeadImportDialog';
 
 interface Lead {
   id: string;
@@ -59,6 +60,7 @@ const EnhancedLeadManager = () => {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
@@ -182,83 +184,7 @@ const EnhancedLeadManager = () => {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const csv = e.target?.result as string;
-        const lines = csv.split('\n');
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        
-        const leadsToImport = lines.slice(1)
-          .filter(line => line.trim())
-          .map(line => {
-            const values = line.split(',').map(v => v.trim().replace(/['"]/g, ''));
-            const lead: any = {};
-            
-            headers.forEach((header, index) => {
-              const value = values[index];
-              if (!value) return;
-              
-              switch (header) {
-                case 'phone':
-                case 'phone_number':
-                  lead.phone_number = value;
-                  break;
-                case 'first_name':
-                case 'firstname':
-                  lead.first_name = value;
-                  break;
-                case 'last_name':
-                case 'lastname':
-                  lead.last_name = value;
-                  break;
-                case 'email':
-                  lead.email = value;
-                  break;
-                case 'company':
-                  lead.company = value;
-                  break;
-                case 'address':
-                case 'street':
-                case 'street_address':
-                  lead.address = value;
-                  break;
-                case 'city':
-                  lead.city = value;
-                  break;
-                case 'state':
-                  lead.state = value;
-                  break;
-                case 'zip':
-                case 'zip_code':
-                case 'postal_code':
-                  lead.zip_code = value;
-                  break;
-              }
-            });
-            
-            return lead;
-          })
-          .filter(lead => lead.phone_number);
-
-        if (leadsToImport.length > 0) {
-          await importLeads(leadsToImport);
-          loadData();
-        }
-      } catch (error) {
-        toast({
-          title: "Import Error",
-          description: "Failed to parse CSV file. Please check the format.",
-          variant: "destructive"
-        });
-      }
-    };
-    reader.readAsText(file);
-  };
+  // File upload is now handled by LeadImportDialog
 
   const handleAddToCampaign = async () => {
     if (!selectedCampaign || selectedLeads.length === 0) {
@@ -630,73 +556,24 @@ const EnhancedLeadManager = () => {
 
         {/* Import Leads Tab */}
         <TabsContent value="import">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* CSV Upload */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Upload className="h-5 w-5" />
-                  CSV Upload
-                </CardTitle>
-                <CardDescription>Upload leads from a CSV file</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileUpload}
-                    className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                  />
-                  <div className="text-xs text-muted-foreground">
-                    <p className="font-medium mb-1">Expected columns:</p>
-                    <div className="grid grid-cols-2 gap-1">
-                      <span>• phone_number (required)</span>
-                      <span>• first_name</span>
-                      <span>• last_name</span>
-                      <span>• email</span>
-                      <span>• company</span>
-                      <span>• address</span>
-                      <span>• city</span>
-                      <span>• state</span>
-                      <span>• zip_code</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* GHL Integration */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Link className="h-5 w-5" />
-                  Go High Level
-                </CardTitle>
-                <CardDescription>Import leads from your GHL account</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {ghlConnected ? (
-                  <div className="space-y-3">
-                    <Badge variant="default">Connected</Badge>
-                    <Button onClick={handleGHLSync} className="w-full">
-                      <Database className="h-4 w-4 mr-2" />
-                      Import from GHL
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <Badge variant="outline">Not Connected</Badge>
-                    <p className="text-sm text-muted-foreground">
-                      Connect your Go High Level account to import leads automatically.
-                    </p>
-                    <Button variant="outline" className="w-full" disabled>
-                      Connect GHL First
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          <div className="flex flex-col items-center justify-center py-12 space-y-4">
+            <Upload className="h-12 w-12 text-muted-foreground" />
+            <div className="text-center">
+              <h3 className="font-semibold text-lg">Import Leads</h3>
+              <p className="text-sm text-muted-foreground max-w-md">
+                Upload a CSV file to import leads. You'll be able to add tags, create a smart list, and assign to a campaign during import.
+              </p>
+            </div>
+            <Button size="lg" onClick={() => setImportDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Import from CSV
+            </Button>
+            {ghlConnected && (
+              <Button variant="outline" onClick={handleGHLSync} disabled={isLoading}>
+                <Database className="h-4 w-4 mr-2" />
+                Import from Go High Level
+              </Button>
+            )}
           </div>
         </TabsContent>
 
@@ -804,6 +681,17 @@ const EnhancedLeadManager = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Lead Import Dialog */}
+      <LeadImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        campaigns={campaigns}
+        onImportComplete={(count) => {
+          loadData();
+          fetchLists();
+        }}
+      />
       </div>
     </div>
   );

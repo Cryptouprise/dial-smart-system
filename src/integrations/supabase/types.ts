@@ -8010,6 +8010,10 @@ export type Database = {
         Returns: number
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      merge_custom_fields: {
+        Args: { p_lead_id: string; p_updates: Json }
+        Returns: Json
+      }
       mint_api_key: {
         Args: {
           p_expires_in?: string
