@@ -687,6 +687,22 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
               </Button>
             </div>
 
+            {/* Duplicate Handling */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-2 cursor-pointer">
+                  <Users className="h-4 w-4" />
+                  Update existing contacts
+                </Label>
+                <Switch checked={updateExisting} onCheckedChange={setUpdateExisting} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {updateExisting
+                  ? 'Duplicate phone numbers will have their empty fields filled in with new data from the CSV.'
+                  : 'Duplicate phone numbers will be skipped — no existing data will be changed.'}
+              </p>
+            </div>
+
             <Separator />
 
             {/* Tags */}
@@ -784,9 +800,14 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
           <div className="space-y-4 py-2">
             <div className="text-center py-4">
               <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-3" />
-              <h3 className="text-lg font-semibold">{result.imported} Leads Imported</h3>
+              <h3 className="text-lg font-semibold">
+                {result.imported > 0 && `${result.imported} New`}
+                {result.imported > 0 && result.updated > 0 && ' • '}
+                {result.updated > 0 && `${result.updated} Updated`}
+                {result.imported === 0 && result.updated === 0 && 'No changes'}
+              </h3>
               {result.skipped > 0 && (
-                <p className="text-sm text-muted-foreground">{result.skipped} skipped (duplicates or errors)</p>
+                <p className="text-sm text-muted-foreground">{result.skipped} skipped (already exist)</p>
               )}
             </div>
 

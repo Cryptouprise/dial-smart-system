@@ -493,19 +493,21 @@ const EnhancedLeadManager = () => {
             </div>
           </div>
 
-          {/* Lead Count */}
+          {/* Lead Count + Select All */}
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {displayedLeadCount.toLocaleString()} lead{displayedLeadCount !== 1 ? 's' : ''}
-              {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
-            </p>
-            {filteredLeads.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={toggleSelectAllVisible}>
-                  {allVisibleSelected ? 'Clear Visible' : `Select All Visible (${filteredLeads.length.toLocaleString()})`}
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {filteredLeads.length > 0 && (
+                <Checkbox
+                  checked={allVisibleSelected}
+                  onCheckedChange={toggleSelectAllVisible}
+                  aria-label="Select all"
+                />
+              )}
+              <p className="text-sm text-muted-foreground">
+                {displayedLeadCount.toLocaleString()} lead{displayedLeadCount !== 1 ? 's' : ''}
+                {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
+              </p>
+            </div>
           </div>
 
           {/* Mobile-Friendly Lead Cards */}
