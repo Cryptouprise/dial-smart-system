@@ -272,19 +272,6 @@ const EnhancedLeadManager = () => {
     );
   };
 
-  const visibleLeadIds = filteredLeads.map(lead => lead.id);
-  const allVisibleSelected = visibleLeadIds.length > 0 && visibleLeadIds.every(id => selectedLeads.includes(id));
-
-  const toggleSelectAllVisible = () => {
-    setSelectedLeads(prev => {
-      if (allVisibleSelected) {
-        return prev.filter(id => !visibleLeadIds.includes(id));
-      }
-
-      return Array.from(new Set([...prev, ...visibleLeadIds]));
-    });
-  };
-
   const openLeadDetail = (lead: Lead) => {
     setSelectedLead(lead);
     setIsDetailOpen(true);
@@ -353,6 +340,18 @@ const EnhancedLeadManager = () => {
 
   const filteredLeads = leads;
   const displayedLeadCount = currentLeadCount ?? filteredLeads.length;
+  const visibleLeadIds = filteredLeads.map(lead => lead.id);
+  const allVisibleSelected = visibleLeadIds.length > 0 && visibleLeadIds.every(id => selectedLeads.includes(id));
+
+  const toggleSelectAllVisible = () => {
+    setSelectedLeads(prev => {
+      if (allVisibleSelected) {
+        return prev.filter(id => !visibleLeadIds.includes(id));
+      }
+
+      return Array.from(new Set([...prev, ...visibleLeadIds]));
+    });
+  };
 
   return (
     <div className="flex h-full">
