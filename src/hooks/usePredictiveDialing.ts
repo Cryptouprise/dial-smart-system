@@ -406,10 +406,9 @@ export const usePredictiveDialing = () => {
 
       if (empty || !query) return [];
 
-      // Apply limit (default 5000, but allow override)
-      query = query.limit(filters?.limit || 5000);
+      const limitedQuery = query.limit(filters?.limit || 5000);
 
-      const { data, error } = await query;
+      const { data, error } = await limitedQuery;
 
       if (error) throw error;
       return data;

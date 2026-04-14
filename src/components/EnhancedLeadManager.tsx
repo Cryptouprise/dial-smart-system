@@ -70,34 +70,6 @@ const EnhancedLeadManager = () => {
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
   const { lists, fetchLists } = useSmartLists();
 
-  useEffect(() => {
-    loadData();
-    checkGHLConnection();
-    fetchLists();
-  }, []);
-
-  // Reload leads when smart list or built-in filter changes
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      loadLeadsForCurrentFilter();
-    }
-  }, [selectedSmartList, builtInFilter, statusFilter, activeAdvancedFilters, searchQuery, loadLeadsForCurrentFilter]);
-
-  // Server-side search with debounce
-  useEffect(() => {
-    if (!searchQuery.trim()) return; // Don't search on empty — loadData handles initial load
-    const timer = setTimeout(async () => {
-      const searchFilters = buildViewFilters({ search: searchQuery.trim() });
-      const [results, count] = await Promise.all([
-        getLeads(searchFilters),
-        getLeadCount(searchFilters)
-      ]);
-      if (results) setLeads(results);
-      if (count !== null) setCurrentLeadCount(count);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery, getLeads, getLeadCount, buildViewFilters]);
-
   const hasActiveSmartFilters = useCallback((filters?: SmartListFilters | null) => {
     return Object.values(filters || {}).some(value => Array.isArray(value) ? value.length > 0 : value !== undefined);
   }, []);
@@ -178,6 +150,35 @@ const EnhancedLeadManager = () => {
   const refreshCurrentView = useCallback(async () => {
     await Promise.all([loadData(), loadLeadsForCurrentFilter()]);
   }, [loadData, loadLeadsForCurrentFilter]);
+
+  useEffect(() => {
+    loadData();
+    checkGHLConnection();
+    fetchLists();
+  }, []);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      loadLeadsForCurrentFilter();
+    }
+  }, [selectedSmartList, builtInFilter, statusFilter, activeAdvancedFilters, searchQuery, loadLeadsForCurrentFilter]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+
+    const timer = setTimeout(async () => {
+      const searchFilters = buildViewFilters({ search: searchQuery.trim() });
+      const [results, count] = await Promise.all([
+        getLeads(searchFilters),
+        getLeadCount(searchFilters)
+      ]);
+
+      if (results) setLeads(results);
+      if (count !== null) setCurrentLeadCount(count);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, getLeads, getLeadCount, buildViewFilters]);
 
   const handleSelectSmartList = (list: SmartList | null) => {
     setSelectedSmartList(list);
