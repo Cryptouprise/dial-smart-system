@@ -190,6 +190,7 @@ const mapRowsToLeads = (
 interface ImportResult {
   total: number;
   imported: number;
+  updated: number;
   skipped: number;
   tags: string[];
   smartListName?: string;
