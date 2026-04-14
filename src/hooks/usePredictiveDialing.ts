@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { debouncedErrorToast } from '@/lib/toastDedup';
@@ -48,9 +48,90 @@ interface CallLog {
   ended_at?: string;
 }
 
+export interface LeadQueryFilters {
+  status?: string;
+  statuses?: string[];
+  campaign_id?: string;
+  search?: string;
+  limit?: number;
+  lead_source?: string;
+  tags?: string[];
+  tags_all?: string[];
+  tags_exclude?: string[];
+  created_after?: string;
+  created_before?: string;
+}
+
 export const usePredictiveDialing = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+  const applyLeadQueryFilters = useCallback(async (baseQuery: any, filters?: LeadQueryFilters) => {
+    let query = baseQuery;
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+
+    if (filters?.statuses?.length) {
+      query = query.in('status', filters.statuses);
+    }
+
+    if (filters?.lead_source) {
+      query = query.eq('lead_source', filters.lead_source);
+    }
+
+    if (filters?.tags?.length) {
+      query = query.overlaps('tags', filters.tags);
+    }
+
+    if (filters?.tags_all?.length) {
+      query = query.contains('tags', filters.tags_all);
+    }
+
+    if (filters?.tags_exclude?.length) {
+      for (const excludedTag of filters.tags_exclude) {
+        query = query.not('tags', 'cs', `{${excludedTag}}`);
+      }
+    }
+
+    if (filters?.created_after) {
+      query = query.gte('created_at', filters.created_after);
+    }
+
+    if (filters?.created_before) {
+      query = query.lte('created_at', filters.created_before);
+    }
+
+    if (filters?.search) {
+      const term = filters.search.trim();
+      const digits = term.replace(/\D/g, '');
+
+      if (digits.length >= 7) {
+        const withPlus = digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
+        query = query.or(`phone_number.ilike.%${digits}%,phone_number.ilike.%${withPlus}%`);
+      } else {
+        query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,company.ilike.%${term}%,phone_number.ilike.%${term}%`);
+      }
+    }
+
+    if (filters?.campaign_id) {
+      const { data: campaignLeads, error: campaignLeadError } = await supabase
+        .from('campaign_leads')
+        .select('lead_id')
+        .eq('campaign_id', filters.campaign_id);
+
+      if (campaignLeadError) throw campaignLeadError;
+
+      if (!campaignLeads?.length) {
+        return { query: null, empty: true };
+      }
+
+      query = query.in('id', campaignLeads.map(cl => cl.lead_id));
+    }
+
+    return { query, empty: false };
+  }, []);
 
   // Lead Management
   const createLead = async (leadData: Partial<Lead>) => {
@@ -298,56 +379,32 @@ export const usePredictiveDialing = () => {
     }
   };
 
-  const getLeadCount = async () => {
+  const getLeadCount = useCallback(async (filters?: LeadQueryFilters) => {
     try {
-      const { count, error } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true });
+      const { query, empty } = await applyLeadQueryFilters(
+        supabase.from('leads').select('*', { count: 'exact', head: true }),
+        filters
+      );
+
+      if (empty || !query) return 0;
+
+      const { count, error } = await query;
       if (error) return null;
       return count;
     } catch {
       return null;
     }
-  };
+  }, [applyLeadQueryFilters]);
 
-  const getLeads = async (filters?: { status?: string; campaign_id?: string; search?: string; limit?: number }) => {
+  const getLeads = useCallback(async (filters?: LeadQueryFilters) => {
     setIsLoading(true);
     try {
-      let query = supabase.from('leads').select('*').order('created_at', { ascending: false });
+      const { query, empty } = await applyLeadQueryFilters(
+        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        filters
+      );
 
-      if (filters?.status) {
-        query = query.eq('status', filters.status);
-      }
-
-      if (filters?.search) {
-        const term = filters.search.trim();
-        // Normalize phone: strip non-digits for phone matching
-        const digits = term.replace(/\D/g, '');
-        if (digits.length >= 7) {
-          // Phone search — try multiple formats to catch both normalized and raw numbers
-          const withPlus = digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
-          query = query.or(`phone_number.ilike.%${digits}%,phone_number.ilike.%${withPlus}%`);
-        } else {
-          // Text search — name, email, company
-          query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,company.ilike.%${term}%,phone_number.ilike.%${term}%`);
-        }
-      }
-
-      if (filters?.campaign_id) {
-        // Get lead IDs that belong to the campaign
-        const { data: campaignLeads } = await supabase
-          .from('campaign_leads')
-          .select('lead_id')
-          .eq('campaign_id', filters.campaign_id);
-
-        if (campaignLeads && campaignLeads.length > 0) {
-          const leadIds = campaignLeads.map(cl => cl.lead_id);
-          query = query.in('id', leadIds);
-        } else {
-          // No leads in this campaign
-          return [];
-        }
-      }
+      if (empty || !query) return [];
 
       // Apply limit (default 5000, but allow override)
       query = query.limit(filters?.limit || 5000);
@@ -362,7 +419,7 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [applyLeadQueryFilters, toast]);
 
   // Campaign Management
   const createCampaign = async (campaignData: Partial<Campaign>) => {
@@ -481,7 +538,7 @@ export const usePredictiveDialing = () => {
     }
   };
 
-  const getCampaigns = async () => {
+  const getCampaigns = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
@@ -497,7 +554,7 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   // Outbound Calling
   const makeCall = async (campaignId: string, leadId: string, phoneNumber: string, callerId: string) => {
@@ -566,7 +623,7 @@ export const usePredictiveDialing = () => {
     }
   };
 
-  const getCallLogs = async (campaignId?: string) => {
+  const getCallLogs = useCallback(async (campaignId?: string) => {
     setIsLoading(true);
     try {
       let query = supabase
@@ -592,7 +649,7 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   const updateCallOutcome = async (callLogId: string, outcome: string, notes?: string) => {
     setIsLoading(true);
