@@ -1109,11 +1109,6 @@ serve(async (req) => {
                   from_number: callerId,
                   to_number: finalPhone,
                   agent_id: agentId,
-                  override_agent_config: {
-                    // Force transfer tools to show the transferee (lead) as the caller,
-                    // not the AI agent's number. This matches Retell portal behavior.
-                    opt_out_sensitive_data_storage: false,
-                  },
                   retell_llm_dynamic_variables: dynamicVariables,
                   metadata: {
                     campaign_id: campaignId,
