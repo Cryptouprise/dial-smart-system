@@ -491,16 +491,27 @@ const EnhancedLeadManager = () => {
                 </SelectContent>
               </Select>
               {selectedLeads.length > 0 && (
-                <Button 
-                  onClick={handleResetForCalling}
-                  disabled={isLoading}
-                  variant="outline"
-                  size="sm"
-                  className="whitespace-nowrap"
-                >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  Reset ({selectedLeads.length})
-                </Button>
+                <>
+                  <Button 
+                    onClick={handleResetForCalling}
+                    disabled={isLoading}
+                    variant="outline"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Reset ({selectedLeads.length})
+                  </Button>
+                  <Button 
+                    onClick={() => setBulkDeleteOpen(true)}
+                    variant="destructive"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete ({selectedLeads.length})
+                  </Button>
+                </>
               )}
             </div>
           </div>
