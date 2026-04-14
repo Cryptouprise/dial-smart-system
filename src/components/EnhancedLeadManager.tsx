@@ -60,6 +60,7 @@ const EnhancedLeadManager = () => {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
