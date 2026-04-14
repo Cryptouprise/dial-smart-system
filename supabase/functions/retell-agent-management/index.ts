@@ -536,6 +536,16 @@ serve(async (req) => {
         
         const llmData = await response.json();
         console.log(`[Retell Agent] LLM fetched successfully`);
+        // Log transfer tool config for debugging caller ID issues
+        const transferTools = (llmData.general_tools || []).filter((t: any) => t.type === 'transfer_call');
+        if (transferTools.length > 0) {
+          for (const tt of transferTools) {
+            console.log(`[Retell Agent] Transfer tool "${tt.name}" config:`, JSON.stringify({
+              transfer_destination: tt.transfer_destination,
+              transfer_option: tt.transfer_option,
+            }));
+          }
+        }
         
         return new Response(JSON.stringify(llmData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
