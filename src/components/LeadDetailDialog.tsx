@@ -63,7 +63,24 @@ interface Lead {
   next_callback_at: string | null;
   do_not_call: boolean | null;
   priority: number | null;
+  custom_fields?: Record<string, unknown> | null;
 }
+
+// Well-known qualification fields the AI captures mid-call via update-lead-info.
+// These render with friendly labels even when empty so reps see what's missing.
+const WELL_KNOWN_CUSTOM_FIELDS: { key: string; label: string; hint?: string }[] = [
+  { key: 'Homeowner', label: 'Homeowner', hint: 'yes / no' },
+  { key: 'ElectricBill', label: 'Monthly Electric Bill', hint: 'e.g. 250' },
+  { key: 'RoofType', label: 'Roof Type', hint: 'shingle / tile / metal / flat' },
+  { key: 'RoofCondition', label: 'Roof Condition', hint: 'good / fair / poor' },
+  { key: 'CreditScore', label: 'Credit Score', hint: '650+ / excellent / good / fair / poor' },
+  { key: 'UtilityProvider', label: 'Utility Provider' },
+  { key: 'Qualified', label: 'Qualified', hint: 'yes / no' },
+  { key: 'AppointmentInterest', label: 'Appointment Interest', hint: 'yes / no' },
+  { key: 'Timeline', label: 'Timeline' },
+  { key: 'CurrentlyShopping', label: 'Currently Shopping', hint: 'yes / no' },
+  { key: 'Notes', label: 'Notes' },
+];
 
 interface ActivityItem {
   id: string;
@@ -310,6 +327,40 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
         title: "Save Failed",
         description: `Failed to save ${field}`,
         variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Save a single key inside the custom_fields JSONB (merge, don't clobber).
+  const handleCustomFieldSave = async (key: string, value: string) => {
+    if (!lead) return;
+    setIsSaving(true);
+    try {
+      const existing = (lead.custom_fields && typeof lead.custom_fields === 'object'
+        ? lead.custom_fields
+        : {}) as Record<string, unknown>;
+      const trimmed = value.trim();
+      const next: Record<string, unknown> = { ...existing };
+      if (trimmed === '') {
+        delete next[key];
+      } else {
+        next[key] = trimmed;
+      }
+      const { error } = await supabase
+        .from('leads')
+        .update({ custom_fields: next, updated_at: new Date().toISOString() })
+        .eq('id', lead.id);
+      if (error) throw error;
+      setEditedLead(prev => ({ ...prev, custom_fields: next }));
+      onLeadUpdated?.();
+    } catch (error) {
+      console.error('Error saving custom field:', error);
+      toast({
+        title: 'Save Failed',
+        description: `Failed to save ${key}`,
+        variant: 'destructive',
       });
     } finally {
       setIsSaving(false);
@@ -977,6 +1028,80 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                   </CardContent>
                 </Card>
               )}
+
+              {/* Custom Fields (AI-captured qualification answers, stored in leads.custom_fields JSONB) */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Variable className="h-4 w-4" />
+                    Custom Fields
+                    <Badge variant="outline" className="ml-2 text-[10px]">AI-captured</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    These fields are filled in automatically when the AI agent captures qualification answers during calls.
+                    You can also edit them manually — they get passed back into the next call so the AI remembers.
+                  </p>
+                  {(() => {
+                    const cf = (lead.custom_fields && typeof lead.custom_fields === 'object'
+                      ? lead.custom_fields
+                      : {}) as Record<string, unknown>;
+                    const wellKnownKeys = new Set(WELL_KNOWN_CUSTOM_FIELDS.map(f => f.key));
+                    const extraKeys = Object.keys(cf).filter(k => !wellKnownKeys.has(k));
+                    const rows = [
+                      ...WELL_KNOWN_CUSTOM_FIELDS,
+                      ...extraKeys.map(k => ({ key: k, label: k, hint: 'custom' })),
+                    ];
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {rows.map(({ key, label, hint }) => {
+                          const value = cf[key];
+                          const stringValue = value == null ? '' : String(value);
+                          const isNotes = key === 'Notes';
+                          return (
+                            <div key={key} className={isNotes ? 'md:col-span-2' : ''}>
+                              <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                                {label}
+                                {hint && (
+                                  <span className="text-[10px] opacity-60">({hint})</span>
+                                )}
+                                {stringValue && (
+                                  <Badge variant="secondary" className="text-[9px] h-4 px-1">set</Badge>
+                                )}
+                              </Label>
+                              {isNotes ? (
+                                <Textarea
+                                  className="mt-1 text-sm"
+                                  rows={2}
+                                  defaultValue={stringValue}
+                                  placeholder="Notes from conversations…"
+                                  onBlur={(e) => {
+                                    if (e.target.value.trim() !== stringValue.trim()) {
+                                      handleCustomFieldSave(key, e.target.value);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <Input
+                                  className="mt-1 h-8 text-sm"
+                                  defaultValue={stringValue}
+                                  placeholder="—"
+                                  onBlur={(e) => {
+                                    if (e.target.value.trim() !== stringValue.trim()) {
+                                      handleCustomFieldSave(key, e.target.value);
+                                    }
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="activity" className="mt-0">
