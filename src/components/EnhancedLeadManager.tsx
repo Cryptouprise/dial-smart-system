@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
@@ -13,7 +14,8 @@ import { useSmartLists, SmartList, SmartListFilters } from '@/hooks/useSmartList
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2 } from 'lucide-react';
 
 interface Lead {
   id: string;
@@ -54,6 +56,9 @@ const EnhancedLeadManager = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedSmartList, setSelectedSmartList] = useState<SmartList | null>(null);
   const [builtInFilter, setBuiltInFilter] = useState<'all' | 'new' | 'hot' | 'recent'>('all');
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
@@ -306,6 +311,44 @@ const EnhancedLeadManager = () => {
     setIsDetailOpen(true);
   };
 
+  const deleteLead = async (lead: Lead) => {
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('leads').delete().eq('id', lead.id);
+      if (error) {
+        // If delete fails (FK constraints), archive instead
+        await supabase.from('leads').update({ do_not_call: true, status: 'dnc' }).eq('id', lead.id);
+        toast({ title: 'Lead archived', description: 'Lead had history and was marked Do Not Call instead.' });
+      } else {
+        toast({ title: 'Lead deleted' });
+      }
+      setLeads(prev => prev.filter(l => l.id !== lead.id));
+      setSelectedLeads(prev => prev.filter(id => id !== lead.id));
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to delete lead', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+      setLeadToDelete(null);
+    }
+  };
+
+  const bulkDeleteLeads = async () => {
+    setDeleting(true);
+    let deleted = 0;
+    for (const leadId of selectedLeads) {
+      const { error } = await supabase.from('leads').delete().eq('id', leadId);
+      if (error) {
+        await supabase.from('leads').update({ do_not_call: true, status: 'dnc' }).eq('id', leadId);
+      }
+      deleted++;
+    }
+    setLeads(prev => prev.filter(l => !selectedLeads.includes(l.id)));
+    setSelectedLeads([]);
+    setDeleting(false);
+    setBulkDeleteOpen(false);
+    toast({ title: `${deleted} lead(s) deleted/archived` });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'new': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
@@ -448,16 +491,27 @@ const EnhancedLeadManager = () => {
                 </SelectContent>
               </Select>
               {selectedLeads.length > 0 && (
-                <Button 
-                  onClick={handleResetForCalling}
-                  disabled={isLoading}
-                  variant="outline"
-                  size="sm"
-                  className="whitespace-nowrap"
-                >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  Reset ({selectedLeads.length})
-                </Button>
+                <>
+                  <Button 
+                    onClick={handleResetForCalling}
+                    disabled={isLoading}
+                    variant="outline"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Reset ({selectedLeads.length})
+                  </Button>
+                  <Button 
+                    onClick={() => setBulkDeleteOpen(true)}
+                    variant="destructive"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete ({selectedLeads.length})
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -529,8 +583,8 @@ const EnhancedLeadManager = () => {
                           )}
                         </div>
                         
-                        {/* Status & Edit */}
-                        <div className="flex items-center gap-2 shrink-0">
+                        {/* Status & Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
                           <Badge className={`text-xs ${getStatusColor(lead.status)}`}>
                             {lead.status}
                           </Badge>
@@ -544,6 +598,17 @@ const EnhancedLeadManager = () => {
                             }}
                           >
                             <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLeadToDelete(lead);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
@@ -695,6 +760,50 @@ const EnhancedLeadManager = () => {
         onOpenChange={setIsDetailOpen}
         onLeadUpdated={loadData}
       />
+
+      {/* Delete Single Lead Dialog */}
+      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {leadToDelete?.first_name || leadToDelete?.phone_number || 'this lead'}. If the lead has call/SMS history, it will be archived (Do Not Call) instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => leadToDelete && deleteLead(leadToDelete)}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedLeads.length} leads?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all selected leads. Leads with call/SMS history will be archived (Do Not Call) instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={bulkDeleteLeads}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : `Delete ${selectedLeads.length} Leads`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </div>
   );
