@@ -116,7 +116,8 @@ const EnhancedLeadManager = () => {
       setLeads(smartListLeads);
     } else {
       // Load all leads with built-in filter
-      const allLeads = await getLeads();
+      const [allLeads, count] = await Promise.all([getLeads(), getLeadCount()]);
+      if (count !== null) setTotalLeadCount(count);
       if (allLeads) {
         let filtered = allLeads;
         if (builtInFilter === 'new') {
@@ -130,7 +131,7 @@ const EnhancedLeadManager = () => {
         setLeads(filtered);
       }
     }
-  }, [selectedSmartList, builtInFilter, getLeads, getListLeads]);
+  }, [selectedSmartList, builtInFilter, getLeads, getListLeads, getLeadCount]);
 
   const handleSelectSmartList = (list: SmartList | null) => {
     setSelectedSmartList(list);
