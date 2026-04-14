@@ -311,6 +311,44 @@ const EnhancedLeadManager = () => {
     setIsDetailOpen(true);
   };
 
+  const deleteLead = async (lead: Lead) => {
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('leads').delete().eq('id', lead.id);
+      if (error) {
+        // If delete fails (FK constraints), archive instead
+        await supabase.from('leads').update({ do_not_call: true, status: 'dnc' }).eq('id', lead.id);
+        toast({ title: 'Lead archived', description: 'Lead had history and was marked Do Not Call instead.' });
+      } else {
+        toast({ title: 'Lead deleted' });
+      }
+      setLeads(prev => prev.filter(l => l.id !== lead.id));
+      setSelectedLeads(prev => prev.filter(id => id !== lead.id));
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to delete lead', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+      setLeadToDelete(null);
+    }
+  };
+
+  const bulkDeleteLeads = async () => {
+    setDeleting(true);
+    let deleted = 0;
+    for (const leadId of selectedLeads) {
+      const { error } = await supabase.from('leads').delete().eq('id', leadId);
+      if (error) {
+        await supabase.from('leads').update({ do_not_call: true, status: 'dnc' }).eq('id', leadId);
+      }
+      deleted++;
+    }
+    setLeads(prev => prev.filter(l => !selectedLeads.includes(l.id)));
+    setSelectedLeads([]);
+    setDeleting(false);
+    setBulkDeleteOpen(false);
+    toast({ title: `${deleted} lead(s) deleted/archived` });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'new': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
