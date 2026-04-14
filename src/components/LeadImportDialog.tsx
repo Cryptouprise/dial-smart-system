@@ -310,7 +310,7 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
 
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
       
-      // Normalize phone numbers and prepare leads
+      // Normalize phone numbers and dedup within CSV
       const leadsWithTags: any[] = [];
       const seenPhones = new Set<string>();
       
@@ -333,24 +333,92 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
 
       setProgress(20);
 
-      // Fetch existing phones to skip duplicates
-      const { data: existingLeads } = await supabase
-        .from('leads')
-        .select('phone_number')
-        .eq('user_id', user.id);
-      const existingPhones = new Set((existingLeads || []).map(l => l.phone_number));
-      const deduped = leadsWithTags.filter(l => !existingPhones.has(l.phone_number));
+      // Fetch ALL existing phones for this user to detect duplicates
+      const existingPhoneMap = new Map<string, any>();
+      let offset = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data: batch } = await supabase
+          .from('leads')
+          .select('id, phone_number, first_name, last_name, email, company, address, city, state, zip_code, tags')
+          .eq('user_id', user.id)
+          .range(offset, offset + pageSize - 1);
+        if (!batch || batch.length === 0) break;
+        for (const l of batch) {
+          existingPhoneMap.set(l.phone_number, l);
+        }
+        if (batch.length < pageSize) break;
+        offset += pageSize;
+      }
 
       setProgress(30);
 
-      // Batch insert leads
+      // Split into new leads vs duplicates
+      const newLeads: any[] = [];
+      const duplicateLeads: { csvLead: any; existingLead: any }[] = [];
+      
+      for (const lead of leadsWithTags) {
+        const existing = existingPhoneMap.get(lead.phone_number);
+        if (existing) {
+          duplicateLeads.push({ csvLead: lead, existingLead: existing });
+        } else {
+          newLeads.push(lead);
+        }
+      }
+
+      // Batch insert NEW leads
       let importedCount = 0;
       const batchSize = 100;
-      for (let i = 0; i < deduped.length; i += batchSize) {
-        const batch = deduped.slice(i, i + batchSize);
+      for (let i = 0; i < newLeads.length; i += batchSize) {
+        const batch = newLeads.slice(i, i + batchSize);
         const { error } = await supabase.from('leads').insert(batch as any);
         if (!error) importedCount += batch.length;
-        setProgress(30 + Math.round((i / deduped.length) * 40));
+        setProgress(30 + Math.round((i / Math.max(newLeads.length, 1)) * 20));
+      }
+
+      setProgress(55);
+
+      // Update existing leads if user opted in
+      let updatedCount = 0;
+      if (updateExisting && duplicateLeads.length > 0) {
+        for (let i = 0; i < duplicateLeads.length; i++) {
+          const { csvLead, existingLead } = duplicateLeads[i];
+          const updates: Record<string, any> = {};
+          
+          // Only update fields that are non-empty in CSV and empty/different in existing
+          if (csvLead.first_name && !existingLead.first_name) updates.first_name = csvLead.first_name;
+          if (csvLead.last_name && !existingLead.last_name) updates.last_name = csvLead.last_name;
+          if (csvLead.email && !existingLead.email) updates.email = csvLead.email;
+          if (csvLead.company && !existingLead.company) updates.company = csvLead.company;
+          if (csvLead.address && !existingLead.address) updates.address = csvLead.address;
+          if (csvLead.city && !existingLead.city) updates.city = csvLead.city;
+          if (csvLead.state && !existingLead.state) updates.state = csvLead.state;
+          if (csvLead.zip_code && !existingLead.zip_code) updates.zip_code = csvLead.zip_code;
+          
+          // Merge tags
+          if (tagList.length > 0) {
+            const existingTags = existingLead.tags || [];
+            const mergedTags = Array.from(new Set([...existingTags, ...tagList]));
+            if (mergedTags.length !== existingTags.length) {
+              updates.tags = mergedTags;
+            }
+          }
+
+          // Merge custom fields
+          if (csvLead.custom_fields && Object.keys(csvLead.custom_fields).length > 0) {
+            updates.custom_fields = csvLead.custom_fields; // Will be merged via DB
+          }
+
+          if (Object.keys(updates).length > 0) {
+            updates.updated_at = new Date().toISOString();
+            const { error } = await supabase.from('leads').update(updates).eq('id', existingLead.id);
+            if (!error) updatedCount++;
+          }
+          
+          if (i % 50 === 0) {
+            setProgress(55 + Math.round((i / duplicateLeads.length) * 15));
+          }
+        }
       }
 
       setProgress(75);
@@ -362,9 +430,8 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
         if (tagList.length > 0) {
           filters.tags = tagList;
         } else {
-          // Use lead_source and date as filter
-            filters.lead_source = 'CSV Import';
-          filters.created_after = new Date(Date.now() - 60000).toISOString(); // Last minute
+          filters.lead_source = 'CSV Import';
+          filters.created_after = new Date(Date.now() - 60000).toISOString();
         }
         await createList(smartListName.trim(), filters, `Imported from ${csvFile?.name}`);
         createdListName = smartListName.trim();
@@ -376,7 +443,6 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
       // Assign to campaign if requested
       let campaignName: string | undefined;
       if (assignCampaign && selectedCampaignId) {
-        // Get the recently imported leads by tag or recent creation
         let leadIds: string[] = [];
         if (tagList.length > 0) {
           const { data: tagged } = await supabase
@@ -399,7 +465,6 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
         }
 
         if (leadIds.length > 0) {
-          // Check existing assignments
           const { data: existing } = await supabase
             .from('campaign_leads')
             .select('lead_id')
@@ -409,7 +474,6 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
 
           if (newIds.length > 0) {
             const inserts = newIds.map(id => ({ campaign_id: selectedCampaignId, lead_id: id }));
-            // Batch inserts for campaign_leads too
             for (let i = 0; i < inserts.length; i += batchSize) {
               await supabase.from('campaign_leads').insert(inserts.slice(i, i + batchSize));
             }
@@ -424,14 +488,15 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
       setResult({
         total: parsedLeads.length,
         imported: importedCount,
-        skipped: parsedLeads.length - importedCount,
+        updated: updatedCount,
+        skipped: duplicateLeads.length - updatedCount,
         tags: tagList,
         smartListName: createdListName,
         campaignName,
       });
 
       setStep('results');
-      onImportComplete?.(importedCount);
+      onImportComplete?.(importedCount + updatedCount);
     } catch (err: any) {
       console.error('Import error:', err);
       toast({ title: 'Import Failed', description: err.message, variant: 'destructive' });
