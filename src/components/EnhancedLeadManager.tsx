@@ -98,13 +98,15 @@ const EnhancedLeadManager = () => {
   }, [searchQuery]);
 
   const loadData = async () => {
-    const [leadsData, campaignsData] = await Promise.all([
+    const [leadsData, campaignsData, count] = await Promise.all([
       getLeads(),
-      getCampaigns()
+      getCampaigns(),
+      getLeadCount()
     ]);
     
     if (leadsData) setLeads(leadsData);
     if (campaignsData) setCampaigns(campaignsData);
+    if (count !== null) setTotalLeadCount(count);
   };
 
   const loadLeadsForCurrentFilter = useCallback(async () => {
