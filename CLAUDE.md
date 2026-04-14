@@ -13,6 +13,30 @@
 
 ---
 
+### April 14, 2026 - Lead Import Mapping + Bulk Select Fix
+
+**What was built/fixed/changed**
+- Rebuilt the CSV lead importer so it now uses a proper parser instead of naive comma splitting, which was dropping names and address fields on uploads.
+- Added a real column-mapping step with preview before import, so users can map phone, full name, first name, last name, email, company, street, city, state, and ZIP from arbitrary CSV headers.
+- Preserved unmapped CSV columns into `leads.custom_fields` so extra uploaded data is not silently lost.
+- Added a bulk `Select All Visible` action in Lead Management so users can operate on the current lead set at scale.
+
+**Key files modified**
+- `src/components/LeadImportDialog.tsx`
+- `src/components/EnhancedLeadManager.tsx`
+- `package.json`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification pending after this patch.
+
+**Gotchas / lessons learned**
+- CSV imports that use quoted commas or non-standard headers will break badly with `split(',')`; a real CSV parser is mandatory for production lead imports.
+- Even when a lead table has standard columns, preserving unmapped upload columns into `custom_fields` avoids silent data loss and makes imports enterprise-safe.
+
 ### April 14, 2026 - Leads Filter Spinner + Exact Count Fix
 
 **What was built/fixed/changed**

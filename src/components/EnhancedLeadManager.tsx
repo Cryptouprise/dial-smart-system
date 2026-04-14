@@ -272,6 +272,19 @@ const EnhancedLeadManager = () => {
     );
   };
 
+  const visibleLeadIds = filteredLeads.map(lead => lead.id);
+  const allVisibleSelected = visibleLeadIds.length > 0 && visibleLeadIds.every(id => selectedLeads.includes(id));
+
+  const toggleSelectAllVisible = () => {
+    setSelectedLeads(prev => {
+      if (allVisibleSelected) {
+        return prev.filter(id => !visibleLeadIds.includes(id));
+      }
+
+      return Array.from(new Set([...prev, ...visibleLeadIds]));
+    });
+  };
+
   const openLeadDetail = (lead: Lead) => {
     setSelectedLead(lead);
     setIsDetailOpen(true);
@@ -487,6 +500,13 @@ const EnhancedLeadManager = () => {
               {displayedLeadCount.toLocaleString()} lead{displayedLeadCount !== 1 ? 's' : ''}
               {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
             </p>
+            {filteredLeads.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={toggleSelectAllVisible}>
+                  {allVisibleSelected ? 'Clear Visible' : `Select All Visible (${filteredLeads.length.toLocaleString()})`}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Mobile-Friendly Lead Cards */}
@@ -600,12 +620,12 @@ const EnhancedLeadManager = () => {
             <div className="text-center">
               <h3 className="font-semibold text-lg">Import Leads</h3>
               <p className="text-sm text-muted-foreground max-w-md">
-                Upload a CSV file to import leads. You'll be able to add tags, create a smart list, and assign to a campaign during import.
+                Upload a CSV file, map every column before import, then tag leads and drop them into smart lists or campaigns.
               </p>
             </div>
             <Button size="lg" onClick={() => setImportDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Import from CSV
+              Import with Mapping
             </Button>
             {ghlConnected && (
               <Button variant="outline" onClick={handleGHLSync} disabled={isLoading}>
