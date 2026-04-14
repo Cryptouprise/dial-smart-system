@@ -13,6 +13,28 @@
 
 ---
 
+### April 14, 2026 - Leads Filter Spinner + Exact Count Fix
+
+**What was built/fixed/changed**
+- Fixed the Leads page endless spinner caused by unstable callback props and unstable data-fetch functions retriggering filter effects on every render.
+- Moved lead view filtering/counting to server-side query filters for built-in views and advanced filters, so counts now reflect the actual matching set instead of the loaded row cap.
+- Updated the Leads manager count labels to show exact matching counts for Recent/New/search/filter views instead of misleading `1000 leads` style client counts.
+
+**Key files modified**
+- `src/hooks/usePredictiveDialing.ts`
+- `src/components/EnhancedLeadManager.tsx`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification still required after this patch.
+
+**Gotchas / lessons learned**
+- Passing inline callbacks like `onLeadCountChange={(count) => ...}` into effects-driven filter components can create accidental re-fetch loops.
+- Exact lead counts must come from Supabase `count: 'exact'` queries with the same filters, not from the currently loaded array length, especially when row caps are in play.
+
 This file provides persistent context for Claude Code when working with the dial-smart-system codebase.
 
 ## Voice Broadcast Playbook (ACTIVE)

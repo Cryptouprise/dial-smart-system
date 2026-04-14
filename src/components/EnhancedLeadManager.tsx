@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
+import { usePredictiveDialing, type LeadQueryFilters } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
 import { useSmartLists, SmartList, SmartListFilters } from '@/hooks/useSmartLists';
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
@@ -45,6 +45,7 @@ interface Lead {
 
 const EnhancedLeadManager = () => {
   const [totalLeadCount, setTotalLeadCount] = useState<number | null>(null);
+  const [currentLeadCount, setCurrentLeadCount] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [ghlConnected, setGhlConnected] = useState(false);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -62,11 +63,93 @@ const EnhancedLeadManager = () => {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [activeAdvancedFilters, setActiveAdvancedFilters] = useState<SmartListFilters>({});
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
-  const { getListLeads, lists, fetchLists } = useSmartLists();
+  const { lists, fetchLists } = useSmartLists();
+
+  const hasActiveSmartFilters = useCallback((filters?: SmartListFilters | null) => {
+    return Object.values(filters || {}).some(value => Array.isArray(value) ? value.length > 0 : value !== undefined);
+  }, []);
+
+  const mapSmartListFiltersToQuery = useCallback((filters?: SmartListFilters | null): LeadQueryFilters => ({
+    statuses: filters?.status,
+    lead_source: filters?.lead_source,
+    campaign_id: filters?.campaign_id,
+    tags: filters?.tags,
+    tags_all: filters?.tags_all,
+    tags_exclude: filters?.tags_exclude,
+    created_after: filters?.created_after,
+    created_before: filters?.created_before,
+  }), []);
+
+  const getBuiltInFilters = useCallback((type: 'all' | 'new' | 'hot' | 'recent'): LeadQueryFilters => {
+    switch (type) {
+      case 'new':
+        return { status: 'new' };
+      case 'hot':
+        return { status: 'interested' };
+      case 'recent':
+        return { created_after: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() };
+      default:
+        return {};
+    }
+  }, []);
+
+  const buildViewFilters = useCallback((overrides: Partial<LeadQueryFilters> = {}): LeadQueryFilters => {
+    const baseFilters = hasActiveSmartFilters(activeAdvancedFilters)
+      ? mapSmartListFiltersToQuery(activeAdvancedFilters)
+      : selectedSmartList
+        ? mapSmartListFiltersToQuery(selectedSmartList.filters)
+        : getBuiltInFilters(builtInFilter);
+
+    const mergedFilters: LeadQueryFilters = {
+      ...baseFilters,
+      ...overrides,
+    };
+
+    if (!overrides.status && !overrides.statuses && statusFilter !== 'all') {
+      mergedFilters.status = statusFilter;
+    }
+
+    return mergedFilters;
+  }, [activeAdvancedFilters, selectedSmartList, builtInFilter, statusFilter, hasActiveSmartFilters, mapSmartListFiltersToQuery, getBuiltInFilters]);
+
+  const loadData = useCallback(async () => {
+    const [campaignsData, count] = await Promise.all([
+      getCampaigns(),
+      getLeadCount()
+    ]);
+    
+    if (campaignsData) setCampaigns(campaignsData);
+    if (count !== null) setTotalLeadCount(count);
+  }, [getCampaigns, getLeadCount]);
+
+  const loadLeadsForCurrentFilter = useCallback(async () => {
+    const viewFilters = buildViewFilters();
+    const [filteredLeads, count] = await Promise.all([
+      getLeads(viewFilters),
+      getLeadCount(viewFilters)
+    ]);
+
+    if (filteredLeads) {
+      setLeads(filteredLeads);
+    }
+
+    if (count !== null) {
+      setCurrentLeadCount(count);
+
+      if (!selectedSmartList && !hasActiveSmartFilters(activeAdvancedFilters) && builtInFilter === 'all' && statusFilter === 'all') {
+        setTotalLeadCount(count);
+      }
+    }
+  }, [buildViewFilters, getLeads, getLeadCount, selectedSmartList, activeAdvancedFilters, builtInFilter, statusFilter, hasActiveSmartFilters]);
+
+  const refreshCurrentView = useCallback(async () => {
+    await Promise.all([loadData(), loadLeadsForCurrentFilter()]);
+  }, [loadData, loadLeadsForCurrentFilter]);
 
   useEffect(() => {
     loadData();
@@ -74,64 +157,28 @@ const EnhancedLeadManager = () => {
     fetchLists();
   }, []);
 
-  // Reload leads when smart list or built-in filter changes
   useEffect(() => {
-    loadLeadsForCurrentFilter();
-  }, [selectedSmartList, builtInFilter]);
-
-  // Server-side search with debounce
-  useEffect(() => {
-    if (!searchQuery.trim()) return; // Don't search on empty — loadData handles initial load
-    const timer = setTimeout(async () => {
-      const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
-      const results = await getLeads({ search: searchQuery.trim(), status: statusParam });
-      if (results) setLeads(results);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter]);
-
-  // When search is cleared, reload all leads
-  useEffect(() => {
-    if (searchQuery === '' && !selectedSmartList) {
+    if (!searchQuery.trim()) {
       loadLeadsForCurrentFilter();
     }
-  }, [searchQuery]);
+  }, [selectedSmartList, builtInFilter, statusFilter, activeAdvancedFilters, searchQuery, loadLeadsForCurrentFilter]);
 
-  const loadData = async () => {
-    const [leadsData, campaignsData, count] = await Promise.all([
-      getLeads(),
-      getCampaigns(),
-      getLeadCount()
-    ]);
-    
-    if (leadsData) setLeads(leadsData);
-    if (campaignsData) setCampaigns(campaignsData);
-    if (count !== null) setTotalLeadCount(count);
-  };
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
 
-  const loadLeadsForCurrentFilter = useCallback(async () => {
-    if (selectedSmartList) {
-      // Load leads from smart list
-      const smartListLeads = await getListLeads(selectedSmartList.id);
-      setLeads(smartListLeads);
-    } else {
-      // Load all leads with built-in filter
-      const [allLeads, count] = await Promise.all([getLeads(), getLeadCount()]);
-      if (count !== null) setTotalLeadCount(count);
-      if (allLeads) {
-        let filtered = allLeads;
-        if (builtInFilter === 'new') {
-          filtered = allLeads.filter(l => l.status === 'new');
-        } else if (builtInFilter === 'hot') {
-          filtered = allLeads.filter(l => l.status === 'interested');
-        } else if (builtInFilter === 'recent') {
-          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          filtered = allLeads.filter(l => l.created_at && new Date(l.created_at) > yesterday);
-        }
-        setLeads(filtered);
-      }
-    }
-  }, [selectedSmartList, builtInFilter, getLeads, getListLeads, getLeadCount]);
+    const timer = setTimeout(async () => {
+      const searchFilters = buildViewFilters({ search: searchQuery.trim() });
+      const [results, count] = await Promise.all([
+        getLeads(searchFilters),
+        getLeadCount(searchFilters)
+      ]);
+
+      if (results) setLeads(results);
+      if (count !== null) setCurrentLeadCount(count);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, getLeads, getLeadCount, buildViewFilters]);
 
   const handleSelectSmartList = (list: SmartList | null) => {
     setSelectedSmartList(list);
@@ -144,37 +191,26 @@ const EnhancedLeadManager = () => {
   };
 
   const handleFilterChange = useCallback(async (filters: SmartListFilters) => {
-    // Apply filters to current leads
-    const allLeads = await getLeads();
-    if (!allLeads) {
-      console.error('Failed to load leads for filtering');
-      return;
+    setActiveAdvancedFilters(filters);
+
+    const queryFilters = hasActiveSmartFilters(filters)
+      ? buildViewFilters(mapSmartListFiltersToQuery(filters))
+      : buildViewFilters();
+
+    const results = await getLeads(queryFilters);
+    if (results) {
+      setLeads(results);
     }
 
-    let filtered = allLeads;
+    if (!hasActiveSmartFilters(filters)) {
+      const fallbackCount = await getLeadCount(buildViewFilters());
+      if (fallbackCount !== null) setCurrentLeadCount(fallbackCount);
+    }
+  }, [getLeads, getLeadCount, hasActiveSmartFilters, mapSmartListFiltersToQuery, buildViewFilters]);
 
-    if (filters.status?.length) {
-      filtered = filtered.filter(l => filters.status!.includes(l.status));
-    }
-    if (filters.lead_source) {
-      filtered = filtered.filter(l => l.lead_source === filters.lead_source);
-    }
-    if (filters.tags?.length) {
-      filtered = filtered.filter(l => l.tags?.some(t => filters.tags!.includes(t)));
-    }
-    // Handle tags_exclude - exclude leads that have any of the excluded tags
-    if (filters.tags_exclude?.length) {
-      filtered = filtered.filter(l => !l.tags?.some(t => filters.tags_exclude!.includes(t)));
-    }
-    if (filters.created_after) {
-      filtered = filtered.filter(l => l.created_at && new Date(l.created_at) >= new Date(filters.created_after!));
-    }
-    if (filters.created_before) {
-      filtered = filtered.filter(l => l.created_at && new Date(l.created_at) <= new Date(filters.created_before!));
-    }
-
-    setLeads(filtered);
-  }, [getLeads]);
+  const handleLeadCountChange = useCallback((count: number) => {
+    setCurrentLeadCount(count);
+  }, []);
 
   const checkGHLConnection = () => {
     const creds = getGHLCredentials();
@@ -184,7 +220,7 @@ const EnhancedLeadManager = () => {
   const handleGHLSync = async () => {
     const result = await syncContacts('import');
     if (result) {
-      loadData();
+      refreshCurrentView();
     }
   };
 
@@ -223,7 +259,7 @@ const EnhancedLeadManager = () => {
     const result = await resetLeadsForCalling(selectedLeads);
     if (result) {
       setSelectedLeads([]);
-      loadData();
+      refreshCurrentView();
     }
   };
 
@@ -302,13 +338,8 @@ const EnhancedLeadManager = () => {
     return parts.length > 0 ? parts.join(', ') : null;
   };
 
-  // Filtering is now server-side; just apply status filter for non-search cases
-  const filteredLeads = leads.filter(lead => {
-    // When searching, server already filtered — just apply status if not sent server-side
-    if (searchQuery.trim()) return true;
-    const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
-    return matchesStatus;
-  });
+  const filteredLeads = leads;
+  const displayedLeadCount = currentLeadCount ?? filteredLeads.length;
 
   return (
     <div className="flex h-full">
@@ -339,11 +370,13 @@ const EnhancedLeadManager = () => {
                 {selectedSmartList ? selectedSmartList.name : 'Lead Management'}
               </h2>
               <p className="text-sm text-muted-foreground">
-                {selectedSmartList 
-                  ? `${selectedSmartList.lead_count} leads in this list`
-                  : totalLeadCount !== null 
-                    ? `${totalLeadCount.toLocaleString()} total leads`
-                    : 'Import, manage, and assign leads to campaigns'}
+                  {selectedSmartList 
+                    ? `${displayedLeadCount.toLocaleString()} leads in this list`
+                    : (searchQuery.trim() || builtInFilter !== 'all' || statusFilter !== 'all' || hasActiveSmartFilters(activeAdvancedFilters)) && currentLeadCount !== null
+                      ? `${currentLeadCount.toLocaleString()} matching leads`
+                      : totalLeadCount !== null 
+                        ? `${totalLeadCount.toLocaleString()} total leads`
+                        : 'Import, manage, and assign leads to campaigns'}
               </p>
             </div>
           </div>
@@ -379,7 +412,7 @@ const EnhancedLeadManager = () => {
         {showFilters && (
           <AdvancedLeadFilter 
             onFilterChange={handleFilterChange}
-            onLeadCountChange={(count) => console.log('Matching:', count)}
+            onLeadCountChange={handleLeadCountChange}
           />
         )}
 
@@ -451,7 +484,7 @@ const EnhancedLeadManager = () => {
           {/* Lead Count */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {filteredLeads.length} lead{filteredLeads.length !== 1 ? 's' : ''}
+              {displayedLeadCount.toLocaleString()} lead{displayedLeadCount !== 1 ? 's' : ''}
               {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
             </p>
           </div>
@@ -641,7 +674,7 @@ const EnhancedLeadManager = () => {
         lead={selectedLead as any}
         open={isDetailOpen}
         onOpenChange={setIsDetailOpen}
-        onLeadUpdated={loadData}
+        onLeadUpdated={refreshCurrentView}
       />
 
       {/* Delete Single Lead Dialog */}
@@ -694,7 +727,7 @@ const EnhancedLeadManager = () => {
         onOpenChange={setImportDialogOpen}
         campaigns={campaigns}
         onImportComplete={(count) => {
-          loadData();
+          refreshCurrentView();
           fetchLists();
         }}
       />
