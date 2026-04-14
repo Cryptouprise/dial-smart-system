@@ -1055,6 +1055,49 @@ serve(async (req) => {
           console.error('[Outbound Calling] A/B variant selection error (continuing):', variantError.message);
         }
 
+        // ===== DIAGNOSTIC: Fetch and log the agent's live LLM tool config =====
+        try {
+          console.log('[Outbound Calling] Fetching agent LLM config for diagnostic audit...');
+          const agentConfigRes = await fetchWithTimeout(`${baseUrl}/get-agent/${agentId}`, {
+            method: 'GET',
+            headers: retellHeaders,
+          }, 10000);
+          if (agentConfigRes.ok) {
+            const agentConfig = await agentConfigRes.json();
+            const llmId = agentConfig?.response_engine?.llm_id || agentConfig?.llm_id || 'unknown';
+            console.log(`[Outbound Calling] Agent LLM ID: ${llmId}`);
+
+            // Fetch the LLM to inspect tools
+            if (llmId && llmId !== 'unknown') {
+              const llmRes = await fetchWithTimeout(`${baseUrl}/get-retell-llm/${llmId}`, {
+                method: 'GET',
+                headers: retellHeaders,
+              }, 10000);
+              if (llmRes.ok) {
+                const llmConfig = await llmRes.json();
+                const tools = llmConfig?.tool_functions || llmConfig?.tools || [];
+                console.log(`[Outbound Calling] Agent has ${tools.length} tools configured`);
+                for (const tool of tools) {
+                  const toolName = tool?.name || tool?.type || 'unnamed';
+                  if (tool?.type === 'transfer_call' || tool?.type === 'warm_transfer' || toolName.toLowerCase().includes('transfer')) {
+                    console.log(`[Outbound Calling] TRANSFER TOOL: "${toolName}" | show_transferee_as_caller=${tool?.show_transferee_as_caller ?? 'NOT SET'} | number=${tool?.number || 'N/A'}`);
+                  }
+                  if (tool?.type === 'webhook' || tool?.type === 'custom') {
+                    const url = tool?.url || tool?.webhook_url || '';
+                    console.log(`[Outbound Calling] WEBHOOK TOOL: "${toolName}" | url=${url || 'EMPTY'}`);
+                  }
+                }
+              } else {
+                console.warn('[Outbound Calling] Could not fetch LLM config:', await llmRes.text());
+              }
+            }
+          } else {
+            console.warn('[Outbound Calling] Could not fetch agent config:', await agentConfigRes.text());
+          }
+        } catch (diagErr: any) {
+          console.warn('[Outbound Calling] Diagnostic audit failed (non-blocking):', diagErr.message);
+        }
+
         try {
           response = await retryWithBackoff(
             async () => {
