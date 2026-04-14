@@ -218,6 +218,7 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
   const [smartListName, setSmartListName] = useState('');
   const [assignCampaign, setAssignCampaign] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
+  const [updateExisting, setUpdateExisting] = useState(false);
 
   // Results
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -234,6 +235,7 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
     setSmartListName('');
     setAssignCampaign(false);
     setSelectedCampaignId('');
+    setUpdateExisting(false);
     setResult(null);
   }, []);
 
