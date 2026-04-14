@@ -298,13 +298,26 @@ export const usePredictiveDialing = () => {
     }
   };
 
-  const getLeads = async (filters?: { status?: string; campaign_id?: string }) => {
+  const getLeads = async (filters?: { status?: string; campaign_id?: string; search?: string; limit?: number }) => {
     setIsLoading(true);
     try {
       let query = supabase.from('leads').select('*').order('created_at', { ascending: false });
 
       if (filters?.status) {
         query = query.eq('status', filters.status);
+      }
+
+      if (filters?.search) {
+        const term = filters.search.trim();
+        // Normalize phone: strip non-digits for phone matching
+        const digits = term.replace(/\D/g, '');
+        if (digits.length >= 7) {
+          // Phone search — match against phone_number column
+          query = query.or(`phone_number.ilike.%${digits}%`);
+        } else {
+          // Text search — name, email, company
+          query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,company.ilike.%${term}%,phone_number.ilike.%${term}%`);
+        }
       }
 
       if (filters?.campaign_id) {
@@ -322,6 +335,9 @@ export const usePredictiveDialing = () => {
           return [];
         }
       }
+
+      // Apply limit (default 1000, but allow override)
+      query = query.limit(filters?.limit || 1000);
 
       const { data, error } = await query;
 
