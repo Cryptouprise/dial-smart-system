@@ -195,7 +195,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
 
       // Update lead with fresh data
       if (freshLeadRes.data) {
-        setEditedLead(freshLeadRes.data);
+        setEditedLead({
+          ...freshLeadRes.data,
+          custom_fields: (freshLeadRes.data.custom_fields as Record<string, unknown>) ?? {},
+        });
       }
 
       // Set workflow status
@@ -350,7 +353,7 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
       }
       const { error } = await supabase
         .from('leads')
-        .update({ custom_fields: next, updated_at: new Date().toISOString() })
+        .update({ custom_fields: next as any, updated_at: new Date().toISOString() })
         .eq('id', lead.id);
       if (error) throw error;
       setEditedLead(prev => ({ ...prev, custom_fields: next }));
