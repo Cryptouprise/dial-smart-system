@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
@@ -13,7 +14,8 @@ import { useSmartLists, SmartList, SmartListFilters } from '@/hooks/useSmartList
 import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2 } from 'lucide-react';
 
 interface Lead {
   id: string;
