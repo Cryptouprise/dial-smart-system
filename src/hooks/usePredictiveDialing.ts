@@ -670,6 +670,7 @@ export const usePredictiveDialing = () => {
     updateLead,
     importLeads,
     getLeads,
+    getLeadCount,
     resetLeadsForCalling,
     // Campaign management
     createCampaign,

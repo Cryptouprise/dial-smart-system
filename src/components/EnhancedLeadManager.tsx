@@ -44,6 +44,7 @@ interface Lead {
 }
 
 const EnhancedLeadManager = () => {
+  const [totalLeadCount, setTotalLeadCount] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [ghlConnected, setGhlConnected] = useState(false);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -63,7 +64,7 @@ const EnhancedLeadManager = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   
   const { toast } = useToast();
-  const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
+  const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
   const { getListLeads, lists, fetchLists } = useSmartLists();
 
