@@ -760,6 +760,50 @@ const EnhancedLeadManager = () => {
         onOpenChange={setIsDetailOpen}
         onLeadUpdated={loadData}
       />
+
+      {/* Delete Single Lead Dialog */}
+      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {leadToDelete?.first_name || leadToDelete?.phone_number || 'this lead'}. If the lead has call/SMS history, it will be archived (Do Not Call) instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => leadToDelete && deleteLead(leadToDelete)}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedLeads.length} leads?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all selected leads. Leads with call/SMS history will be archived (Do Not Call) instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={bulkDeleteLeads}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : `Delete ${selectedLeads.length} Leads`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </div>
   );
