@@ -757,6 +757,17 @@ const EnhancedLeadManager = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Lead Import Dialog */}
+      <LeadImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        campaigns={campaigns}
+        onImportComplete={(count) => {
+          loadData();
+          fetchLists();
+        }}
+      />
       </div>
     </div>
   );
