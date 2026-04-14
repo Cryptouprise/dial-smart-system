@@ -12,6 +12,7 @@ import { Upload, Tag, CheckCircle2, Loader2, List, Megaphone, FileText, ArrowRig
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useSmartLists } from '@/hooks/useSmartLists';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 interface LeadImportDialogProps {
   open: boolean;
@@ -130,25 +131,47 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
 
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
       
-      // Add tags to each lead
-      const leadsWithTags = parsedLeads.map(lead => ({
-        ...lead,
-        user_id: user.id,
-        status: 'new',
-        lead_source: 'CSV Import',
-        tags: tagList.length > 0 ? tagList : undefined,
-      }));
+      // Normalize phone numbers and prepare leads
+      const leadsWithTags: any[] = [];
+      const seenPhones = new Set<string>();
+      
+      for (const lead of parsedLeads) {
+        if (!lead.phone_number) continue;
+        const normalized = normalizePhoneNumber(lead.phone_number);
+        if (!normalized) continue;
+        if (seenPhones.has(normalized)) continue;
+        seenPhones.add(normalized);
+        
+        leadsWithTags.push({
+          ...lead,
+          phone_number: normalized,
+          user_id: user.id,
+          status: 'new',
+          lead_source: 'CSV Import',
+          tags: tagList.length > 0 ? tagList : undefined,
+        });
+      }
+
+      setProgress(20);
+
+      // Fetch existing phones to skip duplicates
+      const { data: existingLeads } = await supabase
+        .from('leads')
+        .select('phone_number')
+        .eq('user_id', user.id);
+      const existingPhones = new Set((existingLeads || []).map(l => l.phone_number));
+      const deduped = leadsWithTags.filter(l => !existingPhones.has(l.phone_number));
 
       setProgress(30);
 
       // Batch insert leads
       let importedCount = 0;
       const batchSize = 100;
-      for (let i = 0; i < leadsWithTags.length; i += batchSize) {
-        const batch = leadsWithTags.slice(i, i + batchSize);
+      for (let i = 0; i < deduped.length; i += batchSize) {
+        const batch = deduped.slice(i, i + batchSize);
         const { error } = await supabase.from('leads').insert(batch as any);
         if (!error) importedCount += batch.length;
-        setProgress(30 + Math.round((i / leadsWithTags.length) * 40));
+        setProgress(30 + Math.round((i / deduped.length) * 40));
       }
 
       setProgress(75);

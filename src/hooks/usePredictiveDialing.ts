@@ -298,6 +298,18 @@ export const usePredictiveDialing = () => {
     }
   };
 
+  const getLeadCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true });
+      if (error) return null;
+      return count;
+    } catch {
+      return null;
+    }
+  };
+
   const getLeads = async (filters?: { status?: string; campaign_id?: string; search?: string; limit?: number }) => {
     setIsLoading(true);
     try {
@@ -312,8 +324,9 @@ export const usePredictiveDialing = () => {
         // Normalize phone: strip non-digits for phone matching
         const digits = term.replace(/\D/g, '');
         if (digits.length >= 7) {
-          // Phone search — match against phone_number column
-          query = query.or(`phone_number.ilike.%${digits}%`);
+          // Phone search — try multiple formats to catch both normalized and raw numbers
+          const withPlus = digits.startsWith('1') ? `+${digits}` : `+1${digits}`;
+          query = query.or(`phone_number.ilike.%${digits}%,phone_number.ilike.%${withPlus}%`);
         } else {
           // Text search — name, email, company
           query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,company.ilike.%${term}%,phone_number.ilike.%${term}%`);
@@ -336,8 +349,8 @@ export const usePredictiveDialing = () => {
         }
       }
 
-      // Apply limit (default 1000, but allow override)
-      query = query.limit(filters?.limit || 1000);
+      // Apply limit (default 5000, but allow override)
+      query = query.limit(filters?.limit || 5000);
 
       const { data, error } = await query;
 
