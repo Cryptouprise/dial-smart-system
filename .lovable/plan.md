@@ -1,66 +1,60 @@
 
 
-## Problem Diagnosis
+## Problem: Tags and Caller ID Not Working on Platform-Launched Calls
 
-**Retell API 400 Error: "Got empty url"**
+### Root Cause
 
-The edge function logs show the exact error:
+When you launch a call from the Retell portal, Retell uses the **phone number's pre-configured outbound agent** — which includes all LLM tool configurations like "Send Enrichment", "Ring RANGBA Tool", and `show_transferee_as_caller: true`.
+
+When your app launches a call via `outbound-calling`, it sends this to Retell's `create-phone-call` API:
+
+```text
+{
+  from_number,
+  to_number,
+  agent_id,
+  retell_llm_dynamic_variables,
+  metadata
+}
 ```
-Retell AI API error: 400 - {"status":"error","message":"Got empty url"}
-```
 
-The payload being sent includes `"webhook_url":""` (empty string). Retell's API rejects empty strings for URL fields — it expects either a valid URL or the field to be omitted entirely.
+That's it. **No `override_agent_config`** is sent. The call uses whatever agent config is stored on Retell's side for that `agent_id`. So in theory, the tools (Send Enrichment, Ring RANGBA, transfer with `show_transferee_as_caller`) should work identically.
 
-**Root cause**: `AgentEditDialog.tsx` line 546 initializes `webhook_url: agent.webhook_url || ''`, and the `handleSave` function (line 579) only sanitizes `pii_config` but passes all empty URL strings through untouched.
+**But here's the catch**: your app calls `PATCH /update-phone-number` to assign the agent to the `from_number` before dialing. If that PATCH changes the phone number's outbound agent assignment and the new agent has a **different LLM** or **different tool configuration** than what you tested in the portal, the tools won't fire the same way.
 
-## Plan
+The most likely causes are:
 
-### Task 1: Fix Retell Agent Save — Sanitize Empty URLs
+1. **The agent's LLM has drifted** — The agent_id your campaign uses may point to an LLM whose tools were overwritten or partially synced (the exact issue we fixed with payload preservation). The tools exist in the JSON but may have lost critical nested settings like `show_transferee_as_caller` or webhook URLs for enrichment/RANGBA during a previous save from the platform UI.
 
-**File: `supabase/functions/retell-agent-management/index.ts`**
+2. **Dynamic variables are missing keys the tools expect** — Tools like "Send Enrichment" and "Ring RANGBA" likely reference dynamic variables (lead phone, name, etc.) by specific key names. If the tool's webhook URL or parameters use variable names that don't match what `outbound-calling` injects, the tool fires but sends empty/wrong data.
 
-In the `update` case (around line 137), after building `updateData`, strip out any fields with empty string values that Retell treats as URLs. This is the safest place to fix it (server-side) so it catches all callers:
+3. **No `override_agent_config`** — If you need per-call tool behavior that differs from the stored agent config, the app would need to send `override_agent_config` in the create-phone-call payload. Currently it doesn't.
 
-- Before sending to Retell API, iterate over `updateData` and delete any key where:
-  - The value is `""` (empty string)
-  - AND the key matches URL-related fields: `webhook_url`, `post_call_webhook_url`, `transfer_webhook_url`
-- Also strip the internal `_retellTools` key (if present) since that's our UI-only field, not a Retell API field — sending unknown keys could cause issues.
-- Apply the same sanitization in the `create` case for safety.
+### Fix Plan
 
-### Task 2: Frontend Sanitization Belt-and-Suspenders
+#### Step 1: Diagnose — Log the live LLM tool config during calls
 
-**File: `src/components/AgentEditDialog.tsx`**
+Add diagnostic logging to `outbound-calling` that fetches the agent's current LLM config right before placing the call, and logs the transfer tool's `show_transferee_as_caller` field and any webhook tool URLs (enrichment/RANGBA). This tells us definitively whether the stored config is correct or corrupted.
 
-In `handleSave` (line 579), add URL sanitization before calling `onSave`:
-- Delete `webhook_url` if it's empty string
-- Delete `post_call_webhook_url` and `transfer_webhook_url` if empty
-- Delete `_retellTools` (internal UI state, not an API field)
+**File**: `supabase/functions/outbound-calling/index.ts`
 
-### Task 3: Campaign Launch / Dispatch / Calling Audit
+#### Step 2: Fix — Send `override_agent_config` with transfer settings
 
-Based on my review of the full dispatch chain, the following are confirmed working:
+If the agent's stored config is correct but Retell isn't honoring it on API-created calls, add `override_agent_config` to the create-phone-call payload to explicitly set `show_transferee_as_caller: true` on all transfer tools. This forces the behavior regardless of what's stored.
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| `call-dispatcher` number rotation | OK | Retell fallback to all active numbers, Telnyx provider-specific pool |
-| `call-dispatcher` provider routing | OK | Both/Retell/Telnyx/Assistable paths all have agent validation |
-| `call-dispatcher` dedup check | OK | 30-min recent answered call check prevents repeat dials |
-| `call-dispatcher` concurrency | OK | Capacity-aware batch sizing |
-| `outbound-calling` Retell path | OK | Standard Retell create-call API |
-| `outbound-calling` Telnyx path | OK | TeXML AI calls endpoint (fixed in prior session) |
-| `outbound-calling` DNC validation | OK | Checks before calling |
-| Number daily limit reset | OK | `reset_stale_daily_calls` RPC called before dispatch |
-| Queue recycling | OK | Upsert on campaign_id+lead_id for terminal rows |
-| Manual dispatch bypass | OK | Both `action: 'dispatch'` and `immediate: true` bypass schedule gate |
+**File**: `supabase/functions/outbound-calling/index.ts`
 
-No additional dispatch/calling issues found. The only blocker is the Retell save error.
+#### Step 3: Verify webhook tool URLs
 
-### Task 4: Deploy and Verify
+Check that the enrichment and RANGBA tools have their webhook URLs intact in the agent's LLM config. If a previous save from the platform UI stripped these URLs (the empty-string URL stripping logic), the tools would exist but point nowhere.
 
-- Deploy `retell-agent-management` edge function
-- Verify build passes
+**File**: `supabase/functions/retell-agent-management/index.ts` (logging during sync)
 
-## Summary
+#### Step 4: Deploy and test
 
-Two small edits fix the 400 error — sanitize empty URL strings both server-side (retell-agent-management) and client-side (AgentEditDialog). The campaign launch/dispatch/calling pipeline is solid.
+Deploy `outbound-calling` with the diagnostic logging, make one test call from the platform, and check the logs to see exactly what tool config Retell has for the agent. Then we'll know if it's a config corruption issue or a Retell API behavioral difference.
+
+### Why Portal Works But API Doesn't — Summary
+
+The Retell portal uses the **phone number's assigned agent** when you click "Call" in their UI. Your app uses `create-phone-call` with an `agent_id` parameter — same agent, but Retell may handle tool execution slightly differently for API-created calls vs portal-created calls, OR the agent's LLM tools were corrupted by a previous save from your platform's tool builder (before the payload preservation fix).
 
