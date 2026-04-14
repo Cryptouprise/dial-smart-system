@@ -340,7 +340,9 @@ const EnhancedLeadManager = () => {
               <p className="text-sm text-muted-foreground">
                 {selectedSmartList 
                   ? `${selectedSmartList.lead_count} leads in this list`
-                  : 'Import, manage, and assign leads to campaigns'}
+                  : totalLeadCount !== null 
+                    ? `${totalLeadCount.toLocaleString()} total leads`
+                    : 'Import, manage, and assign leads to campaigns'}
               </p>
             </div>
           </div>
