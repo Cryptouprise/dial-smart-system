@@ -44,6 +44,7 @@ interface Lead {
 }
 
 const EnhancedLeadManager = () => {
+  const [totalLeadCount, setTotalLeadCount] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [ghlConnected, setGhlConnected] = useState(false);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -63,7 +64,7 @@ const EnhancedLeadManager = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   
   const { toast } = useToast();
-  const { getLeads, createLead, importLeads, getCampaigns, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
+  const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
   const { getListLeads, lists, fetchLists } = useSmartLists();
 
@@ -97,13 +98,15 @@ const EnhancedLeadManager = () => {
   }, [searchQuery]);
 
   const loadData = async () => {
-    const [leadsData, campaignsData] = await Promise.all([
+    const [leadsData, campaignsData, count] = await Promise.all([
       getLeads(),
-      getCampaigns()
+      getCampaigns(),
+      getLeadCount()
     ]);
     
     if (leadsData) setLeads(leadsData);
     if (campaignsData) setCampaigns(campaignsData);
+    if (count !== null) setTotalLeadCount(count);
   };
 
   const loadLeadsForCurrentFilter = useCallback(async () => {
@@ -113,7 +116,8 @@ const EnhancedLeadManager = () => {
       setLeads(smartListLeads);
     } else {
       // Load all leads with built-in filter
-      const allLeads = await getLeads();
+      const [allLeads, count] = await Promise.all([getLeads(), getLeadCount()]);
+      if (count !== null) setTotalLeadCount(count);
       if (allLeads) {
         let filtered = allLeads;
         if (builtInFilter === 'new') {
@@ -127,7 +131,7 @@ const EnhancedLeadManager = () => {
         setLeads(filtered);
       }
     }
-  }, [selectedSmartList, builtInFilter, getLeads, getListLeads]);
+  }, [selectedSmartList, builtInFilter, getLeads, getListLeads, getLeadCount]);
 
   const handleSelectSmartList = (list: SmartList | null) => {
     setSelectedSmartList(list);
@@ -337,7 +341,9 @@ const EnhancedLeadManager = () => {
               <p className="text-sm text-muted-foreground">
                 {selectedSmartList 
                   ? `${selectedSmartList.lead_count} leads in this list`
-                  : 'Import, manage, and assign leads to campaigns'}
+                  : totalLeadCount !== null 
+                    ? `${totalLeadCount.toLocaleString()} total leads`
+                    : 'Import, manage, and assign leads to campaigns'}
               </p>
             </div>
           </div>
