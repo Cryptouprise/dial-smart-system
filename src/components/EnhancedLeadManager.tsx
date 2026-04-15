@@ -75,7 +75,7 @@ const EnhancedLeadManager = () => {
   const [savingBulkSmartList, setSavingBulkSmartList] = useState(false);
   
   const { toast } = useToast();
-  const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
+  const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, getAllMatchingLeadIds, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
   const { fetchLists, addTagsToLeads, createList } = useSmartLists();
 
@@ -460,10 +460,8 @@ const EnhancedLeadManager = () => {
     setSelectingAll(true);
     try {
       const viewFilters = buildViewFilters();
-      // Fetch only IDs for all matching leads (no limit)
-      const allMatching = await getLeads({ ...viewFilters, limit: 50000 });
-      if (allMatching) {
-        const allIds = allMatching.map((l: any) => l.id);
+      const allIds = await getAllMatchingLeadIds(viewFilters);
+      if (allIds.length > 0) {
         setSelectedLeads(allIds);
         toast({ title: 'Selected All', description: `${allIds.length.toLocaleString()} leads selected` });
       }
