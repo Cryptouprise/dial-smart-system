@@ -576,6 +576,10 @@ async function placeCall(rc: RouteContext): Promise<Response> {
 
   // Resolve caller ID: use from_number if provided, else pick the first active
   // phone number for the requested provider.
+  // CRITICAL (2026-04-14): `rotation_enabled=true` filter added. Without it,
+  // the non-deterministic LIMIT 1 can pick a DID that does NOT pass the
+  // transferee's caller ID to Ringba on transfer, breaking attribution.
+  // See memory/custom-fields-pipeline-state.md line 69 + retell-amazing-state-apr13.md line 27.
   let callerId: string = body.from_number ?? "";
   if (!callerId) {
     const numQ = rc.supabase
@@ -584,6 +588,7 @@ async function placeCall(rc: RouteContext): Promise<Response> {
       .eq("user_id", rc.ctx.userId)
       .eq("status", "active")
       .eq("is_spam", false)
+      .eq("rotation_enabled", true)
       .limit(1);
     if (provider === "telnyx") {
       numQ.eq("provider", "telnyx");
