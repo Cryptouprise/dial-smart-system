@@ -13,6 +13,28 @@
 
 ---
 
+### April 15, 2026 - Retell Agent Editor Unified Save Fix
+
+**What was built/fixed/changed**
+- Fixed the Retell agent editor so the main **Save Changes** button now persists unsaved prompt/opening-message/model edits before saving the rest of the agent settings.
+- Fixed LLM dirty-state tracking so model-only changes are no longer missed or silently dropped.
+- Prevented the dialog from closing on the main save path if the prompt save fails.
+
+**Key files modified**
+- `src/components/AgentEditDialog.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification pending after this patch.
+
+**Gotchas / lessons learned**
+- The Retell editor had two separate save paths: one for agent config and one for the LLM prompt, which made the main save button look broken when users edited the script.
+- Dirty-state tracking must include the editable LLM model too, not just prompt text, or model changes appear to save but never persist.
+
 ### April 15, 2026 - Retell Agent Editor Live Prompt Hydration Fix
 
 **What was built/fixed/changed**

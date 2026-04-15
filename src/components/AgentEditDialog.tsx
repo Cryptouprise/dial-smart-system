@@ -205,6 +205,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [isLoadingLlm, setIsLoadingLlm] = useState(false);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [editableBeginMessage, setEditableBeginMessage] = useState('');
+  const [editableLlmModel, setEditableLlmModel] = useState('gpt-4o-mini');
   const [isSavingLlm, setIsSavingLlm] = useState(false);
   const [hasUnsavedPromptChanges, setHasUnsavedPromptChanges] = useState(false);
   const [resolvedLlmId, setResolvedLlmId] = useState('');
@@ -343,6 +344,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         setLlmData({ ...data, llm_id: liveLlmId });
         setEditablePrompt(data.general_prompt || data.system_prompt || '');
         setEditableBeginMessage(data.begin_message || '');
+        setEditableLlmModel(data.model || 'gpt-4o-mini');
         console.log('LLM data loaded (live):', { llmId: liveLlmId, promptLength: (data.general_prompt || '').length });
       } catch (error: any) {
         console.error('Failed to fetch LLM data:', error);
@@ -359,6 +361,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       setLlmData(null);
       setEditablePrompt('');
       setEditableBeginMessage('');
+      setEditableLlmModel('gpt-4o-mini');
       setResolvedLlmId('');
       setHasUnsavedPromptChanges(false);
     }
@@ -369,19 +372,22 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     if (llmData) {
       const originalPrompt = llmData.general_prompt || llmData.system_prompt || '';
       const originalBegin = llmData.begin_message || '';
+      const originalModel = llmData.model || 'gpt-4o-mini';
       setHasUnsavedPromptChanges(
-        editablePrompt !== originalPrompt || editableBeginMessage !== originalBegin
+        editablePrompt !== originalPrompt ||
+        editableBeginMessage !== originalBegin ||
+        editableLlmModel !== originalModel
       );
     }
-  }, [editablePrompt, editableBeginMessage, llmData]);
+  }, [editablePrompt, editableBeginMessage, editableLlmModel, llmData]);
 
   // Save LLM/prompt changes
-  const saveLlmChanges = async () => {
+  const saveLlmChanges = async ({ silentSuccess = false }: { silentSuccess?: boolean } = {}) => {
     // Use the LLM ID from the live-fetched data, falling back to local agent
     const llmId = resolvedLlmId || llmData?.llm_id || config.response_engine?.llm_id || agent?.response_engine?.llm_id;
     if (!llmId) {
       toast({ title: 'Error', description: 'No LLM ID found for this agent', variant: 'destructive' });
-      return;
+      return false;
     }
 
     setIsSavingLlm(true);
@@ -392,7 +398,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           llmId,
           generalPrompt: editablePrompt,
           beginMessage: editableBeginMessage,
-          model: llmData?.model,
+          model: editableLlmModel || llmData?.model,
         }
       });
 
@@ -402,11 +408,16 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       setLlmData({ ...data, llm_id: llmId });
       setEditablePrompt(data.general_prompt || data.system_prompt || editablePrompt);
       setEditableBeginMessage(data.begin_message || editableBeginMessage);
+      setEditableLlmModel(data.model || editableLlmModel || 'gpt-4o-mini');
       setHasUnsavedPromptChanges(false);
-      toast({ title: 'Success', description: 'Agent prompt updated successfully' });
+      if (!silentSuccess) {
+        toast({ title: 'Success', description: 'Agent prompt updated successfully' });
+      }
+      return true;
     } catch (error: any) {
       console.error('Failed to save LLM changes:', error);
       toast({ title: 'Error', description: error.message || 'Failed to save prompt', variant: 'destructive' });
+      return false;
     } finally {
       setIsSavingLlm(false);
     }
@@ -624,6 +635,11 @@ AFTER LEAVING THE MESSAGE:
   }, [agent]);
 
   const handleSave = async () => {
+    if (hasUnsavedPromptChanges) {
+      const llmSaved = await saveLlmChanges({ silentSuccess: true });
+      if (!llmSaved) return;
+    }
+
     const sanitizedConfig = { ...config };
 
     // Sanitize PII config to match Retell API expectations
@@ -1340,11 +1356,8 @@ AFTER LEAVING THE MESSAGE:
                       <div className="space-y-2">
                         <Label>Language Model</Label>
                         <Select 
-                          value={llmData.model || 'gpt-4o-mini'} 
-                          onValueChange={(v) => {
-                            setLlmData((prev: any) => ({ ...prev, model: v }));
-                            setHasUnsavedPromptChanges(true);
-                          }}
+                          value={editableLlmModel || llmData.model || 'gpt-4o-mini'} 
+                          onValueChange={setEditableLlmModel}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -1369,7 +1382,7 @@ AFTER LEAVING THE MESSAGE:
                       </div>
 
                       <Button 
-                        onClick={saveLlmChanges} 
+                        onClick={() => void saveLlmChanges()} 
                         disabled={isSavingLlm}
                         className="w-full"
                       >
@@ -2660,8 +2673,8 @@ AFTER LEAVING THE MESSAGE:
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isLoading}>
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button onClick={() => void handleSave()} disabled={isLoading || isSavingLlm}>
+            {(isLoading || isSavingLlm) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Changes
           </Button>
         </DialogFooter>
