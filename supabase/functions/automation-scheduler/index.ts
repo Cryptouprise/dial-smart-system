@@ -323,36 +323,58 @@ serve(async (req) => {
             // Check for ANY existing queue entry (including completed)
             const { data: existingEntry } = await supabase
               .from('dialing_queues')
-              .select('id, status, updated_at')
+              .select('id, status, updated_at, attempts, max_attempts')
               .eq('lead_id', lead.id)
               .eq('campaign_id', campaign.id)
               .maybeSingle();
-            
+
             if (existingEntry) {
               // Reset completed, failed, OR stuck calling entries for callback
               // "calling" entries stuck for > 2 minutes are likely abandoned
-              const isStuckCalling = existingEntry.status === 'calling' && 
-                existingEntry.updated_at && 
+              const isStuckCalling = existingEntry.status === 'calling' &&
+                existingEntry.updated_at &&
                 (Date.now() - new Date(existingEntry.updated_at).getTime()) > 2 * 60 * 1000;
-              
+
               if (existingEntry.status === 'completed' || existingEntry.status === 'failed' || isStuckCalling) {
-                // Reset the entry to pending for callback
-                const { error: updateError } = await supabase
-                  .from('dialing_queues')
-                  .update({
-                    status: 'pending',
-                    scheduled_at: new Date().toISOString(),
-                    priority: 10, // High callback priority
-                    attempts: 0,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', existingEntry.id);
-                
-                if (!updateError) {
-                  callbacksReset++;
-                  console.log(`[Scheduler] Reset ${existingEntry.status} queue entry for callback - lead ${lead.id}`);
+                // Bug fix 2026-04-15: respect max_attempts. Without this check
+                // the callback reset loop re-queued the same lead indefinitely
+                // (symptom: one user got called 3-10 times/hour from a campaign
+                // with max_attempts=1). After max_attempts, clear the callback
+                // and stop looping on this lead.
+                const attempts = (existingEntry as any).attempts ?? 0;
+                const maxAttempts = (existingEntry as any).max_attempts ?? 3;
+                if (attempts >= maxAttempts && !isStuckCalling) {
+                  await supabase
+                    .from('leads')
+                    .update({ next_callback_at: null })
+                    .eq('id', lead.id);
+                  console.log(`[Scheduler] Max attempts (${attempts}/${maxAttempts}) reached for lead ${lead.id} — clearing callback, not resetting queue`);
                 } else {
-                  console.error(`[Scheduler] Failed to reset queue entry for lead ${lead.id}:`, updateError);
+                  // Reset the entry to pending for callback
+                  const { error: updateError } = await supabase
+                    .from('dialing_queues')
+                    .update({
+                      status: 'pending',
+                      scheduled_at: new Date().toISOString(),
+                      priority: 10, // High callback priority
+                      attempts: 0,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingEntry.id);
+
+                  if (!updateError) {
+                    // Bug fix 2026-04-15: clear next_callback_at after honoring the
+                    // callback, otherwise this lead stays past-due and gets reset
+                    // again on every scheduler cycle (infinite loop).
+                    await supabase
+                      .from('leads')
+                      .update({ next_callback_at: null })
+                      .eq('id', lead.id);
+                    callbacksReset++;
+                    console.log(`[Scheduler] Reset ${existingEntry.status} queue entry for callback - lead ${lead.id}`);
+                  } else {
+                    console.error(`[Scheduler] Failed to reset queue entry for lead ${lead.id}:`, updateError);
+                  }
                 }
               } else if (existingEntry.status === 'pending') {
                 console.log(`[Scheduler] Lead ${lead.id} already pending in queue`);

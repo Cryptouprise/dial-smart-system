@@ -489,7 +489,7 @@ serve(async (req) => {
         // For call-first workflows, add to dialing queue
         const { data: existingQueueEntry } = await supabase
           .from('dialing_queues')
-          .select('id, status, scheduled_at')
+          .select('id, status, scheduled_at, attempts, max_attempts')
           .eq('campaign_id', campaignLead.campaign_id)
           .eq('lead_id', lead.id)
           .limit(1)
@@ -498,6 +498,18 @@ serve(async (req) => {
         if (existingQueueEntry) {
           // Reset existing entry to pending for callback
           if (existingQueueEntry.status === 'completed' || existingQueueEntry.status === 'failed') {
+            // Bug fix 2026-04-15: respect max_attempts. Without this check the
+            // callback reset loop re-queued the same lead indefinitely.
+            const attempts = (existingQueueEntry as any).attempts ?? 0;
+            const maxAttempts = (existingQueueEntry as any).max_attempts ?? 3;
+            if (attempts >= maxAttempts) {
+              await supabase
+                .from('leads')
+                .update({ next_callback_at: null })
+                .eq('id', lead.id);
+              console.log(`[Dispatcher] Max attempts (${attempts}/${maxAttempts}) reached for lead ${lead.id} — clearing callback, not resetting queue`);
+              continue;
+            }
             await supabase
               .from('dialing_queues')
               .update({
@@ -508,6 +520,12 @@ serve(async (req) => {
                 updated_at: nowIso,
               })
               .eq('id', existingQueueEntry.id);
+            // Bug fix 2026-04-15: clear next_callback_at after honoring the
+            // callback so this lead doesn't stay past-due and loop back.
+            await supabase
+              .from('leads')
+              .update({ next_callback_at: null })
+              .eq('id', lead.id);
             callbacksQueued++;
           }
           continue;

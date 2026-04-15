@@ -1757,6 +1757,13 @@ function mapCallStatusToOutcome(
       if (disconnectionReason === 'dial_no_answer') return 'no_answer';
       if (disconnectionReason === 'dial_busy') return 'busy';
       if (disconnectionReason === 'dial_failed') return 'failed';
+      // Transfer detection (bug fix 2026-04-15): Retell uses several disconnection_reason
+      // values for successful transfers. Without this, transfers fell through to
+      // 'completed', which kept the lead in the campaign and got them re-dialed.
+      if (disconnectionReason &&
+          /transfer|handoff|warm_transfer|call_transferred/i.test(disconnectionReason)) {
+        return 'transferred';
+      }
       return 'completed';
     case 'error':
       return 'failed';
@@ -1787,8 +1794,34 @@ function mapRetellAnalysisToDisposition(
     };
   }
 
-  // Check transcript for callback patterns FIRST
   const transcriptLower = (transcript || analysis.call_summary || '').toLowerCase();
+
+  // Transfer detection (bug fix 2026-04-15): Look for transfer cues in the transcript
+  // OR custom_analysis_data before any other pattern matching. A transfer is a
+  // terminal disposition — we must classify it correctly so the lead gets removed
+  // from the campaign and routed to the right pipeline stage.
+  const customTransferFlag =
+    customData.transferred === true ||
+    customData.was_transferred === true ||
+    (typeof customData.outcome === 'string' && /transfer/i.test(customData.outcome));
+  const transferPatterns = [
+    /transferring\s+you/i,
+    /connecting\s+you\s+(now|to)/i,
+    /let\s+me\s+(go\s+ahead\s+and\s+)?transfer/i,
+    /hold\s+(on\s+)?(while|as)\s+I\s+transfer/i,
+    /i('ll|\s*will)\s+(get|put)\s+you\s+through/i,
+    /i('ve|\s*have)\s+got\s+[\w\s]+on\s+the\s+(line|phone)/i,
+    /please\s+hold\s+while\s+i\s+(connect|transfer)/i,
+  ];
+  if (customTransferFlag || transferPatterns.some(p => p.test(transcriptLower))) {
+    return {
+      disposition: 'transferred',
+      confidence: 0.95,
+      summary: analysis.call_summary || 'Call transferred successfully',
+    };
+  }
+
+  // Check transcript for callback patterns FIRST
   const callbackPatterns = [
     /call\s*(me\s*)?(back|later|again)/i,
     /try\s*(me\s*)?(again|later|back)/i,
@@ -1891,8 +1924,12 @@ function mapDispositionToLeadStatus(disposition: string): string {
     'busy': 'contacted',
     'contacted': 'contacted',
     'converted': 'won',
+    // Transfer is a terminal positive disposition — treat as qualified so pipeline
+    // routing and downstream automation recognize the lead moved forward.
+    'transferred': 'qualified',
+    'transfer': 'qualified',
   };
-  
+
   return statusMap[disposition] || 'contacted';
 }
 
