@@ -309,7 +309,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
   // Save LLM/prompt changes
   const saveLlmChanges = async () => {
-    const llmId = agent?.response_engine?.llm_id;
+    // Use the LLM ID from the live-fetched data, falling back to local agent
+    const llmId = llmData?.llm_id || agent?.response_engine?.llm_id;
     if (!llmId) {
       toast({ title: 'Error', description: 'No LLM ID found for this agent', variant: 'destructive' });
       return;
