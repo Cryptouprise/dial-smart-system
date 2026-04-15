@@ -101,6 +101,57 @@ const PRICING = {
   }
 };
 
+const buildAgentConfig = (agentData: any) => ({
+  agent_name: agentData?.agent_name || '',
+  response_engine: agentData?.response_engine || {},
+  voice_id: agentData?.voice_id || '11labs-Adrian',
+  voice_model: agentData?.voice_model || 'eleven_turbo_v2',
+  fallback_voice_ids: agentData?.fallback_voice_ids || [],
+  voice_temperature: agentData?.voice_temperature || 1,
+  voice_speed: agentData?.voice_speed || 1,
+  volume: agentData?.volume || 1,
+  responsiveness: agentData?.responsiveness || 1,
+  interruption_sensitivity: agentData?.interruption_sensitivity || 1,
+  enable_backchannel: agentData?.enable_backchannel ?? true,
+  backchannel_frequency: agentData?.backchannel_frequency || 0.9,
+  backchannel_words: agentData?.backchannel_words || ['yeah', 'uh-huh'],
+  language: agentData?.language || 'en-US',
+  ambient_sound: agentData?.ambient_sound || null,
+  ambient_sound_volume: agentData?.ambient_sound_volume || 1,
+  webhook_url: agentData?.webhook_url || '',
+  webhook_timeout_ms: agentData?.webhook_timeout_ms || 10000,
+  boosted_keywords: agentData?.boosted_keywords || [],
+  pronunciation_dictionary: agentData?.pronunciation_dictionary || [],
+  voicemail_detection: agentData?.voicemail_detection ?? true,
+  voicemail_option: agentData?.voicemail_option || { action: { type: 'hangup' } },
+  post_call_analysis_data: agentData?.post_call_analysis_data || [],
+  post_call_analysis_model: agentData?.post_call_analysis_model || 'gpt-4o-mini',
+  end_call_after_silence_ms: agentData?.end_call_after_silence_ms || 600000,
+  max_call_duration_ms: agentData?.max_call_duration_ms || 3600000,
+  normalize_for_speech: agentData?.normalize_for_speech ?? true,
+  reminder_trigger_ms: agentData?.reminder_trigger_ms || 10000,
+  reminder_max_count: agentData?.reminder_max_count || 2,
+  begin_message_delay_ms: agentData?.begin_message_delay_ms || 2500,
+  ring_duration_ms: agentData?.ring_duration_ms || 30000,
+  stt_mode: agentData?.stt_mode || 'fast',
+  vocab_specialization: agentData?.vocab_specialization || 'general',
+  allow_user_dtmf: agentData?.allow_user_dtmf ?? true,
+  user_dtmf_options: agentData?.user_dtmf_options || {
+    digit_limit: 25,
+    termination_key: '#',
+    timeout_ms: 8000
+  },
+  denoising_mode: agentData?.denoising_mode || 'noise-cancellation',
+  enable_realtime_transcription: agentData?.enable_realtime_transcription ?? true,
+  data_storage_setting: agentData?.data_storage_setting || 'everything',
+  opt_in_signed_url: agentData?.opt_in_signed_url ?? true,
+  mcp_servers: agentData?.mcp_servers || [],
+  pii_config: agentData?.pii_config || { mode: 'off', categories: [] },
+  post_call_webhook_url: agentData?.post_call_webhook_url || '',
+  transfer_webhook_url: agentData?.transfer_webhook_url || '',
+  webhook_payload_fields: agentData?.webhook_payload_fields || ['first_name', 'last_name', 'phone', 'email'],
+});
+
 export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   open,
   onOpenChange,
@@ -156,6 +207,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   const [editableBeginMessage, setEditableBeginMessage] = useState('');
   const [isSavingLlm, setIsSavingLlm] = useState(false);
   const [hasUnsavedPromptChanges, setHasUnsavedPromptChanges] = useState(false);
+  const [resolvedLlmId, setResolvedLlmId] = useState('');
   const [snippetsExpanded, setSnippetsExpanded] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
@@ -254,14 +306,18 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
       if (!agent?.agent_id || !open) return;
       
       setIsLoadingLlm(true);
+      setLlmData(null);
+      setResolvedLlmId('');
       try {
         // Step 1: Fetch the LIVE agent from Retell to get current LLM ID
         const { data: liveAgent, error: agentError } = await supabase.functions.invoke('retell-agent-management', {
           body: { action: 'get', agentId: agent.agent_id }
         });
+        const hydratedAgent = !agentError && liveAgent ? liveAgent : agent;
+        setConfig(buildAgentConfig(hydratedAgent));
         
-        const liveLlmId = liveAgent?.response_engine?.llm_id || 
-                          liveAgent?.llm_id ||
+        const liveLlmId = hydratedAgent?.response_engine?.llm_id || 
+                          hydratedAgent?.llm_id ||
                           agent?.response_engine?.llm_id;
         
         if (!liveLlmId) {
@@ -269,6 +325,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
           setIsLoadingLlm(false);
           return;
         }
+
+        setResolvedLlmId(liveLlmId);
 
         if (agentError) {
           console.warn('Could not fetch live agent, falling back to local LLM ID:', agentError);
@@ -282,7 +340,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
         });
         
         if (error) throw error;
-        setLlmData(data);
+        setLlmData({ ...data, llm_id: liveLlmId });
         setEditablePrompt(data.general_prompt || data.system_prompt || '');
         setEditableBeginMessage(data.begin_message || '');
         console.log('LLM data loaded (live):', { llmId: liveLlmId, promptLength: (data.general_prompt || '').length });
@@ -295,6 +353,16 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     
     fetchLlmData();
   }, [agent?.agent_id, open]);
+
+  useEffect(() => {
+    if (!open) {
+      setLlmData(null);
+      setEditablePrompt('');
+      setEditableBeginMessage('');
+      setResolvedLlmId('');
+      setHasUnsavedPromptChanges(false);
+    }
+  }, [open]);
 
   // Track unsaved prompt changes
   useEffect(() => {
@@ -310,7 +378,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   // Save LLM/prompt changes
   const saveLlmChanges = async () => {
     // Use the LLM ID from the live-fetched data, falling back to local agent
-    const llmId = llmData?.llm_id || agent?.response_engine?.llm_id;
+    const llmId = resolvedLlmId || llmData?.llm_id || config.response_engine?.llm_id || agent?.response_engine?.llm_id;
     if (!llmId) {
       toast({ title: 'Error', description: 'No LLM ID found for this agent', variant: 'destructive' });
       return;
@@ -330,7 +398,10 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
       if (error) throw error;
 
-      setLlmData(data);
+      setResolvedLlmId(llmId);
+      setLlmData({ ...data, llm_id: llmId });
+      setEditablePrompt(data.general_prompt || data.system_prompt || editablePrompt);
+      setEditableBeginMessage(data.begin_message || editableBeginMessage);
       setHasUnsavedPromptChanges(false);
       toast({ title: 'Success', description: 'Agent prompt updated successfully' });
     } catch (error: any) {
@@ -548,53 +619,7 @@ AFTER LEAVING THE MESSAGE:
 
   useEffect(() => {
     if (agent) {
-      setConfig({
-        agent_name: agent.agent_name || '',
-        response_engine: agent.response_engine || {},
-        voice_id: agent.voice_id || '11labs-Adrian',
-        voice_model: agent.voice_model || 'eleven_turbo_v2',
-        fallback_voice_ids: agent.fallback_voice_ids || [],
-        voice_temperature: agent.voice_temperature || 1,
-        voice_speed: agent.voice_speed || 1,
-        volume: agent.volume || 1,
-        responsiveness: agent.responsiveness || 1,
-        interruption_sensitivity: agent.interruption_sensitivity || 1,
-        enable_backchannel: agent.enable_backchannel ?? true,
-        backchannel_frequency: agent.backchannel_frequency || 0.9,
-        backchannel_words: agent.backchannel_words || ['yeah', 'uh-huh'],
-        language: agent.language || 'en-US',
-        ambient_sound: agent.ambient_sound || null,
-        ambient_sound_volume: agent.ambient_sound_volume || 1,
-        webhook_url: agent.webhook_url || '',
-        webhook_timeout_ms: agent.webhook_timeout_ms || 10000,
-        boosted_keywords: agent.boosted_keywords || [],
-        pronunciation_dictionary: agent.pronunciation_dictionary || [],
-        voicemail_detection: agent.voicemail_detection ?? true,
-        voicemail_option: agent.voicemail_option || { action: { type: 'hangup' } },
-        post_call_analysis_data: agent.post_call_analysis_data || [],
-        post_call_analysis_model: agent.post_call_analysis_model || 'gpt-4o-mini',
-        end_call_after_silence_ms: agent.end_call_after_silence_ms || 600000,
-        max_call_duration_ms: agent.max_call_duration_ms || 3600000,
-        normalize_for_speech: agent.normalize_for_speech ?? true,
-        reminder_trigger_ms: agent.reminder_trigger_ms || 10000,
-        reminder_max_count: agent.reminder_max_count || 2,
-        begin_message_delay_ms: agent.begin_message_delay_ms || 2500,
-        ring_duration_ms: agent.ring_duration_ms || 30000,
-        stt_mode: agent.stt_mode || 'fast',
-        vocab_specialization: agent.vocab_specialization || 'general',
-        allow_user_dtmf: agent.allow_user_dtmf ?? true,
-        user_dtmf_options: agent.user_dtmf_options || {
-          digit_limit: 25,
-          termination_key: '#',
-          timeout_ms: 8000
-        },
-        denoising_mode: agent.denoising_mode || 'noise-cancellation',
-        enable_realtime_transcription: agent.enable_realtime_transcription ?? true,
-        data_storage_setting: agent.data_storage_setting || 'everything',
-        opt_in_signed_url: agent.opt_in_signed_url ?? true,
-        mcp_servers: agent.mcp_servers || [],
-        pii_config: agent.pii_config || { mode: 'off', categories: [] },
-      });
+      setConfig(buildAgentConfig(agent));
     }
   }, [agent]);
 
@@ -1284,6 +1309,7 @@ AFTER LEAVING THE MESSAGE:
                       <div className="space-y-2">
                         <Label>Opening Message</Label>
                         <DynamicVariablesInput
+                          key={`${agent?.agent_id || 'agent'}-${resolvedLlmId || config.response_engine?.llm_id || 'llm'}-begin`}
                           value={editableBeginMessage}
                           onChange={setEditableBeginMessage}
                           placeholder="Hello {{first_name}}! How can I help you today?"
@@ -1298,6 +1324,7 @@ AFTER LEAVING THE MESSAGE:
                       <div className="space-y-2">
                         <Label>System Prompt / Script</Label>
                         <DynamicVariablesInput
+                          key={`${agent?.agent_id || 'agent'}-${resolvedLlmId || config.response_engine?.llm_id || 'llm'}-prompt`}
                           value={editablePrompt}
                           onChange={setEditablePrompt}
                           placeholder="You are a helpful AI assistant talking to {{first_name}}..."

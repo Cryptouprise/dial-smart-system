@@ -13,6 +13,28 @@
 
 ---
 
+### April 15, 2026 - Retell Agent Editor Live Prompt Hydration Fix
+
+**What was built/fixed/changed**
+- Fixed the Retell agent edit dialog so it now hydrates from the live Retell agent payload on open instead of relying only on the stale list-row snapshot.
+- Fixed prompt and begin-message editor state resets so reopening an agent no longer risks showing stale content from the previous LLM session.
+- Bound prompt saves to the resolved live `llm_id` and refreshed the local editor state from the save response.
+
+**Key files modified**
+- `src/components/AgentEditDialog.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification required after this patch.
+
+**Gotchas / lessons learned**
+- In the Retell manager, the list payload is not authoritative enough for editing; the dialog must rehydrate from `get-agent` + `get_llm` every time it opens.
+- Controlled prompt inputs can still look stale across dialog sessions unless their state is explicitly reset/remounted when the live LLM changes.
+
 ### April 14, 2026 - Lead Import Mapping + Bulk Select Fix
 
 **What was built/fixed/changed**
