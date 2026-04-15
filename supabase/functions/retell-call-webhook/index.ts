@@ -2110,15 +2110,19 @@ async function updatePipelinePosition(
     'follow_up': 'Follow Up',
     'potential_prospect': 'Prospects',
     
-    // Neutral/Contact attempts (gray)
+    // Neutral/Contact attempts — split into discrete buckets so each
+    // outcome lives in its own pipeline board. This lets users filter
+    // "everyone in voicemail" or "everyone who didn't answer" and
+    // reactivate them as separate batches, instead of mixing them under
+    // a generic "Contacted" / "Not Contacted" pile.
     'contacted': 'Contacted',
-    'voicemail': 'Contacted',
-    'not_connected': 'Not Contacted',
-    'dropped_call': 'Not Contacted',
+    'voicemail': 'Voicemail',
+    'no_answer': 'No Answer',
+    'busy': 'No Answer',
+    'failed': 'No Answer',
+    'not_connected': 'No Answer',
+    'dropped_call': 'No Answer',
     'dial_tree_workflow': 'In Progress',
-    'no_answer': 'Not Contacted',
-    'busy': 'Not Contacted',
-    'failed': 'Not Contacted',
     
     // Negative/Disqualified (red)
     'not_interested': 'Not Interested',
