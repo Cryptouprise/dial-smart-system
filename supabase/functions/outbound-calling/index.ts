@@ -517,6 +517,8 @@ serve(async (req) => {
             });
 
             dynamicVariables = {
+              // CRITICAL: lead_id required by update_lead_info tool webhook ({{lead_id}} substitution)
+              lead_id: lead.id,
               current_time: currentTimeFormatted,
               current_time_iso: new Date().toISOString(),
               current_timezone: timezone,
@@ -869,6 +871,8 @@ serve(async (req) => {
           const currentDayOfWeek = new Date().toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' });
 
           dynamicVariables = {
+            // CRITICAL: lead_id required by update_lead_info tool webhook ({{lead_id}} substitution)
+            lead_id: lead.id,
             // CRITICAL: Current time variables so agent always knows the date/time
             current_time: currentTimeFormatted,
             current_time_iso: currentTimeIso,
