@@ -1050,39 +1050,97 @@ serve(async (req) => {
       console.log('[Dispatcher] Manual dispatch — bypassing scheduled_at gate');
     }
 
-    let queueQuery = supabase
-      .from('dialing_queues')
-      .select(`
-        *,
-        leads (id, phone_number, first_name, last_name, ghl_contact_id),
-        campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
-      `)
-      .in('campaign_id', campaignIds)
-      .eq('status', 'pending');
+    // ============= ATOMIC CLAIM (race condition fix) =============
+    // For internal/cron calls: use claim_pending_dispatches RPC which atomically
+    // sets status='calling' + increments attempts using FOR UPDATE SKIP LOCKED.
+    // This prevents multiple concurrent dispatcher invocations from claiming the same rows.
+    // For manual dispatch: use the old SELECT path since we need to bypass scheduled_at.
+    let eligibleCalls: any[] = [];
 
     if (!manualDispatchNow) {
-      queueQuery = queueQuery.lte('scheduled_at', nowIso);
-    }
+      // ATOMIC CLAIM PATH — prevents race condition
+      const { data: claimed, error: claimError } = await supabase
+        .rpc('claim_pending_dispatches', {
+          p_campaign_ids: campaignIds,
+          p_limit: batchSize,
+        });
 
-    const { data: queuedCalls, error: queueError } = await queueQuery
-      .order('priority', { ascending: false })
-      .order('scheduled_at', { ascending: true })
-      .limit(batchSize);
+      if (claimError) throw claimError;
 
-    if (queueError) throw queueError;
+      // Filter out items that have exceeded max_attempts (defense in depth)
+      const validClaimed = (claimed || []).filter((q: any) => {
+        // attempts was already incremented by the RPC, so check against max
+        const attempts = q.attempts || 0;
+        const maxAttempts = q.max_attempts || 3;
+        if (attempts > maxAttempts) {
+          console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} > max ${maxAttempts}, marking failed`);
+          supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
+          return false;
+        }
+        return true;
+      });
 
-    // CRITICAL: Filter out items that have exceeded max_attempts (defense in depth)
-    const eligibleCalls = (queuedCalls || []).filter((q: any) => {
-      const attempts = q.attempts || 0;
-      const maxAttempts = q.max_attempts || 3;
-      if (attempts >= maxAttempts) {
-        console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
-        // Async mark as failed
-        supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
-        return false;
+      // Hydrate leads + campaigns for claimed rows (RPC only returns dialing_queues columns)
+      if (validClaimed.length > 0) {
+        const leadIds = [...new Set(validClaimed.map((q: any) => q.lead_id).filter(Boolean))];
+        const claimedCampaignIds = [...new Set(validClaimed.map((q: any) => q.campaign_id).filter(Boolean))];
+
+        const [leadsResult, campaignsResult] = await Promise.all([
+          leadIds.length > 0
+            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id').in('id', leadIds)
+            : { data: [] },
+          claimedCampaignIds.length > 0
+            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata').in('id', claimedCampaignIds)
+            : { data: [] },
+        ]);
+
+        const leadsMap = new Map((leadsResult.data || []).map((l: any) => [l.id, l]));
+        const campaignsMap = new Map((campaignsResult.data || []).map((c: any) => [c.id, c]));
+
+        eligibleCalls = validClaimed.map((q: any) => ({
+          ...q,
+          leads: leadsMap.get(q.lead_id) || null,
+          campaigns: campaignsMap.get(q.campaign_id) || null,
+        }));
       }
-      return true;
-    });
+
+      console.log(`[Dispatcher] ATOMIC CLAIM: claimed ${claimed?.length || 0}, eligible ${eligibleCalls.length}`);
+    } else {
+      // MANUAL DISPATCH PATH — bypasses scheduled_at, uses old SELECT
+      const { data: queuedCalls, error: queueError } = await supabase
+        .from('dialing_queues')
+        .select(`
+          *,
+          leads (id, phone_number, first_name, last_name, ghl_contact_id),
+          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
+        `)
+        .in('campaign_id', campaignIds)
+        .eq('status', 'pending')
+        .order('priority', { ascending: false })
+        .order('scheduled_at', { ascending: true })
+        .limit(batchSize);
+
+      if (queueError) throw queueError;
+
+      // Filter out items that have exceeded max_attempts
+      eligibleCalls = (queuedCalls || []).filter((q: any) => {
+        const attempts = q.attempts || 0;
+        const maxAttempts = q.max_attempts || 3;
+        if (attempts >= maxAttempts) {
+          console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
+          supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
+          return false;
+        }
+        return true;
+      });
+
+      // For manual dispatch, mark as calling now (atomic claim already did this for internal)
+      for (const q of eligibleCalls) {
+        await supabase.from('dialing_queues')
+          .update({ status: 'calling', attempts: (q.attempts || 0) + 1, updated_at: nowIso })
+          .eq('id', q.id);
+      }
+    }
 
     console.log(`[Dispatcher] Processing ${eligibleCalls.length} queued calls (filtered from ${queuedCalls?.length || 0})`);
 
