@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Phone, PhoneIncoming, Clock, Calendar, MessageSquare, TrendingUp, RefreshCw, Loader2 } from 'lucide-react';
+import { Phone, PhoneIncoming, Clock, Calendar, MessageSquare, TrendingUp, RefreshCw, Loader2, UserCheck, PhoneMissed, Voicemail, RotateCcw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { useCampaignResults, CampaignMetrics } from '@/hooks/useCampaignResults';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +11,14 @@ import { useSearchParams } from 'react-router-dom';
 import { getProviderMeta } from '@/lib/providerUtils';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
+
+const OUTCOME_COLORS: Record<string, string> = {
+  'Human Conversations': '#10B981',
+  'Voicemails': '#F59E0B',
+  'No Answer': '#F97316',
+  'Failed / Never Connected': '#EF4444',
+  'Other': '#94A3B8',
+};
 
 export const CampaignResultsDashboard: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -35,7 +43,6 @@ export const CampaignResultsDashboard: React.FC = () => {
       .order('created_at', { ascending: false });
     setCampaigns(data || []);
 
-    // Deep-link: if URL has ?id=..., preselect that campaign
     const deepLinkId = searchParams.get('id');
     if (deepLinkId && data?.some(c => c.id === deepLinkId)) {
       setSelectedCampaignId(deepLinkId);
@@ -53,6 +60,15 @@ export const CampaignResultsDashboard: React.FC = () => {
     name: name.replace(/_/g, ' '),
     value
   })) : [];
+
+  // Build outcome breakdown for the stacked visual
+  const outcomeBreakdown = metrics ? [
+    { name: 'Human Conversations', value: metrics.humanConversations, color: OUTCOME_COLORS['Human Conversations'] },
+    { name: 'Voicemails', value: metrics.voicemailsReached, color: OUTCOME_COLORS['Voicemails'] },
+    { name: 'No Answer', value: metrics.retryableCalls - metrics.neverConnected, color: OUTCOME_COLORS['No Answer'] },
+    { name: 'Failed / Never Connected', value: metrics.neverConnected, color: OUTCOME_COLORS['Failed / Never Connected'] },
+    { name: 'Other', value: Math.max(0, metrics.totalCalls - metrics.humanConversations - metrics.voicemailsReached - metrics.retryableCalls), color: OUTCOME_COLORS['Other'] },
+  ].filter(o => o.value > 0) : [];
 
   return (
     <div className="space-y-6">
@@ -97,8 +113,8 @@ export const CampaignResultsDashboard: React.FC = () => {
         </div>
       ) : metrics ? (
         <>
-          {/* Overview Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {/* Primary Metrics — Honest Breakdown */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
@@ -109,24 +125,36 @@ export const CampaignResultsDashboard: React.FC = () => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-green-500/30 bg-green-500/5">
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <PhoneIncoming className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-muted-foreground">Connected</span>
+                  <UserCheck className="h-4 w-4 text-green-500" />
+                  <span className="text-sm text-muted-foreground">Humans Talked To</span>
                 </div>
-                <p className="text-2xl font-bold">{metrics.connectedCalls}</p>
-                <p className="text-xs text-muted-foreground">{metrics.connectionRate.toFixed(1)}% rate</p>
+                <p className="text-2xl font-bold text-green-600">{metrics.humanConversations}</p>
+                <p className="text-xs text-muted-foreground">{metrics.humanConversationRate.toFixed(1)}% of calls</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-blue-500" />
-                  <span className="text-sm text-muted-foreground">Avg Duration</span>
+                  <Voicemail className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm text-muted-foreground">Voicemails</span>
                 </div>
-                <p className="text-2xl font-bold">{Math.round(metrics.avgDuration)}s</p>
+                <p className="text-2xl font-bold">{metrics.voicemailsReached}</p>
+                <p className="text-xs text-muted-foreground">{metrics.totalCalls > 0 ? ((metrics.voicemailsReached / metrics.totalCalls) * 100).toFixed(0) : 0}% of calls</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-orange-500/30 bg-orange-500/5">
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-orange-500" />
+                  <span className="text-sm text-muted-foreground">Retryable</span>
+                </div>
+                <p className="text-2xl font-bold text-orange-600">{metrics.retryableCalls}</p>
+                <p className="text-xs text-muted-foreground">Safe to re-queue</p>
               </CardContent>
             </Card>
 
@@ -143,27 +171,75 @@ export const CampaignResultsDashboard: React.FC = () => {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-cyan-500" />
-                  <span className="text-sm text-muted-foreground">SMS Sent</span>
+                  <Clock className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm text-muted-foreground">Avg Duration</span>
                 </div>
-                <p className="text-2xl font-bold">{metrics.smsSent}</p>
-                <p className="text-xs text-muted-foreground">{metrics.smsReplied} replies</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm text-muted-foreground">Voicemails</span>
-                </div>
-                <p className="text-2xl font-bold">{metrics.voicemailsLeft}</p>
+                <p className="text-2xl font-bold">{Math.round(metrics.avgDuration)}s</p>
               </CardContent>
             </Card>
           </div>
 
+          {/* Reached vs Connected context */}
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center gap-2">
+                  <PhoneIncoming className="h-4 w-4 text-blue-500" />
+                  <span className="text-muted-foreground">Reached (any audio):</span>
+                  <span className="font-semibold">{metrics.connectedCalls}</span>
+                  <span className="text-muted-foreground">({metrics.connectionRate.toFixed(0)}%)</span>
+                </div>
+                <span className="text-muted-foreground">•</span>
+                <div className="flex items-center gap-2">
+                  <PhoneMissed className="h-4 w-4 text-red-500" />
+                  <span className="text-muted-foreground">Never Connected:</span>
+                  <span className="font-semibold">{metrics.neverConnected}</span>
+                </div>
+                <span className="text-muted-foreground">•</span>
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-cyan-500" />
+                  <span className="text-muted-foreground">SMS:</span>
+                  <span className="font-semibold">{metrics.smsSent} sent / {metrics.smsReplied} replies</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Charts Row */}
           <div className="grid md:grid-cols-2 gap-4">
+            {/* Call Outcome Breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Call Outcome Breakdown</CardTitle>
+                <CardDescription>What actually happened on each call</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {outcomeBreakdown.length > 0 ? (
+                  <div className="space-y-3">
+                    {outcomeBreakdown.map(item => {
+                      const pct = metrics.totalCalls > 0 ? (item.value / metrics.totalCalls) * 100 : 0;
+                      return (
+                        <div key={item.name} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span className="flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: item.color }} />
+                              {item.name}
+                            </span>
+                            <span className="font-medium">{item.value} <span className="text-muted-foreground">({pct.toFixed(0)}%)</span></span>
+                          </div>
+                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: item.color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">No call data</p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Calls Over Time */}
             <Card>
               <CardHeader>
@@ -177,7 +253,8 @@ export const CampaignResultsDashboard: React.FC = () => {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Line type="monotone" dataKey="count" stroke="#3B82F6" name="Total" />
-                    <Line type="monotone" dataKey="connected" stroke="#10B981" name="Connected" />
+                    <Line type="monotone" dataKey="humans" stroke="#10B981" name="Humans" />
+                    <Line type="monotone" dataKey="connected" stroke="#94A3B8" name="Reached" strokeDasharray="5 5" />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -196,38 +273,9 @@ export const CampaignResultsDashboard: React.FC = () => {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Bar dataKey="count" fill="#3B82F6" name="Total" />
-                    <Bar dataKey="connected" fill="#10B981" name="Connected" />
+                    <Bar dataKey="humans" fill="#10B981" name="Humans" />
                   </BarChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Call Status Breakdown - Debug Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Call Status Breakdown</CardTitle>
-                <CardDescription>Raw status values from call logs</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {metrics.callStatuses && Object.keys(metrics.callStatuses).length > 0 ? (
-                  <div className="space-y-2">
-                    {Object.entries(metrics.callStatuses).map(([status, count]) => (
-                      <div key={status} className="flex justify-between items-center">
-                        <Badge variant={
-                          status === 'completed' || status === 'answered' ? 'default' :
-                          status === 'failed' ? 'destructive' :
-                          status === 'ringing' || status === 'in-progress' ? 'secondary' :
-                          'outline'
-                        }>
-                          {status}
-                        </Badge>
-                        <span className="font-semibold">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">No status data</p>
-                )}
               </CardContent>
             </Card>
 
