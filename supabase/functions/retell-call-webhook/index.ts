@@ -17,6 +17,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * Invoke another edge function with explicit service-role auth.
+ *
+ * Regression fix (2026-04-15): supabase.functions.invoke() from within an edge
+ * function did not propagate SUPABASE_SERVICE_ROLE_KEY as the Authorization
+ * header, causing 401 Unauthorized on downstream functions with
+ * verify_jwt=true (disposition-router, analyze-call-transcript,
+ * ghl-integration). That silent failure killed the whole post-call automation
+ * chain: auto_disposition / ai_analysis / call_summary / sentiment stayed
+ * NULL, lead status never advanced, leads never got removed from campaigns.
+ */
+async function invokeServiceFunction<T = any>(
+  functionName: string,
+  body: Record<string, any>
+): Promise<{ data: T | null; error: { message: string; status: number } | null }> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceKey) {
+    return {
+      data: null,
+      error: { message: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars', status: 0 },
+    };
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed: any = null;
+    if (text) {
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+    }
+    if (!res.ok) {
+      const msg = typeof parsed === 'string'
+        ? parsed
+        : (parsed?.error || parsed?.message || `HTTP ${res.status}`);
+      return { data: null, error: { message: String(msg), status: res.status } };
+    }
+    return { data: parsed as T, error: null };
+  } catch (err: any) {
+    return { data: null, error: { message: err?.message || String(err), status: 0 } };
+  }
+}
+
 interface RetellWebhookPayload {
   event: string;
   call: {
@@ -1327,16 +1377,17 @@ serve(async (req) => {
       // 4. Trigger disposition router for automated actions
       console.log('[Retell Webhook] Triggering disposition router...');
       try {
-        const dispositionResponse = await supabase.functions.invoke('disposition-router', {
-          body: {
-            action: 'process_disposition',
-            leadId,
-            userId,
-            dispositionName: outcome,
-            callOutcome: outcome,
-            transcript: formattedTranscript,
-          },
+        const dispositionResponse = await invokeServiceFunction('disposition-router', {
+          action: 'process_disposition',
+          leadId,
+          userId,
+          dispositionName: outcome,
+          callOutcome: outcome,
+          transcript: formattedTranscript,
         });
+        if (dispositionResponse.error) {
+          throw new Error(`disposition-router ${dispositionResponse.error.status}: ${dispositionResponse.error.message}`);
+        }
         console.log('[Retell Webhook] Disposition router response:', dispositionResponse.data);
       } catch (routerError: any) {
         console.error('[Retell Webhook] Disposition router error:', routerError);
@@ -1960,16 +2011,17 @@ async function analyzeTranscriptWithAI(
   params: { transcript: string; callId?: string; userId: string }
 ): Promise<{ disposition: string; confidence: number; summary: string } | null> {
   try {
-    const response = await supabase.functions.invoke('analyze-call-transcript', {
-      body: {
+    const response = await invokeServiceFunction<{ disposition: string; confidence: number; summary: string }>(
+      'analyze-call-transcript',
+      {
         transcript: params.transcript,
         callId: params.callId,
         userId: params.userId,
       },
-    });
+    );
 
     if (response.error) {
-      throw new Error(response.error.message || 'AI analysis failed');
+      throw new Error(`analyze-call-transcript ${response.error.status}: ${response.error.message}`);
     }
 
     return response.data;
@@ -2277,18 +2329,39 @@ async function syncToGoHighLevel(
 
   if (!ghlSettings?.sync_enabled) return;
 
+  // Per-campaign GHL opt-out: if the lead's most recent campaign explicitly
+  // has metadata.sync_to_ghl === false, skip GHL sync for this call.
+  // Backward compat: missing/unset = sync ON (existing behavior).
+  try {
+    const { data: recentCampaignLink } = await supabase
+      .from('campaign_leads')
+      .select('campaign_id, campaigns(metadata)')
+      .eq('lead_id', leadId)
+      .order('added_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const campaignMeta = (recentCampaignLink as any)?.campaigns?.metadata;
+    if (campaignMeta && campaignMeta.sync_to_ghl === false) {
+      console.log(`[Retell Webhook] GHL sync skipped — campaign ${recentCampaignLink?.campaign_id} has sync_to_ghl=false`);
+      return;
+    }
+  } catch (gateErr) {
+    console.error('[Retell Webhook] Campaign GHL gate lookup failed (proceeding with sync):', gateErr);
+  }
+
   // Invoke GHL integration
-  await supabase.functions.invoke('ghl-integration', {
-    body: {
-      action: 'log_call',
-      leadId,
-      userId,
-      outcome,
-      transcript,
-      durationSeconds,
-      callId: call.call_id,
-    },
+  const ghlResp = await invokeServiceFunction('ghl-integration', {
+    action: 'log_call',
+    leadId,
+    userId,
+    outcome,
+    transcript,
+    durationSeconds,
+    callId: call.call_id,
   });
+  if (ghlResp.error) {
+    console.error('[Retell Webhook] GHL integration error:', ghlResp.error);
+  }
 }
 
 async function logFailedOperation(
