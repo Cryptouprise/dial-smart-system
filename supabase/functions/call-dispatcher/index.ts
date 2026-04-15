@@ -1142,12 +1142,12 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[Dispatcher] Processing ${eligibleCalls.length} queued calls (filtered from ${queuedCalls?.length || 0})`);
+    console.log(`[Dispatcher] Processing ${eligibleCalls.length} eligible calls`);
 
     // ============= DIAGNOSTICS FOR ZERO DISPATCHED =============
     // If no queued calls are eligible NOW, check if there are any scheduled for later
     let diagnostics: any = null;
-    if (!queuedCalls || queuedCalls.length === 0) {
+    if (eligibleCalls.length === 0) {
       const { data: pendingCalls, count: pendingTotal } = await supabase
         .from('dialing_queues')
         .select('id, scheduled_at, lead_id, status', { count: 'exact' })
