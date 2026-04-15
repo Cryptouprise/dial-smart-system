@@ -52,6 +52,7 @@ export interface LeadQueryFilters {
   status?: string;
   statuses?: string[];
   campaign_id?: string;
+  lead_ids?: string[];
   search?: string;
   limit?: number;
   lead_source?: string;
@@ -128,6 +129,10 @@ export const usePredictiveDialing = () => {
       }
 
       query = query.in('id', campaignLeads.map(cl => cl.lead_id));
+    }
+
+    if (filters?.lead_ids?.length) {
+      query = query.in('id', filters.lead_ids);
     }
 
     return { query, empty: false };

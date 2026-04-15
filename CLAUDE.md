@@ -13,6 +13,31 @@
 
 ---
 
+### April 15, 2026 - Lead Bulk Actions Expansion
+
+**What was built/fixed/changed**
+- Expanded the lead selection workflow so bulk-selected leads can now be acted on directly from the main Manage view instead of feeling stuck with delete-only behavior.
+- Added bulk **Add Tags**, **Save as Smart List**, **Assign to Campaign**, and **Reset for Calling** actions to the selected-leads toolbar.
+- Added support for static smart lists based on explicit selected lead IDs so imported lead batches can be saved and revisited reliably.
+- Improved bulk tagging performance for large selections by loading lead tags in batches instead of one-by-one.
+
+**Key files modified**
+- `src/components/EnhancedLeadManager.tsx`
+- `src/hooks/useSmartLists.ts`
+- `src/hooks/usePredictiveDialing.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- Build verification pending after this patch.
+
+**Gotchas / lessons learned**
+- The real UX blocker was not lead selection itself; it was that the main selected-leads toolbar exposed almost no meaningful actions, which made large imports feel dead on arrival.
+- Smart lists needed a way to represent explicit selected lead sets (`lead_ids`), not only dynamic filters, for imported batch management to feel practical.
+
 ### April 15, 2026 - Retell Agent Editor Unified Save Fix
 
 **What was built/fixed/changed**
