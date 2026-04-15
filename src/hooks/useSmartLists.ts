@@ -370,12 +370,18 @@ export const useSmartLists = () => {
     try {
       if (leadIds.length === 0 || tags.length === 0) return 0;
 
-      const { data: leads, error: leadsError } = await supabase
-        .from('leads')
-        .select('id,tags')
-        .in('id', leadIds);
-
-      if (leadsError) throw leadsError;
+      // Fetch existing tags in batches to avoid PostgREST URL length limits
+      const fetchBatchSize = 300;
+      const leads: { id: string; tags: string[] | null }[] = [];
+      for (let i = 0; i < leadIds.length; i += fetchBatchSize) {
+        const batchIds = leadIds.slice(i, i + fetchBatchSize);
+        const { data, error } = await supabase
+          .from('leads')
+          .select('id,tags')
+          .in('id', batchIds);
+        if (error) throw error;
+        if (data) leads.push(...data);
+      }
 
       const updates = (leads || []).map((lead) => ({
         id: lead.id,
