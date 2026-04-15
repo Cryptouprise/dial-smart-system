@@ -350,25 +350,27 @@ export const usePredictiveDialing = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Reset lead status to 'new'
-      const { error: leadError } = await supabase
-        .from('leads')
-        .update({ status: 'new', last_contacted_at: null })
-        .in('id', leadIds);
+      // Batch updates to avoid PostgREST URL length limits
+      const batchSize = 300;
+      for (let i = 0; i < leadIds.length; i += batchSize) {
+        const batch = leadIds.slice(i, i + batchSize);
 
-      if (leadError) throw leadError;
+        const { error: leadError } = await supabase
+          .from('leads')
+          .update({ status: 'new', last_contacted_at: null })
+          .in('id', batch);
+        if (leadError) throw leadError;
 
-      // Delete any existing queue entries for these leads
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .delete()
-        .in('lead_id', leadIds);
-
-      if (queueError) throw queueError;
+        const { error: queueError } = await supabase
+          .from('dialing_queues')
+          .delete()
+          .in('lead_id', batch);
+        if (queueError) throw queueError;
+      }
 
       toast({
         title: "Success",
-        description: `Reset ${leadIds.length} leads for calling`,
+        description: `Reset ${leadIds.length.toLocaleString()} leads for calling`,
       });
 
       return true;
@@ -383,6 +385,40 @@ export const usePredictiveDialing = () => {
       setIsLoading(false);
     }
   };
+
+  // Fetch ALL matching lead IDs with pagination (only IDs, lightweight)
+  const getAllMatchingLeadIds = useCallback(async (filters?: LeadQueryFilters): Promise<string[]> => {
+    try {
+      const allIds: string[] = [];
+      const pageSize = 1000;
+      let offset = 0;
+      let keepGoing = true;
+
+      while (keepGoing) {
+        const { query, empty } = await applyLeadQueryFilters(
+          supabase.from('leads').select('id').order('created_at', { ascending: false }),
+          filters
+        );
+
+        if (empty || !query) return [];
+
+        const { data, error } = await query.range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allIds.push(...data.map((row: any) => row.id));
+        if (data.length < pageSize) {
+          keepGoing = false;
+        } else {
+          offset += pageSize;
+        }
+      }
+
+      return allIds;
+    } catch {
+      return [];
+    }
+  }, [applyLeadQueryFilters]);
 
   const getLeadCount = useCallback(async (filters?: LeadQueryFilters) => {
     try {
@@ -512,24 +548,27 @@ export const usePredictiveDialing = () => {
   const addLeadsToCampaign = async (campaignId: string, leadIds: string[]) => {
     setIsLoading(true);
     try {
-      const campaignLeads = leadIds.map(leadId => ({
-        campaign_id: campaignId,
-        lead_id: leadId
-      }));
-
-      const { data, error } = await supabase
-        .from('campaign_leads')
-        .insert(campaignLeads)
-        .select();
-
-      if (error) throw error;
+      // Batch inserts to avoid payload size limits
+      const batchSize = 500;
+      let totalInserted = 0;
+      for (let i = 0; i < leadIds.length; i += batchSize) {
+        const batch = leadIds.slice(i, i + batchSize).map(leadId => ({
+          campaign_id: campaignId,
+          lead_id: leadId
+        }));
+        const { error } = await supabase
+          .from('campaign_leads')
+          .insert(batch);
+        if (error) throw error;
+        totalInserted += batch.length;
+      }
 
       toast({
         title: "Success",
-        description: `Added ${leadIds.length} leads to campaign`,
+        description: `Added ${totalInserted.toLocaleString()} leads to campaign`,
       });
 
-      return data;
+      return true;
     } catch (error: any) {
       toast({
         title: "Error",
@@ -732,6 +771,7 @@ export const usePredictiveDialing = () => {
     importLeads,
     getLeads,
     getLeadCount,
+    getAllMatchingLeadIds,
     resetLeadsForCalling,
     // Campaign management
     createCampaign,
