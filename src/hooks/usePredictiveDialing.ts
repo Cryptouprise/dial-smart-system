@@ -384,6 +384,40 @@ export const usePredictiveDialing = () => {
     }
   };
 
+  // Fetch ALL matching lead IDs with pagination (only IDs, lightweight)
+  const getAllMatchingLeadIds = useCallback(async (filters?: LeadQueryFilters): Promise<string[]> => {
+    try {
+      const allIds: string[] = [];
+      const pageSize = 1000;
+      let offset = 0;
+      let keepGoing = true;
+
+      while (keepGoing) {
+        const { query, empty } = await applyLeadQueryFilters(
+          supabase.from('leads').select('id').order('created_at', { ascending: false }),
+          filters
+        );
+
+        if (empty || !query) return [];
+
+        const { data, error } = await query.range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allIds.push(...data.map((row: any) => row.id));
+        if (data.length < pageSize) {
+          keepGoing = false;
+        } else {
+          offset += pageSize;
+        }
+      }
+
+      return allIds;
+    } catch {
+      return [];
+    }
+  }, [applyLeadQueryFilters]);
+
   const getLeadCount = useCallback(async (filters?: LeadQueryFilters) => {
     try {
       const { query, empty } = await applyLeadQueryFilters(
