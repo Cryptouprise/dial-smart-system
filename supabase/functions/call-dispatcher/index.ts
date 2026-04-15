@@ -1247,10 +1247,7 @@ serve(async (req) => {
             continue;
           }
 
-          // Mark as calling
-          await supabase.from('dialing_queues')
-            .update({ status: 'calling', attempts: (queueItem.attempts || 0) + 1, updated_at: nowIso })
-            .eq('id', queueItem.id);
+          // status='calling' + attempts already set by atomic claim (or manual dispatch pre-loop)
 
           // Invoke assistable-make-call
           // Use GHL contact_id from lead if available; fall back to phone number
@@ -1396,15 +1393,7 @@ serve(async (req) => {
         
         console.log(`[Dispatcher] Selected caller ID: ${callerId} for lead ${queueItem.lead_id} (score: ${scoredNumbers[0].score})`);
         
-        // Mark as calling
-        await supabase
-          .from('dialing_queues')
-          .update({ 
-            status: 'calling', 
-            attempts: (queueItem.attempts || 0) + 1,
-            updated_at: nowIso 
-          })
-          .eq('id', queueItem.id);
+        // status='calling' + attempts already set by atomic claim (or manual dispatch pre-loop)
 
         // Initiate the call with ALL required parameters (provider-aware)
         const callBody: any = {
