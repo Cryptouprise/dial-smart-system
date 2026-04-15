@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { usePredictiveDialing, type LeadQueryFilters } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
@@ -15,7 +16,7 @@ import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
 import { supabase } from '@/integrations/supabase/client';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus } from 'lucide-react';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus, Tag, Loader2 } from 'lucide-react';
 import { LeadImportDialog } from '@/components/LeadImportDialog';
 
 interface Lead {
@@ -61,14 +62,22 @@ const EnhancedLeadManager = () => {
   const [builtInFilter, setBuiltInFilter] = useState<'all' | 'new' | 'hot' | 'recent'>('all');
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkSmartListOpen, setBulkSmartListOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [activeAdvancedFilters, setActiveAdvancedFilters] = useState<SmartListFilters>({});
+  const [activeTab, setActiveTab] = useState('manage');
+  const [bulkTagsInput, setBulkTagsInput] = useState('');
+  const [bulkSmartListName, setBulkSmartListName] = useState('');
+  const [bulkSmartListDescription, setBulkSmartListDescription] = useState('');
+  const [savingBulkTags, setSavingBulkTags] = useState(false);
+  const [savingBulkSmartList, setSavingBulkSmartList] = useState(false);
   
   const { toast } = useToast();
   const { getLeads, createLead, importLeads, getCampaigns, getLeadCount, addLeadsToCampaign, resetLeadsForCalling, isLoading } = usePredictiveDialing();
   const { getGHLCredentials, syncContacts, getContacts } = useGoHighLevel();
-  const { lists, fetchLists } = useSmartLists();
+  const { fetchLists, addTagsToLeads, createList } = useSmartLists();
 
   const hasActiveSmartFilters = useCallback((filters?: SmartListFilters | null) => {
     return Object.values(filters || {}).some(value => Array.isArray(value) ? value.length > 0 : value !== undefined);
@@ -78,6 +87,7 @@ const EnhancedLeadManager = () => {
     statuses: filters?.status,
     lead_source: filters?.lead_source,
     campaign_id: filters?.campaign_id,
+    lead_ids: filters?.lead_ids,
     tags: filters?.tags,
     tags_all: filters?.tags_all,
     tags_exclude: filters?.tags_exclude,
@@ -263,6 +273,98 @@ const EnhancedLeadManager = () => {
     }
   };
 
+  const parseTagInput = (value: string) => Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tagValue) => tagValue.trim())
+        .filter(Boolean)
+    )
+  );
+
+  const handleBulkAddTags = async () => {
+    const tags = parseTagInput(bulkTagsInput);
+
+    if (selectedLeads.length === 0) {
+      toast({
+        title: 'No leads selected',
+        description: 'Select at least one lead before adding tags.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (tags.length === 0) {
+      toast({
+        title: 'No tags entered',
+        description: 'Enter one or more comma-separated tags.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setSavingBulkTags(true);
+    try {
+      const updatedCount = await addTagsToLeads(selectedLeads, tags);
+      if (updatedCount > 0) {
+        setBulkTagOpen(false);
+        setBulkTagsInput('');
+        await refreshCurrentView();
+      }
+    } finally {
+      setSavingBulkTags(false);
+    }
+  };
+
+  const openBulkSmartListDialog = () => {
+    if (!bulkSmartListName.trim()) {
+      setBulkSmartListName(`Selected Leads - ${new Date().toLocaleDateString()}`);
+    }
+    setBulkSmartListOpen(true);
+  };
+
+  const handleSaveSelectedAsSmartList = async () => {
+    if (selectedLeads.length === 0) {
+      toast({
+        title: 'No leads selected',
+        description: 'Select leads before saving a smart list.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!bulkSmartListName.trim()) {
+      toast({
+        title: 'List name required',
+        description: 'Give this smart list a name first.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setSavingBulkSmartList(true);
+    try {
+      const createdList = await createList(
+        bulkSmartListName.trim(),
+        { lead_ids: selectedLeads },
+        bulkSmartListDescription.trim() || `Static list of ${selectedLeads.length} selected leads`,
+        false
+      );
+
+      if (createdList) {
+        setSelectedSmartList(createdList);
+        setBuiltInFilter('all');
+        setActiveAdvancedFilters({});
+        setActiveTab('manage');
+        setBulkSmartListOpen(false);
+        setBulkSmartListName('');
+        setBulkSmartListDescription('');
+      }
+    } finally {
+      setSavingBulkSmartList(false);
+    }
+  };
+
   const toggleLeadSelection = (leadId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setSelectedLeads(prev => 
@@ -428,7 +530,7 @@ const EnhancedLeadManager = () => {
           />
         )}
 
-        <Tabs defaultValue="manage" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3 h-auto">
           <TabsTrigger value="manage" className="text-xs sm:text-sm py-2">
             <Users className="h-4 w-4 sm:mr-2" />
@@ -467,31 +569,69 @@ const EnhancedLeadManager = () => {
                   <SelectItem value="not_interested">Not Interested</SelectItem>
                 </SelectContent>
               </Select>
-              {selectedLeads.length > 0 && (
-                <>
+            </div>
+          </div>
+
+          {selectedLeads.length > 0 && (
+            <Card>
+              <CardContent className="p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="font-medium">
+                    {selectedLeads.length.toLocaleString()} lead{selectedLeads.length !== 1 ? 's' : ''} selected
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Bulk actions now work directly from the lead view.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => setBulkTagOpen(true)}
+                    disabled={isLoading}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Tag className="h-4 w-4 mr-2" />
+                    Add Tags
+                  </Button>
+                  <Button
+                    onClick={openBulkSmartListDialog}
+                    disabled={isLoading}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <List className="h-4 w-4 mr-2" />
+                    Save as Smart List
+                  </Button>
+                  <Button
+                    onClick={() => setActiveTab('campaigns')}
+                    disabled={isLoading}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Link className="h-4 w-4 mr-2" />
+                    Assign to Campaign
+                  </Button>
                   <Button 
                     onClick={handleResetForCalling}
                     disabled={isLoading}
                     variant="outline"
                     size="sm"
-                    className="whitespace-nowrap"
                   >
-                    <RotateCcw className="h-4 w-4 mr-1" />
-                    Reset ({selectedLeads.length})
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset for Calling
                   </Button>
                   <Button 
                     onClick={() => setBulkDeleteOpen(true)}
                     variant="destructive"
                     size="sm"
-                    className="whitespace-nowrap"
                   >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete ({selectedLeads.length})
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
                   </Button>
-                </>
-              )}
-            </div>
-          </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Lead Count + Select All */}
           <div className="flex items-center justify-between">
@@ -741,6 +881,71 @@ const EnhancedLeadManager = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={bulkTagOpen} onOpenChange={setBulkTagOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add tags to selected leads</DialogTitle>
+            <DialogDescription>
+              Add one or more comma-separated tags to {selectedLeads.length.toLocaleString()} selected leads.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={bulkTagsInput}
+              onChange={(event) => setBulkTagsInput(event.target.value)}
+              placeholder="solar, high priority, april import"
+            />
+            <p className="text-sm text-muted-foreground">
+              Existing tags stay in place; new ones are merged in.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkTagOpen(false)} disabled={savingBulkTags}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleBulkAddTags()} disabled={savingBulkTags}>
+              {savingBulkTags && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Add Tags
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkSmartListOpen} onOpenChange={setBulkSmartListOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save selected leads as a smart list</DialogTitle>
+            <DialogDescription>
+              Create a reusable list from the {selectedLeads.length.toLocaleString()} leads you have selected right now.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={bulkSmartListName}
+              onChange={(event) => setBulkSmartListName(event.target.value)}
+              placeholder="April import - homeowners"
+            />
+            <Input
+              value={bulkSmartListDescription}
+              onChange={(event) => setBulkSmartListDescription(event.target.value)}
+              placeholder="Optional description"
+            />
+            <p className="text-sm text-muted-foreground">
+              This saves the current selection as a static smart list so you can come back to the same leads later.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkSmartListOpen(false)} disabled={savingBulkSmartList}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSaveSelectedAsSmartList()} disabled={savingBulkSmartList}>
+              {savingBulkSmartList && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save Smart List
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Lead Import Dialog */}
       <LeadImportDialog

@@ -9,6 +9,7 @@ export interface SmartListFilters {
   status?: string[];
   lead_source?: string;
   campaign_id?: string;
+  lead_ids?: string[];
   created_after?: string;
   created_before?: string;
   has_email?: boolean;
@@ -178,6 +179,22 @@ export const useSmartLists = () => {
       if (filters.lead_source) {
         query = query.eq('lead_source', filters.lead_source);
       }
+      if (filters.campaign_id) {
+        const { data: campaignLeads, error: campaignLeadError } = await supabase
+          .from('campaign_leads')
+          .select('lead_id')
+          .eq('campaign_id', filters.campaign_id);
+
+        if (campaignLeadError) throw campaignLeadError;
+
+        const campaignLeadIds = campaignLeads?.map(item => item.lead_id) || [];
+        if (campaignLeadIds.length === 0) return 0;
+
+        query = query.in('id', campaignLeadIds);
+      }
+      if (filters.lead_ids?.length) {
+        query = query.in('id', filters.lead_ids);
+      }
       if (filters.tags?.length) {
         query = query.overlaps('tags', filters.tags);
       }
@@ -240,6 +257,22 @@ export const useSmartLists = () => {
       if (filters.lead_source) {
         query = query.eq('lead_source', filters.lead_source);
       }
+      if (filters.campaign_id) {
+        const { data: campaignLeads, error: campaignLeadError } = await supabase
+          .from('campaign_leads')
+          .select('lead_id')
+          .eq('campaign_id', filters.campaign_id);
+
+        if (campaignLeadError) throw campaignLeadError;
+
+        const campaignLeadIds = campaignLeads?.map(item => item.lead_id) || [];
+        if (campaignLeadIds.length === 0) return [];
+
+        query = query.in('id', campaignLeadIds);
+      }
+      if (filters.lead_ids?.length) {
+        query = query.in('id', filters.lead_ids);
+      }
       if (filters.tags?.length) {
         query = query.overlaps('tags', filters.tags);
       }
@@ -273,24 +306,38 @@ export const useSmartLists = () => {
     tags: string[]
   ): Promise<number> => {
     try {
+      if (leadIds.length === 0 || tags.length === 0) return 0;
+
+      const { data: leads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id,tags')
+        .in('id', leadIds);
+
+      if (leadsError) throw leadsError;
+
+      const updates = (leads || []).map((lead) => ({
+        id: lead.id,
+        tags: Array.from(new Set([...
+          (((lead.tags || []) as string[])),
+          ...tags,
+        ])),
+      }));
+
       let successCount = 0;
-      
-      for (const leadId of leadIds) {
-        const { data: lead } = await supabase
-          .from('leads')
-          .select('tags')
-          .eq('id', leadId)
-          .maybeSingle();
+      const batchSize = 100;
 
-        const existingTags = (lead?.tags || []) as string[];
-        const newTags = [...new Set([...existingTags, ...tags])];
+      for (let index = 0; index < updates.length; index += batchSize) {
+        const batch = updates.slice(index, index + batchSize);
+        const results = await Promise.all(
+          batch.map((lead) =>
+            supabase
+              .from('leads')
+              .update({ tags: lead.tags })
+              .eq('id', lead.id)
+          )
+        );
 
-        const { error } = await supabase
-          .from('leads')
-          .update({ tags: newTags })
-          .eq('id', leadId);
-
-        if (!error) successCount++;
+        successCount += results.filter((result) => !result.error).length;
       }
 
       toast({
@@ -315,24 +362,35 @@ export const useSmartLists = () => {
     tags: string[]
   ): Promise<number> => {
     try {
+      if (leadIds.length === 0 || tags.length === 0) return 0;
+
+      const { data: leads, error: leadsError } = await supabase
+        .from('leads')
+        .select('id,tags')
+        .in('id', leadIds);
+
+      if (leadsError) throw leadsError;
+
+      const updates = (leads || []).map((lead) => ({
+        id: lead.id,
+        tags: (((lead.tags || []) as string[])).filter((existingTag) => !tags.includes(existingTag)),
+      }));
+
       let successCount = 0;
-      
-      for (const leadId of leadIds) {
-        const { data: lead } = await supabase
-          .from('leads')
-          .select('tags')
-          .eq('id', leadId)
-          .maybeSingle();
+      const batchSize = 100;
 
-        const existingTags = (lead?.tags || []) as string[];
-        const newTags = existingTags.filter(t => !tags.includes(t));
+      for (let index = 0; index < updates.length; index += batchSize) {
+        const batch = updates.slice(index, index + batchSize);
+        const results = await Promise.all(
+          batch.map((lead) =>
+            supabase
+              .from('leads')
+              .update({ tags: lead.tags })
+              .eq('id', lead.id)
+          )
+        );
 
-        const { error } = await supabase
-          .from('leads')
-          .update({ tags: newTags })
-          .eq('id', leadId);
-
-        if (!error) successCount++;
+        successCount += results.filter((result) => !result.error).length;
       }
 
       toast({
@@ -372,6 +430,9 @@ export const useSmartLists = () => {
       }
       if (filters.tags?.length) {
         query = query.overlaps('tags', filters.tags);
+      }
+      if (filters.lead_ids?.length) {
+        query = query.in('id', filters.lead_ids);
       }
       if (filters.lead_source) {
         query = query.eq('lead_source', filters.lead_source);
