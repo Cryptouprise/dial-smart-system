@@ -248,23 +248,44 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     loadPhoneNumbers();
   }, [open, agent?.inbound_phone_number, toast]);
 
-  // Fetch LLM data to show script/prompt
+  // Fetch LLM data to show script/prompt - always resolve LIVE LLM ID from Retell first
   useEffect(() => {
     const fetchLlmData = async () => {
-      const llmId = agent?.response_engine?.llm_id;
-      if (!llmId || !open) return;
+      if (!agent?.agent_id || !open) return;
       
       setIsLoadingLlm(true);
       try {
+        // Step 1: Fetch the LIVE agent from Retell to get current LLM ID
+        const { data: liveAgent, error: agentError } = await supabase.functions.invoke('retell-agent-management', {
+          body: { action: 'get', agentId: agent.agent_id }
+        });
+        
+        const liveLlmId = liveAgent?.response_engine?.llm_id || 
+                          liveAgent?.llm_id ||
+                          agent?.response_engine?.llm_id;
+        
+        if (!liveLlmId) {
+          console.warn('No LLM ID found for agent', agent.agent_id);
+          setIsLoadingLlm(false);
+          return;
+        }
+
+        if (agentError) {
+          console.warn('Could not fetch live agent, falling back to local LLM ID:', agentError);
+        } else {
+          console.log('Resolved live LLM ID from Retell:', liveLlmId, '(local was:', agent?.response_engine?.llm_id, ')');
+        }
+
+        // Step 2: Fetch the LLM data using the LIVE LLM ID
         const { data, error } = await supabase.functions.invoke('retell-agent-management', {
-          body: { action: 'get_llm', llmId }
+          body: { action: 'get_llm', llmId: liveLlmId }
         });
         
         if (error) throw error;
         setLlmData(data);
         setEditablePrompt(data.general_prompt || data.system_prompt || '');
         setEditableBeginMessage(data.begin_message || '');
-        console.log('LLM data loaded:', data);
+        console.log('LLM data loaded (live):', { llmId: liveLlmId, promptLength: (data.general_prompt || '').length });
       } catch (error: any) {
         console.error('Failed to fetch LLM data:', error);
       } finally {
@@ -273,7 +294,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
     };
     
     fetchLlmData();
-  }, [agent?.response_engine?.llm_id, open]);
+  }, [agent?.agent_id, open]);
 
   // Track unsaved prompt changes
   useEffect(() => {
@@ -288,7 +309,8 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
 
   // Save LLM/prompt changes
   const saveLlmChanges = async () => {
-    const llmId = agent?.response_engine?.llm_id;
+    // Use the LLM ID from the live-fetched data, falling back to local agent
+    const llmId = llmData?.llm_id || agent?.response_engine?.llm_id;
     if (!llmId) {
       toast({ title: 'Error', description: 'No LLM ID found for this agent', variant: 'destructive' });
       return;
