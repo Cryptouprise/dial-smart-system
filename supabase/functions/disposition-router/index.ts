@@ -371,7 +371,7 @@ serve(async (req) => {
       if (targetStageName) {
         try {
           // BULLETPROOF: Ensure board exists, create if missing
-          const board = await ensurePipelineBoardLocal(supabase, userId, targetStageName);
+          const board = await ensurePipelineBoardLocal(supabase, userId, targetStageName, campaignId);
           
           console.log(`[Disposition Router] Moving lead ${leadId} to pipeline: ${board.name} (board: ${board.id})`);
           const { error: pipelineError } = await supabase.from('lead_pipeline_positions').upsert({
@@ -674,17 +674,19 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
 }
 
 // BULLETPROOF local helper - ensures pipeline board exists, creates if missing
+// When campaignId is provided, prefers campaign-specific boards over global ones
 async function ensurePipelineBoardLocal(
   supabase: any,
   userId: string,
-  desiredName: string
+  desiredName: string,
+  campaignId?: string | null
 ): Promise<{ id: string; name: string; created: boolean }> {
   const normalizedName = desiredName.trim();
   
-  // Try case-insensitive match first
+  // Fetch all boards for this user (we'll filter in code for campaign specificity)
   const { data: existingBoards } = await supabase
     .from('pipeline_boards')
-    .select('id, name, position')
+    .select('id, name, position, campaign_id')
     .eq('user_id', userId);
   
   // Case-insensitive matching with common variations
@@ -693,31 +695,59 @@ async function ensurePipelineBoardLocal(
     normalizedName.toLowerCase().replace(/_/g, ' '),
   ];
   
+  const nameMatches = (boardName: string) => {
+    const lower = boardName.toLowerCase();
+    return variations.includes(lower) || lower === normalizedName.toLowerCase();
+  };
+  
+  // Priority 1: Campaign-specific board matching the name
+  if (campaignId) {
+    for (const board of existingBoards || []) {
+      if (board.campaign_id === campaignId && nameMatches(board.name)) {
+        console.log(`[Disposition Router] Matched campaign-specific board: ${board.name} (campaign: ${campaignId})`);
+        return { id: board.id, name: board.name, created: false };
+      }
+    }
+  }
+  
+  // Priority 2: Global board (no campaign_id) matching the name
   for (const board of existingBoards || []) {
-    const boardNameLower = board.name.toLowerCase();
-    if (variations.includes(boardNameLower) || boardNameLower === normalizedName.toLowerCase()) {
+    if (!board.campaign_id && nameMatches(board.name)) {
       return { id: board.id, name: board.name, created: false };
     }
   }
   
-  // Create the board if not found
+  // Priority 3: Any board matching the name (fallback for legacy boards)
+  for (const board of existingBoards || []) {
+    if (nameMatches(board.name)) {
+      return { id: board.id, name: board.name, created: false };
+    }
+  }
+  
+  // Create the board if not found — tag with campaign_id if available
   const maxPosition = (existingBoards || []).reduce((max: number, b: any) => 
     Math.max(max, b.position || 0), 0);
   
+  const insertPayload: any = {
+    user_id: userId,
+    name: normalizedName,
+    description: `Auto-created for: ${normalizedName}`,
+    position: maxPosition + 1,
+    settings: {},
+  };
+  
+  if (campaignId) {
+    insertPayload.campaign_id = campaignId;
+  }
+  
   const { data: created, error } = await supabase
     .from('pipeline_boards')
-    .insert({
-      user_id: userId,
-      name: normalizedName,
-      description: `Auto-created for: ${normalizedName}`,
-      position: maxPosition + 1,
-      settings: {},
-    })
+    .insert(insertPayload)
     .select('id, name')
     .single();
   
   if (error) throw error;
   
-  console.log(`[Disposition Router] ✅ Auto-created pipeline board: ${created.name}`);
+  console.log(`[Disposition Router] ✅ Auto-created pipeline board: ${created.name}${campaignId ? ` (campaign: ${campaignId})` : ''}`);
   return { id: created.id, name: created.name, created: true };
 }

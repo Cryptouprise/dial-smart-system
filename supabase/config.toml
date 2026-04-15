@@ -101,7 +101,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.analyze-call-transcript]
-verify_jwt = true
+verify_jwt = false  # Called internally by retell-call-webhook via service role key
 
 [functions.retell-business-verification]
 verify_jwt = true
@@ -125,7 +125,7 @@ verify_jwt = true
 verify_jwt = false  # Internal service function - called by automation-scheduler
 
 [functions.disposition-router]
-verify_jwt = true
+verify_jwt = false  # Called internally by retell-call-webhook via service role key
 
 [functions.voice-broadcast-tts]
 verify_jwt = true
