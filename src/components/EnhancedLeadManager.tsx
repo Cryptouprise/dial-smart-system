@@ -455,6 +455,23 @@ const EnhancedLeadManager = () => {
     });
   };
 
+  const [selectingAll, setSelectingAll] = useState(false);
+  const selectAllMatching = async () => {
+    setSelectingAll(true);
+    try {
+      const viewFilters = buildViewFilters();
+      // Fetch only IDs for all matching leads (no limit)
+      const allMatching = await getLeads({ ...viewFilters, limit: 50000 });
+      if (allMatching) {
+        const allIds = allMatching.map((l: any) => l.id);
+        setSelectedLeads(allIds);
+        toast({ title: 'Selected All', description: `${allIds.length.toLocaleString()} leads selected` });
+      }
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+
   return (
     <div className="flex h-full">
       {/* Smart Lists Sidebar - Desktop */}
