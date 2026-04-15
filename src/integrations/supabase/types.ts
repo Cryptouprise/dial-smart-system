@@ -7935,6 +7935,29 @@ export type Database = {
         Args: { a: number; b: number; c: number; d: number }
         Returns: number
       }
+      claim_pending_dispatches: {
+        Args: { p_campaign_ids: string[]; p_limit?: number }
+        Returns: {
+          attempts: number
+          campaign_id: string
+          created_at: string
+          id: string
+          lead_id: string
+          max_attempts: number
+          notes: string | null
+          phone_number: string
+          priority: number
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "dialing_queues"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
