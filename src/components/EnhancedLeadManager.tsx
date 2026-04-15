@@ -455,6 +455,23 @@ const EnhancedLeadManager = () => {
     });
   };
 
+  const [selectingAll, setSelectingAll] = useState(false);
+  const selectAllMatching = async () => {
+    setSelectingAll(true);
+    try {
+      const viewFilters = buildViewFilters();
+      // Fetch only IDs for all matching leads (no limit)
+      const allMatching = await getLeads({ ...viewFilters, limit: 50000 });
+      if (allMatching) {
+        const allIds = allMatching.map((l: any) => l.id);
+        setSelectedLeads(allIds);
+        toast({ title: 'Selected All', description: `${allIds.length.toLocaleString()} leads selected` });
+      }
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+
   return (
     <div className="flex h-full">
       {/* Smart Lists Sidebar - Desktop */}
@@ -634,7 +651,7 @@ const EnhancedLeadManager = () => {
           )}
 
           {/* Lead Count + Select All */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-3">
               {filteredLeads.length > 0 && (
                 <Checkbox
@@ -645,9 +662,24 @@ const EnhancedLeadManager = () => {
               )}
               <p className="text-sm text-muted-foreground">
                 {displayedLeadCount.toLocaleString()} lead{displayedLeadCount !== 1 ? 's' : ''}
-                {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
+                {selectedLeads.length > 0 && ` • ${selectedLeads.length.toLocaleString()} selected`}
               </p>
             </div>
+            {allVisibleSelected && displayedLeadCount > filteredLeads.length && selectedLeads.length < displayedLeadCount && (
+              <Button
+                variant="link"
+                size="sm"
+                className="text-xs p-0 h-auto"
+                onClick={selectAllMatching}
+                disabled={selectingAll}
+              >
+                {selectingAll ? (
+                  <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Selecting...</>
+                ) : (
+                  <>Select all {displayedLeadCount.toLocaleString()} matching leads</>
+                )}
+              </Button>
+            )}
           </div>
 
           {/* Mobile-Friendly Lead Cards */}
