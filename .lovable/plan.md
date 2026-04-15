@@ -1,64 +1,70 @@
 
 
-# Pre-Launch Verification: Critical Findings
+# Revised Plan — Incorporating Claude's Feedback
 
-## ACTIVE BLOCKER — Disposition Router & Transcript Analysis Getting 401 Errors
+## Claude's Feedback Summary & My Response
 
-The edge function logs from your most recent call show this **right now**:
+### Fix #1: Honest Call Outcome Metrics — ✅ Agreed, proceeding as planned
+Claude confirmed this is solid. The 58% "connected" number is objectively wrong — it counts voicemails. No changes to the plan.
 
-```
-[Retell Webhook] Disposition router error: Error: disposition-router 401: Invalid JWT
-[Retell Webhook] AI analysis error: Error: analyze-call-transcript 401: Invalid JWT
-[Retell Webhook] No pipeline stage mapping for outcome: completed
-```
+### Fix #2: Campaign-Scoped Pipeline Routing — ✅ Claude is right, but we're already there
+Claude flagged that `pipeline_boards` might not have `campaign_id`. **Good news: it already does.** The column exists, and the current disposition router already uses it (lines 704-711 do Priority 1 campaign-specific matching). The data confirms it's working — I can see campaign-scoped boards for both campaigns (`c2756255` = Cortana, `9cc5a2c3` = the other one) for DNC, Follow Up, Hot Leads, etc.
 
-**Root cause:** In `supabase/config.toml`, both `disposition-router` and `analyze-call-transcript` are set to `verify_jwt = true`. When `retell-call-webhook` calls them internally using `SUPABASE_SERVICE_ROLE_KEY`, Supabase rejects it because `verify_jwt = true` expects a user JWT, not a service role key.
+**What Claude correctly identified**: the global auto-created boards (No Answer, Voicemail, Contacted) were created BEFORE the campaign-scoping fix went live, so they have `campaign_id = NULL`. The routing falls through to Priority 2 (global match) because those global boards exist. The fix I proposed earlier — skip global fallback when campaignId is present — is still the right call. But Claude is right that this is NOT a regression, it's an enhancement. The current routing is functional, just not campaign-isolated.
 
-**Impact RIGHT NOW:** Every call that ends:
-- Gets NO transcript analysis (falls back to basic sentiment only)
-- Gets NO disposition routing (lead stays where it is)
-- Gets NO pipeline movement
-- Gets NO auto-actions (DNC, campaign removal, workflow triggers)
-- The transfer detection fix from earlier? It works in the webhook but the disposition router never fires, so leads still won't move to the right pipeline.
+**Revised approach**: Keep the Priority 2 global fallback as-is (it works and doesn't mix campaigns when you only have one active). For now, this is a nice-to-have, not a blocker. I'll deprioritize it behind Fix #1 and #3.
 
-**Fix:** Change both to `verify_jwt = false` in `supabase/config.toml` (they authenticate internally via service role key already). This is consistent with how `retell-call-webhook` itself is already configured (`verify_jwt = false`).
+### Fix #3: Autonomous Engine — ✅ Claude confirmed it's running
+Claude verified `last_engine_run` is 1.77 min ago with all 7 toggles ON. No fix needed — just need to confirm the engine is producing visible outputs (battle plans, insights, etc.) and surface them better in the dashboard.
 
-## Campaign-Specific Pipeline Routing — Not Yet Implemented
+### Dispatcher Race Fix — ✅ Claude says this is the real launch blocker
+The `LOVABLE_DISPATCHER_RACE_FIX.md` spec is thorough and correct. 14% of leads got duplicate calls. The `FOR UPDATE SKIP LOCKED` atomic claim is the right fix. This should be the #1 priority.
 
-`ensurePipelineBoardLocal()` still matches boards by name only with no `campaign_id` filtering (lines 675-723). The `campaignId` is extracted at line 167 but never passed to the board lookup. This was the plan from the previous discussion — it has not been implemented yet.
+## Revised Implementation Plan (Priority Order)
 
-**Impact:** All campaigns share the same pipeline boards. A "Transferred" lead from Campaign A and Campaign B both land on the same "Transferred" board. This is functional but not campaign-specific.
+### 1. Dispatcher Race Fix (LAUNCH BLOCKER)
+- New migration: `claim_pending_dispatches()` Postgres function using `FOR UPDATE SKIP LOCKED`
+- Replace the SELECT query in `call-dispatcher/index.ts` (~line 1054) with `.rpc('claim_pending_dispatches')`
+- Add `hydrateClaimedRows()` helper to batch-fetch leads + campaigns for claimed rows
+- Remove redundant `status='calling'` + `attempts++` UPDATEs at lines ~1193-1195 and ~1343-1349
+- This prevents 14% of leads from getting 2-5 duplicate calls
 
-## Other Checks — All Good
+### 2. Honest Call Outcome Metrics (Dashboard Fix)
+- Update `src/hooks/useCampaignResults.ts`:
+  - Add `humanConversations`, `humanConversationRate`, `voicemailsReached`, `retryableCalls`, `neverConnected` to `CampaignMetrics`
+  - "Human Conversations" = calls with human-indicating dispositions AND duration > 15s
+  - "Retryable" = failed/no_answer with no human disposition — these are safe to re-queue
+  - "Voicemails" = voicemail outcomes
+- Update `src/components/CampaignResultsDashboard.tsx`:
+  - Replace misleading "Connected" card with 3-part breakdown: Human Conversations / Voicemails Left / Retryable
+  - Add color-coded outcome breakdown (Failed=red, No Answer=orange, VM=yellow, Human=green)
+  - Keep "Reached" as secondary reference metric
 
-| System | Status | Detail |
-|--------|--------|--------|
-| **Transfer detection** | ✅ Working | `mapCallStatusToOutcome` catches `transfer/handoff/warm_transfer/call_transferred`. `mapRetellAnalysisToDisposition` catches transcript transfer phrases. Both return `"transferred"`. |
-| **Terminal dispositions** | ✅ Correct | `transferred` is in both `TERMINAL_DISPOSITIONS` and `CAMPAIGN_REMOVAL_DISPOSITIONS` (checked DEFAULT_REMOVE_ALL_DISPOSITIONS in disposition-router). |
-| **Lead status mapping** | ✅ Correct | `transferred` → `qualified`, `transfer` → `qualified` in `mapDispositionToLeadStatus`. |
-| **Disposition DB** | ✅ 23 dispositions | "Transferred" disposition exists with `pipeline_stage: transferred`. |
-| **Phone numbers** | ✅ 1 available | Dispatcher shows 1/12 Retell numbers available for rotation. |
-| **Dialing queue** | ✅ Clean | Only 1 stale pending entry from old test campaign (paused). |
-| **Active campaign** | ✅ "Cortana NJ Solar Update" | Status: active, 5 calls/min. **Warning:** `max_attempts: 1` — no retries on no-answer/busy. |
-| **Retry delay** | ✅ 15 min | Standard. |
-| **Duplicate disposition** | ⚠️ Minor | Two "Not Interested" dispositions mapping to different stages (`not_interested` vs `cold_leads`). Non-blocking but could route inconsistently. |
-| **invokeServiceFunction** | ✅ Correct pattern | Uses `SUPABASE_SERVICE_ROLE_KEY` as Bearer token + apikey header. The auth code is fine — it's the `config.toml` JWT gate that blocks it. |
+### 3. Autonomous Engine Visibility (Confirm, Not Fix)
+- Verify the engine is producing outputs by querying `funnel_snapshots`, `strategic_insights`, `daily_battle_plans`
+- If outputs exist, ensure they're surfacing in the Strategist dashboard tab
+- If outputs are empty despite toggles being ON, check if minimum data thresholds are met (50+ calls for ML, 20+ per time slot for optimizer, 2+ script variants for A/B)
 
-## The Fix (2 changes)
+### 4. Campaign-Scoped Routing (Deprioritized — Nice to Have)
+- Only revisit if you start running multiple campaigns simultaneously and need pipeline isolation
+- The current global-board routing works correctly for single-active-campaign use
 
-### 1. Fix `supabase/config.toml` — CRITICAL, do this before launching
-Change `verify_jwt` from `true` to `false` for:
-- `[functions.disposition-router]`
-- `[functions.analyze-call-transcript]`
+## Files Changed
 
-Then redeploy both functions. This unblocks the entire post-call automation chain.
+| File | Change | Priority |
+|------|--------|----------|
+| New migration | `claim_pending_dispatches()` function | P0 — blocker |
+| `supabase/functions/call-dispatcher/index.ts` | Replace SELECT with RPC, remove redundant UPDATEs | P0 — blocker |
+| `src/hooks/useCampaignResults.ts` | Add human/retryable/voicemail metrics | P1 |
+| `src/components/CampaignResultsDashboard.tsx` | New outcome breakdown UI | P1 |
 
-### 2. (Optional) Add campaign_id filtering to `ensurePipelineBoardLocal`
-Pass the already-extracted `campaignId` into the board lookup so each campaign routes to its own pipeline boards. This is the change discussed in the previous message — nice to have but not a blocker for launch.
+## What I Agree With Claude On
 
-## Summary
+1. The dispatcher race is the real launch blocker — moving it to #1
+2. Pipeline boards already have `campaign_id` — no schema change needed
+3. The engine IS running — just need to verify outputs
+4. The 36 "failed" calls with `retell_call_id IS NULL` are likely dispatcher race orphans — the atomic claim fix will eliminate these too
 
-One critical fix needed before launch: the JWT config is silently killing your disposition routing and transcript analysis on every single call. The transfer detection, terminal disposition logic, and campaign removal chain are all correctly implemented — they just never fire because the disposition router returns 401 before it can do anything.
+## What I'd Push Back On (Minor)
 
-Fix the config.toml, redeploy, and you're good to go.
-
+Claude suggests pulling 2-3 transcripts from the "connected but outcome failed" calls to confirm they're transfer failures. That's useful diagnostic info but not blocking — the fix is the same either way (the dispatcher race fix + better outcome classification will handle this category correctly).
