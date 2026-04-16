@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Phone, PhoneIncoming, Clock, Calendar, MessageSquare, TrendingUp, RefreshCw, Loader2, UserCheck, PhoneMissed, Voicemail, RotateCcw } from 'lucide-react';
+import { Phone, PhoneIncoming, Clock, Calendar, MessageSquare, TrendingUp, RefreshCw, Loader2, UserCheck, PhoneMissed, Voicemail, RotateCcw, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { useCampaignResults, CampaignMetrics } from '@/hooks/useCampaignResults';
 import { supabase } from '@/integrations/supabase/client';
@@ -114,7 +114,7 @@ export const CampaignResultsDashboard: React.FC = () => {
       ) : metrics ? (
         <>
           {/* Primary Metrics — Honest Breakdown */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
@@ -175,6 +175,28 @@ export const CampaignResultsDashboard: React.FC = () => {
                   <span className="text-sm text-muted-foreground">Avg Duration</span>
                 </div>
                 <p className="text-2xl font-bold">{Math.round(metrics.avgDuration)}s</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-emerald-500/30 bg-emerald-500/5">
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-emerald-500" />
+                  <span className="text-sm text-muted-foreground">Total Cost</span>
+                </div>
+                <p className="text-2xl font-bold text-emerald-600">${(metrics.totalCostCents / 100).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">{metrics.totalDurationMinutes.toFixed(1)} min</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Cost / Human</span>
+                </div>
+                <p className="text-2xl font-bold">${(metrics.costPerHumanConversation / 100).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">${(metrics.costPerMinute / 100).toFixed(2)}/min</p>
               </CardContent>
             </Card>
           </div>

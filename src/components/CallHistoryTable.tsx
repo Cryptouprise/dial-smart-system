@@ -385,7 +385,7 @@ export function CallHistoryTable() {
         call.sentiment || '',
         call.duration_seconds || 0,
         call.disconnect_reason || '',
-        call.billed_cost_cents ? (call.billed_cost_cents / 100).toFixed(2) : '',
+        (call as any).retell_cost_cents ? ((call as any).retell_cost_cents / 100).toFixed(2) : '',
         call.lead ? `${call.lead.first_name || ''} ${call.lead.last_name || ''}`.trim() : '',
         call.campaign?.name || '',
         call.call_summary || '',
@@ -809,8 +809,8 @@ export function CallHistoryTable() {
                         </TableCell>
                       )}
                       {visibleColumns.cost && (
-                        <TableCell className="text-sm">
-                          {formatCost(call.billed_cost_cents)}
+                        <TableCell className="text-sm font-mono">
+                          {formatCost((call as any).retell_cost_cents)}
                         </TableCell>
                       )}
                       {visibleColumns.date && (
@@ -960,8 +960,8 @@ export function CallHistoryTable() {
                     <div className="mt-1">{selectedCall.disconnect_reason || '-'}</div>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Cost</Label>
-                    <div className="mt-1">{formatCost(selectedCall.billed_cost_cents)}</div>
+                    <Label className="text-xs text-muted-foreground">Retell Cost</Label>
+                    <div className="mt-1 font-mono">{formatCost((selectedCall as any).retell_cost_cents)}</div>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Started</Label>

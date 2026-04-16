@@ -23,21 +23,24 @@ const VOICEMAIL_OUTCOMES = new Set([
 
 export interface CampaignMetrics {
   totalCalls: number;
-  // Legacy "connected" (reached = any audio/VM)
   connectedCalls: number;
   connectionRate: number;
-  // NEW: Honest metrics
   humanConversations: number;
   humanConversationRate: number;
   voicemailsReached: number;
   retryableCalls: number;
   neverConnected: number;
-  // Existing
   avgDuration: number;
   appointmentsSet: number;
   voicemailsLeft: number;
   smsSent: number;
   smsReplied: number;
+  // Cost metrics
+  totalCostCents: number;
+  totalDurationMinutes: number;
+  costPerMinute: number;
+  costPerCall: number;
+  costPerHumanConversation: number;
   dispositions: Record<string, number>;
   leadStatuses: Record<string, number>;
   callsByHour: { hour: number; count: number; connected: number; humans: number }[];
@@ -163,6 +166,13 @@ export const useCampaignResults = () => {
         ? durations.reduce((a: number, b: number) => a + b, 0) / durations.length 
         : 0;
 
+      // Cost metrics from retell_cost_cents
+      const totalCostCents = calls.reduce((sum: number, c: any) => sum + (c.retell_cost_cents || 0), 0);
+      const totalDurationMinutes = durations.reduce((a: number, b: number) => a + b, 0) / 60;
+      const costPerMinute = totalDurationMinutes > 0 ? totalCostCents / totalDurationMinutes : 0;
+      const costPerCall = totalCalls > 0 ? totalCostCents / totalCalls : 0;
+      const costPerHumanConversation = humanConversations > 0 ? totalCostCents / humanConversations : 0;
+
       const dispositions: Record<string, number> = {};
       const callStatuses: Record<string, number> = {};
       calls.forEach(c => {
@@ -221,6 +231,11 @@ export const useCampaignResults = () => {
         voicemailsLeft,
         smsSent: smsCount,
         smsReplied: smsReplies,
+        totalCostCents,
+        totalDurationMinutes,
+        costPerMinute,
+        costPerCall,
+        costPerHumanConversation,
         dispositions,
         leadStatuses,
         callsByHour,
