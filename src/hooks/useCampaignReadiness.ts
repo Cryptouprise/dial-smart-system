@@ -492,8 +492,72 @@ export const useCampaignReadiness = () => {
             critical: false
           });
         }
-      }
+        }
 
+        // =====================================================
+        // 7b. TIMEZONE COVERAGE CHECK (per-lead state-based)
+        // =====================================================
+        // If no campaign timezone is set AND leads are missing state data,
+        // we can't determine their local calling hours — block launch.
+        const campaignTimezone = campaign.timezone;
+        
+        // Count leads missing state
+        const { count: leadsWithoutState } = await supabase
+          .from('campaign_leads')
+          .select('lead_id, leads!inner(id, state)', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId)
+          .is('leads.state', null);
+
+        const { count: totalCampaignLeads } = await supabase
+          .from('campaign_leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId);
+
+        const missingStateCount = leadsWithoutState || 0;
+        const totalLeads = totalCampaignLeads || 0;
+
+        if (!campaignTimezone && missingStateCount > 0 && totalLeads > 0) {
+          const pct = Math.round((missingStateCount / totalLeads) * 100);
+          if (missingStateCount === totalLeads) {
+            // ALL leads missing state AND no campaign timezone = CRITICAL
+            checks.push({
+              id: 'timezone_coverage',
+              label: 'Timezone coverage',
+              status: 'fail',
+              message: `No campaign timezone set and 0/${totalLeads} leads have a state. Cannot determine local calling hours. Set a campaign timezone or add state data to leads.`,
+              critical: true,
+              fixRoute: '/?tab=predictive'
+            });
+            blockingReasons.push('No timezone data — set campaign timezone or add state to leads');
+          } else {
+            // Some leads missing state, no campaign timezone = WARNING
+            checks.push({
+              id: 'timezone_coverage',
+              label: 'Timezone coverage',
+              status: 'warning',
+              message: `${missingStateCount}/${totalLeads} leads (${pct}%) have no state. These will default to Eastern time. Set a campaign timezone for safety.`,
+              critical: false,
+              fixRoute: '/?tab=predictive'
+            });
+          }
+        } else if (campaignTimezone && missingStateCount > 0) {
+          const pct = Math.round((missingStateCount / totalLeads) * 100);
+          checks.push({
+            id: 'timezone_coverage',
+            label: 'Timezone coverage',
+            status: missingStateCount > totalLeads * 0.5 ? 'warning' : 'pass',
+            message: `${missingStateCount}/${totalLeads} leads (${pct}%) have no state — will use campaign timezone (${campaignTimezone}).`,
+            critical: false
+          });
+        } else {
+          checks.push({
+            id: 'timezone_coverage',
+            label: 'Timezone coverage',
+            status: 'pass',
+            message: totalLeads > 0 ? `All ${totalLeads} leads have state data for local timezone enforcement` : 'No leads in campaign',
+            critical: false
+          });
+        }
       // =====================================================
       // 8. CHECK WORKFLOW EXISTS
       // =====================================================

@@ -6,6 +6,83 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= US STATE → TIMEZONE MAPPING =============
+// Used for per-lead calling hours enforcement based on the lead's state
+const STATE_TIMEZONE_MAP: Record<string, string> = {
+  // Eastern
+  CT: 'America/New_York', DE: 'America/New_York', FL: 'America/New_York',
+  GA: 'America/New_York', IN: 'America/Indiana/Indianapolis', KY: 'America/New_York',
+  ME: 'America/New_York', MD: 'America/New_York', MA: 'America/New_York',
+  MI: 'America/New_York', NH: 'America/New_York', NJ: 'America/New_York',
+  NY: 'America/New_York', NC: 'America/New_York', OH: 'America/New_York',
+  PA: 'America/New_York', RI: 'America/New_York', SC: 'America/New_York',
+  VT: 'America/New_York', VA: 'America/New_York', WV: 'America/New_York',
+  DC: 'America/New_York',
+  // Central
+  AL: 'America/Chicago', AR: 'America/Chicago', IL: 'America/Chicago',
+  IA: 'America/Chicago', KS: 'America/Chicago', LA: 'America/Chicago',
+  MN: 'America/Chicago', MS: 'America/Chicago', MO: 'America/Chicago',
+  NE: 'America/Chicago', ND: 'America/Chicago', OK: 'America/Chicago',
+  SD: 'America/Chicago', TN: 'America/Chicago', TX: 'America/Chicago',
+  WI: 'America/Chicago',
+  // Mountain
+  AZ: 'America/Phoenix', CO: 'America/Denver', ID: 'America/Boise',
+  MT: 'America/Denver', NM: 'America/Denver', UT: 'America/Denver',
+  WY: 'America/Denver',
+  // Pacific
+  CA: 'America/Los_Angeles', NV: 'America/Los_Angeles',
+  OR: 'America/Los_Angeles', WA: 'America/Los_Angeles',
+  // Non-contiguous
+  AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
+  // Territories
+  PR: 'America/Puerto_Rico', VI: 'America/Virgin', GU: 'Pacific/Guam',
+  AS: 'Pacific/Pago_Pago', MP: 'Pacific/Guam',
+};
+
+/**
+ * Resolve timezone for a lead based on their state field.
+ * Returns null if state is missing or unrecognized.
+ */
+function getLeadTimezone(state: string | null | undefined): string | null {
+  if (!state) return null;
+  const normalized = state.trim().toUpperCase();
+  // Handle full state names by checking first two chars (works for abbreviations)
+  // Also try the raw value in case it's already an abbreviation
+  return STATE_TIMEZONE_MAP[normalized] || null;
+}
+
+/**
+ * Check if it's currently within calling hours for a specific timezone.
+ * Returns { allowed: boolean, reason: string }
+ */
+function isWithinCallingHours(
+  tz: string,
+  startHour: string,
+  endHour: string,
+): { allowed: boolean; reason: string } {
+  try {
+    const nowInTz = new Date().toLocaleString('en-US', { timeZone: tz });
+    const tzDate = new Date(nowInTz);
+    const currentMinutes = tzDate.getHours() * 60 + tzDate.getMinutes();
+
+    const [startH, startM] = startHour.split(':').map(Number);
+    const [endH, endM] = endHour.split(':').map(Number);
+    const startMin = startH * 60 + (startM || 0);
+    const endMin = endH * 60 + (endM || 0);
+
+    if (currentMinutes < startMin || currentMinutes >= endMin) {
+      return {
+        allowed: false,
+        reason: `Outside ${startHour}-${endHour} in ${tz} (currently ${tzDate.getHours()}:${String(tzDate.getMinutes()).padStart(2, '0')})`,
+      };
+    }
+    return { allowed: true, reason: '' };
+  } catch {
+    // If timezone is invalid, allow the call (don't block on bad data)
+    return { allowed: true, reason: '' };
+  }
+}
+
 async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   console.log('[Dispatcher Cleanup] Cleaning up stuck calls for user:', userId);
 
@@ -1179,10 +1256,10 @@ serve(async (req) => {
 
         const [leadsResult, campaignsResult] = await Promise.all([
           leadIds.length > 0
-            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id').in('id', leadIds)
+            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id, state').in('id', leadIds)
             : { data: [] },
           claimedCampaignIds.length > 0
-            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata').in('id', claimedCampaignIds)
+            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end').in('id', claimedCampaignIds)
             : { data: [] },
         ]);
 
@@ -1203,8 +1280,8 @@ serve(async (req) => {
         .from('dialing_queues')
         .select(`
           *,
-          leads (id, phone_number, first_name, last_name, ghl_contact_id),
-          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
+          leads (id, phone_number, first_name, last_name, ghl_contact_id, state),
+          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end)
         `)
         .in('campaign_id', campaignIds)
         .eq('status', 'pending')
@@ -1231,6 +1308,54 @@ serve(async (req) => {
         await supabase.from('dialing_queues')
           .update({ status: 'calling', attempts: (q.attempts || 0) + 1, updated_at: nowIso })
           .eq('id', q.id);
+      }
+    }
+
+    // ============= PER-LEAD TIMEZONE FILTERING =============
+    // Check each lead's state and skip if their local time is outside calling hours.
+    // This prevents calling someone in CA at 6 AM just because it's 9 AM ET.
+    {
+      const beforeCount = eligibleCalls.length;
+      let skippedForTimezone = 0;
+      const timezoneFilteredCalls: any[] = [];
+
+      for (const q of eligibleCalls) {
+        const lead = q.leads;
+        const campaign = q.campaigns;
+        const leadState = lead?.state;
+        const leadTz = getLeadTimezone(leadState);
+        const campaignTz = campaign?.timezone || 'America/New_York';
+        const startHour = campaign?.calling_hours_start || '09:00';
+        const endHour = campaign?.calling_hours_end || '19:30';
+
+        // Use lead's state timezone if available, otherwise fall back to campaign timezone
+        const effectiveTz = leadTz || campaignTz;
+
+        const { allowed, reason } = isWithinCallingHours(effectiveTz, startHour, endHour);
+
+        if (!allowed) {
+          skippedForTimezone++;
+          console.log(`[Dispatcher] Skipping lead ${q.lead_id} — ${reason} (state: ${leadState || 'unknown'})`);
+          // Release the claim back to pending so they get picked up later
+          supabase.from('dialing_queues')
+            .update({
+              status: 'pending',
+              attempts: Math.max(0, (q.attempts || 1) - 1), // undo the attempt increment from claim
+              updated_at: new Date().toISOString(),
+              notes: `Timezone skip: ${reason}`,
+            })
+            .eq('id', q.id)
+            .then(() => {});
+          continue;
+        }
+
+        timezoneFilteredCalls.push(q);
+      }
+
+      eligibleCalls = timezoneFilteredCalls;
+
+      if (skippedForTimezone > 0) {
+        console.log(`[Dispatcher] Timezone filter: ${skippedForTimezone}/${beforeCount} leads skipped (outside their local calling hours)`);
       }
     }
 
