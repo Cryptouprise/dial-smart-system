@@ -104,6 +104,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [dispositionCampaign, setDispositionCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
