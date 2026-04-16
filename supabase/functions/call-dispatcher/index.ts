@@ -1582,8 +1582,30 @@ serve(async (req) => {
         // TRUE ROUND-ROBIN: Pick the number with the lowest total usage (daily_calls + batch).
         // Local presence is a minor tiebreaker only — even distribution ALWAYS wins.
         const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
-        
-        const numberPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
+
+        const baseProviderPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
+
+        // Apply campaign-scoped pool filter if this campaign has explicit numbers assigned.
+        const campaignPoolIds = campaignPoolMap[queueItem.campaign_id];
+        let numberPool = baseProviderPool;
+        if (campaignPoolIds && campaignPoolIds.size > 0) {
+          const scoped = baseProviderPool.filter((n: any) => campaignPoolIds.has(n.id));
+          if (scoped.length > 0) {
+            numberPool = scoped;
+            console.log(`[Dispatcher] Campaign ${queueItem.campaign_id}: using ${scoped.length} pool-assigned numbers`);
+          } else {
+            console.warn(`[Dispatcher] Campaign ${queueItem.campaign_id} has a phone pool but none are currently available (spam/quarantine/limit/provider mismatch). Skipping this dispatch instead of using wrong-area numbers.`);
+            await supabase
+              .from('dialing_queues')
+              .update({
+                status: 'failed',
+                updated_at: nowIso,
+                notes: 'No assigned pool numbers available — check Campaign Phone Pool',
+              })
+              .eq('id', queueItem.id);
+            continue;
+          }
+        }
 
         // NJ-area / local-area set: numbers whose area code shares the destination's state.
         // Same-state area codes for common contiguous regions (NJ + NYC metro overflow).
