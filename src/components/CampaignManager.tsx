@@ -106,6 +106,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [dispositionCampaign, setDispositionCampaign] = useState<Campaign | null>(null);
+  const [phonePoolCampaign, setPhonePoolCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
@@ -1492,6 +1493,15 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     title="Load Leads"
                   >
                     <Upload className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPhonePoolCampaign(campaign)}
+                    title="Phone Numbers (caller ID pool)"
+                  >
+                    <Phone className="h-4 w-4" />
                   </Button>
 
                   <Button
