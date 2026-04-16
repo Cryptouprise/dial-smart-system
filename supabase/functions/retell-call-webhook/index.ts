@@ -1525,15 +1525,16 @@ serve(async (req) => {
         if (callDetailsResponse.ok) {
           const callDetails = await callDetailsResponse.json();
 
+          // Retell returns costs in DOLLARS — multiply by 100 to get cents
           if (callDetails.call_cost?.combined_cost) {
-            retellActualCostCents = Math.round(callDetails.call_cost.combined_cost);
+            retellActualCostCents = Math.round(callDetails.call_cost.combined_cost * 100);
           } else if (callDetails.cost_breakdown) {
             const breakdown = callDetails.cost_breakdown;
             retellActualCostCents = Math.round(
-              (breakdown.llm_cost || 0) +
+              ((breakdown.llm_cost || 0) +
               (breakdown.stt_cost || 0) +
               (breakdown.tts_cost || 0) +
-              (breakdown.telephony_cost || 0)
+              (breakdown.telephony_cost || 0)) * 100
             );
           }
 

@@ -28,35 +28,53 @@ interface DailyMetrics {
   leadConversions: number;
 }
 
+async function fetchAllRows(query: any): Promise<any[]> {
+  const PAGE_SIZE = 1000;
+  let allRows: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) { console.error('Pagination fetch error:', error); break; }
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+}
+
 async function fetchDailyMetrics(supabase: any, userId: string, date: string): Promise<DailyMetrics> {
   const startOfDay = `${date}T00:00:00.000Z`;
   const endOfDay = `${date}T23:59:59.999Z`;
 
-  const [calls, leads, sms, numbers] = await Promise.all([
-    supabase.from('call_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('created_at', startOfDay)
-      .lte('created_at', endOfDay),
-    supabase.from('leads')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('updated_at', startOfDay)
-      .lte('updated_at', endOfDay),
-    supabase.from('sms_messages')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('created_at', startOfDay)
-      .lte('created_at', endOfDay),
-    supabase.from('phone_numbers')
-      .select('*')
-      .eq('user_id', userId)
+  const [callsData, leadsData, smsData, numbersData] = await Promise.all([
+    fetchAllRows(
+      supabase.from('call_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay)
+    ),
+    fetchAllRows(
+      supabase.from('leads')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('updated_at', startOfDay)
+        .lte('updated_at', endOfDay)
+    ),
+    fetchAllRows(
+      supabase.from('sms_messages')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay)
+    ),
+    fetchAllRows(
+      supabase.from('phone_numbers')
+        .select('*')
+        .eq('user_id', userId)
+    ),
   ]);
-
-  const callsData = calls.data || [];
-  const leadsData = leads.data || [];
-  const smsData = sms.data || [];
-  const numbersData = numbers.data || [];
 
   const connectedCalls = callsData.filter((c: any) => 
     c.status === 'completed' || c.outcome === 'connected' || c.outcome === 'appointment_set'
