@@ -166,6 +166,13 @@ export const useCampaignResults = () => {
         ? durations.reduce((a: number, b: number) => a + b, 0) / durations.length 
         : 0;
 
+      // Cost metrics from retell_cost_cents
+      const totalCostCents = calls.reduce((sum: number, c: any) => sum + (c.retell_cost_cents || 0), 0);
+      const totalDurationMinutes = durations.reduce((a: number, b: number) => a + b, 0) / 60;
+      const costPerMinute = totalDurationMinutes > 0 ? totalCostCents / totalDurationMinutes : 0;
+      const costPerCall = totalCalls > 0 ? totalCostCents / totalCalls : 0;
+      const costPerHumanConversation = humanConversations > 0 ? totalCostCents / humanConversations : 0;
+
       const dispositions: Record<string, number> = {};
       const callStatuses: Record<string, number> = {};
       calls.forEach(c => {
