@@ -1302,8 +1302,8 @@ async function manageLeadJourneys(
     .from('lead_journey_state')
     .select('*, leads!inner(id, first_name, phone_number, status, do_not_call, last_contacted_at, next_callback_at)')
     .eq('user_id', userId)
-    .not('journey_stage', 'in', '("closed_won","closed_lost","dormant")')
-    .order('next_action_at', { ascending: true, nullsFirst: false })
+    .not('current_stage', 'in', '("closed_won","closed_lost","dormant")')
+    .order('next_action_scheduled_at', { ascending: true, nullsFirst: false })
     .limit(150);
 
   if (!journeyLeads || journeyLeads.length === 0) return result;
