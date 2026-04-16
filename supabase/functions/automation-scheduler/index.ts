@@ -62,7 +62,7 @@ async function processRule(supabase: any, rule: AutomationRule) {
   // Get leads to process based on rule type and conditions
   let leadsQuery = supabase
     .from('leads')
-    .select('id, phone_number, status, last_contacted_at, priority_score')
+    .select('id, phone_number, status, last_contacted_at, priority')
     .eq('user_id', rule.user_id)
     .eq('do_not_call', false)
     .in('status', ['new', 'contacted', 'callback']);
