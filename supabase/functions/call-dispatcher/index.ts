@@ -331,6 +331,75 @@ serve(async (req) => {
 
     console.log(`[Dispatcher] Settings: ${retellConcurrency} Retell concurrent, ${callsPerMinute} calls/min, adaptive: ${adaptivePacing}`);
 
+    // ============= CALLING HOURS ENFORCEMENT (TIMEZONE-AWARE) =============
+    // Check active campaigns to determine calling hours & timezone
+    // Hard cutoff: 7:30 PM ET as requested, default window 9:00 AM - 7:30 PM campaign tz
+    {
+      const { data: callingHoursCampaigns } = await supabase
+        .from('campaigns')
+        .select('id, name, calling_hours_start, calling_hours_end, timezone')
+        .eq('user_id', user.id)
+        .eq('status', 'active');
+
+      if (callingHoursCampaigns && callingHoursCampaigns.length > 0) {
+        let outsideHours = true;
+        let reasonMsg = '';
+
+        for (const camp of callingHoursCampaigns) {
+          const tz = camp.timezone || 'America/New_York';
+          const startHour = camp.calling_hours_start || '09:00';
+          const endHour = camp.calling_hours_end || '19:30'; // Default 7:30 PM
+
+          // Get current time in campaign timezone
+          const nowInTz = new Date().toLocaleString('en-US', { timeZone: tz });
+          const tzDate = new Date(nowInTz);
+          const currentHour = tzDate.getHours();
+          const currentMinute = tzDate.getMinutes();
+          const currentTimeMinutes = currentHour * 60 + currentMinute;
+
+          // Parse start/end as HH:MM
+          const [startH, startM] = startHour.split(':').map(Number);
+          const [endH, endM] = endHour.split(':').map(Number);
+          const startMinutes = startH * 60 + (startM || 0);
+          const endMinutes = endH * 60 + (endM || 0);
+
+          // Hard cutoff: 7:30 PM ET regardless of campaign setting
+          const etNow = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+          const etDate = new Date(etNow);
+          const etMinutes = etDate.getHours() * 60 + etDate.getMinutes();
+          const hardCutoffMinutes = 19 * 60 + 30; // 7:30 PM ET
+
+          if (etMinutes >= hardCutoffMinutes) {
+            reasonMsg = `Hard cutoff: past 7:30 PM ET (currently ${etDate.getHours()}:${String(etDate.getMinutes()).padStart(2, '0')} ET)`;
+            outsideHours = true;
+            break;
+          }
+
+          if (currentTimeMinutes >= startMinutes && currentTimeMinutes < endMinutes) {
+            outsideHours = false; // At least one campaign is within hours
+          } else {
+            reasonMsg = `Outside calling hours for "${camp.name}" (${startHour}-${endHour} ${tz}, currently ${currentHour}:${String(currentMinute).padStart(2, '0')})`;
+          }
+        }
+
+        if (outsideHours) {
+          console.log(`[Dispatcher] CALLING HOURS BLOCK: ${reasonMsg}`);
+          return new Response(
+            JSON.stringify({
+              success: true,
+              dispatched: 0,
+              status: 'outside_calling_hours',
+              message: reasonMsg,
+              remaining: 0,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('[Dispatcher] Calling hours check: WITHIN allowed window');
+      }
+    }
+
     // Automatic cleanup
     try {
       await cleanupStuckCallsAndQueues(supabase, user.id);
