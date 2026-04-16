@@ -1851,14 +1851,15 @@ async function manageLeadJourneys(
         const targetStage = config.target_stage;
         if (targetStage) {
           await supabase.from('lead_journey_state').update({
-            journey_stage: targetStage,
+            current_stage: targetStage,
+            previous_stage: newStage,
             stage_entered_at: now.toISOString(),
-            times_stage_changed: (journey.times_stage_changed || 0) + 1,
           }).eq('id', journey.id);
           await supabase.from('journey_event_log').insert({
             user_id: userId, lead_id: lead.id, event_type: 'rule_fired',
-            from_stage: newStage, to_stage: targetStage, rule_name: bestRule.rule_name,
-            details: { reason: bestRule.description },
+            event_source: bestRule.name || 'playbook',
+            from_stage: newStage, to_stage: targetStage,
+            event_data: { reason: 'move_stage action' },
           });
           result.stage_changes++;
         }
