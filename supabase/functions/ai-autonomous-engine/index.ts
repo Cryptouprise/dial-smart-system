@@ -1629,28 +1629,23 @@ async function manageLeadJourneys(
       // Not time yet - set next check to 1.5hrs before callback
       const reminderTime = new Date(callbackTime.getTime() - 1.5 * 60 * 60 * 1000);
       await supabase.from('lead_journey_state').update({
-        next_action_type: 'confirmation_sms',
-        next_action_at: reminderTime.toISOString(),
-        next_action_reason: `Waiting for callback at ${callbackTime.toLocaleString()}`,
+        next_recommended_action: 'confirmation_sms',
+        next_action_scheduled_at: reminderTime.toISOString(),
+        metadata: { ...(journey.metadata as any || {}), next_action_reason: `Waiting for callback at ${callbackTime.toLocaleString()}` },
       }).eq('id', journey.id);
       continue;
     }
 
     // --- 6h. Match against playbook rules ---
     const leadCampaignType = journey.campaign_type || 'cold_outreach';
-    const stageRules = rules.filter((r: any) =>
-      r.journey_stage === newStage &&
-      totalTouches >= r.min_touches &&
-      totalTouches <= r.max_touches &&
-      daysInStage >= r.min_days_in_stage &&
-      daysInStage <= r.max_days_in_stage &&
-      interestLevel >= r.min_interest_level &&
-      interestLevel <= r.max_interest_level &&
-      // Don't fire rules that require no explicit callback when one exists
-      (!r.requires_no_explicit_callback || !explicitCallback) &&
-      // Campaign type filter: 'all' matches everything, or must match exactly
-      (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType)
-    );
+    const stageRules = rules.filter((r: any) => {
+      const conditions = r.conditions || {};
+      return r.trigger_stage === newStage &&
+        totalTouches >= (conditions.min_touches ?? 0) &&
+        totalTouches <= (conditions.max_touches ?? 999) &&
+        // Campaign type filter
+        (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType);
+    });
 
     // --- PERPETUAL FOLLOW-UP: If no playbook rule matched and perpetual is enabled ---
     let matchedRule = true; // track whether a playbook rule was found
