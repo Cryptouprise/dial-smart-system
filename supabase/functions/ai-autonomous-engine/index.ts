@@ -779,13 +779,13 @@ async function analyzeFunnel(
   // Get stage distribution
   const { data: stages } = await supabase
     .from('lead_journey_state')
-    .select('journey_stage')
+    .select('current_stage')
     .eq('user_id', userId);
 
   if (!stages || stages.length === 0) return { decisions, snapshot_saved: false };
 
   const counts: Record<string, number> = {};
-  stages.forEach((s: any) => { counts[s.journey_stage] = (counts[s.journey_stage] || 0) + 1; });
+  stages.forEach((s: any) => { counts[s.current_stage] = (counts[s.current_stage] || 0) + 1; });
 
   const hotCount = counts['hot'] || 0;
   const callbackCount = counts['callback_set'] || 0;
@@ -1287,9 +1287,8 @@ async function manageLeadJourneys(
     const newEntries = untracked.map((lead: any) => ({
       user_id: userId,
       lead_id: lead.id,
-      journey_stage: lead.status === 'new' ? 'fresh' : 'attempting',
-      first_contact_at: lead.last_contacted_at || null,
-      explicit_callback_at: lead.next_callback_at || null,
+      current_stage: lead.status === 'new' ? 'fresh' : 'attempting',
+      stage_entered_at: new Date().toISOString(),
     }));
     await supabase.from('lead_journey_state').upsert(newEntries, {
       onConflict: 'user_id,lead_id',
