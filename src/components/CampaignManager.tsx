@@ -2001,6 +2001,24 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
         />
       )}
 
+      {/* Disposition Dashboard Dialog */}
+      {dispositionCampaign && (
+        <Dialog open={!!dispositionCampaign} onOpenChange={(open) => !open && setDispositionCampaign(null)}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Disposition Dashboard — {dispositionCampaign.name}</DialogTitle>
+              <DialogDescription>
+                Bird's-eye view of every call, disposition, and dollar spent on this campaign.
+              </DialogDescription>
+            </DialogHeader>
+            <CampaignDispositionDashboard
+              campaignId={dispositionCampaign.id}
+              campaignName={dispositionCampaign.name}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Campaign Wizard */}
       <CampaignWizard
         open={showWizard}
