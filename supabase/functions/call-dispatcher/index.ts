@@ -1311,6 +1311,54 @@ serve(async (req) => {
       }
     }
 
+    // ============= PER-LEAD TIMEZONE FILTERING =============
+    // Check each lead's state and skip if their local time is outside calling hours.
+    // This prevents calling someone in CA at 6 AM just because it's 9 AM ET.
+    {
+      const beforeCount = eligibleCalls.length;
+      let skippedForTimezone = 0;
+      const timezoneFilteredCalls: any[] = [];
+
+      for (const q of eligibleCalls) {
+        const lead = q.leads;
+        const campaign = q.campaigns;
+        const leadState = lead?.state;
+        const leadTz = getLeadTimezone(leadState);
+        const campaignTz = campaign?.timezone || 'America/New_York';
+        const startHour = campaign?.calling_hours_start || '09:00';
+        const endHour = campaign?.calling_hours_end || '19:30';
+
+        // Use lead's state timezone if available, otherwise fall back to campaign timezone
+        const effectiveTz = leadTz || campaignTz;
+
+        const { allowed, reason } = isWithinCallingHours(effectiveTz, startHour, endHour);
+
+        if (!allowed) {
+          skippedForTimezone++;
+          console.log(`[Dispatcher] Skipping lead ${q.lead_id} — ${reason} (state: ${leadState || 'unknown'})`);
+          // Release the claim back to pending so they get picked up later
+          supabase.from('dialing_queues')
+            .update({
+              status: 'pending',
+              attempts: Math.max(0, (q.attempts || 1) - 1), // undo the attempt increment from claim
+              updated_at: new Date().toISOString(),
+              notes: `Timezone skip: ${reason}`,
+            })
+            .eq('id', q.id)
+            .then(() => {});
+          continue;
+        }
+
+        timezoneFilteredCalls.push(q);
+      }
+
+      eligibleCalls = timezoneFilteredCalls;
+
+      if (skippedForTimezone > 0) {
+        console.log(`[Dispatcher] Timezone filter: ${skippedForTimezone}/${beforeCount} leads skipped (outside their local calling hours)`);
+      }
+    }
+
     console.log(`[Dispatcher] Processing ${eligibleCalls.length} eligible calls`);
 
     // ============= DIAGNOSTICS FOR ZERO DISPATCHED =============
