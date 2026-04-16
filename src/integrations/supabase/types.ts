@@ -1599,6 +1599,7 @@ export type Database = {
           caller_id: string
           campaign_id: string | null
           confidence_score: number | null
+          cost_breakdown: Json | null
           created_at: string
           duration_seconds: number | null
           ended_at: string | null
@@ -1613,6 +1614,7 @@ export type Database = {
           provider: string | null
           recording_url: string | null
           retell_call_id: string | null
+          retell_cost_cents: number | null
           sentiment: string | null
           started_at: string | null
           status: string
@@ -1622,6 +1624,7 @@ export type Database = {
           telnyx_conversation_id: string | null
           time_wasted_reason: string | null
           time_wasted_score: number | null
+          token_usage: Json | null
           transcript: string | null
           user_id: string
         }
@@ -1637,6 +1640,7 @@ export type Database = {
           caller_id: string
           campaign_id?: string | null
           confidence_score?: number | null
+          cost_breakdown?: Json | null
           created_at?: string
           duration_seconds?: number | null
           ended_at?: string | null
@@ -1651,6 +1655,7 @@ export type Database = {
           provider?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
+          retell_cost_cents?: number | null
           sentiment?: string | null
           started_at?: string | null
           status: string
@@ -1660,6 +1665,7 @@ export type Database = {
           telnyx_conversation_id?: string | null
           time_wasted_reason?: string | null
           time_wasted_score?: number | null
+          token_usage?: Json | null
           transcript?: string | null
           user_id: string
         }
@@ -1675,6 +1681,7 @@ export type Database = {
           caller_id?: string
           campaign_id?: string | null
           confidence_score?: number | null
+          cost_breakdown?: Json | null
           created_at?: string
           duration_seconds?: number | null
           ended_at?: string | null
@@ -1689,6 +1696,7 @@ export type Database = {
           provider?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
+          retell_cost_cents?: number | null
           sentiment?: string | null
           started_at?: string | null
           status?: string
@@ -1698,6 +1706,7 @@ export type Database = {
           telnyx_conversation_id?: string | null
           time_wasted_reason?: string | null
           time_wasted_score?: number | null
+          token_usage?: Json | null
           transcript?: string | null
           user_id?: string
         }
