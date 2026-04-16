@@ -111,28 +111,38 @@ const PredictiveDialingDashboard = () => {
 
   const loadDashboardData = async () => {
     const campaignsData = await getCampaigns();
-    const callLogsData = await getCallLogs();
 
     if (campaignsData) setCampaigns(campaignsData);
-    if (callLogsData) {
-      setCallLogs(callLogsData);
-      
-      // Calculate stats
-      const today = new Date().toISOString().split('T')[0];
-      const todayCalls = callLogsData.filter(call => 
-        call.created_at.startsWith(today)
-      );
-      const answeredCalls = todayCalls.filter(call => 
-        call.status === 'answered' || call.status === 'completed'
-      );
 
-      setStats({
-        totalLeads: 0, // Will be updated when leads are loaded
-        activeCampaigns: campaignsData?.filter(c => c.status === 'active').length || 0,
-        todayCalls: todayCalls.length,
-        connectRate: todayCalls.length > 0 ? Math.round((answeredCalls.length / todayCalls.length) * 100) : 0
-      });
-    }
+    // Use count queries to get accurate today's stats (avoids 1000-row cap)
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = `${today}T00:00:00.000Z`;
+
+    const [totalRes, connectedRes] = await Promise.all([
+      supabase
+        .from('call_logs')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayStart),
+      supabase
+        .from('call_logs')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayStart)
+        .in('status', ['answered', 'completed'])
+    ]);
+
+    const totalCalls = totalRes.count || 0;
+    const connectedCalls = connectedRes.count || 0;
+
+    setStats({
+      totalLeads: 0,
+      activeCampaigns: campaignsData?.filter(c => c.status === 'active').length || 0,
+      todayCalls: totalCalls,
+      connectRate: totalCalls > 0 ? Math.round((connectedCalls / totalCalls) * 100) : 0
+    });
+
+    // Still load recent call logs for the table display (limited set is fine)
+    const callLogsData = await getCallLogs();
+    if (callLogsData) setCallLogs(callLogsData);
   };
 
   return (
