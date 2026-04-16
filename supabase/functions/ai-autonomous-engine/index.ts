@@ -1046,8 +1046,8 @@ Score 1-3: not interested. 4-6: neutral/exploring. 7-8: interested. 9-10: ready 
       if (intentData.call_interest_score >= 8) {
         await supabase.from('lead_journey_state')
           .update({
-            interest_level: intentData.call_interest_score,
-            last_positive_signal_at: new Date().toISOString(),
+            engagement_score: intentData.call_interest_score * 10,
+            sentiment_score: intentData.call_interest_score / 10,
           })
           .eq('user_id', userId)
           .eq('lead_id', call.lead_id);
@@ -1082,9 +1082,9 @@ async function optimizePlaybook(
   // 1. Update playbook performance stats from journey events
   const { data: rules } = await supabase
     .from('followup_playbook')
-    .select('id, rule_name, journey_stage, action_type, delay_hours')
+    .select('id, name, trigger_stage, priority, conditions, actions, campaign_type')
     .eq('user_id', userId)
-    .eq('enabled', true);
+    .eq('is_active', true);
 
   if (!rules || rules.length === 0) return { decisions, optimizations: 0 };
 
