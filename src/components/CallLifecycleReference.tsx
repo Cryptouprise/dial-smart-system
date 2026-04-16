@@ -328,12 +328,12 @@ export default function CallLifecycleReference() {
               <p className="mt-1">→ Reschedule 30 min later if attempts &lt; max_attempts</p>
             </div>
             <div className="bg-muted/30 rounded-lg p-3">
-              <p className="font-semibold text-yellow-500 mb-1">Exhausted</p>
+              <p className="font-semibold text-accent-foreground mb-1">Exhausted</p>
               <p className="text-muted-foreground">attempts ≥ max_attempts</p>
               <p className="mt-1">→ Queue marked "failed", lead stays in system</p>
             </div>
             <div className="bg-muted/30 rounded-lg p-3">
-              <p className="font-semibold text-green-500 mb-1">Terminal</p>
+              <p className="font-semibold text-primary mb-1">Terminal</p>
               <p className="text-muted-foreground">appointment, DNC, not_interested, converted</p>
               <p className="mt-1">→ Queue "completed", removed from all campaigns</p>
             </div>
@@ -374,16 +374,16 @@ export default function CallLifecycleReference() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            <div className="border rounded-lg p-3 border-green-500/30 bg-green-500/5">
-              <p className="font-semibold text-green-500">Full Auto</p>
+            <div className="border rounded-lg p-3 border-primary/30 bg-primary/5">
+              <p className="font-semibold text-primary">Full Auto</p>
               <p className="text-muted-foreground mt-1">AI executes all actions immediately without approval. Best for high-confidence operations with established patterns.</p>
             </div>
-            <div className="border rounded-lg p-3 border-yellow-500/30 bg-yellow-500/5">
-              <p className="font-semibold text-yellow-500">Approval Required</p>
+            <div className="border rounded-lg p-3 border-accent/30 bg-accent/5">
+              <p className="font-semibold text-accent-foreground">Approval Required</p>
               <p className="text-muted-foreground mt-1">AI suggests actions and stages them in the Actions queue. You approve or reject before execution.</p>
             </div>
-            <div className="border rounded-lg p-3 border-blue-500/30 bg-blue-500/5">
-              <p className="font-semibold text-blue-500">Suggestions Only</p>
+            <div className="border rounded-lg p-3 border-secondary/30 bg-secondary/5">
+              <p className="font-semibold text-secondary-foreground">Suggestions Only</p>
               <p className="text-muted-foreground mt-1">AI provides recommendations and logs insights. No actions are queued or executed automatically.</p>
             </div>
           </div>
