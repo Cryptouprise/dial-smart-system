@@ -1942,11 +1942,11 @@ async function queueJourneyAction(
   await supabase.from('ai_action_queue').insert({
     user_id: userId,
     action_type: action.action_type,
-    action_params: action.params,
-    priority: action.priority,
+    title: `Journey: ${action.action_type} for lead`,
+    action_payload: action.params,
+    priority: action.priority === 1 ? 'high' : action.priority === 2 ? 'medium' : 'low',
     status: autoApprove ? 'approved' : 'pending',
-    requires_approval: settings.autonomy_level === 'approval_required',
-    reasoning: action.reasoning,
+    description: action.reasoning,
     source: 'journey_engine',
     approved_at: autoApprove ? new Date().toISOString() : null,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -1957,9 +1957,9 @@ async function queueJourneyAction(
     user_id: userId,
     lead_id: lead.id,
     event_type: 'action_queued',
-    from_stage: journey.journey_stage,
-    rule_name: action.rule_name,
-    details: {
+    event_source: action.rule_name || 'journey_engine',
+    from_stage: journey.current_stage,
+    event_data: {
       action_type: action.action_type,
       params: action.params,
       priority: action.priority,
@@ -1968,9 +1968,8 @@ async function queueJourneyAction(
 
   // Update journey state next_action tracking
   await supabase.from('lead_journey_state').update({
-    next_action_type: action.action_type.replace('journey_', '').replace('send_followup_', ''),
-    next_action_at: action.next_action_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    next_action_reason: action.reasoning,
+    next_recommended_action: action.action_type.replace('journey_', '').replace('send_followup_', ''),
+    next_action_scheduled_at: action.next_action_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', journey.id);
 }
