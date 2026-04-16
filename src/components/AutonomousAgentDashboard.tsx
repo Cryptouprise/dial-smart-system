@@ -32,7 +32,8 @@ import {
   Users,
   Shield,
   Pencil,
-  Upload
+  Upload,
+  BookOpen
 } from 'lucide-react';
 import { QuickLeadLoader } from './QuickLeadLoader';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
@@ -66,6 +67,7 @@ const ActionQueuePanel = lazy(() => import('@/components/ActionQueuePanel'));
 const LeadJourneyDashboard = lazy(() => import('@/components/LeadJourneyDashboard'));
 const CampaignStrategistDashboard = lazy(() => import('@/components/CampaignStrategistDashboard'));
 const MissionBriefingWizard = lazy(() => import('@/components/MissionBriefingWizard'));
+const CallLifecycleReference = lazy(() => import('@/components/CallLifecycleReference'));
 
 // Loading fallback for lazy components
 const TabLoader = () => (
@@ -378,6 +380,10 @@ const AutonomousAgentDashboard: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="goals">Goals</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="how-it-works" className="flex items-center gap-1">
+              <BookOpen className="h-3 w-3" />
+              <span className="hidden sm:inline">How It Works</span>
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -993,6 +999,12 @@ const AutonomousAgentDashboard: React.FC = () => {
         <TabsContent value="activity" className="mt-4">
           <Suspense fallback={<TabLoader />}>
             <AgentActivityDashboard />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="how-it-works" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <CallLifecycleReference />
           </Suspense>
         </TabsContent>
       </Tabs>
