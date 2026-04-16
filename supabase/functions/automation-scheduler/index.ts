@@ -196,7 +196,7 @@ async function processRule(supabase: any, rule: AutomationRule) {
         // Phase 6: Record lead score at queue-time for feedback loop
         // This lets us later compare "what we predicted" vs "what happened"
         try {
-          const leadScore = (lead as any).priority_score;
+          const leadScore = (lead as any).priority;
           if (leadScore !== undefined && leadScore !== null) {
             await supabase.from('lead_score_outcomes').insert({
               user_id: rule.user_id,
