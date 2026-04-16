@@ -32,45 +32,28 @@ async function fetchDailyMetrics(supabase: any, userId: string, date: string): P
   const startOfDay = `${date}T00:00:00.000Z`;
   const endOfDay = `${date}T23:59:59.999Z`;
 
-  // Paginate call_logs to handle campaigns with thousands of calls (Supabase default limit is 1000)
-  let allCallsData: any[] = [];
-  {
-    let page = 0;
-    const PAGE_SIZE = 1000;
-    let hasMore = true;
-    while (hasMore) {
-      const { data: batch, error } = await supabase.from('call_logs')
-        .select('id, user_id, status, outcome, duration_seconds, caller_id, retell_cost_cents, created_at')
-        .eq('user_id', userId)
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay)
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (error) { console.error('[Daily Report] Call logs fetch error:', error); break; }
-      const rows = batch || [];
-      allCallsData = allCallsData.concat(rows);
-      hasMore = rows.length === PAGE_SIZE;
-      page++;
-    }
-    console.log(`[Daily Report] Fetched ${allCallsData.length} call logs for ${date}`);
-  }
-
-  const [leads, sms, numbers] = await Promise.all([
+  const [calls, leads, sms, numbers] = await Promise.all([
+    supabase.from('call_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay),
     supabase.from('leads')
-      .select('id, status, do_not_call, next_callback_at, updated_at')
+      .select('*')
       .eq('user_id', userId)
       .gte('updated_at', startOfDay)
       .lte('updated_at', endOfDay),
     supabase.from('sms_messages')
-      .select('id, direction')
+      .select('*')
       .eq('user_id', userId)
       .gte('created_at', startOfDay)
       .lte('created_at', endOfDay),
     supabase.from('phone_numbers')
-      .select('id, number, daily_calls')
+      .select('*')
       .eq('user_id', userId)
   ]);
 
-  const callsData = allCallsData;
+  const callsData = calls.data || [];
   const leadsData = leads.data || [];
   const smsData = sms.data || [];
   const numbersData = numbers.data || [];

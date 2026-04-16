@@ -759,8 +759,8 @@ serve(async (req) => {
       console.log('Workflow first steps:', Object.keys(workflowFirstSteps).length, 'workflows checked');
     }
 
-    // Check ALL existing queue entries (any status) — prevents re-queuing leads that already
-    // have completed/failed entries. This is the primary re-calling prevention gate.
+    // Check existing queue entries — include ALL statuses to prevent upsert from recycling
+    // completed/failed entries back to pending (root cause of re-calling bug)
     const { data: existingQueue } = await supabase
       .from('dialing_queues')
       .select('lead_id, status')
@@ -797,14 +797,12 @@ serve(async (req) => {
     console.log(`[Dispatcher] Leads currently in active workflows (last 24h): ${existingWorkflowLeadIds.size}, unique phones: ${existingWorkflowPhones.size}`);
 
     // Check for RECENT call_logs to prevent re-calling leads
-    // Widened from 5 min to 30 min (2026-04-16) to prevent the re-calling bug
-    // where leads were called 7.5x despite max_attempts=1
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: recentCallLogs } = await supabase
       .from('call_logs')
       .select('lead_id, status, outcome')
       .in('campaign_id', campaignIds)
-      .gte('created_at', thirtyMinutesAgo);
+      .gte('created_at', fiveMinutesAgo);
 
     // Build set of leads that were called recently
     const recentlyCalledLeadIds = new Set(
@@ -949,49 +947,32 @@ serve(async (req) => {
       }
 
       // Add to dialing queue for call-first or no-workflow campaigns.
-      // CRITICAL FIX (2026-04-16): Only INSERT new queue entries. Never upsert/reset
-      // completed/failed entries back to pending — that was the root cause of the
-      // re-calling bug where leads got called 7.5x despite max_attempts=1.
-      // The existingLeadIds filter above already skips leads with pending/calling entries.
-      // Leads with completed/failed entries are intentionally NOT re-queued.
-      const { data: existingTerminalEntry } = await supabase
-        .from('dialing_queues')
-        .select('id, status, attempts')
-        .eq('campaign_id', campaign.id)
-        .eq('lead_id', cl.lead_id)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingTerminalEntry) {
-        // Lead already has a queue entry (completed/failed) — do NOT reset it
-        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} — already has queue entry (status: ${existingTerminalEntry.status}, attempts: ${existingTerminalEntry.attempts})`);
-        continue;
-      }
+      // CRITICAL: Use INSERT (not upsert) to prevent recycling completed/failed entries.
+      // The existingLeadIds filter above already excludes leads with ANY queue entry.
+      const queuePayload = {
+        campaign_id: campaign.id,
+        lead_id: cl.lead_id,
+        phone_number: lead.phone_number,
+        status: 'pending',
+        scheduled_at: nowIso,
+        priority: 1,
+        max_attempts: campaign.max_attempts || 3,
+        attempts: 0,
+        updated_at: nowIso,
+      };
 
       const { error: queueError } = await supabase
         .from('dialing_queues')
-        .insert({
-          campaign_id: campaign.id,
-          lead_id: cl.lead_id,
-          phone_number: lead.phone_number,
-          status: 'pending',
-          scheduled_at: nowIso,
-          priority: 1,
-          max_attempts: campaign.max_attempts || 1,
-          attempts: 0,
-          updated_at: nowIso,
-        });
+        .insert(queuePayload);
 
       if (!queueError) {
         dialingQueued++;
         console.log(`[Dispatcher] Queue inserted for lead ${cl.lead_id}`);
+      } else if (queueError.code === '23505') {
+        // Unique constraint violation = lead already has a queue entry (race condition safety)
+        console.log(`[Dispatcher] Lead ${cl.lead_id} already in queue (constraint), skipping`);
       } else {
-        // Unique constraint violation = entry already exists, skip gracefully
-        if (queueError.code === '23505') {
-          console.log(`[Dispatcher] Lead ${cl.lead_id} already in queue (unique constraint)`);
-        } else {
-          console.error(`[Dispatcher] Queue insert error for ${cl.lead_id}:`, queueError);
-        }
+        console.error(`[Dispatcher] Queue insert error for ${cl.lead_id}:`, queueError);
       }
     }
 
