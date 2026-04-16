@@ -1560,6 +1560,23 @@ serve(async (req) => {
         
         const numberPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
 
+        // NJ-area / local-area set: numbers whose area code shares the destination's state.
+        // Same-state area codes for common contiguous regions (NJ + NYC metro overflow).
+        const STATE_AREA_CODES: Record<string, string[]> = {
+          // New Jersey + NYC metro (people accept these as "local" for NJ leads)
+          '201': ['201','551','609','640','732','848','856','862','908','973','917','646','212','347','718','929'],
+          '551': ['201','551','609','640','732','848','856','862','908','973'],
+          '609': ['201','551','609','640','732','848','856','862','908','973'],
+          '640': ['201','551','609','640','732','848','856','862','908','973'],
+          '732': ['201','551','609','640','732','848','856','862','908','973'],
+          '848': ['201','551','609','640','732','848','856','862','908','973'],
+          '856': ['201','551','609','640','732','848','856','862','908','973'],
+          '862': ['201','551','609','640','732','848','856','862','908','973'],
+          '908': ['201','551','609','640','732','848','856','862','908','973'],
+          '973': ['201','551','609','640','732','848','856','862','908','973'],
+        };
+        const sameStateCodes = STATE_AREA_CODES[toAreaCode || ''] || [toAreaCode || ''];
+
         const scoredNumbers = numberPool
           .filter((n: any) => {
             if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
@@ -1567,20 +1584,25 @@ serve(async (req) => {
             return true;
           })
           .map((n: any) => {
-            // Total usage = persisted daily_calls + this-batch calls
             const totalUsage = (n.daily_calls || 0) + (numberUsageInBatch[n.id] || 0);
             const numAreaCode = n.number.replace(/\D/g, '').slice(1, 4);
-            // Local presence is a tiny tiebreaker (0.1 points), never overrides usage
-            const localPresenceBonus = (numAreaCode === toAreaCode) ? 0.1 : 0;
-
-            return { number: n, totalUsage, localPresenceBonus };
+            const exactLocalMatch = numAreaCode === toAreaCode;
+            const sameStateMatch = sameStateCodes.includes(numAreaCode);
+            return { number: n, totalUsage, exactLocalMatch, sameStateMatch };
           });
-        
-        // Sort: lowest usage first, then local presence as tiebreaker
-        scoredNumbers.sort((a, b) => {
-          if (a.totalUsage !== b.totalUsage) return a.totalUsage - b.totalUsage;
-          return b.localPresenceBonus - a.localPresenceBonus; // prefer local match on ties
-        });
+
+        // Prefer: exact area-code match → same-state match → lowest usage.
+        // This makes local presence a HARD preference, not a 0.1 tiebreaker.
+        const exactMatches = scoredNumbers.filter(s => s.exactLocalMatch);
+        const stateMatches = scoredNumbers.filter(s => s.sameStateMatch);
+        const pool = exactMatches.length > 0 ? exactMatches
+                   : stateMatches.length > 0 ? stateMatches
+                   : scoredNumbers;
+
+        pool.sort((a, b) => a.totalUsage - b.totalUsage);
+        const sortedScoredNumbers = pool.length > 0 ? pool : scoredNumbers;
+        scoredNumbers.length = 0;
+        scoredNumbers.push(...sortedScoredNumbers);
         
         if (scoredNumbers.length === 0) {
           const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
