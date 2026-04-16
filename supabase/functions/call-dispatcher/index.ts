@@ -759,12 +759,12 @@ serve(async (req) => {
       console.log('Workflow first steps:', Object.keys(workflowFirstSteps).length, 'workflows checked');
     }
 
-    // Check existing queue entries
+    // Check existing queue entries — include ALL statuses to prevent upsert from recycling
+    // completed/failed entries back to pending (root cause of re-calling bug)
     const { data: existingQueue } = await supabase
       .from('dialing_queues')
-      .select('lead_id')
-      .in('campaign_id', campaignIds)
-      .in('status', ['pending', 'calling']);
+      .select('lead_id, status')
+      .in('campaign_id', campaignIds);
 
     const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
 
@@ -947,7 +947,8 @@ serve(async (req) => {
       }
 
       // Add to dialing queue for call-first or no-workflow campaigns.
-      // Use upsert so terminal rows (failed/completed) get recycled instead of blocking on unique(campaign_id, lead_id).
+      // CRITICAL: Use INSERT (not upsert) to prevent recycling completed/failed entries.
+      // The existingLeadIds filter above already excludes leads with ANY queue entry.
       const queuePayload = {
         campaign_id: campaign.id,
         lead_id: cl.lead_id,
@@ -960,19 +961,18 @@ serve(async (req) => {
         updated_at: nowIso,
       };
 
-      const { data: upsertedQueue, error: queueError } = await supabase
+      const { error: queueError } = await supabase
         .from('dialing_queues')
-        .upsert(queuePayload, { onConflict: 'campaign_id,lead_id' })
-        .select('id, status, attempts, max_attempts')
-        .maybeSingle();
+        .insert(queuePayload);
 
       if (!queueError) {
         dialingQueued++;
-        if (upsertedQueue) {
-          console.log(`[Dispatcher] Queue upserted for lead ${cl.lead_id} (queue ${upsertedQueue.id})`);
-        }
+        console.log(`[Dispatcher] Queue inserted for lead ${cl.lead_id}`);
+      } else if (queueError.code === '23505') {
+        // Unique constraint violation = lead already has a queue entry (race condition safety)
+        console.log(`[Dispatcher] Lead ${cl.lead_id} already in queue (constraint), skipping`);
       } else {
-        console.error(`[Dispatcher] Queue upsert error for ${cl.lead_id}:`, queueError);
+        console.error(`[Dispatcher] Queue insert error for ${cl.lead_id}:`, queueError);
       }
     }
 
