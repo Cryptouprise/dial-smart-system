@@ -820,6 +820,11 @@ serve(async (req) => {
       
       if (recentlyCalledLeadIds.has(cl.lead_id)) return false;
       if (successfullyContactedLeadIds.has(cl.lead_id)) return false;
+      // TERMINAL DISPOSITION CHECK: Never re-queue leads with successful outcomes in full campaign history
+      if (terminallyContactedLeadIds.has(cl.lead_id)) {
+        console.log(`[Dispatcher] Skipping lead ${cl.lead_id} - terminal disposition reached (full campaign history)`);
+        return false;
+      }
       return true;
     });
 
