@@ -1392,9 +1392,9 @@ async function manageLeadJourneys(
       : 0;
 
     // --- 6b. Detect interest signals from recent calls ---
-    let interestLevel = journey.interest_level || 5;
-    let sentimentTrend = journey.sentiment_trend || 'unknown';
-    let lastSentiment = journey.last_sentiment_score;
+    let interestLevel = (journey.engagement_score || 50) / 10;
+    let sentimentTrend = 'unknown';
+    let lastSentiment = journey.sentiment_score;
 
     if (calls.length > 0) {
       // Check for positive outcomes
@@ -1441,7 +1441,7 @@ async function manageLeadJourneys(
     const answeredCalls = calls.filter((c: any) =>
       ['completed', 'answered', 'appointment_set', 'interested', 'callback'].includes(c.outcome)
     );
-    let bestHour = journey.best_hour_to_call;
+    let bestHour = (journey.metadata as any)?.best_hour_to_call;
     if (answeredCalls.length > 0) {
       const hourCounts: Record<number, number> = {};
       answeredCalls.forEach((c: any) => {
@@ -1452,7 +1452,7 @@ async function manageLeadJourneys(
     }
 
     // Preferred channel (who do they respond to more?)
-    let preferredChannel = journey.preferred_channel || 'unknown';
+    let preferredChannel = (journey.metadata as any)?.preferred_channel || 'unknown';
     if (callsAnswered > 0 && smsReceived > 0) {
       preferredChannel = callsAnswered > smsReceived ? 'call' : 'sms';
     } else if (callsAnswered > 0) {
@@ -1462,7 +1462,7 @@ async function manageLeadJourneys(
     }
 
     // --- 6c. Compute correct journey stage ---
-    let newStage = journey.journey_stage;
+    let newStage = journey.current_stage;
     const leadStatus = lead.status;
     const lastDisposition = calls.length > 0 ? calls[0].outcome : null;
 
@@ -1521,16 +1521,17 @@ async function manageLeadJourneys(
     }
 
     // Log stage change
-    const stageChanged = newStage !== journey.journey_stage;
+    const stageChanged = newStage !== journey.current_stage;
     if (stageChanged) {
       result.stage_changes++;
       await supabase.from('journey_event_log').insert({
         user_id: userId,
         lead_id: lead.id,
         event_type: 'stage_change',
-        from_stage: journey.journey_stage,
+        event_source: 'autonomous_engine',
+        from_stage: journey.current_stage,
         to_stage: newStage,
-        details: {
+        event_data: {
           reason: `Auto-computed from ${callAttempts} calls (${callsAnswered} answered), ${smsReceived} SMS replies, interest=${interestLevel}, days_silent=${Math.round(daysSinceTouch)}`,
         },
       });
