@@ -1504,184 +1504,90 @@ serve(async (req) => {
     }
 
     // ========================================================================
-    // CREDIT SYSTEM: Post-call cost finalization
+    // ALWAYS FETCH RETELL COST — regardless of billing/org status
     // ========================================================================
-    // NOTE: Some environments don't yet persist organization_id on call_logs, so we
-    // gracefully accept it from webhook metadata when available.
+    {
+      const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+      if (retellApiKey && callLog?.id) {
+        try {
+          const callDetailsResponse = await fetch(
+            `https://api.retellai.com/v2/get-call/${call.call_id}`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${retellApiKey}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          if (callDetailsResponse.ok) {
+            const callDetails = await callDetailsResponse.json();
+            let retellActualCostCents: number | null = null;
+
+            if (callDetails.call_cost?.combined_cost != null) {
+              retellActualCostCents = Math.round(callDetails.call_cost.combined_cost * 100);
+              console.log(`[Retell Webhook] Actual Retell cost: ${retellActualCostCents}c (from combined_cost $${callDetails.call_cost.combined_cost})`);
+            } else if (callDetails.cost != null) {
+              retellActualCostCents = Math.round(callDetails.cost * 100);
+              console.log(`[Retell Webhook] Actual Retell cost: ${retellActualCostCents}c (from cost $${callDetails.cost})`);
+            } else if (callDetails.call_cost?.total_duration_unit_price != null) {
+              // Fallback: compute from per-minute rate x duration
+              const perMin = callDetails.call_cost.total_duration_unit_price;
+              const mins = (durationSeconds || 0) / 60;
+              retellActualCostCents = Math.round(perMin * mins * 100);
+              console.log(`[Retell Webhook] Calculated Retell cost: ${retellActualCostCents}c ($${perMin}/min x ${mins.toFixed(2)}min)`);
+            }
+
+            // Always save cost + breakdown to call_logs
+            const costUpdate: Record<string, any> = {};
+            if (retellActualCostCents != null) costUpdate.retell_cost_cents = retellActualCostCents;
+            if (callDetails.cost_breakdown || callDetails.call_cost) costUpdate.cost_breakdown = callDetails.cost_breakdown || callDetails.call_cost;
+            if (callDetails.llm_token_usage) costUpdate.token_usage = callDetails.llm_token_usage;
+
+            if (Object.keys(costUpdate).length > 0) {
+              await supabase.from('call_logs').update(costUpdate).eq('id', callLog.id);
+              console.log(`[Retell Webhook] Saved cost data to call_logs: ${JSON.stringify(costUpdate)}`);
+            }
+          } else {
+            console.warn(`[Retell Webhook] Retell cost API returned ${callDetailsResponse.status}`);
+          }
+        } catch (costFetchError) {
+          console.error('[Retell Webhook] Error fetching Retell cost:', costFetchError);
+        }
+      }
+    }
+
+    // ========================================================================
+    // CREDIT SYSTEM: Post-call cost finalization (only if billing enabled)
+    // ========================================================================
     const webhookOrganizationId = (metadata as any)?.organization_id || (callLog as any)?.organization_id;
 
     if (webhookOrganizationId && durationSeconds >= 0) {
       try {
         console.log(`[Retell Webhook] Finalizing credit cost for org ${webhookOrganizationId}, duration ${durationSeconds}s`);
 
-        // Fetch actual cost from Retell API if available
-        let retellActualCostCents: number | null = null;
-        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+        const retellCostFromLog = (callLog as any)?.retell_cost_cents || null;
 
-        if (retellApiKey) {
-          try {
-            const callDetailsResponse = await fetch(
-              `https://api.retellai.com/v2/get-call/${call.call_id}`,
-              {
-                method: 'GET',
-                headers: {
-                  'Authorization': `Bearer ${retellApiKey}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-
-            if (callDetailsResponse.ok) {
-              const callDetails = await callDetailsResponse.json();
-
-              // Retell provides cost_breakdown or call_cost with detailed costs
-              if (callDetails.call_cost?.combined_cost) {
-                retellActualCostCents = Math.round(callDetails.call_cost.combined_cost);
-                console.log(`[Retell Webhook] Actual Retell cost: ${retellActualCostCents}c`);
-              } else if (callDetails.cost_breakdown) {
-                // Sum up all cost components
-                const breakdown = callDetails.cost_breakdown;
-                retellActualCostCents = Math.round(
-                  (breakdown.llm_cost || 0) +
-                  (breakdown.stt_cost || 0) +
-                  (breakdown.tts_cost || 0) +
-                  (breakdown.telephony_cost || 0)
-                );
-                console.log(`[Retell Webhook] Calculated Retell cost from breakdown: ${retellActualCostCents}c`);
-              }
-
-              // Update call_logs with actual cost data
-              if (callLog?.id) {
-                await supabase
-                  .from('call_logs')
-                  .update({
-                    retell_cost_cents: retellActualCostCents,
-                    cost_breakdown: callDetails.cost_breakdown || callDetails.call_cost || null,
-                    token_usage: callDetails.llm_token_usage || null
-                  })
-                  .eq('id', callLog.id);
-              }
-            }
-          } catch (costFetchError) {
-            console.error('[Retell Webhook] Error fetching Retell cost:', costFetchError);
-            // Continue with estimated cost
-          }
-        }
-
-        // Finalize the cost (releases reservation and deducts actual)
-        // Pass agent_id for agent-specific pricing lookup
         const { data: finalizeResult, error: finalizeError } = await supabase
           .rpc('finalize_call_cost', {
             p_organization_id: webhookOrganizationId,
             p_call_log_id: callLog?.id || null,
             p_retell_call_id: call.call_id,
-            p_actual_minutes: Math.ceil((durationSeconds / 60) * 10) / 10, // Round to 0.1 min
-            p_retell_cost_cents: retellActualCostCents,
+            p_actual_minutes: Math.ceil((durationSeconds / 60) * 10) / 10,
+            p_retell_cost_cents: retellCostFromLog,
             p_idempotency_key: `finalize_${call.call_id}`,
-            p_agent_id: call.agent_id || null // For agent-specific pricing
+            p_agent_id: call.agent_id || null
           });
 
         if (finalizeError) {
           console.error('[Retell Webhook] Credit finalization error:', finalizeError);
-        } else if (finalizeResult?.[0]) {
+        } else if (finalizeResult?.[0]?.success) {
           const result = finalizeResult[0];
-          if (result.success) {
-            console.log(`[Retell Webhook] Credits finalized: ${result.amount_deducted_cents}c deducted, balance: ${result.new_balance_cents}c, margin: ${result.margin_cents}c`);
-
-            // Check for low balance alert
-            const { data: credits } = await supabase
-              .from('organization_credits')
-              .select('low_balance_threshold_cents, auto_recharge_enabled, auto_recharge_trigger_cents, auto_recharge_amount_cents, last_low_balance_alert_at')
-              .eq('organization_id', webhookOrganizationId)
-              .single();
-
-            if (credits && result.new_balance_cents <= (credits.low_balance_threshold_cents || 1000)) {
-              // Check if we should send alert (only once per 24h)
-              const shouldAlert = !credits.last_low_balance_alert_at ||
-                (Date.now() - new Date(credits.last_low_balance_alert_at).getTime()) > 24 * 60 * 60 * 1000;
-
-              if (shouldAlert) {
-                console.log(`[Retell Webhook] LOW BALANCE ALERT: ${result.new_balance_cents}c remaining`);
-
-                // Create system alert
-                await supabase.from('system_alerts').insert({
-                  user_id: userId,
-                  alert_type: 'low_credit_balance',
-                  severity: 'warning',
-                  title: 'Low Credit Balance',
-                  message: `Your credit balance is low ($${(result.new_balance_cents / 100).toFixed(2)}). Add credits to continue making calls.`,
-                  metadata: {
-                    organization_id: webhookOrganizationId,
-                    balance_cents: result.new_balance_cents,
-                    threshold_cents: credits.low_balance_threshold_cents
-                  }
-                });
-
-                // Update last alert timestamp
-                await supabase
-                  .from('organization_credits')
-                  .update({ last_low_balance_alert_at: new Date().toISOString() })
-                  .eq('organization_id', webhookOrganizationId);
-              }
-
-              // Check for auto-recharge
-              if (credits.auto_recharge_enabled &&
-                  result.new_balance_cents <= (credits.auto_recharge_trigger_cents || 500)) {
-                console.log('[Retell Webhook] Auto-recharge triggered for org:', webhookOrganizationId);
-                const rechargeAmount = credits.auto_recharge_amount_cents || 5000; // default $50
-                const { error: rechargeError } = await supabase.rpc('add_credits', {
-                  p_organization_id: webhookOrganizationId,
-                  p_amount_cents: rechargeAmount,
-                  p_transaction_type: 'auto_recharge',
-                  p_description: 'Auto-recharge triggered by low balance',
-                  p_stripe_payment_intent_id: null,
-                  p_created_by: null,
-                  p_idempotency_key: `auto_recharge_${webhookOrganizationId}_${Date.now()}`
-                });
-                if (rechargeError) {
-                  console.error('[Retell Webhook] Auto-recharge failed:', rechargeError);
-                  // Create system alert for failed auto-recharge
-                  if (userId) {
-                    await supabase.from('system_alerts').insert({
-                      user_id: userId,
-                      alert_type: 'auto_recharge_failed',
-                      severity: 'error',
-                      title: 'Auto-Recharge Failed',
-                      message: `Auto-recharge of $${(rechargeAmount / 100).toFixed(2)} failed. Please add credits manually.`,
-                      metadata: {
-                        organization_id: webhookOrganizationId,
-                        recharge_amount_cents: rechargeAmount,
-                        error: rechargeError.message
-                      }
-                    });
-                  }
-                } else {
-                  console.log('[Retell Webhook] Auto-recharge successful:', rechargeAmount, 'cents');
-                }
-              }
-            }
-          } else {
-            console.warn('[Retell Webhook] Credit finalization returned error:', result.error_message);
-          }
+          console.log(`[Retell Webhook] Credits finalized: ${result.amount_deducted_cents}c deducted, balance: ${result.new_balance_cents}c, margin: ${result.margin_cents}c`);
         }
       } catch (creditError: any) {
         console.error('[Retell Webhook] Credit processing error:', creditError);
-        // Don't fail the webhook - log for manual reconciliation
-        if (userId) {
-          await supabase.from('system_alerts').insert({
-            user_id: userId,
-            alert_type: 'credit_deduction_failed',
-            severity: 'warning',
-            title: 'Credit Deduction Failed',
-            message: `Failed to deduct credits for call ${call.call_id}: ${creditError.message}`,
-            metadata: {
-              call_id: call.call_id,
-              organization_id: webhookOrganizationId,
-              duration_seconds: durationSeconds,
-              error: creditError.message
-            }
-          });
-        }
       }
     }
     // ========================================================================
