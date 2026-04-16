@@ -56,8 +56,8 @@ export const useConcurrencyManager = () => {
       const { data, error } = await supabase
         .from('call_logs')
         .select('id, phone_number, status, created_at, retell_call_id')
-        .in('status', ['initiated', 'ringing', 'in_progress'])
-        .gte('created_at', fiveMinutesAgo) // Only show recent calls
+        .in('status', ['initiated', 'ringing', 'in_progress', 'calling', 'in-progress'])
+        .gte('created_at', fiveMinutesAgo)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -393,11 +393,15 @@ export const useConcurrencyManager = () => {
       )
       .subscribe();
 
-    // REMOVED: 10 second polling interval - realtime subscriptions handle updates
-    // This eliminates duplicate requests and reduces background load by 50%
+    // Polling fallback every 15s since realtime requires publication setup
+    const pollInterval = setInterval(() => {
+      loadActiveCalls();
+      loadActiveTransfers();
+    }, 15000);
 
     return () => {
       callsChannel.unsubscribe();
+      clearInterval(pollInterval);
       transfersChannel.unsubscribe();
     };
   }, [userId]);
