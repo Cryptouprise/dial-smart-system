@@ -1084,7 +1084,17 @@ serve(async (req) => {
                 for (const tool of tools) {
                   const toolName = tool?.name || tool?.type || 'unnamed';
                   if (tool?.type === 'transfer_call' || tool?.type === 'warm_transfer' || toolName.toLowerCase().includes('transfer')) {
-                    console.log(`[Outbound Calling] TRANSFER TOOL: "${toolName}" | show_transferee_as_caller=${tool?.show_transferee_as_caller ?? 'NOT SET'} | number=${tool?.number || 'N/A'}`);
+                    // Retell stores show_transferee_as_caller nested under transfer_option
+                    const showTransfereeAsCaller =
+                      tool?.transfer_option?.show_transferee_as_caller ??
+                      tool?.show_transferee_as_caller ??
+                      'NOT SET';
+                    const transferNumber =
+                      tool?.transfer_destination?.number ||
+                      tool?.transfer_option?.number ||
+                      tool?.number ||
+                      'N/A';
+                    console.log(`[Outbound Calling] TRANSFER TOOL: "${toolName}" | show_transferee_as_caller=${showTransfereeAsCaller} | number=${transferNumber} | transfer_option=${JSON.stringify(tool?.transfer_option || {})}`);
                   }
                   if (tool?.type === 'webhook' || tool?.type === 'custom') {
                     const url = tool?.url || tool?.webhook_url || '';
