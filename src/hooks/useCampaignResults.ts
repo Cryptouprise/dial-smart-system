@@ -23,21 +23,24 @@ const VOICEMAIL_OUTCOMES = new Set([
 
 export interface CampaignMetrics {
   totalCalls: number;
-  // Legacy "connected" (reached = any audio/VM)
   connectedCalls: number;
   connectionRate: number;
-  // NEW: Honest metrics
   humanConversations: number;
   humanConversationRate: number;
   voicemailsReached: number;
   retryableCalls: number;
   neverConnected: number;
-  // Existing
   avgDuration: number;
   appointmentsSet: number;
   voicemailsLeft: number;
   smsSent: number;
   smsReplied: number;
+  // Cost metrics
+  totalCostCents: number;
+  totalDurationMinutes: number;
+  costPerMinute: number;
+  costPerCall: number;
+  costPerHumanConversation: number;
   dispositions: Record<string, number>;
   leadStatuses: Record<string, number>;
   callsByHour: { hour: number; count: number; connected: number; humans: number }[];
