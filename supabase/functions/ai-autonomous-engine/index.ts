@@ -2022,13 +2022,13 @@ async function planDay(
   // Lead inventory by journey stage
   const { data: stageData } = await supabase
     .from('lead_journey_state')
-    .select('journey_stage')
+    .select('current_stage')
     .eq('user_id', userId)
-    .not('journey_stage', 'in', '("closed_won","closed_lost")');
+    .not('current_stage', 'in', '("closed_won","closed_lost")');
 
   const stageCounts: Record<string, number> = {};
   (stageData || []).forEach((s: any) => {
-    stageCounts[s.journey_stage] = (stageCounts[s.journey_stage] || 0) + 1;
+    stageCounts[s.current_stage] = (stageCounts[s.current_stage] || 0) + 1;
   });
 
   const callbacks = stageCounts['callback_set'] || 0;
