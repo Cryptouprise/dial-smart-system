@@ -779,13 +779,13 @@ async function analyzeFunnel(
   // Get stage distribution
   const { data: stages } = await supabase
     .from('lead_journey_state')
-    .select('journey_stage')
+    .select('current_stage')
     .eq('user_id', userId);
 
   if (!stages || stages.length === 0) return { decisions, snapshot_saved: false };
 
   const counts: Record<string, number> = {};
-  stages.forEach((s: any) => { counts[s.journey_stage] = (counts[s.journey_stage] || 0) + 1; });
+  stages.forEach((s: any) => { counts[s.current_stage] = (counts[s.current_stage] || 0) + 1; });
 
   const hotCount = counts['hot'] || 0;
   const callbackCount = counts['callback_set'] || 0;
@@ -1046,8 +1046,8 @@ Score 1-3: not interested. 4-6: neutral/exploring. 7-8: interested. 9-10: ready 
       if (intentData.call_interest_score >= 8) {
         await supabase.from('lead_journey_state')
           .update({
-            interest_level: intentData.call_interest_score,
-            last_positive_signal_at: new Date().toISOString(),
+            engagement_score: intentData.call_interest_score * 10,
+            sentiment_score: intentData.call_interest_score / 10,
           })
           .eq('user_id', userId)
           .eq('lead_id', call.lead_id);
@@ -1082,9 +1082,9 @@ async function optimizePlaybook(
   // 1. Update playbook performance stats from journey events
   const { data: rules } = await supabase
     .from('followup_playbook')
-    .select('id, rule_name, journey_stage, action_type, delay_hours')
+    .select('id, name, trigger_stage, priority, conditions, actions, campaign_type')
     .eq('user_id', userId)
-    .eq('enabled', true);
+    .eq('is_active', true);
 
   if (!rules || rules.length === 0) return { decisions, optimizations: 0 };
 
@@ -1093,7 +1093,7 @@ async function optimizePlaybook(
     const { count: timesFired } = await supabase.from('journey_event_log')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('rule_name', rule.rule_name)
+      .eq('event_source', rule.name)
       .eq('event_type', 'action_queued')
       .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
@@ -1287,9 +1287,8 @@ async function manageLeadJourneys(
     const newEntries = untracked.map((lead: any) => ({
       user_id: userId,
       lead_id: lead.id,
-      journey_stage: lead.status === 'new' ? 'fresh' : 'attempting',
-      first_contact_at: lead.last_contacted_at || null,
-      explicit_callback_at: lead.next_callback_at || null,
+      current_stage: lead.status === 'new' ? 'fresh' : 'attempting',
+      stage_entered_at: new Date().toISOString(),
     }));
     await supabase.from('lead_journey_state').upsert(newEntries, {
       onConflict: 'user_id,lead_id',
@@ -1303,8 +1302,8 @@ async function manageLeadJourneys(
     .from('lead_journey_state')
     .select('*, leads!inner(id, first_name, phone_number, status, do_not_call, last_contacted_at, next_callback_at)')
     .eq('user_id', userId)
-    .not('journey_stage', 'in', '("closed_won","closed_lost","dormant")')
-    .order('next_action_at', { ascending: true, nullsFirst: false })
+    .not('current_stage', 'in', '("closed_won","closed_lost","dormant")')
+    .order('next_action_scheduled_at', { ascending: true, nullsFirst: false })
     .limit(150);
 
   if (!journeyLeads || journeyLeads.length === 0) return result;
@@ -1393,9 +1392,9 @@ async function manageLeadJourneys(
       : 0;
 
     // --- 6b. Detect interest signals from recent calls ---
-    let interestLevel = journey.interest_level || 5;
-    let sentimentTrend = journey.sentiment_trend || 'unknown';
-    let lastSentiment = journey.last_sentiment_score;
+    let interestLevel = (journey.engagement_score || 50) / 10;
+    let sentimentTrend = 'unknown';
+    let lastSentiment = journey.sentiment_score;
 
     if (calls.length > 0) {
       // Check for positive outcomes
@@ -1442,7 +1441,7 @@ async function manageLeadJourneys(
     const answeredCalls = calls.filter((c: any) =>
       ['completed', 'answered', 'appointment_set', 'interested', 'callback'].includes(c.outcome)
     );
-    let bestHour = journey.best_hour_to_call;
+    let bestHour = (journey.metadata as any)?.best_hour_to_call;
     if (answeredCalls.length > 0) {
       const hourCounts: Record<number, number> = {};
       answeredCalls.forEach((c: any) => {
@@ -1453,7 +1452,7 @@ async function manageLeadJourneys(
     }
 
     // Preferred channel (who do they respond to more?)
-    let preferredChannel = journey.preferred_channel || 'unknown';
+    let preferredChannel = (journey.metadata as any)?.preferred_channel || 'unknown';
     if (callsAnswered > 0 && smsReceived > 0) {
       preferredChannel = callsAnswered > smsReceived ? 'call' : 'sms';
     } else if (callsAnswered > 0) {
@@ -1463,7 +1462,7 @@ async function manageLeadJourneys(
     }
 
     // --- 6c. Compute correct journey stage ---
-    let newStage = journey.journey_stage;
+    let newStage = journey.current_stage;
     const leadStatus = lead.status;
     const lastDisposition = calls.length > 0 ? calls[0].outcome : null;
 
@@ -1522,54 +1521,43 @@ async function manageLeadJourneys(
     }
 
     // Log stage change
-    const stageChanged = newStage !== journey.journey_stage;
+    const stageChanged = newStage !== journey.current_stage;
     if (stageChanged) {
       result.stage_changes++;
       await supabase.from('journey_event_log').insert({
         user_id: userId,
         lead_id: lead.id,
         event_type: 'stage_change',
-        from_stage: journey.journey_stage,
+        event_source: 'autonomous_engine',
+        from_stage: journey.current_stage,
         to_stage: newStage,
-        details: {
+        event_data: {
           reason: `Auto-computed from ${callAttempts} calls (${callsAnswered} answered), ${smsReceived} SMS replies, interest=${interestLevel}, days_silent=${Math.round(daysSinceTouch)}`,
         },
       });
     }
 
     // --- 6d. Update journey state (including cost tracking and disposition) ---
-    const longestGap = Math.max(journey.longest_gap_days || 0, daysSinceTouch);
     // Estimate cost: ~7 cents per call attempt, ~1 cent per SMS
     const estCallCost = callAttempts * 7;
     const estSmsCost = smsSent * 1;
     // Estimate value based on disposition conversion probability
     const estValue = lastDispValue
-      ? Math.round(lastDispValue.conversion_probability * 10000) // cents, assuming $100 deal value
+      ? Math.round(lastDispValue.conversion_probability * 10000)
       : Math.round((interestLevel / 10) * 5000);
 
     await supabase
       .from('lead_journey_state')
       .update({
-        journey_stage: newStage,
+        current_stage: newStage,
+        previous_stage: stageChanged ? journey.current_stage : journey.previous_stage,
         total_touches: totalTouches,
-        call_attempts: callAttempts,
-        calls_answered: callsAnswered,
-        sms_sent: smsSent,
-        sms_received: smsReceived,
-        last_touch_at: lastTouchAt?.toISOString() || journey.last_touch_at,
-        last_positive_signal_at: answeredCalls.length > 0 ? answeredCalls[0].created_at : journey.last_positive_signal_at,
-        first_contact_at: calls.length > 0 ? calls[calls.length - 1].created_at : journey.first_contact_at,
-        interest_level: interestLevel,
-        sentiment_trend: sentimentTrend,
-        last_sentiment_score: lastSentiment,
-        best_hour_to_call: bestHour,
-        preferred_channel: preferredChannel,
-        days_in_current_stage: Math.floor(stageChanged ? 0 : daysInStage),
+        total_calls: callAttempts,
+        total_sms: smsSent,
+        engagement_score: Math.round(interestLevel * 10),
+        sentiment_score: lastSentiment,
         stage_entered_at: stageChanged ? now.toISOString() : journey.stage_entered_at,
-        times_stage_changed: stageChanged ? (journey.times_stage_changed || 0) + 1 : journey.times_stage_changed,
-        longest_gap_days: longestGap,
         updated_at: now.toISOString(),
-        explicit_callback_at: explicitCallback || journey.explicit_callback_at,
         // Cost and ROI tracking
         total_cost_cents: estCallCost + estSmsCost,
         call_cost_cents: estCallCost,
@@ -1579,14 +1567,24 @@ async function manageLeadJourneys(
           ? Math.round((estValue / (estCallCost + estSmsCost)) * 100) / 100
           : 0,
         last_disposition: lastDisposition,
+        // Store extended tracking in metadata
+        metadata: {
+          ...(journey.metadata as any || {}),
+          best_hour_to_call: bestHour,
+          preferred_channel: preferredChannel,
+          sentiment_trend: sentimentTrend,
+          calls_answered: callsAnswered,
+          sms_received: smsReceived,
+          total_touches: totalTouches,
+        },
       })
       .eq('id', journey.id);
 
     // --- 6e. Skip action planning for terminal stages ---
     if (['closed_won', 'closed_lost', 'dormant'].includes(newStage)) continue;
 
-    // --- 6f. Check if next_action_at is in the future (already has a pending action) ---
-    if (journey.next_action_at && new Date(journey.next_action_at) > now && !stageChanged) continue;
+    // --- 6f. Check if next_action_scheduled_at is in the future (already has a pending action) ---
+    if (journey.next_action_scheduled_at && new Date(journey.next_action_scheduled_at) > now && !stageChanged) continue;
 
     // --- 6g. CALLBACK_SET: Honor explicit requests exactly ---
     if (newStage === 'callback_set' && explicitCallback) {
@@ -1631,28 +1629,23 @@ async function manageLeadJourneys(
       // Not time yet - set next check to 1.5hrs before callback
       const reminderTime = new Date(callbackTime.getTime() - 1.5 * 60 * 60 * 1000);
       await supabase.from('lead_journey_state').update({
-        next_action_type: 'confirmation_sms',
-        next_action_at: reminderTime.toISOString(),
-        next_action_reason: `Waiting for callback at ${callbackTime.toLocaleString()}`,
+        next_recommended_action: 'confirmation_sms',
+        next_action_scheduled_at: reminderTime.toISOString(),
+        metadata: { ...(journey.metadata as any || {}), next_action_reason: `Waiting for callback at ${callbackTime.toLocaleString()}` },
       }).eq('id', journey.id);
       continue;
     }
 
     // --- 6h. Match against playbook rules ---
     const leadCampaignType = journey.campaign_type || 'cold_outreach';
-    const stageRules = rules.filter((r: any) =>
-      r.journey_stage === newStage &&
-      totalTouches >= r.min_touches &&
-      totalTouches <= r.max_touches &&
-      daysInStage >= r.min_days_in_stage &&
-      daysInStage <= r.max_days_in_stage &&
-      interestLevel >= r.min_interest_level &&
-      interestLevel <= r.max_interest_level &&
-      // Don't fire rules that require no explicit callback when one exists
-      (!r.requires_no_explicit_callback || !explicitCallback) &&
-      // Campaign type filter: 'all' matches everything, or must match exactly
-      (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType)
-    );
+    const stageRules = rules.filter((r: any) => {
+      const conditions = r.conditions || {};
+      return r.trigger_stage === newStage &&
+        totalTouches >= (conditions.min_touches ?? 0) &&
+        totalTouches <= (conditions.max_touches ?? 999) &&
+        // Campaign type filter
+        (r.campaign_type === 'all' || !r.campaign_type || r.campaign_type === leadCampaignType);
+    });
 
     // --- PERPETUAL FOLLOW-UP: If no playbook rule matched and perpetual is enabled ---
     let matchedRule = true; // track whether a playbook rule was found
@@ -1858,27 +1851,30 @@ async function manageLeadJourneys(
         const targetStage = config.target_stage;
         if (targetStage) {
           await supabase.from('lead_journey_state').update({
-            journey_stage: targetStage,
+            current_stage: targetStage,
+            previous_stage: newStage,
             stage_entered_at: now.toISOString(),
-            times_stage_changed: (journey.times_stage_changed || 0) + 1,
           }).eq('id', journey.id);
           await supabase.from('journey_event_log').insert({
             user_id: userId, lead_id: lead.id, event_type: 'rule_fired',
-            from_stage: newStage, to_stage: targetStage, rule_name: bestRule.rule_name,
-            details: { reason: bestRule.description },
+            event_source: bestRule.name || 'playbook',
+            from_stage: newStage, to_stage: targetStage,
+            event_data: { reason: 'move_stage action' },
           });
           result.stage_changes++;
         }
         continue;
       }
 
-      case 'wait':
-        // Just update next check time
+      case 'wait': {
+        const actions = bestRule.actions || {};
+        const delayHours = actions.delay_hours || 24;
         await supabase.from('lead_journey_state').update({
-          next_action_type: 'wait',
-          next_action_at: new Date(now.getTime() + (bestRule.delay_hours || 24) * 60 * 60 * 1000).toISOString(),
-          next_action_reason: bestRule.description,
+          next_recommended_action: 'wait',
+          next_action_scheduled_at: new Date(now.getTime() + delayHours * 60 * 60 * 1000).toISOString(),
         }).eq('id', journey.id);
+        continue;
+      }
         continue;
 
       default:
@@ -1946,11 +1942,11 @@ async function queueJourneyAction(
   await supabase.from('ai_action_queue').insert({
     user_id: userId,
     action_type: action.action_type,
-    action_params: action.params,
-    priority: action.priority,
+    title: `Journey: ${action.action_type} for lead`,
+    action_payload: action.params,
+    priority: action.priority === 1 ? 'high' : action.priority === 2 ? 'medium' : 'low',
     status: autoApprove ? 'approved' : 'pending',
-    requires_approval: settings.autonomy_level === 'approval_required',
-    reasoning: action.reasoning,
+    description: action.reasoning,
     source: 'journey_engine',
     approved_at: autoApprove ? new Date().toISOString() : null,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -1961,9 +1957,9 @@ async function queueJourneyAction(
     user_id: userId,
     lead_id: lead.id,
     event_type: 'action_queued',
-    from_stage: journey.journey_stage,
-    rule_name: action.rule_name,
-    details: {
+    event_source: action.rule_name || 'journey_engine',
+    from_stage: journey.current_stage,
+    event_data: {
       action_type: action.action_type,
       params: action.params,
       priority: action.priority,
@@ -1972,9 +1968,8 @@ async function queueJourneyAction(
 
   // Update journey state next_action tracking
   await supabase.from('lead_journey_state').update({
-    next_action_type: action.action_type.replace('journey_', '').replace('send_followup_', ''),
-    next_action_at: action.next_action_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    next_action_reason: action.reasoning,
+    next_recommended_action: action.action_type.replace('journey_', '').replace('send_followup_', ''),
+    next_action_scheduled_at: action.next_action_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', journey.id);
 }
@@ -2027,13 +2022,13 @@ async function planDay(
   // Lead inventory by journey stage
   const { data: stageData } = await supabase
     .from('lead_journey_state')
-    .select('journey_stage')
+    .select('current_stage')
     .eq('user_id', userId)
-    .not('journey_stage', 'in', '("closed_won","closed_lost")');
+    .not('current_stage', 'in', '("closed_won","closed_lost")');
 
   const stageCounts: Record<string, number> = {};
   (stageData || []).forEach((s: any) => {
-    stageCounts[s.journey_stage] = (stageCounts[s.journey_stage] || 0) + 1;
+    stageCounts[s.current_stage] = (stageCounts[s.current_stage] || 0) + 1;
   });
 
   const callbacks = stageCounts['callback_set'] || 0;

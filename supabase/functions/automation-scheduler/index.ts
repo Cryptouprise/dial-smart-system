@@ -62,7 +62,7 @@ async function processRule(supabase: any, rule: AutomationRule) {
   // Get leads to process based on rule type and conditions
   let leadsQuery = supabase
     .from('leads')
-    .select('id, phone_number, status, last_contacted_at, priority_score')
+    .select('id, phone_number, status, last_contacted_at, priority')
     .eq('user_id', rule.user_id)
     .eq('do_not_call', false)
     .in('status', ['new', 'contacted', 'callback']);
@@ -196,7 +196,7 @@ async function processRule(supabase: any, rule: AutomationRule) {
         // Phase 6: Record lead score at queue-time for feedback loop
         // This lets us later compare "what we predicted" vs "what happened"
         try {
-          const leadScore = (lead as any).priority_score;
+          const leadScore = (lead as any).priority;
           if (leadScore !== undefined && leadScore !== null) {
             await supabase.from('lead_score_outcomes').insert({
               user_id: rule.user_id,
