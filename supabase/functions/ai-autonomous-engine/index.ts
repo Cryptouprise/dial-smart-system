@@ -1866,13 +1866,15 @@ async function manageLeadJourneys(
         continue;
       }
 
-      case 'wait':
-        // Just update next check time
+      case 'wait': {
+        const actions = bestRule.actions || {};
+        const delayHours = actions.delay_hours || 24;
         await supabase.from('lead_journey_state').update({
-          next_action_type: 'wait',
-          next_action_at: new Date(now.getTime() + (bestRule.delay_hours || 24) * 60 * 60 * 1000).toISOString(),
-          next_action_reason: bestRule.description,
+          next_recommended_action: 'wait',
+          next_action_scheduled_at: new Date(now.getTime() + delayHours * 60 * 60 * 1000).toISOString(),
         }).eq('id', journey.id);
+        continue;
+      }
         continue;
 
       default:
