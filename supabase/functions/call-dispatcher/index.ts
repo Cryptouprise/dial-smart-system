@@ -1074,7 +1074,32 @@ serve(async (req) => {
     }
 
     console.log(`[Dispatcher] Query result: Found ${availableNumbers.length} numbers for dispatch`);
-    
+
+    // ============= CAMPAIGN-SCOPED PHONE POOLS =============
+    // If a campaign has explicit numbers in campaign_phone_pools, those are the ONLY
+    // numbers eligible for that campaign. Empty pool = use global pool (backward compatible).
+    const campaignIds = activeCampaigns.map((c: any) => c.id);
+    const campaignPoolMap: Record<string, Set<string>> = {};
+    if (campaignIds.length > 0) {
+      const { data: poolRows, error: poolErr } = await supabase
+        .from('campaign_phone_pools')
+        .select('campaign_id, phone_number_id')
+        .in('campaign_id', campaignIds);
+      if (poolErr) {
+        console.error('[Dispatcher] Error fetching campaign_phone_pools:', poolErr);
+      } else {
+        for (const row of poolRows || []) {
+          if (!row.campaign_id || !row.phone_number_id) continue;
+          if (!campaignPoolMap[row.campaign_id]) campaignPoolMap[row.campaign_id] = new Set();
+          campaignPoolMap[row.campaign_id].add(row.phone_number_id);
+        }
+        const scopedCount = Object.keys(campaignPoolMap).length;
+        if (scopedCount > 0) {
+          console.log(`[Dispatcher] ${scopedCount} campaign(s) have explicit phone pools assigned`);
+        }
+      }
+    }
+
     // If still empty for Retell campaigns, try Retell sync fallback
     if (availableNumbers.length === 0 && hasRetellCampaign) {
       const { data: allUserNumbers } = await supabase
