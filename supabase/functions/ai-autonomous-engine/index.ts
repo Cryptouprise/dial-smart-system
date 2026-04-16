@@ -1538,38 +1538,26 @@ async function manageLeadJourneys(
     }
 
     // --- 6d. Update journey state (including cost tracking and disposition) ---
-    const longestGap = Math.max(journey.longest_gap_days || 0, daysSinceTouch);
     // Estimate cost: ~7 cents per call attempt, ~1 cent per SMS
     const estCallCost = callAttempts * 7;
     const estSmsCost = smsSent * 1;
     // Estimate value based on disposition conversion probability
     const estValue = lastDispValue
-      ? Math.round(lastDispValue.conversion_probability * 10000) // cents, assuming $100 deal value
+      ? Math.round(lastDispValue.conversion_probability * 10000)
       : Math.round((interestLevel / 10) * 5000);
 
     await supabase
       .from('lead_journey_state')
       .update({
-        journey_stage: newStage,
+        current_stage: newStage,
+        previous_stage: stageChanged ? journey.current_stage : journey.previous_stage,
         total_touches: totalTouches,
-        call_attempts: callAttempts,
-        calls_answered: callsAnswered,
-        sms_sent: smsSent,
-        sms_received: smsReceived,
-        last_touch_at: lastTouchAt?.toISOString() || journey.last_touch_at,
-        last_positive_signal_at: answeredCalls.length > 0 ? answeredCalls[0].created_at : journey.last_positive_signal_at,
-        first_contact_at: calls.length > 0 ? calls[calls.length - 1].created_at : journey.first_contact_at,
-        interest_level: interestLevel,
-        sentiment_trend: sentimentTrend,
-        last_sentiment_score: lastSentiment,
-        best_hour_to_call: bestHour,
-        preferred_channel: preferredChannel,
-        days_in_current_stage: Math.floor(stageChanged ? 0 : daysInStage),
+        total_calls: callAttempts,
+        total_sms: smsSent,
+        engagement_score: Math.round(interestLevel * 10),
+        sentiment_score: lastSentiment,
         stage_entered_at: stageChanged ? now.toISOString() : journey.stage_entered_at,
-        times_stage_changed: stageChanged ? (journey.times_stage_changed || 0) + 1 : journey.times_stage_changed,
-        longest_gap_days: longestGap,
         updated_at: now.toISOString(),
-        explicit_callback_at: explicitCallback || journey.explicit_callback_at,
         // Cost and ROI tracking
         total_cost_cents: estCallCost + estSmsCost,
         call_cost_cents: estCallCost,
@@ -1579,14 +1567,24 @@ async function manageLeadJourneys(
           ? Math.round((estValue / (estCallCost + estSmsCost)) * 100) / 100
           : 0,
         last_disposition: lastDisposition,
+        // Store extended tracking in metadata
+        metadata: {
+          ...(journey.metadata as any || {}),
+          best_hour_to_call: bestHour,
+          preferred_channel: preferredChannel,
+          sentiment_trend: sentimentTrend,
+          calls_answered: callsAnswered,
+          sms_received: smsReceived,
+          total_touches: totalTouches,
+        },
       })
       .eq('id', journey.id);
 
     // --- 6e. Skip action planning for terminal stages ---
     if (['closed_won', 'closed_lost', 'dormant'].includes(newStage)) continue;
 
-    // --- 6f. Check if next_action_at is in the future (already has a pending action) ---
-    if (journey.next_action_at && new Date(journey.next_action_at) > now && !stageChanged) continue;
+    // --- 6f. Check if next_action_scheduled_at is in the future (already has a pending action) ---
+    if (journey.next_action_scheduled_at && new Date(journey.next_action_scheduled_at) > now && !stageChanged) continue;
 
     // --- 6g. CALLBACK_SET: Honor explicit requests exactly ---
     if (newStage === 'callback_set' && explicitCallback) {
