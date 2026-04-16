@@ -1093,7 +1093,7 @@ async function optimizePlaybook(
     const { count: timesFired } = await supabase.from('journey_event_log')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('rule_name', rule.rule_name)
+      .eq('event_source', rule.name)
       .eq('event_type', 'action_queued')
       .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
