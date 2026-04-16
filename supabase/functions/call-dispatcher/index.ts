@@ -734,7 +734,7 @@ serve(async (req) => {
         .map((cl: any) => cl.lead_id)
     );
     
-    // Build set of leads that had successful/connected calls
+    // Build set of leads that had successful/connected calls (recent - 5 min window)
     const successfullyContactedLeadIds = new Set(
       (recentCallLogs || [])
         .filter((cl: any) => {
@@ -749,7 +749,25 @@ serve(async (req) => {
         .map((cl: any) => cl.lead_id)
     );
 
-    console.log(`[Dispatcher] Recently called leads: ${recentlyCalledLeadIds.size}, Successfully contacted: ${successfullyContactedLeadIds.size}`);
+    // ============= TERMINAL DISPOSITION CHECK (FULL CAMPAIGN HISTORY) =============
+    // Never re-call leads that already reached a terminal successful outcome in this campaign
+    const terminalOutcomes = ['appointment_set', 'appointment_booked', 'transferred', 'interested', 'converted', 'sold', 'booked'];
+    const terminalDispositions = ['appointment_booked', 'transferred', 'interested', 'converted', 'sold'];
+    
+    const { data: terminalCallLogs } = await supabase
+      .from('call_logs')
+      .select('lead_id, outcome, auto_disposition')
+      .in('campaign_id', campaignIds)
+      .or(
+        terminalOutcomes.map(o => `outcome.eq.${o}`).join(',') + ',' +
+        terminalDispositions.map(d => `auto_disposition.eq.${d}`).join(',')
+      );
+
+    const terminallyContactedLeadIds = new Set(
+      (terminalCallLogs || []).map((cl: any) => cl.lead_id)
+    );
+
+    console.log(`[Dispatcher] Recently called leads: ${recentlyCalledLeadIds.size}, Successfully contacted: ${successfullyContactedLeadIds.size}, Terminal dispositions (full history): ${terminallyContactedLeadIds.size}`);
 
     // Get leads from campaign_leads that need to be queued - include callback fields for filtering
     const { data: campaignLeads, error: leadsError } = await supabase
