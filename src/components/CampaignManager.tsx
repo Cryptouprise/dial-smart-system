@@ -34,6 +34,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAIErrors } from '@/contexts/AIErrorContext';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { executeTestCall } from '@/lib/testCallUtils';
+import { CampaignPhonePool } from './CampaignPhonePool';
 
 interface Campaign {
   id: string;
@@ -105,6 +106,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [dispositionCampaign, setDispositionCampaign] = useState<Campaign | null>(null);
+  const [phonePoolCampaign, setPhonePoolCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
@@ -1496,6 +1498,15 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setPhonePoolCampaign(campaign)}
+                    title="Phone Numbers (caller ID pool)"
+                  >
+                    <Phone className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleCloneCampaign(campaign)}
                     title="Clone Campaign"
                   >
@@ -2019,7 +2030,20 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
         </Dialog>
       )}
 
-      {/* Campaign Wizard */}
+      {/* Campaign Phone Pool Dialog */}
+      {phonePoolCampaign && (
+        <Dialog open={!!phonePoolCampaign} onOpenChange={(open) => !open && setPhonePoolCampaign(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Phone Numbers — {phonePoolCampaign.name}</DialogTitle>
+              <DialogDescription>
+                Pick which caller IDs this campaign can dial from. If you assign any numbers, the dispatcher will use ONLY these for this campaign (great for "NJ leads → NJ numbers"). Leave empty to use all eligible numbers.
+              </DialogDescription>
+            </DialogHeader>
+            <CampaignPhonePool campaignId={phonePoolCampaign.id} />
+          </DialogContent>
+        </Dialog>
+      )}
       <CampaignWizard
         open={showWizard}
         onClose={() => setShowWizard(false)}
