@@ -1449,6 +1449,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setDispositionCampaign(campaign)}
+                    title="Disposition Dashboard"
+                    className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleEdit(campaign)}
                     title="Edit"
                   >
