@@ -6,6 +6,83 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= US STATE → TIMEZONE MAPPING =============
+// Used for per-lead calling hours enforcement based on the lead's state
+const STATE_TIMEZONE_MAP: Record<string, string> = {
+  // Eastern
+  CT: 'America/New_York', DE: 'America/New_York', FL: 'America/New_York',
+  GA: 'America/New_York', IN: 'America/Indiana/Indianapolis', KY: 'America/New_York',
+  ME: 'America/New_York', MD: 'America/New_York', MA: 'America/New_York',
+  MI: 'America/New_York', NH: 'America/New_York', NJ: 'America/New_York',
+  NY: 'America/New_York', NC: 'America/New_York', OH: 'America/New_York',
+  PA: 'America/New_York', RI: 'America/New_York', SC: 'America/New_York',
+  VT: 'America/New_York', VA: 'America/New_York', WV: 'America/New_York',
+  DC: 'America/New_York',
+  // Central
+  AL: 'America/Chicago', AR: 'America/Chicago', IL: 'America/Chicago',
+  IA: 'America/Chicago', KS: 'America/Chicago', LA: 'America/Chicago',
+  MN: 'America/Chicago', MS: 'America/Chicago', MO: 'America/Chicago',
+  NE: 'America/Chicago', ND: 'America/Chicago', OK: 'America/Chicago',
+  SD: 'America/Chicago', TN: 'America/Chicago', TX: 'America/Chicago',
+  WI: 'America/Chicago',
+  // Mountain
+  AZ: 'America/Phoenix', CO: 'America/Denver', ID: 'America/Boise',
+  MT: 'America/Denver', NM: 'America/Denver', UT: 'America/Denver',
+  WY: 'America/Denver',
+  // Pacific
+  CA: 'America/Los_Angeles', NV: 'America/Los_Angeles',
+  OR: 'America/Los_Angeles', WA: 'America/Los_Angeles',
+  // Non-contiguous
+  AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
+  // Territories
+  PR: 'America/Puerto_Rico', VI: 'America/Virgin', GU: 'Pacific/Guam',
+  AS: 'Pacific/Pago_Pago', MP: 'Pacific/Guam',
+};
+
+/**
+ * Resolve timezone for a lead based on their state field.
+ * Returns null if state is missing or unrecognized.
+ */
+function getLeadTimezone(state: string | null | undefined): string | null {
+  if (!state) return null;
+  const normalized = state.trim().toUpperCase();
+  // Handle full state names by checking first two chars (works for abbreviations)
+  // Also try the raw value in case it's already an abbreviation
+  return STATE_TIMEZONE_MAP[normalized] || null;
+}
+
+/**
+ * Check if it's currently within calling hours for a specific timezone.
+ * Returns { allowed: boolean, reason: string }
+ */
+function isWithinCallingHours(
+  tz: string,
+  startHour: string,
+  endHour: string,
+): { allowed: boolean; reason: string } {
+  try {
+    const nowInTz = new Date().toLocaleString('en-US', { timeZone: tz });
+    const tzDate = new Date(nowInTz);
+    const currentMinutes = tzDate.getHours() * 60 + tzDate.getMinutes();
+
+    const [startH, startM] = startHour.split(':').map(Number);
+    const [endH, endM] = endHour.split(':').map(Number);
+    const startMin = startH * 60 + (startM || 0);
+    const endMin = endH * 60 + (endM || 0);
+
+    if (currentMinutes < startMin || currentMinutes >= endMin) {
+      return {
+        allowed: false,
+        reason: `Outside ${startHour}-${endHour} in ${tz} (currently ${tzDate.getHours()}:${String(tzDate.getMinutes()).padStart(2, '0')})`,
+      };
+    }
+    return { allowed: true, reason: '' };
+  } catch {
+    // If timezone is invalid, allow the call (don't block on bad data)
+    return { allowed: true, reason: '' };
+  }
+}
+
 async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   console.log('[Dispatcher Cleanup] Cleaning up stuck calls for user:', userId);
 
