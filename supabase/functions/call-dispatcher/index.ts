@@ -759,12 +759,12 @@ serve(async (req) => {
       console.log('Workflow first steps:', Object.keys(workflowFirstSteps).length, 'workflows checked');
     }
 
-    // Check existing queue entries
+    // Check ALL existing queue entries (any status) — prevents re-queuing leads that already
+    // have completed/failed entries. This is the primary re-calling prevention gate.
     const { data: existingQueue } = await supabase
       .from('dialing_queues')
-      .select('lead_id')
-      .in('campaign_id', campaignIds)
-      .in('status', ['pending', 'calling']);
+      .select('lead_id, status')
+      .in('campaign_id', campaignIds);
 
     const existingLeadIds = new Set((existingQueue || []).map(q => q.lead_id));
 
