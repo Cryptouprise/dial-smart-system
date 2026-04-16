@@ -83,19 +83,35 @@ export const useCampaignResults = () => {
   const fetchCampaignResults = useCallback(async (campaignId: string, dateRange?: { start: Date; end: Date }) => {
     setIsLoading(true);
     try {
-      let callQuery = supabase
-        .from('call_logs')
-        .select('*')
-        .eq('campaign_id', campaignId);
+      // Fetch ALL call logs using pagination to bypass the 1000-row default limit
+      let allCallLogs: any[] = [];
+      let page = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
 
-      if (dateRange) {
-        callQuery = callQuery
-          .gte('created_at', dateRange.start.toISOString())
-          .lte('created_at', dateRange.end.toISOString());
+      while (hasMore) {
+        let callQuery = supabase
+          .from('call_logs')
+          .select('*')
+          .eq('campaign_id', campaignId)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (dateRange) {
+          callQuery = callQuery
+            .gte('created_at', dateRange.start.toISOString())
+            .lte('created_at', dateRange.end.toISOString());
+        }
+
+        const { data: callLogs, error: callError } = await callQuery;
+        if (callError) throw callError;
+
+        const batch = callLogs || [];
+        allCallLogs = allCallLogs.concat(batch);
+        hasMore = batch.length === PAGE_SIZE;
+        page++;
       }
 
-      const { data: callLogs, error: callError } = await callQuery;
-      if (callError) throw callError;
+      const callLogs = allCallLogs;
 
       const { data: campaignLeads } = await supabase
         .from('campaign_leads')
