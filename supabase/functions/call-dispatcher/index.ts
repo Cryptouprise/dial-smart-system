@@ -1259,7 +1259,7 @@ serve(async (req) => {
             ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id, state').in('id', leadIds)
             : { data: [] },
           claimedCampaignIds.length > 0
-            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata').in('id', claimedCampaignIds)
+            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end').in('id', claimedCampaignIds)
             : { data: [] },
         ]);
 
@@ -1281,7 +1281,7 @@ serve(async (req) => {
         .select(`
           *,
           leads (id, phone_number, first_name, last_name, ghl_contact_id, state),
-          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
+          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end)
         `)
         .in('campaign_id', campaignIds)
         .eq('status', 'pending')
