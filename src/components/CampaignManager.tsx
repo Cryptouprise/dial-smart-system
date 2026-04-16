@@ -34,6 +34,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAIErrors } from '@/contexts/AIErrorContext';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { executeTestCall } from '@/lib/testCallUtils';
+import { CampaignPhonePool } from './CampaignPhonePool';
 
 interface Campaign {
   id: string;
