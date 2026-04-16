@@ -1504,69 +1504,64 @@ serve(async (req) => {
     }
 
     // ========================================================================
-    // CREDIT SYSTEM: Post-call cost finalization
+    // COST TRACKING: Fetch actual Retell cost for EVERY call (not gated by org)
     // ========================================================================
-    // NOTE: Some environments don't yet persist organization_id on call_logs, so we
-    // gracefully accept it from webhook metadata when available.
+    let retellActualCostCents: number | null = null;
+    const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
+
+    if (retellApiKey && callLog?.id) {
+      try {
+        const callDetailsResponse = await fetch(
+          `https://api.retellai.com/v2/get-call/${call.call_id}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${retellApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        if (callDetailsResponse.ok) {
+          const callDetails = await callDetailsResponse.json();
+
+          if (callDetails.call_cost?.combined_cost) {
+            retellActualCostCents = Math.round(callDetails.call_cost.combined_cost);
+          } else if (callDetails.cost_breakdown) {
+            const breakdown = callDetails.cost_breakdown;
+            retellActualCostCents = Math.round(
+              (breakdown.llm_cost || 0) +
+              (breakdown.stt_cost || 0) +
+              (breakdown.tts_cost || 0) +
+              (breakdown.telephony_cost || 0)
+            );
+          }
+
+          // ALWAYS save cost to call_logs regardless of billing/org status
+          await supabase
+            .from('call_logs')
+            .update({
+              retell_cost_cents: retellActualCostCents,
+              cost_breakdown: callDetails.cost_breakdown || callDetails.call_cost || null,
+              token_usage: callDetails.llm_token_usage || null
+            })
+            .eq('id', callLog.id);
+
+          console.log(`[Retell Webhook] Cost saved: ${retellActualCostCents}c for call ${call.call_id}`);
+        }
+      } catch (costFetchError) {
+        console.error('[Retell Webhook] Error fetching Retell cost:', costFetchError);
+      }
+    }
+
+    // ========================================================================
+    // CREDIT SYSTEM: Post-call cost finalization (only if org has billing)
+    // ========================================================================
     const webhookOrganizationId = (metadata as any)?.organization_id || (callLog as any)?.organization_id;
 
     if (webhookOrganizationId && durationSeconds >= 0) {
       try {
         console.log(`[Retell Webhook] Finalizing credit cost for org ${webhookOrganizationId}, duration ${durationSeconds}s`);
-
-        // Fetch actual cost from Retell API if available
-        let retellActualCostCents: number | null = null;
-        const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
-
-        if (retellApiKey) {
-          try {
-            const callDetailsResponse = await fetch(
-              `https://api.retellai.com/v2/get-call/${call.call_id}`,
-              {
-                method: 'GET',
-                headers: {
-                  'Authorization': `Bearer ${retellApiKey}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-
-            if (callDetailsResponse.ok) {
-              const callDetails = await callDetailsResponse.json();
-
-              // Retell provides cost_breakdown or call_cost with detailed costs
-              if (callDetails.call_cost?.combined_cost) {
-                retellActualCostCents = Math.round(callDetails.call_cost.combined_cost);
-                console.log(`[Retell Webhook] Actual Retell cost: ${retellActualCostCents}c`);
-              } else if (callDetails.cost_breakdown) {
-                // Sum up all cost components
-                const breakdown = callDetails.cost_breakdown;
-                retellActualCostCents = Math.round(
-                  (breakdown.llm_cost || 0) +
-                  (breakdown.stt_cost || 0) +
-                  (breakdown.tts_cost || 0) +
-                  (breakdown.telephony_cost || 0)
-                );
-                console.log(`[Retell Webhook] Calculated Retell cost from breakdown: ${retellActualCostCents}c`);
-              }
-
-              // Update call_logs with actual cost data
-              if (callLog?.id) {
-                await supabase
-                  .from('call_logs')
-                  .update({
-                    retell_cost_cents: retellActualCostCents,
-                    cost_breakdown: callDetails.cost_breakdown || callDetails.call_cost || null,
-                    token_usage: callDetails.llm_token_usage || null
-                  })
-                  .eq('id', callLog.id);
-              }
-            }
-          } catch (costFetchError) {
-            console.error('[Retell Webhook] Error fetching Retell cost:', costFetchError);
-            // Continue with estimated cost
-          }
-        }
 
         // Finalize the cost (releases reservation and deducts actual)
         // Pass agent_id for agent-specific pricing lookup
