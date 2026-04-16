@@ -1554,39 +1554,33 @@ serve(async (req) => {
         }
         
         // ============= NUMBER ROTATION LOGIC =============
-        // Select best caller ID based on rotation, spam status, and local presence
-        // toPhone already declared above in dedup check
+        // TRUE ROUND-ROBIN: Pick the number with the lowest total usage (daily_calls + batch).
+        // Local presence is a minor tiebreaker only — even distribution ALWAYS wins.
         const toAreaCode = toPhone?.replace(/\D/g, '').slice(1, 4);
         
-        // Score each number from provider-specific pool
         const numberPool = isTelnyx ? telnyxAvailableNumbers : retellAvailableNumbers;
 
         const scoredNumbers = numberPool
           .filter((n: any) => {
-            // Skip quarantined numbers
             if (n.quarantine_until && new Date(n.quarantine_until) > new Date()) return false;
-            // Skip spam-flagged numbers
             if (n.is_spam) return false;
             return true;
           })
           .map((n: any) => {
-            let score = 100;
+            // Total usage = persisted daily_calls + this-batch calls
+            const totalUsage = (n.daily_calls || 0) + (numberUsageInBatch[n.id] || 0);
             const numAreaCode = n.number.replace(/\D/g, '').slice(1, 4);
+            // Local presence is a tiny tiebreaker (0.1 points), never overrides usage
+            const localPresenceBonus = (numAreaCode === toAreaCode) ? 0.1 : 0;
 
-            // Local presence bonus (+50 points)
-            if (numAreaCode === toAreaCode) score += 50;
-
-            // Penalize high daily usage (-1 per call)
-            score -= n.daily_calls || 0;
-
-            // Penalize usage in this batch (-20 per call)
-            score -= (numberUsageInBatch[n.id] || 0) * 20;
-
-            return { number: n, score };
+            return { number: n, totalUsage, localPresenceBonus };
           });
         
-        // Sort by score descending
-        scoredNumbers.sort((a, b) => b.score - a.score);
+        // Sort: lowest usage first, then local presence as tiebreaker
+        scoredNumbers.sort((a, b) => {
+          if (a.totalUsage !== b.totalUsage) return a.totalUsage - b.totalUsage;
+          return b.localPresenceBonus - a.localPresenceBonus; // prefer local match on ties
+        });
         
         if (scoredNumbers.length === 0) {
           const providerLabel = isTelnyx ? 'Telnyx' : 'Retell';
@@ -1608,7 +1602,7 @@ serve(async (req) => {
         // Track usage in this batch
         numberUsageInBatch[selectedNumber.id] = (numberUsageInBatch[selectedNumber.id] || 0) + 1;
         
-        console.log(`[Dispatcher] Selected caller ID: ${callerId} for lead ${queueItem.lead_id} (score: ${scoredNumbers[0].score})`);
+        console.log(`[Dispatcher] ROUND-ROBIN selected: ${callerId} (usage: ${scoredNumbers[0].totalUsage}, pool: ${scoredNumbers.length} numbers)`);
         
         // status='calling' + attempts already set by atomic claim (or manual dispatch pre-loop)
 
@@ -1677,7 +1671,8 @@ serve(async (req) => {
         }
 
         // Update daily_calls on the phone number (with auto-reset if date changed)
-        await supabase.rpc('increment_daily_calls_with_reset', { phone_number_id: selectedNumber.id });
+        // CRITICAL: parameter name must match the SQL function signature (target_phone_id)
+        await supabase.rpc('increment_daily_calls_with_reset', { target_phone_id: selectedNumber.id });
 
       } catch (callError: any) {
         console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);

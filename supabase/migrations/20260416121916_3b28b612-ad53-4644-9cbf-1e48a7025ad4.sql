@@ -1,0 +1,1 @@
+UPDATE phone_numbers SET max_daily_calls = 10000, rotation_enabled = true WHERE status = 'active' AND retell_phone_id IS NOT NULL;
