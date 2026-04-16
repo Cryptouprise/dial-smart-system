@@ -1256,7 +1256,7 @@ serve(async (req) => {
 
         const [leadsResult, campaignsResult] = await Promise.all([
           leadIds.length > 0
-            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id').in('id', leadIds)
+            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id, state').in('id', leadIds)
             : { data: [] },
           claimedCampaignIds.length > 0
             ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata').in('id', claimedCampaignIds)
@@ -1280,7 +1280,7 @@ serve(async (req) => {
         .from('dialing_queues')
         .select(`
           *,
-          leads (id, phone_number, first_name, last_name, ghl_contact_id),
+          leads (id, phone_number, first_name, last_name, ghl_contact_id, state),
           campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata)
         `)
         .in('campaign_id', campaignIds)
