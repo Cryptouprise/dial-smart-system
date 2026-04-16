@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock, Upload, Copy, Check, ChevronsUpDown, ExternalLink, Webhook } from 'lucide-react';
+import { Plus, Play, Pause, Edit, Trash2, Users, Activity, Shield, TrendingUp, AlertCircle, Phone, PhoneOff, Workflow, MessageSquare, Calendar, CalendarOff, Bot, Zap, SkipForward, RotateCcw, Eye, ShieldCheck, Clock, Upload, Copy, Check, ChevronsUpDown, ExternalLink, Webhook, BarChart3 } from 'lucide-react';
+import CampaignDispositionDashboard from './CampaignDispositionDashboard';
 import { QuickLeadLoader } from './QuickLeadLoader';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { AiSmsAgentGenerator } from './AiSmsAgentGenerator';
@@ -103,6 +104,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [dispositionCampaign, setDispositionCampaign] = useState<Campaign | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [viewingCallsFor, setViewingCallsFor] = useState<string | null>(null);
   const [viewingLiveStatus, setViewingLiveStatus] = useState<string | null>(null);
@@ -1447,6 +1449,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setDispositionCampaign(campaign)}
+                    title="Disposition Dashboard"
+                    className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleEdit(campaign)}
                     title="Edit"
                   >
@@ -1987,6 +1999,24 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
             setSmsAgentCampaign(null);
           }}
         />
+      )}
+
+      {/* Disposition Dashboard Dialog */}
+      {dispositionCampaign && (
+        <Dialog open={!!dispositionCampaign} onOpenChange={(open) => !open && setDispositionCampaign(null)}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Disposition Dashboard — {dispositionCampaign.name}</DialogTitle>
+              <DialogDescription>
+                Bird's-eye view of every call, disposition, and dollar spent on this campaign.
+              </DialogDescription>
+            </DialogHeader>
+            <CampaignDispositionDashboard
+              campaignId={dispositionCampaign.id}
+              campaignName={dispositionCampaign.name}
+            />
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Campaign Wizard */}
