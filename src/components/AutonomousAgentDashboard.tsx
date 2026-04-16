@@ -32,7 +32,8 @@ import {
   Users,
   Shield,
   Pencil,
-  Upload
+  Upload,
+  BookOpen
 } from 'lucide-react';
 import { QuickLeadLoader } from './QuickLeadLoader';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
@@ -998,6 +999,12 @@ const AutonomousAgentDashboard: React.FC = () => {
         <TabsContent value="activity" className="mt-4">
           <Suspense fallback={<TabLoader />}>
             <AgentActivityDashboard />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="how-it-works" className="mt-4">
+          <Suspense fallback={<TabLoader />}>
+            <CallLifecycleReference />
           </Suspense>
         </TabsContent>
       </Tabs>
