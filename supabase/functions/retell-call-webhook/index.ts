@@ -945,7 +945,8 @@ serve(async (req) => {
     });
 
     // Determine initial outcome from call status
-    let outcome = mapCallStatusToOutcome(call.call_status, call.disconnection_reason, durationSeconds);
+    // Pass transcript + full call object so the two-signal transfer rule can override.
+    let outcome = mapCallStatusToOutcome(call.call_status, call.disconnection_reason, durationSeconds, formattedTranscript, call);
     
     // ============= SWIFT VOICEMAIL DETECTION =============
     // Check for Retell's real-time AMD detection first (fastest, ~3-5 second detection)
@@ -1737,11 +1738,75 @@ function formatTranscript(
   return rawTranscript || '';
 }
 
+/**
+ * TWO-SIGNAL TRANSFER RULE (2026-04-17):
+ * WE decide transfers, not Retell. Retell sometimes mislabels transferred calls
+ * as 'completed' or 'user_hangup'. So we override Retell's label when BOTH:
+ *   1. transfer_call tool was fired (hard evidence agent decided to transfer)
+ *   2. transcript contains a transfer signal (confirms agent actually said it)
+ * If both true → 'transferred' regardless of disconnection_reason. Otherwise
+ * fall back to Retell's signals.
+ */
+const TRANSFER_TRANSCRIPT_PATTERNS = [
+  /transferring\s+you/i,
+  /connecting\s+you\s+(now|to)/i,
+  /let\s+me\s+(go\s+ahead\s+and\s+)?transfer/i,
+  /hold\s+(on\s+)?(while|as)\s+i\s+transfer/i,
+  /i('ll|\s*will)\s+(get|put|connect)\s+you\s+(through|with)/i,
+  /please\s+hold\s+while\s+i\s+(connect|transfer)/i,
+  /one\s+moment\s+(please|while)/i,
+  /stay\s+on\s+the\s+line/i,
+];
+
+function detectTransferToolFired(call: any): boolean {
+  // Check various places Retell may surface tool-call events
+  if (Array.isArray(call?.tool_calls)) {
+    if (call.tool_calls.some((t: any) =>
+      /transfer/i.test(t?.name || t?.tool_name || t?.function_name || '')
+    )) return true;
+  }
+  const customData = call?.call_analysis?.custom_analysis_data || {};
+  if (customData.transfer_call === true || customData.transferred === true || customData.was_transferred === true) return true;
+  if (typeof customData.outcome === 'string' && /transfer/i.test(customData.outcome)) return true;
+  const toolsUsed = customData.tools_used || customData.tool_calls;
+  if (Array.isArray(toolsUsed) && toolsUsed.some((t: any) =>
+    /transfer/i.test(typeof t === 'string' ? t : (t?.name || t?.tool_name || ''))
+  )) return true;
+  // Transcript-object level: some Retell payloads include tool_call_invocation events
+  if (Array.isArray(call?.transcript_object)) {
+    if (call.transcript_object.some((seg: any) =>
+      /transfer/i.test(seg?.tool_calls?.[0]?.name || seg?.name || '')
+    )) return true;
+  }
+  return false;
+}
+
+function detectTransferTranscriptSignal(transcript?: string): boolean {
+  if (!transcript) return false;
+  return TRANSFER_TRANSCRIPT_PATTERNS.some((re) => re.test(transcript));
+}
+
 function mapCallStatusToOutcome(
   status: string,
   disconnectionReason?: string,
-  durationSeconds?: number
+  durationSeconds?: number,
+  transcript?: string,
+  call?: any
 ): string {
+  // TWO-SIGNAL OVERRIDE: if transfer tool fired AND transcript confirms,
+  // it's a transfer regardless of what Retell says.
+  if (call) {
+    const toolFired = detectTransferToolFired(call);
+    const transcriptSignal = detectTransferTranscriptSignal(transcript);
+    if (toolFired && transcriptSignal) {
+      console.log('[Retell Webhook] TWO-SIGNAL TRANSFER OVERRIDE: tool_fired=true, transcript_signal=true → transferred');
+      return 'transferred';
+    }
+    if (toolFired || transcriptSignal) {
+      console.log(`[Retell Webhook] Partial transfer signal (tool=${toolFired}, transcript=${transcriptSignal}) — falling back to Retell label`);
+    }
+  }
+
   // Very short calls are likely no answers or machine
   if (durationSeconds && durationSeconds < 10) {
     return 'no_answer';
@@ -1753,9 +1818,7 @@ function mapCallStatusToOutcome(
       if (disconnectionReason === 'dial_no_answer') return 'no_answer';
       if (disconnectionReason === 'dial_busy') return 'busy';
       if (disconnectionReason === 'dial_failed') return 'failed';
-      // Transfer detection (bug fix 2026-04-15): Retell uses several disconnection_reason
-      // values for successful transfers. Without this, transfers fell through to
-      // 'completed', which kept the lead in the campaign and got them re-dialed.
+      // Retell's own transfer disconnect_reason (still respected as fallback).
       if (disconnectionReason &&
           /transfer|handoff|warm_transfer|call_transferred/i.test(disconnectionReason)) {
         return 'transferred';
