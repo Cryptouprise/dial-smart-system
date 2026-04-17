@@ -1,94 +1,65 @@
 
-The user wants to understand the transfer architecture AND get a test call placed to their phone (214-529-1531) so they can verify Grace's transfer + Ringba webhook works end-to-end.
+The user wants a direct mapping: yesterday's problems → today's fixes → verdict on whether each is actually solved. No code verification theater. Just an honest audit.
 
-Let me explain the architecture clearly, then propose a concrete test plan.
-
-## How the transfer actually works (plain English)
-
-1. **We dispatch the call** via our `outbound-calling` edge function → Retell API.
-2. **Retell places the call** using one of OUR phone numbers (the caller ID from `phone_numbers` table) → rings the lead.
-3. **Grace (Retell agent) talks** to the lead using the prompt, voice, and tools we configured.
-4. **When Grace decides to transfer**, she fires the `transfer_call` tool. That tool has:
-   - `transfer_destination.number` = where to send them (David / Ringba pool)
-   - `transfer_option.show_transferee_as_caller` = true/false
-5. **Right before the transfer connects**, Retell fires the **Ringba webhook tool** (separate tool) which sends lead tags + custom variables to Ringba's enrichment endpoint.
-6. **Retell's carrier bridges** the original lead to David. The carrier decides what caller ID David sees:
-   - If `show_transferee_as_caller = true` AND the carrier honors it → David sees the LEAD's number → Ringba matches the enrichment → tags appear.
-   - If `show_transferee_as_caller = false` OR carrier strips it → David sees OUR Retell number → Ringba can't match → no tags.
-
-**So our system's only job in the transfer is the toggle on the tool config.** Once Retell takes the call, it's Retell + carrier doing the work. We don't touch the audio.
-
-## Test plan — call you at 214-529-1531
-
-Step 1 — Verify config is correct before dialing
-- Confirm `show_transferee_as_caller = true` on Grace's `transfer_call` tool (both top-level and nested in `transfer_option`).
-- Confirm Grace's Ringba webhook tool is still attached and fires before transfer.
-- Confirm the diagnostic log fix from last session is in place so we can SEE what setting was actually sent.
-
-Step 2 — Add you as a test lead temporarily
-- Insert a one-off lead with phone `+12145291531`, name "Charles Test", into a small test campaign (or reuse an existing test campaign).
-- Make sure the lead has `do_not_call = false` and isn't on DNC.
-
-Step 3 — Place ONE call
-- Use the existing test-call orchestration (`src/lib/testCallUtils.ts`) or trigger via `outbound-calling` directly with your number.
-- Grace calls you from one of our Retell numbers.
-- You answer, say "transfer me" (or whatever Grace's transfer trigger phrase is).
-- Grace fires Ringba webhook + transfers you to David at +19097376175.
-
-Step 4 — Verify three things
-- David picks up → confirms whether he sees YOUR number (214-529-1531) or our Retell number.
-- Ringba dashboard → check if the call shows up with tags attached.
-- Our edge function logs → confirm `transfer_option.show_transferee_as_caller = true` was actually sent.
-
-Step 5 — Branch on result
-- **David sees your number + Ringba has tags** → transfers work, system is cleared for relaunch.
-- **David sees our Retell number** → carrier is stripping caller ID. Need to test other DIDs to find one the carrier honors (this is what the skill docs were saying, but you only need to do it ONCE, not for all 22).
-- **Ringba has no tags** → webhook tool config issue, not a transfer issue. Separate fix.
-
-## What I'll change in code (minimal, surgical)
-
-1. **Re-verify** `show_transferee_as_caller = true` is saved on the transfer_call tool in the database (read-only check first).
-2. **Fix the diagnostic logging bug** in `supabase/functions/outbound-calling/index.ts` lines 1086-1087 so it reads `tool.transfer_option?.show_transferee_as_caller` (the nested path) instead of the wrong top-level path. This was producing the misleading "NOT SET" logs that started this whole confusion.
-3. **Add your number as a temporary test lead** via SQL.
-4. **Place one test call** to you.
-
-## What I will NOT do
-
-- Won't touch any other agent settings.
-- Won't change any rotation_enabled flags.
-- Won't change any other campaign or lead.
-- Won't deploy any other edge functions besides `outbound-calling` (for the log fix).
-- Won't build the disposition-removal rule in this same pass — that's a separate task we'll do right after the transfer test passes.
-
-## Files I'll touch
-
-- `supabase/functions/outbound-calling/index.ts` — fix log lines 1086-1087 only
-- One SQL insert for the test lead (cleanup after)
-- One edge function call to dispatch your test call
-
-## Success criteria
-
-You answer your phone, say transfer, David's phone rings, David tells you what number he saw, Ringba shows or doesn't show tags. Three data points, one call, ~2 minutes of real work.
-
-Approve this and I'll switch to default mode and run it.
+Let me lay out what actually went wrong yesterday/the day before vs what we shipped today.
 
 ---
 
-## Refinement: WE Decide Transfers, Not Retell (User Directive — Approved)
+## Yesterday's Problems vs Today's Fixes — Honest Audit
 
-A call is treated as `transferred` when BOTH:
-1. The `transfer_call` tool fired during the call
-2. Transcript contains a transfer signal ("transferring you", "connecting you", "one moment please", etc.)
+### Problem 1: Dispatcher silently dead — campaigns wouldn't fire
+**Yesterday's symptom:** Spent $42 on 9:30/9:40 runs, got zero results. Calls weren't going out even when leads were queued.
+**Root cause:** Duplicate `const campaignIds` in `call-dispatcher/index.ts` → edge function failed to boot. Logs showed `Identifier 'campaignIds' has already been declared` on every cron tick.
+**Today's fix:** Removed the duplicate declaration.
+**Verdict:** ✅ FIXES IT. This was THE blocker. Live logs from the last 2 hours still show `BOOT_ERROR` though — meaning the deploy hasn't fully propagated yet OR the fix needs to be redeployed. **This is the one thing I need to re-verify is actually live before you launch.**
 
-If both true → `transferred`, regardless of `disconnection_reason` / `call_status`. Retell's label is ignored.
-If only one → fall back to Retell's label (conservative).
-If neither → use Retell's label as-is.
+### Problem 2: Transferred leads getting re-dialed
+**Yesterday's symptom:** People who already transferred to Ringba were getting called again later, looking like spam/harassment.
+**Root cause:** Retell sometimes labels transferred calls as `completed` or `user_hangup` instead of `transferred`. Our `mapCallStatusToOutcome()` only trusted Retell's label, so the lead stayed in the queue.
+**Today's fix:** Two-signal override in `retell-call-webhook`. If `transfer_call` tool fired AND transcript shows transfer language → we mark it `transferred` regardless of what Retell says. Lead is removed from queue.
+**Verdict:** ✅ FIXES IT, with one caveat — this only catches transfers where BOTH signals are present. If only the tool fired (no transcript signal yet because the call cut), it falls back to Retell's label. That's conservative on purpose to avoid false-positives, but it means a small percentage of edge cases will still slip through until you build the bigger "we own all dispositions" project later today.
 
-Implemented in `mapCallStatusToOutcome()` in `retell-call-webhook`. Tool-fired detection scans `call.tool_calls`, `call_analysis.custom_analysis_data` (transferred / was_transferred / outcome / tools_used), and `transcript_object` segments.
+### Problem 3: Wrong-area-code numbers calling NJ leads
+**Yesterday's symptom:** 970 area code numbers (not even ours, apparently) were being used on a NJ campaign. Should have been NJ caller IDs only.
+**Root cause:** Dispatcher pulled from the global active number pool, ignoring per-campaign restrictions.
+**Today's fix:** From the earlier session — `campaign_phone_pools` table + dispatcher reads it (line 1083) + UI button in Campaign Manager to assign specific numbers.
+**Verdict:** ✅ FIXES IT, but **only if you actually click into the NJ campaign and assign the NJ numbers via the 📞 button before launching.** If the pool is empty for a campaign, dispatcher falls back to the global pool (same as before). This is a configuration step, not automatic.
 
-## Recovery Pass — Implementation Status (2026-04-17)
+### Problem 4: Calls firing outside calling hours
+**Yesterday's symptom:** Mentioned in the PDF audit, but not personally observed by you.
+**Root cause:** No safety guard at the `outbound-calling` layer — dispatcher was the only thing enforcing hours.
+**Today's fix:** Added a calling-hours check inside `outbound-calling` for the `create_call` action. Reads `calling_hours_start/end/timezone` from the campaign. Returns `OUTSIDE_CALLING_HOURS` error if blocked. Test calls bypass.
+**Verdict:** ✅ FIXES IT. Belt-and-suspenders — if dispatcher ever screws up scheduling again, this catches it at the edge.
 
-- ✅ `call-dispatcher`: removed duplicate `const campaignIds` (boot fix)
-- ✅ `retell-call-webhook`: two-signal transfer override in `mapCallStatusToOutcome()`
-- ✅ `outbound-calling`: calling-hours safety guard for `create_call` (skips test calls)
-- ⏭️ Next: WE-own-all-dispositions transcript-reading project (separate pass)
+### Problem 5: Ringba showing wrong caller ID on transfers
+**Yesterday's symptom:** Ringba was getting weird/wrong caller IDs, breaking tag matching for "Send Enrichment."
+**Root cause:** This is a **Retell platform behavior**, not our code. Retell's `show_transferee_as_caller` setting on the transfer tool controls what Ringba sees. The Retell API is documented to ignore this flag for some API-initiated calls.
+**Today's fix:** **None in code.** We explicitly did NOT add Ringba payload hacks. Per your direction, this is a Retell dashboard config check, not an app fix.
+**Verdict:** ⚠️ NOT FIXED IN CODE — by design. **Action needed from you:** verify in the Retell dashboard that the transfer tool on your active agent has `show_transferee_as_caller: true`. If Retell still ignores it, that's a Retell support ticket, not a Lovable fix.
+
+### Problem 6: "Failed to fetch search leads" error
+**Yesterday's symptom:** UI error you saw repeatedly.
+**Root cause:** Unknown — never reproduced from logs or network snapshots.
+**Today's fix:** **None.** We deliberately did not touch this because there's no evidence in the current logs of what's actually breaking it.
+**Verdict:** ⚠️ NOT ADDRESSED. If it happens again today, please tell me exactly which screen/button triggers it so I can grab a real network trace and fix the actual cause instead of guessing.
+
+---
+
+## The Honest Bottom Line
+
+**Will work today, automatically:** Problems 1, 2, 4 (dispatcher boot, transfer detection, calling-hours guard).
+
+**Will work today, requires one config step from you:** Problem 3 (assign NJ numbers to NJ campaign via 📞 button) and Problem 5 (verify Retell dashboard `show_transferee_as_caller` toggle).
+
+**Not addressed, will be revisited if it happens:** Problem 6 (search leads error — needs reproduction).
+
+**Live log concern I want to flag:** As of the last cron tick I checked, `call-dispatcher` was STILL throwing the `Identifier 'campaignIds' has already been declared` boot error. Either the redeploy hasn't propagated or the fix needs to be re-pushed. Before you launch a real campaign today, I want to confirm the dispatcher is actually booting clean. That's a 30-second check.
+
+## What I Recommend Right Now
+
+1. Let me re-verify the dispatcher is booting cleanly (read the latest logs after a fresh cron tick).
+2. You go assign NJ numbers to your NJ campaign via the 📞 button.
+3. You spot-check the Retell dashboard for the transfer tool's `show_transferee_as_caller` setting.
+4. We run ONE small test campaign (5-10 leads) to your own number and watch the full lifecycle: dispatch → call → transfer → queue cleanup. If that flow works clean end-to-end, you're safe to scale.
+
+If you want me to do step 1 right now (re-check dispatcher boot status in live logs) and confirm we're actually green before you launch, approve this and I'll do that as the first action in default mode.
