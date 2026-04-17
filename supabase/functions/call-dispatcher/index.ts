@@ -1078,7 +1078,7 @@ serve(async (req) => {
     // ============= CAMPAIGN-SCOPED PHONE POOLS =============
     // If a campaign has explicit numbers in campaign_phone_pools, those are the ONLY
     // numbers eligible for that campaign. Empty pool = use global pool (backward compatible).
-    const campaignIds = activeCampaigns.map((c: any) => c.id);
+    // NOTE: campaignIds was already declared above (~line 740). Reuse it here.
     const campaignPoolMap: Record<string, Set<string>> = {};
     if (campaignIds.length > 0) {
       const { data: poolRows, error: poolErr } = await supabase
