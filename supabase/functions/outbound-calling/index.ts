@@ -317,6 +317,46 @@ serve(async (req) => {
           console.log('[Outbound Calling] TEST CALL MODE — skipping credit checks and DNC validation');
         }
 
+        // ============= CALLING-HOURS SAFETY GUARD =============
+        // Last-resort net: if a campaign somehow tries to dial outside its
+        // configured calling hours (dispatcher should have already filtered),
+        // block it here. Test calls bypass this.
+        if (!isTestCall && campaignId) {
+          try {
+            const { data: campaignRow } = await supabaseAdmin
+              .from('campaigns')
+              .select('calling_hours_start, calling_hours_end, timezone')
+              .eq('id', campaignId)
+              .maybeSingle();
+            if (campaignRow?.calling_hours_start && campaignRow?.calling_hours_end) {
+              const tz = campaignRow.timezone || 'America/New_York';
+              const nowHM = new Date().toLocaleTimeString('en-GB', {
+                timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+              }); // "HH:MM"
+              const start = String(campaignRow.calling_hours_start).slice(0, 5);
+              const end = String(campaignRow.calling_hours_end).slice(0, 5);
+              if (nowHM < start || nowHM >= end) {
+                console.warn(`[Outbound Calling] BLOCKED: ${nowHM} ${tz} outside calling hours ${start}-${end}`);
+                await supabaseAdmin.from('call_logs').update({
+                  status: 'failed',
+                  notes: `Blocked: outside calling hours ${start}-${end} ${tz} (now ${nowHM})`,
+                }).eq('id', callLog.id);
+                return new Response(
+                  JSON.stringify({
+                    success: false,
+                    error: 'Outside calling hours',
+                    error_code: 'OUTSIDE_CALLING_HOURS',
+                    details: { now: nowHM, start, end, timezone: tz },
+                  }),
+                  { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                );
+              }
+            }
+          } catch (chErr) {
+            console.error('[Outbound Calling] Calling-hours guard error (non-fatal):', chErr);
+          }
+        }
+
         if (!isTestCall && !skipCreditCheck) {
         try {
           const { data: orgUser } = await supabaseAdmin
