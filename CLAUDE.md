@@ -1,5 +1,27 @@
 # CLAUDE.md - Dial Smart System
 
+### April 17, 2026 - Recovery Pass: Dispatcher Boot Fix + Two-Signal Transfer Detection + Calling-Hours Guard
+
+**What was built/fixed/changed**
+- Fixed `call-dispatcher` boot failure caused by duplicate `const campaignIds` declaration. Removed the second declaration; the first (~line 740) is reused for campaign phone pool lookup.
+- Implemented two-signal transfer override in `retell-call-webhook` `mapCallStatusToOutcome()`. WE now decide transfers, not Retell. If `transfer_call` tool fired AND transcript contains a transfer signal → `transferred` regardless of Retell's `disconnection_reason` / `call_status`. New helpers `detectTransferToolFired()` and `detectTransferTranscriptSignal()` scan `call.tool_calls`, `call_analysis.custom_analysis_data` (transferred / was_transferred / outcome / tools_used), and `transcript_object` segments.
+- Added calling-hours safety guard in `outbound-calling` `create_call`. Reads `campaigns.calling_hours_start/end/timezone`, blocks with `OUTSIDE_CALLING_HOURS` if outside window. Test calls bypass.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `supabase/functions/retell-call-webhook/index.ts`
+- `supabase/functions/outbound-calling/index.ts`
+
+**Deployment status**
+- Edge function code updated locally; Lovable Cloud auto-deploys.
+
+**Gotchas**
+- Two-signal rule is conservative: requires BOTH tool-fired AND transcript signal to override. Single-signal falls back to Retell's label (logged).
+- Calling-hours guard returns HTTP 200 with structured error (zero-silent-failure policy) so dispatch loops don't retry-storm.
+- Did NOT touch Ringba payload, caller ID, or phone-number selection — out of scope.
+
+---
+
 > **GOLDEN RULE - READ THIS FIRST**
 >
 > After completing ANY task, you MUST update this file or AGENT.md with:
