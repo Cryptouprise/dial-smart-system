@@ -1,73 +1,76 @@
 
-The user wants to understand the transfer architecture AND get a test call placed to their phone (214-529-1531) so they can verify Grace's transfer + Ringba webhook works end-to-end.
 
-Let me explain the architecture clearly, then propose a concrete test plan.
+The user is making one targeted refinement to the plan: they want US (not Retell) to be the source of truth for transfer detection. They're worried about the same bug we already identified — Retell sometimes labels transferred calls as `completed` instead of `transferred` — and they want a belt-and-suspenders rule:
 
-## How the transfer actually works (plain English)
+**Their explicit ask:**
+> "Regardless of disposition, in this one scenario only — if the transfer tool was fired AND the transcript matches — remove them, regardless of what Retell says it is."
 
-1. **We dispatch the call** via our `outbound-calling` edge function → Retell API.
-2. **Retell places the call** using one of OUR phone numbers (the caller ID from `phone_numbers` table) → rings the lead.
-3. **Grace (Retell agent) talks** to the lead using the prompt, voice, and tools we configured.
-4. **When Grace decides to transfer**, she fires the `transfer_call` tool. That tool has:
-   - `transfer_destination.number` = where to send them (David / Ringba pool)
-   - `transfer_option.show_transferee_as_caller` = true/false
-5. **Right before the transfer connects**, Retell fires the **Ringba webhook tool** (separate tool) which sends lead tags + custom variables to Ringba's enrichment endpoint.
-6. **Retell's carrier bridges** the original lead to David. The carrier decides what caller ID David sees:
-   - If `show_transferee_as_caller = true` AND the carrier honors it → David sees the LEAD's number → Ringba matches the enrichment → tags appear.
-   - If `show_transferee_as_caller = false` OR carrier strips it → David sees OUR Retell number → Ringba can't match → no tags.
+This is exactly what the existing planned hardening does in spirit, but I need to make it more explicit in the plan so they know:
+1. The transfer-tool-fired signal is the PRIMARY trigger (not Retell's disconnection_reason)
+2. The transcript match is the SECONDARY confirmation
+3. Retell's own label is IGNORED when those two agree
 
-**So our system's only job in the transfer is the toggle on the tool config.** Once Retell takes the call, it's Retell + carrier doing the work. We don't touch the audio.
+Let me update the plan to call this out clearly. No new files, no scope expansion — just sharpening step #2 of the recovery pass with the user's exact rule.
 
-## Test plan — call you at 214-529-1531
+---
 
-Step 1 — Verify config is correct before dialing
-- Confirm `show_transferee_as_caller = true` on Grace's `transfer_call` tool (both top-level and nested in `transfer_option`).
-- Confirm Grace's Ringba webhook tool is still attached and fires before transfer.
-- Confirm the diagnostic log fix from last session is in place so we can SEE what setting was actually sent.
+## Refinement to Append to `.lovable/plan.md`
 
-Step 2 — Add you as a test lead temporarily
-- Insert a one-off lead with phone `+12145291531`, name "Charles Test", into a small test campaign (or reuse an existing test campaign).
-- Make sure the lead has `do_not_call = false` and isn't on DNC.
+I'll add a new section right after the "What I'm Accepting From The PDF Audit" block:
 
-Step 3 — Place ONE call
-- Use the existing test-call orchestration (`src/lib/testCallUtils.ts`) or trigger via `outbound-calling` directly with your number.
-- Grace calls you from one of our Retell numbers.
-- You answer, say "transfer me" (or whatever Grace's transfer trigger phrase is).
-- Grace fires Ringba webhook + transfers you to David at +19097376175.
+---
 
-Step 4 — Verify three things
-- David picks up → confirms whether he sees YOUR number (214-529-1531) or our Retell number.
-- Ringba dashboard → check if the call shows up with tags attached.
-- Our edge function logs → confirm `transfer_option.show_transferee_as_caller = true` was actually sent.
+## Refinement: WE Decide Transfers, Not Retell (User Directive)
 
-Step 5 — Branch on result
-- **David sees your number + Ringba has tags** → transfers work, system is cleared for relaunch.
-- **David sees our Retell number** → carrier is stripping caller ID. Need to test other DIDs to find one the carrier honors (this is what the skill docs were saying, but you only need to do it ONCE, not for all 22).
-- **Ringba has no tags** → webhook tool config issue, not a transfer issue. Separate fix.
+You're right, and this matches the bug we already saw: Retell does not reliably label transferred calls as `transferred`. Sometimes it says `completed`. Sometimes it says `user_hangup`. We cannot trust their label as the source of truth.
 
-## What I'll change in code (minimal, surgical)
+**The new rule for transfer detection (this one scenario only):**
 
-1. **Re-verify** `show_transferee_as_caller = true` is saved on the transfer_call tool in the database (read-only check first).
-2. **Fix the diagnostic logging bug** in `supabase/functions/outbound-calling/index.ts` lines 1086-1087 so it reads `tool.transfer_option?.show_transferee_as_caller` (the nested path) instead of the wrong top-level path. This was producing the misleading "NOT SET" logs that started this whole confusion.
-3. **Add your number as a temporary test lead** via SQL.
-4. **Place one test call** to you.
+A call is treated as `transferred` when BOTH of these are true, regardless of what Retell's `disconnection_reason` or `call_status` says:
 
-## What I will NOT do
+1. **The `transfer_call` tool was fired during the call** (Retell's tool-call event log shows it)
+2. **The transcript contains a transfer signal** (e.g., "I'll transfer you now," "connecting you," "one moment please," or the agent confirms a transfer destination)
 
-- Won't touch any other agent settings.
-- Won't change any rotation_enabled flags.
-- Won't change any other campaign or lead.
-- Won't deploy any other edge functions besides `outbound-calling` (for the log fix).
-- Won't build the disposition-removal rule in this same pass — that's a separate task we'll do right after the transfer test passes.
+If both are true → mark as `transferred`, remove from queue, no re-dial. **Retell's label is ignored.**
 
-## Files I'll touch
+If only one is true → fall back to Retell's label (conservative).
 
-- `supabase/functions/outbound-calling/index.ts` — fix log lines 1086-1087 only
-- One SQL insert for the test lead (cleanup after)
-- One edge function call to dispatch your test call
+If neither is true → use Retell's label as-is.
 
-## Success criteria
+**Why this works:**
+- The tool-call event is hard evidence that Grace decided to transfer.
+- The transcript signal confirms she actually said it (not just fired the tool by mistake).
+- Together they're a stronger signal than any disconnection_reason Retell could give us.
+- This is the "regardless of disposition" backup you asked for — it's the override that catches the cases where Retell mislabels.
 
-You answer your phone, say transfer, David's phone rings, David tells you what number he saw, Ringba shows or doesn't show tags. Three data points, one call, ~2 minutes of real work.
+**Implementation detail:**
+This becomes the new logic inside `mapCallStatusToOutcome()` in `retell-call-webhook`. The function will receive three inputs: `disconnection_reason`, `transcript`, and `tool_calls` (or `call_analysis.custom_analysis_data.tools_used` — whichever Retell exposes in the webhook payload). The function returns `transferred` if the two-signal rule fires, otherwise falls back to current logic.
 
-Approve this and I'll switch to default mode and run it.
+**What this does NOT do (intentionally):**
+- Does not run our own AI disposition analysis on every call (that's the bigger "we read the transcript and make our own choice" project you mentioned for later today — separate task, separate pass).
+- Does not change anything about how non-transfer dispositions are decided. Other dispositions still come from Retell + existing analyzers until we build our own.
+- Does not affect Ringba payload, caller ID, or anything outside the transfer-classification step.
+
+**One open question (does NOT block the fix):**
+I need to confirm what field Retell's webhook actually exposes for "which tools were called during the call." Likely candidates: `call.tool_calls`, `call.call_analysis.custom_analysis_data`, or an event log on the call object. I'll grep the existing webhook code and Retell's docs as the first step in default mode. If the field doesn't exist in the webhook payload, the fallback is to detect transfer-tool firing from the transcript alone (e.g., agent says the trigger phrase + a destination number is mentioned) — slightly weaker but still better than trusting Retell's label.
+
+---
+
+## Updated File List for the Recovery Pass
+
+- `.lovable/plan.md` — append the refinement section above (no edits to existing plan content)
+- `supabase/functions/call-dispatcher/index.ts` — remove duplicate `campaignIds` (boot fix)
+- `supabase/functions/retell-call-webhook/index.ts` — implement the two-signal transfer rule in `mapCallStatusToOutcome()`
+- `supabase/functions/outbound-calling/index.ts` — calling-hours guard for `create_call`
+- `CLAUDE.md` — log the recovery pass
+
+## Updated Validation Plan
+
+1. `call-dispatcher` boots cleanly (no `Identifier already declared` in logs)
+2. One real campaign-path test call to your number
+3. Confirm:
+   - Transfer happens
+   - In our logs, the call is classified as `transferred` via the two-signal rule (tool fired + transcript match), even if Retell says `completed`
+   - Lead is removed from queue, no re-dial
+4. After that passes, we tackle the bigger "WE own all dispositions by reading the transcript ourselves" project as a separate pass later today.
+
