@@ -71,3 +71,24 @@ Step 5 — Branch on result
 You answer your phone, say transfer, David's phone rings, David tells you what number he saw, Ringba shows or doesn't show tags. Three data points, one call, ~2 minutes of real work.
 
 Approve this and I'll switch to default mode and run it.
+
+---
+
+## Refinement: WE Decide Transfers, Not Retell (User Directive — Approved)
+
+A call is treated as `transferred` when BOTH:
+1. The `transfer_call` tool fired during the call
+2. Transcript contains a transfer signal ("transferring you", "connecting you", "one moment please", etc.)
+
+If both true → `transferred`, regardless of `disconnection_reason` / `call_status`. Retell's label is ignored.
+If only one → fall back to Retell's label (conservative).
+If neither → use Retell's label as-is.
+
+Implemented in `mapCallStatusToOutcome()` in `retell-call-webhook`. Tool-fired detection scans `call.tool_calls`, `call_analysis.custom_analysis_data` (transferred / was_transferred / outcome / tools_used), and `transcript_object` segments.
+
+## Recovery Pass — Implementation Status (2026-04-17)
+
+- ✅ `call-dispatcher`: removed duplicate `const campaignIds` (boot fix)
+- ✅ `retell-call-webhook`: two-signal transfer override in `mapCallStatusToOutcome()`
+- ✅ `outbound-calling`: calling-hours safety guard for `create_call` (skips test calls)
+- ⏭️ Next: WE-own-all-dispositions transcript-reading project (separate pass)
