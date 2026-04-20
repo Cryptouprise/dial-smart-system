@@ -1,5 +1,27 @@
 # CLAUDE.md - Dial Smart System
 
+### April 20, 2026 - Manual Test Dispatch Calling-Hours Override
+
+**What was built/fixed/changed**
+- Fixed a manual testing blocker in `call-dispatcher`: user-triggered dispatches were still being stopped by the global calling-hours guard before the dial session could start.
+- Added an explicit manual-dispatch override so direct user test actions bypass the campaign-level calling-hours block and the per-lead timezone filter.
+- Kept scheduler/internal dispatch behavior unchanged, so automated campaign runs still respect normal calling-hours and timezone compliance rules.
+
+**Key files modified**
+- `supabase/functions/call-dispatcher/index.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Edge-function code updated locally in this session.
+- `deno check supabase/functions/call-dispatcher/index.ts` run for syntax validation after the patch.
+
+**Gotchas / lessons learned**
+- The actual blocker was not queue creation; it was the early dispatcher exit on `outside_calling_hours` during manual runs.
+- Manual test triggers need their own explicit override path, otherwise they look broken even when the queue is populated correctly.
+
 ### April 20, 2026 - SEO Batch 1: Wrong-Domain Canonicals + Sitemap + Robots + llms.txt + compare.html Duplicate-Tbody Fix
 
 **What was built/fixed/changed**
