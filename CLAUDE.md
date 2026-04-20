@@ -1,5 +1,55 @@
 # CLAUDE.md - Dial Smart System
 
+### April 20, 2026 - SEO Batch 1: Wrong-Domain Canonicals + Sitemap + Robots + llms.txt + compare.html Duplicate-Tbody Fix
+
+**What was built/fixed/changed**
+- Fixed every canonical URL on the showcase static pages (`showcase/index.html`, `blog-index.html`, templates `blog.html`, `industry.html`, `vs.html`, `city.html`) that pointed at the old Lovable preview domain `aidialboss1.lovable.app`. They now correctly point at the real production domain `aicallboss.app`.
+- Rewrote `public/sitemap.xml` to only include the 9 real indexable pages on `aicallboss.app`. Dropped ~280 JS-templated URLs (industry/city/vs/blog template URLs) that are currently unindexable — these will be re-added in a follow-up batch after a pre-render pass converts `seo-data.json` into real static HTML files.
+- Rewrote `public/robots.txt` with the correct sitemap URL (`https://aicallboss.app/sitemap.xml`) and explicit allow entries for AI search engines: GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai, PerplexityBot, Perplexity-User, Google-Extended, Applebot, Applebot-Extended, CCBot, Bytespider.
+- Added `public/llms.txt` — the emerging standard for describing a site to AI crawlers. Lists primary entry points, what the product does, who it's for, and pricing basics.
+- Added canonical tags + meta descriptions + Open Graph + Twitter Card tags to the five showcase static pages that lacked them: `landing.html`, `problem.html`, `engines.html`, `roi.html`, `compare.html`.
+- Added `SoftwareApplication` schema to `showcase/landing.html` (no fake aggregate ratings — dropped those in a self-correction after initially adding placeholder numbers).
+- Fixed the duplicated `<tbody>` bug in `public/showcase/compare.html` — the entire comparison table was rendered twice due to a copy-paste mistake, producing malformed HTML. File shrank from 23,074 bytes → 18,426 bytes.
+- Improved the root SPA shell `index.html` default title and description so root-domain crawls no longer see `"AI Dial Boss - Smart Dialer"` — they now see keyword-targeted Call Boss meta with Organization schema.
+- Standardized branding to **Call Boss** across everything edited this pass (matches the production domain `aicallboss.app`). Landing page still shows "DIAL SMART SYSTEM" in body copy — cleanup deferred to a content pass.
+
+**Key files modified**
+- `public/robots.txt` (rewritten)
+- `public/sitemap.xml` (rewritten — trimmed from 292 URLs to 9 real pages)
+- `public/llms.txt` (new file)
+- `public/showcase/index.html` (canonical fix)
+- `public/showcase/blog-index.html` (canonical + schema URLs)
+- `public/showcase/landing.html` (added canonical, description, OG, Twitter, SoftwareApplication schema)
+- `public/showcase/problem.html` (added canonical + meta)
+- `public/showcase/engines.html` (added canonical + meta)
+- `public/showcase/roi.html` (added canonical + meta)
+- `public/showcase/compare.html` (added canonical + meta + removed duplicate `<tbody>`)
+- `public/showcase/templates/blog.html` (baseUrl)
+- `public/showcase/templates/industry.html` (JS canonical)
+- `public/showcase/templates/vs.html` (JS canonical)
+- `public/showcase/templates/city.html` (JS canonical)
+- `index.html` (root SPA shell — improved title, description, OG, Twitter, Organization schema; did NOT add canonical because shell serves multiple SPA routes — per-route canonicals deferred to react-helmet-async pass)
+- `CLAUDE.md` (this session log)
+
+**Database changes made**
+- None (SEO fixes only; no schema, migrations, or edge functions touched).
+
+**Deployment status**
+- Changes committed on branch `claude/seo-audit-dial-boss-jQ0zK`.
+- Lovable auto-deploys from this repo; static files in `public/*` ship verbatim to production on next Lovable publish.
+- No build or edge-function deploy required — all changes are plain HTML/XML/TXT.
+
+**Gotchas / lessons learned**
+- The canonical URLs pointing at `aidialboss1.lovable.app` were the single worst SEO bug: `rel=canonical` is a strong signal, and pointing every static page at the Lovable preview domain was actively telling Google "index that domain instead, we're the duplicate." Fixing that alone unblocks everything else.
+- `public/showcase/*.html` are real indexable static HTML files — NOT JS-rendered. A previous audit incorrectly claimed they were SPA-rendered. They render fine to curl/Googlebot with or without JavaScript.
+- The JS-templated URLs (`templates/blog.html?post=<slug>`, `industry.html?industry=<slug>`, etc.) serve one shell template for ~280 slug entries in `seo-data.json`. Google sees one empty page across all 280 URLs. These were removed from the sitemap in this pass because adding unindexable URLs wastes crawl budget. Next step is to build a pre-render script that converts `seo-data.json` entries into real static HTML at build time.
+- I initially added a fake `aggregateRating` (`"ratingValue": "4.9", "reviewCount": "47"`) to `landing.html` schema — self-corrected and removed immediately because the site has no verified reviews to back those numbers and rating schema can trigger manual penalties.
+- `robots.txt` now explicitly allows AI crawlers (GPTBot, ClaudeBot, PerplexityBot, etc.) — these crawlers respect robots.txt and will not crawl sites that don't opt them in. Previously only `User-agent: *` was listed, which many AI crawlers interpret conservatively.
+- The showcase pages are all minified onto one or two mega-lines of HTML, which makes surgical edits tricky. Using the unique `<title>...</title>` string per page as an anchor worked reliably.
+- `index.html` (the React SPA shell) serves MULTIPLE URL paths (`/`, `/demo`, `/auth`, etc.). A hardcoded canonical there would wrongly canonicalize every SPA route to `/`. Deferred canonical + per-route meta to the react-helmet-async pass.
+
+---
+
 ### April 17, 2026 - Recovery Pass: Dispatcher Boot Fix + Two-Signal Transfer Detection + Calling-Hours Guard
 
 **What was built/fixed/changed**

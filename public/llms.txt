@@ -1,0 +1,50 @@
+# Call Boss
+
+> Call Boss is an AI-powered predictive dialer and voice agent platform.
+> It calls every lead within 5 minutes of form fill, follows up forever, and books appointments autonomously.
+> Built for agencies on top of Retell AI, Telnyx, and Twilio — with deep GoHighLevel integration and full white-label support.
+
+The platform combines an autonomous predictive dialer (50–600 calls/minute with adaptive pacing and phone-number rotation) with AI voice agents powered by Retell AI and Telnyx. It includes workflow branching with 13 conditional operators, SMS A/B testing using the UCB1 multi-armed-bandit algorithm, per-lead churn-risk prediction, and a self-optimizing playbook that learns from every call outcome. Agencies resell it under their own brand through a prepaid credit system with idempotent billing.
+
+## What we do (core capability)
+
+- AI voice agents that handle complete outbound sales conversations — qualification, objection handling, appointment booking — without a human agent.
+- Predictive dialer that can sustain 2,000–10,000 calls per day with real-time answer-rate adaptation and automatic number quarantine on spam-risk detection.
+- Perpetual follow-up: every lead is contacted on adaptive gap timing (7 → 30 days) across call + SMS + email until they convert, opt out, or are legally DNC'd. No lead falls off.
+- Goal-driven strategy planner: user states a goal ("book solar consultations") and the AI builds the pipelines, workflows, playbook rules, and scripts automatically.
+- GoHighLevel deep integration: bi-directional contact sync, pipeline-stage mapping, workflow triggers, and calendar-integration webhooks.
+- Full white-label / reseller mode with per-agent cost tracking, margin reporting, and Stripe billing.
+
+## Primary entry points
+
+- Homepage / hub: https://aicallboss.app/showcase/
+- Full product overview: https://aicallboss.app/showcase/landing.html
+- The problem we solve: https://aicallboss.app/showcase/problem.html
+- The 7 engines (deep-dive): https://aicallboss.app/showcase/engines.html
+- Competitive comparison: https://aicallboss.app/showcase/compare.html
+- ROI calculator: https://aicallboss.app/showcase/roi.html
+- Blog: https://aicallboss.app/showcase/blog-index.html
+- Live demo: https://aicallboss.app/demo
+
+## Who it is for
+
+- Agencies serving home-services, solar, insurance, real estate, legal, and mortgage verticals.
+- Sales operations teams scaling outbound beyond what human SDRs can sustain.
+- Agency owners reselling AI voice services to their own clients with full-brand control.
+
+## Who it is not for
+
+- One-person freelance sales with fewer than ~200 leads per month.
+- Regulated industries that require human-only outreach (talk to us — some HIPAA/collections use cases work, some don't).
+
+## How pricing works
+
+Usage-based: ~$0.15–$0.25 per minute of AI voice time, plus optional add-ons (premium AMD, knowledge base retrieval, etc.). No per-seat fees.
+
+## Company
+
+Built by Infinite AI. Brand domain: https://aicallboss.app
+
+## Crawl policy
+
+All major AI search engines (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, Applebot-Extended, CCBot) are allowed to index this site. See https://aicallboss.app/robots.txt for the full policy.
