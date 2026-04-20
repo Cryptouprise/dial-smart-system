@@ -279,6 +279,12 @@ serve(async (req) => {
     const maxConcurrent = systemSettings?.max_concurrent_calls || 10;
     const adaptivePacing = systemSettings?.enable_adaptive_pacing !== false;
 
+    const manualDispatchRequested =
+      !isInternalCall &&
+      action !== 'health_check' &&
+      action !== 'status_check' &&
+      action !== 'cleanup_stuck_calls';
+
     // Handle health_check action for system verification
     if (action === 'health_check' || action === 'status_check') {
       console.log('[Dispatcher] Health check requested');
@@ -459,7 +465,7 @@ serve(async (req) => {
           }
         }
 
-        if (outsideHours) {
+        if (outsideHours && !manualDispatchRequested) {
           console.log(`[Dispatcher] CALLING HOURS BLOCK: ${reasonMsg}`);
           return new Response(
             JSON.stringify({
@@ -471,6 +477,10 @@ serve(async (req) => {
             }),
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
+        }
+
+        if (outsideHours && manualDispatchRequested) {
+          console.log(`[Dispatcher] Manual dispatch override — bypassing calling-hours block: ${reasonMsg}`);
         }
 
         console.log('[Dispatcher] Calling hours check: WITHIN allowed window');
@@ -1238,7 +1248,7 @@ serve(async (req) => {
     // Now process the dialing queue with DYNAMIC batch size
     // ALL user-initiated calls bypass scheduling. If you clicked a button, you want calls NOW.
     // Only internal/cron calls (isInternalCall=true) respect scheduled_at.
-    const manualDispatchNow = !isInternalCall;
+    const manualDispatchNow = manualDispatchRequested;
 
     if (manualDispatchNow) {
       console.log('[Dispatcher] Manual dispatch — bypassing scheduled_at gate');
@@ -1339,7 +1349,7 @@ serve(async (req) => {
     // ============= PER-LEAD TIMEZONE FILTERING =============
     // Check each lead's state and skip if their local time is outside calling hours.
     // This prevents calling someone in CA at 6 AM just because it's 9 AM ET.
-    {
+    if (!manualDispatchNow) {
       const beforeCount = eligibleCalls.length;
       let skippedForTimezone = 0;
       const timezoneFilteredCalls: any[] = [];
@@ -1382,6 +1392,8 @@ serve(async (req) => {
       if (skippedForTimezone > 0) {
         console.log(`[Dispatcher] Timezone filter: ${skippedForTimezone}/${beforeCount} leads skipped (outside their local calling hours)`);
       }
+    } else {
+      console.log('[Dispatcher] Manual dispatch override — bypassing per-lead timezone filter');
     }
 
     console.log(`[Dispatcher] Processing ${eligibleCalls.length} eligible calls`);
