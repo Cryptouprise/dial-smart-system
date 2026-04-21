@@ -15,6 +15,7 @@ interface ComplianceCheck {
   passed: boolean;
   violations: string[];
   warnings: string[];
+  skippedDueToTransientFailure?: boolean;
 }
 
 // Prevent noisy error loops when the browser temporarily can't reach Supabase
@@ -154,7 +155,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
 
     // If the browser can't reach Supabase right now, skip (avoid error loops)
     if (shouldSkipComplianceFetch()) {
-      return { passed: true, violations, warnings };
+      return { passed: true, violations, warnings, skippedDueToTransientFailure: true };
     }
     // Check abandonment rate (FCC limit: 3%)
     const abandonmentRate = await calculateAbandonmentRate(campaignId);
@@ -194,9 +195,9 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     } catch (error) {
       if (isTransientFetchFailure(error)) {
         enterComplianceFetchCooldown();
-      } else {
-        console.error('Error checking call volume limits:', error);
+        return { passed: true, violations, warnings, skippedDueToTransientFailure: true };
       }
+      console.error('Error checking call volume limits:', error);
     }
 
     return {
@@ -250,6 +251,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
       try {
         const check = await performComplianceCheck(campaignId);
         
+        if (check.skippedDueToTransientFailure) {
+          return;
+        }
+
         if (!check.passed) {
           // Auto-pause campaign on violation
           await autoPauseCampaign(campaignId, check.violations.join('; '));
@@ -272,20 +277,24 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         // Get today's call count
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const { count: callsTodayCount } = await supabase
+        const { count: callsTodayCount, error: callsTodayError } = await supabase
           .from('call_logs')
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaignId)
           .gte('created_at', today.toISOString());
 
+        if (callsTodayError) throw callsTodayError;
+
         // Get this hour's call count
         const thisHour = new Date();
         thisHour.setMinutes(0, 0, 0);
-        const { count: callsThisHourCount } = await supabase
+        const { count: callsThisHourCount, error: callsThisHourError } = await supabase
           .from('call_logs')
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaignId)
           .gte('created_at', thisHour.toISOString());
+
+        if (callsThisHourError) throw callsThisHourError;
 
         setMetrics({
           abandonmentRate,
@@ -295,6 +304,12 @@ export const useCampaignCompliance = (campaignId: string | null) => {
           isWithinCallingHours: withinHours,
           dncViolations
         });
+      } catch (error) {
+        if (isTransientFetchFailure(error)) {
+          enterComplianceFetchCooldown();
+          return;
+        }
+        console.error('Error monitoring campaign compliance:', error);
       } finally {
         isChecking = false;
       }
@@ -324,6 +339,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
       try {
         const check = await performComplianceCheck(campaignId);
         if (!isActive) return;
+
+        if (check.skippedDueToTransientFailure) {
+          return;
+        }
 
         if (!check.passed) {
           console.warn('Compliance violations detected:', check.violations);
