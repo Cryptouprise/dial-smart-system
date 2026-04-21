@@ -47,6 +47,34 @@ export const useConcurrencyManager = () => {
   const { toast } = useToast();
   const { userId } = useCurrentUser();
   const cachedSettingsRef = useRef<ConcurrencySettings | null>(null);
+  const pollingErrorLogRef = useRef<Record<string, number>>({});
+
+  const isTransientPollingError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return [
+      'Failed to fetch',
+      'Load failed',
+      'NetworkError',
+      'upstream connect error or disconnect/reset before headers',
+      'connection timeout',
+      'retried and the latest reset reason',
+    ].some((pattern) => message.includes(pattern));
+  };
+
+  const logPollingError = (key: 'activeCalls' | 'activeTransfers', label: string, error: unknown) => {
+    if (!isTransientPollingError(error)) {
+      console.error(`Error loading ${label}:`, error);
+      return;
+    }
+
+    const now = Date.now();
+    const lastLoggedAt = pollingErrorLogRef.current[key] || 0;
+    if (now - lastLoggedAt > 60000) {
+      pollingErrorLogRef.current[key] = now;
+      const message = error instanceof Error ? error.message : String(error || 'Unknown network error');
+      console.warn(`[ConcurrencyManager] ${label} temporarily unavailable: ${message}`);
+    }
+  };
 
   // Load active calls from database - only recent ones (last 5 minutes)
   const loadActiveCalls = async () => {
@@ -73,8 +101,8 @@ export const useConcurrencyManager = () => {
       setActiveCalls(formattedCalls);
       return formattedCalls;
     } catch (error: any) {
-      console.error('Error loading active calls:', error);
-      return [];
+      logPollingError('activeCalls', 'active calls', error);
+      return activeCalls;
     }
   };
 
@@ -106,8 +134,8 @@ export const useConcurrencyManager = () => {
       setActiveTransfers(transfers);
       return transfers;
     } catch (error: any) {
-      console.error('Error loading active transfers:', error);
-      return [];
+      logPollingError('activeTransfers', 'active transfers', error);
+      return activeTransfers;
     }
   };
 
