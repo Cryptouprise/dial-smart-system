@@ -21,9 +21,18 @@ interface ComplianceCheck {
 const COMPLIANCE_FETCH_COOLDOWN_MS = 60_000;
 let complianceFetchCooldownUntil = 0;
 
+const TRANSIENT_FETCH_PATTERNS = [
+  'Failed to fetch',
+  'Load failed',
+  'NetworkError',
+  'upstream connect error or disconnect/reset before headers',
+  'connection timeout',
+  'retried and the latest reset reason',
+];
+
 const isTransientFetchFailure = (err: unknown) => {
   const msg = (err as any)?.message ? String((err as any).message) : String(err);
-  return msg.includes('Failed to fetch') || msg.includes('Load failed') || msg.includes('NetworkError');
+  return TRANSIENT_FETCH_PATTERNS.some((pattern) => msg.includes(pattern));
 };
 
 const enterComplianceFetchCooldown = () => {
@@ -56,7 +65,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         .eq('id', campaignId)
         .maybeSingle();
 
-      if (error || !campaign) return false;
+      if (error || !campaign) return true;
 
       const now = new Date();
       const currentTime = now.toLocaleTimeString('en-US', { 
@@ -77,10 +86,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     } catch (error) {
       if (isTransientFetchFailure(error)) {
         enterComplianceFetchCooldown();
-        return false;
+        return true;
       }
       console.error('Error checking calling hours:', error);
-      return false;
+      return true;
     }
   }, []);
 
