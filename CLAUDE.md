@@ -1,5 +1,30 @@
 # CLAUDE.md - Dial Smart System
 
+### April 21, 2026 - Repeated Failed-to-Fetch Popup Loop Suppression
+
+**What was built/fixed/changed**
+- Fixed the repeated `Failed to fetch` / timeout popup loop caused by `useConcurrencyManager` polling `call_logs` and `active_ai_transfers` every 15 seconds while transient Supabase/network failures were occurring.
+- Added transient network error detection plus 60-second warning throttling in the concurrency hook so temporary backend timeouts no longer spam `console.error` on every poll cycle.
+- Preserved the last known active-calls / active-transfers state during transient polling failures instead of repeatedly resetting noisy fallback values.
+- Updated `useAIErrorHandler` to ignore these known transient fetch/timeout errors so Guardian does not raise repeated user-facing error toasts for non-actionable network blips.
+
+**Key files modified**
+- `src/hooks/useConcurrencyManager.ts`
+- `src/hooks/useAIErrorHandler.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- `npm run build` passes after the patch.
+- Targeted `useConcurrencyManager` tests were run; one pre-existing hook test remains failing in the current suite baseline while the production build is clean.
+
+**Gotchas / lessons learned**
+- The visible popup loop was not the core dialing engine failing repeatedly; it was transient polling/network noise being treated as actionable runtime errors by Guardian.
+- For operational dashboards, transient backend timeout noise should be throttled and downgraded unless it represents a persistent user-blocking failure.
+
 ### April 20, 2026 - Manual Test Dispatch Calling-Hours Override
 
 **What was built/fixed/changed**

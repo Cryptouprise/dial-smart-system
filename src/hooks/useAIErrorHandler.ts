@@ -38,6 +38,9 @@ const DEFAULT_SETTINGS: AIErrorSettings = {
 // Patterns to ignore (Supabase auth errors, React warnings, Guardian's own errors, etc.)
 const IGNORED_ERROR_PATTERNS = [
   'Failed to fetch',
+  'upstream connect error or disconnect/reset before headers',
+  'connection timeout',
+  'retried and the latest reset reason',
   '_getUser',
   '_useSession',
   'SupabaseAuthClient',
@@ -491,11 +494,14 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
     const message = messageParts.join(' ');
     
     // Don't capture our own logs OR Guardian-related errors OR known noise
-    const shouldIgnore = [
+      const shouldIgnore = [
       '[🛡️ Guardian]',
       '[AI Error Handler]',
       '[Guardian',
       'Failed to fetch',
+        'upstream connect error or disconnect/reset before headers',
+        'connection timeout',
+        'retried and the latest reset reason',
       '_getUser',
       '_useSession',
       'SupabaseAuthClient',
@@ -562,7 +568,21 @@ export const setupGlobalErrorHandlers = (captureError: ReturnType<typeof useAIEr
       }
 
       return response;
-    } catch (error) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error ?? '');
+        const isTransientNetworkError = [
+          'Failed to fetch',
+          'Load failed',
+          'NetworkError',
+          'upstream connect error or disconnect/reset before headers',
+          'connection timeout',
+          'retried and the latest reset reason',
+        ].some((pattern) => message.includes(pattern));
+
+        if (isTransientNetworkError) {
+          throw error;
+        }
+
       // Network failure - capture as network error
       const functionName = extractFunctionNameFromUrl(url);
       captureError(
