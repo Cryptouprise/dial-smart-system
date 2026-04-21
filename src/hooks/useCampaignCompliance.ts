@@ -15,15 +15,25 @@ interface ComplianceCheck {
   passed: boolean;
   violations: string[];
   warnings: string[];
+  skippedDueToTransientFailure?: boolean;
 }
 
 // Prevent noisy error loops when the browser temporarily can't reach Supabase
 const COMPLIANCE_FETCH_COOLDOWN_MS = 60_000;
 let complianceFetchCooldownUntil = 0;
 
+const TRANSIENT_FETCH_PATTERNS = [
+  'Failed to fetch',
+  'Load failed',
+  'NetworkError',
+  'upstream connect error or disconnect/reset before headers',
+  'connection timeout',
+  'retried and the latest reset reason',
+];
+
 const isTransientFetchFailure = (err: unknown) => {
   const msg = (err as any)?.message ? String((err as any).message) : String(err);
-  return msg.includes('Failed to fetch') || msg.includes('Load failed') || msg.includes('NetworkError');
+  return TRANSIENT_FETCH_PATTERNS.some((pattern) => msg.includes(pattern));
 };
 
 const enterComplianceFetchCooldown = () => {
@@ -56,7 +66,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         .eq('id', campaignId)
         .maybeSingle();
 
-      if (error || !campaign) return false;
+      if (error || !campaign) return true;
 
       const now = new Date();
       const currentTime = now.toLocaleTimeString('en-US', { 
@@ -77,10 +87,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     } catch (error) {
       if (isTransientFetchFailure(error)) {
         enterComplianceFetchCooldown();
-        return false;
+        return true;
       }
       console.error('Error checking calling hours:', error);
-      return false;
+      return true;
     }
   }, []);
 
@@ -145,7 +155,7 @@ export const useCampaignCompliance = (campaignId: string | null) => {
 
     // If the browser can't reach Supabase right now, skip (avoid error loops)
     if (shouldSkipComplianceFetch()) {
-      return { passed: true, violations, warnings };
+      return { passed: true, violations, warnings, skippedDueToTransientFailure: true };
     }
     // Check abandonment rate (FCC limit: 3%)
     const abandonmentRate = await calculateAbandonmentRate(campaignId);
@@ -185,9 +195,9 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     } catch (error) {
       if (isTransientFetchFailure(error)) {
         enterComplianceFetchCooldown();
-      } else {
-        console.error('Error checking call volume limits:', error);
+        return { passed: true, violations, warnings, skippedDueToTransientFailure: true };
       }
+      console.error('Error checking call volume limits:', error);
     }
 
     return {
@@ -241,6 +251,10 @@ export const useCampaignCompliance = (campaignId: string | null) => {
       try {
         const check = await performComplianceCheck(campaignId);
         
+        if (check.skippedDueToTransientFailure) {
+          return;
+        }
+
         if (!check.passed) {
           // Auto-pause campaign on violation
           await autoPauseCampaign(campaignId, check.violations.join('; '));
@@ -263,20 +277,24 @@ export const useCampaignCompliance = (campaignId: string | null) => {
         // Get today's call count
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const { count: callsTodayCount } = await supabase
+        const { count: callsTodayCount, error: callsTodayError } = await supabase
           .from('call_logs')
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaignId)
           .gte('created_at', today.toISOString());
 
+        if (callsTodayError) throw callsTodayError;
+
         // Get this hour's call count
         const thisHour = new Date();
         thisHour.setMinutes(0, 0, 0);
-        const { count: callsThisHourCount } = await supabase
+        const { count: callsThisHourCount, error: callsThisHourError } = await supabase
           .from('call_logs')
           .select('*', { count: 'exact', head: true })
           .eq('campaign_id', campaignId)
           .gte('created_at', thisHour.toISOString());
+
+        if (callsThisHourError) throw callsThisHourError;
 
         setMetrics({
           abandonmentRate,
@@ -286,6 +304,12 @@ export const useCampaignCompliance = (campaignId: string | null) => {
           isWithinCallingHours: withinHours,
           dncViolations
         });
+      } catch (error) {
+        if (isTransientFetchFailure(error)) {
+          enterComplianceFetchCooldown();
+          return;
+        }
+        console.error('Error monitoring campaign compliance:', error);
       } finally {
         isChecking = false;
       }
@@ -301,54 +325,47 @@ export const useCampaignCompliance = (campaignId: string | null) => {
     setIsMonitoring(false);
   }, []);
 
-  // Only run once when campaignId changes - don't depend on startMonitoring to avoid infinite loop
+  // Passive badge refresh: only fetch the abandonment rate used by the campaign list UI.
+  // Full compliance checks remain available via performComplianceCheck / startMonitoring.
   useEffect(() => {
     if (!campaignId) return;
     
     let isChecking = false;
     let isActive = true;
 
-    const runComplianceCheck = async () => {
+    const refreshBadgeMetrics = async () => {
       if (isChecking || !isActive || shouldSkipComplianceFetch()) return;
       isChecking = true;
 
       try {
-        const check = await performComplianceCheck(campaignId);
-        if (!isActive) return;
-
-        if (!check.passed) {
-          console.warn('Compliance violations detected:', check.violations);
-        }
-
         const abandonmentRate = await calculateAbandonmentRate(campaignId);
-        const isWithinHours = await checkCallingHours(campaignId);
-        const dncViolations = await checkDNCCompliance(campaignId);
         
         if (!isActive) return;
 
         setMetrics(prev => ({
           ...prev,
           abandonmentRate,
-          isWithinCallingHours: isWithinHours,
-          dncViolations,
-          complianceViolations: check.violations.length
         }));
+      } catch (error) {
+        if (isTransientFetchFailure(error)) {
+          enterComplianceFetchCooldown();
+          return;
+        }
+        console.error('Error refreshing campaign compliance badge:', error);
       } finally {
         isChecking = false;
       }
     };
 
-    // Initial check
-    runComplianceCheck();
+    refreshBadgeMetrics();
 
-    // Check every minute
-    const interval = setInterval(runComplianceCheck, 60000);
+    const interval = setInterval(refreshBadgeMetrics, 60000);
 
     return () => {
       isActive = false;
       clearInterval(interval);
     };
-  }, [campaignId]); // Only depend on campaignId
+  }, [campaignId, calculateAbandonmentRate]);
 
   return {
     metrics,

@@ -1,5 +1,29 @@
 # CLAUDE.md - Dial Smart System
 
+### April 21, 2026 - Campaign Compliance Popup Loop Suppression
+
+**What was built/fixed/changed**
+- Fixed the remaining repeated `Failed to fetch` / timeout popup path coming from `useCampaignCompliance`, which was still treating transient Supabase/network failures as real compliance failures.
+- Expanded transient-network detection in the compliance hook to catch upstream timeout/reset messages, not just plain browser fetch errors.
+- Stopped transient compliance fetch failures from being interpreted as “outside calling hours,” which could incorrectly read as a real violation during backend timeouts.
+- Changed the passive campaign-list badge refresh to only load the abandonment-rate metric needed for display instead of running the full compliance workflow for every visible campaign row.
+- Added safer monitoring guards so transient errors no longer spam logs, toasts, or auto-pause behavior during short-lived backend outages.
+
+**Key files modified**
+- `src/hooks/useCampaignCompliance.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend code updated locally in this session.
+- `npm run build` passes after the patch.
+
+**Gotchas / lessons learned**
+- The previous popup fix covered concurrency polling, but campaign-row compliance badges were still running their own noisy fetch path.
+- A passive UI badge should never execute the full compliance enforcement flow when it only needs one lightweight metric.
+
 ### April 21, 2026 - Repeated Failed-to-Fetch Popup Loop Suppression
 
 **What was built/fixed/changed**
