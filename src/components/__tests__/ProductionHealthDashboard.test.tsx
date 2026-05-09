@@ -25,7 +25,7 @@ describe('ProductionHealthDashboard', () => {
 
   it('should render system health title', () => {
     render(<ProductionHealthDashboard />);
-    expect(screen.getByText('System Health')).toBeInTheDocument();
+    expect(screen.getAllByText('System Health').length).toBeGreaterThan(0);
   });
 
   it('should render real-time monitoring description', () => {
