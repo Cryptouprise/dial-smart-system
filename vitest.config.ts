@@ -12,6 +12,13 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     // Use forks pool for better compatibility
     pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
+    maxThreads: 1,
+    minThreads: 1,
     // Add timeout to prevent hanging tests
     testTimeout: 30000,
     hookTimeout: 30000,
@@ -21,6 +28,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/e2e/**', // Exclude Playwright E2E tests
+      'supabase/functions/_shared/**', // Deno-only tests
       '**/.{idea,git,cache,output,temp}/**',
     ],
     coverage: {
