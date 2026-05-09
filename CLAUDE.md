@@ -1,5 +1,27 @@
 # CLAUDE.md - Dial Smart System
 
+### May 9, 2026 - Reduce Fetch Failures in Automation + API Key Validation
+
+**What was built/fixed/changed**
+- Replaced the Automation Engine settings fetch with `supabase.functions.invoke` to avoid direct fetch + hardcoded API key failures, and added a POST `settings` action in the edge function for consistent auth handling.
+- Added a POST handler in `enhanced-rotation-manager` to return settings, removing reliance on querystring GETs that were triggering fetch errors in some environments.
+- Removed client-side Retell/OpenAI validation fetch calls in Api Keys to avoid CORS-driven “Failed to fetch” errors; validation now uses local format checks.
+
+**Key files modified**
+- `src/components/AutomationEngine.tsx`
+- `supabase/functions/enhanced-rotation-manager/index.ts`
+- `src/pages/ApiKeys.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend and edge-function code updated locally in this session.
+
+**Gotchas / lessons learned**
+- Client-side validation fetches to third-party APIs are prone to CORS/network failures and should be moved server-side or replaced with local validation.
+
 ### April 21, 2026 - Campaign Compliance Popup Loop Suppression
 
 **What was built/fixed/changed**

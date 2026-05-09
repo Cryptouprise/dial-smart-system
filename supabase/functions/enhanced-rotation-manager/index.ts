@@ -45,6 +45,49 @@ serve(async (req) => {
     if (req.method === 'POST') {
       const body = await req.json();
 
+      if (body.action === 'settings') {
+        const { data: settings, error } = await supabaseClient
+          .from('rotation_settings')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error && error.code === 'PGRST116') {
+          console.log('No settings found for user, returning defaults');
+          return new Response(JSON.stringify({
+            settings: {
+              enabled: true,
+              rotation_interval_hours: 24,
+              high_volume_threshold: 50,
+              auto_import_enabled: true,
+              auto_remove_quarantined: true
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (error) {
+          console.error('Settings fetch error:', error);
+          return new Response(JSON.stringify({ error: 'Failed to fetch settings' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        return new Response(JSON.stringify({
+          settings: settings || {
+            enabled: true,
+            rotation_interval_hours: 24,
+            high_volume_threshold: 50,
+            auto_import_enabled: true,
+            auto_remove_quarantined: true
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       if (body.action === 'save_settings') {
         // Validate settings input
         const validationResult = RotationSettingsSchema.safeParse(body.settings);

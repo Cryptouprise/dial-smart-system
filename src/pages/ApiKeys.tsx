@@ -240,14 +240,8 @@ const ApiKeys = () => {
       
       switch (credential.service) {
         case 'retell':
-          const response = await fetch('https://api.retellai.com/v2/agent', {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${credential.credentials.apiKey}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          isValid = response.ok;
+          // Client-side validation only to avoid CORS/network fetch failures
+          isValid = Boolean(credential.credentials.apiKey?.startsWith('retell_'));
           break;
           
         case 'twilio':
@@ -257,13 +251,8 @@ const ApiKeys = () => {
           break;
           
         case 'openai':
-          const openaiResponse = await fetch('https://api.openai.com/v1/models', {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${credential.credentials.apiKey}`,
-            },
-          });
-          isValid = openaiResponse.ok;
+          // Client-side validation only to avoid CORS/network fetch failures
+          isValid = Boolean(credential.credentials.apiKey?.startsWith('sk-'));
           break;
           
         default:

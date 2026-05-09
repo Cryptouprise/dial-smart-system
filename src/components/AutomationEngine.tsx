@@ -45,17 +45,15 @@ const AutomationEngine = ({ numbers, onRefreshNumbers }: AutomationEngineProps) 
       const { data: session } = await supabase.auth.getSession();
       if (!session.session) return;
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enhanced-rotation-manager?action=settings`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.session.access_token}`,
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtb25qdXN5bWRyaXBta3Z0dHRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3MzYyNDcsImV4cCI6MjA2NDMxMjI0N30.NPmcCmeJwR_vNymUZp73G9PqbsiPJ7KSTA9x8xG6Soc'
-          }
+      const { data, error } = await supabase.functions.invoke('enhanced-rotation-manager', {
+        body: {
+          action: 'settings'
         }
-      );
+      });
 
-      const result = await response.json();
+      if (error) throw error;
+
+      const result = data as { settings?: Record<string, unknown> } | null;
 
       if (result?.settings) {
         setAutomationSettings(prev => ({
