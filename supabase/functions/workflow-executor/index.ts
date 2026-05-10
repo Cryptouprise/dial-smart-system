@@ -411,7 +411,7 @@ function calculateNextActionTime(step: any): string {
       (config.delay_hours || 0) * 60 * 60 * 1000 +
       (config.delay_days || 0) * 24 * 60 * 60 * 1000;
     
-    let nextTime = new Date(now.getTime() + delayMs);
+    const nextTime = new Date(now.getTime() + delayMs);
 
     // If time_of_day is specified, adjust to that time
     if (config.time_of_day) {

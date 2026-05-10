@@ -407,7 +407,7 @@ serve(async (req) => {
         .maybeSingle();
 
       // Build context for AI
-      let aiPrompt = prompt || settings?.custom_instructions || 'You are a helpful AI assistant reaching out to follow up.';
+      const aiPrompt = prompt || settings?.custom_instructions || 'You are a helpful AI assistant reaching out to follow up.';
 
       // Add lead context
       const leadContext = `Lead info: ${lead.first_name || 'Unknown'} ${lead.last_name || ''}, Status: ${lead.status}, Phone: ${lead.phone_number}`;
@@ -854,7 +854,7 @@ async function generateAIResponse(
   });
 
   // Build system prompt with workflow-specific knowledge if available
-  let customInstructions = settings?.custom_instructions || settings?.ai_personality || 'professional and helpful';
+  const customInstructions = settings?.custom_instructions || settings?.ai_personality || 'professional and helpful';
   
   // Add workflow-specific knowledge base if provided
   let knowledgeBase = '';
@@ -929,7 +929,7 @@ DO NOT include any special characters or formatting that may not work well in SM
       console.log('[AI SMS] Detected reschedule request:', currentContent);
       
       // Parse new date/time from message
-      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
+      const dateMatch = currentContent.match(/(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
 
       // Get lead info and find their upcoming appointment
@@ -996,7 +996,7 @@ DO NOT include any special characters or formatting that may not work well in SM
   else if (isAppointmentRelated && settings?.enabled) {
     try {
       // Try to parse date/time from message for booking
-      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
+      const dateMatch = currentContent.match(/(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
 
       if (dateMatch && timeMatch) {

@@ -513,7 +513,7 @@ serve(async (req) => {
           // Still create the call log below but without lead association
         } else {
           // Look up lead by caller's phone number, always filtered by userId to prevent cross-tenant access
-          let query = supabase
+          const query = supabase
             .from('leads')
             .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
             .or(`phone_number.ilike.%${last10}`)

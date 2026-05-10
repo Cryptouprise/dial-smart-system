@@ -172,7 +172,7 @@ const AgentPricingManager = () => {
         const existingPricing = agentPricing.find(p => p.retell_agent_id === agent.agent_id);
 
         // Try to detect LLM from agent config
-        let llmModel = agent.llm_model || 'gpt-4o';
+        const llmModel = agent.llm_model || 'gpt-4o';
         let voiceProvider = 'elevenlabs'; // Default
 
         // Parse voice provider from voice_id or voice_model if available

@@ -178,7 +178,7 @@ function selectBestNumber(
   // Extract area code from destination number
   const toAreaCode = toNumber.replace(/\D/g, '').slice(1, 4); // Remove +1 and get area code
   
-  let scoredNumbers = phoneNumbers.map(num => {
+  const scoredNumbers = phoneNumbers.map(num => {
     let score = 0;
     const numAreaCode = num.number.replace(/\D/g, '').slice(1, 4);
     

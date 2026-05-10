@@ -10,20 +10,18 @@ export default defineConfig({
     // jsdom 27 requires Node.js 20.19.0+ which may not be available
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.ts'],
-    // Use forks pool for better compatibility
+    // Use forks for process-level isolation to avoid long-run heap buildup
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
-    maxThreads: 1,
-    minThreads: 1,
+    fileParallelism: false,
+    maxWorkers: 1,
+    minWorkers: 1,
     // Add timeout to prevent hanging tests
     testTimeout: 30000,
     hookTimeout: 30000,
     // Disable watch mode by default
     watch: false,
+    // Keep worker logs lean to reduce memory pressure in long runs
+    silent: true,
     exclude: [
       '**/node_modules/**',
       '**/dist/**',

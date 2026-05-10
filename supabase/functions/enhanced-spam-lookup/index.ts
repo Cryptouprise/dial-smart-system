@@ -374,8 +374,8 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     }
 
     // Check the most recent attestation levels
-    let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
-    let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
+    const bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
+    const attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
 
     return {
       level: bestAttestation,
@@ -771,12 +771,12 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
     const phoneSid = numbersData.incoming_phone_numbers[0].sid;
 
     // Try TrustProducts endpoint first
-    let trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
+    const trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
     let profileResponse = await fetch(trustProductUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
     });
     
-    let isTrustProduct = profileResponse.ok;
+    const isTrustProduct = profileResponse.ok;
     let profile: any = null;
     
     if (isTrustProduct) {

@@ -62,7 +62,7 @@ serve(async (req) => {
 
     let twiml = '';
     let queueStatus = 'completed';
-    let dtmfPressed = digits;
+    const dtmfPressed = digits;
     
     // Look up lead by phone number (the "To" number is the lead's phone)
     // IMPORTANT: multiple leads can match the same phone in different formats (+1..., 1..., etc.)
