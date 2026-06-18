@@ -752,7 +752,7 @@ serve(async (req) => {
 
     // Get workflow first steps for campaigns with workflows
     const workflowIds = activeCampaigns.filter(c => c.workflow_id).map(c => c.workflow_id);
-    let workflowFirstSteps: Record<string, any> = {};
+    const workflowFirstSteps: Record<string, any> = {};
     
     if (workflowIds.length > 0) {
       const { data: workflowSteps } = await supabase
@@ -876,7 +876,7 @@ serve(async (req) => {
 
     // Filter leads that need to be added to queue
     const nowTime = new Date();
-    let leadsToQueue = (campaignLeads || []).filter(cl => {
+    const leadsToQueue = (campaignLeads || []).filter(cl => {
       const lead = cl.leads as any;
       if (!lead || !lead.phone_number) return false;
       if (lead.do_not_call) return false;
@@ -1842,7 +1842,7 @@ serve(async (req) => {
     console.log(`[Dispatcher] Dispatched ${dispatched}, ${remaining} leads remaining`);
 
     // Self-schedule if there are more leads and we're actively dialing
-    let selfScheduled = false;
+    const selfScheduled = false;
     if (remaining > 0 && dispatched > 0 && !isInternalCall) {
       // Only self-schedule from user-initiated calls to avoid infinite loops
       // The automation-scheduler will handle the continuous scheduling

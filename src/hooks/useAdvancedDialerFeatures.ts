@@ -131,13 +131,14 @@ export const useAdvancedDialerFeatures = () => {
           // Try to match area code
           query = query.like('number', `%${destAreaCode}%`);
           break;
-        
-        case 'match_prefix':
+
+        case 'match_prefix': {
           // Try to match first 6 digits (area code + prefix)
           const destPrefix = destinationNumber.substring(2, 8);
           query = query.like('number', `%${destPrefix}%`);
           break;
-        
+        }
+
         case 'nearest':
           // Would need geographic database - for now, match area code
           query = query.like('number', `%${destAreaCode}%`);

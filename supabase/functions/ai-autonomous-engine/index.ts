@@ -1198,9 +1198,8 @@ async function optimizePlaybook(
 
     if (allPerf && allPerf.length > 3) {
       try {
-        let callLLMJson: any;
         const mod = await import('../_shared/openrouter.ts');
-        callLLMJson = mod.callLLMJson;
+        const callLLMJson = mod.callLLMJson;
 
         const { data: recommendations } = await callLLMJson({
           messages: [

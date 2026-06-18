@@ -3631,7 +3631,7 @@ async function executeToolCall(
         });
         const agents = await agentsRes.json();
         
-        let agent = args.agent_id 
+        const agent = args.agent_id 
           ? agents.find((a: any) => a.agent_id === args.agent_id)
           : agents.find((a: any) => a.agent_name?.toLowerCase().includes(args.agent_name?.toLowerCase() || ''));
 

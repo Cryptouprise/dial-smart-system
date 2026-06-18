@@ -1474,7 +1474,7 @@ serve(async (req) => {
         );
       }
 
-      case 'test_google_calendar': {
+      case 'test_google_calendar_event': {
         if (!userId) {
           return new Response(
             JSON.stringify({ error: 'Authentication required' }),
@@ -2087,7 +2087,9 @@ serve(async (req) => {
             ghlCreds.forEach((c) => {
               try {
                 credentials[c.credential_key] = atob(c.credential_value_encrypted);
-              } catch (e) {}
+              } catch (e) {
+                console.warn('[Calendar] Failed to decode GHL credential', c.credential_key, e);
+              }
             });
 
             if (credentials.apiKey && credentials.locationId) {

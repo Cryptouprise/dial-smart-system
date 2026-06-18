@@ -256,14 +256,16 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
     const config = step.step_config;
     
     switch (stepType) {
-      case 'wait':
+      case 'wait': {
         const waitDetails = formatWaitStepDetails(config);
         return `Step ${stepNumber}: Wait (${waitDetails})`;
+      }
       case 'call':
         return `Step ${stepNumber}: Call`;
-      case 'sms':
+      case 'sms': {
         const smsPreview = config?.message?.substring(0, 30);
         return `Step ${stepNumber}: SMS${smsPreview ? ` - "${smsPreview}..."` : ''}`;
+      }
       case 'ai_sms':
         return `Step ${stepNumber}: AI SMS`;
       default:

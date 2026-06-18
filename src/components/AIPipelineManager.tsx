@@ -123,7 +123,7 @@ const AIPipelineManager: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      let query = supabase
+      const query = supabase
         .from('leads')
         .select('*, lead_pipeline_positions(pipeline_board_id)')
         .eq('user_id', user.id)

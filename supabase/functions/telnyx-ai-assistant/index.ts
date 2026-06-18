@@ -639,7 +639,7 @@ serve(async (req) => {
 
         // Resolve assigned phone number IDs to actual phone numbers
         const allPhoneIds = (assistants || []).flatMap((a: any) => a.assigned_phone_number_ids || []).filter(Boolean);
-        let phoneMap: Record<string, string> = {};
+        const phoneMap: Record<string, string> = {};
         if (allPhoneIds.length > 0) {
           const { data: phones } = await supabaseAdmin
             .from('phone_numbers')

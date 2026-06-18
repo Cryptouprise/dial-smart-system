@@ -66,10 +66,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     // If no demo config, try to use first available Retell agent + phone number
-    let agentId = config?.retell_agent_id;
+    const agentId = config?.retell_agent_id;
     let fromNumber = config?.demo_phone_number;
-    let llmId = config?.retell_llm_id;
-    let basePrompt = config?.base_prompt;
+    const llmId = config?.retell_llm_id;
+    const basePrompt = config?.base_prompt;
 
     if (!agentId || agentId === 'PENDING_SETUP') {
       // Fetch first active Retell phone number from platform

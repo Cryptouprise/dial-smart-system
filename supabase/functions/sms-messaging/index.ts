@@ -355,7 +355,7 @@ serve(async (req) => {
 
         // Fetch messaging services to check A2P registration
         console.log('[SMS Messaging] Checking A2P messaging services...');
-        let messagingServiceNumbers: Set<string> = new Set();
+        const messagingServiceNumbers: Set<string> = new Set();
         
         try {
           const messagingServicesUrl = `https://messaging.twilio.com/v1/Services`;

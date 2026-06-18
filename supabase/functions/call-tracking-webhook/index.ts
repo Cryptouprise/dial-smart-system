@@ -1304,7 +1304,7 @@ async function updatePipelinePosition(
   const stageName = stageMapping[disposition] || disposition;
 
   // Find or create the pipeline stage
-  let stage = await findOrCreatePipelineStage(supabase, userId, stageName, disposition);
+  const stage = await findOrCreatePipelineStage(supabase, userId, stageName, disposition);
 
   if (stage) {
     // Check if lead already has a position

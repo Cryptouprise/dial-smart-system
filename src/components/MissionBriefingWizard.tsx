@@ -1386,7 +1386,7 @@ const MissionBriefingWizard: React.FC = () => {
                                   const others = enabledPlatforms.filter(([k]) => k !== pid);
                                   const remaining = 100 - v;
                                   const share = others.length > 0 ? Math.floor(remaining / others.length) : 0;
-                                  let rem = remaining - share * others.length;
+                                  const rem = remaining - share * others.length;
                                   const nextPlatforms = { ...data.platforms, [pid]: { ...cfg, trafficPct: v } };
                                   others.forEach(([k], i) => {
                                     nextPlatforms[k] = { ...nextPlatforms[k], trafficPct: share + (i === 0 ? rem : 0) };
