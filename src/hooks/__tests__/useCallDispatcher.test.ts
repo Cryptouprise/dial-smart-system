@@ -376,9 +376,9 @@ describe('useCallDispatcher', () => {
           } as any;
         }
         if (fromCallIndex === 5) {
-          // dialing_queues insert (re-queue)
+          // dialing_queues upsert (re-queue with onConflict recycling)
           return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
           } as any;
         }
         return {

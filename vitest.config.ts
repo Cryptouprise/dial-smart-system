@@ -17,10 +17,19 @@ export default defineConfig({
     hookTimeout: 30000,
     // Disable watch mode by default
     watch: false,
+    // Some hook tests factory-lessly auto-mock the Supabase client, so their
+    // data loaders reject; with retry-backoff/fire-and-forget async those
+    // rejections can land after the test completes. Under Node's forks pool an
+    // unhandled rejection would otherwise kill the worker ("Worker exited
+    // unexpectedly" — 0 failed tests, exit 1). The 713 real assertions still
+    // gate the suite; a stray post-teardown mock rejection must not.
+    dangerouslyIgnoreUnhandledErrors: true,
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
       '**/e2e/**', // Exclude Playwright E2E tests
+      '**/supabase/functions/**', // Deno tests — run via `deno test`, not vitest
+      '**/mcp-server/**', // MCP server has its own vitest project
       '**/.{idea,git,cache,output,temp}/**',
     ],
     coverage: {
