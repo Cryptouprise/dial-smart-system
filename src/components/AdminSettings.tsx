@@ -258,16 +258,21 @@ const AdminSettings = () => {
         return;
       }
 
-      // Call the add_credits RPC function
-      const { data, error } = await supabase.rpc('add_credits', {
-        p_organization_id: organizationId,
-        p_amount_cents: amountCents,
-        p_transaction_type: 'manual_add',
-        p_description: `Manual credit addition by admin`,
-        p_idempotency_key: `manual_${organizationId}_${Date.now()}`,
+      // Route through the credit-management edge function, which authorizes the
+      // caller (org owner/admin) and uses the service role to add credits.
+      // The raw add_credits RPC is no longer client-callable (security).
+      const { data, error } = await supabase.functions.invoke('credit-management', {
+        body: {
+          action: 'add_credits',
+          organization_id: organizationId,
+          amount_cents: amountCents,
+          type: 'manual_add',
+          description: 'Manual credit addition by admin',
+        },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       // Refresh settings and transactions
       const { data: updated } = await supabase

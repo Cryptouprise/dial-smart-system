@@ -366,17 +366,34 @@ serve(async (req) => {
           throw new Error('Organization ID and positive amount_cents required');
         }
 
+        // AUTHORIZATION: adding credits is privileged. Only the service role
+        // (Stripe webhook / internal) or an owner/admin of the target org may
+        // do it. Without this, any authenticated user could credit any org.
+        if (!isServiceRole) {
+          const { data: membership } = await supabase
+            .from('organization_users')
+            .select('role')
+            .eq('organization_id', orgId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          const role = membership?.role;
+          if (role !== 'owner' && role !== 'admin') {
+            return new Response(
+              JSON.stringify({ error: 'Forbidden: only org owners/admins can add credits' }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+
         const { data: addResult, error: addError } = await supabase
           .rpc('add_credits', {
             p_organization_id: orgId,
             p_amount_cents: amount,
-            p_type: body.type || 'deposit',
-            p_description: body.description || null,
-            p_stripe_payment_intent_id: body.stripe_payment_intent_id || null,
-            p_created_by: userId,
+            p_transaction_type: body.type || 'manual_add',
+            p_description: body.description || 'Manual credit addition',
             p_idempotency_key: body.stripe_payment_intent_id
               ? `add_${body.stripe_payment_intent_id}`
-              : null
+              : `manual_${orgId}_${Date.now()}`,
           });
 
         if (addError) throw addError;
