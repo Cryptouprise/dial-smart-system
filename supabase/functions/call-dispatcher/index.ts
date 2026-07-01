@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { raiseAlert, resolveAlerts } from '../_shared/alerting.ts';
+import { resolveRouting } from '../_shared/provider-router.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1460,30 +1461,38 @@ serve(async (req) => {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
-        let campaignProvider = campaign?.provider || 'retell';
-        const isBothMode = campaignProvider === 'both';
-        const isAssistable = campaignProvider === 'assistable';
-        
-        // For "both" mode: alternate between retell and telnyx using attempt count
-        // With fallback: if the chosen provider has no agent configured, use the other
-        if (isBothMode) {
-          const attemptNum = (queueItem.attempts || 0);
-          const preferredProvider = attemptNum % 2 === 0 ? 'retell' : 'telnyx';
-          const hasRetellAgent = !!campaign?.agent_id;
-          const hasTelnyxAgent = !!campaign?.telnyx_assistant_id;
-          
-          if (preferredProvider === 'retell' && !hasRetellAgent && hasTelnyxAgent) {
-            campaignProvider = 'telnyx';
-            console.log(`[Dispatcher] Both mode fallback: no Retell agent, using Telnyx`);
-          } else if (preferredProvider === 'telnyx' && !hasTelnyxAgent && hasRetellAgent) {
-            campaignProvider = 'retell';
-            console.log(`[Dispatcher] Both mode fallback: no Telnyx agent, using Retell`);
-          } else {
-            campaignProvider = preferredProvider;
+        const configuredProvider = campaign?.provider || 'retell';
+        const isBothMode = configuredProvider === 'both';
+        const isAssistable = configuredProvider === 'assistable';
+
+        // ── PROVIDER/AGENT ROUTING (orchestration layer, Phase 1) ──
+        // Retell/Telnyx/both selection now flows through the shared, unit-tested
+        // resolveRouting() instead of inline logic. Behavior-preserving for
+        // both-mode attempt alternation; additionally, an explicit provider
+        // whose agent is unconfigured now falls back to a configured alternate
+        // agent instead of hard-failing. Assistable is handled by its own path
+        // below, so it's excluded here.
+        let campaignProvider = configuredProvider;
+        if (!isAssistable) {
+          const routing = resolveRouting({
+            campaign: {
+              provider: configuredProvider,
+              agent_id: campaign?.agent_id,
+              telnyx_assistant_id: campaign?.telnyx_assistant_id,
+            },
+            attempt: queueItem.attempts || 0,
+          });
+          if (routing.provider) {
+            campaignProvider = routing.provider;
+            if (routing.fallbackUsed) console.log(`[Dispatcher] Router: ${routing.reason}`);
+          } else if (isBothMode) {
+            // No agent for either provider — keep a concrete label so the
+            // downstream no-agent alert fires cleanly.
+            campaignProvider = (queueItem.attempts || 0) % 2 === 0 ? 'retell' : 'telnyx';
           }
-          console.log(`[Dispatcher] Both mode: attempt ${attemptNum} → using ${campaignProvider}`);
+          // else: explicit provider with no agent — keep it; the no-agent path handles it.
         }
-        
+
         const isTelnyx = campaignProvider === 'telnyx';
         
         // CRITICAL DEDUP: Check if this lead was already answered/completed recently
