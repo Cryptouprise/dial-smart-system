@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { raiseAlert, resolveAlerts } from '../_shared/alerting.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1170,6 +1171,22 @@ serve(async (req) => {
         }
       });
 
+      // Surface to the operator (in-app alert + manager SMS). Deduped so a
+      // 5-min dispatch loop doesn't storm. Without this the campaign silently
+      // stops dispatching with zero visible signal.
+      await raiseAlert({
+        supabase,
+        userId: user.id,
+        alertType: 'no_numbers_available',
+        severity: 'critical',
+        title: 'Campaign cannot dial — no phone numbers available',
+        message:
+          'All numbers may have hit daily limits, been quarantined, or need Retell import. Calls are not going out until this is fixed.',
+        metadata: { workflowEnrolled, dialingQueued },
+        relatedType: 'dispatch',
+        dedupeMinutes: 60,
+      });
+
       return new Response(
         JSON.stringify({
           success: false,
@@ -1186,6 +1203,9 @@ serve(async (req) => {
     }
     
     console.log(`[Dispatcher] Found ${availableNumbers.length} phone numbers for rotation`);
+    // Numbers are back — clear any standing "no numbers" alert so the operator's
+    // alert list reflects reality instead of a stale red flag.
+    await resolveAlerts(supabase, user.id, 'no_numbers_available');
     
     // Track usage for rotation within this batch
     const numberUsageInBatch: Record<string, number> = {};
@@ -1579,6 +1599,21 @@ serve(async (req) => {
             }
           });
 
+          // Operator-visible alert, deduped per-campaign so one misconfigured
+          // campaign doesn't spam an alert for every queued lead.
+          await raiseAlert({
+            supabase,
+            userId: user.id,
+            alertType: 'campaign_no_agent',
+            severity: 'critical',
+            title: `Campaign "${campaign?.name || 'Untitled'}" has no ${providerLabel} agent`,
+            message: `Leads are queued but can't be dialed — configure a ${providerLabel} agent in campaign settings.`,
+            metadata: { campaign_id: queueItem.campaign_id, provider: campaignProvider },
+            relatedId: queueItem.campaign_id,
+            relatedType: 'campaign',
+            dedupeMinutes: 120,
+          });
+
           await supabase
             .from('dialing_queues')
             .update({
@@ -1786,7 +1821,23 @@ serve(async (req) => {
           // Break out of loop - stop trying to dial more this batch
           break;
         }
-        
+
+        // Non-rate-limit provider failure (e.g. Telnyx 10015 bad connection_id,
+        // Retell rejection). This is the "silent failed call" class — surface it
+        // once per campaign per window so the operator knows dials are erroring.
+        await raiseAlert({
+          supabase,
+          userId: user.id,
+          alertType: 'provider_call_failed',
+          severity: 'warning',
+          title: 'Provider is rejecting outbound calls',
+          message: `Call creation is failing: ${String(errorMsg).slice(0, 160)}`,
+          metadata: { campaign_id: queueItem.campaign_id, lead_id: queueItem.lead_id },
+          relatedId: queueItem.campaign_id,
+          relatedType: 'campaign',
+          dedupeMinutes: 30,
+        });
+
         // Check if should retry for other errors
         const attempts = (queueItem.attempts || 0) + 1;
         const maxAttempts = queueItem.max_attempts || 3;
