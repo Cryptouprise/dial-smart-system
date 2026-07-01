@@ -89,12 +89,21 @@ These are ACTIVE in prod and should be deleted or gated — they are attack surf
 - [x] **Security:** replace always-true `edge_function_errors` INSERT policy with own-row check. **DONE**.
 - [x] **Reliability:** silent-failure alerting on the dial path. **DONE** — `_shared/alerting.ts` wired into `call-dispatcher`.
 - [x] **UX:** first-run guided setup hero on Command Center. **DONE**.
-- [ ] **Cleanup:** delete debug/test/one-shot edge functions (§3) — requires Supabase CLI/dashboard (no MCP delete tool). See list in §3.
-- [ ] **Verify:** one real end-to-end Retell campaign — dispatch → webhook → `call_logs` row → disposition recorded.
-- [ ] **Storage:** scope `broadcast-audio` / `marketing-assets` bucket listing (deferred — non-sensitive assets, and public read is required for Twilio audio fetch + marketing images; tighten carefully to avoid breaking playback).
-- [ ] **Infra:** upgrade Postgres to patched version (dashboard action, not a migration).
-- [ ] **Orchestration:** adopt `resolveRouting()` in the dispatcher (Phase 1, log-compare) — see `ORCHESTRATION_LAYER.md`.
-- [ ] **Hygiene (non-blocking):** 714 `console.*` statements, `npm audit` high/moderate vulns, 43 MB PWA precache (first-load weight).
+- [x] **Build (CRITICAL):** `index.html` + `public/showcase/blog-index.html` were base64-corrupted → a standard `vite build` emitted a **blank app with no JS**. **DONE** — decoded back to real HTML; build now emits the app bundle. (Lovable's pipeline apparently decoded these on its side, which is why prod worked; CI/any standard build did not.)
+- [x] **Orchestration:** adopt `resolveRouting()` in the dispatcher (Phase 1). **DONE** — inline provider selection replaced by the shared router; explicit-provider fallback added.
+- [x] **Perf:** PWA precache scoped to the app shell. **DONE** — 43 MB/358 entries → 3.8 MB/202 entries.
+- [x] **Storage:** `broadcast-audio` / `marketing-assets` listing — **ACCEPTED BY DESIGN.** Both must be `public` (Twilio fetches audio via unsigned URLs; marketing site needs public images), public downloads bypass RLS, and contents are non-sensitive. Revisit only if these buckets ever hold sensitive data (then: private bucket + signed URLs).
+- [ ] **Cleanup (you — CLI):** delete debug/test/one-shot edge functions still live in prod (§3). No MCP delete tool. Run:
+  ```bash
+  supabase functions delete patch-grace-once debug-twilio-call test-sip-call \
+    backfill-call-agent-data retell-cost-backfill --project-ref emonjusymdripmkvtttc
+  # review before deleting (keep if still needed): test-workflow, clear-voice-webhooks,
+  # remove-trunk, check-number-config, configure-sip-trunk, setup-lady-jarvis, retell-force-webhook
+  # KEEP: demo-* (marketing demo depends on them)
+  ```
+- [ ] **Infra (you — dashboard):** upgrade Postgres to the patched version. Supabase Dashboard → Settings → Infrastructure → Upgrade.
+- [ ] **Verify (you):** one real end-to-end Retell campaign — dispatch → webhook → `call_logs` row → disposition recorded.
+- [ ] **Hygiene (non-blocking):** 714 `console.*` statements, `npm audit` high/moderate vulns.
 
 ---
 
