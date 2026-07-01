@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useCampaignWorkflows } from '../useCampaignWorkflows';
 
-vi.mock('@/integrations/supabase/client');
+// Uses the global awaitable Supabase mock (src/test/setup.ts). A factory-less
+// vi.mock() here auto-mocks the client to undefined, making the hook's loaders
+// throw and leak async work that can crash the worker fork.
 
 describe('useCampaignWorkflows', () => {
   beforeEach(() => {

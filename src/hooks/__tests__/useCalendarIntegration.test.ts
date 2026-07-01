@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useCalendarIntegration } from '../useCalendarIntegration';
 
-vi.mock('@/integrations/supabase/client');
+// Use the global awaitable Supabase mock from src/test/setup.ts. A factory-less
+// vi.mock() here would auto-mock the client to return undefined, making the
+// hook's data loaders throw and spawn retry timers that outlive the test.
 
 describe('useCalendarIntegration', () => {
   beforeEach(() => {

@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAIBrain } from '../useAIBrain';
 
-vi.mock('@/integrations/supabase/client');
+// Uses the global awaitable Supabase mock (src/test/setup.ts) instead of a
+// factory-less auto-mock, which would return undefined and make the hook's
+// async work throw and leak past teardown (crashing the worker fork).
 
 // Mock React Router hooks
 vi.mock('react-router-dom', () => ({
