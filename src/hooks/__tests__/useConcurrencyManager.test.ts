@@ -145,7 +145,7 @@ describe('useConcurrencyManager', () => {
         await result.current.loadActiveCalls();
       });
 
-      expect(chainMock.in).toHaveBeenCalledWith('status', ['initiated', 'ringing', 'in_progress']);
+      expect(chainMock.in).toHaveBeenCalledWith('status', ['initiated', 'ringing', 'in_progress', 'calling', 'in-progress']);
     });
 
     it('should return empty array on error', async () => {

@@ -21,6 +21,8 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/e2e/**', // Exclude Playwright E2E tests
+      '**/supabase/functions/**', // Deno tests — run via `deno test`, not vitest
+      '**/mcp-server/**', // MCP server has its own vitest project
       '**/.{idea,git,cache,output,temp}/**',
     ],
     coverage: {

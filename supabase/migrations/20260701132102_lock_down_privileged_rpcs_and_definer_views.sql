@@ -4,18 +4,29 @@
 -- service_role (used by edge functions) retains full access throughout.
 --
 -- Applied to production via MCP on 2026-07-01. This file mirrors that change so
--- the repo migration history stays in sync. Idempotent: safe to re-run.
+-- the repo migration history stays in sync.
+--
+-- ROBUSTNESS: every REVOKE/GRANT/ALTER is guarded with an existence check
+-- (to_regprocedure / to_regclass). Function signatures differ between the live
+-- DB and a DB rebuilt purely from repo migrations (known add_credits drift:
+-- live uses p_transaction_type, older repo migrations use p_type). Without the
+-- guards a missing signature would abort the whole DO block and skip the rest
+-- of the lockdown. Guards make this migration safe + idempotent on any DB.
 
 -- ============================================================
 -- GROUP A: server-only functions — revoke ALL client access.
 -- Called only by edge functions (service_role) or cron. None are invoked from
 -- the frontend (add_credits now routes through the credit-management edge fn).
+-- Signatures listed for BOTH the live and repo-defined variants where they
+-- differ, so whichever exists gets locked down.
 -- ============================================================
 DO $$
 DECLARE
   fn text;
   sigs text[] := ARRAY[
-    'public.add_credits(uuid, integer, text, text, text)',
+    'public.add_credits(uuid, integer, text, text, text)',                                  -- live
+    'public.add_credits(uuid, integer, text, text, text, uuid)',                            -- repo variant (p_type/p_created_by)
+    'public.add_credits(uuid, integer, text, text, text, uuid, text)',                      -- repo v2 variant
     'public.calibrate_lead_scoring_weights(uuid)',
     'public.check_and_reset_daily_calls()',
     'public.check_credit_balance(uuid, numeric)',
@@ -25,6 +36,7 @@ DECLARE
     'public.decrement_daily_calls(uuid)',
     'public.expire_old_actions()',
     'public.finalize_call_cost(uuid, uuid, text, numeric, integer, text, text)',
+    'public.finalize_call_cost(uuid, uuid, text, numeric, integer, text)',                  -- variant w/o agent_id
     'public.get_effective_daily_calls(uuid)',
     'public.get_funnel_trend(uuid, integer)',
     'public.get_telnyx_assistant_for_call(uuid, uuid)',
@@ -36,6 +48,7 @@ DECLARE
     'public.recalculate_calling_windows(uuid)',
     'public.recalculate_number_health(uuid)',
     'public.reserve_credits(uuid, integer, uuid, text)',
+    'public.reserve_credits(uuid, integer, uuid, text, text)',                              -- variant w/ idempotency key
     'public.reset_all_daily_calls()',
     'public.reset_stale_daily_calls(uuid)',
     'public.save_operational_memory(uuid, text, text, jsonb, integer)',
@@ -50,8 +63,10 @@ DECLARE
   ];
 BEGIN
   FOREACH fn IN ARRAY sigs LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', fn);
-    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', fn);
+    IF to_regprocedure(fn) IS NOT NULL THEN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', fn);
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', fn);
+    END IF;
   END LOOP;
 END $$;
 
@@ -70,18 +85,33 @@ DECLARE
   ];
 BEGIN
   FOREACH fn IN ARRAY sigs LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon', fn);
-    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated, service_role', fn);
+    IF to_regprocedure(fn) IS NOT NULL THEN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon', fn);
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated, service_role', fn);
+    END IF;
   END LOOP;
 END $$;
 
 -- ============================================================
 -- SECURITY DEFINER views (ERROR-level) → security_invoker (PG15+).
+-- Guarded so a rebuild missing any view doesn't abort the migration.
 -- ============================================================
-ALTER VIEW public.top_openers SET (security_invoker = on);
-ALTER VIEW public.time_wasted_summary SET (security_invoker = on);
-ALTER VIEW public.voicemail_performance SET (security_invoker = on);
-ALTER VIEW public.call_outcome_dimensions SET (security_invoker = on);
+DO $$
+DECLARE
+  v text;
+  views text[] := ARRAY[
+    'public.top_openers',
+    'public.time_wasted_summary',
+    'public.voicemail_performance',
+    'public.call_outcome_dimensions'
+  ];
+BEGIN
+  FOREACH v IN ARRAY views LOOP
+    IF to_regclass(v) IS NOT NULL THEN
+      EXECUTE format('ALTER VIEW %s SET (security_invoker = on)', v);
+    END IF;
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- edge_function_errors: replace the always-true INSERT policy.
