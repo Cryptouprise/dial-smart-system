@@ -47,7 +47,21 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB limit
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Precache ONLY the SPA app shell — not the ~280 pre-rendered SEO/
+        // showcase/blog HTML pages and their images. Those are standalone static
+        // pages served directly (and crawled); precaching them forced a ~43MB
+        // service-worker download on every first app visit. The app at / only
+        // needs its own JS/CSS/fonts + root shell for offline/PWA.
+        globPatterns: [
+          'assets/**/*.{js,css,woff2}',
+          'index.html',
+          'manifest.webmanifest',
+          'favicon.ico',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'apple-touch-icon.png',
+        ],
+        globIgnores: ['**/showcase/**', '**/blog*/**', '**/templates/**'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
