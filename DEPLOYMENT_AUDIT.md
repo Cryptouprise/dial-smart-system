@@ -84,13 +84,16 @@ These are ACTIVE in prod and should be deleted or gated — they are attack surf
 
 ## 6. Pre-launch checklist (single-operator launch)
 
-- [ ] **Security:** migration revoking `anon`/`authenticated` EXECUTE on `mint_api_key`, `add_credits`, `upgrade_user_tier`, `reserve_credits`, `finalize_call_cost` (+ other server-only RPCs).
-- [ ] **Security:** recreate 4 SECURITY DEFINER views as INVOKER; set `search_path=''` on 27 functions.
-- [ ] **Cleanup:** delete debug/test/one-shot edge functions (§3).
-- [ ] **Reliability:** silent-failure alerting on the dial path (see companion work in this branch).
+- [x] **Security:** revoke `anon`/`authenticated` EXECUTE on `mint_api_key`, `add_credits`, `upgrade_user_tier`, `reserve_credits`, `finalize_call_cost` + all server-only RPCs. **DONE** — migration `20260701132102` (applied). Verified: 0 SECURITY DEFINER functions anon-callable.
+- [x] **Security:** flip 4 SECURITY DEFINER views to `security_invoker`; pin `search_path` on all public functions. **DONE** — migrations `20260701132102` + `20260701132334` (applied). Verified: 0 functions without a pinned search_path.
+- [x] **Security:** replace always-true `edge_function_errors` INSERT policy with own-row check. **DONE**.
+- [x] **Reliability:** silent-failure alerting on the dial path. **DONE** — `_shared/alerting.ts` wired into `call-dispatcher`.
+- [x] **UX:** first-run guided setup hero on Command Center. **DONE**.
+- [ ] **Cleanup:** delete debug/test/one-shot edge functions (§3) — requires Supabase CLI/dashboard (no MCP delete tool). See list in §3.
 - [ ] **Verify:** one real end-to-end Retell campaign — dispatch → webhook → `call_logs` row → disposition recorded.
-- [ ] **Storage:** scope `broadcast-audio` / `marketing-assets` bucket listing.
-- [ ] **Infra:** upgrade Postgres to patched version.
+- [ ] **Storage:** scope `broadcast-audio` / `marketing-assets` bucket listing (deferred — non-sensitive assets, and public read is required for Twilio audio fetch + marketing images; tighten carefully to avoid breaking playback).
+- [ ] **Infra:** upgrade Postgres to patched version (dashboard action, not a migration).
+- [ ] **Orchestration:** adopt `resolveRouting()` in the dispatcher (Phase 1, log-compare) — see `ORCHESTRATION_LAYER.md`.
 - [ ] **Hygiene (non-blocking):** 714 `console.*` statements, `npm audit` high/moderate vulns, 43 MB PWA precache (first-load weight).
 
 ---
