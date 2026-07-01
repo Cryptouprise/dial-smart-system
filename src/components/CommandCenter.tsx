@@ -72,6 +72,12 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
   const [todayStats, setTodayStats] = useState<TodayStats>({ totalCalls: 0, transfers: 0, appointments: 0, answerRate: 0 });
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
+  const [setup, setSetup] = useState<{ hasNumbers: boolean; hasAgent: boolean; hasLeads: boolean; loaded: boolean }>({
+    hasNumbers: false,
+    hasAgent: false,
+    hasLeads: false,
+    loaded: false,
+  });
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -87,12 +93,33 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           { id: '2', name: 'Database Reactivation', status: 'active', totalLeads: 5000, callsMade: 2341, transfers: 5, appointments: 3, provider: 'telnyx' },
         ]);
         setTodayStats({ totalCalls: 347, transfers: 17, appointments: 11, answerRate: 22 });
+        setSetup({ hasNumbers: true, hasAgent: true, hasLeads: true, loaded: true });
         setLoading(false);
         return;
       }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
+
+      // First-run readiness: what does the user still need before a call can go out?
+      // Cheap existence checks (head + count) — an agent can be Retell OR Telnyx.
+      // Isolated so a single failing table read can never break the dashboard load.
+      try {
+        const [numbersCount, retellAgents, telnyxAgents, leadsCount] = await Promise.all([
+          supabase.from('phone_numbers').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
+          supabase.from('retell_agents').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+          supabase.from('telnyx_assistants').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+          supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        ]);
+        setSetup({
+          hasNumbers: (numbersCount.count ?? 0) > 0,
+          hasAgent: (retellAgents.count ?? 0) > 0 || (telnyxAgents.count ?? 0) > 0,
+          hasLeads: (leadsCount.count ?? 0) > 0,
+          loaded: true,
+        });
+      } catch (readinessErr) {
+        console.warn('CommandCenter readiness check failed (non-fatal):', readinessErr);
+      }
 
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
@@ -185,8 +212,74 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
     }
   };
 
+  const setupComplete = setup.hasNumbers && setup.hasAgent && setup.hasLeads;
+  const setupSteps = [
+    { key: 'numbers', label: 'Get phone numbers', done: setup.hasNumbers, tab: 'overview' },
+    { key: 'agent', label: 'Create an AI agent', done: setup.hasAgent, tab: 'onboarding' },
+    { key: 'leads', label: 'Add leads to call', done: setup.hasLeads, tab: 'lead-upload' },
+  ];
+  const nextStep = setupSteps.find(s => !s.done);
+  const doneCount = setupSteps.filter(s => s.done).length;
+
   return (
     <div className="space-y-5">
+      {/* ── FIRST-RUN SETUP HERO ── shown until numbers + agent + leads exist */}
+      {setup.loaded && !setupComplete && (
+        <Card className="border-primary/50 bg-gradient-to-br from-primary/10 via-background to-primary/5 shadow-lg">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-primary/15 shrink-0">
+                <Rocket className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-semibold text-base leading-tight">Let's get you making calls</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {doneCount} of 3 done — finish setup and launch your first campaign in minutes.
+                </p>
+              </div>
+              <Badge variant="secondary" className="ml-auto shrink-0 text-xs">{doneCount}/3</Badge>
+            </div>
+
+            <Progress value={(doneCount / 3) * 100} className="h-1.5 mb-4" />
+
+            <div className="grid sm:grid-cols-3 gap-2 mb-4">
+              {setupSteps.map((s, i) => (
+                <button
+                  key={s.key}
+                  onClick={() => onNavigate(s.tab)}
+                  className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all hover:shadow-sm ${
+                    s.done
+                      ? 'border-green-300 bg-green-50 dark:bg-green-950/40 dark:border-green-800'
+                      : 'border-primary/30 bg-background hover:bg-primary/5'
+                  }`}
+                >
+                  {s.done ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                  ) : (
+                    <span className="h-4 w-4 rounded-full border-2 border-primary/40 text-[10px] font-bold text-primary flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                  )}
+                  <span className={`text-xs font-medium ${s.done ? 'text-green-700 dark:text-green-300 line-through' : ''}`}>
+                    {s.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => onNavigate(nextStep?.tab || 'onboarding')} className="gap-2">
+                <Zap className="h-4 w-4" />
+                {nextStep ? `Continue: ${nextStep.label}` : 'Finish setup'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => onNavigate('onboarding')} className="text-xs gap-1.5">
+                Open full setup guide <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── AI COMMAND BAR ── */}
       <Card className="border-primary/40 bg-gradient-to-br from-primary/5 via-background to-primary/10 shadow-lg">
         <CardContent className="p-5">
