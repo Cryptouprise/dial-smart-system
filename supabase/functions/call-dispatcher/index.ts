@@ -1466,31 +1466,31 @@ serve(async (req) => {
         const isAssistable = configuredProvider === 'assistable';
 
         // ── PROVIDER/AGENT ROUTING (orchestration layer, Phase 1) ──
-        // Retell/Telnyx/both selection now flows through the shared, unit-tested
-        // resolveRouting() instead of inline logic. Behavior-preserving for
-        // both-mode attempt alternation; additionally, an explicit provider
-        // whose agent is unconfigured now falls back to a configured alternate
-        // agent instead of hard-failing. Assistable is handled by its own path
-        // below, so it's excluded here.
+        // Only "both" mode chooses between providers, and its Retell + Telnyx
+        // number pools are always loaded together upstream — so resolveRouting()
+        // drives it (attempt alternation + agent-availability fallback), now via
+        // the shared, unit-tested function instead of inline logic.
+        //
+        // Explicit retell/telnyx/assistable campaigns keep their configured
+        // provider. We deliberately do NOT cross-fall-back an explicit provider
+        // to an alternate: the alternate's number pool is only fetched when a
+        // campaign actually uses that provider (hasRetellCampaign/
+        // hasTelnyxCampaign), so switching would fail with "no valid <provider>
+        // numbers". An explicit provider missing its agent is handled by the
+        // no-agent path below, exactly as before.
         let campaignProvider = configuredProvider;
-        if (!isAssistable) {
+        if (isBothMode) {
           const routing = resolveRouting({
             campaign: {
-              provider: configuredProvider,
+              provider: 'both',
               agent_id: campaign?.agent_id,
               telnyx_assistant_id: campaign?.telnyx_assistant_id,
             },
             attempt: queueItem.attempts || 0,
           });
-          if (routing.provider) {
-            campaignProvider = routing.provider;
-            if (routing.fallbackUsed) console.log(`[Dispatcher] Router: ${routing.reason}`);
-          } else if (isBothMode) {
-            // No agent for either provider — keep a concrete label so the
-            // downstream no-agent alert fires cleanly.
-            campaignProvider = (queueItem.attempts || 0) % 2 === 0 ? 'retell' : 'telnyx';
-          }
-          // else: explicit provider with no agent — keep it; the no-agent path handles it.
+          campaignProvider = routing.provider
+            ?? ((queueItem.attempts || 0) % 2 === 0 ? 'retell' : 'telnyx');
+          if (routing.fallbackUsed) console.log(`[Dispatcher] Router: ${routing.reason}`);
         }
 
         const isTelnyx = campaignProvider === 'telnyx';
