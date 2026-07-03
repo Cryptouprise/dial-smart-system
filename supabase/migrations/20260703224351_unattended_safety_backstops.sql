@@ -14,6 +14,10 @@
 -- is scheduled separately over HTTP (it needs provider API access); that
 -- cron job uses the public anon JWT like the pre-existing scheduler jobs.
 
+-- The live DB has dialing_queues.notes but no repo migration adds it — guard
+-- so a DB rebuilt purely from migrations doesn't abort the backstop cron.
+ALTER TABLE public.dialing_queues ADD COLUMN IF NOT EXISTS notes text;
+
 CREATE OR REPLACE FUNCTION public.run_safety_backstops()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -79,6 +83,8 @@ BEGIN
   -- or webhook path died mid-call. Fail them so leads aren't stranded,
   -- and alert (deduped) so the operator knows it happened.
   ------------------------------------------------------------------
+  -- One statement: recover stuck rows, then alert ONLY the owners of the
+  -- affected campaigns with their own per-user counts (not a global fan-out).
   WITH stuck AS (
     UPDATE dialing_queues q
     SET status = 'failed',
@@ -87,24 +93,28 @@ BEGIN
     WHERE q.status = 'calling'
       AND q.updated_at < v_now - interval '15 minutes'
     RETURNING q.campaign_id
+  ),
+  per_user AS (
+    SELECT c.user_id, count(*) AS n
+    FROM stuck s
+    JOIN campaigns c ON c.id = s.campaign_id
+    GROUP BY c.user_id
+  ),
+  ins AS (
+    INSERT INTO system_alerts (user_id, alert_type, severity, title, message, metadata)
+    SELECT pu.user_id, 'stuck_calls_recovered', 'warning',
+           'Stuck queue entries auto-recovered',
+           pu.n || ' of your dialing-queue entries were stuck in calling >15 min and were marked failed. If this repeats, the dispatch/webhook path is dropping calls.',
+           jsonb_build_object('count', pu.n)
+    FROM per_user pu
+    WHERE NOT EXISTS (
+      SELECT 1 FROM system_alerts a
+      WHERE a.user_id = pu.user_id
+        AND a.alert_type = 'stuck_calls_recovered'
+        AND a.created_at > v_now - interval '1 hour')
+    RETURNING 1
   )
   SELECT count(*) INTO v_stuck_count FROM stuck;
-
-  IF v_stuck_count > 0 THEN
-    INSERT INTO system_alerts (user_id, alert_type, severity, title, message, metadata)
-    SELECT c.user_id, 'stuck_calls_recovered', 'warning',
-           'Stuck queue entries auto-recovered',
-           v_stuck_count || ' dialing-queue entries were stuck in calling >15 min and were marked failed. If this repeats, the dispatch/webhook path is dropping calls.',
-           jsonb_build_object('count', v_stuck_count)
-    FROM campaigns c
-    WHERE c.status IN ('active','running')
-      AND NOT EXISTS (
-        SELECT 1 FROM system_alerts a
-        WHERE a.user_id = c.user_id
-          AND a.alert_type = 'stuck_calls_recovered'
-          AND a.created_at > v_now - interval '1 hour')
-    GROUP BY c.user_id;
-  END IF;
 
   ------------------------------------------------------------------
   -- 3. BUDGET BACKSTOP

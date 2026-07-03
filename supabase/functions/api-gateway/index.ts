@@ -548,7 +548,10 @@ async function assignLeadsToCampaign(rc: RouteContext, campaignId: string): Prom
  * Body: lead fields + campaign_id (required) + dispatch_now (default true).
  */
 async function leadIntake(rc: RouteContext): Promise<Response> {
+  // Intake both writes a lead AND starts outbound dialing/spend, so it needs
+  // the dial-capable scope too — consistent with placeCall/forceDispatch.
   requireScope(rc.ctx, "leads:write");
+  requireScope(rc.ctx, "calls:write");
   const body = await safeJson(rc.req);
   if (!body.phone_number) throw new ValidationError("phone_number is required");
   if (!body.campaign_id) throw new ValidationError("campaign_id is required for intake");
@@ -633,7 +636,7 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
         max_attempts: camp.max_attempts ?? 3,
         scheduled_at: nowIso,
         updated_at: nowIso,
-        priority: 1, // speed-to-lead: front of the queue
+        priority: 100, // dispatcher sorts priority DESC — 100 = front of the queue (callback/force-dispatch tier)
       }],
       { onConflict: "campaign_id,lead_id" },
     );
