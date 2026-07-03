@@ -4637,19 +4637,20 @@ serve(async (req) => {
   }
 
   try {
-    const { 
-      message, 
-      sessionId, 
-      currentRoute, 
+    const requestPayload = await req.json();
+    const {
+      message,
+      sessionId,
+      currentRoute,
       conversationHistory,
       action // 'chat', 'feedback', 'get_preferences'
-    } = await req.json();
+    } = requestPayload;
 
     const authHeader = req.headers.get('Authorization');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    
+
     if (!supabaseUrl || !supabaseKey) {
       return new Response(
         JSON.stringify({ error: 'Supabase configuration missing' }),
@@ -4659,20 +4660,32 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth header
+    // Get user from auth header. Trusted internal callers (slack-webhook,
+    // schedulers) may instead pass internal:true + userId with the service-role
+    // key as bearer — same convention as call-dispatcher.
     const token = authHeader?.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const internalUserId = typeof requestPayload.userId === 'string' ? requestPayload.userId : null;
+    const isInternalCall = requestPayload.internal === true && internalUserId && token === supabaseKey;
+
+    let user: { id: string } | null = null;
+    if (isInternalCall) {
+      user = { id: internalUserId };
+      console.log('[AI Brain] Internal service call for user:', internalUserId);
+    } else {
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !authUser) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      user = authUser;
     }
 
     // Handle feedback action
     if (action === 'feedback') {
-      const { responseId, rating, messageContent, responseContent } = await req.json();
+      // Body was already consumed above — reuse the parsed payload.
+      const { responseId, rating, messageContent, responseContent } = requestPayload;
       await recordFeedback(supabase, user.id, responseId, rating, messageContent, responseContent);
       return new Response(
         JSON.stringify({ success: true }),

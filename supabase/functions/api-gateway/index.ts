@@ -220,6 +220,8 @@ async function dispatch(
 
   // ── Leads (extended) ────────────────────────────────────────────────────────
   if (path === "/v1/leads/search" && method === "POST") return searchLeads(rc);
+  if (path === "/v1/leads/bulk" && method === "POST") return bulkCreateLeads(rc);
+  if (path === "/v1/leads/intake" && method === "POST") return leadIntake(rc);
 
   // ── Campaigns ───────────────────────────────────────────────────────────────
   if (path === "/v1/campaigns") {
@@ -227,12 +229,13 @@ async function dispatch(
     if (method === "POST") return createCampaign(rc);
   }
   const campMatch = path.match(
-    /^\/v1\/campaigns\/([0-9a-f-]{36})(\/(launch|pause|validate|live-stats|disposition-breakdown|retry-failed|force-dispatch|dry-run|pre-launch-audit))?$/,
+    /^\/v1\/campaigns\/([0-9a-f-]{36})(\/(launch|pause|validate|live-stats|disposition-breakdown|retry-failed|force-dispatch|dry-run|pre-launch-audit|leads))?$/,
   );
   if (campMatch) {
     const id = campMatch[1];
     const action = campMatch[3];
     if (!action && method === "GET") return getCampaign(rc, id);
+    if (action === "leads" && method === "POST") return assignLeadsToCampaign(rc, id);
     if (action === "launch" && method === "POST") return setCampaignStatus(rc, id, "active");
     if (action === "pause" && method === "POST") return setCampaignStatus(rc, id, "paused");
     if (action === "validate" && method === "GET") return validateCampaign(rc, id);
@@ -354,6 +357,314 @@ async function createLead(rc: RouteContext): Promise<Response> {
     .single();
   if (error) throw error;
   return successResponse(data, 201);
+}
+
+/** Normalize a phone string to bare digits for dedup comparison. */
+function phoneDigits(p: unknown): string {
+  return String(p ?? "").replace(/\D/g, "").slice(-10);
+}
+
+/**
+ * POST /v1/leads/bulk — create up to 500 leads in one call.
+ * Dedupes within the batch AND against the user's existing leads by the last
+ * 10 digits of the phone number. Returns created/skipped counts + ids so a
+ * bot can immediately assign them to a campaign.
+ */
+async function bulkCreateLeads(rc: RouteContext): Promise<Response> {
+  requireScope(rc.ctx, "leads:write");
+  const body = await safeJson(rc.req);
+  const rows = Array.isArray(body.leads) ? body.leads : null;
+  if (!rows || rows.length === 0) throw new ValidationError("leads must be a non-empty array");
+  if (rows.length > 500) throw new ValidationError("Max 500 leads per request");
+
+  const seen = new Set<string>();
+  const valid: Record<string, unknown>[] = [];
+  const rejected: { index: number; reason: string }[] = [];
+
+  rows.forEach((r: Record<string, unknown>, i: number) => {
+    const digits = phoneDigits(r?.phone_number);
+    if (digits.length < 7) {
+      rejected.push({ index: i, reason: "invalid phone_number" });
+      return;
+    }
+    if (seen.has(digits)) {
+      rejected.push({ index: i, reason: "duplicate phone in batch" });
+      return;
+    }
+    seen.add(digits);
+    const insert: Record<string, unknown> = {
+      user_id: rc.ctx.userId,
+      phone_number: String(r.phone_number),
+      first_name: r.first_name ?? null,
+      last_name: r.last_name ?? null,
+      email: r.email ?? null,
+      company: r.company ?? null,
+      lead_source: r.lead_source ?? "api_bulk",
+      status: r.status ?? "new",
+      tags: Array.isArray(r.tags) ? r.tags : null,
+      notes: r.notes ?? null,
+      timezone: r.timezone ?? null,
+      city: r.city ?? null,
+      state: r.state ?? null,
+      custom_fields: r.custom_fields ?? null,
+    };
+    if (rc.ctx.organizationId) insert.organization_id = rc.ctx.organizationId;
+    valid.push(insert);
+  });
+
+  // Dedup against existing leads: fetch this user's phone numbers once and
+  // compare by last-10 digits (formats vary between sources).
+  const { data: existing, error: existingError } = await rc.supabase
+    .from("leads")
+    .select("phone_number")
+    .eq("user_id", rc.ctx.userId);
+  if (existingError) throw existingError;
+  const existingDigits = new Set((existing ?? []).map((l: { phone_number: string }) => phoneDigits(l.phone_number)));
+
+  const toInsert = valid.filter((v) => !existingDigits.has(phoneDigits(v.phone_number)));
+  const skippedExisting = valid.length - toInsert.length;
+
+  let created: { id: string; phone_number: string }[] = [];
+  if (toInsert.length > 0) {
+    const { data, error } = await rc.supabase
+      .from("leads")
+      .insert(toInsert)
+      .select("id, phone_number");
+    if (error) throw error;
+    created = data ?? [];
+  }
+
+  return successResponse(
+    {
+      created: created.length,
+      skipped_existing: skippedExisting,
+      rejected,
+      lead_ids: created.map((l) => l.id),
+    },
+    201,
+  );
+}
+
+/**
+ * POST /v1/campaigns/:id/leads — attach leads to a campaign AND queue them
+ * for dialing. Body: { lead_ids: string[] } or { status: "new" } to attach all
+ * the user's leads with that status. This is the missing link that lets a bot
+ * cold-start a campaign end-to-end (create leads -> assign -> launch).
+ */
+async function assignLeadsToCampaign(rc: RouteContext, campaignId: string): Promise<Response> {
+  requireScope(rc.ctx, "campaigns:write");
+  const body = await safeJson(rc.req);
+
+  const { data: camp, error: campError } = await rc.supabase
+    .from("campaigns")
+    .select("id, name, status, max_attempts")
+    .eq("user_id", rc.ctx.userId)
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (campError) throw campError;
+  if (!camp) throw new NotFoundError(`Campaign ${campaignId} not found`);
+
+  let leads: { id: string; phone_number: string; do_not_call: boolean | null }[] = [];
+  if (Array.isArray(body.lead_ids) && body.lead_ids.length > 0) {
+    if (body.lead_ids.length > 2000) throw new ValidationError("Max 2000 lead_ids per request");
+    const { data, error } = await rc.supabase
+      .from("leads")
+      .select("id, phone_number, do_not_call")
+      .eq("user_id", rc.ctx.userId)
+      .in("id", body.lead_ids);
+    if (error) throw error;
+    leads = data ?? [];
+  } else if (typeof body.status === "string" && body.status.length > 0) {
+    const { data, error } = await rc.supabase
+      .from("leads")
+      .select("id, phone_number, do_not_call")
+      .eq("user_id", rc.ctx.userId)
+      .eq("status", body.status)
+      .limit(2000);
+    if (error) throw error;
+    leads = data ?? [];
+  } else {
+    throw new ValidationError("Provide lead_ids (array) or status (string) to select leads");
+  }
+
+  const dialable = leads.filter((l) => !l.do_not_call && phoneDigits(l.phone_number).length >= 7);
+  const skippedDnc = leads.length - dialable.length;
+  if (dialable.length === 0) {
+    return successResponse({ assigned: 0, queued: 0, skipped_dnc_or_invalid: skippedDnc });
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // campaign_leads join rows (id-pair table; safe to re-add via upsert-ish insert)
+  const { error: clError } = await rc.supabase
+    .from("campaign_leads")
+    .upsert(
+      dialable.map((l) => ({ campaign_id: campaignId, lead_id: l.id })),
+      { onConflict: "campaign_id,lead_id", ignoreDuplicates: true },
+    );
+  if (clError && !String(clError.message ?? "").includes("no unique")) {
+    // Table may lack the composite unique constraint on some installs — fall
+    // back to plain insert and tolerate duplicate errors.
+    const { error: insError } = await rc.supabase
+      .from("campaign_leads")
+      .insert(dialable.map((l) => ({ campaign_id: campaignId, lead_id: l.id })));
+    if (insError && !String(insError.message ?? "").toLowerCase().includes("duplicate")) throw insError;
+  }
+
+  // dialing_queues entries — upsert on (campaign_id, lead_id) so re-assigning
+  // recycles terminal rows into fresh pending attempts (dispatcher convention).
+  const { error: dqError } = await rc.supabase
+    .from("dialing_queues")
+    .upsert(
+      dialable.map((l) => ({
+        campaign_id: campaignId,
+        lead_id: l.id,
+        phone_number: l.phone_number,
+        status: "pending",
+        attempts: 0,
+        max_attempts: camp.max_attempts ?? 3,
+        scheduled_at: nowIso,
+        updated_at: nowIso,
+        priority: typeof body.priority === "number" ? body.priority : 5,
+      })),
+      { onConflict: "campaign_id,lead_id" },
+    );
+  if (dqError) throw dqError;
+
+  return successResponse({
+    assigned: dialable.length,
+    queued: dialable.length,
+    skipped_dnc_or_invalid: skippedDnc,
+    campaign: { id: camp.id, name: camp.name, status: camp.status },
+  });
+}
+
+/**
+ * POST /v1/leads/intake — SPEED-TO-LEAD webhook.
+ * Point a website form / GHL workflow / Zapier at this endpoint and a new lead
+ * is created, attached to the given campaign, queued at top priority, and the
+ * dispatcher is triggered immediately (legal calling hours still enforced —
+ * if it's after hours the lead dials the moment the window opens).
+ * Body: lead fields + campaign_id (required) + dispatch_now (default true).
+ */
+async function leadIntake(rc: RouteContext): Promise<Response> {
+  requireScope(rc.ctx, "leads:write");
+  const body = await safeJson(rc.req);
+  if (!body.phone_number) throw new ValidationError("phone_number is required");
+  if (!body.campaign_id) throw new ValidationError("campaign_id is required for intake");
+
+  const digits = phoneDigits(body.phone_number);
+  if (digits.length < 7) throw new ValidationError("phone_number must contain at least 7 digits");
+
+  const { data: camp, error: campError } = await rc.supabase
+    .from("campaigns")
+    .select("id, name, status, max_attempts")
+    .eq("user_id", rc.ctx.userId)
+    .eq("id", body.campaign_id)
+    .maybeSingle();
+  if (campError) throw campError;
+  if (!camp) throw new NotFoundError(`Campaign ${body.campaign_id} not found`);
+
+  // Reuse an existing lead with the same number (repeat form submits happen);
+  // otherwise create. Never dial a DNC lead no matter what the form sends.
+  const { data: existing } = await rc.supabase
+    .from("leads")
+    .select("id, do_not_call")
+    .eq("user_id", rc.ctx.userId)
+    .like("phone_number", `%${digits}`)
+    .limit(1)
+    .maybeSingle();
+
+  let leadId: string;
+  if (existing) {
+    if (existing.do_not_call) {
+      return successResponse({ queued: false, reason: "lead is on DNC", lead_id: existing.id });
+    }
+    leadId = existing.id;
+    await rc.supabase
+      .from("leads")
+      .update({
+        first_name: body.first_name ?? undefined,
+        last_name: body.last_name ?? undefined,
+        email: body.email ?? undefined,
+        lead_source: body.lead_source ?? "website_intake",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", leadId);
+  } else {
+    const insert: Record<string, unknown> = {
+      user_id: rc.ctx.userId,
+      phone_number: String(body.phone_number),
+      first_name: body.first_name ?? null,
+      last_name: body.last_name ?? null,
+      email: body.email ?? null,
+      company: body.company ?? null,
+      lead_source: body.lead_source ?? "website_intake",
+      status: "new",
+      city: body.city ?? null,
+      state: body.state ?? null,
+      custom_fields: body.custom_fields ?? null,
+    };
+    if (rc.ctx.organizationId) insert.organization_id = rc.ctx.organizationId;
+    const { data: created, error: createError } = await rc.supabase
+      .from("leads")
+      .insert(insert)
+      .select("id")
+      .single();
+    if (createError) throw createError;
+    leadId = created.id;
+  }
+
+  const nowIso = new Date().toISOString();
+  await rc.supabase
+    .from("campaign_leads")
+    .insert({ campaign_id: camp.id, lead_id: leadId })
+    .then(() => {}); // tolerate duplicates
+
+  const { error: dqError } = await rc.supabase
+    .from("dialing_queues")
+    .upsert(
+      [{
+        campaign_id: camp.id,
+        lead_id: leadId,
+        phone_number: String(body.phone_number),
+        status: "pending",
+        attempts: 0,
+        max_attempts: camp.max_attempts ?? 3,
+        scheduled_at: nowIso,
+        updated_at: nowIso,
+        priority: 1, // speed-to-lead: front of the queue
+      }],
+      { onConflict: "campaign_id,lead_id" },
+    );
+  if (dqError) throw dqError;
+
+  // Trigger the dispatcher now (speed-to-lead: seconds matter). Legal calling
+  // hours are enforced by the dispatcher — after hours the lead stays queued
+  // and dials the moment the window opens.
+  let dispatched = false;
+  if (body.dispatch_now !== false) {
+    try {
+      const upstream = await fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ action: "dispatch", internal: true, userId: rc.ctx.userId, campaignId: camp.id }),
+      });
+      dispatched = upstream.ok;
+    } catch (dispatchError) {
+      console.warn("[leadIntake] dispatch trigger failed (lead stays queued):", dispatchError);
+    }
+  }
+
+  return successResponse(
+    {
+      lead_id: leadId,
+      campaign_id: camp.id,
+      queued: true,
+      dispatch_triggered: dispatched,
+    },
+    201,
+  );
 }
 
 async function updateLead(rc: RouteContext, id: string): Promise<Response> {

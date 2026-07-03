@@ -256,3 +256,13 @@ verify_jwt = true
 
 [functions.telnyx-scheduled-events]
 verify_jwt = true
+
+[functions.slack-webhook]
+# Slack cannot send a Supabase JWT — security is Slack signature verification
+# (SLACK_SIGNING_SECRET) inside the function.
+verify_jwt = false
+
+[functions.api-gateway]
+# Uses its own dsk_live_ API-key auth (already deployed with verify_jwt=false
+# in prod; recorded here so a redeploy doesn't silently re-enable JWT).
+verify_jwt = false
