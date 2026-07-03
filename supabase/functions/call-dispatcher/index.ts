@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { raiseAlert, resolveAlerts } from '../_shared/alerting.ts';
+import { resolveRouting } from '../_shared/provider-router.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1460,30 +1461,38 @@ serve(async (req) => {
       try {
         const lead = queueItem.leads as any;
         const campaign = queueItem.campaigns as any;
-        let campaignProvider = campaign?.provider || 'retell';
-        const isBothMode = campaignProvider === 'both';
-        const isAssistable = campaignProvider === 'assistable';
-        
-        // For "both" mode: alternate between retell and telnyx using attempt count
-        // With fallback: if the chosen provider has no agent configured, use the other
+        const configuredProvider = campaign?.provider || 'retell';
+        const isBothMode = configuredProvider === 'both';
+        const isAssistable = configuredProvider === 'assistable';
+
+        // ── PROVIDER/AGENT ROUTING (orchestration layer, Phase 1) ──
+        // Only "both" mode chooses between providers, and its Retell + Telnyx
+        // number pools are always loaded together upstream — so resolveRouting()
+        // drives it (attempt alternation + agent-availability fallback), now via
+        // the shared, unit-tested function instead of inline logic.
+        //
+        // Explicit retell/telnyx/assistable campaigns keep their configured
+        // provider. We deliberately do NOT cross-fall-back an explicit provider
+        // to an alternate: the alternate's number pool is only fetched when a
+        // campaign actually uses that provider (hasRetellCampaign/
+        // hasTelnyxCampaign), so switching would fail with "no valid <provider>
+        // numbers". An explicit provider missing its agent is handled by the
+        // no-agent path below, exactly as before.
+        let campaignProvider = configuredProvider;
         if (isBothMode) {
-          const attemptNum = (queueItem.attempts || 0);
-          const preferredProvider = attemptNum % 2 === 0 ? 'retell' : 'telnyx';
-          const hasRetellAgent = !!campaign?.agent_id;
-          const hasTelnyxAgent = !!campaign?.telnyx_assistant_id;
-          
-          if (preferredProvider === 'retell' && !hasRetellAgent && hasTelnyxAgent) {
-            campaignProvider = 'telnyx';
-            console.log(`[Dispatcher] Both mode fallback: no Retell agent, using Telnyx`);
-          } else if (preferredProvider === 'telnyx' && !hasTelnyxAgent && hasRetellAgent) {
-            campaignProvider = 'retell';
-            console.log(`[Dispatcher] Both mode fallback: no Telnyx agent, using Retell`);
-          } else {
-            campaignProvider = preferredProvider;
-          }
-          console.log(`[Dispatcher] Both mode: attempt ${attemptNum} → using ${campaignProvider}`);
+          const routing = resolveRouting({
+            campaign: {
+              provider: 'both',
+              agent_id: campaign?.agent_id,
+              telnyx_assistant_id: campaign?.telnyx_assistant_id,
+            },
+            attempt: queueItem.attempts || 0,
+          });
+          campaignProvider = routing.provider
+            ?? ((queueItem.attempts || 0) % 2 === 0 ? 'retell' : 'telnyx');
+          if (routing.fallbackUsed) console.log(`[Dispatcher] Router: ${routing.reason}`);
         }
-        
+
         const isTelnyx = campaignProvider === 'telnyx';
         
         // CRITICAL DEDUP: Check if this lead was already answered/completed recently
