@@ -287,6 +287,13 @@ serve(async (req) => {
       action !== 'status_check' &&
       action !== 'cleanup_stuck_calls';
 
+    // Legal calling-hours bypass must be EXPLICIT. Manual dispatch still skips
+    // scheduled_at gating (clicking "dispatch now" should dial now), but
+    // dialing OUTSIDE legal hours requires bypassCallingHours: true in the
+    // request body. Without this, any button/bot that passes immediate:true
+    // silently creates TCPA exposure after hours.
+    const bypassCallingHours = manualDispatchRequested && requestBody.bypassCallingHours === true;
+
     // Handle health_check action for system verification
     if (action === 'health_check' || action === 'status_check') {
       console.log('[Dispatcher] Health check requested');
@@ -467,22 +474,24 @@ serve(async (req) => {
           }
         }
 
-        if (outsideHours && !manualDispatchRequested) {
+        if (outsideHours && !bypassCallingHours) {
           console.log(`[Dispatcher] CALLING HOURS BLOCK: ${reasonMsg}`);
           return new Response(
             JSON.stringify({
               success: true,
               dispatched: 0,
               status: 'outside_calling_hours',
-              message: reasonMsg,
+              message: reasonMsg + (manualDispatchRequested
+                ? ' — to intentionally dial outside legal hours (e.g. a test call), pass bypassCallingHours: true'
+                : ''),
               remaining: 0,
             }),
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        if (outsideHours && manualDispatchRequested) {
-          console.log(`[Dispatcher] Manual dispatch override — bypassing calling-hours block: ${reasonMsg}`);
+        if (outsideHours && bypassCallingHours) {
+          console.log(`[Dispatcher] EXPLICIT calling-hours override (bypassCallingHours=true): ${reasonMsg}`);
         }
 
         console.log('[Dispatcher] Calling hours check: WITHIN allowed window');
@@ -1370,7 +1379,9 @@ serve(async (req) => {
     // ============= PER-LEAD TIMEZONE FILTERING =============
     // Check each lead's state and skip if their local time is outside calling hours.
     // This prevents calling someone in CA at 6 AM just because it's 9 AM ET.
-    if (!manualDispatchNow) {
+    // Manual dispatch does NOT skip this — only an explicit bypassCallingHours
+    // (e.g. a deliberate test call) may dial a lead outside their local window.
+    if (!bypassCallingHours) {
       const beforeCount = eligibleCalls.length;
       let skippedForTimezone = 0;
       const timezoneFilteredCalls: any[] = [];
@@ -1414,7 +1425,7 @@ serve(async (req) => {
         console.log(`[Dispatcher] Timezone filter: ${skippedForTimezone}/${beforeCount} leads skipped (outside their local calling hours)`);
       }
     } else {
-      console.log('[Dispatcher] Manual dispatch override — bypassing per-lead timezone filter');
+      console.log('[Dispatcher] EXPLICIT bypassCallingHours — skipping per-lead timezone filter');
     }
 
     console.log(`[Dispatcher] Processing ${eligibleCalls.length} eligible calls`);
@@ -1513,6 +1524,42 @@ serve(async (req) => {
             .from('dialing_queues')
             .update({ status: 'completed', updated_at: nowIso, notes: 'Lead already answered recently - dedup' })
             .eq('id', queueItem.id);
+          continue;
+        }
+
+        // ── DNC HARD STOP ──
+        // The lead row's do_not_call flag can lag the dnc_list (webhook opt-outs,
+        // imports, DTMF "2" handling write to dnc_list directly), so check the
+        // list itself right before a call goes out. Match common stored formats.
+        const dncDigits = (toPhone || '').replace(/\D/g, '');
+        const dncLast10 = dncDigits.slice(-10);
+        const dncVariants = [...new Set([
+          toPhone,
+          dncDigits,
+          dncLast10,
+          `1${dncLast10}`,
+          `+1${dncLast10}`,
+        ].filter(Boolean))];
+        const { data: dncHit } = await supabase
+          .from('dnc_list')
+          .select('id')
+          .eq('user_id', user.id)
+          .in('phone_number', dncVariants)
+          .limit(1);
+
+        if (dncHit && dncHit.length > 0) {
+          console.log(`[Dispatcher] DNC BLOCK: ${toPhone} is on the DNC list — skipping and flagging lead ${queueItem.lead_id}`);
+          await supabase
+            .from('dialing_queues')
+            .update({ status: 'completed', updated_at: nowIso, notes: 'Blocked: phone is on DNC list' })
+            .eq('id', queueItem.id);
+          // Sync the lead row so future queueing skips it upstream too.
+          await supabase
+            .from('leads')
+            .update({ do_not_call: true, updated_at: nowIso })
+            .eq('id', queueItem.lead_id)
+            .eq('user_id', user.id);
+          dispatchResults.push({ leadId: queueItem.lead_id, success: false, error: 'DNC blocked' });
           continue;
         }
         
