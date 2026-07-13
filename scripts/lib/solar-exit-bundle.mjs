@@ -294,6 +294,15 @@ function sha256Bytes(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function canonicalText(value) {
+  const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
+  return text.replace(/\r\n?/g, '\n');
+}
+
+function sha256CanonicalText(value) {
+  return sha256(canonicalText(value));
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
@@ -315,14 +324,14 @@ export function computeLaunchManifestDigest(manifest) {
 
 export function computeSolarExitArtifactDigestMap(bundle) {
   return {
-    agent_prompt: sha256(bundle.prompt),
+    agent_prompt: sha256CanonicalText(bundle.prompt),
     retell_agent: sha256(canonicalJson(bundle.retell)),
     dispositions: sha256(canonicalJson(bundle.dispositions)),
     eligibility_policy: sha256(canonicalJson(bundle.eligibility)),
     ghl_mapping: sha256(canonicalJson(bundle.ghl)),
     conversation_tests: sha256(canonicalJson(bundle.conversationTests)),
     synthetic_consent: sha256(canonicalJson(bundle.consentFixtures)),
-    synthetic_leads: sha256(bundle.syntheticLeadsCsv),
+    synthetic_leads: sha256CanonicalText(bundle.syntheticLeadsCsv),
   };
 }
 
@@ -362,7 +371,7 @@ export function computeCanonicalSourceDigest(bundle) {
     if (evidenceRoot && (file === evidenceRoot || isPathInside(evidenceRoot, file))) continue;
     supplemental.push({
       path: relative(bundle.root, file).split(sep).join('/'),
-      sha256: sha256Bytes(readFileSync(file)),
+      sha256: sha256CanonicalText(readFileSync(file)),
     });
   }
   supplemental.sort((left, right) => left.path.localeCompare(right.path));

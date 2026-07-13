@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
   buildConversationResultTemplate,
   compileSolarExitDraft,
+  computeCanonicalSourceDigest,
   computeLaunchBundleDigest,
   computeLaunchManifestDigest,
   evaluateConsentEvidence,
@@ -16,6 +17,18 @@ import {
   scoreConversationResults,
   validateSolarExitBundleData,
 } from './lib/solar-exit-bundle.mjs';
+
+function rewriteTreeLineEndings(root, lineEnding) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      rewriteTreeLineEndings(path, lineEnding);
+      continue;
+    }
+    const normalized = readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+    writeFileSync(path, normalized.replace(/\n/g, lineEnding), 'utf8');
+  }
+}
 
 function markAsIsolatedCandidate(bundle) {
   bundle.root = mkdtempSync(join(tmpdir(), 'solar-exit-candidate-'));
@@ -39,6 +52,23 @@ test('Solar Exit bundle is structurally ready as a locked offline artifact', () 
   assert.equal(bundle.manifest.production_launch_allowed, false);
   assert.equal(bundle.manifest.campaign.status, 'draft');
   assert.equal(bundle.manifest.environment, 'offline_only');
+});
+
+test('canonical source digest is stable across LF and CRLF checkouts', () => {
+  const sandbox = mkdtempSync(join(tmpdir(), 'solar-exit-line-endings-'));
+  const lfRoot = join(sandbox, 'lf');
+  const crlfRoot = join(sandbox, 'crlf');
+  try {
+    cpSync('campaigns/solar-exit', lfRoot, { recursive: true });
+    cpSync('campaigns/solar-exit', crlfRoot, { recursive: true });
+    rewriteTreeLineEndings(lfRoot, '\n');
+    rewriteTreeLineEndings(crlfRoot, '\r\n');
+    const expected = loadSolarExitBundle().manifest.release_provenance.canonical_source_sha256;
+    assert.equal(computeCanonicalSourceDigest(loadSolarExitBundle(lfRoot)), expected);
+    assert.equal(computeCanonicalSourceDigest(loadSolarExitBundle(crlfRoot)), expected);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
 });
 
 test('production launch gate fails closed and explains unresolved evidence', () => {
