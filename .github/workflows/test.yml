@@ -134,8 +134,6 @@ jobs:
     name: Fresh database replay and schema drift
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -148,6 +146,8 @@ jobs:
         run: node --test scripts/certify-fresh-database.test.mjs
       - name: Replay all migrations twice and reject schema/type drift
         run: node scripts/certify-fresh-database.mjs
+        env:
+          DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
       - name: Upload fresh-database diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
