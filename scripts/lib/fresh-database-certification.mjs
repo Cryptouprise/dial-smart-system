@@ -107,7 +107,7 @@ export async function reserveLocalPort() {
   });
 }
 
-export function createIsolatedSupabaseProject({ repoRoot, temporaryRoot, databasePort }) {
+export function createIsolatedSupabaseProject({ repoRoot, temporaryRoot, databasePort, migrationSourceDir }) {
   const projectId = `dial-smart-db-cert-${randomUUID().slice(0, 12)}`;
   const targetSupabase = join(temporaryRoot, 'supabase');
   mkdirSync(targetSupabase, { recursive: true });
@@ -116,7 +116,7 @@ export function createIsolatedSupabaseProject({ repoRoot, temporaryRoot, databas
   const sourceConfig = readFileSync(sourceConfigPath, 'utf8');
   const isolatedConfig = isolateSupabaseConfig(sourceConfig, { projectId, databasePort });
   writeFileSync(join(targetSupabase, 'config.toml'), isolatedConfig);
-  cpSync(resolve(repoRoot, 'supabase/migrations'), join(targetSupabase, 'migrations'), {
+  cpSync(migrationSourceDir || resolve(repoRoot, 'supabase/migrations'), join(targetSupabase, 'migrations'), {
     recursive: true,
   });
   const sourceTests = resolve(repoRoot, 'supabase/tests');

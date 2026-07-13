@@ -119,7 +119,9 @@ function assertDockerReady() {
 }
 
 function migrationFiles() {
-  const migrationDir = resolve(repoRoot, 'supabase/migrations');
+  const migrationDir = process.env.DATABASE_CERTIFICATION_MIGRATIONS_DIR
+    ? resolve(repoRoot, process.env.DATABASE_CERTIFICATION_MIGRATIONS_DIR)
+    : resolve(repoRoot, 'supabase/migrations');
   return readdirSync(migrationDir)
     .filter((name) => name.endsWith('.sql'))
     .sort();
@@ -147,6 +149,9 @@ async function main() {
   }
 
   const files = migrationFiles();
+  const migrationSourceDir = process.env.DATABASE_CERTIFICATION_MIGRATIONS_DIR
+    ? resolve(repoRoot, process.env.DATABASE_CERTIFICATION_MIGRATIONS_DIR)
+    : resolve(repoRoot, 'supabase/migrations');
   const contractFiles = databaseContractFiles();
   const databasePort = await reserveLocalPort();
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'dial-smart-db-cert-'));
@@ -154,6 +159,7 @@ async function main() {
     repoRoot,
     temporaryRoot,
     databasePort,
+    migrationSourceDir,
   });
   const firstDumpPath = join(temporaryRoot, 'schema-first.sql');
   const secondDumpPath = join(temporaryRoot, 'schema-second.sql');

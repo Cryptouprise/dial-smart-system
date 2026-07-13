@@ -1,0 +1,4 @@
+# The recovered v4 lineage is a byte-hash-locked immutable replay artifact.
+# Keep Git from normalizing line endings or treating SQL formatting as a patch.
+certification/recovery-lineage-v4/migrations/*.sql binary
+certification/recovery-lineage-v4/lineage-lock.json binary
